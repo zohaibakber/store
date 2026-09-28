@@ -1,6 +1,6 @@
 import { OrgCommitSequence, SyncEpoch } from "@store/contracts";
-import { inventoryState } from "@store/db/postgres/schema";
-import { eq } from "drizzle-orm";
+import { inventoryState, replicas } from "@store/db/postgres/schema";
+import { and, eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -11,6 +11,7 @@ import type { InventoryActor } from "./model";
 import {
   integerTextFromNumeric,
   inventoryPostgresUnavailable,
+  protocol,
   requireReady,
   runStatement,
   type InventoryDrizzle,
@@ -23,7 +24,8 @@ export type LiveHorizon = {
 
 const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")(function* (
   db: InventoryDrizzle,
-  organizationId: string,
+  actor: InventoryActor,
+  replicaId: string,
 ) {
   const [row] = yield* runStatement(
     db
@@ -32,12 +34,26 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
         releaseId: inventoryState.releaseId,
         epoch: inventoryState.epoch,
         commitSequence: inventoryState.commitSequence,
+        ownerUserId: replicas.ownerUserId,
       })
       .from(inventoryState)
-      .where(eq(inventoryState.organizationId, organizationId))
+      .leftJoin(
+        replicas,
+        and(
+          eq(replicas.organizationId, inventoryState.organizationId),
+          eq(replicas.replicaId, replicaId),
+        ),
+      )
+      .where(eq(inventoryState.organizationId, actor.organizationId))
       .limit(1),
   );
   const state = yield* requireReady(row);
+  if (state.ownerUserId === null) {
+    return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
+  }
+  if (state.ownerUserId !== actor.userId) {
+    return yield* protocol("REPLICA_OWNED_BY_OTHER", "This replica belongs to another user.");
+  }
   return {
     epoch: SyncEpoch.make(state.epoch),
     horizon: OrgCommitSequence.make(integerTextFromNumeric(state.commitSequence)),
@@ -51,19 +67,26 @@ export const LIVE_HORIZON_SHARING = {
 
 type SharedHorizon = { readonly horizon: LiveHorizon; readonly readAt: number };
 
+const sharingKey = (actor: InventoryActor, replicaId: string) =>
+  JSON.stringify([actor.organizationId, actor.userId, replicaId]);
+
 const makeSharedHorizonReader = (
-  read: (organizationId: string) => Effect.Effect<LiveHorizon, InventoryError>,
+  read: (actor: InventoryActor, replicaId: string) => Effect.Effect<LiveHorizon, InventoryError>,
 ) => {
   const latest = new Map<string, SharedHorizon>();
-  return Effect.fn("InventoryLive.sharedHorizon")(function* (organizationId: string) {
+  return Effect.fn("InventoryLive.sharedHorizon")(function* (
+    actor: InventoryActor,
+    replicaId: string,
+  ) {
     const now = yield* Clock.currentTimeMillis;
-    const shared = latest.get(organizationId);
+    const key = sharingKey(actor, replicaId);
+    const shared = latest.get(key);
     if (shared !== undefined && now - shared.readAt < LIVE_HORIZON_SHARING.maxAgeMillis) {
       return shared.horizon;
     }
-    const horizon = yield* read(organizationId);
-    latest.delete(organizationId);
-    latest.set(organizationId, { horizon, readAt: now });
+    const horizon = yield* read(actor, replicaId);
+    latest.delete(key);
+    latest.set(key, { horizon, readAt: now });
     if (latest.size > LIVE_HORIZON_SHARING.capacity) {
       const oldest = latest.keys().next();
       if (oldest.done !== true) latest.delete(oldest.value);
@@ -73,7 +96,10 @@ const makeSharedHorizonReader = (
 };
 
 export interface InventoryLiveContract {
-  readonly readLiveHorizon: (actor: InventoryActor) => Effect.Effect<LiveHorizon, InventoryError>;
+  readonly readLiveHorizon: (
+    actor: InventoryActor,
+    replicaId: string,
+  ) => Effect.Effect<LiveHorizon, InventoryError>;
 }
 
 export class InventoryLive extends Context.Service<InventoryLive, InventoryLiveContract>()(
@@ -81,12 +107,12 @@ export class InventoryLive extends Context.Service<InventoryLive, InventoryLiveC
 ) {}
 
 export const makeInventoryLive = (db: InventoryDrizzle): InventoryLiveContract => {
-  const sharedHorizon = makeSharedHorizonReader((organizationId) =>
-    readLiveHorizonStatement(db, organizationId),
+  const sharedHorizon = makeSharedHorizonReader((actor, replicaId) =>
+    readLiveHorizonStatement(db, actor, replicaId),
   );
   return InventoryLive.of({
-    readLiveHorizon: Effect.fn("InventoryLive.readLiveHorizon")(function* (actor) {
-      return yield* sharedHorizon(actor.organizationId);
+    readLiveHorizon: Effect.fn("InventoryLive.readLiveHorizon")(function* (actor, replicaId) {
+      return yield* sharedHorizon(actor, replicaId);
     }),
   });
 };

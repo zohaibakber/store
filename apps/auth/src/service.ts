@@ -20,11 +20,13 @@ import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import { EphemeralStore } from "./ephemeral";
 import { AuthError, infrastructureError, infrastructureLog } from "./errors";
 import { GoogleOAuth } from "./google";
 import { makeGoogleIdentityOps, type GoogleCallback } from "./google-identity";
+import { HubRevocation, noHubRevocation } from "./hub-revocation";
 import type { AuthLimits } from "./limits";
 import { makeLoginOps } from "./login";
 import { makeOrganizationOps } from "./organization-ops";
@@ -94,6 +96,10 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
       const accessTokens = yield* AccessTokenService;
       const email = yield* EmailProvider;
       const google = yield* GoogleOAuth;
+      const hubs = Option.getOrElse(
+        yield* Effect.serviceOption(HubRevocation),
+        () => noHubRevocation,
+      );
 
       const sessions = makeSessionOps(repository, accessTokens, configuration);
       const login = makeLoginOps(
@@ -119,6 +125,7 @@ export const authServiceLayer = (configuration: AuthServiceConfiguration) =>
         sessions,
         configuration,
         configuration.limits,
+        hubs,
       );
 
       return AuthService.of({

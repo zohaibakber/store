@@ -7,14 +7,13 @@ import {
   SnapshotId,
   SyncProtocolError,
   SyncPullRequest,
-  SyncSubmitCommandRequest,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { InventoryCommandsContract } from "./commands";
+import type { InventoryCommandsContract, SyncRequestMalformed } from "./commands";
 import type { InventoryDatabaseError, InventoryError } from "./errors";
 import type {
   EncodedJsonBody,
@@ -58,8 +57,8 @@ export interface SyncAuthorityContract {
   ) => Effect.Effect<RegisterReplicaResult, SyncAuthorityError, RuntimeContext>;
   readonly submitCommand: (
     actor: InventorySyncActor,
-    request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<SubmittedCommand, SyncAuthorityError, RuntimeContext>;
+    bodyText: string,
+  ) => Effect.Effect<SubmittedCommand, SyncAuthorityError | SyncRequestMalformed, RuntimeContext>;
   readonly getReceipt: (
     actor: InventorySyncActor,
     operationId: string,
@@ -94,16 +93,15 @@ export const unprovisionedSyncAuthority: SyncAuthorityContract = {
   readSnapshotPart: () => unavailable(),
 };
 
+const unavailableFrom = (error: InventoryDatabaseError) =>
+  error === inventoryPostgresUnavailable
+    ? Effect.fail(syncUnavailableError(error.message))
+    : syncDatabaseFailure(error);
+
 export const toSyncAuthorityError = <A, R>(
   effect: Effect.Effect<A, InventoryError, R>,
 ): Effect.Effect<A, SyncAuthorityError, R> =>
-  effect.pipe(
-    Effect.catchTag("InventoryDatabaseError", (error) =>
-      error === inventoryPostgresUnavailable
-        ? Effect.fail(syncUnavailableError(error.message))
-        : syncDatabaseFailure(error),
-    ),
-  );
+  effect.pipe(Effect.catchTag("InventoryDatabaseError", unavailableFrom));
 
 export const makeInventorySyncAuthority = (stores: {
   readonly commands: InventoryCommandsContract;
@@ -111,8 +109,10 @@ export const makeInventorySyncAuthority = (stores: {
 }): SyncAuthorityContract => ({
   registerReplica: (actor, request) =>
     toSyncAuthorityError(stores.commands.register(actor, request)),
-  submitCommand: (actor, request) =>
-    toSyncAuthorityError(stores.commands.submitEncoded(actor, request)),
+  submitCommand: (actor, bodyText) =>
+    stores.commands
+      .submitRaw(actor, bodyText)
+      .pipe(Effect.catchTag("InventoryDatabaseError", unavailableFrom)),
   getReceipt: (actor, operationId) =>
     toSyncAuthorityError(stores.commands.receipt(actor, operationId)),
   pull: (actor, request) => toSyncAuthorityError(stores.commands.pullEncoded(actor, request)),

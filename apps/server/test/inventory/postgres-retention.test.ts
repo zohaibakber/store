@@ -12,7 +12,6 @@ import {
   batches,
   categories,
   commandReceipts,
-  consumedTickets,
   downloadLeases,
   inventoryChanges,
   inventoryState,
@@ -28,6 +27,7 @@ import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
@@ -497,29 +497,22 @@ describe("postgres inventory maintenance", () => {
     ]);
   });
 
-  it("deletes expired consumed tickets in bounded batches and keeps live ones", async () => {
+  it("maintains an organization once the consumed tickets table is dropped", async () => {
     const organizationId = decodeOrganizationId("org-ticket-expiry");
     const outcome = await run(
       Effect.gen(function* () {
+        const sql = yield* PgClient.PgClient;
         const db = yield* seedOrganization(organizationId, 3);
-        yield* db.insert(consumedTickets).values([
-          { organizationId, nonceHash: "expired-1", expiresAt: OCCURRED_AT - 3 },
-          { organizationId, nonceHash: "expired-2", expiresAt: OCCURRED_AT - 2 },
-          { organizationId, nonceHash: "expired-3", expiresAt: OCCURRED_AT - 1 },
-          { organizationId, nonceHash: "live", expiresAt: OCCURRED_AT + 60_000 },
-        ]);
-        const first = yield* maintainOrganization(db, organizationId);
-        const second = yield* maintainOrganization(db, organizationId);
-        const remaining = yield* db
-          .select({ nonceHash: consumedTickets.nonceHash })
-          .from(consumedTickets)
-          .where(eq(consumedTickets.organizationId, organizationId));
-        return { first, second, remaining };
+        const [table] = yield* sql<{
+          readonly found: string | null;
+        }>`select to_regclass('public.consumed_tickets')::text as found`;
+        const report = yield* maintainOrganization(db, organizationId);
+        return { found: table?.found, report };
       }),
     );
-    expect(outcome.first.expiredTickets).toBe(2);
-    expect(outcome.second.expiredTickets).toBe(1);
-    expect(outcome.remaining).toEqual([{ nonceHash: "live" }]);
+    expect(outcome.found).toBeNull();
+    expect(outcome.report.expiredTickets).toBe(0);
+    expect(outcome.report.builtSnapshot).toBe(true);
   });
 
   it("builds a snapshot for an organization without one and then advances the floor", async () => {
@@ -608,4 +601,76 @@ describe("postgres inventory maintenance", () => {
       expect(stamp.maintainedAt).toBe(OCCURRED_AT);
     }
   }, 120_000);
+  it("stamps each organization on its own so one lock timeout does not roll back the others", async () => {
+    const locked = decodeOrganizationId("org-maintain-locked");
+    const free = decodeOrganizationId("org-maintain-free");
+    await run(
+      Effect.gen(function* () {
+        yield* seedOrganization(locked, 6);
+        yield* seedOrganization(free, 6);
+      }),
+    );
+    const holder = new pg.Client({ connectionString: database.connectionString });
+    await holder.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select 1 from inventory_state where organization_id = $1 for update", [
+        locked,
+      ]);
+      const outcome = await run(
+        Effect.gen(function* () {
+          const db = yield* openDrizzle;
+          const summary = yield* maintain(db);
+          const floors = yield* db
+            .select({
+              organizationId: inventoryState.organizationId,
+              floor: inventoryState.retentionFloor,
+              maintainedAt: inventoryState.maintainedAt,
+            })
+            .from(inventoryState)
+            .where(inArray(inventoryState.organizationId, [locked, free]))
+            .orderBy(asc(inventoryState.organizationId));
+          return { summary, floors };
+        }),
+      );
+      expect(outcome.summary.failures.map((failure) => failure.organizationId)).toEqual([locked]);
+      expect(reportFor(outcome.summary, free).floorAfter).toBe("4");
+      expect(outcome.floors).toEqual([
+        { organizationId: free, floor: "4", maintainedAt: OCCURRED_AT },
+        { organizationId: locked, floor: "0", maintainedAt: null },
+      ]);
+    } finally {
+      await holder.query("rollback");
+      await holder.end();
+    }
+  }, 30_000);
+
+  it("gives up acquiring a snapshot while another transaction holds its build lock", async () => {
+    const organizationId = decodeOrganizationId("org-acquire-lock-timeout");
+    await run(seedOrganization(organizationId, 3));
+    const holder = new pg.Client({ connectionString: database.connectionString });
+    const caller = new pg.Client({ connectionString: database.connectionString });
+    await holder.connect();
+    await caller.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
+        `sync.snapshot:${organizationId}`,
+      ]);
+      const started = performance.now();
+      const [outcome] = await Promise.allSettled([
+        caller.query(
+          "select sync.acquire_snapshot($1, null, 'user-1', $2, 'operational', 1, 500, 60000)",
+          [organizationId, LAST_UNIT_EPOCH],
+        ),
+      ]);
+      const waited = performance.now() - started;
+      expect(outcome).toMatchObject({ status: "rejected", reason: { code: "55P03" } });
+      expect(waited).toBeLessThan(10_000);
+    } finally {
+      await holder.query("rollback");
+      await holder.end();
+      await caller.end();
+    }
+  }, 30_000);
 });

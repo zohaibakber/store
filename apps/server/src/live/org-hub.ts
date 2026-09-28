@@ -53,6 +53,7 @@ export class OrgHub extends Cloudflare.DurableObject<OrgHub, OrgHubContract>()("
 
 export const hubSocket = (socket: Cloudflare.WebSocket): HubSocket => ({
   attachment: () => Option.getOrUndefined(decodeHubAttachment(socket.deserializeAttachment())),
+  remember: (attachment) => socket.serializeAttachment<HubAttachment>(attachment),
   send: (text) => socket.ws.send(text),
   close: (code, reason) => socket.ws.close(code, reason),
 });
@@ -126,20 +127,17 @@ export const makeOrgHub = (
           userId: admission.userId,
           expiresAt: admission.expiresAt,
           maxBytes: admission.maxBytes,
-        });
-        cursor = advanceCursor(cursor, {
           epoch: admission.epoch,
-          horizon: admission.horizon,
-        }).cursor;
+        });
+        cursor = advanceCursor(cursor, { epoch: admission.epoch, horizon: admission.horizon });
         server.ws.send(helloFrame(cursor));
         return platform.upgrade(client);
       }),
       publish: (input: HubPublish) =>
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
-          const advanced = advanceCursor(cursor, { epoch: input.epoch, horizon: input.horizon });
-          cursor = advanced.cursor;
-          return publishToSockets(yield* socketsTagged(), input, advanced.epochChanged, now);
+          cursor = advanceCursor(cursor, { epoch: input.epoch, horizon: input.horizon });
+          return publishToSockets(yield* socketsTagged(), input, now);
         }),
       revoke: (userId: string) =>
         socketsTagged(userTag(userId)).pipe(

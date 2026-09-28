@@ -116,7 +116,7 @@ const sleepJittered = (millis: number): Effect.Effect<void> =>
 const textOf = (data: string | Uint8Array): string =>
   data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
 
-type SessionEnd = "renew" | "closed" | "reauthenticate";
+type SessionEnd = "renew" | "closed" | "reauthenticate" | "refused";
 
 const AUTH_CLOSE_CODES: ReadonlySet<number> = new Set([
   LIVE_SOCKET_CLOSE.tokenExpired,
@@ -125,12 +125,14 @@ const AUTH_CLOSE_CODES: ReadonlySet<number> = new Set([
 
 type SessionFailure = Socket.SocketError | LiveSocketStale | LiveSocketOffline;
 
-const endOf = (error: SessionFailure): SessionEnd =>
-  error._tag === "SocketError" &&
-  error.reason._tag === "SocketCloseError" &&
-  AUTH_CLOSE_CODES.has(error.reason.code)
-    ? "reauthenticate"
-    : "closed";
+const endOf = (error: SessionFailure): SessionEnd => {
+  if (error._tag !== "SocketError") return "closed";
+  const reason = error.reason;
+  if (reason._tag === "SocketCloseError" && AUTH_CLOSE_CODES.has(reason.code)) {
+    return "reauthenticate";
+  }
+  return reason._tag === "SocketOpenError" && reason.kind === "Unknown" ? "refused" : "closed";
+};
 
 export const makeLiveSocket = (
   host: LiveSocketHost,
@@ -140,6 +142,7 @@ export const makeLiveSocket = (
     const nudges = yield* Queue.sliding<void>(1);
     const attempts = yield* Ref.make(0);
     const forceRefresh = yield* Ref.make(false);
+    const refusalRefreshSpent = yield* Ref.make(false);
     const network = host.network ?? browserNetworkSignal();
     const online = yield* SubscriptionRef.make(network?.isOnline() ?? true);
     const webSocketLayer =
@@ -190,6 +193,7 @@ export const makeLiveSocket = (
         const receive = (data: string | Uint8Array) =>
           Effect.gen(function* () {
             yield* Ref.set(heardAt, yield* Clock.currentTimeMillis);
+            yield* Ref.set(refusalRefreshSpent, false);
             const text = textOf(data);
             if (text === LIVE_SOCKET_PONG) return;
             const frame = decodeSyncLiveServerFrame(text);
@@ -259,6 +263,9 @@ export const makeLiveSocket = (
       );
       if (ended === "renew") return;
       if (ended === "reauthenticate") yield* Ref.set(forceRefresh, true);
+      if (ended === "refused" && !(yield* Ref.getAndSet(refusalRefreshSpent, true))) {
+        yield* Ref.set(forceRefresh, true);
+      }
       yield* backOff;
     });
 

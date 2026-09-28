@@ -7,7 +7,7 @@ import {
   SyncEpoch,
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
-import { inventoryState } from "@store/db/postgres/schema";
+import { inventoryState, replicas } from "@store/db/postgres/schema";
 import { RuntimeContext } from "alchemy";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Context from "effect/Context";
@@ -23,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
-import { makeInventoryLive } from "../../src/inventory/live-tickets";
+import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import type { CommitFanout } from "../../src/inventory/model";
 import { inventoryPostgresUnavailable } from "../../src/inventory/postgres";
 import {
@@ -92,7 +92,6 @@ const makeFixture = (
   const published: Array<{
     readonly organizationId: string;
     readonly fanout: CommitFanout;
-    readonly originReplicaId: string;
   }> = [];
   const horizonReads: Array<string> = [];
   const hubs: LiveRouteDependencies["hubs"] = {
@@ -108,9 +107,9 @@ const makeFixture = (
     }),
   };
   const fanout: LiveFanoutContract = {
-    publish: (organizationId, value, originReplicaId) =>
+    publish: (organizationId, value) =>
       Effect.sync(() => {
-        published.push({ organizationId, fanout: value, originReplicaId });
+        published.push({ organizationId, fanout: value });
       }),
     revoke: () => Effect.void,
   };
@@ -219,6 +218,7 @@ describe("command fan-out", () => {
     horizon: "8",
     group: '{"commitSequence":"8","operationId":"op-8","decision":"accepted","changes":[]}',
     byteLength: 80,
+    originReplicaId: lastUnitBuyerAEnvelope.replicaId,
   };
   const authorityWith = (value: CommitFanout | null): SyncAuthorityContract => ({
     ...unprovisionedSyncAuthority,
@@ -236,9 +236,7 @@ describe("command fan-out", () => {
     const response = await submit(fixture);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe('{"ok":true}');
-    expect(fixture.published).toEqual([
-      { organizationId: "org-1", fanout, originReplicaId: lastUnitBuyerAEnvelope.replicaId },
-    ]);
+    expect(fixture.published).toEqual([{ organizationId: "org-1", fanout }]);
   });
 
   it("publishes nothing when the submit committed nothing", async () => {
@@ -260,23 +258,13 @@ describe("live upgrade on Postgres", () => {
     await database?.close();
   });
 
-  it("reads the horizon with at most one statement per connect", async () => {
+  const connectOnPostgres = (replicaId: string) => {
     const fixture = makeFixture();
-    const counted = await Effect.runPromise(
+    return Effect.runPromise(
       Effect.gen(function* () {
         const db = yield* PgDrizzle.makeWithDefaults();
-        yield* db.insert(inventoryState).values({
-          organizationId: "org-1",
-          status: "ready",
-          importId: "import-test",
-          releaseId: "release-test",
-          incarnation: "incarnation-test",
-          epoch: LAST_UNIT_EPOCH,
-          commitSequence: "12",
-          retentionFloor: "0",
-        });
         const live = makeInventoryLive(db);
-        return yield* countStatements(
+        const counted = yield* countStatements(
           liveSocketHandler({
             hubs: fixture.hubs,
             getSession: serverRuntime.getSession,
@@ -285,13 +273,15 @@ describe("live upgrade on Postgres", () => {
             Effect.provideService(
               HttpServerRequest.HttpServerRequest,
               HttpServerRequest.fromWeb(
-                new Request("http://localhost/api/sync/live?replicaId=replica-a", {
+                new Request(`http://localhost/api/sync/live?replicaId=${replicaId}`, {
                   headers: socketHeaders(GOOD_TOKEN),
                 }),
               ),
             ),
           ),
         );
+        const body = yield* Effect.promise(() => HttpServerResponse.toWeb(counted.result).text());
+        return { ...counted, body, forwarded: fixture.forwarded };
       }).pipe(
         Effect.provide(
           PgClient.layer({
@@ -304,11 +294,71 @@ describe("live upgrade on Postgres", () => {
         Effect.scoped,
       ),
     );
-    expect(counted.result.status).toBe(204);
-    expect(counted.roundTrips).toBeLessThanOrEqual(1);
-    expect(fixture.forwarded[0]?.headers).toMatchObject({
+  };
+
+  beforeAll(async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const db = yield* PgDrizzle.makeWithDefaults();
+        yield* db.insert(inventoryState).values({
+          organizationId: "org-1",
+          status: "ready",
+          importId: "import-test",
+          releaseId: "release-test",
+          incarnation: "incarnation-test",
+          epoch: LAST_UNIT_EPOCH,
+          commitSequence: "12",
+          retentionFloor: "0",
+        });
+        yield* db.insert(replicas).values(
+          [
+            { replicaId: "replica-a", ownerUserId: "user-1" },
+            { replicaId: "replica-other", ownerUserId: "user-2" },
+          ].map((replica) => ({
+            ...replica,
+            organizationId: "org-1",
+            deviceLabel: replica.replicaId,
+            lastClientSequence: "0",
+            processedThroughClientSequence: "0",
+            registeredAt: 1_700_000_000_000,
+            lastSeenAt: 1_700_000_000_000,
+          })),
+        );
+      }).pipe(
+        Effect.provide(
+          PgClient.layer({
+            url: Redacted.make(database.connectionString),
+            maxConnections: 1,
+            applicationName: "tabaaq-live-route-seed",
+          }),
+        ),
+        Effect.scoped,
+      ),
+    );
+  }, 180_000);
+
+  it("reads the horizon and the replica owner in one statement per connect", async () => {
+    const outcome = await connectOnPostgres("replica-a");
+    expect(outcome.result.status).toBe(204);
+    expect(outcome.roundTrips).toBe(1);
+    expect(outcome.forwarded[0]?.headers).toMatchObject({
       [HUB_ADMISSION_HEADERS.epoch]: LAST_UNIT_EPOCH,
       [HUB_ADMISSION_HEADERS.horizon]: "12",
     });
+  });
+
+  it("refuses a replica another member owns, so it cannot evict their socket", async () => {
+    const outcome = await connectOnPostgres("replica-other");
+    expect(outcome.result.status).toBe(403);
+    expect(JSON.parse(outcome.body)).toMatchObject({ error: { code: "REPLICA_OWNED_BY_OTHER" } });
+    expect(outcome.roundTrips).toBe(1);
+    expect(outcome.forwarded).toEqual([]);
+  });
+
+  it("refuses a replica that was never registered", async () => {
+    const outcome = await connectOnPostgres("replica-unregistered");
+    expect(outcome.result.status).toBe(409);
+    expect(JSON.parse(outcome.body)).toMatchObject({ error: { code: "REPLICA_UNKNOWN" } });
+    expect(outcome.forwarded).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ export interface CommitFanout {
   readonly horizon: string;
   readonly group: string;
   readonly byteLength: number;
+  readonly originReplicaId: string;
 }
 
 export interface SubmittedCommand {

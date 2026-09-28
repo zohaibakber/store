@@ -69,3 +69,6 @@ minimumReleaseAgeExclude:
   - "@effect/vitest@4.0.0-rc.117"
   - effect@4.0.0-rc.117
   - "@cloudflare/workers-types@5.20260927.1"
+
+patchedDependencies:
+  alchemy: patches/alchemy.patch

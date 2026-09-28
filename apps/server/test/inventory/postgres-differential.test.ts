@@ -566,7 +566,7 @@ const makeGenerator = (random: Random) => {
           ? batch.packQuantity
           : batch.packQuantity * (product?.unitsPerPack ?? 1) + batch.unitQuantity;
       const quantity = Math.max(1, random.integer(1, Math.max(1, available + 2)));
-      const salePrice = random.integer(0, 500);
+      const salePrice = random.chance(0.02) ? 2_500_000_000 : random.integer(0, 500);
       const split = quantity > 1 && random.chance(0.15);
       const takes = split
         ? [Math.floor(quantity / 2), quantity - Math.floor(quantity / 2)]
@@ -579,9 +579,11 @@ const makeGenerator = (random: Random) => {
         salePrice,
       });
       for (const take of takes) {
-        const saleMovementId = fresh("mv-sale");
+        const reusedMovement = random.chance(0.02) ? random.pick(model.stockMovements) : undefined;
+        const reusedItem = random.chance(0.02) ? random.pick(model.invoiceItems) : undefined;
+        const saleMovementId = reusedMovement?.id ?? fresh("mv-sale");
         allocations.push({
-          invoiceItemId: decodeInvoiceItemId(fresh("item")),
+          invoiceItemId: decodeInvoiceItemId(reusedItem?.id ?? fresh("item")),
           saleMovementId,
           openPackMovementId: random.chance(0.5) ? `${saleMovementId}-open` : null,
           productId: decodeProductId(batch.productId),

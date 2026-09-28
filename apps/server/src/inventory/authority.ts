@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { InventoryCommands, InventoryCommandsUnavailable, makeInventoryCommands } from "./commands";
-import { InventoryLive, InventoryLiveUnavailable, makeInventoryLive } from "./live-tickets";
+import { InventoryLive, InventoryLiveUnavailable, makeInventoryLive } from "./live-horizon";
 import {
   InventoryMaintenance,
   InventoryMaintenanceUnavailable,

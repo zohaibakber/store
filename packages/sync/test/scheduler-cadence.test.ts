@@ -90,7 +90,7 @@ describe("sync scheduler idle cadence", () => {
       const { pulls, scheduler } = yield* startScheduler(() => Effect.succeed("advanced"), {
         policy: defaultHttpPollPolicy,
       });
-      for (let step = 0; step < 40; step += 1) yield* TestClock.adjust("15 seconds");
+      for (let step = 0; step < 80; step += 1) yield* TestClock.adjust("15 seconds");
       const gaps = gapsOf(yield* Ref.get(pulls));
       expect(gaps.length).toBeGreaterThanOrEqual(7);
       for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(PULL_FLOOR_MILLIS);

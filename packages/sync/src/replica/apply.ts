@@ -1,6 +1,5 @@
 import {
   compareDecimalSequence,
-  type SyncLiveServerFrame,
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
@@ -135,16 +134,4 @@ export const applyPullResult = Effect.fn("ReplicaApply.applyPullResult")(functio
     digestVerified: coverage.digestVerified,
     touchedKeys,
   } satisfies PullApplyResult;
-});
-
-export const applyLiveFrame = Effect.fn("ReplicaApply.applyLiveFrame")(function* (
-  tx: ReplicaDb,
-  feed: ReplicaFeedMode,
-  frame: Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>,
-) {
-  if (feed._tag !== "following") return false;
-  for (const group of frame.transactions) {
-    yield* applyTransactionGroup(tx, group);
-  }
-  return true;
 });

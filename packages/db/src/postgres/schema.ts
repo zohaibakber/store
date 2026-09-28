@@ -462,22 +462,3 @@ export const snapshotParts = pgTable(
     check("snapshot_parts_byte_length_nonnegative", sql`${table.byteLength} >= 0`),
   ],
 );
-
-export const consumedTickets = pgTable(
-  "consumed_tickets",
-  {
-    organizationId: tenantId(),
-    nonceHash: text("nonce_hash").notNull(),
-    expiresAt: epochMilliseconds("expires_at").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      name: "consumed_tickets_organization_id_nonce_hash_pk",
-      columns: [table.organizationId, table.nonceHash],
-    }),
-    index("consumed_tickets_organization_id_expires_at_idx").on(
-      table.organizationId,
-      table.expiresAt,
-    ),
-  ],
-);

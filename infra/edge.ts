@@ -102,8 +102,9 @@ export const resolveEdgeHostnames = Effect.gen(function* () {
 export const Edge = Effect.gen(function* () {
   const { stage } = yield* Alchemy.Stack;
   const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
+  const enabled = yield* Config.Boolean("EDGE_WAF_ENABLED").pipe(Config.withDefault(false));
   const hostnames = yield* resolveEdgeHostnames;
-  if (localDevelopment || stage !== EDGE_OWNER_STAGE || !hostnames) return undefined;
+  if (!enabled || localDevelopment || stage !== EDGE_OWNER_STAGE || !hostnames) return undefined;
   const firewallRules = edgeFirewallRules(hostnames);
   if (firewallRules.length === 0) return undefined;
   const zone = yield* Cloudflare.Zone.Zone("EdgeZone", { name: hostnames.zone }).pipe(

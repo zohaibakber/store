@@ -234,8 +234,8 @@ describe("organization invitations", () => {
 });
 
 describe("organization role guards", () => {
-  const withTeam = () => {
-    const instance = harness();
+  const withTeam = (options: { readonly withoutHubs?: boolean } = {}) => {
+    const instance = harness(options);
     const owner = seedUser(instance.store, { id: "owner", email: "owner@example.com" });
     const admin = seedUser(instance.store, { id: "admin", email: "admin@example.com" });
     const member = seedUser(instance.store, { id: "member", email: "member@example.com" });
@@ -373,6 +373,83 @@ describe("organization role guards", () => {
     expect(team.instance.store.memberships.some((entry) => entry.userId === team.member.id)).toBe(
       false,
     );
+  });
+
+  it("closes the live sockets of a removed member and of nobody else", async () => {
+    const team = withTeam();
+    await failing(team.instance, team.adminToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.owner.id,
+    });
+    await failing(team.instance, team.ownerToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.owner.id,
+    });
+    expect(team.instance.revocations).toEqual([]);
+
+    await command(team.instance, team.adminToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.member.id,
+    });
+    expect(team.instance.revocations).toEqual([
+      { organizationId: team.organizationId, userId: team.member.id },
+    ]);
+  });
+
+  it("closes the live sockets of a demoted member but not of a promoted one", async () => {
+    const team = withTeam();
+    await command(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.member.id,
+      role: "admin",
+    });
+    await command(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.member.id,
+      role: "admin",
+    });
+    await failing(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.owner.id,
+      role: "member",
+    });
+    expect(team.instance.revocations).toEqual([]);
+
+    await command(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.admin.id,
+      role: "member",
+    });
+    expect(team.instance.revocations).toEqual([
+      { organizationId: team.organizationId, userId: team.admin.id },
+    ]);
+  });
+
+  it("removes and demotes members when no live hub is bound", async () => {
+    const team = withTeam({ withoutHubs: true });
+    const demoted = await command(team.instance, team.ownerToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.admin.id,
+      role: "member",
+    });
+    const removed = await command(team.instance, team.ownerToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.admin.id,
+    });
+    expect({ demoted, removed }).toEqual({
+      demoted: { _tag: "Applied" },
+      removed: { _tag: "Applied" },
+    });
+    expect(team.instance.revocations).toEqual([]);
   });
 
   it("hides an organization the caller does not belong to", async () => {

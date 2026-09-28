@@ -1,13 +1,15 @@
 import { SyncNotFound } from "@store/contracts/sync/http-errors";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/organization";
 import { StoreApi } from "../http/api";
-import { retryAfter } from "../http/errors";
+import { publicError, retryAfter } from "../http/errors";
 import { mapSyncError } from "../http/sync-errors";
+import { MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
 import type { EncodedSnapshotPart, InventorySyncActor } from "../inventory/model";
 import { SyncAuthority, type SyncAuthorityError } from "../inventory/sync-authority";
 import { LiveFanout } from "../live/fanout";
@@ -33,6 +35,31 @@ const snapshotPartResponse = (part: EncodedSnapshotPart, ifNoneMatch: string | u
     ? HttpServerResponse.empty({ status: 304, headers })
     : encodedJsonResponse(part.json, headers);
 };
+
+const malformedCommandResponse = HttpServerResponse.empty({ status: 400 });
+
+const commandTooLargeResponse = () =>
+  HttpServerResponse.jsonUnsafe(
+    publicError("COMMAND_TOO_LARGE", "The command is too large to submit."),
+    { status: 413 },
+  );
+
+const utf8 = new TextDecoder();
+
+const declaresOversizedBody = (request: HttpServerRequest.HttpServerRequest) => {
+  const declared = Number(request.headers["content-length"]);
+  return Number.isFinite(declared) && declared > MAX_SUBMIT_BODY_BYTES;
+};
+
+const boundedBodyText = (request: HttpServerRequest.HttpServerRequest) =>
+  declaresOversizedBody(request)
+    ? Effect.succeed(undefined)
+    : request.arrayBuffer.pipe(
+        Effect.orDie,
+        Effect.map((buffer) =>
+          buffer.byteLength > MAX_SUBMIT_BODY_BYTES ? undefined : utf8.decode(buffer),
+        ),
+      );
 
 const syncActor = (identity: CurrentOrganizationContext): InventorySyncActor => ({
   organizationId: identity.organizationId,
@@ -61,18 +88,20 @@ export const SyncHandlers = HttpApiBuilder.group(
       .handle("registerReplica", ({ payload }) =>
         asActor("registerReplica", (actor) => authority.registerReplica(actor, payload)),
       )
-      .handle("submitCommand", ({ payload }) =>
+      .handleRaw("submitCommand", ({ request }) =>
         asActor("submitCommand", (actor) =>
-          authority
-            .submitCommand(actor, payload)
-            .pipe(
-              Effect.tap((submitted) =>
-                submitted.fanout === null || Option.isNone(fanout)
-                  ? Effect.void
-                  : fanout.value.publish(actor.organizationId, submitted.fanout, payload.replicaId),
-              ),
-            ),
-        ).pipe(Effect.map((submitted) => encodedJsonResponse(submitted.body))),
+          Effect.gen(function* () {
+            const bodyText = yield* boundedBodyText(request);
+            if (bodyText === undefined) return commandTooLargeResponse();
+            const submitted = yield* authority.submitCommand(actor, bodyText);
+            if (submitted.fanout !== null && Option.isSome(fanout)) {
+              yield* fanout.value.publish(actor.organizationId, submitted.fanout);
+            }
+            return encodedJsonResponse(submitted.body);
+          }).pipe(
+            Effect.catchTag("SyncRequestMalformed", () => Effect.succeed(malformedCommandResponse)),
+          ),
+        ),
       )
       .handle("getReceipt", ({ params }) =>
         asActor("getReceipt", (actor) => authority.getReceipt(actor, params.operationId)).pipe(

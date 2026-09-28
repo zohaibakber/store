@@ -65,7 +65,8 @@ describe("sync HTTP", () => {
         pullEncoded: unused,
         commit: unused,
         submit: unused,
-        submitEncoded: () =>
+        submitEncoded: unused,
+        submitRaw: () =>
           Effect.fail(
             databaseError(
               new EffectDrizzleQueryError({

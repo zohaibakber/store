@@ -501,6 +501,87 @@ describe("postgres inventory commands", () => {
     ]);
   });
 
+  it("rejects commands that collide with stored identities or overflow a column instead of failing the request", async () => {
+    const organizationId = decodeOrganizationId("org-poison-commands");
+    const actor = actorFor(organizationId);
+    const [take] = lastUnitBuyerBCommand.allocations;
+    const [line] = lastUnitBuyerBCommand.input.items;
+    if (take === undefined || line === undefined) throw new Error("The fixture has no allocation.");
+    const [first] = lastUnitBuyerACommand.allocations;
+    if (first === undefined) throw new Error("The fixture has no allocation.");
+    const saleOnB = (
+      clientSequence: string,
+      commandId: string,
+      allocation: typeof take,
+      salePrice = line.salePrice,
+      invoiceNumber = lastUnitBuyerBCommand.invoiceNumber,
+    ) =>
+      envelopeFor(
+        organizationId,
+        lastUnitEnvelope({
+          replicaId: LAST_UNIT_REPLICA_B,
+          clientSequence,
+          command: {
+            ...lastUnitBuyerBCommand,
+            commandId,
+            invoiceId: decodeInvoiceId(commandId),
+            invoiceNumber,
+            input: { ...lastUnitBuyerBCommand.input, items: [{ ...line, salePrice }] },
+            allocations: [{ ...allocation, salePrice }],
+          },
+        }),
+      );
+    const poisoned = [
+      saleOnB("1", "sale-reused-item", { ...take, invoiceItemId: first.invoiceItemId }),
+      saleOnB("2", "sale-reused-movement", { ...take, saleMovementId: first.saleMovementId }),
+      saleOnB("3", "sale-overflow", take, 3_000_000_000),
+      saleOnB("4", "sale-number-overflow", take, line.salePrice, 3_000_000_000),
+    ];
+    const malformed = saleOnB("5", "sale-fraction", take, 0.5);
+    const outcome = await run(
+      Effect.gen(function* () {
+        const { commands, db } = yield* openCommands(organizationId, 5);
+        const accepted = yield* commands.commit(
+          actor,
+          envelopeFor(organizationId, lastUnitBuyerAEnvelope),
+        );
+        const receipts = [];
+        for (const envelope of poisoned) receipts.push(yield* commands.commit(actor, envelope));
+        const retried = yield* commands.commit(actor, poisoned[0]!);
+        const refused = yield* commands
+          .submitRaw(actor, JSON.stringify(malformed))
+          .pipe(Effect.flip);
+        const stock = yield* batchStock(db, organizationId);
+        const [replica] = yield* db
+          .select({ last: replicas.lastClientSequence })
+          .from(replicas)
+          .where(
+            and(
+              eq(replicas.organizationId, organizationId),
+              eq(replicas.replicaId, LAST_UNIT_REPLICA_B),
+            ),
+          );
+        return { accepted, receipts, retried, refused, stock, last: replica?.last };
+      }),
+    );
+    expect(outcome.accepted.decision).toBe("accepted");
+    expect(
+      outcome.receipts.map((receipt) => [
+        receipt.decision,
+        receipt.result._tag === "rejected" ? receipt.result.code : receipt.result._tag,
+      ]),
+    ).toEqual([
+      ["rejected", "ENTITY_CONFLICT"],
+      ["rejected", "ENTITY_CONFLICT"],
+      ["rejected", "INVALID_OPERATION"],
+      ["rejected", "INVALID_OPERATION"],
+    ]);
+    expect(outcome.retried).toEqual(outcome.receipts[0]);
+    expect(outcome.refused._tag).toBe("SyncRequestMalformed");
+    expect(outcome.stock).toEqual({ unitQuantity: 4, packQuantity: 0 });
+    expect(outcome.last).toBe("4");
+  });
+
   it("keeps identity and ownership failures as request errors that leave the sequence", async () => {
     const organizationId = decodeOrganizationId("org-request-failures");
     const actor = actorFor(organizationId);

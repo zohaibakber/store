@@ -27,7 +27,7 @@ const decodeLeafListsRow = Schema.decodeUnknownEffect(LeafListsRow);
 type LeafTable = typeof categories | typeof products | typeof batches;
 
 const orderedLeaves = (entity: PartitionEntity, table: LeafTable) =>
-  sql`(select group_concat("leaf", char(10)) from (select ${`${entity}:`} || ${table.id} || ':' || cast(${table.rowVersion} as integer) as "leaf" from ${table} order by "leaf"))`;
+  sql`(select group_concat("leaf", char(10) order by "leaf") from (select ${`${entity}:`} || ${table.id} || ':' || cast(${table.rowVersion} as integer) as "leaf" from ${table}))`;
 
 const leafCount = (table: LeafTable) => sql`(select count(*) from ${table})`;
 

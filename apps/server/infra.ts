@@ -32,7 +32,7 @@ import {
 import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
 import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
-import { InventoryLive } from "./src/inventory/live-tickets";
+import { InventoryLive } from "./src/inventory/live-horizon";
 import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
 import { makeInventorySyncAuthority, SyncAuthority } from "./src/inventory/sync-authority";

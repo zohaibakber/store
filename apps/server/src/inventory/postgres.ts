@@ -57,6 +57,17 @@ const sqlErrorOf = <E>(error: E): SqlError.SqlError | undefined => {
   return Option.isSome(failure) && SqlError.isSqlError(failure.value) ? failure.value : undefined;
 };
 
+const DATA_EXCEPTION_CLASS = "22";
+
+export const isDataException = (error: InventoryDatabaseError): boolean => {
+  const cause = sqlErrorOf(error.cause)?.reason.cause;
+  return (
+    Predicate.hasProperty(cause, "code") &&
+    Predicate.isString(cause.code) &&
+    cause.code.startsWith(DATA_EXCEPTION_CLASS)
+  );
+};
+
 const isSerializationFailure = <E>(error: E): boolean => {
   const reason = sqlErrorOf(error)?.reason._tag;
   return reason === "SerializationError" || reason === "DeadlockError";

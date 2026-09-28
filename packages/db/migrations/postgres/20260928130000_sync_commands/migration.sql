@@ -835,6 +835,183 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+CREATE FUNCTION sync.is_js_string(p_value jsonb, p_min integer, p_max integer) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(
+    jsonb_typeof(p_value) = 'string'
+      AND char_length(p_value #>> '{}') >= p_min
+      AND (
+        p_max IS NULL
+        OR octet_length(p_value #>> '{}') <= p_max
+        OR char_length(p_value #>> '{}') + regexp_count(p_value #>> '{}', '[\U00010000-\U0010FFFF]') <= p_max
+      ),
+    false
+  )
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.is_js_nullable_string(p_value jsonb, p_min integer, p_max integer) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_value) = 'null' OR sync.is_js_string(p_value, p_min, p_max), false)
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.is_js_int(p_value jsonb, p_min numeric) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN jsonb_typeof(p_value) = 'number' THEN
+      (p_value #>> '{}')::numeric = trunc((p_value #>> '{}')::numeric)
+        AND abs((p_value #>> '{}')::numeric) <= 9007199254740991
+        AND (p_value #>> '{}')::numeric >= p_min
+    ELSE false
+  END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.is_js_nullable_int(p_value jsonb, p_min numeric) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_value) = 'null' OR sync.is_js_int(p_value, p_min), false)
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.is_decimal_sequence(p_value jsonb) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_value) = 'string' AND (p_value #>> '{}') ~ '^[0-9]+$', false)
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.is_one_of(p_value jsonb, p_options text[]) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(jsonb_typeof(p_value) = 'string' AND (p_value #>> '{}') = ANY (p_options), false)
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.invoice_command_problem(p jsonb) RETURNS text
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  v_input jsonb := p->'input';
+  v_entry jsonb;
+BEGIN
+  IF NOT sync.is_js_string(p->'invoiceId', 1, NULL) THEN RETURN 'invoiceId'; END IF;
+  IF NOT sync.is_js_int(p->'invoiceNumber', 1) THEN RETURN 'invoiceNumber'; END IF;
+  IF jsonb_typeof(v_input) IS DISTINCT FROM 'object' THEN RETURN 'input'; END IF;
+  IF NOT sync.is_js_nullable_string(v_input->'customerName', 0, NULL) THEN RETURN 'input.customerName'; END IF;
+  IF jsonb_typeof(v_input->'items') IS DISTINCT FROM 'array' THEN RETURN 'input.items'; END IF;
+  FOR v_entry IN SELECT e.value FROM jsonb_array_elements(v_input->'items') AS e(value) LOOP
+    IF jsonb_typeof(v_entry) IS DISTINCT FROM 'object'
+      OR NOT sync.is_js_string(v_entry->'productId', 1, NULL)
+      OR NOT sync.is_js_nullable_string(v_entry->'batchId', 1, NULL)
+      OR jsonb_typeof(v_entry->'quantity') IS DISTINCT FROM 'number'
+      OR NOT sync.is_one_of(v_entry->'quantityType', ARRAY['unit', 'pack'])
+      OR jsonb_typeof(v_entry->'salePrice') IS DISTINCT FROM 'number'
+    THEN
+      RETURN 'input.items[]';
+    END IF;
+  END LOOP;
+  IF jsonb_typeof(p->'allocations') IS DISTINCT FROM 'array' OR jsonb_array_length(p->'allocations') < 1 THEN
+    RETURN 'allocations';
+  END IF;
+  FOR v_entry IN SELECT e.value FROM jsonb_array_elements(p->'allocations') AS e(value) LOOP
+    IF jsonb_typeof(v_entry) IS DISTINCT FROM 'object'
+      OR NOT sync.is_js_string(v_entry->'invoiceItemId', 1, NULL)
+      OR NOT sync.is_js_string(v_entry->'saleMovementId', 1, NULL)
+      OR NOT sync.is_js_nullable_string(v_entry->'openPackMovementId', 1, NULL)
+      OR NOT sync.is_js_string(v_entry->'productId', 1, NULL)
+      OR NOT sync.is_js_string(v_entry->'batchId', 1, NULL)
+      OR NOT sync.is_js_int(v_entry->'quantity', 1)
+      OR NOT sync.is_one_of(v_entry->'quantityType', ARRAY['unit', 'pack'])
+      OR NOT sync.is_js_int(v_entry->'salePrice', 0)
+      OR NOT sync.is_js_int(v_entry->'packsOpened', 0)
+    THEN
+      RETURN 'allocations[]';
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.catalog_write_problem(w jsonb) RETURNS text
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  v_row jsonb := w->'row';
+BEGIN
+  IF jsonb_typeof(w) IS DISTINCT FROM 'object' THEN RETURN 'write'; END IF;
+  IF NOT sync.is_one_of(w->'entity', ARRAY['category', 'product', 'batch']) THEN RETURN 'entity'; END IF;
+  IF NOT sync.is_one_of(w->'action', ARRAY['upsert', 'delete']) THEN RETURN 'action'; END IF;
+  IF NOT sync.is_js_string(w->'id', 1, NULL) THEN RETURN 'id'; END IF;
+  IF w->>'action' = 'delete' THEN
+    IF NOT sync.is_js_int(w->'expectedRowVersion', 1) THEN RETURN 'expectedRowVersion'; END IF;
+    RETURN NULL;
+  END IF;
+  IF NOT sync.is_js_nullable_int(w->'expectedRowVersion', 1) THEN RETURN 'expectedRowVersion'; END IF;
+  IF jsonb_typeof(v_row) IS DISTINCT FROM 'object' THEN RETURN 'row'; END IF;
+  CASE w->>'entity'
+    WHEN 'category' THEN
+      IF NOT sync.is_js_string(v_row->'name', 1, 200) THEN RETURN 'row.name'; END IF;
+      IF jsonb_typeof(v_row->'tracksPacks') IS DISTINCT FROM 'boolean' THEN RETURN 'row.tracksPacks'; END IF;
+    WHEN 'product' THEN
+      IF NOT sync.is_js_string(v_row->'name', 1, 200) THEN RETURN 'row.name'; END IF;
+      IF NOT sync.is_js_string(v_row->'categoryId', 1, NULL) THEN RETURN 'row.categoryId'; END IF;
+      IF NOT sync.is_js_nullable_string(v_row->'aisle', 0, NULL) THEN RETURN 'row.aisle'; END IF;
+      IF NOT sync.is_js_nullable_string(v_row->'composition', 0, NULL) THEN RETURN 'row.composition'; END IF;
+      IF NOT sync.is_js_nullable_string(v_row->'strength', 0, NULL) THEN RETURN 'row.strength'; END IF;
+      IF NOT sync.is_js_int(v_row->'unitsPerPack', 1) THEN RETURN 'row.unitsPerPack'; END IF;
+      IF NOT sync.is_js_nullable_int(v_row->'purchasePrice', 0) THEN RETURN 'row.purchasePrice'; END IF;
+      IF NOT sync.is_js_nullable_int(v_row->'retailPrice', 0) THEN RETURN 'row.retailPrice'; END IF;
+      IF NOT sync.is_js_nullable_int(v_row->'unitPrice', 0) THEN RETURN 'row.unitPrice'; END IF;
+      IF jsonb_typeof(v_row->'visible') IS DISTINCT FROM 'boolean' THEN RETURN 'row.visible'; END IF;
+    ELSE
+      IF NOT sync.is_js_string(w->'movementId', 1, 200) THEN RETURN 'movementId'; END IF;
+      IF NOT sync.is_js_nullable_string(w->'note', 0, 500) THEN RETURN 'note'; END IF;
+      IF NOT sync.is_js_string(v_row->'productId', 1, NULL) THEN RETURN 'row.productId'; END IF;
+      IF NOT sync.is_js_nullable_string(v_row->'batchNumber', 0, NULL) THEN RETURN 'row.batchNumber'; END IF;
+      IF NOT sync.is_js_nullable_int(v_row->'expiresAt', 1) THEN RETURN 'row.expiresAt'; END IF;
+      IF NOT sync.is_js_int(v_row->'packQuantity', 0) THEN RETURN 'row.packQuantity'; END IF;
+      IF NOT sync.is_js_int(v_row->'unitQuantity', 0) THEN RETURN 'row.unitQuantity'; END IF;
+  END CASE;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.submit_request_problem(p_request jsonb) RETURNS text
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+DECLARE
+  v_command jsonb := p_request->'command';
+  v_payload jsonb := p_request->'command'->'payload';
+  v_problem text;
+  v_write jsonb;
+BEGIN
+  IF jsonb_typeof(p_request) IS DISTINCT FROM 'object' THEN RETURN 'request'; END IF;
+  IF NOT sync.is_js_string(p_request->'organizationId', 1, NULL) THEN RETURN 'organizationId'; END IF;
+  IF NOT sync.is_decimal_sequence(p_request->'epoch') THEN RETURN 'epoch'; END IF;
+  IF NOT sync.is_js_string(p_request->'replicaId', 1, 200) THEN RETURN 'replicaId'; END IF;
+  IF NOT sync.is_decimal_sequence(p_request->'clientSequence') THEN RETURN 'clientSequence'; END IF;
+  IF NOT sync.is_js_string(p_request->'operationId', 1, 200) THEN RETURN 'operationId'; END IF;
+  IF coalesce(jsonb_typeof(p_request->'payloadHash') <> 'string' OR NOT (p_request->>'payloadHash') ~ '^[0-9a-f]{64}$', true) THEN
+    RETURN 'payloadHash';
+  END IF;
+  IF p_request ? 'afterCommitSequence' AND NOT sync.is_decimal_sequence(p_request->'afterCommitSequence') THEN
+    RETURN 'afterCommitSequence';
+  END IF;
+  IF p_request ? 'maxBytes' AND NOT sync.is_js_int(p_request->'maxBytes', 1) THEN RETURN 'maxBytes'; END IF;
+  IF jsonb_typeof(v_command) IS DISTINCT FROM 'object' THEN RETURN 'command'; END IF;
+  IF NOT sync.is_one_of(v_command->'_tag', ARRAY['issueInvoice', 'catalogWrite']) THEN RETURN 'command._tag'; END IF;
+  IF jsonb_typeof(v_payload) IS DISTINCT FROM 'object' THEN RETURN 'command.payload'; END IF;
+  IF NOT sync.is_js_string(v_payload->'commandId', 1, 200) THEN RETURN 'command.payload.commandId'; END IF;
+  IF NOT sync.is_js_string(v_payload->'deviceId', 1, 200) THEN RETURN 'command.payload.deviceId'; END IF;
+  IF NOT sync.is_js_int(v_payload->'occurredAt', 1) THEN RETURN 'command.payload.occurredAt'; END IF;
+  IF v_command->>'_tag' = 'issueInvoice' THEN
+    RETURN 'command.payload.' || sync.invoice_command_problem(v_payload);
+  END IF;
+  IF jsonb_typeof(v_payload->'writes') IS DISTINCT FROM 'array'
+    OR jsonb_array_length(v_payload->'writes') NOT BETWEEN 1 AND 1000
+  THEN
+    RETURN 'command.payload.writes';
+  END IF;
+  FOR v_write IN SELECT e.value FROM jsonb_array_elements(v_payload->'writes') AS e(value) LOOP
+    v_problem := sync.catalog_write_problem(v_write);
+    IF v_problem IS NOT NULL THEN
+      RETURN 'command.payload.writes[].' || v_problem;
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END
+$$;
+--> statement-breakpoint
 CREATE FUNCTION sync.submit_command(
   p_actor jsonb,
   p_request json,
@@ -865,6 +1042,7 @@ DECLARE
   v_result text;
   v_changes sync.change_row[];
   v_code text;
+  v_problem text;
   v_message text;
   v_commit numeric;
   v_group text;
@@ -872,6 +1050,16 @@ DECLARE
   v_page record;
   v_page_body text;
 BEGIN
+  v_problem := sync.submit_request_problem(v_envelope);
+  IF v_problem IS NOT NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'invalid_parameter_value',
+      MESSAGE = 'The command envelope is malformed at ' || v_problem || '.';
+  END IF;
+  IF v_envelope->>'organizationId' IS DISTINCT FROM v_organization_id THEN
+    error_code := 'ORGANIZATION_MISMATCH';
+    error_message := 'The command does not belong to the active organization.';
+    RETURN;
+  END IF;
   IF sync.sha256_hex(sync.canonical_json(p_request->'command')) IS DISTINCT FROM v_envelope->>'payloadHash' THEN
     error_code := 'INVALID_PAYLOAD_HASH';
     error_message := 'The payload hash does not match.';
@@ -941,13 +1129,22 @@ BEGIN
         FROM sync.catalog_write(v_organization_id, v_user_id, v_command->'payload') AS e;
       END IF;
       v_decision := 'accepted';
-    EXCEPTION WHEN SQLSTATE 'ZS001' THEN
-      GET STACKED DIAGNOSTICS v_code = PG_EXCEPTION_DETAIL, v_message = MESSAGE_TEXT;
+    EXCEPTION
+      WHEN SQLSTATE 'ZS001' THEN
+        GET STACKED DIAGNOSTICS v_code = PG_EXCEPTION_DETAIL, v_message = MESSAGE_TEXT;
+      WHEN unique_violation THEN
+        v_code := 'ENTITY_CONFLICT';
+        v_message := 'A record this command creates already exists.';
+      WHEN numeric_value_out_of_range OR invalid_text_representation OR check_violation THEN
+        v_code := 'INVALID_OPERATION';
+        v_message := 'A value in this command is out of range.';
+    END;
+    IF v_code IS NOT NULL THEN
       v_decision := 'rejected';
       v_changes := ARRAY[]::sync.change_row[];
       v_result := '{"_tag":"rejected","code":' || to_json(v_code)::text
         || ',"message":' || to_json(v_message)::text || '}';
-    END;
+    END IF;
   ELSE
     v_decision := 'rejected';
     v_changes := ARRAY[]::sync.change_row[];

@@ -320,6 +320,8 @@ CREATE FUNCTION "sync"."acquire_snapshot"(
   "now_millis" bigint DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE
+SET "lock_timeout" = '3s'
+SET "statement_timeout" = '20s'
 AS $$
 DECLARE
   "at" bigint := coalesce("now_millis", "sync"."now_millis"());
@@ -385,6 +387,7 @@ $$;--> statement-breakpoint
 CREATE FUNCTION "sync"."maintain"("policy" jsonb DEFAULT '{}'::jsonb, "now_millis" bigint DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql VOLATILE
 SET "lock_timeout" = '2s'
+SET "statement_timeout" = '30s'
 AS $$
 DECLARE
   "at" bigint := coalesce("now_millis", "sync"."now_millis"());
@@ -423,7 +426,6 @@ DECLARE
   "lease_horizon" numeric;
   "floor_after" numeric;
   "remains" boolean;
-  "floors" jsonb := '[]'::jsonb;
   "reports" jsonb := '[]'::jsonb;
   "failures" jsonb := '[]'::jsonb;
   "published" integer := 0;
@@ -527,6 +529,10 @@ BEGIN
         least("snapshot_horizon", "lease_horizon", greatest(0, "state"."commit_sequence" - "minimum_retained")),
         "state"."retention_floor"
       );
+      UPDATE "public"."inventory_state" AS "s"
+      SET "retention_floor" = greatest("s"."retention_floor", "floor_after"),
+        "maintained_at" = "at"
+      WHERE "s"."organization_id" = "org";
       "deleted" := 0;
       "batches" := 0;
       LOOP
@@ -565,7 +571,6 @@ BEGIN
         "more" := true;
       END IF;
 
-      "floors" := "floors" || jsonb_build_object('organizationId', "org", 'floor', "floor_after"::text);
       "reports" := "reports" || jsonb_build_object(
         'organizationId', "org",
         'floorBefore', "state"."retention_floor"::text,
@@ -578,6 +583,7 @@ BEGIN
         'more', "remains"
       );
       "processed" := "processed" + 1;
+      "published" := "published" + 1;
     EXCEPTION WHEN OTHERS THEN
       "failures" := "failures" || jsonb_build_object('organizationId', "org", 'error', SQLERRM);
     END;
@@ -586,16 +592,6 @@ BEGIN
   IF "selected" = "organization_limit" THEN
     "more" := true;
   END IF;
-
-  WITH "stamped" AS (
-    UPDATE "public"."inventory_state" AS "s"
-    SET "retention_floor" = greatest("s"."retention_floor", "f"."floor"),
-      "maintained_at" = "at"
-    FROM jsonb_to_recordset("floors") AS "f"("organizationId" text, "floor" numeric)
-    WHERE "s"."organization_id" = "f"."organizationId"
-    RETURNING 1
-  )
-  SELECT count(*) INTO "published" FROM "stamped";
 
   RETURN jsonb_build_object(
     'organizations', "processed",

@@ -21,8 +21,12 @@ import {
   replicas,
 } from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
+import * as SqlError from "effect/unstable/sql/SqlError";
 
 import type { InventoryActor } from "../../../src/inventory/model";
 import type { InventoryDrizzle } from "../../../src/inventory/postgres";
@@ -89,6 +93,35 @@ const rejected = (code: SyncProtocolCode, message: string): Decision => ({
   result: { _tag: "rejected", code, message },
   changes: [],
 });
+
+const sqlStateOf = (cause: unknown): string | undefined => {
+  const failure =
+    Predicate.isTagged(cause, "EffectDrizzleQueryError") &&
+    Predicate.hasProperty(cause, "cause") &&
+    Cause.isCause(cause.cause)
+      ? Option.getOrUndefined(Cause.findErrorOption(cause.cause))
+      : cause;
+  if (!SqlError.isSqlError(failure)) return undefined;
+  return Option.getOrUndefined(
+    Option.map(decodeSqlStateOrigin(failure.reason.cause), (origin) => origin.code),
+  );
+};
+
+const decodeSqlStateOrigin = Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }));
+
+const OUT_OF_RANGE = rejected("INVALID_OPERATION", "A value in this command is out of range.");
+
+const DOMAIN_SQL_STATE_REJECTIONS = new Map<string, Decision>([
+  ["23505", rejected("ENTITY_CONFLICT", "A record this command creates already exists.")],
+  ["22003", OUT_OF_RANGE],
+  ["22P02", OUT_OF_RANGE],
+  ["23514", OUT_OF_RANGE],
+]);
+
+const domainRejection = (cause: unknown): Decision | undefined => {
+  const state = sqlStateOf(cause);
+  return state === undefined ? undefined : DOMAIN_SQL_STATE_REJECTIONS.get(state);
+};
 
 const executeCommand = Effect.fn("Oracle.executeCommand")(function* (
   tx: InventoryTransaction,
@@ -158,11 +191,13 @@ const commitInTransaction = Effect.fn("Oracle.commitInTransaction")(function* (
           .transaction((savepoint) => executeCommand(savepoint, actor, envelope.command))
           .pipe(
             Effect.map((accepted): Decision => ({ decision: "accepted", ...accepted })),
-            Effect.catch((cause) =>
-              isProtocolError(cause) && !REQUEST_FAILURE_CODES.includes(cause.code)
-                ? Effect.succeed(rejected(cause.code, cause.message))
-                : Effect.fail(cause),
-            ),
+            Effect.catch((cause) => {
+              if (isProtocolError(cause) && !REQUEST_FAILURE_CODES.includes(cause.code)) {
+                return Effect.succeed(rejected(cause.code, cause.message));
+              }
+              const domain = domainRejection(cause);
+              return domain ? Effect.succeed(domain) : Effect.fail(cause);
+            }),
           )
       : rejected(
           "COMMAND_IDENTITY_MISMATCH",

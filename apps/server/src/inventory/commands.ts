@@ -26,6 +26,7 @@ import type { EncodedJsonBody, InventoryActor, SubmittedCommand } from "./model"
 import {
   databaseError,
   inventoryPostgresUnavailable,
+  isDataException,
   protocol,
   randomHex,
   requireReady,
@@ -57,6 +58,8 @@ const EncodedRows = Schema.Tuple([
 
 const SubmittedRows = Schema.Tuple([
   Schema.Struct({
+    guard: Schema.NullOr(Schema.Literal("MALFORMED")),
+    origin_replica_id: Schema.NullOr(Schema.String),
     body: Schema.NullOr(Schema.String),
     fanout_epoch: Schema.NullOr(Schema.String),
     fanout_horizon: Schema.NullOr(Schema.String),
@@ -104,6 +107,17 @@ const decodedWith =
   (input: I) =>
     decode(input).pipe(Effect.mapError(databaseError));
 
+export class SyncRequestMalformed extends Schema.TaggedError<SyncRequestMalformed>()(
+  "SyncRequestMalformed",
+  { message: Schema.String },
+) {}
+
+const malformedRequest = SyncRequestMalformed.make({
+  message: "The command envelope is not valid JSON of the expected shape.",
+});
+
+export const MAX_SUBMIT_BODY_BYTES = 2 * 1024 * 1024;
+
 const actorJson = (actor: InventoryActor) =>
   JSON.stringify({ organizationId: actor.organizationId, userId: actor.userId });
 
@@ -124,6 +138,10 @@ export interface InventoryCommandsContract {
     actor: InventoryActor,
     request: SyncSubmitCommandRequest,
   ) => Effect.Effect<SubmittedCommand, InventoryError>;
+  readonly submitRaw: (
+    actor: InventoryActor,
+    bodyText: string,
+  ) => Effect.Effect<SubmittedCommand, InventoryError | SyncRequestMalformed>;
   readonly receipt: (
     actor: InventoryActor,
     operationId: string,
@@ -165,46 +183,74 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     return { json: yield* bodyOrProtocolError(row) } satisfies EncodedJsonBody;
   });
 
-  const submitEncoded = Effect.fn("InventoryCommands.submitEncoded")(function* (
+  const submitRaw = Effect.fn("InventoryCommands.submitRaw")(function* (
     actor: InventoryActor,
-    request: SyncSubmitCommandRequest,
+    bodyText: string,
   ) {
-    if (request.organizationId !== actor.organizationId) {
-      return yield* protocol(
-        "ORGANIZATION_MISMATCH",
-        "The command does not belong to the active organization.",
-      );
-    }
     const receivedAt = yield* Clock.currentTimeMillis;
     const [row] = yield* runStatement(
       withSerializationRetry(
         db.execute(
-          sql`select "body", "fanout_epoch", "fanout_horizon", "fanout_group", "fanout_bytes",
-            "error_code", "error_message"
-          from sync.submit_command(
-            ${actorJson(actor)}::jsonb,
-            ${JSON.stringify(request)}::json,
-            ${receivedAt}::bigint,
-            ${pullByteBudget(request.maxBytes)}::integer
-          )`,
+          sql`select "g"."guard", "r"."request"->>'replicaId' as "origin_replica_id",
+            "s"."body", "s"."fanout_epoch", "s"."fanout_horizon", "s"."fanout_group",
+            "s"."fanout_bytes", "s"."error_code", "s"."error_message"
+          from (select ${bodyText}::text::json as "request") as "r"
+          cross join lateral (
+            select case
+              when json_typeof("r"."request") <> 'object' then 'MALFORMED'
+            end as "guard"
+          ) as "g"
+          left join lateral (
+            select * from sync.submit_command(
+              ${actorJson(actor)}::jsonb,
+              "r"."request",
+              ${receivedAt}::bigint,
+              least(
+                greatest(
+                  coalesce(("r"."request"->>'maxBytes')::numeric, ${PULL_PAYLOAD_BUDGET_BYTES}::numeric),
+                  ${MIN_PULL_BYTE_BUDGET}::numeric
+                ),
+                ${PULL_PAYLOAD_BUDGET_BYTES}::numeric
+              )::integer
+            )
+            where "g"."guard" is null
+          ) as "s" on true`,
           "objects",
         ),
       ),
-    ).pipe(Effect.flatMap(decodedWith(decodeSubmittedRows)));
+    ).pipe(
+      Effect.catchIf(
+        (error) => error._tag === "InventoryDatabaseError" && isDataException(error),
+        () => Effect.fail(malformedRequest),
+      ),
+      Effect.flatMap(decodedWith(decodeSubmittedRows)),
+    );
+    if (row.guard === "MALFORMED") return yield* malformedRequest;
     const body = yield* bodyOrProtocolError(row);
     const fanout =
       row.fanout_epoch === null ||
       row.fanout_horizon === null ||
       row.fanout_group === null ||
-      row.fanout_bytes === null
+      row.fanout_bytes === null ||
+      row.origin_replica_id === null
         ? null
         : {
             epoch: row.fanout_epoch,
             horizon: row.fanout_horizon,
             group: row.fanout_group,
             byteLength: row.fanout_bytes,
+            originReplicaId: row.origin_replica_id,
           };
     return { body, fanout } satisfies SubmittedCommand;
+  });
+
+  const submitEncoded = Effect.fn("InventoryCommands.submitEncoded")(function* (
+    actor: InventoryActor,
+    request: SyncSubmitCommandRequest,
+  ) {
+    return yield* submitRaw(actor, JSON.stringify(request)).pipe(
+      Effect.catchTag("SyncRequestMalformed", (error) => Effect.fail(databaseError(error))),
+    );
   });
 
   return InventoryCommands.of({
@@ -235,6 +281,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       return yield* decodeSubmitResult(submitted.body).pipe(Effect.mapError(databaseError));
     }),
     submitEncoded,
+    submitRaw,
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
       const rows = yield* runStatement(
         db.execute(
@@ -267,6 +314,7 @@ export const InventoryCommandsUnavailable = Layer.succeed(
     commit: () => Effect.fail(inventoryPostgresUnavailable),
     submit: () => Effect.fail(inventoryPostgresUnavailable),
     submitEncoded: () => Effect.fail(inventoryPostgresUnavailable),
+    submitRaw: () => Effect.fail(inventoryPostgresUnavailable),
     receipt: () => Effect.fail(inventoryPostgresUnavailable),
     pull: () => Effect.fail(inventoryPostgresUnavailable),
     pullEncoded: () => Effect.fail(inventoryPostgresUnavailable),

@@ -19,7 +19,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { publicError } from "../http/errors";
 import type { ServerRuntimeContract } from "../http/runtime";
 import type { InventoryError } from "../inventory/errors";
-import type { LiveHorizon } from "../inventory/live-tickets";
+import type { LiveHorizon } from "../inventory/live-horizon";
 import type { InventoryActor } from "../inventory/model";
 import { admissionHeaders, withoutAdmissionHeaders } from "./hub-core";
 
@@ -36,6 +36,7 @@ export interface LiveRouteDependencies {
   readonly getSession: ServerRuntimeContract["getSession"];
   readonly readLiveHorizon: (
     actor: InventoryActor,
+    replicaId: string,
   ) => Effect.Effect<LiveHorizon, InventoryError, RuntimeContext>;
 }
 
@@ -48,9 +49,11 @@ const queryOf = (request: HttpServerRequest.HttpServerRequest) =>
   decodeQuery(Object.fromEntries(new URL(request.url, "http://live.invalid").searchParams));
 
 const horizonFailure = (error: InventoryError) =>
-  error._tag === "SyncProtocolError"
-    ? refuse(409, error.code, error.message)
-    : refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.");
+  error._tag !== "SyncProtocolError"
+    ? refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.")
+    : error.code === "REPLICA_OWNED_BY_OTHER"
+      ? refuse(403, error.code, error.message)
+      : refuse(409, error.code, error.message);
 
 export const freshUpgradeResponse = (
   response: HttpServerResponse.HttpServerResponse,
@@ -101,7 +104,7 @@ export const liveSocketHandler = (dependencies: LiveRouteDependencies) =>
       return refuse(400, "INVALID_LIVE_QUERY", "The live channel needs a replica id.");
     }
     const horizon = yield* dependencies
-      .readLiveHorizon({ organizationId, userId: session.user.id })
+      .readLiveHorizon({ organizationId, userId: session.user.id }, query.value.replicaId)
       .pipe(Effect.result);
     if (horizon._tag === "Failure") return horizonFailure(horizon.failure);
     const forwarded = request.modify({

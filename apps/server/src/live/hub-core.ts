@@ -11,6 +11,7 @@ export const HubAttachment = Schema.Struct({
   userId: Schema.String,
   expiresAt: Schema.Number,
   maxBytes: Schema.NullOr(Schema.Number),
+  epoch: Schema.optionalKey(Schema.String),
 });
 export type HubAttachment = typeof HubAttachment.Type;
 
@@ -31,6 +32,7 @@ export interface HubCursor {
 
 export interface HubSocket {
   readonly attachment: () => HubAttachment | undefined;
+  readonly remember: (attachment: HubAttachment) => void;
   readonly send: (text: string) => void;
   readonly close: (code: number, reason: string) => void;
 }
@@ -116,19 +118,12 @@ export const resumeFrame = (cursor: HubCursor) =>
 export const transactionsFrame = (publish: HubPublish) =>
   `{"_tag":"transactions","epoch":${json(publish.epoch)},"subscription":${json(OPERATIONAL_SUBSCRIPTION)},"schemaVersion":${SYNC_SCHEMA_VERSION},"fromCommitSequence":${json(publish.horizon)},"toCommitSequence":${json(publish.horizon)},"transactions":[${publish.group}]}`;
 
-export interface CursorAdvance {
-  readonly cursor: HubCursor;
-  readonly epochChanged: boolean;
-}
-
-export const advanceCursor = (current: HubCursor | undefined, next: HubCursor): CursorAdvance => {
-  if (current === undefined) return { cursor: next, epochChanged: false };
-  if (current.epoch !== next.epoch) return { cursor: next, epochChanged: true };
-  return {
-    cursor: compareDecimalSequence(next.horizon, current.horizon) > 0 ? next : current,
-    epochChanged: false,
-  };
-};
+export const advanceCursor = (current: HubCursor | undefined, next: HubCursor): HubCursor =>
+  current === undefined ||
+  current.epoch !== next.epoch ||
+  compareDecimalSequence(next.horizon, current.horizon) > 0
+    ? next
+    : current;
 
 const trySilentClose = (socket: HubSocket, code: number, reason: string) => {
   try {
@@ -156,7 +151,6 @@ export const closeIfExpired = (socket: HubSocket, now: number): boolean => {
 export const publishToSockets = (
   sockets: ReadonlyArray<HubSocket>,
   publish: HubPublish,
-  epochChanged: boolean,
   now: number,
 ): number => {
   const cursor = { epoch: publish.epoch, horizon: publish.horizon };
@@ -166,8 +160,12 @@ export const publishToSockets = (
   for (const socket of sockets) {
     if (closeIfExpired(socket, now)) continue;
     const attachment = socket.attachment();
-    if (attachment === undefined || attachment.replicaId === publish.originReplicaId) continue;
-    if (epochChanged) {
+    if (attachment === undefined) continue;
+    if (attachment.epoch !== publish.epoch) {
+      socket.remember({ ...attachment, epoch: publish.epoch });
+    }
+    if (attachment.replicaId === publish.originReplicaId) continue;
+    if (attachment.epoch !== undefined && attachment.epoch !== publish.epoch) {
       trySend(socket, resumeFrame(cursor));
     } else if (attachment.maxBytes !== null && publish.byteLength > attachment.maxBytes) {
       wake ??= wakeFrame(cursor);

@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 
 import { EphemeralStore } from "../src/ephemeral";
 import { GoogleOAuth, GoogleOAuthError, type GoogleProfile } from "../src/google";
+import { HubRevocation } from "../src/hub-revocation";
 import type { AuthRateLimit } from "../src/limits";
 import {
   AuthRepository,
@@ -534,15 +535,35 @@ const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
     ),
   );
 
+export interface HubRevocationCall {
+  readonly organizationId: OrganizationId;
+  readonly userId: UserId;
+}
+
 export interface Harness {
   readonly store: Store;
   readonly issued: Array<IssueAccessTokenInput>;
+  readonly revocations: Array<HubRevocationCall>;
   readonly layer: Layer.Layer<AuthService | RuntimeContext>;
 }
 
-export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}): Harness => {
+export const harness = (
+  options: { readonly googleProfile?: GoogleProfile; readonly withoutHubs?: boolean } = {},
+): Harness => {
   const store = emptyStore();
   const issued: Array<IssueAccessTokenInput> = [];
+  const revocations: Array<HubRevocationCall> = [];
+  const hubs = options.withoutHubs
+    ? Layer.empty
+    : Layer.succeed(
+        HubRevocation,
+        HubRevocation.of({
+          revoke: (organizationId, userId) =>
+            Effect.sync(() => {
+              revocations.push({ organizationId, userId });
+            }),
+        }),
+      );
 
   const dependencies = Layer.mergeAll(
     Layer.succeed(AuthRepository, AuthRepository.of(fakeRepository(store))),
@@ -613,6 +634,7 @@ export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}
   return {
     store,
     issued,
+    revocations,
     layer: Layer.merge(
       authServiceLayer({
         developmentOtp: true,
@@ -622,7 +644,7 @@ export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}
           tenPerMinute: countingLimit(10),
           fivePerMinute: countingLimit(5),
         },
-      }).pipe(Layer.provide(dependencies)),
+      }).pipe(Layer.provide(dependencies), Layer.provide(hubs)),
       Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
     ),
   };

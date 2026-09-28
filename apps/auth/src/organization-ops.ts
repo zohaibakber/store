@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 
 import { hashInvitationSecret, INVITATION_TTL_MS, randomSecret } from "./crypto";
 import { authError } from "./errors";
+import { noHubRevocation, type HubRevocationContract } from "./hub-revocation";
 import { enforceAuthLimit, type AuthLimits } from "./limits";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
@@ -26,12 +27,21 @@ interface OrganizationOpsConfiguration {
   readonly refreshTokenPepper: string;
 }
 
+const ROLE_RANK = { member: 0, admin: 1, owner: 2 } as const satisfies Record<
+  OrganizationRole,
+  number
+>;
+
+const isDemotion = (from: OrganizationRole, to: OrganizationRole) =>
+  ROLE_RANK[to] < ROLE_RANK[from];
+
 export const makeOrganizationOps = (
   repository: AuthRepositoryApi,
   email: EmailProviderApi,
   sessions: Pick<SessionOps, "authorize">,
   configuration: OrganizationOpsConfiguration,
   limits: AuthLimits,
+  hubs: HubRevocationContract = noHubRevocation,
 ) => {
   const hashInvite = (secret: string) =>
     hashInvitationSecret(configuration.refreshTokenPepper, secret);
@@ -276,6 +286,9 @@ export const makeOrganizationOps = (
         "Make someone else an owner before changing this role.",
       );
     }
+    if (isDemotion(target.role, input.role)) {
+      yield* hubs.revoke(input.organizationId, input.userId);
+    }
     return { _tag: "Applied" } as const;
   });
 
@@ -316,6 +329,7 @@ export const makeOrganizationOps = (
         "Make someone else an owner before removing this person.",
       );
     }
+    yield* hubs.revoke(input.organizationId, input.userId);
     return { _tag: "Applied" } as const;
   });
 

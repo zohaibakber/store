@@ -23,7 +23,6 @@ export interface LiveFanoutContract {
   readonly publish: (
     organizationId: string,
     fanout: CommitFanout,
-    originReplicaId: string,
   ) => Effect.Effect<void, never, RuntimeContext>;
   readonly revoke: (
     organizationId: string,
@@ -45,7 +44,7 @@ export const makeLiveFanout = (
   runInBackground: RunInBackground,
 ): LiveFanoutContract =>
   LiveFanout.of({
-    publish: (organizationId, fanout, originReplicaId) =>
+    publish: (organizationId, fanout) =>
       runInBackground(
         Effect.suspend(() =>
           hubs.getByName(organizationId).publish({
@@ -53,7 +52,7 @@ export const makeLiveFanout = (
             horizon: fanout.horizon,
             group: fanout.group,
             byteLength: fanout.byteLength,
-            originReplicaId,
+            originReplicaId: fanout.originReplicaId,
           }),
         ).pipe(Effect.asVoid, logFailure("live.publish_failed")),
       ),

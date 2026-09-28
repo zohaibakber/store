@@ -241,6 +241,37 @@ describe("OrgHub", () => {
     });
   });
 
+  it("still tells a socket to resume after the hub was evicted and woken", async () => {
+    const harness = makeHarness();
+    await run(
+      Effect.gen(function* () {
+        const before = yield* makeOrgHub(harness.state, harness.platform);
+        yield* connect(before, admission({ replicaId: "replica-old", epoch: "1" }));
+        yield* connect(before, admission({ replicaId: "replica-new", epoch: "2", horizon: "0" }));
+        const woken = yield* makeOrgHub(harness.state, harness.platform);
+        yield* woken.publish({
+          epoch: "2",
+          horizon: "1",
+          group: group("1"),
+          byteLength: 10,
+          originReplicaId: "replica-a",
+        });
+        yield* woken.publish({
+          epoch: "2",
+          horizon: "2",
+          group: group("2"),
+          byteLength: 10,
+          originReplicaId: "replica-a",
+        });
+      }),
+    );
+    const [old, current] = harness.accepted.map((entry) =>
+      frames(entry.socket).map((frame) => frame._tag),
+    );
+    expect(old).toEqual(["hello", "resume", "transactions"]);
+    expect(current).toEqual(["hello", "transactions", "transactions"]);
+  });
+
   it("greets a later socket with a horizon a publish advanced past the Worker's read", async () => {
     const harness = makeHarness();
     await run(

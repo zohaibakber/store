@@ -21,6 +21,7 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "alchemy": "catalog:",
     "embedded-postgres": "18.4.0-beta.17",
     "rolldown": "1.2.11",

@@ -1,0 +1,25 @@
+diff --git a/lib/Cloudflare/Workers/WorkerBridge.js b/lib/Cloudflare/Workers/WorkerBridge.js
+index f00dd3e1acce371519a2aa07138a8b6626f14f96..e391e538033b06d8f1c614bd29e23436bd794dba 100644
+--- a/lib/Cloudflare/Workers/WorkerBridge.js
++++ b/lib/Cloudflare/Workers/WorkerBridge.js
+@@ -29,6 +29,7 @@ export const makeWorkerBridge = (Base, { stack, entrypoint, }) => {
+         stack,
+         exportName: "default",
+     });
++    build(() => undefined).catch(() => undefined);
+     const processEvent = (makeEffect, ctx, env, onExit) => {
+         const scope = Scope.makeUnsafe();
+         return build((promise) => ctx.waitUntil(promise))
+diff --git a/src/Cloudflare/Workers/WorkerBridge.ts b/src/Cloudflare/Workers/WorkerBridge.ts
+index 0fd70818fba984a30950e577319af42573bf1077..2408d5749011a67e3dbfa839726740e653216f64 100644
+--- a/src/Cloudflare/Workers/WorkerBridge.ts
++++ b/src/Cloudflare/Workers/WorkerBridge.ts
+@@ -76,6 +76,8 @@ export const makeWorkerBridge = (
+     exportName: "default",
+   });
+ 
++  build(() => undefined).catch(() => undefined);
++
+   const processEvent = <T>(
+     makeEffect: (
+       build: WorkerBuild,

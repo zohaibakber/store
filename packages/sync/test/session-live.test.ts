@@ -72,6 +72,12 @@ class FakeSocket implements Socket.WebSocketLike {
     this.#emit("message", { data });
   }
 
+  refuse() {
+    this.readyState = 3;
+    this.#emit("error", {});
+    this.#emit("close", { code: 1006, reason: "" });
+  }
+
   drop(code: number) {
     this.readyState = 3;
     this.#emit("close", { code, reason: "" });
@@ -176,11 +182,18 @@ const startLive = (options: { readonly token: string }) =>
       yield* settle;
       return socket;
     });
+    const refusedSocket = Effect.gen(function* () {
+      yield* settle;
+      const socket = yield* Queue.take(sockets);
+      socket.refuse();
+      yield* settle;
+      return socket;
+    });
     const noSocket = Effect.gen(function* () {
       yield* settle;
       return Option.isNone(yield* Queue.poll(sockets));
     });
-    return { store, owned, nextSocket, noSocket, tokenRequests, pulls, network };
+    return { store, owned, nextSocket, refusedSocket, noSocket, tokenRequests, pulls, network };
   });
 
 describe("live socket transport", () => {
@@ -264,6 +277,36 @@ describe("live socket transport", () => {
       yield* TestClock.adjust("2 seconds");
       yield* live.nextSocket;
       expect(live.tokenRequests.map((request) => request.force)).toEqual([false, true]);
+      yield* live.owned.dispose;
+      yield* live.store.dispose();
+    }),
+  );
+
+  it.effect("refreshes the token once when the handshake is refused, not on every retry", () =>
+    Effect.gen(function* () {
+      const live = yield* startLive({ token: tokenExpiringAt(60 * 60_000) });
+      yield* live.refusedSocket;
+      yield* TestClock.adjust("7 seconds");
+      yield* live.refusedSocket;
+      yield* TestClock.adjust("7 seconds");
+      yield* live.refusedSocket;
+      yield* TestClock.adjust("7 seconds");
+      const opened = yield* live.nextSocket;
+      opened.message(`{"_tag":"hello","epoch":"${LAST_UNIT_EPOCH}","horizon":"0"}`);
+      yield* settle;
+      opened.drop(1006);
+      yield* TestClock.adjust("7 seconds");
+      yield* live.refusedSocket;
+      yield* TestClock.adjust("7 seconds");
+      yield* live.nextSocket;
+      expect(live.tokenRequests.map((request) => request.force)).toEqual([
+        false,
+        true,
+        false,
+        false,
+        false,
+        true,
+      ]);
       yield* live.owned.dispose;
       yield* live.store.dispose();
     }),
