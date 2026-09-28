@@ -104,7 +104,12 @@ const sleepJittered = (delay: Duration.Duration, floorMillis: number): Effect.Ef
     Effect.schedule(
       Schedule.jittered(Schedule.duration(delay)).pipe(
         Schedule.modifyDelay(({ duration }) =>
-          Effect.succeed(Duration.max(duration, Duration.millis(floorMillis))),
+          Effect.succeed(
+            Duration.max(
+              Duration.millis(Math.round(Duration.toMillis(duration))),
+              Duration.millis(floorMillis),
+            ),
+          ),
         ),
       ),
     ),
