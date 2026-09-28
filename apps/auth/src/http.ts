@@ -277,7 +277,7 @@ const CorsAndOrigin = HttpRouter.middleware(
     const configuration = yield* AuthHttpConfig;
     const cors = HttpMiddleware.cors({
       allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
-      allowedHeaders: ["Authorization", "Content-Type"],
+      allowedHeaders: ["Authorization", "Content-Type", "traceparent", "b3"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       credentials: true,
       maxAge: 600,
