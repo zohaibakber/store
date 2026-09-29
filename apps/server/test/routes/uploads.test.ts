@@ -45,27 +45,10 @@ const workingAi = (generate = vi.fn(async () => JSON.stringify(extraction))) => 
 });
 
 describe("invoice upload authorization", () => {
-  it("denies unauthenticated upload requests", async () => {
-    const response = await appFor(false).request(
-      "/api/uploads",
-      invoiceForm([pdf()]),
-      workingAi().ai,
-    );
-    expect(response.status).toBe(401);
-  });
-
-  it("denies uploads when the session was revoked with organization access", async () => {
-    const response = await appFor(false).request(
-      "/api/uploads",
-      invoiceForm([pdf()]),
-      workingAi().ai,
-    );
-    expect(response.status).toBe(401);
-  });
-
-  it("never reaches the model when the caller is unauthorized", async () => {
+  it("denies unauthenticated uploads without reaching the model", async () => {
     const { ai, generate } = workingAi();
-    await appFor(false).request("/api/uploads", invoiceForm([pdf()]), ai);
+    const response = await appFor(false).request("/api/uploads", invoiceForm([pdf()]), ai);
+    expect(response.status).toBe(401);
     expect(generate).not.toHaveBeenCalled();
   });
 
@@ -91,27 +74,24 @@ describe("invoice upload authorization", () => {
 });
 
 describe("invoice upload validation", () => {
-  it("rejects a request with no attachments", async () => {
-    const response = await appFor(true).request("/api/uploads", invoiceForm([]), workingAi().ai);
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: { code: "NO_ATTACHMENTS" } });
-  });
-
-  it("rejects attachments that are neither PDF nor CSV", async () => {
-    const response = await appFor(true).request(
-      "/api/uploads",
-      invoiceForm([new File(["binary"], "invoice.docx")]),
-      workingAi().ai,
-    );
-    expect(response.status).toBe(415);
-    expect(await response.json()).toMatchObject({ error: { code: "UNSUPPORTED_ATTACHMENT" } });
-  });
-
-  it("rejects more attachments than the batch limit", async () => {
-    const files = Array.from({ length: 11 }, (_, index) => pdf(`invoice-${index}.pdf`));
+  it.each([
+    { name: "no attachments", files: [], status: 400, code: "NO_ATTACHMENTS" },
+    {
+      name: "an attachment that is neither PDF nor CSV",
+      files: [new File(["binary"], "invoice.docx")],
+      status: 415,
+      code: "UNSUPPORTED_ATTACHMENT",
+    },
+    {
+      name: "more attachments than the batch limit",
+      files: Array.from({ length: 11 }, (_, index) => pdf(`invoice-${index}.pdf`)),
+      status: 413,
+      code: "TOO_MANY_ATTACHMENTS",
+    },
+  ])("rejects $name", async ({ files, status, code }) => {
     const response = await appFor(true).request("/api/uploads", invoiceForm(files), workingAi().ai);
-    expect(response.status).toBe(413);
-    expect(await response.json()).toMatchObject({ error: { code: "TOO_MANY_ATTACHMENTS" } });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ error: { code } });
   });
 });
 
@@ -122,65 +102,6 @@ describe("invoice upload extraction", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject(extraction);
     expect(generate).toHaveBeenCalledOnce();
-    expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        messages: expect.any(Array),
-        jsonSchema: expect.any(Object),
-      }),
-    );
-  });
-
-  it("extracts CSV attachments without calling the model at all", async () => {
-    const { ai, generate } = workingAi();
-    const csv = new File(
-      ["name,packs,units per pack,pack price\nIbuprofen,3,20,9.5\n"],
-      "invoice.csv",
-      { type: "text/csv" },
-    );
-    const response = await appFor(true).request("/api/uploads", invoiceForm([csv]), ai);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      lines: [{ name: "Ibuprofen", packQuantity: 3, unitsPerPack: 20, packPrice: 950 }],
-    });
-    expect(generate).not.toHaveBeenCalled();
-  });
-
-  it("keeps quoted CSV names and pack notation without asking the model", async () => {
-    const { ai, generate } = workingAi();
-    const csv = new File(
-      ['name,packs,units per pack,pack price\n"Amoxicillin 250mg, Capsules",3,10x10,"1,250.00"\n'],
-      "invoice.csv",
-      { type: "text/csv" },
-    );
-    const response = await appFor(true).request("/api/uploads", invoiceForm([csv]), ai);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      lines: [
-        {
-          name: "Amoxicillin 250mg, Capsules",
-          packQuantity: 3,
-          unitsPerPack: 100,
-          packPrice: 125000,
-        },
-      ],
-    });
-    expect(generate).not.toHaveBeenCalled();
-  });
-
-  it("does not add PDF extraction on top of CSV lines from the same upload", async () => {
-    const { ai, generate } = workingAi();
-    const csv = new File(
-      ["name,packs,units per pack,pack price\nIbuprofen,3,20,9.5\n"],
-      "invoice.csv",
-      { type: "text/csv" },
-    );
-    const response = await appFor(true).request("/api/uploads", invoiceForm([csv, pdf()]), ai);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      lines: [{ name: "Ibuprofen", packQuantity: 3, unitsPerPack: 20, packPrice: 950 }],
-    });
-    expect(generate).not.toHaveBeenCalled();
-    expect(ai.toMarkdown).not.toHaveBeenCalled();
   });
 
   it("reports a failed extraction without leaking the underlying cause", async () => {

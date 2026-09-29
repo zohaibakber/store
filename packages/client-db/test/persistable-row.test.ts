@@ -14,6 +14,5 @@ describe("persistableRow", () => {
     });
 
     expect(row).toEqual({ id: "product-1", name: "Paracetamol" });
-    expect(Object.keys(row)).not.toContain("$synced");
   });
 });

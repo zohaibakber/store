@@ -20,9 +20,9 @@ const inventoryApiPath = (apiBaseUrl: string) => {
 
 const SYNC_COMMAND_PATHS = ["replicas", "commands", "pull", "snapshots"] as const;
 
-export const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
+const MAX_INVENTORY_COMMAND_BODY_BYTES = 1_048_576;
 
-export const assertInventoryRequestBodySize = (body: string | null) => {
+const assertInventoryRequestBodySize = (body: string | null) => {
   if (!body) return;
   if (Buffer.byteLength(body, "utf8") <= MAX_INVENTORY_COMMAND_BODY_BYTES) return;
   throw new Error(
@@ -53,7 +53,7 @@ const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
   return SNAPSHOT_ID.test(snapshotId) && SNAPSHOT_PART.test(partNumber);
 };
 
-export const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest) => {
+const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest) => {
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
   const apiPath = inventoryApiPath(apiBaseUrl);

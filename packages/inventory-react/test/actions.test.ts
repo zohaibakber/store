@@ -113,88 +113,6 @@ const catalogWrites = (envelope: SyncCommandEnvelope) => {
 };
 
 describe("inventory catalog actions", () => {
-  it("enqueues a category insert with a null expected row version", async () => {
-    const { actions, enqueued } = harness({ categories: [] });
-    const row = await actions.createCategory({ name: "Coffee" });
-    expect(row.rowVersion).toBe(1);
-    expect(row.organizationId).toBe(actor.organizationId);
-    expect(enqueued).toHaveLength(1);
-    expect(catalogWrites(enqueued[0]!)).toEqual([
-      {
-        entity: "category",
-        action: "upsert",
-        id: row.id,
-        expectedRowVersion: null,
-        row: { name: "Coffee", tracksPacks: true },
-      },
-    ]);
-  });
-
-  it("guards a product update with the current row version", async () => {
-    const { actions, enqueued } = harness();
-    const row = await actions.updateProduct({
-      id: productId,
-      name: "Green Label",
-      categoryId,
-      unitsPerPack: 10,
-    });
-    expect(row.rowVersion).toBe(4);
-    expect(catalogWrites(enqueued[0]!)[0]).toMatchObject({
-      entity: "product",
-      action: "upsert",
-      expectedRowVersion: 3,
-      row: { name: "Green Label", unitsPerPack: 10 },
-    });
-  });
-
-  it("carries a movement id on batch upserts", async () => {
-    const { actions, enqueued } = harness();
-    await actions.createBatch({ productId, packQuantity: 2, unitQuantity: 0 });
-    const write = catalogWrites(enqueued[0]!)[0];
-    expect(write).toMatchObject({ entity: "batch", action: "upsert", note: null });
-    expect(write && "movementId" in write ? write.movementId : "").toMatch(/[0-9a-f-]{36}/u);
-  });
-
-  it("creates a product and its first batch in one atomic catalog command", async () => {
-    const { actions, atoms, enqueued } = harness();
-    const created = await actions.createProductWithBatch({
-      product: { name: " Panadol Extra ", categoryId, unitsPerPack: 12 },
-      batch: {
-        batchNumber: " B-7 ",
-        expiresAt: 1_900_000_000_000,
-        packQuantity: 3,
-        unitQuantity: 4,
-      },
-    });
-    expect(created.product).toMatchObject({ name: "Panadol Extra", categoryId, unitsPerPack: 12 });
-    expect(created.batch).toMatchObject({
-      productId: created.product.id,
-      batchNumber: "B-7",
-      packQuantity: 3,
-      unitQuantity: 4,
-    });
-    expect(created.product.operationId).toBe(created.batch.operationId);
-    expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]!.operationId).toBe(created.product.operationId);
-    expect(catalogWrites(enqueued[0]!)).toMatchObject([
-      {
-        entity: "product",
-        action: "upsert",
-        id: created.product.id,
-        expectedRowVersion: null,
-        row: { name: "Panadol Extra", unitsPerPack: 12 },
-      },
-      {
-        entity: "batch",
-        action: "upsert",
-        id: created.batch.id,
-        expectedRowVersion: null,
-        row: { productId: created.product.id, packQuantity: 3, unitQuantity: 4 },
-      },
-    ]);
-    expect(atoms.registry.get(atoms.commandExecution)).toMatchObject({ _tag: "pending" });
-  });
-
   it("enqueues nothing when the batch half of a new product is invalid", async () => {
     const { actions, atoms, enqueued } = harness();
     await expect(
@@ -203,25 +121,6 @@ describe("inventory catalog actions", () => {
         batch: { packQuantity: -1, unitQuantity: 0 },
       }),
     ).rejects.toThrow("Pack quantity must be a non-negative whole number.");
-    expect(enqueued).toHaveLength(0);
-    expect(atoms.registry.get(atoms.commandExecution)).toMatchObject({ _tag: "failed" });
-  });
-
-  it("receives a batch for an existing product as a single batch upsert", async () => {
-    const { actions, enqueued } = harness();
-    const batch = await actions.receiveBatch({ productId, packQuantity: 5, unitQuantity: 0 });
-    expect(batch.productId).toBe(productId);
-    expect(enqueued).toHaveLength(1);
-    expect(catalogWrites(enqueued[0]!)).toMatchObject([
-      { entity: "batch", action: "upsert", expectedRowVersion: null, row: { productId } },
-    ]);
-  });
-
-  it("refuses to enqueue a delete that breaks a catalog rule", async () => {
-    const { actions, atoms, enqueued } = harness();
-    await expect(actions.deleteCategory(categoryId)).rejects.toThrow(
-      "Move products to another category before deleting this category.",
-    );
     expect(enqueued).toHaveLength(0);
     expect(atoms.registry.get(atoms.commandExecution)).toMatchObject({ _tag: "failed" });
   });

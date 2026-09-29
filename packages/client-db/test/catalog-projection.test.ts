@@ -1,9 +1,7 @@
-import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
 import {
-  CATALOG_IMPORT_LINES_PER_COMMAND,
   projectCreateBatch,
   projectCreateCategory,
   projectCreateProduct,
@@ -137,10 +135,46 @@ describe("catalog projection", () => {
     });
   });
 
-  it("refuses a category delete while active products remain", () => {
-    expect(() => projectDeleteCategory(contextWith(), categoryId)).toThrow(
+  it.each([
+    [
+      "a category delete while active products remain",
+      () => projectDeleteCategory(contextWith(), categoryId),
       "Move products to another category before deleting this category.",
-    );
+    ],
+    [
+      "a units-per-pack change while stock remains",
+      () =>
+        projectUpdateProduct(
+          contextWith({ batches: collectionOf([{ ...emptyBatch, packQuantity: 3 }]) }),
+          { id: productId, name: "Green", categoryId, unitsPerPack: 4 },
+        ),
+      "Change units per pack only after the product has no remaining stock.",
+    ],
+    [
+      "a product delete while stock remains",
+      () =>
+        projectDeleteProduct(
+          contextWith({ batches: collectionOf([{ ...emptyBatch, unitQuantity: 1 }]) }),
+          productId,
+        ),
+      "Clear remaining stock before deleting this product.",
+    ],
+    [
+      "a batch delete while stock remains",
+      () =>
+        projectDeleteBatch(
+          contextWith({ batches: collectionOf([{ ...emptyBatch, packQuantity: 1 }]) }),
+          batchId,
+        ),
+      "Clear remaining stock before deleting this batch.",
+    ],
+    [
+      "a negative quantity",
+      () => projectCreateBatch(contextWith(), { productId, packQuantity: -1 }),
+      "Pack quantity must be a non-negative whole number.",
+    ],
+  ])("refuses %s", (_name, project, message) => {
+    expect(project).toThrow(message);
   });
 
   it("projects a category delete carrying the current row version", () => {
@@ -174,24 +208,6 @@ describe("catalog projection", () => {
         visible: true,
       },
     });
-  });
-
-  it("refuses a units-per-pack change while stock remains", () => {
-    const context = contextWith({
-      batches: collectionOf([{ ...emptyBatch, packQuantity: 3 }]),
-    });
-    expect(() =>
-      projectUpdateProduct(context, { id: productId, name: "Green", categoryId, unitsPerPack: 4 }),
-    ).toThrow("Change units per pack only after the product has no remaining stock.");
-  });
-
-  it("refuses a product delete while stock remains", () => {
-    const context = contextWith({
-      batches: collectionOf([{ ...emptyBatch, unitQuantity: 1 }]),
-    });
-    expect(() => projectDeleteProduct(context, productId)).toThrow(
-      "Clear remaining stock before deleting this product.",
-    );
   });
 
   it("projects a batch insert with a movement id and a null note", () => {
@@ -234,37 +250,6 @@ describe("catalog projection", () => {
       note: "Recount",
       row: { packQuantity: 7, unitQuantity: 0 },
     });
-  });
-
-  it("refuses a batch delete while stock remains", () => {
-    const context = contextWith({
-      batches: collectionOf([{ ...emptyBatch, packQuantity: 1 }]),
-    });
-    expect(() => projectDeleteBatch(context, batchId)).toThrow(
-      "Clear remaining stock before deleting this batch.",
-    );
-  });
-
-  it("rejects a negative quantity before any write is built", () => {
-    expect(() => projectCreateBatch(contextWith(), { productId, packQuantity: -1 })).toThrow(
-      "Pack quantity must be a non-negative whole number.",
-    );
-  });
-
-  it("chunks an import at the command row limit", () => {
-    const context = contextWith();
-    const lines = Array.from({ length: CATALOG_IMPORT_LINES_PER_COMMAND + 1 }, (_, index) => ({
-      productId: null,
-      name: `Line ${index}`,
-      packQuantity: 1,
-    }));
-    const projected = projectImportInventory(context, { categoryId, lines });
-    expect(CATALOG_IMPORT_LINES_PER_COMMAND).toBe(500);
-    expect(projected.chunks).toHaveLength(2);
-    expect(projected.chunks[0]).toHaveLength(MAX_CATALOG_WRITE_ROWS);
-    expect(projected.chunks[1]).toHaveLength(2);
-    expect(projected.createdProducts).toBe(CATALOG_IMPORT_LINES_PER_COMMAND + 1);
-    expect(projected.createdBatches).toBe(CATALOG_IMPORT_LINES_PER_COMMAND + 1);
   });
 
   it("reuses an existing product id and its row version for an import line", () => {

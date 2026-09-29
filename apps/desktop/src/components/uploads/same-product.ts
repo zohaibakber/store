@@ -1,6 +1,6 @@
 import type { ProductId } from "@store/contracts";
 
-export const sameProduct = (
+const sameProduct = (
   line: { readonly name: string; readonly unitsPerPack: number },
   product: { readonly name: string; readonly unitsPerPack: number },
 ) =>

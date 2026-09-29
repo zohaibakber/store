@@ -28,14 +28,11 @@ export const INITIAL_STABILITY: StabilityState = {
   lastCaptureAt: null,
 };
 
-export const textTokens = (text: string): ReadonlyArray<string> => [
+const textTokens = (text: string): ReadonlyArray<string> => [
   ...new Set(text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []),
 ];
 
-export const tokenSimilarity = (
-  left: ReadonlyArray<string>,
-  right: ReadonlyArray<string>,
-): number => {
+const tokenSimilarity = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
   if (left.length === 0 && right.length === 0) return 1;
   const leftSet = new Set(left);
   const shared = right.filter((token) => leftSet.has(token)).length;

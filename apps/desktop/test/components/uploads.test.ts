@@ -1,17 +1,7 @@
 import { decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
-import { importProductMatch, sameProduct } from "@/components/uploads/same-product";
-
-describe("sameProduct", () => {
-  it("restocks only when the name and units per pack both match", () => {
-    const line = { name: "Amoxicillin", unitsPerPack: 20 };
-    expect(sameProduct(line, { name: "Amoxicillin", unitsPerPack: 20 })).toBe(true);
-    expect(sameProduct(line, { name: "amoxicillin", unitsPerPack: 20 })).toBe(true);
-    expect(sameProduct(line, { name: "Amoxicillin", unitsPerPack: 10 })).toBe(false);
-    expect(sameProduct(line, { name: "Ibuprofen", unitsPerPack: 20 })).toBe(false);
-  });
-});
+import { importProductMatch } from "@/components/uploads/same-product";
 
 describe("importProductMatch", () => {
   const ten = {
@@ -26,26 +16,16 @@ describe("importProductMatch", () => {
   };
   const duplicateTwenty = {
     id: decodeProductId("33333333-3333-4333-8333-333333333333"),
-    name: "amoxicillin",
+    name: " amoxicillin ",
     unitsPerPack: 20,
   };
 
-  it("binds the only catalog product with that SKU", () => {
-    expect(importProductMatch({ name: "Amoxicillin", unitsPerPack: 20 }, [ten, twenty])).toEqual({
-      _tag: "one",
-      id: twenty.id,
-    });
-  });
-
-  it("does not invent a match for a new SKU", () => {
+  it("binds a line only to the single catalog product with the same name and pack size", () => {
+    const line = { name: "Amoxicillin", unitsPerPack: 20 };
+    expect(importProductMatch(line, [ten, twenty])).toEqual({ _tag: "one", id: twenty.id });
     expect(importProductMatch({ name: "Ibuprofen", unitsPerPack: 10 }, [ten, twenty])).toEqual({
       _tag: "none",
     });
-  });
-
-  it("refuses to pick when two live products share the SKU", () => {
-    expect(
-      importProductMatch({ name: "Amoxicillin", unitsPerPack: 20 }, [ten, twenty, duplicateTwenty]),
-    ).toEqual({ _tag: "many" });
+    expect(importProductMatch(line, [ten, twenty, duplicateTwenty])).toEqual({ _tag: "many" });
   });
 });

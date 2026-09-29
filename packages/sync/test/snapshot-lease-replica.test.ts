@@ -16,7 +16,7 @@ import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { recoverFrom } from "../src/session";
-import type { SyncTransport } from "../src/transport";
+import { stubTransport } from "./lib/engine-fixture";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
 const databaseName = "snapshot-lease-replica";
@@ -27,10 +27,7 @@ afterEach(() => {
 
 const recordingTransport = () => {
   const requests: Array<AcquireSnapshotRequest> = [];
-  const transport: SyncTransport = {
-    registerReplica: () => Effect.die("unused"),
-    submitCommand: () => Effect.die("unused"),
-    getReceipt: () => Effect.die("unused"),
+  const transport = stubTransport({
     pull: () => Effect.fail(syncProtocolError("SNAPSHOT_REQUIRED", "Behind retained history.")),
     acquireSnapshot: (request) =>
       Effect.sync(() => {
@@ -41,8 +38,7 @@ const recordingTransport = () => {
           retryAfterMillis: 1_000,
         };
       }),
-    readSnapshotPart: () => Effect.die("unused"),
-  };
+  });
   return { requests, transport };
 };
 

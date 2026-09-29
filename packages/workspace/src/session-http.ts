@@ -53,16 +53,13 @@ export interface SessionHttpClientOptions {
   readonly requestHeaders?: () => HeadersInit;
 }
 
-export const normalizeApiBaseUrl = (baseUrl: string) =>
+const normalizeApiBaseUrl = (baseUrl: string) =>
   baseUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
 
-export const normalizeAuthBaseUrl = (baseUrl: string) => baseUrl.replace(/\/$/, "");
+const normalizeAuthBaseUrl = (baseUrl: string) => baseUrl.replace(/\/$/, "");
 
-export const isAccessTokenFresh = (
-  tokens: TokenSet | null | undefined,
-  skewMs = ACCESS_TOKEN_REFRESH_SKEW_MS,
-  now = Date.now(),
-) => tokens != null && tokens.accessExpiresAt > now + skewMs;
+const isAccessTokenFresh = (tokens: TokenSet | null) =>
+  tokens != null && tokens.accessExpiresAt > Date.now() + ACCESS_TOKEN_REFRESH_SKEW_MS;
 
 export const cookieSessionNeedsRefresh = (tokens: TokenSet | null, force: boolean) =>
   force || !isAccessTokenFresh(tokens);
@@ -70,14 +67,14 @@ export const cookieSessionNeedsRefresh = (tokens: TokenSet | null, force: boolea
 export const refreshTokenNeedsRefresh = (tokens: TokenSet | null, force = false) =>
   !!tokens?.refreshToken && (force || !isAccessTokenFresh(tokens));
 
-export interface SerializedRequestBody {
+interface SerializedRequestBody {
   readonly body: BodyInit | null | undefined;
   readonly setJsonContentType: boolean;
 }
 
 const encodeJsonBody = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
-export const serializeRequestBody = (
+const serializeRequestBody = (
   requestBody: JsonRequestPayload | undefined,
 ): SerializedRequestBody => {
   if (requestBody === undefined || requestBody === null || requestBody instanceof FormData) {

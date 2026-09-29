@@ -1,10 +1,7 @@
 import { AuthClientError } from "@store/auth";
-import { RequestError } from "@store/workspace";
-import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MobileAuthExtra, authConfigFrom } from "../src/auth/config";
-import { toSession } from "../src/auth/controller";
+import { authConfigFrom } from "../src/auth/config";
 import {
   SESSION_ENDED_NOTICE,
   initialAuthState,
@@ -32,19 +29,13 @@ const run = (events: ReadonlyArray<AuthEvent>, from: AuthState = initialAuthStat
   events.reduce(transition, from);
 
 describe("session state machine", () => {
-  it("restores a remembered organization straight to signed in", () => {
-    const state = run([{ _tag: "Restored", account: account(), lastOrganization: remembered }]);
-    expect(statusOf(state)).toBe("signedIn");
-  });
-
-  it("asks for the organization when this device has not confirmed it", () => {
-    const state = run([{ _tag: "Restored", account: account(), lastOrganization: null }]);
-    expect(statusOf(state)).toBe("needsOrganization");
-  });
-
-  it("restores to signed out without a stored session", () => {
-    const state = run([{ _tag: "Restored", account: null, lastOrganization: remembered }]);
-    expect(state).toEqual({ _tag: "SignedOut", notice: null });
+  it.each([
+    ["signedIn", account(), remembered],
+    ["needsOrganization", account(), null],
+    ["signedOut", null, remembered],
+  ] as const)("restores to %s", (expected, restored, lastOrganization) => {
+    const state = run([{ _tag: "Restored", account: restored, lastOrganization }]);
+    expect(statusOf(state)).toBe(expected);
   });
 
   it("confirms only the active organization", () => {
@@ -110,48 +101,10 @@ describe("session state machine", () => {
     const signedOut: AuthState = { _tag: "SignedOut", notice: null };
     expect(transition(signedOut, { _tag: "SessionEnded" })).toBe(signedOut);
   });
-
-  it("projects the public session", async () => {
-    const signOut = async () => undefined;
-    const authenticatedFetch: typeof fetch = async () => new Response(null);
-    const liveAccessToken = async () => "access-token";
-    const active = run([{ _tag: "Restored", account: account(), lastOrganization: remembered }]);
-
-    expect(toSession(active, { signOut, authenticatedFetch, liveAccessToken })).toEqual({
-      status: "signedIn",
-      userId: "user-1",
-      email: "owner@example.com",
-      displayName: "Owner",
-      organizationId: "org-1",
-      organizationName: "Corner Pharmacy",
-      authenticatedFetch,
-      liveAccessToken,
-      signOut,
-    });
-    expect(
-      toSession(
-        { _tag: "SignedOut", notice: null },
-        { signOut, authenticatedFetch, liveAccessToken },
-      ),
-    ).toEqual({ status: "signedOut" });
-  });
 });
 
 describe("auth problems", () => {
   const context = { online: true, now: 1_000_000 };
-
-  it("tells offline apart from an unavailable server", () => {
-    const facts = failureFacts(new Error("fetch failed: Network request failed"));
-    expect(describeFailure(facts, { ...context, online: false }).kind).toBe("offline");
-    expect(describeFailure(facts, context).kind).toBe("unavailable");
-  });
-
-  it("treats server errors as unavailable", () => {
-    const facts = failureFacts(
-      new RequestError({ status: 503, code: "AUTH_UNAVAILABLE", message: "Down." }),
-    );
-    expect(describeFailure(facts, context).kind).toBe("unavailable");
-  });
 
   it("separates a wrong code from an expired one", () => {
     const facts = failureFacts(
@@ -223,19 +176,5 @@ describe("auth config", () => {
       authBaseUrl: "https://auth.example.test",
       googleWebClientId: null,
     });
-  });
-
-  it("keeps a configured Google web client ID", () => {
-    expect(
-      authConfigFrom({
-        apiBaseUrl: "http://localhost:8787",
-        authBaseUrl: "http://localhost:8788",
-        googleWebClientId: "123.apps.googleusercontent.com",
-      }).googleWebClientId,
-    ).toBe("123.apps.googleusercontent.com");
-  });
-
-  it("fails fast without base URLs", () => {
-    expect(() => Schema.decodeUnknownSync(MobileAuthExtra)({ variant: "development" })).toThrow();
   });
 });

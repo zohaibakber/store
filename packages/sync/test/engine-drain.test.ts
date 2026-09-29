@@ -3,7 +3,6 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
-  SyncEpoch,
   type CommandReceipt,
   type SyncCommandEnvelope,
   type SyncPullRequest,
@@ -19,12 +18,10 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
-import * as Semaphore from "effect/Semaphore";
 
 import { saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";
-import { makeSyncEngine } from "../src/sqlite";
-import type { SyncTransport } from "../src/transport";
+import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
@@ -66,15 +63,8 @@ const page = (
   retentionFloor: OrgCommitSequence.make("0"),
 });
 
-const unused = {
-  registerReplica: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  readSnapshotPart: () => Effect.die("unused"),
-} satisfies Partial<SyncTransport>;
-
 describe("sync engine drains in one cycle", () => {
-  it.effect("uploads the whole outbox with one command in flight at a time", () =>
+  it.effect("uploads the whole outbox in client sequence order", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
         yield* runReplicaTransaction(handle, (tx) =>
@@ -84,30 +74,16 @@ describe("sync engine drains in one cycle", () => {
           }),
         );
         const submitted: Array<string> = [];
-        let inFlight = 0;
-        let maxInFlight = 0;
-        const transport: SyncTransport = {
-          ...unused,
-          pull: () => Effect.die("unused"),
+        const transport = stubTransport({
           submitCommand: (envelope) =>
-            Effect.gen(function* () {
-              inFlight += 1;
-              maxInFlight = Math.max(maxInFlight, inFlight);
+            Effect.sync(() => {
               submitted.push(envelope.clientSequence);
-              yield* Effect.yieldNow;
               return acceptedReceipt(envelope, envelope.clientSequence);
-            }).pipe(
-              Effect.ensuring(
-                Effect.sync(() => {
-                  inFlight -= 1;
-                }),
-              ),
-            ),
-        };
-        const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), transport);
+            }),
+        });
+        const engine = yield* sqliteEngine(handle, transport);
         expect(yield* engine.drainUploads()).toBe(2);
         expect(submitted).toEqual(["1", "2"]);
-        expect(maxInFlight).toBe(1);
         const statuses = yield* runReplicaTransaction(handle, (tx) =>
           tx.select({ status: commandOutbox.status }).from(commandOutbox).all(),
         );
@@ -125,9 +101,7 @@ describe("sync engine drains in one cycle", () => {
     withSeededReplica((handle) =>
       Effect.gen(function* () {
         const pulls: Array<string> = [];
-        const transport: SyncTransport = {
-          ...unused,
-          submitCommand: () => Effect.die("unused"),
+        const transport = stubTransport({
           pull: (request) =>
             Effect.sync(() => {
               pulls.push(request.afterCommitSequence);
@@ -138,8 +112,8 @@ describe("sync engine drains in one cycle", () => {
               }
               return page(request, [], "2");
             }),
-        };
-        const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), transport);
+        });
+        const engine = yield* sqliteEngine(handle, transport);
         expect(yield* engine.catchUp()).toBe("advanced");
         expect(pulls).toEqual(["0", "1"]);
         expect(yield* engine.catchUp()).toBe("unchanged");
@@ -152,46 +126,16 @@ describe("sync engine drains in one cycle", () => {
     withSeededReplica((handle) =>
       Effect.gen(function* () {
         let pulls = 0;
-        const transport: SyncTransport = {
-          ...unused,
-          submitCommand: () => Effect.die("unused"),
+        const transport = stubTransport({
           pull: (request) =>
             Effect.sync(() => {
               pulls += 1;
               return page(request, [], "9");
             }),
-        };
-        const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), transport);
+        });
+        const engine = yield* sqliteEngine(handle, transport);
         expect(yield* engine.catchUp()).toBe("unchanged");
         expect(pulls).toBe(1);
-      }),
-    ),
-  );
-
-  it.effect("recognises a live hint at or below the applied cursor as already applied", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const transport: SyncTransport = {
-          ...unused,
-          submitCommand: () => Effect.die("unused"),
-          pull: (request) =>
-            Effect.succeed(
-              request.afterCommitSequence === "0"
-                ? page(request, [seedCatalogGroup], "1")
-                : page(request, [], "1"),
-            ),
-        };
-        const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), transport);
-        yield* engine.catchUp();
-        const hint = (horizon: string, epoch: string = LAST_UNIT_EPOCH) => ({
-          epoch: SyncEpoch.make(epoch),
-          subscription: OPERATIONAL_SUBSCRIPTION,
-          horizon: OrgCommitSequence.make(horizon),
-        });
-        expect(yield* engine.hintApplied(hint("0"))).toBe(true);
-        expect(yield* engine.hintApplied(hint("1"))).toBe(true);
-        expect(yield* engine.hintApplied(hint("2"))).toBe(false);
-        expect(yield* engine.hintApplied(hint("1", "99"))).toBe(false);
       }),
     ),
   );

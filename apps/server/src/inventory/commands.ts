@@ -6,12 +6,8 @@ import {
   MIN_PULL_BYTE_BUDGET,
   RegisterReplicaResult,
   SyncProtocolCode,
-  SyncPullResult,
-  SyncSubmitCommandResult,
   type RegisterReplicaRequest,
-  type SyncCommandEnvelope,
   type SyncPullRequest,
-  type SyncSubmitCommandRequest,
 } from "@store/contracts";
 import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
@@ -80,13 +76,8 @@ const ReceiptRows = Schema.Array(
 const decodeEncodedRows = Schema.decodeUnknownEffect(EncodedRows);
 const decodeSubmittedRows = Schema.decodeUnknownEffect(SubmittedRows);
 const decodeReceiptRows = Schema.decodeUnknownEffect(ReceiptRows);
-const decodeReceipt = Schema.decodeUnknownEffect(Schema.fromJsonString(CommandReceipt));
 const decodeRegisterResult = Schema.decodeUnknownEffect(
   Schema.fromJsonString(RegisterReplicaResult),
-);
-const decodePullResult = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncPullResult));
-const decodeSubmitResult = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(SyncSubmitCommandResult),
 );
 
 type FunctionOutcome = {
@@ -126,18 +117,6 @@ export interface InventoryCommandsContract {
     actor: InventoryActor,
     request: RegisterReplicaRequest,
   ) => Effect.Effect<RegisterReplicaResult, InventoryError>;
-  readonly commit: (
-    actor: InventoryActor,
-    envelope: SyncCommandEnvelope,
-  ) => Effect.Effect<CommandReceipt, InventoryError>;
-  readonly submit: (
-    actor: InventoryActor,
-    request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<SyncSubmitCommandResult, InventoryError>;
-  readonly submitEncoded: (
-    actor: InventoryActor,
-    request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<SubmittedCommand, InventoryError>;
   readonly submitRaw: (
     actor: InventoryActor,
     bodyText: string,
@@ -146,10 +125,6 @@ export interface InventoryCommandsContract {
     actor: InventoryActor,
     operationId: string,
   ) => Effect.Effect<CommandReceipt | undefined, InventoryError>;
-  readonly pull: (
-    actor: InventoryActor,
-    request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, InventoryError>;
   readonly pullEncoded: (
     actor: InventoryActor,
     request: SyncPullRequest,
@@ -245,15 +220,6 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     return { body, fanout } satisfies SubmittedCommand;
   });
 
-  const submitEncoded = Effect.fn("InventoryCommands.submitEncoded")(function* (
-    actor: InventoryActor,
-    request: SyncSubmitCommandRequest,
-  ) {
-    return yield* submitRaw(actor, JSON.stringify(request)).pipe(
-      Effect.catchTag("SyncRequestMalformed", (error) => Effect.fail(databaseError(error))),
-    );
-  });
-
   return InventoryCommands.of({
     register: Effect.fn("InventoryCommands.register")(function* (actor, request) {
       const now = yield* Clock.currentTimeMillis;
@@ -273,15 +239,6 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       const body = yield* bodyOrProtocolError(row);
       return yield* decodeRegisterResult(body).pipe(Effect.mapError(databaseError));
     }),
-    commit: Effect.fn("InventoryCommands.commit")(function* (actor, envelope) {
-      const submitted = yield* submitEncoded(actor, envelope);
-      return yield* decodeReceipt(submitted.body).pipe(Effect.mapError(databaseError));
-    }),
-    submit: Effect.fn("InventoryCommands.submit")(function* (actor, request) {
-      const submitted = yield* submitEncoded(actor, request);
-      return yield* decodeSubmitResult(submitted.body).pipe(Effect.mapError(databaseError));
-    }),
-    submitEncoded,
     submitRaw,
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
       const rows = yield* runStatement(
@@ -300,10 +257,6 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       yield* requireReady(row === undefined ? undefined : { ...row, releaseId: row.release_id });
       return row?.receipt ?? undefined;
     }),
-    pull: Effect.fn("InventoryCommands.pull")(function* (actor, request) {
-      const encoded = yield* pullEncoded(actor, request);
-      return yield* decodePullResult(encoded.json).pipe(Effect.mapError(databaseError));
-    }),
     pullEncoded,
   });
 };
@@ -312,12 +265,8 @@ export const InventoryCommandsUnavailable = Layer.succeed(
   InventoryCommands,
   InventoryCommands.of({
     register: () => Effect.fail(inventoryPostgresUnavailable),
-    commit: () => Effect.fail(inventoryPostgresUnavailable),
-    submit: () => Effect.fail(inventoryPostgresUnavailable),
-    submitEncoded: () => Effect.fail(inventoryPostgresUnavailable),
     submitRaw: () => Effect.fail(inventoryPostgresUnavailable),
     receipt: () => Effect.fail(inventoryPostgresUnavailable),
-    pull: () => Effect.fail(inventoryPostgresUnavailable),
     pullEncoded: () => Effect.fail(inventoryPostgresUnavailable),
   }),
 );

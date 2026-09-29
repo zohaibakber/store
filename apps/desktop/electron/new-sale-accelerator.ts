@@ -12,7 +12,7 @@ type AcceleratorInput = {
   readonly shift: boolean;
 };
 
-export const isNewSaleAccelerator = (input: AcceleratorInput): boolean => {
+const isNewSaleAccelerator = (input: AcceleratorInput): boolean => {
   if (input.type !== "keyDown") return false;
   const isN = input.code === "KeyN" || input.key.toLowerCase() === "n";
   if (!isN) return false;

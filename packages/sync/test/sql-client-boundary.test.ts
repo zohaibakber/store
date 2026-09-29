@@ -19,7 +19,6 @@ const NATIVE = [
 
 const ENTRYPOINTS = [
   ["@store/sync", "src/index.ts"],
-  ["@store/sync/browser", "src/browser.ts"],
   ["@store/sync/sql-client", "src/sql-client.ts"],
 ] as const;
 
@@ -37,12 +36,5 @@ describe("native-free entrypoints", () => {
     const drizzleFiles = [...graph.files].filter((file) => file.includes("/drizzle-orm/"));
     expect(drizzleFiles.some((file) => file.endsWith("sqlite-core/effect/session.js"))).toBe(true);
     expect(drizzleFiles.length).toBeGreaterThan(20);
-  });
-
-  it("still detects the native driver behind the Node entrypoint", () => {
-    const graph = graphOf("src/sqlite.ts");
-    expect(matchingSpecifiers(graph.bare, NATIVE)).toContain(
-      "@effect/sql-sqlite-node/SqliteClient",
-    );
   });
 });

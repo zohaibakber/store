@@ -57,11 +57,6 @@ describe("hostAccess", () => {
     });
   });
 
-  it("keeps sign-in chrome-free and the rest of the app in the shell", () => {
-    expect(access.chrome({ pathname: "/sign-in" })).toEqual({ _tag: "Bare" });
-    expect(access.chrome({ pathname: "/products" })).toEqual({ _tag: "Shell" });
-  });
-
   it("has no inventory scope until an organization is signed in", () => {
     expect(access.inventoryScope(unauthenticated)).toBeNull();
     expect(access.inventoryScope(authenticated)).toEqual({

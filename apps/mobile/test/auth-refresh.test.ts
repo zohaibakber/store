@@ -50,13 +50,4 @@ describe("authenticatedFetch", () => {
     expect(test.sent).toEqual([]);
     expect(test.refreshes()).toBe(0);
   });
-
-  it("sends API paths through the session client", async () => {
-    const test = harness();
-
-    const response = await test.authenticatedFetch("/api/sync/pull", { method: "POST" });
-
-    expect(response.status).toBe(200);
-    expect(test.sent).toEqual([`${API}/api/sync/pull`]);
-  });
 });

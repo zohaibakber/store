@@ -46,20 +46,13 @@ const schemaDecodeFailure = (): Schema.SchemaError | undefined => {
 };
 
 describe("retry-after parsing", () => {
-  it("reads delay seconds", () => {
-    expect(retryAfterMillis("120", NOW)).toBe(120_000);
-  });
-
-  it("reads an HTTP date", () => {
-    expect(retryAfterMillis(new Date(NOW + 45_000).toUTCString(), NOW)).toBe(45_000);
-  });
-
-  it("clamps a past HTTP date to zero", () => {
-    expect(retryAfterMillis(new Date(NOW - 45_000).toUTCString(), NOW)).toBe(0);
-  });
-
-  it("ignores an unparseable header", () => {
-    expect(retryAfterMillis("soon", NOW)).toBeUndefined();
+  it.each([
+    ["delay seconds", "120", 120_000],
+    ["an HTTP date", new Date(NOW + 45_000).toUTCString(), 45_000],
+    ["a past HTTP date clamped to zero", new Date(NOW - 45_000).toUTCString(), 0],
+    ["an unparseable header", "soon", undefined],
+  ])("reads %s", (_name, header, expected) => {
+    expect(retryAfterMillis(header, NOW)).toBe(expected);
   });
 });
 
@@ -116,21 +109,16 @@ describe("transport failure taxonomy", () => {
     expect(dispositionFor(failure)).toEqual({ _tag: "recover", code: "EPOCH_MISMATCH" });
   });
 
-  it("stops on a protocol error with no recovery path", () => {
-    expect(dispositionFor(syncProtocolError("INSUFFICIENT_STOCK", "no stock"))._tag).toBe("stop");
-  });
-
-  it("surfaces a replica sequence gap as local corruption requiring recovery", () => {
-    expect(dispositionFor(syncProtocolError("REPLICA_SEQUENCE_GAP", "gap"))).toEqual({
-      _tag: "recoveryRequired",
-      code: "REPLICA_SEQUENCE_GAP",
-      message: "gap",
-    });
-  });
-
-  it("routes SNAPSHOT_REQUIRED and INCARNATION_MISMATCH to recovery", () => {
-    expect(dispositionFor(syncProtocolError("SNAPSHOT_REQUIRED", "behind"))._tag).toBe("recover");
-    expect(dispositionFor(syncProtocolError("INCARNATION_MISMATCH", "reset"))._tag).toBe("recover");
+  it.each([
+    ["INSUFFICIENT_STOCK", { _tag: "stop", status: undefined, message: "failure" }],
+    [
+      "REPLICA_SEQUENCE_GAP",
+      { _tag: "recoveryRequired", code: "REPLICA_SEQUENCE_GAP", message: "failure" },
+    ],
+    ["SNAPSHOT_REQUIRED", { _tag: "recover", code: "SNAPSHOT_REQUIRED" }],
+    ["INCARNATION_MISMATCH", { _tag: "recover", code: "INCARNATION_MISMATCH" }],
+  ] as const)("routes a %s protocol error", (code, disposition) => {
+    expect(dispositionFor(syncProtocolError(code, "failure"))).toEqual(disposition);
   });
 
   it("classifies every replica storage failure as a terminal storage error", () => {

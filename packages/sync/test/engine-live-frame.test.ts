@@ -11,12 +11,9 @@ import {
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
-import * as Semaphore from "effect/Semaphore";
 
-import { cursorFromStore } from "../src/engine";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { makeSyncEngine } from "../src/sqlite";
-import type { SyncTransport } from "../src/transport";
+import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { withSeededReplica } from "./lib/replica-fixture";
 
@@ -35,19 +32,14 @@ const page = (
   retentionFloor: OrgCommitSequence.make("0"),
 });
 
-const followingAtOne: SyncTransport = {
-  registerReplica: () => Effect.die("unused"),
-  submitCommand: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  readSnapshotPart: () => Effect.die("unused"),
+const followingAtOne = stubTransport({
   pull: (request) =>
     Effect.succeed(
       request.afterCommitSequence === "0"
         ? page(request, [seedCatalogGroup], "1")
         : page(request, [], "1"),
     ),
-};
+});
 
 const groupAt = (commitSequence: string): SyncTransactionGroup => ({
   ...seedSpareBatchGroup,
@@ -78,10 +70,10 @@ const hint = (horizon: string, epoch: string = LAST_UNIT_EPOCH) => ({
 const followingEngine = Effect.fn(function* (
   handle: Parameters<Parameters<typeof withSeededReplica>[0]>[0],
 ) {
-  const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), followingAtOne);
+  const engine = yield* sqliteEngine(handle, followingAtOne);
   yield* engine.catchUp();
   const store = yield* makeSqliteReplicaStore(handle, "sqlite");
-  const applied = cursorFromStore(store).pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
+  const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   return { engine, applied };
 });
 
@@ -150,36 +142,45 @@ describe("sync engine live frames", () => {
     ),
   );
 
-  it.effect("ignores a frame it already has and a hello at the applied horizon", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const { engine, applied } = yield* followingEngine(handle);
-        expect(yield* engine.applyLiveFrame(transactions([seedCatalogGroup]))).toEqual({
-          _tag: "current",
-        });
-        expect(
-          yield* engine.applyLiveFrame({
-            _tag: "hello",
-            epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
-            horizon: OrgCommitSequence.make("1"),
-          }),
-        ).toEqual({ _tag: "current" });
-        expect(
-          yield* engine.applyLiveFrame({
-            _tag: "wake",
-            epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
-            horizon: OrgCommitSequence.make("5"),
-          }),
-        ).toEqual({ _tag: "pull", hint: hint("5") });
-        expect(yield* applied).toBe("1");
-      }),
-    ),
+  it.effect(
+    "ignores a frame or hello at the applied horizon and pulls for a newer or foreign one",
+    () =>
+      withSeededReplica((handle) =>
+        Effect.gen(function* () {
+          const { engine, applied } = yield* followingEngine(handle);
+          expect(yield* engine.applyLiveFrame(transactions([seedCatalogGroup]))).toEqual({
+            _tag: "current",
+          });
+          expect(
+            yield* engine.applyLiveFrame({
+              _tag: "hello",
+              epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
+              horizon: OrgCommitSequence.make("1"),
+            }),
+          ).toEqual({ _tag: "current" });
+          expect(
+            yield* engine.applyLiveFrame({
+              _tag: "hello",
+              epoch: SyncEpoch.make("99"),
+              horizon: OrgCommitSequence.make("1"),
+            }),
+          ).toEqual({ _tag: "pull", hint: hint("1", "99") });
+          expect(
+            yield* engine.applyLiveFrame({
+              _tag: "wake",
+              epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
+              horizon: OrgCommitSequence.make("5"),
+            }),
+          ).toEqual({ _tag: "pull", hint: hint("5") });
+          expect(yield* applied).toBe("1");
+        }),
+      ),
   );
 
   it.effect("pulls instead of applying while the replica is still catching up", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
-        const engine = yield* makeSyncEngine(handle, yield* Semaphore.make(1), followingAtOne);
+        const engine = yield* sqliteEngine(handle, followingAtOne);
         const outcome = yield* engine.applyLiveFrame(transactions([groupAt("1")]));
         expect(outcome).toEqual({ _tag: "pull", hint: hint("1") });
       }),

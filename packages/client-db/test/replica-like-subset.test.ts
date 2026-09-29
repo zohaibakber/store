@@ -2,7 +2,6 @@ import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { lowerSqliteSubset } from "../src/replica/compile";
-import { planIndexedDbSubset } from "../src/replica/indexeddb-plan";
 import { openNodeReplicaSqlite, type NodeReplicaSqlite } from "../src/replica/node-sqlite";
 import type { InventorySubsetSpec } from "../src/replica/subset-spec";
 
@@ -55,12 +54,6 @@ describe("like subset predicates", () => {
     expect(await matching("composition", "%")).toEqual(["p-1", "p-3", "p-4"]);
   });
 
-  it("plans the IndexedDB read as a residual over the product generation", () => {
-    const plan = Effect.runSync(planIndexedDbSubset(likeSpec("name", "pan%")));
-    expect(plan.scan).toEqual({ _tag: "generationPrefix", reverse: false });
-    expect(plan.residual).toEqual({ _tag: "like", column: "name", pattern: "pan%" });
-  });
-
   it("serves a name prefix search from the case-insensitive name index", async () => {
     const statement = Effect.runSync(
       lowerSqliteSubset({
@@ -106,11 +99,5 @@ describe("like subset predicates", () => {
       "Panadol",
       "PANADOL Extra",
     ]);
-  });
-
-  it("rejects like predicates on columns outside the allowlist", () => {
-    expect(() =>
-      Effect.runSync(lowerSqliteSubset({ ...likeSpec("retailPrice", "%1%"), source: "products" })),
-    ).toThrow();
   });
 });

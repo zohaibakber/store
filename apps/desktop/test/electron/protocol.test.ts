@@ -8,84 +8,53 @@ import { isOAuthCallbackUrl } from "../../electron/oauth-callback";
 import { developmentRendererTarget } from "../../electron/protocol";
 import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
 
-const productionPolicy = () =>
+const policyFor = (options: { readonly development?: boolean; readonly wasm?: boolean } = {}) =>
   makeDesktopContentSecurityPolicy({
     scheme: "com.tabaaq.desktop",
-    apiOrigin: "https://api.tabaaq.app",
-    authOrigin: "https://auth.tabaaq.app",
-    development: false,
+    apiOrigin: options.development ? "http://localhost:8787" : "https://api.tabaaq.app",
+    authOrigin: options.development ? "http://localhost:8788" : "https://auth.tabaaq.app",
+    development: options.development ?? false,
+    wasm: options.wasm ?? false,
   });
+
+const directive = (policy: string, name: string) =>
+  policy
+    .split("; ")
+    .find((entry) => entry.startsWith(`${name} `))
+    ?.split(" ");
 
 describe("desktop content security policy", () => {
   it("permits Vite's injected React refresh preamble in development", () => {
-    const policy = makeDesktopContentSecurityPolicy({
-      scheme: "com.tabaaq.desktop",
-      apiOrigin: "http://localhost:8787",
-      authOrigin: "http://localhost:8788",
-      development: true,
-    });
-    const scriptSources = policy
-      .split("; ")
-      .find((directive) => directive.startsWith("script-src "))
-      ?.split(" ");
-
+    const scriptSources = directive(policyFor({ development: true }), "script-src");
     expect(scriptSources).toContain("'unsafe-eval'");
     expect(scriptSources).toContain("'unsafe-inline'");
   });
 
-  it("keeps production script-src free of eval and wasm eval", () => {
-    const scriptSources = productionPolicy()
-      .split("; ")
-      .find((directive) => directive.startsWith("script-src "))
-      ?.split(" ");
-
-    expect(scriptSources).toEqual(["script-src", "'self'"]);
-    expect(scriptSources).not.toContain("'wasm-unsafe-eval'");
-    expect(scriptSources).not.toContain("'unsafe-eval'");
-    expect(scriptSources).not.toContain("'unsafe-inline'");
-  });
-
-  it("allows wasm compilation only for the legacy PowerSync database worker", () => {
-    const workerScriptSources = makeDesktopContentSecurityPolicy({
-      scheme: "com.tabaaq.desktop",
-      apiOrigin: "https://api.tabaaq.app",
-      authOrigin: "https://auth.tabaaq.app",
-      development: false,
-      wasm: true,
-    })
-      .split("; ")
-      .find((directive) => directive.startsWith("script-src "))
-      ?.split(" ");
-
-    expect(workerScriptSources).toEqual(["script-src", "'self'", "'wasm-unsafe-eval'"]);
+  it("keeps production script-src to self and wasm eval to the legacy PowerSync worker", () => {
+    expect(directive(policyFor(), "script-src")).toEqual(["script-src", "'self'"]);
+    expect(directive(policyFor({ wasm: true }), "script-src")).toEqual([
+      "script-src",
+      "'self'",
+      "'wasm-unsafe-eval'",
+    ]);
     expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-CKuXHS5K.js")).toBe(true);
     expect(isLegacyPowerSyncWorkerPath("/assets/index-CKuXHS5K.js")).toBe(false);
     expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-x.js/../index.js")).toBe(false);
     expect(isLegacyPowerSyncWorkerPath("/WASQLiteDB.worker-CKuXHS5K.js")).toBe(false);
   });
 
-  it("permits production Sentry ingest connections", () => {
-    const connectSources = productionPolicy()
-      .split("; ")
-      .find((directive) => directive.startsWith("connect-src "))
-      ?.split(" ");
-
+  it("limits production connections, frames, and workers to known origins", () => {
+    const policy = policyFor();
+    const connectSources = directive(policy, "connect-src");
     expect(connectSources).toContain("https://*.ingest.sentry.io");
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");
     expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).not.toContain("https://*.powersync.journeyapps.com");
-    expect(connectSources).not.toContain("wss://*.powersync.journeyapps.com");
-    expect(connectSources).not.toContain("https://challenges.cloudflare.com");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
-  });
-
-  it("does not allow Clerk Turnstile or blob workers in production", () => {
-    const policy = productionPolicy();
-    expect(policy).toContain("frame-src 'self'");
     expect(policy).not.toContain("challenges.cloudflare.com");
-    expect(policy).toContain("worker-src 'self'");
-    expect(policy).not.toContain("worker-src 'self' blob:");
+    expect(directive(policy, "frame-src")).toEqual(["frame-src", "'self'"]);
+    expect(directive(policy, "worker-src")).toEqual(["worker-src", "'self'"]);
   });
 });
 

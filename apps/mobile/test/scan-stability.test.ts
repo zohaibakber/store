@@ -5,8 +5,6 @@ import {
   type StabilityState,
   markCaptured,
   stepStability,
-  textTokens,
-  tokenSimilarity,
 } from "../src/scan/stability";
 
 const panadol = "PANADOL Extra Paracetamol 500mg B.No AB1234 EXP 08/27";
@@ -22,17 +20,6 @@ const feed = (texts: ReadonlyArray<readonly [string, number]>, start = INITIAL_S
   }
   return { state, captures };
 };
-
-describe("textTokens", () => {
-  it("keeps unique lowercase words of two or more characters", () => {
-    expect(textTokens("EXP 08/27 exp a")).toEqual(["exp", "08", "27"]);
-  });
-
-  it("measures overlap between frames", () => {
-    expect(tokenSimilarity(textTokens(panadol), textTokens(panadol))).toBe(1);
-    expect(tokenSimilarity(textTokens(panadol), textTokens(brufen))).toBeLessThan(0.3);
-  });
-});
 
 describe("stepStability", () => {
   it("captures once the text has held steady", () => {

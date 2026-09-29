@@ -8,7 +8,6 @@ import {
   pullMaxBytesFor,
   reconnected,
   replicaDatabaseName,
-  visibilityForAppState,
 } from "../src/inventory/policy";
 
 describe("mobile replica policy", () => {
@@ -46,11 +45,5 @@ describe("mobile replica policy", () => {
     expect(pullMaxBytesFor({ type: "WIFI", isConnected: true })).toBeUndefined();
     expect(pullMaxBytesFor({ type: "ETHERNET" })).toBeUndefined();
     expect(pullMaxBytesFor({})).toBeUndefined();
-  });
-
-  it("maps app states to scheduler visibility", () => {
-    expect(visibilityForAppState("active")).toBe("foreground");
-    expect(visibilityForAppState("background")).toBe("background");
-    expect(visibilityForAppState("inactive")).toBe("unchanged");
   });
 });

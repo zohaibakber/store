@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  expiryTimestamp,
   findExpiryMentions,
   formatExpiry,
   likelyExpiry,
@@ -50,20 +49,6 @@ describe("findExpiryMentions", () => {
   });
 });
 
-describe("expiry formatting", () => {
-  it("formats month and day precision", () => {
-    expect(formatExpiry({ year: 2027, month: 8, day: null })).toBe("08/2027");
-    expect(formatExpiry({ year: 2027, month: 8, day: 5 })).toBe("05/08/2027");
-  });
-
-  it("stores a month-only expiry as the last day of that month", () => {
-    const stored = new Date(expiryTimestamp({ year: 2027, month: 2, day: null }));
-    expect([stored.getFullYear(), stored.getMonth() + 1, stored.getDate()]).toEqual([2027, 2, 28]);
-    const exact = new Date(expiryTimestamp({ year: 2027, month: 8, day: 15 }));
-    expect([exact.getFullYear(), exact.getMonth() + 1, exact.getDate()]).toEqual([2027, 8, 15]);
-  });
-});
-
 describe("readExpiryInput", () => {
   const stored = (text: string) => {
     const input = readExpiryInput(text);
@@ -83,9 +68,11 @@ describe("readExpiryInput", () => {
     expect(stored("2028-03-15")).toBe(new Date(2028, 2, 15).getTime());
   });
 
-  it("reads what the scan review writes back", () => {
-    const formatted = formatExpiry({ year: 2027, month: 8, day: null });
-    expect(stored(formatted)).toBe(expiryTimestamp({ year: 2027, month: 8, day: null }));
+  it.each([
+    [{ year: 2027, month: 8, day: null }, new Date(2027, 7, 31).getTime()],
+    [{ year: 2027, month: 8, day: 5 }, new Date(2027, 7, 5).getTime()],
+  ])("reads what the scan review writes back for %o", (value, expected) => {
+    expect(stored(formatExpiry(value))).toBe(expected);
   });
 
   it("separates empty from invalid input", () => {

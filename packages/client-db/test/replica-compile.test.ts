@@ -41,56 +41,52 @@ describe("lowerSqliteSubset", () => {
     expect(plan.parameters).toEqual(["cat-1", 20]);
   });
 
-  it("fails on an operator that would require a scan", () => {
-    expect(() =>
-      Effect.runSync(
-        compileSqliteSubset(descriptor, {
-          where: new IR.Func("like", [new IR.PropRef(["name"]), new IR.Value("%scan%")]),
-          limit: 20,
-        }),
-      ),
-    ).toThrow(UnsupportedSubsetQuery);
-  });
-
-  it("fails on nested property references", () => {
-    expect(() =>
-      Effect.runSync(
-        compileSqliteSubset(descriptor, {
-          where: new IR.Func("eq", [new IR.PropRef(["name", "length", "value"]), new IR.Value(1)]),
-          limit: 20,
-        }),
-      ),
-    ).toThrow(UnsupportedSubsetQuery);
-  });
-
-  it("fails on unindexed ordering", () => {
-    const products: InventoryCollectionDescriptor<CategoryRow> = {
-      ...descriptor,
-      source: "products",
-    };
-    expect(() =>
-      Effect.runSync(
-        compileSqliteSubset(products, {
-          orderBy: [{ expression: new IR.PropRef(["composition"]), compareOptions: compare }],
-          limit: 20,
-        }),
-      ),
-    ).toThrow(UnsupportedSubsetQuery);
-  });
-
-  it("fails when history has no bounded limit", () => {
-    const invoices: InventoryCollectionDescriptor<CategoryRow> = {
-      ...descriptor,
-      source: "invoices",
-    };
-    expect(() => Effect.runSync(compileSqliteSubset(invoices, {}))).toThrow(UnsupportedSubsetQuery);
-    expect(() =>
-      Effect.runSync(
-        compileSqliteSubset(invoices, {
-          where: new IR.Func("gt", [new IR.PropRef(["createdAt"]), new IR.Value(0)]),
-        }),
-      ),
-    ).toThrow(UnsupportedSubsetQuery);
+  it.each<[string, InventoryCollectionDescriptor<CategoryRow>["source"], CompileSubsetInput]>([
+    [
+      "an operator that would require a scan",
+      "categories",
+      {
+        where: new IR.Func("like", [new IR.PropRef(["name"]), new IR.Value("%scan%")]),
+        limit: 20,
+      },
+    ],
+    [
+      "nested property references",
+      "categories",
+      {
+        where: new IR.Func("eq", [new IR.PropRef(["name", "length", "value"]), new IR.Value(1)]),
+        limit: 20,
+      },
+    ],
+    [
+      "unindexed ordering",
+      "products",
+      {
+        orderBy: [{ expression: new IR.PropRef(["composition"]), compareOptions: compare }],
+        limit: 20,
+      },
+    ],
+    ["history without a limit", "invoices", {}],
+    [
+      "history bounded only by a range",
+      "invoices",
+      { where: new IR.Func("gt", [new IR.PropRef(["createdAt"]), new IR.Value(0)]) },
+    ],
+    [
+      "an in list larger than the indexed bound",
+      "categories",
+      {
+        where: new IR.Func("in", [
+          new IR.PropRef(["id"]),
+          new IR.Value(Array.from({ length: MAX_IN_VALUES + 1 }, (_, index) => `id-${index}`)),
+        ]),
+        limit: 20,
+      },
+    ],
+  ])("fails on %s", (_name, source, options) => {
+    expect(() => Effect.runSync(compileSqliteSubset({ ...descriptor, source }, options))).toThrow(
+      UnsupportedSubsetQuery,
+    );
   });
 
   it("pages by the cursor when a window also carries an offset", () => {
@@ -142,18 +138,6 @@ describe("lowerSqliteSubset", () => {
     expect(ties.parameters).toEqual([1_790_000_000_000, DEFAULT_COLLECTION_MAXIMUM_ROWS]);
   });
 
-  it("fails when in is larger than the indexed bound", () => {
-    const values = Array.from({ length: MAX_IN_VALUES + 1 }, (_, index) => `id-${index}`);
-    expect(() =>
-      Effect.runSync(
-        compileSqliteSubset(descriptor, {
-          where: new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(values)]),
-          limit: 20,
-        }),
-      ),
-    ).toThrow(UnsupportedSubsetQuery);
-  });
-
   it("rejects a received spec whose column is outside the source allowlist", () => {
     expect(() =>
       Effect.runSync(
@@ -171,6 +155,17 @@ describe("lowerSqliteSubset", () => {
         lowerSqliteSubset({
           source: "products",
           orderBy: [{ column: "composition", direction: "asc" }],
+          limit: 10,
+          offset: 0,
+        }),
+      ),
+    ).toThrow(UnsupportedSubsetQuery);
+    expect(() =>
+      Effect.runSync(
+        lowerSqliteSubset({
+          source: "products",
+          where: { _tag: "like", column: "retailPrice", pattern: "%1%" },
+          orderBy: [],
           limit: 10,
           offset: 0,
         }),

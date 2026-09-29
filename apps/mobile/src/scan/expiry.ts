@@ -153,7 +153,7 @@ export const formatExpiry = (value: ExpiryValue): string =>
     ? `${twoDigits(value.month)}/${value.year}`
     : `${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year}`;
 
-export const expiryTimestamp = (value: ExpiryValue): number =>
+const expiryTimestamp = (value: ExpiryValue): number =>
   value.day === null
     ? new Date(value.year, value.month, 0).getTime()
     : new Date(value.year, value.month - 1, value.day).getTime();

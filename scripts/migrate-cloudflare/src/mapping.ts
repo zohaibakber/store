@@ -32,7 +32,7 @@ import {
 
 const sqliteFlag = (value: boolean): SqliteFlag => (value ? 1 : 0);
 
-export const translateCategory = (row: PostgresCategory): SqliteCategory =>
+const translateCategory = (row: PostgresCategory): SqliteCategory =>
   SqliteCategorySchema.make({
     id: row.id,
     name: row.name,

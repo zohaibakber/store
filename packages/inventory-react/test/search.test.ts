@@ -6,7 +6,6 @@ import {
   catalogProductSearchResults,
   matchCatalogProducts,
   MAX_PRODUCT_SEARCH_RESULTS,
-  productSearchRank,
   summarizeProductStock,
 } from "../src/search";
 
@@ -75,11 +74,6 @@ describe("catalog product search matching", () => {
       product(String(index), `Item ${index}`, null, null),
     );
     expect(matchCatalogProducts(many, "item", 10_000)).toHaveLength(MAX_PRODUCT_SEARCH_RESULTS);
-  });
-
-  it("reports no rank for a product missing any query token", () => {
-    expect(productSearchRank(catalog[1]!, "panadol caffeine")).toBe(3);
-    expect(productSearchRank(catalog[1]!, "panadol aspirin")).toBeNull();
   });
 });
 

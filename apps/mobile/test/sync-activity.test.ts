@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   firstFixableProduct,
   lastSyncedLabel,
-  pendingLabel,
   rejectionReason,
   syncActivityView,
 } from "../src/features/sync/sync-activity";
@@ -39,12 +38,6 @@ describe("sync activity view", () => {
     expect(lastSyncedLabel(now - 3 * 3_600_000, now)).toBe("Synced 3 h ago");
     expect(lastSyncedLabel(now - 3 * 86_400_000, now)).toMatch(/^Synced 21 Sep/u);
     expect(lastSyncedLabel(now + 10_000, now)).toBe("Synced just now");
-  });
-
-  it("counts changes waiting to upload", () => {
-    expect(pendingLabel(0)).toBe("Nothing waiting to upload");
-    expect(pendingLabel(1)).toBe("1 change waiting to upload");
-    expect(pendingLabel(1_200)).toBe("1,200 changes waiting to upload");
   });
 
   it("names rejection reasons and keeps unknown codes generic", () => {

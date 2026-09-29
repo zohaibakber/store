@@ -246,10 +246,12 @@ const setupIpc = () => {
 };
 
 describe("replica worker IPC contract", () => {
-  it("rejects untrusted renderer frames", () => {
-    expect(
-      isTrustedIpcSenderFrame({ url: "https://evil.example" }, ["https://app.tabaaq.local"]),
-    ).toBe(false);
+  it("rejects missing and untrusted renderer frames", () => {
+    expect(isTrustedIpcSenderFrame(null, allowed)).toBe(false);
+    expect(isTrustedIpcSenderFrame({ url: "https://evil.example" }, allowed)).toBe(false);
+    expect(isTrustedIpcSenderFrame({ url: "https://app.tabaaq.local/inventory" }, allowed)).toBe(
+      true,
+    );
     expect(() =>
       assertTrustedIpcSender({ url: "https://evil.example" }, ["https://app.tabaaq.local"]),
     ).toThrow("Rejected IPC from an untrusted renderer.");

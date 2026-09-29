@@ -58,6 +58,7 @@ import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { commitWithOracle } from "./oracle/commit";
+import { typedCommands } from "./typed-commands";
 
 const ORGANIZATION_ID = LAST_UNIT_ORGANIZATION_ID;
 const OWNER = "user-1";
@@ -775,7 +776,7 @@ describe("postgres command differential", () => {
         const sqlDb = yield* openDatabase(sqlUrl);
         yield* seedDatabase(oracleDb);
         yield* seedDatabase(sqlDb);
-        const commands = makeInventoryCommands(sqlDb);
+        const commands = typedCommands(makeInventoryCommands(sqlDb));
         const mismatches: Array<Comparison["mismatches"][number]> = [];
         const labels: Record<string, number> = {};
         const codes: Record<string, number> = {};

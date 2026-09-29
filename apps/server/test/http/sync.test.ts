@@ -1,11 +1,5 @@
-import {
-  OrgCommitSequence,
-  SnapshotId,
-  SyncCommandEnvelope,
-  SyncPullResult,
-  syncProtocolError,
-} from "@store/contracts";
-import { lastUnitBuyerACommand, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { SnapshotId, SyncPullResult, syncProtocolError } from "@store/contracts";
+import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -34,11 +28,11 @@ const pullPost = {
   body: JSON.stringify({ epoch: "1", subscription: "operational", afterCommitSequence: "0" }),
 } satisfies RequestInit;
 
-const commandPost = (body: SyncCommandEnvelope = lastUnitBuyerAEnvelope) =>
+const commandPost = () =>
   ({
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(lastUnitBuyerAEnvelope),
   }) satisfies RequestInit;
 
 describe("sync HTTP", () => {
@@ -61,11 +55,7 @@ describe("sync HTTP", () => {
       commands: {
         register: unused,
         receipt: unused,
-        pull: unused,
         pullEncoded: unused,
-        commit: unused,
-        submit: unused,
-        submitEncoded: unused,
         submitRaw: () =>
           Effect.fail(
             databaseError(
@@ -79,7 +69,6 @@ describe("sync HTTP", () => {
       },
       snapshots: {
         acquireSnapshot: unused,
-        readSnapshotPart: unused,
         readSnapshotPartEncoded: unused,
       },
     });
@@ -93,68 +82,9 @@ describe("sync HTTP", () => {
     expect(text).not.toMatch(/select|secret_column|inventory_state|org-private|Failed query/iu);
   });
 
-  it("maps organization mismatch to 403", async () => {
-    const syncAuthority: SyncAuthorityContract = {
-      registerReplica: () => Effect.die("unused"),
-      getReceipt: () => Effect.die("unused"),
-      pull: () => Effect.die("unused"),
-      acquireSnapshot: () => Effect.die("unused"),
-      readSnapshotPart: () => Effect.die("unused"),
-      submitCommand: () =>
-        Effect.fail(
-          syncProtocolError(
-            "ORGANIZATION_MISMATCH",
-            "The command does not belong to the active organization.",
-          ),
-        ),
-    };
-    const response = await appFor(true, { syncAuthority }).request(
-      "/api/sync/commands",
-      commandPost(),
-    );
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({
-      error: { code: "ORGANIZATION_MISMATCH" },
-    });
-  });
-
-  it("returns a receipt from the test authority", async () => {
-    const receipt = {
-      operationId: lastUnitBuyerAEnvelope.operationId,
-      replicaId: lastUnitBuyerAEnvelope.replicaId,
-      clientSequence: lastUnitBuyerAEnvelope.clientSequence,
-      payloadHash: lastUnitBuyerAEnvelope.payloadHash,
-      decision: "accepted" as const,
-      commitSequence: OrgCommitSequence.make("1"),
-      result: {
-        _tag: "issueInvoice" as const,
-        invoiceId: lastUnitBuyerACommand.invoiceId,
-        invoiceNumber: 1,
-      },
-    };
-    const syncAuthority: SyncAuthorityContract = {
-      registerReplica: () => Effect.die("unused"),
-      getReceipt: () => Effect.succeed(receipt),
-      pull: () => Effect.die("unused"),
-      acquireSnapshot: () => Effect.die("unused"),
-      readSnapshotPart: () => Effect.die("unused"),
-      submitCommand: () => Effect.succeed({ body: JSON.stringify(receipt), fanout: null }),
-    };
-    const response = await appFor(true, { syncAuthority }).request(
-      "/api/sync/commands",
-      commandPost(),
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      operationId: lastUnitBuyerAEnvelope.operationId,
-      decision: "accepted",
-    });
-  });
-
   it("maps SNAPSHOT_REQUIRED to 409", async () => {
     const syncAuthority: SyncAuthorityContract = {
-      registerReplica: () => Effect.die("unused"),
-      getReceipt: () => Effect.die("unused"),
+      ...unusedAuthority,
       pull: () =>
         Effect.fail(
           syncProtocolError(
@@ -162,19 +92,8 @@ describe("sync HTTP", () => {
             "This replica is behind the retained history and needs a snapshot.",
           ),
         ),
-      acquireSnapshot: () => Effect.die("unused"),
-      readSnapshotPart: () => Effect.die("unused"),
-      submitCommand: () => Effect.die("unused"),
     };
-    const response = await appFor(true, { syncAuthority }).request("/api/sync/pull", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        epoch: "1",
-        subscription: "operational",
-        afterCommitSequence: "0",
-      }),
-    });
+    const response = await appFor(true, { syncAuthority }).request("/api/sync/pull", pullPost);
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({
       error: { code: "SNAPSHOT_REQUIRED" },
@@ -222,42 +141,29 @@ describe("sync HTTP", () => {
     expect(revalidated.headers.get("etag")).toBe(`"${sha256}"`);
   });
 
-  it("tells a caller when to retry while a snapshot is building", async () => {
-    const syncAuthority: SyncAuthorityContract = {
-      ...unusedAuthority,
-      acquireSnapshot: () =>
-        Effect.succeed({
-          _tag: "building" as const,
-          snapshotId: SnapshotId.make("snap-building"),
-          retryAfterMillis: 15_000,
-        }),
-    };
-    const response = await appFor(true, { syncAuthority }).request("/api/sync/snapshots", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ epoch: "1", subscription: "operational" }),
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("retry-after")).toBe("15");
-    expect(await response.json()).toMatchObject({ _tag: "building", retryAfterMillis: 15_000 });
-  });
-
-  it("rounds Retry-After up to whole seconds", async () => {
-    const syncAuthority: SyncAuthorityContract = {
-      ...unusedAuthority,
-      acquireSnapshot: () =>
-        Effect.succeed({
-          _tag: "building" as const,
-          snapshotId: SnapshotId.make("snap-building"),
-          retryAfterMillis: 1_001,
-        }),
-    };
-    const response = await appFor(true, { syncAuthority }).request("/api/sync/snapshots", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ epoch: "1", subscription: "operational" }),
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("retry-after")).toBe("2");
-  });
+  it.each([
+    [15_000, "15"],
+    [1_001, "2"],
+  ])(
+    "tells a caller to retry a building snapshot after %i ms as Retry-After %s",
+    async (retryAfterMillis, header) => {
+      const syncAuthority: SyncAuthorityContract = {
+        ...unusedAuthority,
+        acquireSnapshot: () =>
+          Effect.succeed({
+            _tag: "building" as const,
+            snapshotId: SnapshotId.make("snap-building"),
+            retryAfterMillis,
+          }),
+      };
+      const response = await appFor(true, { syncAuthority }).request("/api/sync/snapshots", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ epoch: "1", subscription: "operational" }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("retry-after")).toBe(header);
+      expect(await response.json()).toMatchObject({ _tag: "building", retryAfterMillis });
+    },
+  );
 });

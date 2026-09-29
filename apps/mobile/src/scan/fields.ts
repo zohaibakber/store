@@ -29,7 +29,7 @@ export type FieldFlags = { readonly [Field in ScanField]: string | null };
 
 export type ReviewValues = { readonly [Field in ScanField]: string };
 
-export const NO_FLAGS: FieldFlags = {
+const NO_FLAGS: FieldFlags = {
   name: null,
   composition: null,
   strength: null,
@@ -48,7 +48,7 @@ export const textContains = (haystack: string, needle: string): boolean => {
   return wanted.length > 0 && compact(haystack).includes(wanted);
 };
 
-export const packCountsInText = (text: string): ReadonlySet<number> => {
+const packCountsInText = (text: string): ReadonlySet<number> => {
   const counts = new Set<number>();
   for (const match of text.matchAll(/(\d{1,4})\s*[x×*]\s*(\d{1,4})/gi)) {
     counts.add(Number(match[1]) * Number(match[2]));
@@ -125,7 +125,7 @@ const expiryText = (text: string | null): string => {
   return parsed === null ? text : formatExpiry(parsed);
 };
 
-export const reviewValuesFrom = (result: ProductScanResult | null): ReviewValues => ({
+const reviewValuesFrom = (result: ProductScanResult | null): ReviewValues => ({
   name: result?.name ?? "",
   composition: result?.composition ?? "",
   strength: result?.strength ?? "",

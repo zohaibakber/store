@@ -4,7 +4,6 @@ import {
   SnapshotId,
   SnapshotPartHash,
   SyncEpoch,
-  syncProtocolError,
   OPERATIONAL_SUBSCRIPTION,
   type SnapshotManifest,
   type SnapshotPartPayload,
@@ -13,90 +12,30 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
-import * as Stream from "effect/Stream";
 
-import {
-  isSnapshotRequired,
-  recoverRequiredSnapshot,
-  SNAPSHOT_PART_FETCH_CONCURRENCY,
-} from "../src/recovery";
-import type { ReplicaSnapshotImportStore, ReplicaStoreContract } from "../src/replica/store";
-import { dispositionFor, SyncTransportUnavailable, type SyncTransport } from "../src/transport";
+import { recoverRequiredSnapshot, SNAPSHOT_PART_FETCH_CONCURRENCY } from "../src/recovery";
+import type { ReplicaSnapshotImportStore } from "../src/replica/store";
+import { dispositionFor, SyncTransportUnavailable } from "../src/transport";
+import { stubTransport } from "./lib/engine-fixture";
 
 const acquireRequest = {
   epoch: SyncEpoch.make("1"),
   subscription: OPERATIONAL_SUBSCRIPTION,
 };
 
-const unusedTransport = (acquireSnapshot: SyncTransport["acquireSnapshot"]): SyncTransport => ({
-  registerReplica: () => Effect.die("unused"),
-  submitCommand: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  pull: () => Effect.die("unused"),
-  acquireSnapshot,
-  readSnapshotPart: () => Effect.die("unused"),
-});
-
-const unusedStore = {
-  readSyncCursor: () =>
-    Effect.succeed({
-      epoch: "1",
-      appliedCommitSequence: "0",
-      replicaId: "replica-1",
-      registered: true,
-    }),
-  adoptRegistration: () => Effect.die("unused"),
-  beginSnapshotImport: () => Effect.die("unused begin"),
-  importSnapshotPart: () => Effect.die("unused import"),
-  activateSnapshot: () => Effect.die("unused activate"),
-  readStamp: () => Effect.succeed({ generationId: "1", localCommitVersion: 0 }),
-  enqueueCommand: () => Effect.die("unused"),
-  claimNextUpload: () => Effect.die("unused"),
-  settleUploadClaim: () => Effect.die("unused"),
-  settleUploadWithPage: () => Effect.die("unused"),
-  releaseUploadClaim: () => Effect.die("unused"),
-  recoverStaleUploadClaims: () => Effect.die("unused"),
-  verifyAuthority: () => Effect.die("unused"),
-  markCoverageRepair: () => Effect.die("unused"),
-  readDigestVerification: () => Effect.die("unused"),
-  recordDigestVerification: () => Effect.die("unused"),
-  applyRemotePage: () => Effect.die("unused"),
-  applyTransactionGroup: () => Effect.die("unused"),
-  readCommandStatus: () => Effect.die("unused"),
-  readPendingMarks: () => Effect.die("unused"),
-  recordCaughtUp: () => Effect.die("unused"),
-  commits: Stream.empty,
-} satisfies ReplicaStoreContract;
-
 describe("snapshot recovery", () => {
-  it("classifies SNAPSHOT_REQUIRED", () => {
-    expect(isSnapshotRequired(syncProtocolError("SNAPSHOT_REQUIRED", "behind"))).toBe(true);
-    expect(isSnapshotRequired(syncProtocolError("SNAPSHOT_UNAVAILABLE", "none"))).toBe(false);
-  });
-
-  it.effect("fails closed when acquireSnapshot reports no published snapshot", () =>
-    Effect.gen(function* () {
-      const transport = unusedTransport(() =>
-        Effect.fail(syncProtocolError("SNAPSHOT_UNAVAILABLE", "No snapshot is published.")),
-      );
-      const result = yield* Effect.flip(
-        recoverRequiredSnapshot(transport, unusedStore, acquireRequest),
-      );
-      expect(result).toMatchObject({ code: "SNAPSHOT_UNAVAILABLE" });
-    }),
-  );
-
   it.effect("retries a building snapshot after the server's retry hint", () =>
     Effect.gen(function* () {
-      const transport = unusedTransport(() =>
-        Effect.succeed({
-          _tag: "building" as const,
-          snapshotId: SnapshotId.make("snapshot-building"),
-          retryAfterMillis: 5_000,
-        }),
-      );
+      const transport = stubTransport({
+        acquireSnapshot: () =>
+          Effect.succeed({
+            _tag: "building" as const,
+            snapshotId: SnapshotId.make("snapshot-building"),
+            retryAfterMillis: 5_000,
+          }),
+      });
       const result = yield* Effect.flip(
-        recoverRequiredSnapshot(transport, unusedStore, acquireRequest),
+        recoverRequiredSnapshot(transport, recordingImportStore(0), acquireRequest),
       );
       expect(result).toBeInstanceOf(SyncTransportUnavailable);
       expect(dispositionFor(result)).toEqual({ _tag: "retry", delayMillis: 5_000 });
@@ -110,14 +49,14 @@ describe("snapshot recovery", () => {
       const releases = new Map<number, Deferred.Deferred<void>>();
       for (const part of manifest.parts)
         releases.set(part.partNumber, yield* Deferred.make<void>());
-      const transport: SyncTransport = {
-        ...unusedTransport(() => Effect.succeed({ _tag: "ready" as const, manifest })),
+      const transport = stubTransport({
+        acquireSnapshot: () => Effect.succeed({ _tag: "ready" as const, manifest }),
         readSnapshotPart: (snapshotId, partNumber) =>
           Queue.offer(started, partNumber).pipe(
             Effect.andThen(Deferred.await(releases.get(partNumber) ?? Deferred.makeUnsafe<void>())),
             Effect.as(partPayload(snapshotId, partNumber)),
           ),
-      };
+      });
       const store = recordingImportStore(0);
       const recovery = yield* Effect.forkChild(
         recoverRequiredSnapshot(transport, store, acquireRequest),
@@ -141,14 +80,14 @@ describe("snapshot recovery", () => {
     Effect.gen(function* () {
       const manifest = manifestWithParts(4);
       const fetched: Array<number> = [];
-      const transport: SyncTransport = {
-        ...unusedTransport(() => Effect.succeed({ _tag: "ready" as const, manifest })),
+      const transport = stubTransport({
+        acquireSnapshot: () => Effect.succeed({ _tag: "ready" as const, manifest }),
         readSnapshotPart: (snapshotId, partNumber) =>
           Effect.sync(() => {
             fetched.push(partNumber);
             return partPayload(snapshotId, partNumber);
           }),
-      };
+      });
       const store = recordingImportStore(2);
       yield* recoverRequiredSnapshot(transport, store, acquireRequest);
       expect(fetched.sort((left, right) => left - right)).toEqual([3, 4]);

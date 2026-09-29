@@ -27,7 +27,6 @@ import { TestClock } from "effect/testing";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 import { afterEach } from "vitest";
 
-import { IndexedDbReplicaStore as BrowserIndexedDbReplicaStore } from "../src/browser";
 import { SyncEngine } from "../src/engine";
 import {
   IndexedDbReplicaStore,
@@ -152,7 +151,6 @@ describe("sync layers", () => {
       }),
     );
     await runtime.dispose();
-    expect(BrowserIndexedDbReplicaStore).toBe(IndexedDbReplicaStore);
     expect(seen.same).toBe(true);
     expect(seen.allocation).toEqual({ epoch: "1", nextClientSequence: "1" });
     expect(seen.statuses).toEqual([]);

@@ -24,7 +24,7 @@ type LegacyMigrationToast = {
 const unsyncedChanges = (count: number) =>
   count === 1 ? "1 unsynced change" : `${count} unsynced changes`;
 
-export const legacyMigrationToast = (notice: LegacyMigrationNotice): LegacyMigrationToast => {
+const legacyMigrationToast = (notice: LegacyMigrationNotice): LegacyMigrationToast => {
   if (notice.carriedOver === 0) {
     return {
       title: `${changes(notice.rejected)} from the previous version could not be applied`,

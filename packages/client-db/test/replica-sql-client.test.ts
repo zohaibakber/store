@@ -106,9 +106,6 @@ describe("openSqlClientReplicaHandle", () => {
       expect(network.requested.some((url) => url.startsWith(API_BASE_URL))).toBe(true);
     });
 
-    await handle.setVisible(false);
-    await handle.wakeSync("reconnect");
-    handle.wakeSyncUpload?.();
     unsubscribe();
     await handle.dispose();
   });

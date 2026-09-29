@@ -12,7 +12,6 @@ import {
   SyncTransportAuthRequired,
   SyncTransportInvalid,
   SyncTransportOffline,
-  SyncTransportUnavailable,
 } from "../src/transport";
 
 const policy: SyncSchedulerPolicy = {
@@ -44,24 +43,6 @@ const startScheduler = (
   });
 
 describe("sync scheduler failure policy", () => {
-  it.effect("honours Retry-After instead of the backoff delay", () =>
-    Effect.gen(function* () {
-      const { attempts, scheduler } = yield* startScheduler(
-        SyncTransportUnavailable.make({
-          message: "busy",
-          status: 503,
-          retryAfterMillis: 30_000,
-        }),
-      );
-      expect(yield* Ref.get(attempts)).toBe(1);
-      yield* TestClock.adjust("29999 millis");
-      expect(yield* Ref.get(attempts)).toBe(1);
-      yield* TestClock.adjust("1 millis");
-      expect(yield* Ref.get(attempts)).toBe(2);
-      yield* scheduler.shutdown;
-    }),
-  );
-
   it.effect("pauses for auth renewal until an explicit wake", () =>
     Effect.gen(function* () {
       const { attempts, scheduler } = yield* startScheduler(

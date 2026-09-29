@@ -25,10 +25,10 @@ export class ScanRejected extends Schema.TaggedError<ScanRejected>()("ScanReject
 
 export type ScanParseError = ScanOffline | ScanRateLimited | ScanFailed | ScanRejected;
 
-export const DEFAULT_RETRY_AFTER_MILLIS = 60_000;
+const DEFAULT_RETRY_AFTER_MILLIS = 60_000;
 const PARSE_TIMEOUT = "25 seconds";
 
-export const retryAfterMillis = (header: string | undefined, now: number): number => {
+const retryAfterMillis = (header: string | undefined, now: number): number => {
   const trimmed = header?.trim();
   if (!trimmed) return DEFAULT_RETRY_AFTER_MILLIS;
   if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
@@ -43,7 +43,7 @@ const fallbackMessage = (status: number): string => {
   return "This scan could not be auto-filled.";
 };
 
-export const scanFailureFor = (
+const scanFailureFor = (
   status: number,
   retryAfter: string | undefined,
   now: number,

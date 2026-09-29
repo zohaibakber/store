@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
+import { typedCommands } from "./typed-commands";
 
 let database: AuthorityPostgres;
 
@@ -104,7 +105,7 @@ const batchWrite = (expectedRowVersion: number | null, packQuantity: number) => 
 const openRegistered = (organizationId: string) =>
   Effect.gen(function* () {
     const db = yield* PgDrizzle.makeWithDefaults();
-    const commands = makeInventoryCommands(db);
+    const commands = typedCommands(makeInventoryCommands(db));
     const actor = { organizationId, userId: "integrity-user" };
     yield* commands.register(actor, { replicaId: REPLICA_ID });
     return { db, commands, actor };
@@ -263,7 +264,7 @@ describe("postgres command integrity", () => {
     const result = await run(
       Effect.gen(function* () {
         const db = yield* PgDrizzle.makeWithDefaults();
-        const commands = makeInventoryCommands(db);
+        const commands = typedCommands(makeInventoryCommands(db));
         const actor = { organizationId, userId: "integrity-user" };
         const registrations = yield* Effect.all(
           [

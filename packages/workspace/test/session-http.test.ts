@@ -6,12 +6,8 @@ import {
   RequestError,
   SessionHttpClient,
   cookieSessionNeedsRefresh,
-  isAccessTokenFresh,
-  normalizeApiBaseUrl,
-  normalizeAuthBaseUrl,
   refreshTokenNeedsRefresh,
   requestErrorFromPayload,
-  serializeRequestBody,
 } from "../src/session-http";
 
 const tokens = (accessExpiresAt: number) =>
@@ -23,19 +19,6 @@ const tokens = (accessExpiresAt: number) =>
   });
 
 describe("session-http helpers", () => {
-  it("normalizes api and auth base urls", () => {
-    expect(normalizeApiBaseUrl("http://localhost:8787/api/")).toBe("http://localhost:8787");
-    expect(normalizeApiBaseUrl("http://localhost:8787/")).toBe("http://localhost:8787");
-    expect(normalizeAuthBaseUrl("http://localhost:8788/")).toBe("http://localhost:8788");
-  });
-
-  it("detects fresh access tokens with the refresh skew", () => {
-    const now = 1_000_000;
-    expect(isAccessTokenFresh(tokens(now + 31_000), 30_000, now)).toBe(true);
-    expect(isAccessTokenFresh(tokens(now + 30_000), 30_000, now)).toBe(false);
-    expect(isAccessTokenFresh(null, 30_000, now)).toBe(false);
-  });
-
   it("applies cookie vs refresh-token refresh gates", () => {
     const fresh = tokens(Date.now() + 60_000);
     const stale = tokens(Date.now() + 1_000);
@@ -47,16 +30,6 @@ describe("session-http helpers", () => {
     expect(refreshTokenNeedsRefresh(null)).toBe(false);
     expect(refreshTokenNeedsRefresh(fresh, true)).toBe(true);
     expect(refreshTokenNeedsRefresh(null, true)).toBe(false);
-  });
-
-  it("serializes JSON bodies and leaves FormData alone", () => {
-    expect(serializeRequestBody({ a: 1 })).toEqual({
-      body: '{"a":1}',
-      setJsonContentType: true,
-    });
-    expect(serializeRequestBody("raw")).toEqual({ body: "raw", setJsonContentType: false });
-    const form = new FormData();
-    expect(serializeRequestBody(form)).toEqual({ body: form, setJsonContentType: false });
   });
 
   it("parses nested and flat request failures", () => {
@@ -90,8 +63,8 @@ describe("SessionHttpClient", () => {
         Response.json({ message: "This session is not authorized." }, { status: 403 }),
       );
     const client = new SessionHttpClient({
-      apiBaseUrl: "http://localhost:8787",
-      authBaseUrl: "http://localhost:8788",
+      apiBaseUrl: "http://localhost:8787/api/",
+      authBaseUrl: "http://localhost:8788/",
       tokens: store,
       fetch,
       refreshSession: async () => store.get(),
@@ -99,8 +72,10 @@ describe("SessionHttpClient", () => {
     });
 
     await expect(client.apiRequest("/api/auth/session")).rejects.toBeInstanceOf(RequestError);
+    expect(client.authBaseUrl).toBe("http://localhost:8788");
     expect(fetch).toHaveBeenCalledOnce();
-    const [, init] = fetch.mock.calls[0]!;
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8787/api/auth/session");
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer access");
   });
 
@@ -211,7 +186,7 @@ describe("SessionHttpClient", () => {
     expect(await third).toEqual(await second);
   });
 
-  it("applies host request headers", async () => {
+  it("applies host request headers and encodes JSON bodies", async () => {
     const store = new MemoryTokenStore();
     store.set(tokens(Date.now() + 60_000));
     const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true }));
@@ -225,9 +200,12 @@ describe("SessionHttpClient", () => {
       requestHeaders: () => ({ "electron-origin": "app://app" }),
     });
 
-    await client.apiRequest("/api/auth/session");
+    await client.apiRequest("/api/organizations", { method: "POST", body: { a: 1 } });
     const [, init] = fetch.mock.calls[0]!;
-    expect(new Headers(init.headers).get("electron-origin")).toBe("app://app");
+    const headers = new Headers(init.headers);
+    expect(headers.get("electron-origin")).toBe("app://app");
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(init.body).toBe('{"a":1}');
   });
 
   it("forces one coalesced refresh and replays once after a 401", async () => {

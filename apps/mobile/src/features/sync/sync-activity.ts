@@ -45,7 +45,7 @@ export const lastSyncedLabel = (lastCaughtUpAt: number | null, now: number): str
   return `Synced ${formatDateTime(lastCaughtUpAt)}`;
 };
 
-export const pendingLabel = (count: number): string => {
+const pendingLabel = (count: number): string => {
   if (count === 0) return "Nothing waiting to upload";
   if (count === 1) return "1 change waiting to upload";
   return `${formatCount(count)} changes waiting to upload`;

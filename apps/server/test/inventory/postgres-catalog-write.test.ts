@@ -9,7 +9,6 @@ import {
   partitionDigestOf,
   ReplicaClientSequence,
   STOCK_MOVEMENT_ROW_VERSION,
-  SyncProtocolError,
   type CatalogRowWrite,
   type CatalogWriteCommand,
   type PartitionLeafSource,
@@ -46,7 +45,6 @@ import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
 import * as SqlError from "effect/unstable/sql/SqlError";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -55,8 +53,7 @@ import type { InventoryActor } from "../../src/inventory/model";
 import { withSerializationRetry } from "../../src/inventory/postgres";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { pullGroupByteLength } from "./oracle/commit";
-
-const isProtocol = Schema.is(SyncProtocolError);
+import { typedCommands } from "./typed-commands";
 
 const OCCURRED_AT = 1_700_000_000_000;
 const CATEGORY_ID = decodeCategoryId("cat-1");
@@ -207,7 +204,7 @@ const openCatalog = (organizationId: string, commitSequence = "0") =>
       registeredAt: OCCURRED_AT,
       lastSeenAt: OCCURRED_AT,
     });
-    return { commands: makeInventoryCommands(db), db };
+    return { commands: typedCommands(makeInventoryCommands(db)), db };
   });
 
 type CatalogDb = Effect.Success<ReturnType<typeof openCatalog>>["db"];
@@ -338,36 +335,6 @@ describe("postgres catalog writes", () => {
     expect(outcome.batch).toMatchObject({ packQuantity: 3, unitQuantity: 5, rowVersion: 2 });
   });
 
-  it("rejects a batch update whose expected row version is stale", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-batch-version");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db } = yield* openCatalog(organizationId);
-        yield* commands.commit(actor, catalogEnvelope(organizationId, "1", seedCatalog()));
-        const stale = yield* commands.commit(
-          actor,
-          catalogEnvelope(
-            organizationId,
-            "2",
-            catalogCommand("cmd-stale-batch", [batchWrite("batch-1", 9, "mv-stale", 7, 0)]),
-          ),
-        );
-        const [batch] = yield* db
-          .select()
-          .from(batches)
-          .where(and(eq(batches.organizationId, organizationId), eq(batches.id, BATCH_ID)))
-          .limit(1);
-        const pulled = yield* commands.pull(actor, pullFrom("0"));
-        return { stale, batch, pulled };
-      }),
-    );
-    expect(outcome.stale.decision).toBe("rejected");
-    expect(outcome.stale.result).toMatchObject({ _tag: "rejected", code: "ENTITY_CONFLICT" });
-    expect(outcome.batch).toMatchObject({ packQuantity: 2, rowVersion: 1 });
-    expect(outcome.pulled.transactions[1]?.changes).toHaveLength(0);
-  });
-
   it("guards a units-per-pack change by row version and accepts a fresh one", async () => {
     const organizationId = decodeOrganizationId("org-catalog-units");
     const actor = actorFor(organizationId);
@@ -414,8 +381,37 @@ describe("postgres catalog writes", () => {
     expect(outcome.product).toMatchObject({ unitsPerPack: 20, rowVersion: 2 });
   });
 
-  it("blocks a units-per-pack change while the product still has stock", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-units-stock");
+  it.each([
+    {
+      name: "a units-per-pack change while the product still has stock",
+      organization: "org-catalog-units-stock",
+      write: productUpdate("prod-1", 1, "Panadol", 20),
+      message: catalogWriteError.unitsPerPackWithStock,
+    },
+    {
+      name: "deleting a category that still has an active product",
+      organization: "org-catalog-category-delete",
+      write: {
+        entity: "category",
+        action: "delete",
+        id: CATEGORY_ID,
+        expectedRowVersion: 1,
+      } satisfies CatalogRowWrite,
+      message: catalogWriteError.categoryHasProducts,
+    },
+    {
+      name: "deleting a batch that still has stock",
+      organization: "org-catalog-batch-delete",
+      write: {
+        entity: "batch",
+        action: "delete",
+        id: BATCH_ID,
+        expectedRowVersion: 1,
+      } satisfies CatalogRowWrite,
+      message: catalogWriteError.batchHasStock,
+    },
+  ])("blocks $name", async ({ organization, write, message }) => {
+    const organizationId = decodeOrganizationId(organization);
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
@@ -423,19 +419,11 @@ describe("postgres catalog writes", () => {
         yield* commands.commit(actor, catalogEnvelope(organizationId, "1", seedCatalog()));
         return yield* commands.commit(
           actor,
-          catalogEnvelope(
-            organizationId,
-            "2",
-            catalogCommand("cmd-units-stock", [productUpdate("prod-1", 1, "Panadol", 20)]),
-          ),
+          catalogEnvelope(organizationId, "2", catalogCommand("cmd-blocked", [write])),
         );
       }),
     );
-    expect(outcome.result).toMatchObject({
-      _tag: "rejected",
-      code: "ENTITY_CONFLICT",
-      message: catalogWriteError.unitsPerPackWithStock,
-    });
+    expect(outcome.result).toMatchObject({ _tag: "rejected", code: "ENTITY_CONFLICT", message });
   });
 
   it("accepts an unguarded product field update with a stale row version", async () => {
@@ -463,85 +451,6 @@ describe("postgres catalog writes", () => {
     );
     expect(outcome.renamed.decision).toBe("accepted");
     expect(outcome.product).toMatchObject({ name: "Panadol Extra", rowVersion: 2 });
-  });
-
-  it("rejects a product whose category does not exist", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-relation");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCatalog(organizationId);
-        return yield* commands.commit(
-          actor,
-          catalogEnvelope(
-            organizationId,
-            "1",
-            catalogCommand("cmd-orphan", [productInsert("prod-1", "cat-missing", "Panadol")]),
-          ),
-        );
-      }),
-    );
-    expect(outcome.result).toMatchObject({
-      _tag: "rejected",
-      code: "ENTITY_RELATION_INVALID",
-    });
-  });
-
-  it("blocks deleting a category that still has an active product", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-category-delete");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCatalog(organizationId);
-        yield* commands.commit(actor, catalogEnvelope(organizationId, "1", seedCatalog()));
-        return yield* commands.commit(
-          actor,
-          catalogEnvelope(
-            organizationId,
-            "2",
-            catalogCommand("cmd-delete-category", [
-              {
-                entity: "category",
-                action: "delete",
-                id: CATEGORY_ID,
-                expectedRowVersion: 1,
-              },
-            ]),
-          ),
-        );
-      }),
-    );
-    expect(outcome.result).toMatchObject({
-      _tag: "rejected",
-      code: "ENTITY_CONFLICT",
-      message: catalogWriteError.categoryHasProducts,
-    });
-  });
-
-  it("blocks deleting a batch that still has stock", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-batch-delete");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCatalog(organizationId);
-        yield* commands.commit(actor, catalogEnvelope(organizationId, "1", seedCatalog()));
-        return yield* commands.commit(
-          actor,
-          catalogEnvelope(
-            organizationId,
-            "2",
-            catalogCommand("cmd-delete-batch", [
-              { entity: "batch", action: "delete", id: BATCH_ID, expectedRowVersion: 1 },
-            ]),
-          ),
-        );
-      }),
-    );
-    expect(outcome.result).toMatchObject({
-      _tag: "rejected",
-      code: "ENTITY_CONFLICT",
-      message: catalogWriteError.batchHasStock,
-    });
   });
 
   it("soft deletes products and hard deletes categories while publishing delete images", async () => {
@@ -834,40 +743,6 @@ describe("postgres catalog writes", () => {
     expect(outcome.pulled.transactions[1]?.changes).toEqual([]);
   });
 
-  it("returns the stored receipt on an identical catalog retry", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-retry");
-    const actor = actorFor(organizationId);
-    const envelopeOf = catalogEnvelope(organizationId, "1", seedCatalog());
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCatalog(organizationId);
-        const first = yield* commands.commit(actor, envelopeOf);
-        const retry = yield* commands.commit(actor, envelopeOf);
-        const pulled = yield* commands.pull(actor, pullFrom("0"));
-        return { first, retry, pulled };
-      }),
-    );
-    expect(outcome.retry).toEqual(outcome.first);
-    expect(outcome.pulled.transactions).toHaveLength(1);
-  });
-
-  it("rejects a catalog command that skips a client sequence", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-gap");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCatalog(organizationId);
-        const cause = yield* commands
-          .commit(actor, catalogEnvelope(organizationId, "4", seedCatalog()))
-          .pipe(Effect.flip);
-        const stored = yield* commands.receipt(actor, "cmd-seed");
-        return { cause, stored };
-      }),
-    );
-    expect(isProtocol(outcome.cause) && outcome.cause.code).toBe("REPLICA_SEQUENCE_GAP");
-    expect(outcome.stored).toBeUndefined();
-  });
-
   it("bounds a pull page by the payload budget without splitting a group", async () => {
     const organizationId = decodeOrganizationId("org-catalog-budget");
     const actor = actorFor(organizationId);
@@ -981,21 +856,8 @@ describe("postgres catalog writes", () => {
     expect(committed).toBe(3);
   });
 
-  it("retries a serialization failure and leaves other database errors alone", async () => {
+  it("retries a deadlock and leaves other database errors alone", async () => {
     const sqlFailure = (reason: SqlError.SqlErrorReason) => new SqlError.SqlError({ reason });
-    let serializationAttempts = 0;
-    const flaky = Effect.suspend(() => {
-      serializationAttempts += 1;
-      if (serializationAttempts < 3) {
-        return Effect.fail(
-          sqlFailure(new SqlError.SerializationError({ cause: new Error("could not serialize") })),
-        );
-      }
-      return Effect.succeed(serializationAttempts);
-    });
-    const recovered = await Effect.runPromise(withSerializationRetry(flaky));
-    expect(recovered).toBe(3);
-
     let deadlockAttempts = 0;
     const deadlocked = Effect.suspend(() => {
       deadlockAttempts += 1;

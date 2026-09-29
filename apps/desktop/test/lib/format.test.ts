@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatCount, parseExpiryDate, pluralize } from "@/lib/format";
+import { parseExpiryDate } from "@/lib/format";
 
 const dayMonthYear = (timestamp: number | null) => {
   if (timestamp == null) return null;
@@ -9,58 +9,19 @@ const dayMonthYear = (timestamp: number | null) => {
 };
 
 describe("parseExpiryDate", () => {
-  it("reads the day-first format invoices use", () => {
-    expect(dayMonthYear(parseExpiryDate("31-12-2027"))).toEqual([31, 12, 2027]);
-  });
-
-  it("reads an ambiguous date day-first rather than month-first", () => {
-    expect(dayMonthYear(parseExpiryDate("05-06-2027"))).toEqual([5, 6, 2027]);
-  });
-
-  it("accepts slash separators", () => {
-    expect(dayMonthYear(parseExpiryDate("01/02/2028"))).toEqual([1, 2, 2028]);
-  });
-
-  it("still accepts ISO dates, which CSV exports commonly use", () => {
-    expect(dayMonthYear(parseExpiryDate("2027-12-31"))).toEqual([31, 12, 2027]);
-  });
-
-  it("returns null for absent or blank values", () => {
-    expect(parseExpiryDate(null)).toBeNull();
-    expect(parseExpiryDate("")).toBeNull();
-    expect(parseExpiryDate("   ")).toBeNull();
-  });
-
-  it("returns null rather than guessing at an unreadable date", () => {
-    expect(parseExpiryDate("not a date")).toBeNull();
-    expect(parseExpiryDate("13/13/2027")).toBeNull();
-  });
-
-  it("returns null for an impossible day", () => {
-    expect(parseExpiryDate("31-02-2027")).toBeNull();
-  });
-
-  it("tolerates surrounding whitespace", () => {
-    expect(dayMonthYear(parseExpiryDate("  31-12-2027  "))).toEqual([31, 12, 2027]);
-  });
-});
-
-describe("pluralize", () => {
-  it("uses the singular only for one", () => {
-    expect(pluralize(1, "unit")).toBe("unit");
-    expect(pluralize(0, "unit")).toBe("units");
-    expect(pluralize(2, "unit")).toBe("units");
-  });
-
-  it("accepts an irregular plural", () => {
-    expect(pluralize(3, "batch", "batches")).toBe("batches");
-  });
-});
-
-describe("formatCount", () => {
-  it("groups digits and pluralizes the noun", () => {
-    expect(formatCount(1, "unit")).toBe("1 unit");
-    expect(formatCount(1765, "unit")).toBe(`${(1765).toLocaleString()} units`);
-    expect(formatCount(2, "entry", "entries")).toBe("2 entries");
+  it.each([
+    ["31-12-2027", [31, 12, 2027]],
+    ["05-06-2027", [5, 6, 2027]],
+    ["01/02/2028", [1, 2, 2028]],
+    ["2027-12-31", [31, 12, 2027]],
+    ["  31-12-2027  ", [31, 12, 2027]],
+    [null, null],
+    ["", null],
+    ["   ", null],
+    ["not a date", null],
+    ["13/13/2027", null],
+    ["31-02-2027", null],
+  ])("reads %j day-first", (input, expected) => {
+    expect(dayMonthYear(parseExpiryDate(input))).toEqual(expected);
   });
 });

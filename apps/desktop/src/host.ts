@@ -50,9 +50,8 @@ export interface AppHost {
 
 let installed: AppHost | null = null;
 
-export const installAppHost = (host: AppHost): AppHost => {
+export const installAppHost = (host: AppHost) => {
   installed = host;
-  return host;
 };
 
 export const appHost = (): AppHost => {

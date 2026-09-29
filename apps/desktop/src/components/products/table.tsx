@@ -218,7 +218,7 @@ export const viewWithSorting = (view: ProductListView, sorting: SortingState): P
 const pageSizeFrom = (size: number): ProductPageSize =>
   PRODUCT_PAGE_SIZES.find((candidate) => candidate === size) ?? DEFAULT_PRODUCT_LIST_VIEW.size;
 
-export const viewWithPagination = (
+const viewWithPagination = (
   view: ProductListView,
   pagination: PaginationState,
 ): ProductListView => {

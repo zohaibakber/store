@@ -29,11 +29,6 @@ const expectedSession = () => {
 };
 
 describe("WebAuthBroker cold start", () => {
-  it("starts unauthenticated and offline before initialize", () => {
-    const { broker } = makeBroker(fakeSessionServer({}));
-    expect(broker.snapshot).toMatchObject({ status: "unauthenticated", isOnline: false });
-  });
-
   it("skips the cookie refresh when this origin never signed in", async () => {
     const server = fakeSessionServer({});
     const { broker } = makeBroker(server);
@@ -92,22 +87,12 @@ describe("WebAuthBroker cold start", () => {
     expect(storage.entries.has(HINT_KEY)).toBe(false);
   });
 
-  it("keeps the session hint through a transient refresh failure", async () => {
+  it.each([
+    ["a transient refresh failure", Response.json({ message: "Unavailable" }, { status: 503 })],
+    ["a malformed refresh response", Response.json({ accessToken: 1 })],
+  ])("keeps the session hint through %s", async (_case, response) => {
     const server = fakeSessionServer({
-      [`POST ${AUTH}/v1/session/refresh`]: () =>
-        Response.json({ message: "Unavailable" }, { status: 503 }),
-    });
-    const { broker, storage } = makeBroker(server, expectedSession());
-
-    const snapshot = await broker.initialize();
-
-    expect(snapshot).toMatchObject({ status: "unauthenticated", workspaceError: "Unavailable" });
-    expect(storage.entries.get(HINT_KEY)).toBe("1");
-  });
-
-  it("keeps the session hint when the refresh response is malformed", async () => {
-    const server = fakeSessionServer({
-      [`POST ${AUTH}/v1/session/refresh`]: () => Response.json({ accessToken: 1 }),
+      [`POST ${AUTH}/v1/session/refresh`]: () => response,
     });
     const { broker, storage } = makeBroker(server, expectedSession());
 

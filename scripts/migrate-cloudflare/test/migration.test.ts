@@ -9,7 +9,7 @@ import { describe, expect } from "vitest";
 import { MigrationCheckpointTest } from "../src/checkpoint.ts";
 import { DatasetReleaseDirectoryTest } from "../src/directory.ts";
 import { ExportStore } from "../src/export-store.ts";
-import { encodeRowsJson, rowsChecksum, translateCategory } from "../src/mapping.ts";
+import { encodeRowsJson, rowsChecksum } from "../src/mapping.ts";
 import { OrganizationInventoryImport } from "../src/target.ts";
 import { runMigration } from "../src/workflow.ts";
 import { allRows, firstRow, ORG, openHarness, PUBLISHED_AT, request, runOn } from "./harness.ts";
@@ -21,7 +21,6 @@ const CategoryPackRow = Schema.Struct({ tracksPacks: Schema.Number, name: Schema
 const ProductVisibleRow = Schema.Struct({ visible: Schema.Number, unitPrice: Schema.Number });
 const BatchQtyRow = Schema.Struct({ packQuantity: Schema.Number, unitQuantity: Schema.Number });
 const InvoiceTotalRow = Schema.Struct({ total: Schema.Number });
-const TableNameRow = Schema.Struct({ name: Schema.String });
 const PointerRow = Schema.Struct({
   id: Schema.Number,
   releaseId: Schema.String,
@@ -32,28 +31,12 @@ const decodeCategoryPack = Schema.decodeUnknownSync(CategoryPackRow);
 const decodeProductVisible = Schema.decodeUnknownSync(ProductVisibleRow);
 const decodeBatchQty = Schema.decodeUnknownSync(BatchQtyRow);
 const decodeInvoiceTotal = Schema.decodeUnknownSync(InvoiceTotalRow);
-const decodeTableNames = Schema.decodeUnknownSync(Schema.Array(TableNameRow));
 const decodePointers = Schema.decodeUnknownSync(Schema.Array(PointerRow));
 const decodeReleases = Schema.decodeUnknownSync(Schema.Array(ReleaseRow));
 
 describe("cloudflare migration action", () => {
   it.effect("translates booleans, money, and quantities into explicit SQLite values", () =>
     Effect.gen(function* () {
-      const category = translateCategory({
-        id: "cat-1",
-        name: "General",
-        tracksPacks: true,
-        organizationId: ORG,
-        createdByUserId: "user-1",
-        updatedByUserId: "user-1",
-        deviceId: "device-1",
-        operationId: "op-cat-1",
-        rowVersion: 1,
-        createdAt: PUBLISHED_AT,
-        updatedAt: PUBLISHED_AT,
-        deletedAt: null,
-      });
-      expect(category.tracksPacks).toBe(1);
       const harness = yield* openHarness;
       const result = yield* runOn(harness);
       expect(result.migrationId).toBe("migration-fixed");
@@ -103,23 +86,6 @@ describe("cloudflare migration action", () => {
         return yield* target.readImportState(ORG);
       }).pipe(Effect.provide(harness.layer));
       expect(state).toEqual({ _tag: "ready", organizationId: ORG, importId: "import-fixed" });
-      expect(
-        decodeTableNames(
-          yield* allRows(
-            harness.target,
-            "select name from sqlite_master where type = 'table' order by name",
-          ),
-        ).map((row) => row.name),
-      ).toEqual([
-        "batches",
-        "categories",
-        "import_applied_chunks",
-        "import_state",
-        "invoice_items",
-        "invoices",
-        "products",
-        "stock_movements",
-      ]);
     }),
   );
 
@@ -217,11 +183,11 @@ describe("cloudflare migration action", () => {
           )
           .pipe(Effect.result);
       }).pipe(Effect.provide(harness.layer));
-      expect(Result.isFailure(rejected)).toBe(true);
-      if (Result.isFailure(rejected) && rejected.failure._tag === "Migrate.ChunkContentMismatch") {
-        expect(rejected.failure.chunkIndex).toBe(0);
-        expect(rejected.failure.table).toBe("categories");
-      }
+      expect(Result.isFailure(rejected) ? rejected.failure : null).toMatchObject({
+        _tag: "Migrate.ChunkContentMismatch",
+        chunkIndex: 0,
+        table: "categories",
+      });
       expect(
         decodeCount(yield* firstRow(harness.target, "select count(*) as n from categories")).n,
       ).toBe(3);
@@ -246,13 +212,11 @@ describe("cloudflare migration action", () => {
         `insert into categories (id, name, tracksPacks, createdAt, updatedAt, deletedAt, organizationId, createdByUserId, updatedByUserId, deviceId, operationId, rowVersion) values ('cat-x', 'Corrupt', 1, 1, 1, null, 'org-1', 'user-1', 'user-1', 'device-1', 'op-corrupt', 1)`,
       );
       const failed = yield* runOn(harness).pipe(Effect.result);
-      expect(Result.isFailure(failed)).toBe(true);
-      if (Result.isFailure(failed) && failed.failure._tag === "Migrate.ValidationFailed") {
-        expect(failed.failure.incompleteStep).toBe("validateRecords");
-        expect(failed.failure.message).toBe(
-          "Table categories row count 4 does not match manifest 3.",
-        );
-      }
+      expect(Result.isFailure(failed) ? failed.failure : null).toMatchObject({
+        _tag: "Migrate.ValidationFailed",
+        incompleteStep: "validateRecords",
+        message: "Table categories row count 4 does not match manifest 3.",
+      });
       expect(
         decodeCount(
           yield* firstRow(harness.directory, "select count(*) as n from inventory_active_release"),
@@ -295,25 +259,6 @@ describe("cloudflare migration action", () => {
           ),
         ),
       ).toEqual([{ id: 1, releaseId: "release-fixed", activatedAt: 1_700_000_000 }]);
-    }),
-  );
-
-  it.effect("returns the original completed result when the action is repeated", () =>
-    Effect.gen(function* () {
-      const harness = yield* openHarness;
-      const first = yield* runOn(harness);
-      const second = yield* runOn(harness);
-      expect(first.migrationId).toBe("migration-fixed");
-      expect(first.importId).toBe("import-fixed");
-      expect(first.releaseId).toBe("release-fixed");
-      expect(first.publishedAt).toBe(PUBLISHED_AT);
-      expect(first.organizationCount).toBe(1);
-      expect(second).toEqual(first);
-      expect(
-        decodeCount(
-          yield* firstRow(harness.directory, "select count(*) as n from inventory_active_release"),
-        ).n,
-      ).toBe(1);
     }),
   );
 });

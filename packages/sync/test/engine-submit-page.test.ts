@@ -24,6 +24,7 @@ import { saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";
 import { makeSqliteReplicaStore } from "../src/sqlite";
 import type { SyncTransport } from "../src/transport";
+import { stubTransport } from "./lib/engine-fixture";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
 const receiptFor = (request: SyncSubmitCommandRequest, commitSequence: string): CommandReceipt => ({
@@ -63,20 +64,12 @@ const pageOf = (
   retentionFloor: OrgCommitSequence.make("0"),
 });
 
-const unused = {
-  registerReplica: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  readSnapshotPart: () => Effect.die("unused"),
-} satisfies Partial<SyncTransport>;
-
 const recordingTransport = (
   answer: (request: SyncSubmitCommandRequest) => SyncPullResult | undefined,
 ) => {
   const submits: Array<SyncSubmitCommandRequest> = [];
   const pulls: Array<SyncPullRequest> = [];
-  const transport: SyncTransport = {
-    ...unused,
+  const transport = stubTransport({
     submitCommand: (request) =>
       Effect.sync(() => {
         submits.push(request);
@@ -89,7 +82,7 @@ const recordingTransport = (
         pulls.push(request);
         return pageOf(request.afterCommitSequence, [], request.afterCommitSequence);
       }),
-  };
+  });
   return { transport, submits, pulls };
 };
 

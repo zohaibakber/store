@@ -51,7 +51,7 @@ export const formatShare = (value: number) => percent.format(value);
 export const formatChange = (value: number | null) =>
   value === null ? null : signedPercent.format(value);
 
-export const formatCover = (days: number | null) => {
+const formatCover = (days: number | null) => {
   if (days === null) return EMPTY;
   if (days < 1) return "< 1 day";
   if (days > 365) return "1 yr+";

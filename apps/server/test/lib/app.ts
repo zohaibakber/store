@@ -11,11 +11,22 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
+import { InventoryAuthorityUnavailable } from "../../src/inventory/authority";
+import { InventoryCommands } from "../../src/inventory/commands";
+import { InventorySnapshots } from "../../src/inventory/snapshots";
 import {
+  makeInventorySyncAuthority,
   SyncAuthority,
-  unprovisionedSyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
+
+export const unprovisionedSyncAuthority = makeInventorySyncAuthority(
+  Effect.runSync(
+    Effect.all({ commands: InventoryCommands, snapshots: InventorySnapshots }).pipe(
+      Effect.provide(InventoryAuthorityUnavailable),
+    ),
+  ),
+);
 
 const sessionFor = (role: "owner" | "admin" | "member") =>
   AuthSession.make({

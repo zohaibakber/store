@@ -54,7 +54,7 @@ export const searchTokens = (query: string) => {
 const startsAnyWord = (text: string, token: string) =>
   text.startsWith(token) || text.includes(` ${token}`);
 
-export const productSearchRank = (product: SearchableProduct, query: string): number | null => {
+const productSearchRank = (product: SearchableProduct, query: string): number | null => {
   const tokens = searchTokens(query);
   if (tokens.length === 0) return 0;
   const name = normalizeSearchText(product.name);

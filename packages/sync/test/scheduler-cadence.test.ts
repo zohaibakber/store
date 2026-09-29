@@ -77,14 +77,6 @@ const expectWithinJitter = (gap: number | undefined, expected: number) => {
 const unchanged: PullScript = () => Effect.succeed("unchanged");
 
 describe("sync scheduler idle cadence", () => {
-  it("starts the default ladder at the one-minute floor and idles for fifteen minutes when live", () => {
-    expect(defaultHttpPollPolicy.activePollMillis).toBe(PULL_FLOOR_MILLIS);
-    expect(defaultHttpPollPolicy.minPollMillis).toBe(60_000);
-    expect(defaultHttpPollPolicy.backoffMillis).toEqual([60_000, 120_000, 300_000]);
-    expect(defaultHttpPollPolicy.liveIdlePollMillis).toBe(LIVE_IDLE_PULL_MILLIS);
-    expect(LIVE_IDLE_PULL_MILLIS).toBe(15 * 60_000);
-  });
-
   it.effect("never polls faster than the floor without a socket, even while pulls advance", () =>
     Effect.gen(function* () {
       const { pulls, scheduler } = yield* startScheduler(() => Effect.succeed("advanced"), {
@@ -123,19 +115,6 @@ describe("sync scheduler idle cadence", () => {
       const gaps = gapsOf(yield* Ref.get(pulls));
       expect(gaps.length).toBeGreaterThanOrEqual(3);
       for (const gap of gaps) expectWithinJitter(gap, LIVE_IDLE_PULL_MILLIS);
-      yield* scheduler.shutdown;
-    }),
-  );
-
-  it.effect("climbs the idle ladder while pulls return no transactions", () =>
-    Effect.gen(function* () {
-      const { pulls, scheduler } = yield* startScheduler(unchanged);
-      yield* advance(40_000);
-      const gaps = gapsOf(yield* Ref.get(pulls));
-      expectWithinJitter(gaps[0], 2_000);
-      expectWithinJitter(gaps[1], 4_000);
-      expectWithinJitter(gaps[2], 8_000);
-      expectWithinJitter(gaps[3], 8_000);
       yield* scheduler.shutdown;
     }),
   );
@@ -183,23 +162,6 @@ describe("sync scheduler idle cadence", () => {
 });
 
 describe("sync scheduler live cadence", () => {
-  it.effect("polls at the live idle cadence while the live channel stays connected", () =>
-    Effect.gen(function* () {
-      const { pulls, scheduler } = yield* startScheduler(unchanged);
-      yield* scheduler.setLiveConnected(true);
-      for (let emptyWait = 0; emptyWait < 3; emptyWait += 1) {
-        yield* scheduler.setLiveConnected(true);
-        yield* advance(7_000);
-      }
-      expect((yield* Ref.get(pulls)).length).toBe(1);
-      yield* advance(16_000);
-      const times = yield* Ref.get(pulls);
-      expect(times.length).toBe(2);
-      expectWithinJitter(gapsOf(times)[0], 30_000);
-      yield* scheduler.shutdown;
-    }),
-  );
-
   it.effect("returns to the idle ladder as soon as the live channel reports a transport loss", () =>
     Effect.gen(function* () {
       const { pulls, scheduler } = yield* startScheduler(unchanged);

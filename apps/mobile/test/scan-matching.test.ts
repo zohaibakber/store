@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { brandQuery, pickCatalogMatch } from "../src/scan/matching";
+import { pickCatalogMatch } from "../src/scan/matching";
 
 const product = (
   id: string,
@@ -55,11 +55,5 @@ describe("pickCatalogMatch", () => {
         strength: "625mg",
       }),
     ).toBeNull();
-  });
-
-  it("uses the first word as the brand query", () => {
-    expect(brandQuery({ name: " Panadol  Extra ", composition: null, strength: null })).toBe(
-      "Panadol",
-    );
   });
 });

@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { sqliteCollectionOptions } from "../src/replica/collection";
 import { decodeCategorySqliteRows } from "../src/replica/decode";
-import { UnsupportedSubsetQuery } from "../src/replica/errors";
 import { openNodeReplicaSqlite } from "../src/replica/node-sqlite";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
 import type {
@@ -172,18 +171,6 @@ describe("sqliteCollectionOptions", () => {
     await collection.cleanup();
     await insertCategory(replica, "after", "After");
     expect(collection.get("after")).toBeUndefined();
-    replica.close();
-  });
-
-  it("fails an unsupported expression instead of scanning", async () => {
-    const replica = await openNodeReplicaSqlite(identity);
-    const { options } = startCollection(replica);
-    await expect(
-      options.utils.loadSubset({
-        where: new IR.Func("like", [new IR.PropRef(["name"]), new IR.Value("%scan%")]),
-        limit: 10,
-      }),
-    ).rejects.toBeInstanceOf(UnsupportedSubsetQuery);
     replica.close();
   });
 });

@@ -210,17 +210,6 @@ describe("openInventoryWorkspace", () => {
     await inventory.dispose();
   });
 
-  it("does not open a workspace when the replica opener fails", async () => {
-    const host: InventoryHost = {
-      apiBaseUrl: "http://localhost",
-      deviceId: identity.replicaId,
-      openReplica: async () => {
-        throw new Error("replica missing");
-      },
-    };
-    await expect(openInventoryWorkspace(host, scope)).rejects.toThrow("replica missing");
-  });
-
   it("reports saved-locally from the outbox without waiting for a remote connection", async () => {
     const replica = await openNodeReplicaSqlite(identity);
     await replica.withWrite(

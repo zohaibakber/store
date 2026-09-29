@@ -24,7 +24,7 @@ import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
-import type { SyncTransport } from "../src/transport";
+import { stubTransport } from "./lib/engine-fixture";
 
 const databaseName = "engine-snapshot-recovery";
 
@@ -82,10 +82,7 @@ describe("engine snapshot recovery against published transport", () => {
   it.effect("imports a ready snapshot then completes pull", () =>
     Effect.gen(function* () {
       let pullCalls = 0;
-      const transport: SyncTransport = {
-        registerReplica: () => Effect.die("unused"),
-        submitCommand: () => Effect.die("unused"),
-        getReceipt: () => Effect.die("unused"),
+      const transport = stubTransport({
         pull: (_request: SyncPullRequest) => {
           pullCalls += 1;
           if (pullCalls === 1) {
@@ -111,7 +108,7 @@ describe("engine snapshot recovery against published transport", () => {
           }
           return Effect.succeed(partPayload);
         },
-      };
+      });
 
       const store = yield* makeIndexedDbReplicaStore({
         databaseName,

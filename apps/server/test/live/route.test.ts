@@ -6,7 +6,7 @@ import {
   OrgCommitSequence,
   SyncEpoch,
 } from "@store/contracts";
-import { LAST_UNIT_EPOCH, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import { inventoryState, replicas } from "@store/db/postgres/schema";
 import { RuntimeContext } from "alchemy";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
@@ -24,17 +24,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import { makeInventoryLive } from "../../src/inventory/live-horizon";
-import type { CommitFanout } from "../../src/inventory/model";
 import { inventoryPostgresUnavailable } from "../../src/inventory/postgres";
-import {
-  SyncAuthority,
-  unprovisionedSyncAuthority,
-  type SyncAuthorityContract,
-} from "../../src/inventory/sync-authority";
+import { SyncAuthority } from "../../src/inventory/sync-authority";
 import { LiveFanout, type LiveFanoutContract } from "../../src/live/fanout";
 import { HUB_ADMISSION_HEADERS } from "../../src/live/hub-core";
 import { LiveRoutes, liveSocketHandler, type LiveRouteDependencies } from "../../src/live/route";
 import { startAuthorityPostgres, type AuthorityPostgres } from "../inventory/authority-postgres";
+import { unprovisionedSyncAuthority } from "../lib/app";
 import { countStatements } from "../lib/statement-count";
 
 const GOOD_TOKEN = "header.payload.signature";
@@ -84,15 +80,10 @@ type Forwarded = { readonly organizationId: string; readonly headers: Record<str
 
 const makeFixture = (
   options: {
-    readonly authority?: SyncAuthorityContract;
     readonly readLiveHorizon?: LiveRouteDependencies["readLiveHorizon"];
   } = {},
 ) => {
   const forwarded: Array<Forwarded> = [];
-  const published: Array<{
-    readonly organizationId: string;
-    readonly fanout: CommitFanout;
-  }> = [];
   const horizonReads: Array<string> = [];
   const hubs: LiveRouteDependencies["hubs"] = {
     getByName: (organizationId) => ({
@@ -107,10 +98,7 @@ const makeFixture = (
     }),
   };
   const fanout: LiveFanoutContract = {
-    publish: (organizationId, value) =>
-      Effect.sync(() => {
-        published.push({ organizationId, fanout: value });
-      }),
+    publish: () => Effect.void,
     revoke: () => Effect.void,
   };
   const readLiveHorizon: LiveRouteDependencies["readLiveHorizon"] =
@@ -126,7 +114,7 @@ const makeFixture = (
       LiveRoutes({ hubs, getSession: serverRuntime.getSession, readLiveHorizon }),
     ).pipe(
       Layer.provide(Layer.succeed(ServerRuntime, serverRuntime)),
-      Layer.provide(Layer.succeed(SyncAuthority, options.authority ?? unprovisionedSyncAuthority)),
+      Layer.provide(Layer.succeed(SyncAuthority, unprovisionedSyncAuthority)),
       Layer.provide(Layer.succeed(LiveFanout, fanout)),
       Layer.provide(HttpServer.layerServices),
     );
@@ -138,7 +126,7 @@ const makeFixture = (
     );
     return handler(new Request(new URL(path, "http://localhost"), init));
   };
-  return { serve, forwarded, published, horizonReads, hubs };
+  return { serve, forwarded, horizonReads, hubs };
 };
 
 const socketHeaders = (token: string | undefined, extra: Record<string, string> = {}) => ({
@@ -209,41 +197,6 @@ describe("GET /api/sync/live", () => {
     });
     expect(response.status).toBe(503);
     expect(fixture.forwarded).toEqual([]);
-  });
-});
-
-describe("command fan-out", () => {
-  const fanout: CommitFanout = {
-    epoch: "1",
-    horizon: "8",
-    group: '{"commitSequence":"8","operationId":"op-8","decision":"accepted","changes":[]}',
-    byteLength: 80,
-    originReplicaId: lastUnitBuyerAEnvelope.replicaId,
-  };
-  const authorityWith = (value: CommitFanout | null): SyncAuthorityContract => ({
-    ...unprovisionedSyncAuthority,
-    submitCommand: () => Effect.succeed({ body: '{"ok":true}', fanout: value }),
-  });
-  const submit = (fixture: ReturnType<typeof makeFixture>) =>
-    fixture.serve("/api/sync/commands", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${GOOD_TOKEN}` },
-      body: JSON.stringify(lastUnitBuyerAEnvelope),
-    });
-
-  it("publishes a committed group to the hub, naming the committing replica", async () => {
-    const fixture = makeFixture({ authority: authorityWith(fanout) });
-    const response = await submit(fixture);
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe('{"ok":true}');
-    expect(fixture.published).toEqual([{ organizationId: "org-1", fanout }]);
-  });
-
-  it("publishes nothing when the submit committed nothing", async () => {
-    const fixture = makeFixture({ authority: authorityWith(null) });
-    const response = await submit(fixture);
-    expect(response.status).toBe(200);
-    expect(fixture.published).toEqual([]);
   });
 });
 

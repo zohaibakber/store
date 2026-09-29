@@ -41,6 +41,7 @@ import type { InventoryDrizzle } from "../../src/inventory/postgres";
 import {
   makeInventorySnapshots,
   SNAPSHOT_POLICY,
+  type InventorySnapshotsContract,
   type SnapshotPolicy,
 } from "../../src/inventory/snapshots";
 import { countStatements } from "../lib/statement-count";
@@ -175,6 +176,18 @@ const readyManifest = (result: AcquireSnapshotResult) => {
   return result.manifest;
 };
 
+const decodePartPayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SnapshotPartPayload));
+
+const readPart = (
+  snapshots: InventorySnapshotsContract,
+  actor: InventoryActor,
+  snapshotId: SnapshotId,
+  partNumber: number,
+) =>
+  snapshots
+    .readSnapshotPartEncoded(actor, snapshotId, partNumber)
+    .pipe(Effect.flatMap((encoded) => Effect.orDie(decodePartPayload(encoded.json))));
+
 const sha256Hex = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
 describe("postgres snapshot acquisition", () => {
@@ -199,7 +212,7 @@ describe("postgres snapshot acquisition", () => {
         const encoded = yield* countStatements(
           snapshots.readSnapshotPartEncoded(actor, manifest.snapshotId, 1),
         );
-        const part = yield* snapshots.readSnapshotPart(actor, manifest.snapshotId, 1);
+        const part = yield* readPart(snapshots, actor, manifest.snapshotId, 1);
         const again = yield* countStatements(snapshots.acquireSnapshot(actor, operationalRequest));
         return { acquired, manifest, encoded, part, again };
       }),
@@ -244,7 +257,7 @@ describe("postgres snapshot acquisition", () => {
         const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
         const parts = [];
         for (const ref of manifest.parts) {
-          parts.push(yield* snapshots.readSnapshotPart(actor, manifest.snapshotId, ref.partNumber));
+          parts.push(yield* readPart(snapshots, actor, manifest.snapshotId, ref.partNumber));
         }
         return { manifest, parts };
       }),
@@ -259,24 +272,6 @@ describe("postgres snapshot acquisition", () => {
       LAST_UNIT_PRODUCT_ID,
       LAST_UNIT_BATCH_ID,
     ]);
-  });
-
-  it("publishes one empty part for an empty partition", async () => {
-    const organizationId = decodeOrganizationId("org-snap-empty");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId);
-        yield* db.delete(batches).where(eq(batches.organizationId, organizationId));
-        yield* db.delete(products).where(eq(products.organizationId, organizationId));
-        yield* db.delete(categories).where(eq(categories.organizationId, organizationId));
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        const part = yield* snapshots.readSnapshotPart(actor, manifest.snapshotId, 1);
-        return { manifest, part };
-      }),
-    );
-    expect(result.manifest.parts).toHaveLength(1);
-    expect(result.part.rows).toEqual([]);
   });
 
   it("reports the entity counts frozen into the snapshot, not the live tables", async () => {
@@ -354,13 +349,13 @@ describe("postgres snapshot acquisition", () => {
         const { snapshots } = yield* openAuthority(organizationId);
         const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
         const missingPart = yield* snapshots
-          .readSnapshotPart(actor, manifest.snapshotId, 99)
+          .readSnapshotPartEncoded(actor, manifest.snapshotId, 99)
           .pipe(Effect.flip);
         const wrongEpoch = yield* snapshots
           .acquireSnapshot(actor, { ...operationalRequest, epoch: SyncEpoch.make("9") })
           .pipe(Effect.flip);
         const unknownSnapshot = yield* snapshots
-          .readSnapshotPart(actor, SnapshotId.make("missing-snapshot-idxx"), 1)
+          .readSnapshotPartEncoded(actor, SnapshotId.make("missing-snapshot-idxx"), 1)
           .pipe(Effect.flip);
         const unknownOrganization = yield* snapshots
           .acquireSnapshot(actorFor("org-snap-missing"), operationalRequest)

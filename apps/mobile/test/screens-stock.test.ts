@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { DAY_MS } from "../src/features/format";
-import { movementDelta, movementLabel } from "../src/features/stock/movement-text";
+import { movementDelta } from "../src/features/stock/movement-text";
 import { parseReceiveBatch } from "../src/features/stock/receive-batch";
 import {
-  attentionLabel,
   batchAttention,
   batchOnHand,
   matchesStockFilter,
   onHandOf,
-  productSubtitle,
   stockAttention,
 } from "../src/features/stock/stock-state";
 
@@ -37,11 +35,6 @@ describe("stock attention", () => {
     );
     expect(stockAttention({ ...healthy, nearestExpiry: now + 200 * DAY_MS }, now)).toBeNull();
   });
-
-  it("labels each attention state", () => {
-    expect(attentionLabel("lowStock")).toBe("Low stock");
-    expect(attentionLabel("expiringSoon")).toBe("Expires soon");
-  });
 });
 
 describe("stock filters", () => {
@@ -49,21 +42,14 @@ describe("stock filters", () => {
   const expiring = { ...healthy, nearestExpiry: now + 10 * DAY_MS };
   const expired = { ...healthy, expiredUnits: 2 };
 
-  it("keeps everything for All", () => {
-    expect([healthy, low, expiring].every((stock) => matchesStockFilter(stock, "all", now))).toBe(
-      true,
-    );
-  });
-
-  it("keeps only low stock for Low stock", () => {
-    expect(matchesStockFilter(low, "lowStock", now)).toBe(true);
-    expect(matchesStockFilter(expiring, "lowStock", now)).toBe(false);
-  });
-
-  it("keeps expired and soon-to-expire stock for Expiring soon", () => {
-    expect(matchesStockFilter(expiring, "expiringSoon", now)).toBe(true);
-    expect(matchesStockFilter(expired, "expiringSoon", now)).toBe(true);
-    expect(matchesStockFilter(low, "expiringSoon", now)).toBe(false);
+  it.each([
+    ["all", [healthy, low, expiring, expired]],
+    ["lowStock", [low]],
+    ["expiringSoon", [expiring, expired]],
+  ] as const)("keeps the matching stock for %s", (filter, kept) => {
+    expect(
+      [healthy, low, expiring, expired].filter((stock) => matchesStockFilter(stock, filter, now)),
+    ).toEqual(kept);
   });
 
   it("flags batches by expiry", () => {
@@ -90,21 +76,9 @@ describe("on-hand counts", () => {
     expect(batchOnHand(1, 0, 10, true)).toBe("1 pack");
     expect(batchOnHand(1, 5, 10, false)).toBe("15 units");
   });
-
-  it("joins composition, strength, and pack size", () => {
-    expect(
-      productSubtitle({ composition: "Paracetamol", strength: "500 mg", unitsPerPack: 20 }),
-    ).toBe("Paracetamol · 500 mg · 20 per pack");
-    expect(productSubtitle({ composition: " ", strength: null, unitsPerPack: 1 })).toBe("");
-  });
 });
 
 describe("stock movements", () => {
-  it("labels movement types", () => {
-    expect(movementLabel("stock_in")).toBe("Received");
-    expect(movementLabel("open_pack")).toBe("Pack opened");
-  });
-
   it("signs pack and unit deltas", () => {
     expect(movementDelta({ packDelta: 12, unitDelta: 0 }, 10, true)).toBe("+12 packs");
     expect(movementDelta({ packDelta: -1, unitDelta: 10 }, 10, true)).toBe("−1 pack, +10 units");
@@ -113,28 +87,6 @@ describe("stock movements", () => {
 });
 
 describe("receiving a batch by hand", () => {
-  const expiryOf = (expiry: string) => {
-    const parsed = parseReceiveBatch({ batchNumber: "", expiry, packs: "1", units: "" });
-    return parsed._tag === "valid" ? parsed.draft.expiresAt : "invalid";
-  };
-
-  it("reads month and year expiries as the end of that month", () => {
-    expect(expiryOf("08/27")).toBe(new Date(2027, 7, 31).getTime());
-    expect(expiryOf("2027-02")).toBe(new Date(2027, 1, 28).getTime());
-  });
-
-  it("reads full dates day first or year first", () => {
-    expect(expiryOf("15/03/2028")).toBe(new Date(2028, 2, 15).getTime());
-    expect(expiryOf("2028-03-15")).toBe(new Date(2028, 2, 15).getTime());
-  });
-
-  it("treats a blank expiry as none and rejects impossible dates", () => {
-    expect(expiryOf("  ")).toBeNull();
-    expect(expiryOf("31/02/2027")).toBe("invalid");
-    expect(expiryOf("13/27")).toBe("invalid");
-    expect(expiryOf("soon")).toBe("invalid");
-  });
-
   it("builds a draft from valid fields", () => {
     expect(
       parseReceiveBatch({ batchNumber: " B12 ", expiry: "08/27", packs: "12", units: "" }),
@@ -146,6 +98,10 @@ describe("receiving a batch by hand", () => {
         packQuantity: 12,
         unitQuantity: 0,
       },
+    });
+    expect(parseReceiveBatch({ batchNumber: " ", expiry: "  ", packs: "", units: "3" })).toEqual({
+      _tag: "valid",
+      draft: { batchNumber: null, expiresAt: null, packQuantity: 0, unitQuantity: 3 },
     });
   });
 

@@ -124,6 +124,13 @@ describe("planIndexedDbSubset", () => {
       }),
     );
     expect(search.scan).toEqual({ _tag: "indexPrefix", index: "byNameKey", reverse: false });
+    expect(search.residual).toEqual({
+      _tag: "or",
+      predicates: [
+        { _tag: "like", column: "name", pattern: "%pan%" },
+        { _tag: "like", column: "composition", pattern: "%pan%" },
+      ],
+    });
   });
 
   it("orders a category filter by name through byCategoryName", () => {

@@ -1,7 +1,7 @@
 import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
-import { projectIssuedInvoice, replicaInvoiceNumber } from "../src/invoice-projection";
+import { projectIssuedInvoice } from "../src/invoice-projection";
 import type { BatchRow, ProductRow } from "../src/rows";
 
 const readable = <Row extends { readonly id: string }>(rows: ReadonlyArray<Row>) => {
@@ -67,15 +67,6 @@ const batch = (overrides: Partial<BatchRow> = {}): BatchRow => ({
   ...overrides,
 });
 
-describe("replicaInvoiceNumber", () => {
-  it("is one past the highest persisted number", () => {
-    expect(replicaInvoiceNumber([])).toBe(1);
-    expect(
-      replicaInvoiceNumber([{ invoiceNumber: 2 }, { invoiceNumber: 4 }, { invoiceNumber: 3 }]),
-    ).toBe(5);
-  });
-});
-
 describe("projectIssuedInvoice", () => {
   it("projects the invoice, its items, and the stock change from local rows", () => {
     rowSeq = 0;
@@ -83,7 +74,7 @@ describe("projectIssuedInvoice", () => {
       actor,
       commandId: "command-1",
       occurredAt: ids.now(),
-      invoiceNumber: replicaInvoiceNumber([]),
+      invoiceNumber: 1,
       sale: {
         customerName: "Walk-in",
         items: [

@@ -32,7 +32,7 @@ export class SyncUnavailableError extends Schema.TaggedError<SyncUnavailableErro
   },
 ) {}
 
-const syncUnavailableError = (message = "Organization sync is not provisioned.") =>
+const syncUnavailableError = (message: string) =>
   SyncUnavailableError.make({ code: "SYNC_NOT_PROVISIONED", message });
 
 const syncDatabaseFailure = (error: InventoryDatabaseError) =>
@@ -82,23 +82,12 @@ export class SyncAuthority extends Context.Service<SyncAuthority, SyncAuthorityC
   "@store/server/SyncAuthority",
 ) {}
 
-const unavailable = () => Effect.fail(syncUnavailableError());
-
-export const unprovisionedSyncAuthority: SyncAuthorityContract = {
-  registerReplica: () => unavailable(),
-  submitCommand: () => unavailable(),
-  getReceipt: () => unavailable(),
-  pull: () => unavailable(),
-  acquireSnapshot: () => unavailable(),
-  readSnapshotPart: () => unavailable(),
-};
-
 const unavailableFrom = (error: InventoryDatabaseError) =>
   error === inventoryPostgresUnavailable
     ? Effect.fail(syncUnavailableError(error.message))
     : syncDatabaseFailure(error);
 
-export const toSyncAuthorityError = <A, R>(
+const toSyncAuthorityError = <A, R>(
   effect: Effect.Effect<A, InventoryError, R>,
 ): Effect.Effect<A, SyncAuthorityError, R> =>
   effect.pipe(Effect.catchTag("InventoryDatabaseError", unavailableFrom));

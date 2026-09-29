@@ -4,7 +4,6 @@ import {
   MAX_SNAPSHOT_PART_BYTES,
   MAX_SNAPSHOT_PART_ROWS,
   SNAPSHOT_LEASE_LIFETIME_MILLIS,
-  SnapshotPartPayload,
   SYNC_SCHEMA_VERSION,
   SyncProtocolCode,
   type AcquireSnapshotRequest,
@@ -141,18 +140,11 @@ const readEncodedSnapshotPart = Effect.fn("InventorySnapshots.readEncodedSnapsho
   return { json: found.payloadJson, sha256: found.sha256 } satisfies EncodedSnapshotPart;
 });
 
-const decodePartPayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SnapshotPartPayload));
-
 export interface InventorySnapshotsContract {
   readonly acquireSnapshot: (
     actor: InventoryActor,
     request: AcquireSnapshotRequest,
   ) => Effect.Effect<AcquireSnapshotResult, InventoryError>;
-  readonly readSnapshotPart: (
-    actor: InventoryActor,
-    snapshotId: SnapshotId,
-    partNumber: number,
-  ) => Effect.Effect<SnapshotPartPayload, InventoryError>;
   readonly readSnapshotPartEncoded: (
     actor: InventoryActor,
     snapshotId: SnapshotId,
@@ -169,22 +161,15 @@ export const makeInventorySnapshots = (
   db: InventoryDrizzle,
   policy: SnapshotPolicy = SNAPSHOT_POLICY,
 ): InventorySnapshotsContract => {
-  const readSnapshotPartEncoded = Effect.fn("InventorySnapshots.readSnapshotPartEncoded")(
-    function* (actor: InventoryActor, snapshotId: SnapshotId, partNumber: number) {
-      return yield* readEncodedSnapshotPart(db, actor, snapshotId, partNumber);
-    },
-  );
   return InventorySnapshots.of({
     acquireSnapshot: Effect.fn("InventorySnapshots.acquireSnapshot")(function* (actor, request) {
       return yield* acquireSnapshotWith(db, actor, request, policy);
     }),
-    readSnapshotPart: Effect.fn("InventorySnapshots.readSnapshotPart")(
+    readSnapshotPartEncoded: Effect.fn("InventorySnapshots.readSnapshotPartEncoded")(
       function* (actor, snapshotId, partNumber) {
-        const encoded = yield* readSnapshotPartEncoded(actor, snapshotId, partNumber);
-        return yield* decodePartPayload(encoded.json).pipe(Effect.mapError(databaseError));
+        return yield* readEncodedSnapshotPart(db, actor, snapshotId, partNumber);
       },
     ),
-    readSnapshotPartEncoded,
   });
 };
 
@@ -192,7 +177,6 @@ export const InventorySnapshotsUnavailable = Layer.succeed(
   InventorySnapshots,
   InventorySnapshots.of({
     acquireSnapshot: () => Effect.fail(inventoryPostgresUnavailable),
-    readSnapshotPart: () => Effect.fail(inventoryPostgresUnavailable),
     readSnapshotPartEncoded: () => Effect.fail(inventoryPostgresUnavailable),
   }),
 );

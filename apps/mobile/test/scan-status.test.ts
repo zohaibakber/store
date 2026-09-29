@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ParseState, ScanDraft } from "../src/scan/model";
-import { batchRow, countStatuses, draftStatus, statusSummary } from "../src/scan/status";
+import { batchRow, draftStatus } from "../src/scan/status";
 
 const label = "PANADOL Extra 500mg 2 x 10 Tablets B.No AB1234 EXP 08/27";
 
@@ -66,13 +66,5 @@ describe("batchRow", () => {
       result: { ...parsed.result, unitsPerPack: null },
     };
     expect(batchRow(draft(missingUnits), false, null)).toEqual({ status: "check", plan: null });
-  });
-});
-
-describe("statusSummary", () => {
-  it("summarises the batch review", () => {
-    const counts = countStatuses(["ready", "ready", "check", "reading", "ready"]);
-    expect(statusSummary(counts)).toBe("3 ready, 1 to check, 1 still reading");
-    expect(statusSummary(countStatuses([]))).toBe("Nothing scanned yet");
   });
 });

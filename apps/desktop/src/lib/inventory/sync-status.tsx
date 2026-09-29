@@ -71,7 +71,7 @@ const statusShortLabel = (status: InventorySyncStatus) => {
   }
 };
 
-export function InventorySyncStatusView({
+function InventorySyncStatusView({
   online = true,
   status,
 }: {

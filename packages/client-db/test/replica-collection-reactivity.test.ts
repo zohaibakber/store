@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { createInvoiceCoherenceGate, sqliteCollectionOptions } from "../src/replica/collection";
 import { decodeCategorySqliteRows } from "../src/replica/decode";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
-import { subsetWindowKey } from "../src/replica/subset-window";
 import type {
   InventoryCollectionDescriptor,
   ReplicaCommitNotice,
@@ -62,7 +61,6 @@ describe("collection reactivity", () => {
       where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("shared")]),
       limit: 10,
     };
-    expect(subsetWindowKey(first)).toBe(subsetWindowKey(second));
     await options.utils.loadSubset(first);
     await options.utils.loadSubset(second);
     expect(reads).toBe(2);

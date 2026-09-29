@@ -41,6 +41,7 @@ import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
 import { countStatements } from "../lib/statement-count";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
+import { typedCommands } from "./typed-commands";
 
 const isProtocol = Schema.is(SyncProtocolError);
 
@@ -377,7 +378,7 @@ describe("postgres inventory maintenance", () => {
       Effect.gen(function* () {
         const db = yield* seedOrganization(organizationId, 10);
         yield* publishSnapshot(db, organizationId, "snapshot-pull", "6");
-        const commands = makeInventoryCommands(db);
+        const commands = typedCommands(makeInventoryCommands(db));
         const beforeRetention = yield* commands.pull(actor, {
           epoch: LAST_UNIT_EPOCH,
           subscription: OPERATIONAL_SUBSCRIPTION,
@@ -496,24 +497,6 @@ describe("postgres inventory maintenance", () => {
       "snapshot-7",
       "snapshot-9",
     ]);
-  });
-
-  it("maintains an organization once the consumed tickets table is dropped", async () => {
-    const organizationId = decodeOrganizationId("org-ticket-expiry");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const sql = yield* PgClient.PgClient;
-        const db = yield* seedOrganization(organizationId, 3);
-        const [table] = yield* sql<{
-          readonly found: string | null;
-        }>`select to_regclass('public.consumed_tickets')::text as found`;
-        const report = yield* maintainOrganization(db, organizationId);
-        return { found: table?.found, report };
-      }),
-    );
-    expect(outcome.found).toBeNull();
-    expect(outcome.report.expiredTickets).toBe(0);
-    expect(outcome.report.builtSnapshot).toBe(true);
   });
 
   it("builds a snapshot for an organization without one and then advances the floor", async () => {

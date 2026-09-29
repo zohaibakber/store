@@ -107,7 +107,7 @@ const count = (value: ModelScalar | undefined, fallback: number, minimum: number
 
 const unspecifiedItemName = "Unspecified item";
 
-export const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
+const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
   const name = line.name.trim();
   return (
     name.length > 0 && name !== unspecifiedItemName && line.packQuantity + line.unitQuantity > 0
@@ -144,7 +144,7 @@ const normalizeExtraction = (value: InvoiceModelObject) => {
   };
 };
 
-export const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
+const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
   const [headerRow = [], ...rows] = parseCsvRecords(contents);
   const headers = headerRow.map((value) => value.trim().toLowerCase());
   const valueAt = (row: ReadonlyArray<string>, name: string) =>

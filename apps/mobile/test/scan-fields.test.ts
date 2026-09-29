@@ -2,7 +2,6 @@ import type { ProductScanResult } from "@store/contracts/server-api.schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  NO_FLAGS,
   commitLabel,
   commitSummary,
   deriveFieldFlags,
@@ -10,12 +9,9 @@ import {
   editsFrom,
   mergeAutoFill,
   needsCheck,
-  packCountsInText,
   planCommit,
-  reviewValuesFrom,
   reviewValuesWith,
   sameEdits,
-  textContains,
   valueFromChip,
 } from "../src/scan/fields";
 
@@ -39,29 +35,12 @@ const scan = (overrides: Partial<ProductScanResult> = {}): ProductScanResult => 
   ...overrides,
 });
 
-describe("textContains", () => {
-  it("ignores case, whitespace and line breaks", () => {
-    expect(textContains(label, "panadol extra")).toBe(true);
-    expect(textContains(label, "500mg")).toBe(true);
-    expect(textContains(label, "Brufen")).toBe(false);
-    expect(textContains(label, "  ")).toBe(false);
-  });
-});
-
-describe("packCountsInText", () => {
-  it("multiplies pack factors and keeps plain counts", () => {
-    const counts = packCountsInText("2 x 10 Tablets, 30's");
-    expect(counts.has(20)).toBe(true);
-    expect(counts.has(30)).toBe(true);
-  });
-});
-
 describe("deriveFieldFlags", () => {
   it("flags nothing when every value appears on the label", () => {
-    expect(deriveFieldFlags(scan({ composition: null }), label)).toEqual({
-      ...NO_FLAGS,
-      composition: "Not found on the label",
-    });
+    const flags = deriveFieldFlags(scan({ composition: null }), label);
+    expect(Object.entries(flags).filter(([, flag]) => flag !== null)).toEqual([
+      ["composition", "Not found on the label"],
+    ]);
   });
 
   it("flags values that are missing from the recognised text", () => {
@@ -85,20 +64,7 @@ describe("deriveFieldFlags", () => {
   });
 
   it("does not flag a manual draft", () => {
-    expect(deriveFieldFlags(null, label)).toEqual(NO_FLAGS);
-  });
-});
-
-describe("reviewValuesFrom", () => {
-  it("formats the parsed fields for editing", () => {
-    expect(reviewValuesFrom(scan({ strength: null }))).toEqual({
-      name: "Panadol Extra",
-      composition: "Paracetamol + Caffeine",
-      strength: "",
-      unitsPerPack: "20",
-      batchNumber: "AB1234",
-      expiresAt: "08/2027",
-    });
+    expect(Object.values(deriveFieldFlags(null, label)).every((flag) => flag === null)).toBe(true);
   });
 });
 
@@ -113,8 +79,26 @@ describe("valueFromChip", () => {
 
 const match = { id: "p1", name: "Panadol Extra", unitsPerPack: 20 };
 
+const parsedValues = {
+  name: "Panadol Extra",
+  composition: "Paracetamol + Caffeine",
+  strength: "500mg",
+  unitsPerPack: "20",
+  batchNumber: "AB1234",
+  expiresAt: "08/2027",
+};
+
+const empty = {
+  name: "",
+  composition: "",
+  strength: "",
+  unitsPerPack: "",
+  batchNumber: "",
+  expiresAt: "",
+};
+
 describe("planCommit", () => {
-  const values = reviewValuesFrom(scan());
+  const values = parsedValues;
 
   it("adds a batch to the matched product", () => {
     const plan = planCommit("addBatch", values, 12, match);
@@ -152,28 +136,25 @@ describe("planCommit", () => {
 });
 
 describe("commitLabel", () => {
-  const values = reviewValuesFrom(scan());
-
-  it("names the effect of the commit", () => {
-    expect(commitLabel("addBatch", values, 12, match)).toBe("Add 12 packs to Panadol Extra");
-    expect(commitLabel("newProduct", values, 1, null)).toBe("Create Panadol Extra with 1 pack");
-  });
-
-  it("follows a product picked by hand", () => {
+  it("names the effect of the commit on the chosen product", () => {
     const picked = { id: "p2", name: "Panadol CF", unitsPerPack: 10 };
-    expect(commitLabel("addBatch", values, 2, picked)).toBe("Add 2 packs to Panadol CF");
-    expect(commitSummary("addBatch", values, 2, picked)).toBe("Added 2 packs to Panadol CF");
-    expect(commitSummary("newProduct", values, 1, null)).toBe("Created Panadol Extra with 1 pack");
+    expect(commitLabel("addBatch", parsedValues, 12, match)).toBe("Add 12 packs to Panadol Extra");
+    expect(commitLabel("newProduct", parsedValues, 1, null)).toBe(
+      "Create Panadol Extra with 1 pack",
+    );
+    expect(commitLabel("addBatch", parsedValues, 2, picked)).toBe("Add 2 packs to Panadol CF");
+    expect(commitSummary("addBatch", parsedValues, 2, picked)).toBe("Added 2 packs to Panadol CF");
+    expect(commitSummary("newProduct", parsedValues, 1, null)).toBe(
+      "Created Panadol Extra with 1 pack",
+    );
   });
 });
 
 describe("auto-fill while editing", () => {
-  const empty = reviewValuesFrom(null);
-
   it("fills only the fields the user has not touched and reports them", () => {
     const typed = { ...empty, batchNumber: "XY99" };
     const merged = mergeAutoFill(typed, new Set(["batchNumber"]), scan());
-    expect(merged.values).toEqual({ ...reviewValuesFrom(scan()), batchNumber: "XY99" });
+    expect(merged.values).toEqual({ ...parsedValues, batchNumber: "XY99" });
     expect(merged.filled).toEqual(["name", "composition", "strength", "unitsPerPack", "expiresAt"]);
   });
 
@@ -190,7 +171,7 @@ describe("auto-fill while editing", () => {
     expect(edits).toEqual({ name: "Panadol", expiresAt: "08/2027" });
     expect([...editedFields(edits)]).toEqual(["name", "expiresAt"]);
     expect(reviewValuesWith(scan(), edits)).toEqual({
-      ...reviewValuesFrom(scan()),
+      ...parsedValues,
       name: "Panadol",
     });
     expect(sameEdits(undefined, {})).toBe(true);

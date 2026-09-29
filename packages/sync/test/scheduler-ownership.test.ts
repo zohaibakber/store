@@ -240,36 +240,13 @@ describe("sync scheduler ownership gate", () => {
       expect(yield* Ref.get(drains)).toBe(0);
       yield* scheduler.setNetworkOwner(true);
       yield* TestClock.adjust("0 millis");
-      expect(yield* Ref.get(drains)).toBeGreaterThan(0);
-      yield* scheduler.shutdown;
-    }),
-  );
-
-  it.effect("follower wakes never drain after ownership is released", () =>
-    Effect.gen(function* () {
-      const drains = yield* Ref.make(0);
-      const scheduler = yield* makeSyncScheduler(
-        {
-          drainUpload: () => Ref.update(drains, (n) => n + 1),
-          catchUp: () => Effect.succeed("unchanged"),
-        },
-        {
-          activePollMillis: 5_000,
-          backoffMillis: [5_000],
-          hiddenPollMillis: 5_000,
-          liveIdlePollMillis: 5_000,
-        },
-      );
-      yield* scheduler.setNetworkOwner(true);
-      yield* scheduler.wake("localWrite");
-      yield* TestClock.adjust("0 millis");
       const whileOwner = yield* Ref.get(drains);
       expect(whileOwner).toBeGreaterThan(0);
       yield* scheduler.setNetworkOwner(false);
       yield* scheduler.wake("localWrite");
       yield* scheduler.wake("live");
       yield* scheduler.wake("reconnect");
-      yield* TestClock.adjust("1 minute");
+      yield* TestClock.adjust("1 hour");
       expect(yield* Ref.get(drains)).toBe(whileOwner);
       yield* scheduler.shutdown;
     }),

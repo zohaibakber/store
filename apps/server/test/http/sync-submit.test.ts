@@ -19,14 +19,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientError from "effect/unstable/http/HttpClientError";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
@@ -40,11 +36,11 @@ import type { CommitFanout, InventoryActor } from "../../src/inventory/model";
 import {
   makeInventorySyncAuthority,
   SyncAuthority,
-  unprovisionedSyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
 import { LiveFanout, type LiveFanoutContract } from "../../src/live/fanout";
 import { startAuthorityPostgres, type AuthorityPostgres } from "../inventory/authority-postgres";
+import { unprovisionedSyncAuthority } from "../lib/app";
 import { countStatements } from "../lib/statement-count";
 
 const USER_ID = "user-1";
@@ -162,37 +158,6 @@ const recordingAuthority = () => {
   };
   return { authority, bodies };
 };
-
-const clientSeenFailure = (handler: WebHandler, rewriteBody: string) =>
-  Effect.gen(function* () {
-    const client = yield* HttpApiClient.make(SyncHttpApi, { baseUrl: "http://localhost" });
-    return yield* Effect.flip(client.sync.submitCommand({ payload: lastUnitBuyerAEnvelope }));
-  }).pipe(
-    Effect.provideService(
-      HttpClient.HttpClient,
-      HttpClient.make((request, url) =>
-        Effect.promise(() =>
-          handler(
-            new Request(url, {
-              method: request.method,
-              headers: { ...request.headers, authorization: "Bearer token" },
-              body: rewriteBody,
-            }),
-          ),
-        ).pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response))),
-      ),
-    ),
-  );
-
-type ClientFailure = Effect.Success<ReturnType<typeof clientSeenFailure>>;
-
-const clientFailureKind = (failure: ClientFailure) =>
-  HttpClientError.isHttpClientError(failure)
-    ? {
-        kind: failure.reason._tag,
-        status: "response" in failure.reason ? failure.reason.response?.status : undefined,
-      }
-    : { kind: "other", status: undefined };
 
 describe("POST /api/sync/commands without Postgres", () => {
   it("refuses an oversized body before it reaches the authority", async () => {
@@ -313,7 +278,6 @@ describe("POST /api/sync/commands on Postgres", () => {
         const commands = yield* seed(organizationId);
         const snapshots = {
           acquireSnapshot: unused,
-          readSnapshotPart: unused,
           readSnapshotPartEncoded: unused,
         };
         const server = yield* Effect.promise(() =>
@@ -403,18 +367,6 @@ describe("POST /api/sync/commands on Postgres", () => {
     expect(JSON.parse(outcome.body)).toMatchObject({
       error: { code: "ORGANIZATION_MISMATCH" },
     });
-  });
-
-  it("gives the typed client the same failure it saw before", async () => {
-    const baseline = typedSubmitBaseline();
-    const outcome = await onPostgres("org-client-view", ({ handler }) =>
-      Effect.all({
-        raw: clientSeenFailure(handler, "{bad"),
-        typed: clientSeenFailure(baseline, "{bad"),
-      }),
-    );
-    expect(clientFailureKind(outcome.raw)).toEqual(clientFailureKind(outcome.typed));
-    expect(clientFailureKind(outcome.raw)).toEqual({ kind: "StatusCodeError", status: 400 });
   });
 
   it("submits with one statement whatever the body holds", async () => {

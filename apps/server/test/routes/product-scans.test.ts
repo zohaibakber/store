@@ -37,15 +37,11 @@ describe("product scan authorization and validation", () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid scan input", async () => {
-    const response = await appFor(true).request("/api/product-scans", scan(""));
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ error: { code: "INVALID_PRODUCT_SCAN" } });
-  });
-
-  it("rejects recognized text beyond the schema max length", async () => {
-    const response = await appFor(true).request("/api/product-scans", scan("x".repeat(12_001)));
+  it.each([
+    ["empty", ""],
+    ["beyond the schema max length", "x".repeat(12_001)],
+  ])("rejects %s recognized text", async (_, text) => {
+    const response = await appFor(true).request("/api/product-scans", scan(text));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: "INVALID_PRODUCT_SCAN" } });

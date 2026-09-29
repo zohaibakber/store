@@ -8,7 +8,6 @@ import {
   DEFAULT_PRODUCT_LIST_VIEW,
   ProductTableFilters,
   useProductsTable,
-  viewWithPagination,
   type ProductListRow,
   type ProductListView,
 } from "@/components/products/table";
@@ -116,14 +115,5 @@ test("product filters become a replica query view and clear together", async () 
     composition: undefined,
     aisle: undefined,
     strength: undefined,
-  });
-});
-
-test("changing the page size returns to the first page", () => {
-  const view = { ...DEFAULT_PRODUCT_LIST_VIEW, page: 4 };
-  expect(viewWithPagination(view, { pageIndex: 5, pageSize: 50 })).toMatchObject({ page: 5 });
-  expect(viewWithPagination(view, { pageIndex: 4, pageSize: 100 })).toMatchObject({
-    page: 0,
-    size: 100,
   });
 });
