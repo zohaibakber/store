@@ -77,8 +77,8 @@ export function RecentInvoices() {
                   <div
                     className={
                       invoice.customerName
-                        ? "w-0 min-w-full truncate"
-                        : "w-0 min-w-full truncate text-muted-foreground"
+                        ? "w-0 min-w-full truncate leading-tight"
+                        : "w-0 min-w-full truncate leading-tight text-muted-foreground"
                     }
                   >
                     {invoice.customerName ?? "Walk-in customer"}

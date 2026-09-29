@@ -119,7 +119,9 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
             {invoice.items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="max-w-0">
-                  <span className="block truncate font-medium capitalize">{item.productName}</span>
+                  <span className="block truncate leading-tight font-medium capitalize">
+                    {item.productName}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <span className="text-muted-foreground tabular-nums">

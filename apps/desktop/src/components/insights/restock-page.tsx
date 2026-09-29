@@ -119,8 +119,8 @@ function TwoLine({
 }) {
   return (
     <div className="-my-1 flex min-w-0 flex-col gap-0.5" title={title}>
-      <span className="truncate text-sm leading-none">{primary}</span>
-      <span className="truncate text-xs leading-none text-muted-foreground">{secondary}</span>
+      <span className="truncate text-sm leading-tight">{primary}</span>
+      <span className="truncate text-xs leading-tight text-muted-foreground">{secondary}</span>
     </div>
   );
 }

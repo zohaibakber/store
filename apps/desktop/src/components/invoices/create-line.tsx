@@ -52,7 +52,7 @@ function LineBatch({ line }: { line: SaleLine }) {
 
   if (batches.length <= 1) {
     return (
-      <span className="block truncate text-xs text-muted-foreground tabular-nums">
+      <span className="block truncate text-xs leading-tight text-muted-foreground tabular-nums">
         {only ? batchLabel(only) : EMPTY}
       </span>
     );
@@ -139,19 +139,21 @@ function InvoiceCreateLine({
       </TableCell>
       <TableCell className="max-w-0">
         <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="min-w-0 truncate font-medium capitalize">{line.product.name}</span>
+          <span className="min-w-0 truncate leading-tight font-medium capitalize">
+            {line.product.name}
+          </span>
           {line.product.strength && (
             <span className="shrink-0 text-muted-foreground">{line.product.strength}</span>
           )}
           {error ? (
             <span
-              className="min-w-0 flex-1 basis-0 truncate text-xs text-destructive-foreground"
+              className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-destructive-foreground"
               role="alert"
             >
               {error}
             </span>
           ) : (
-            <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-muted-foreground">
               {line.product.category.name}
             </span>
           )}

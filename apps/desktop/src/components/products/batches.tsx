@@ -728,7 +728,7 @@ function MovementReference({
       </Link>
     );
   }
-  if (movement.note) return <span className="truncate">{movement.note}</span>;
+  if (movement.note) return <span className="truncate leading-tight">{movement.note}</span>;
   const batchNumber = batchNumbers.get(movement.batchId);
   return batchNumber ? <span>Batch {batchNumber}</span> : muted;
 }

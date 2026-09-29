@@ -203,7 +203,7 @@ function CategoryName({
 
   return (
     <button
-      className="max-w-full cursor-text truncate rounded-sm text-start font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      className="max-w-full cursor-text truncate rounded-sm text-start leading-tight font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => {
         setDraft(category.name);
         onEditingChange(true);

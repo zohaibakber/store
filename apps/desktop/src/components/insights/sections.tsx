@@ -124,7 +124,7 @@ function ProductLink({
 }) {
   return (
     <Link
-      className="min-w-0 truncate font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
+      className="min-w-0 truncate leading-tight font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
       params={{ productId }}
       to="/products/$productId"
     >
