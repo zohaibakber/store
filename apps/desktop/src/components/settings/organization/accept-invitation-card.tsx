@@ -69,40 +69,42 @@ export function AcceptInvitationCard() {
           void form.handleSubmit();
         }}
       >
-        <Fieldset className="flex w-full flex-col sm:flex-row sm:items-end">
-          <form.Field
-            name="token"
-            children={(field) => (
-              <div className="min-w-0 flex-1">
-                <FormField field={field} label="Invitation">
-                  {(control) => (
-                    <Input
-                      {...control}
-                      autoComplete="off"
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder="Paste the invite link or token"
-                      value={field.state.value}
-                    />
-                  )}
-                </FormField>
-              </div>
-            )}
-          />
-          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-            {([canSubmit, isSubmitting]) => (
-              <Button
-                className="sm:shrink-0"
-                disabled={!canSubmit}
-                loading={isSubmitting}
-                type="submit"
-                variant="outline"
-              >
-                <HugeiconsIcon aria-hidden="true" icon={TicketStarIcon} />
-                Accept
-              </Button>
-            )}
-          </form.Subscribe>
+        <Fieldset className="w-full">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <form.Field
+              name="token"
+              children={(field) => (
+                <div className="min-w-0 flex-1">
+                  <FormField field={field} label="Invitation">
+                    {(control) => (
+                      <Input
+                        {...control}
+                        autoComplete="off"
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder="Paste the invite link or token"
+                        value={field.state.value}
+                      />
+                    )}
+                  </FormField>
+                </div>
+              )}
+            />
+            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
+              {([canSubmit, isSubmitting]) => (
+                <Button
+                  className="sm:shrink-0"
+                  disabled={!canSubmit}
+                  loading={isSubmitting}
+                  type="submit"
+                  variant="outline"
+                >
+                  <HugeiconsIcon aria-hidden="true" icon={TicketStarIcon} />
+                  Accept
+                </Button>
+              )}
+            </form.Subscribe>
+          </div>
         </Fieldset>
       </form>
     </FrameCard>

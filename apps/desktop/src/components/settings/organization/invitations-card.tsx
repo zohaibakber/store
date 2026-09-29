@@ -1,9 +1,4 @@
-import {
-  Copy01Icon,
-  Mail01Icon,
-  MailAdd01Icon,
-  MultiplicationSignIcon,
-} from "@hugeicons/core-free-icons";
+import { Copy01Icon, MailAdd01Icon, MultiplicationSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   EmailAddress,
@@ -19,13 +14,6 @@ import { FormField } from "@/components/shared/form-field";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Frame, FrameHeader } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
@@ -92,68 +80,70 @@ function InviteForm({ organizationId }: { organizationId: AuthOrganizationMember
           void form.handleSubmit();
         }}
       >
-        <Fieldset className="flex w-full flex-col sm:flex-row sm:items-end">
-          <form.Field
-            name="email"
-            children={(field) => (
-              <div className="min-w-0 flex-1">
-                <FormField field={field} label="Email">
+        <Fieldset className="w-full">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <form.Field
+              name="email"
+              children={(field) => (
+                <div className="min-w-0 flex-1">
+                  <FormField field={field} label="Email">
+                    {(control) => (
+                      <Input
+                        {...control}
+                        autoComplete="off"
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        placeholder="name@example.com"
+                        type="email"
+                        value={field.state.value}
+                      />
+                    )}
+                  </FormField>
+                </div>
+              )}
+            />
+            <form.Field
+              name="role"
+              children={(field) => (
+                <FormField field={field} label="Role">
                   {(control) => (
-                    <Input
-                      {...control}
-                      autoComplete="off"
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value)}
-                      placeholder="name@example.com"
-                      type="email"
+                    <Select
+                      items={invitableRoles}
+                      onValueChange={(role) => role && field.handleChange(role)}
                       value={field.state.value}
-                    />
+                    >
+                      <SelectTrigger className="w-full sm:w-32" id={control.id}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {invitableRoles.map((role) => (
+                            <SelectItem key={role.value} value={role.value}>
+                              {role.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   )}
                 </FormField>
-              </div>
-            )}
-          />
-          <form.Field
-            name="role"
-            children={(field) => (
-              <FormField field={field} label="Role">
-                {(control) => (
-                  <Select
-                    items={invitableRoles}
-                    onValueChange={(role) => role && field.handleChange(role)}
-                    value={field.state.value}
-                  >
-                    <SelectTrigger className="w-full sm:w-32" id={control.id}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {invitableRoles.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                )}
-              </FormField>
-            )}
-          />
-          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-            {([canSubmit, isSubmitting]) => (
-              <Button
-                className="sm:shrink-0"
-                disabled={!canSubmit}
-                loading={isSubmitting}
-                type="submit"
-                variant="outline"
-              >
-                <HugeiconsIcon aria-hidden="true" icon={MailAdd01Icon} />
-                Invite
-              </Button>
-            )}
-          </form.Subscribe>
+              )}
+            />
+            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
+              {([canSubmit, isSubmitting]) => (
+                <Button
+                  className="sm:shrink-0"
+                  disabled={!canSubmit}
+                  loading={isSubmitting}
+                  type="submit"
+                  variant="outline"
+                >
+                  <HugeiconsIcon aria-hidden="true" icon={MailAdd01Icon} />
+                  Invite
+                </Button>
+              )}
+            </form.Subscribe>
+          </div>
         </Fieldset>
       </form>
 
@@ -237,19 +227,13 @@ export function OrganizationInvitationsCard({
       description="Invite someone to this store. Delivery is on you for now."
       title="Invitations"
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <InviteForm organizationId={organization.id} />
 
         {invitations.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <HugeiconsIcon aria-hidden="true" icon={Mail01Icon} />
-              </EmptyMedia>
-              <EmptyTitle>Nothing pending</EmptyTitle>
-              <EmptyDescription>Invitations you send appear here until redeemed.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <p className="text-sm text-muted-foreground">
+            No pending invitations. Sent invitations stay here until they're redeemed.
+          </p>
         ) : (
           <div className="flex flex-col gap-2">
             {invitations.map((invitation) => (

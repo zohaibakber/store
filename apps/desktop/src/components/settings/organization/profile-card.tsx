@@ -75,52 +75,54 @@ export function OrganizationProfileCard({
           void form.handleSubmit();
         }}
       >
-        <Fieldset className="grid w-full">
-          <form.Field
-            name="name"
-            children={(field) => (
-              <FormField field={field} label="Name">
-                {(control) => (
-                  <Input
-                    {...control}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value)}
-                    placeholder="e.g. Ali's Pharmacy"
-                    value={field.state.value}
-                  />
-                )}
-              </FormField>
-            )}
-          />
-          <form.Field
-            name="slug"
-            children={(field) => (
-              <FormField
-                description="A short handle for this store. Leave it empty if you don't need one."
-                field={field}
-                label="Handle"
-              >
-                {(control) => (
-                  <Input
-                    {...control}
-                    onBlur={field.handleBlur}
-                    onChange={(event) => field.handleChange(event.target.value.toLowerCase())}
-                    placeholder="alis-pharmacy"
-                    value={field.state.value}
-                  />
-                )}
-              </FormField>
-            )}
-          />
-          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-            {([canSubmit, isSubmitting]) => (
-              <div className="flex justify-end">
-                <Button disabled={!canSubmit} loading={isSubmitting} size="sm" type="submit">
-                  Save changes
-                </Button>
-              </div>
-            )}
-          </form.Subscribe>
+        <Fieldset className="w-full">
+          <div className="grid gap-4">
+            <form.Field
+              name="name"
+              children={(field) => (
+                <FormField field={field} label="Name">
+                  {(control) => (
+                    <Input
+                      {...control}
+                      onBlur={field.handleBlur}
+                      onChange={(event) => field.handleChange(event.target.value)}
+                      placeholder="e.g. Ali's Pharmacy"
+                      value={field.state.value}
+                    />
+                  )}
+                </FormField>
+              )}
+            />
+            <form.Field
+              name="slug"
+              children={(field) => (
+                <FormField
+                  description="A short handle for this store. Leave it empty if you don't need one."
+                  field={field}
+                  label="Handle"
+                >
+                  {(control) => (
+                    <Input
+                      {...control}
+                      onBlur={field.handleBlur}
+                      onChange={(event) => field.handleChange(event.target.value.toLowerCase())}
+                      placeholder="alis-pharmacy"
+                      value={field.state.value}
+                    />
+                  )}
+                </FormField>
+              )}
+            />
+            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
+              {([canSubmit, isSubmitting]) => (
+                <div className="flex justify-end">
+                  <Button disabled={!canSubmit} loading={isSubmitting} size="sm" type="submit">
+                    Save changes
+                  </Button>
+                </div>
+              )}
+            </form.Subscribe>
+          </div>
         </Fieldset>
       </form>
     </FrameCard>

@@ -17,7 +17,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Frame, FrameHeader } from "@/components/ui/frame";
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { formatCount } from "@/lib/format";
 import { useOrganization } from "@/lib/organization";
 
 const roles = [
@@ -104,43 +104,43 @@ function MemberRow({
   };
 
   return (
-    <Frame className="w-full">
-      <FrameHeader className="flex-row items-center">
-        <Avatar className="size-8">
-          <AvatarImage alt={member.name} src={member.image ?? undefined} />
-          <AvatarFallback>{initials(member.name)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{member.name}</p>
-          <p className="truncate text-sm text-muted-foreground">{member.email}</p>
-        </div>
-        {organization.role === "owner" ? (
-          <Select
-            items={roles}
-            onValueChange={(role) => role && void changeRole(role)}
-            value={member.role}
-          >
-            <SelectTrigger aria-label={`Role for ${member.name}`} className="w-32" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {roles.map((role) => (
-                  <SelectItem key={role.value} value={role.value}>
-                    {role.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        ) : (
-          <Badge variant="outline">{member.role}</Badge>
-        )}
-        {canRemove(organization.role, member.role) && !isSelf ? (
-          <RemoveMemberDialog member={member} organizationId={organization.id} />
-        ) : null}
-      </FrameHeader>
-    </Frame>
+    <div className="flex items-center gap-3 px-4 py-2">
+      <Avatar className="size-8">
+        <AvatarImage alt={member.name} src={member.image ?? undefined} />
+        <AvatarFallback>{initials(member.name)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">{member.name}</p>
+        <p className="truncate text-sm text-muted-foreground">{member.email}</p>
+      </div>
+      {organization.role === "owner" ? (
+        <Select
+          items={roles}
+          onValueChange={(role) => role && void changeRole(role)}
+          value={member.role}
+        >
+          <SelectTrigger aria-label={`Role for ${member.name}`} className="w-32" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {roles.map((role) => (
+                <SelectItem key={role.value} value={role.value}>
+                  {role.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      ) : (
+        <Badge variant="outline">{member.role}</Badge>
+      )}
+      {canRemove(organization.role, member.role) && !isSelf ? (
+        <RemoveMemberDialog member={member} organizationId={organization.id} />
+      ) : organization.role === "owner" || organization.role === "admin" ? (
+        <span aria-hidden="true" className="size-8 shrink-0 sm:size-7" />
+      ) : null}
+    </div>
   );
 }
 
@@ -154,8 +154,8 @@ export function OrganizationMembersCard({
   organization: AuthOrganizationMembership;
 }) {
   return (
-    <FrameCard title="Members">
-      <div className="flex flex-col gap-2">
+    <FrameCard description={formatCount(members.length, "member")} flush title="Members">
+      <div className="flex flex-col divide-y">
         {members.map((member) => (
           <MemberRow
             isSelf={member.userId === currentUserId}
