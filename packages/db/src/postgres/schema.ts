@@ -110,7 +110,6 @@ export const batches = pgTable(
       columns: [table.organizationId, table.productId],
       foreignColumns: [products.organizationId, products.id],
     }),
-    index("batches_organization_id_product_id_idx").on(table.organizationId, table.productId),
     index("batches_organization_id_product_expiry_idx").on(
       table.organizationId,
       table.productId,

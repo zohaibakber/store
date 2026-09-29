@@ -1,0 +1,1 @@
+DROP INDEX "batches_organization_id_product_id_idx";
