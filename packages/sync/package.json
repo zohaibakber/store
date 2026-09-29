@@ -11,10 +11,6 @@
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts"
   },
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/sync/test"
-  },
   "dependencies": {
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",

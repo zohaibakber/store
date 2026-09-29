@@ -63,9 +63,10 @@ vp install
 vp run dev
 ```
 
-Turborepo starts the API/auth Workers and the desktop workspace. The desktop's
-plain `vp dev` task starts the renderer on `:5174`, builds main and preload, and
-launches Electron. Use a Turbo filter when you only need one workspace.
+`vp run` starts the API/auth Workers and the desktop workspace in parallel. The
+desktop's plain `vp dev` task starts the renderer on `:5174`, builds main and
+preload, and launches Electron. Use `vp run @store/desktop#dev` when you only
+need one workspace.
 
 ```sh
 vp run dev:web
@@ -149,7 +150,8 @@ artifacts are present. `workflow_dispatch` on `.github/workflows/release.yml`
 remains available for a packaging-only rebuild; it does not deploy
 infrastructure.
 
-Run all workspace checks with `vp check` and `vp test`, or produce the packaged
+Run all workspace checks with `vp check`, `vp run -r check` (Drizzle schema
+and migration bundle), and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production
 deploys run `pnpm exec alchemy deploy`, which serves the web app from
 `PRODUCTION_DOMAIN`, the API from `api.<PRODUCTION_DOMAIN>`, and auth at

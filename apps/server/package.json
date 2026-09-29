@@ -3,10 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./api": "./api.ts",
+    "./runtime/production-domain": "./src/runtime/production-domain.ts"
+  },
   "scripts": {
     "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev",
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. apps/server/test"
+    "dev:web": "vp run dev"
   },
   "dependencies": {
     "@effect/sql-pg": "catalog:",

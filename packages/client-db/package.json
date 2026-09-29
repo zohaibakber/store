@@ -9,10 +9,6 @@
     "./sql-client": "./src/replica/sql-client.ts",
     "./subset-spec": "./src/replica/subset-spec.ts"
   },
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/client-db/test"
-  },
   "dependencies": {
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",

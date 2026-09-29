@@ -74,14 +74,17 @@ under `apps/desktop/src/components/ui` stay governed by their upstream definitio
 
 Toolchain (pnpm `11.27.1` + Node.js 24 + the Vite+ `vp` CLI) is installed in the VM and on
 `PATH` in login shells. The startup update script runs `vp install` and fetches
-the Electron binary. From the repo root: `vp install`, `vp check`, `vp test`,
-and `vp build` (Turborepo fans them out per package).
+the Electron binary. From the repo root: `vp install`, `vp check`, `vp run -r check`,
+and `vp test`. `vp check` type-checks every package against its own tsconfig and
+`vp test` runs every package's tests, so packages carry no per-package `check` or
+`test` scripts. The only package `check` is `@store/db`'s Drizzle schema and
+migration-bundle check. Run one package's tests with `vp test packages/sync`.
 
 - **Electron binary.** If installation leaves `apps/desktop/node_modules/electron`
   without its `dist/` binary, or `vp dev` for the desktop errors that Electron
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
-- **Desktop app.** `vp run dev` from the repo root lets Turborepo start the
-  API/auth workers and `apps/desktop`. Its `vp dev` command starts the renderer
+- **Desktop app.** `vp run dev` from the repo root starts the API/auth workers
+  and `apps/desktop` in parallel. Its `vp dev` command starts the renderer
   on `:5174`, builds main/preload, and launches Electron. Unpackaged/dev keeps an
   escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
   can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
@@ -103,14 +106,3 @@ and `vp build` (Turborepo fans them out per package).
   `/api/sync/*` (Neon in `dev`, PlanetScale in `prod`).
   Inventory can be driven from the local replica without the backend after the
   first sync.
-
-<!-- BEGIN:turborepo-agent-rules -->
-
-# This is NOT the Turborepo you know
-
-Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
-
-Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
-
-This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
-<!-- END:turborepo-agent-rules -->

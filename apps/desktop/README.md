@@ -55,14 +55,14 @@ From the repository root:
 vp run dev
 ```
 
-Turborepo starts the server and desktop workspace. The desktop workspace's plain
+`vp run` starts the server and desktop workspace in parallel. The desktop workspace's plain
 `vp dev` command starts Vite on `127.0.0.1:5174`, builds main and preload,
 launches Electron, and reloads the relevant process when its source changes.
 
 To run only the desktop workspace against an already-running backend:
 
 ```sh
-turbo run dev --filter=@store/desktop
+vp run @store/desktop#dev
 ```
 
 For the browser host, run `vp run dev:web` from the repository root, or

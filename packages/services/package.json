@@ -8,10 +8,6 @@
     "./insights": "./src/insights/index.ts",
     "./format": "./src/format.ts"
   },
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/services/test"
-  },
   "dependencies": {
     "@store/contracts": "workspace:*",
     "effect": "catalog:"

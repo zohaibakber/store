@@ -21,10 +21,6 @@
     "./sync/fixtures": "./src/sync/fixtures/last-unit-invoice.ts",
     "./updater": "./src/updater.ts"
   },
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/contracts/test"
-  },
   "dependencies": {
     "@noble/hashes": "2.4.0",
     "@store/db": "workspace:*",

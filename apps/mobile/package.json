@@ -7,9 +7,7 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "prebuild": "expo prebuild --platform android",
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. apps/mobile/test"
+    "prebuild": "expo prebuild --platform android"
   },
   "dependencies": {
     "@effect/atom-react": "catalog:",

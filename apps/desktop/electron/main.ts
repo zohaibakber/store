@@ -49,11 +49,11 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
-const turboFilteredEnvFallbackFiles = [
+const envFallbackFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
 ];
-for (const file of turboFilteredEnvFallbackFiles) {
+for (const file of envFallbackFiles) {
   try {
     process.loadEnvFile(file);
   } catch {}

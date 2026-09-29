@@ -7,10 +7,6 @@
     ".": "./src/auth.ts",
     "./security": "./src/security.ts"
   },
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. packages/auth/test"
-  },
   "dependencies": {
     "effect": "catalog:"
   },

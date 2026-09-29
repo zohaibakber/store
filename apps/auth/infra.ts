@@ -15,6 +15,7 @@ import {
   resolveAuthSecurity,
 } from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
+import { Api, OrgHub } from "@store/server/api";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Cause from "effect/Cause";
@@ -30,7 +31,6 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import { Api, OrgHub } from "../server/api";
 import { ephemeralStoreLayer } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
 import { authRoutes, buildOncePerIsolate, workerRuntimeServices } from "./src/http";

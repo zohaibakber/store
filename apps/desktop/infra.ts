@@ -1,13 +1,12 @@
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Output from "alchemy/Output";
-import * as Effect from "effect/Effect";
-
-import { Auth } from "../auth/infra.ts";
-import { Api } from "../server/api.ts";
+import { Auth } from "@store/auth-worker/infra";
+import { Api } from "@store/server/api";
 import {
   productionDomainConfig,
   requireProductionHostname,
-} from "../server/src/runtime/production-domain.ts";
+} from "@store/server/runtime/production-domain";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Output from "alchemy/Output";
+import * as Effect from "effect/Effect";
 
 export const Website = Cloudflare.Website.Vite(
   "Website",

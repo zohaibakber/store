@@ -3,9 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "check": "tsc --noEmit",
-    "test": "vitest run --root ../.. apps/auth/test"
+  "exports": {
+    "./infra": "./infra.ts"
   },
   "dependencies": {
     "@effect/sql-d1": "catalog:",
@@ -16,6 +15,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260929.1",
+    "@effect/platform-node": "catalog:",
+    "@store/server": "workspace:*",
     "@types/node": "^26.6.3",
     "alchemy": "catalog:",
     "typescript": "catalog:",

@@ -32,8 +32,8 @@ jobs:
       - name: Check (format, lint, typecheck)
         run: vp check
 
-      - name: Workspace checks
-        run: vp run check
+      - name: Schema checks
+        run: vp run -r check
 
       - name: Tests
         run: vp test
