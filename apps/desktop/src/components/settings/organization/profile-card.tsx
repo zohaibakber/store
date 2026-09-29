@@ -1,4 +1,4 @@
-import { OrganizationName, OrganizationSlug, type AuthOrganizationMembership } from "@store/auth";
+import { OrganizationName, type AuthOrganizationMembership } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
 import * as Schema from "effect/Schema";
 
@@ -18,16 +18,8 @@ const profileSchema = formValidator(
       Schema.isMinLength(2, { message: "Give the store a name." }),
       Schema.isMaxLength(60),
     ),
-    slug: Schema.Trim.check(
-      Schema.isPattern(/^[a-z0-9]*(?:-[a-z0-9]+)*$/u, {
-        message: "Use lowercase letters, numbers and dashes.",
-      }),
-      Schema.isMaxLength(40),
-    ),
   }),
 );
-
-const trimmedSlug = (slug: string) => (slug === "" ? null : OrganizationSlug.make(slug));
 
 export function OrganizationProfileCard({
   organization,
@@ -37,7 +29,7 @@ export function OrganizationProfileCard({
   editable: boolean;
 }) {
   const { actions } = useOrganization();
-  const defaults = { name: organization.name, slug: organization.slug ?? "" };
+  const defaults = { name: organization.name };
 
   const form = useForm({
     defaultValues: defaults,
@@ -47,7 +39,7 @@ export function OrganizationProfileCard({
         _tag: "UpdateOrganization",
         organizationId: organization.id,
         name: OrganizationName.make(value.name.trim()),
-        slug: trimmedSlug(value.slug.trim()),
+        slug: organization.slug ?? null,
       });
       if (result) toastManager.add({ title: "Organization updated", type: "success" });
     },
@@ -61,7 +53,7 @@ export function OrganizationProfileCard({
       >
         <p className="truncate text-sm font-medium">{organization.name}</p>
         <p className="text-sm text-muted-foreground">
-          {organization.slug ?? "Only an owner or admin can change these details."}
+          Only an owner or admin can change these details.
         </p>
       </FrameCard>
     );
@@ -87,26 +79,6 @@ export function OrganizationProfileCard({
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                       placeholder="e.g. Ali's Pharmacy"
-                      value={field.state.value}
-                    />
-                  )}
-                </FormField>
-              )}
-            />
-            <form.Field
-              name="slug"
-              children={(field) => (
-                <FormField
-                  description="A short handle for this store. Leave it empty if you don't need one."
-                  field={field}
-                  label="Handle"
-                >
-                  {(control) => (
-                    <Input
-                      {...control}
-                      onBlur={field.handleBlur}
-                      onChange={(event) => field.handleChange(event.target.value.toLowerCase())}
-                      placeholder="alis-pharmacy"
                       value={field.state.value}
                     />
                   )}
