@@ -1,3 +1,5 @@
+import { BTreeIndex } from "@tanstack/db";
+
 import { invoiceCoherenceEntityForSource } from "./coherence";
 import { readCollectionKeys, readCollectionSource, readCollectionSubset } from "./collection-read";
 import { startCollectionSync } from "./collection-sync";
@@ -26,6 +28,8 @@ export const sqliteCollectionOptions = <Row extends InventoryCollectionRow>(
     syncMode: descriptor.syncMode,
     startSync: false,
     defaultStringCollation: { stringSort: "lexical" },
+    autoIndex: "eager",
+    defaultIndexType: BTreeIndex,
     sync: {
       rowUpdateMode: "full",
       sync: (params) =>

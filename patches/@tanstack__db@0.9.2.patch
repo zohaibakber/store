@@ -1,0 +1,39 @@
+diff --git a/dist/cjs/indexes/auto-index.cjs b/dist/cjs/indexes/auto-index.cjs
+index af5c7de8ba79f7d52ab07cefbd1a1cb71e3504b6..f82ce98ac83ffea163334aa8b424b29ddeddf18f 100644
+--- a/dist/cjs/indexes/auto-index.cjs
++++ b/dist/cjs/indexes/auto-index.cjs
+@@ -41,7 +41,7 @@ function ensureIndexForField(fieldName, fieldPath, collection, compareOptions, c
+       },
+       {
+         name: `auto:${fieldPath.join(`.`)}`,
+-        options: compareFn ? { compareFn, compareOptions: compareOpts } : {}
++        options: compareFn ? { compareFn, compareOptions: compareOpts } : { compareOptions: compareOpts }
+       }
+     );
+   } catch (error) {
+diff --git a/dist/esm/indexes/auto-index.js b/dist/esm/indexes/auto-index.js
+index fd950eaedb16452ba55b72302340128d82b54f4c..419ef76a0b3b5db969bd71f7ae72f62109dc2f13 100644
+--- a/dist/esm/indexes/auto-index.js
++++ b/dist/esm/indexes/auto-index.js
+@@ -39,7 +39,7 @@ function ensureIndexForField(fieldName, fieldPath, collection, compareOptions, c
+       },
+       {
+         name: `auto:${fieldPath.join(`.`)}`,
+-        options: compareFn ? { compareFn, compareOptions: compareOpts } : {}
++        options: compareFn ? { compareFn, compareOptions: compareOpts } : { compareOptions: compareOpts }
+       }
+     );
+   } catch (error) {
+diff --git a/src/indexes/auto-index.ts b/src/indexes/auto-index.ts
+index 6e6f1896edd270bc887ef1dfd595fd0bd65d4aa7..ab2ac7712a561dde80a4b36e49f3092735bc0819 100644
+--- a/src/indexes/auto-index.ts
++++ b/src/indexes/auto-index.ts
+@@ -67,7 +67,7 @@ export function ensureIndexForField<
+       },
+       {
+         name: `auto:${fieldPath.join(`.`)}`,
+-        options: compareFn ? { compareFn, compareOptions: compareOpts } : {},
++        options: compareFn ? { compareFn, compareOptions: compareOpts } : { compareOptions: compareOpts },
+       },
+     )
+   } catch (error) {
