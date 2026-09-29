@@ -796,15 +796,13 @@ describe("postgres catalog writes", () => {
             catalogCommand("cmd-rename", [productUpdate("prod-1", 9, "Panadol Extra", 10)]),
           ),
         );
-        const partial = yield* commands.pull(actor, { ...pullFrom("0", true), limit: 1 });
         const complete = yield* commands.pull(actor, pullFrom("0", true));
         const withoutDigest = yield* commands.pull(actor, pullFrom("0"));
         const rows = yield* activePartitionRows(db, organizationId);
         const expected = yield* partitionDigestOf(rows);
-        return { partial, complete, withoutDigest, rows, expected };
+        return { complete, withoutDigest, rows, expected };
       }),
     );
-    expect(outcome.partial.digest).toBeUndefined();
     expect(outcome.withoutDigest.digest).toBeUndefined();
     expect(outcome.rows.some((row) => row.entity === "stockMovement")).toBe(true);
     expect(outcome.complete.digest).toEqual(outcome.expected);

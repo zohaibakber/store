@@ -51,8 +51,6 @@ export interface SessionHttpClientOptions {
   readonly fetch: SessionFetch;
   readonly refreshSession: () => Promise<RefreshedTokenSet | null>;
   readonly needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
-  readonly afterRefresh?: (refreshed: RefreshedTokenSet) => Promise<void>;
-  readonly requestHeaders?: () => HeadersInit;
 }
 
 const normalizeApiBaseUrl = (baseUrl: string) =>
@@ -122,8 +120,6 @@ export class SessionHttpClient {
   readonly #fetch: SessionFetch;
   readonly #refreshSession: () => Promise<RefreshedTokenSet | null>;
   readonly #needsRefresh: (tokens: TokenSet | null, force: boolean) => boolean;
-  readonly #afterRefresh: ((refreshed: RefreshedTokenSet) => Promise<void>) | undefined;
-  readonly #requestHeaders: (() => HeadersInit) | undefined;
   #refreshInFlight: Promise<RefreshedTokenSet | null> | null = null;
 
   constructor(options: SessionHttpClientOptions) {
@@ -133,8 +129,6 @@ export class SessionHttpClient {
     this.#fetch = options.fetch;
     this.#refreshSession = options.refreshSession;
     this.#needsRefresh = options.needsRefresh;
-    this.#afterRefresh = options.afterRefresh;
-    this.#requestHeaders = options.requestHeaders;
   }
 
   get apiBaseUrl() {
@@ -156,13 +150,7 @@ export class SessionHttpClient {
     const release = () => {
       if (this.#refreshInFlight === refresh) this.#refreshInFlight = null;
     };
-    const refresh: Promise<RefreshedTokenSet | null> = this.#refreshSession()
-      .then(async (next) => {
-        release();
-        if (next && this.#afterRefresh) await this.#afterRefresh(next);
-        return next;
-      })
-      .finally(release);
+    const refresh: Promise<RefreshedTokenSet | null> = this.#refreshSession().finally(release);
     this.#refreshInFlight = refresh;
     return refresh;
   }
@@ -222,12 +210,6 @@ export class SessionHttpClient {
 
   async #send(baseUrl: string, pathname: string, init?: JsonRequestInit): Promise<Response> {
     const headers = new Headers(init?.headers);
-    const extra = this.#requestHeaders?.();
-    if (extra) {
-      new Headers(extra).forEach((value, key) => {
-        headers.set(key, value);
-      });
-    }
     const tokens = this.#tokens.get();
     if (tokens) headers.set("authorization", `Bearer ${tokens.accessToken}`);
     const { body, setJsonContentType } = serializeRequestBody(init?.body);
@@ -254,10 +236,6 @@ export class SessionHttpClient {
 
   #sendRaw(request: Request): Promise<Response> {
     const headers = new Headers(request.headers);
-    const extra = this.#requestHeaders?.();
-    if (extra) {
-      new Headers(extra).forEach((value, key) => headers.set(key, value));
-    }
     const tokens = this.#tokens.get();
     if (tokens) headers.set("authorization", `Bearer ${tokens.accessToken}`);
     return this.#fetch(new Request(request, { credentials: "omit", headers }));

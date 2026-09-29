@@ -497,14 +497,6 @@ const fakeRepository = (store: Store): AuthRepositoryApi => ({
         }
       }
     }),
-  revokeUser: (userId, now) =>
-    Effect.sync(() => {
-      for (const [index, session] of store.sessions.entries()) {
-        if (session.userId === userId && session.revokedAt === null) {
-          store.sessions[index] = { ...session, revokedAt: now };
-        }
-      }
-    }),
 });
 
 const countingLimit = (limit: number): AuthRateLimit => {

@@ -14,11 +14,7 @@ export function WorkspaceLogo({ className }: { className?: string }) {
         className,
       )}
     >
-      {organization?.image ? (
-        <img alt="" className="size-6 shrink-0 rounded-sm object-cover" src={organization.image} />
-      ) : (
-        <BrandMark alt="" className="size-6 shrink-0 rounded-sm" />
-      )}
+      <BrandMark alt="" className="size-6 shrink-0 rounded-sm" />
       <span className="truncate font-medium group-data-[collapsible=icon]:hidden">{name}</span>
     </span>
   );

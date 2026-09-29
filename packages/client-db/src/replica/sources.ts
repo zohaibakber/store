@@ -13,15 +13,6 @@ export type InventoryCollectionSource = (typeof INVENTORY_COLLECTION_SOURCES)[nu
 
 export type InventoryCollectionSyncMode = "eager" | "on-demand";
 
-export const SOURCE_TABLE = {
-  categories: "categories",
-  products: "products",
-  batches: "batches",
-  invoices: "invoices",
-  invoiceItems: "invoice_items",
-  stockMovements: "stock_movements",
-} satisfies Record<InventoryCollectionSource, string>;
-
 export const SOURCE_ENTITY = {
   categories: "category",
   products: "product",

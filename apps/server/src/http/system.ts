@@ -32,6 +32,6 @@ export const AuthHandlers = HttpApiBuilder.group(
       const request = yield* HttpServerRequest.HttpServerRequest;
       return yield* runtime.loadWorkspace(new Headers(request.headers)).pipe(Effect.orDie);
     });
-    return handlers.handle("session", session).handle("getSession", session);
+    return handlers.handle("session", session);
   }),
 );

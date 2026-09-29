@@ -22,7 +22,6 @@
     "pg": "^8.23.0"
   },
   "devDependencies": {
-    "@effect/vitest": "catalog:",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "alchemy": "catalog:",

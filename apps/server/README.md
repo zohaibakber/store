@@ -3,7 +3,7 @@
 The Cloudflare Worker exposes authenticated inventory and support APIs:
 
 - `GET /api/health`
-- `GET /api/auth/session` and `GET /api/auth/get-session`
+- `GET /api/auth/session`
 - `POST /api/sync/commands`, `POST /api/sync/replicas`, `POST /api/sync/pull`
 - `GET /api/sync/receipts/:operationId`
 - `POST /api/sync/snapshots`, `GET /api/sync/snapshots/:snapshotId/parts/:partNumber`

@@ -199,9 +199,6 @@ export const SyncPullRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   afterCommitSequence: OrgCommitSequence,
-  limit: Schema.optionalKey(
-    PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SYNC_PULL_TRANSACTIONS)),
-  ),
   digestVersion: Schema.optionalKey(PartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });

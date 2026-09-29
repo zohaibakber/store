@@ -59,7 +59,6 @@ export const AcquireSnapshotRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   replicaId: Schema.optionalKey(SyncIdentifier),
-  digestVersion: Schema.optionalKey(PartitionDigestVersion),
 });
 export type AcquireSnapshotRequest = typeof AcquireSnapshotRequest.Type;
 

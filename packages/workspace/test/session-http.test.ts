@@ -119,86 +119,7 @@ describe("SessionHttpClient", () => {
     expect(refreshes).toBe(1);
   });
 
-  it("reloads host state after a refresh without deadlocking ensureFreshAccess", async () => {
-    const store = new MemoryTokenStore();
-    store.set(tokens(Date.now() + 1_000));
-    let afterRefreshCalls = 0;
-    const client = new SessionHttpClient({
-      apiBaseUrl: "http://localhost:8787",
-      authBaseUrl: "http://localhost:8788",
-      tokens: store,
-      fetch: vi.fn(),
-      refreshSession: async () => {
-        const next = tokens(Date.now() + 120_000);
-        store.set(next);
-        return next;
-      },
-      needsRefresh: cookieSessionNeedsRefresh,
-      afterRefresh: async () => {
-        afterRefreshCalls += 1;
-        await client.ensureFreshAccess();
-      },
-    });
-
-    await client.ensureFreshAccess();
-    expect(afterRefreshCalls).toBe(1);
-  });
-
-  it("keeps a refresh started during afterRefresh in flight so no refresh token is reused", async () => {
-    const store = new MemoryTokenStore();
-    const rotated = (serial: number) =>
-      RefreshedTokenSet.make({
-        workspace,
-        accessToken: AccessToken.make(`access-${serial}`),
-        accessExpiresAt: Date.now() + 10_000,
-        refreshToken: RefreshToken.make(`refresh-${serial}.secret`),
-        refreshExpiresAt: Date.now() + 600_000,
-      });
-    store.set(rotated(0));
-    const presented: Array<string> = [];
-    const pendingRefreshes: Array<() => void> = [];
-    let releaseAfterRefresh!: () => void;
-    const afterRefreshGate = new Promise<void>((resolve) => {
-      releaseAfterRefresh = resolve;
-    });
-    let afterRefreshCalls = 0;
-    const client = new SessionHttpClient({
-      apiBaseUrl: "http://localhost:8787",
-      authBaseUrl: "http://localhost:8788",
-      tokens: store,
-      fetch: vi.fn(),
-      refreshSession: async () => {
-        presented.push(store.get()?.refreshToken ?? "none");
-        await new Promise<void>((resolve) => pendingRefreshes.push(resolve));
-        const next = rotated(presented.length);
-        store.set(next);
-        return next;
-      },
-      needsRefresh: refreshTokenNeedsRefresh,
-      afterRefresh: async () => {
-        afterRefreshCalls += 1;
-        if (afterRefreshCalls === 1) await afterRefreshGate;
-      },
-    });
-
-    const first = client.ensureFreshAccess();
-    await vi.waitFor(() => expect(pendingRefreshes).toHaveLength(1));
-    pendingRefreshes[0]!();
-    await vi.waitFor(() => expect(afterRefreshCalls).toBe(1));
-    const second = client.ensureFreshAccess();
-    await vi.waitFor(() => expect(pendingRefreshes).toHaveLength(2));
-    releaseAfterRefresh();
-    await first;
-    const third = client.ensureFreshAccess();
-    expect(pendingRefreshes).toHaveLength(2);
-    pendingRefreshes[1]!();
-    await Promise.all([second, third]);
-
-    expect(presented).toEqual(["refresh-0.secret", "refresh-1.secret"]);
-    expect(await third).toEqual(await second);
-  });
-
-  it("applies host request headers and encodes JSON bodies", async () => {
+  it("encodes JSON bodies", async () => {
     const store = new MemoryTokenStore();
     store.set(tokens(Date.now() + 60_000));
     const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true }));
@@ -209,13 +130,11 @@ describe("SessionHttpClient", () => {
       fetch,
       refreshSession: async () => null,
       needsRefresh: refreshTokenNeedsRefresh,
-      requestHeaders: () => ({ "electron-origin": "app://app" }),
     });
 
     await client.apiRequest("/api/organizations", { method: "POST", body: { a: 1 } });
     const [, init] = fetch.mock.calls[0]!;
     const headers = new Headers(init.headers);
-    expect(headers.get("electron-origin")).toBe("app://app");
     expect(headers.get("content-type")).toBe("application/json");
     expect(init.body).toBe('{"a":1}');
   });

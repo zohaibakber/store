@@ -39,13 +39,11 @@ const unauthenticated = (isOnline: boolean, workspaceError: string | null = null
 export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #http: SessionHttpClient;
   readonly #tokens: MemoryTokenStore;
-  readonly #electronOrigin: string;
   readonly #hooks: SessionSnapshotHooks;
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
 
-  constructor(baseUrl: string, authBaseUrl: string, electronOrigin: string) {
+  constructor(baseUrl: string, authBaseUrl: string) {
     this.#tokens = new MemoryTokenStore();
-    this.#electronOrigin = electronOrigin;
     this.#http = new SessionHttpClient({
       apiBaseUrl: baseUrl,
       authBaseUrl,
@@ -53,7 +51,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
       needsRefresh: refreshTokenNeedsRefresh,
       refreshSession: () => this.#rotateTokens(),
-      requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
     });
     this.#hooks = {
       http: this.#http,
@@ -72,10 +69,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   get snapshot() {
     return this.#snapshot;
-  }
-
-  get accessToken() {
-    return this.#tokens.get()?.accessToken ?? null;
   }
 
   ensureFreshAccess(force = false) {
@@ -103,10 +96,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   renewSession() {
     return renewSessionSnapshot(this.#hooks);
-  }
-
-  refresh() {
-    return loadSessionSnapshot(this.#hooks);
   }
 
   async signOut() {

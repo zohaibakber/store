@@ -15,7 +15,6 @@ const WorkspaceOrganization = Schema.Struct({
   id: OrganizationId,
   name: Schema.String,
   slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  image: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: Schema.String,
 });
 

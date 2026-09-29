@@ -24,8 +24,7 @@
       provider: "github",
       owner: "zohaibakber",
       repo: "store",
-      // Both platform jobs upload into the same draft. The release workflow
-      // publishes it only after every platform and update manifest is present.
+      // The release workflow publishes the draft once the update manifest is present.
       releaseType: "draft",
     },
   ],
@@ -70,9 +69,6 @@
     // instead of generating the standard hicolor size ladder, so the
     // launcher/app-search icon fails to resolve even though it's present.
     // A pre-sized icon set directory forces it to ship all standard sizes.
-    // Named after executableName (`tabaaq`), not the old `store-electron`
-    // template key. Linux icon themes cache by that name, so a leftover teal
-    // store-electron.png would otherwise keep showing after updates.
     icon: "assets/prod/icons",
     desktop: {
       entry: {

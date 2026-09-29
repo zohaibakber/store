@@ -237,7 +237,6 @@ export interface AuthRepositoryApi {
     now: number,
   ) => Effect.Effect<void, RepositoryError>;
   readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
-  readonly revokeUser: (userId: UserIdType, now: number) => Effect.Effect<void, RepositoryError>;
 }
 
 export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
@@ -1004,13 +1003,6 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         .set({ revokedAt: at(now) })
         .where(and(eq(session.familyId, familyId), isNull(session.revokedAt)))
         .pipe(fail("revokeFamily"));
-    }),
-    revokeUser: Effect.fn("AuthRepository.revokeUser")(function* (userId, now) {
-      yield* database
-        .update(session)
-        .set({ revokedAt: at(now) })
-        .where(and(eq(session.userId, userId), isNull(session.revokedAt)))
-        .pipe(fail("revokeUser"));
     }),
   };
 };

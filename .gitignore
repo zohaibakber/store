@@ -32,14 +32,8 @@ release
 !.vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
-.vercel
-
-.vercel
 .env*
 .wrangler
-.dev.vars
-.dev.vars.*
-!.dev.vars.example
 
 .claude/worktrees/
 

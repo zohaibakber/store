@@ -11,7 +11,7 @@ export const HubAttachment = Schema.Struct({
   userId: Schema.String,
   expiresAt: Schema.Number,
   maxBytes: Schema.NullOr(Schema.Number),
-  epoch: Schema.optionalKey(Schema.String),
+  epoch: Schema.String,
 });
 export type HubAttachment = typeof HubAttachment.Type;
 
@@ -165,7 +165,7 @@ export const publishToSockets = (
       socket.remember({ ...attachment, epoch: publish.epoch });
     }
     if (attachment.replicaId === publish.originReplicaId) continue;
-    if (attachment.epoch !== undefined && attachment.epoch !== publish.epoch) {
+    if (attachment.epoch !== publish.epoch) {
       trySend(socket, resumeFrame(cursor));
     } else if (attachment.maxBytes !== null && publish.byteLength > attachment.maxBytes) {
       wake ??= wakeFrame(cursor);

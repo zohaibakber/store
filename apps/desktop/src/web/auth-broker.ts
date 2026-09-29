@@ -7,7 +7,6 @@ import {
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
   cookieSessionNeedsRefresh,
-  loadSessionSnapshot,
   refreshedTokens,
   renewSessionSnapshot,
   requestErrorFromPayload,
@@ -126,10 +125,6 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
 
   renewSession() {
     return renewSessionSnapshot(this.#hooks);
-  }
-
-  refresh() {
-    return loadSessionSnapshot(this.#hooks);
   }
 
   async signOut() {

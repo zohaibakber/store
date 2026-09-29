@@ -170,7 +170,6 @@ export const ApiLive = Api.make(
     };
     const verifyAccessToken = yield* makeAccessTokenVerifier(jwtConfig);
     const RuntimeLive = Layer.succeed(ServerRuntime, {
-      electronProtocol: security.electronProtocol,
       trustedOrigins: security.trustedOrigins,
       getSession: (headers) => authenticateHeaders(headers, verifyAccessToken),
       loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, verifyAccessToken),

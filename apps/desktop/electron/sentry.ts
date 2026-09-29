@@ -3,7 +3,6 @@ import { app } from "electron";
 
 interface DesktopErrorContext {
   readonly op: string;
-  readonly databasePath?: string;
 }
 
 const sentryDsn = () =>
@@ -37,7 +36,6 @@ export const reportDesktopError = (cause: unknown, context: DesktopErrorContext)
   console.error(error, context);
   Sentry.withScope((scope) => {
     scope.setTag("op", context.op);
-    if (context.databasePath) scope.setTag("databasePath", context.databasePath);
     Sentry.captureException(error);
   });
 };

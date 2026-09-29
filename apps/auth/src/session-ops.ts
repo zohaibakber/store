@@ -203,8 +203,7 @@ export const makeSessionOps = (
     if (!session) return;
     const actualHash = yield* hashSecret(parsed.secret);
     if (!safeEqual(actualHash, session.refreshTokenHash)) return;
-    if (input.everywhere) yield* repository.revokeUser(session.userId, now);
-    else yield* repository.revokeSession(session.id, now);
+    yield* repository.revokeSession(session.id, now);
   });
 
   const authorize = Effect.fn("Auth.Session.authorize")(function* (accessToken: string) {

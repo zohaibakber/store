@@ -15,7 +15,6 @@ export const RATE_LIMITS = {
 } as const;
 
 export interface ServerRuntimeContract {
-  readonly electronProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly getSession: (
     headers: Headers,

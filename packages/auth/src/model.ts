@@ -198,7 +198,6 @@ export interface RefreshInput extends Schema.Schema.Type<typeof RefreshInput> {}
 
 export const SignOutInput = Schema.Struct({
   refreshToken: Schema.optionalKey(RefreshToken),
-  everywhere: Schema.optionalKey(Schema.Boolean),
 });
 export interface SignOutInput extends Schema.Schema.Type<typeof SignOutInput> {}
 

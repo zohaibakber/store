@@ -29,8 +29,6 @@ describe("desktop inventory HTTP allowlist", () => {
   });
 
   it.each([
-    ["POST", "/api/inventory/mutations"],
-    ["POST", "/api/sync/live-tickets"],
     ["GET", "/api/sync/live?replicaId=replica-a&subscription=operational"],
     ["POST", "/api/sync/live"],
     ["GET", "/api/sync/pull"],

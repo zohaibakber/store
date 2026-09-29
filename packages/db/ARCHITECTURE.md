@@ -24,8 +24,3 @@ behaviour on top of these layouts.
    rewrites. Never edit applied migration SQL.
 4. The replica schema may re-export catalog tables from `store.schema`; it must
    not redefine those tables.
-
-## Managed columns
-
-`storeManagedColumnNames` in `store.schema` is the single list of columns the
-authority assigns. Contracts `omitManaged` strips them from client push rows.

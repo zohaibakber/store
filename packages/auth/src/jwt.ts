@@ -61,7 +61,7 @@ const JwtPayload = Schema.Struct({
 const JwtHeader = Schema.Struct({
   alg: Schema.Literal("ES256"),
   typ: Schema.Literal("JWT"),
-  kid: Schema.optionalKey(Schema.Literal(AUTH_JWT_KEY_ID)),
+  kid: Schema.Literal(AUTH_JWT_KEY_ID),
 });
 
 export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {

@@ -120,7 +120,7 @@ const titleBarOverlay = () => ({
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, `${ELECTRON_PROTOCOL}://app`);
+const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL);
 
 let pendingOAuthCallback: string | null = null;
 

@@ -42,12 +42,7 @@ export const LiveSocketQuery = Schema.Struct({
 });
 export type LiveSocketQuery = typeof LiveSocketQuery.Type;
 
-const LiveResumeReason = Schema.Literals([
-  "send_window_lost",
-  "retention_passed",
-  "epoch_changed",
-  "lease_expired",
-]);
+const LiveResumeReason = Schema.Literals(["epoch_changed"]);
 
 export const SyncLiveServerFrame = Schema.TaggedUnion({
   hello: {

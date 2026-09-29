@@ -45,9 +45,9 @@ const system = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("status", "/api", { success: ApiStatus }))
   .add(HttpApiEndpoint.get("health", "/api/health", { success: Health }));
 
-const auth = HttpApiGroup.make("auth")
-  .add(HttpApiEndpoint.get("session", "/api/auth/session", { success: WorkspaceSnapshot }))
-  .add(HttpApiEndpoint.get("getSession", "/api/auth/get-session", { success: WorkspaceSnapshot }));
+const auth = HttpApiGroup.make("auth").add(
+  HttpApiEndpoint.get("session", "/api/auth/session", { success: WorkspaceSnapshot }),
+);
 
 const uploads = HttpApiGroup.make("uploads").add(
   HttpApiEndpoint.post("extract", "/api/uploads", {

@@ -77,7 +77,6 @@ const session = AuthSession.make({
 const unused = () => Effect.die("unused");
 
 const serverRuntime: ServerRuntimeContract = {
-  electronProtocol: "com.tabaaq.desktop",
   trustedOrigins: [],
   getSession: () => Effect.succeed(session),
   loadWorkspace: unused,

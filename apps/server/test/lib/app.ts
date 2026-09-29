@@ -97,7 +97,6 @@ const runtimeFor = (
   const session = sessionFor(options.role ?? "owner");
   const role = options.role ?? "owner";
   return {
-    electronProtocol: "com.tabaaq.desktop",
     trustedOrigins: options.trustedOrigins ?? ["http://localhost:5173", "http://localhost:5174"],
     getSession: () => Effect.succeed(authenticated ? session : null),
     loadWorkspace: () =>

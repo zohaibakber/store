@@ -44,25 +44,12 @@ trap cleanup EXIT
     --appimage-extract usr/share/icons/hicolor >/dev/null
 )
 
-# Older builds used executableName `store-electron`, so Linux icon themes
-# cached a teal mark under that name. Always install as `tabaaq` and drop
-# the leftover cache key (AppImages before this change still ship the old
-# filename inside squashfs).
-find "${ICON_ROOT}" -name 'store-electron.png' -delete 2>/dev/null || true
-find "${ICON_ROOT}" -name 'com.tabaaq.desktop.png' -delete 2>/dev/null || true
-
 for apps_dir in \
   "${extract_dir}"/squashfs-root/usr/share/icons/hicolor/*/apps; do
   [ -d "${apps_dir}" ] || continue
   size=$(basename "$(dirname "${apps_dir}")")
-  if [ -f "${apps_dir}/${ICON_NAME}.png" ]; then
-    source_icon="${apps_dir}/${ICON_NAME}.png"
-  elif [ -f "${apps_dir}/store-electron.png" ]; then
-    source_icon="${apps_dir}/store-electron.png"
-  else
-    continue
-  fi
-  install -Dm644 "${source_icon}" "${ICON_ROOT}/${size}/apps/${ICON_NAME}.png"
+  [ -f "${apps_dir}/${ICON_NAME}.png" ] || continue
+  install -Dm644 "${apps_dir}/${ICON_NAME}.png" "${ICON_ROOT}/${size}/apps/${ICON_NAME}.png"
 done
 
 cat > "${DESKTOP_DIR}/tabaaq.desktop" <<EOF

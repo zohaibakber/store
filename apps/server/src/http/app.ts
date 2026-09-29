@@ -35,14 +35,7 @@ const Cors = HttpRouter.middleware(
     const runtime = yield* ServerRuntime;
     const cors = HttpMiddleware.cors({
       allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
-      allowedHeaders: [
-        "Content-Type",
-        "Authorization",
-        "Electron-Origin",
-        "Expo-Origin",
-        "traceparent",
-        "b3",
-      ],
+      allowedHeaders: ["Content-Type", "Authorization", "traceparent", "b3"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       exposedHeaders: ["Content-Length"],
       maxAge: 7200,

@@ -64,7 +64,6 @@ const session = AuthSession.make({
 const unused = () => Effect.die("unused");
 
 const serverRuntime: ServerRuntimeContract = {
-  electronProtocol: "com.tabaaq.desktop",
   trustedOrigins: [],
   getSession: (headers) =>
     Effect.succeed(headers.get("authorization") === `Bearer ${GOOD_TOKEN}` ? session : null),

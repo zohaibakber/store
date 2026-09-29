@@ -1,5 +1,4 @@
 import {
-  PARTITION_DIGEST_VERSION,
   SyncProtocolError,
   type AcquireSnapshotRequest,
   type SnapshotManifest,
@@ -26,10 +25,7 @@ export const recoverRequiredSnapshot = (
   request: AcquireSnapshotRequest,
 ): Effect.Effect<void, SnapshotRecoveryError> =>
   Effect.gen(function* () {
-    const acquired = yield* transport.acquireSnapshot({
-      ...request,
-      digestVersion: PARTITION_DIGEST_VERSION,
-    });
+    const acquired = yield* transport.acquireSnapshot(request);
     const { manifest } = acquired;
     const progress = yield* store.beginSnapshotImport(manifest);
     const remaining = Arr.sort(

@@ -33,24 +33,6 @@ const mutableSyncMetadata = {
   rowVersion: epochMilliseconds().notNull().default(1),
 };
 
-export type StoreManagedColumn =
-  | "id"
-  | "actorUserId"
-  | keyof typeof timestamps
-  | keyof typeof mutableSyncMetadata;
-export const storeManagedColumnNames: ReadonlyArray<StoreManagedColumn> = [
-  "id",
-  "actorUserId",
-  "createdAt",
-  "updatedAt",
-  "organizationId",
-  "createdByUserId",
-  "updatedByUserId",
-  "deviceId",
-  "operationId",
-  "rowVersion",
-];
-
 export const categories = sqliteTable(
   "categories",
   {
