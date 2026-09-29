@@ -120,7 +120,12 @@ const titleBarOverlay = () => ({
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL);
+const publishSession = (snapshot: WorkspaceSnapshot) => {
+  win?.webContents.send("auth:session-changed", snapshot);
+  return snapshot;
+};
+
+const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
 
 let pendingOAuthCallback: string | null = null;
 
@@ -167,11 +172,6 @@ const authTransitions = Semaphore.makeUnsafe(1);
 const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> =>
   Effect.runPromise(authTransitions.withPermit(Effect.promise(transition)));
 
-const publishSession = (snapshot: WorkspaceSnapshot) => {
-  win?.webContents.send("auth:session-changed", snapshot);
-  return snapshot;
-};
-
 const AuthTokens = Schema.NullOr(TokenSet);
 const InvoiceUpload = Schema.Struct({
   files: Schema.Array(
@@ -196,18 +196,15 @@ function registerAuthIpc() {
   ipcMain.handle("auth:adopt-session", async (event, input) => {
     assertRendererIpc(event.senderFrame);
     const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
-    return serializeAuthTransition(() => authBroker.adoptSession(tokens).then(publishSession));
+    return serializeAuthTransition(() => authBroker.adoptSession(tokens));
   });
   ipcMain.handle("auth:renew-session", (event) => {
     assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(() => authBroker.renewSession().then(publishSession));
+    return serializeAuthTransition(() => authBroker.renewSession());
   });
   ipcMain.handle("auth:sign-out", (event) => {
     assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(async () => {
-      await authBroker.signOut();
-      publishSession(authBroker.snapshot);
-    });
+    return serializeAuthTransition(() => authBroker.signOut());
   });
   ipcMain.handle("auth:organization", (event) => {
     assertRendererIpc(event.senderFrame);

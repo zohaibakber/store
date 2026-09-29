@@ -33,9 +33,14 @@ export const syncHealthFromScheduler = (status: SyncSchedulerStatus): ReplicaSyn
       return { _tag: "storageError", message: status.message };
     case "recoveryRequired":
       return { _tag: "recoveryRequired", message: status.message };
-    case "running":
     case "pausedForAuth":
+      return {
+        _tag: "recoveryRequired",
+        message: "Sign in again to resume syncing. Pending changes are saved on this device.",
+      };
     case "stopped":
+      return { _tag: "recoveryRequired", message: status.message };
+    case "running":
       return { _tag: "running" };
   }
 };

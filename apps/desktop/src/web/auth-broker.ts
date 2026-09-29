@@ -79,7 +79,10 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   readonly #hooks: SessionSnapshotHooks;
   #snapshot: WorkspaceSnapshot = unauthenticatedWorkspace({ isOnline: false });
 
-  constructor(options: WebAuthBrokerOptions) {
+  constructor(
+    options: WebAuthBrokerOptions,
+    publishSession: (snapshot: WorkspaceSnapshot) => void,
+  ) {
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.#hint = signedInOriginHint(options.storage ?? browserStorage);
     this.#isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine ?? true);
@@ -96,6 +99,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       getLocalSnapshot: () => this.#snapshot,
       publish: (snapshot) => {
         this.#snapshot = snapshot;
+        publishSession(snapshot);
         return snapshot;
       },
       clearAuthenticated: async () => this.#clear(),
@@ -109,12 +113,11 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   async initialize(): Promise<WorkspaceSnapshot> {
     if (!this.#hint.expected()) return this.#hooks.publish(this.#signedOut());
     try {
-      const refreshed = await this.#http.ensureFreshAccess(true);
-      if (refreshed) return this.#snapshot;
+      await this.#http.ensureFreshAccess(true);
+      return this.#snapshot;
     } catch (cause) {
       return this.#hooks.publish(this.#signedOut(failureMessage(cause)));
     }
-    return this.#hooks.publish(this.#signedOut());
   }
 
   adoptSession(tokens: TokenSet | null) {
@@ -136,7 +139,6 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       credentials: "include",
       body: encodeSignOut(SignOutInput.make({})),
     }).catch(() => undefined);
-    this.#hooks.publish(this.#signedOut());
   }
 
   apiRequest(pathname: string, init?: JsonRequestInit) {
@@ -162,7 +164,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
   #clear() {
     this.#tokens.set(null);
     this.#hint.clear();
-    this.#snapshot = this.#signedOut();
+    this.#hooks.publish(this.#signedOut());
   }
 
   async #refreshWithCookie(): Promise<RefreshedTokenSet | null> {

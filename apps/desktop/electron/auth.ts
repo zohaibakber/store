@@ -42,7 +42,11 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #hooks: SessionSnapshotHooks;
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
 
-  constructor(baseUrl: string, authBaseUrl: string) {
+  constructor(
+    baseUrl: string,
+    authBaseUrl: string,
+    publishSession: (snapshot: WorkspaceSnapshot) => void,
+  ) {
     this.#tokens = new MemoryTokenStore();
     this.#http = new SessionHttpClient({
       apiBaseUrl: baseUrl,
@@ -57,6 +61,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       getLocalSnapshot: () => this.#snapshot,
       publish: (snapshot) => {
         this.#snapshot = snapshot;
+        publishSession(snapshot);
         return snapshot;
       },
       clearAuthenticated: () => this.#clear(),
@@ -115,7 +120,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     }
     this.#tokens.set(null);
     await this.#clear();
-    this.#hooks.publish(unauthenticated(true));
   }
 
   apiRequest(pathname: string, init?: JsonRequestInit) {
@@ -132,7 +136,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
 
   async #clear() {
     this.#tokens.set(null);
-    this.#snapshot = unauthenticated(true);
+    this.#hooks.publish(unauthenticated(true));
     await rm(this.#storagePath(), { force: true });
   }
 

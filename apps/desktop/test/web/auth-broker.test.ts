@@ -14,13 +14,16 @@ import {
 
 const makeBroker = (server: ReturnType<typeof fakeSessionServer>, storage = memoryStorage()) => ({
   storage,
-  broker: new WebAuthBroker({
-    apiBaseUrl: API,
-    authBaseUrl: AUTH,
-    fetch: server.fetch,
-    storage,
-    isOnline: () => true,
-  }),
+  broker: new WebAuthBroker(
+    {
+      apiBaseUrl: API,
+      authBaseUrl: AUTH,
+      fetch: server.fetch,
+      storage,
+      isOnline: () => true,
+    },
+    () => undefined,
+  ),
 });
 
 const expectedSession = () => {
@@ -105,12 +108,15 @@ describe("WebAuthBroker cold start", () => {
         throw new DOMException("blocked", "SecurityError");
       },
     };
-    const broker = new WebAuthBroker({
-      apiBaseUrl: API,
-      authBaseUrl: AUTH,
-      fetch: server.fetch,
-      storage: blocked,
-    });
+    const broker = new WebAuthBroker(
+      {
+        apiBaseUrl: API,
+        authBaseUrl: AUTH,
+        fetch: server.fetch,
+        storage: blocked,
+      },
+      () => undefined,
+    );
 
     await expect(broker.initialize()).resolves.toMatchObject({ status: "unauthenticated" });
     expect(server.requests).toEqual([]);

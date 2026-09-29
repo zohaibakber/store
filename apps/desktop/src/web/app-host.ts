@@ -34,7 +34,6 @@ const isGoogleAuthorizationUrl = (candidate: string) => {
 };
 
 export const createWebAppHost = (options: WebAppHostOptions) => {
-  const broker = new WebAuthBroker(options);
   const sessions = makeReplayChannel<WorkspaceSnapshot>();
   const transitions = Semaphore.makeUnsafe(1);
   let pendingOAuthCallback = claimOAuthCallback(options.location, options.history);
@@ -43,6 +42,7 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
     sessions.publish(snapshot);
     return snapshot;
   };
+  const broker = new WebAuthBroker(options, publish);
   const serialize = <A>(transition: () => Promise<A>): Promise<A> =>
     Effect.runPromise(transitions.withPermit(Effect.promise(transition)));
   const authRequest = broker.authRequest.bind(broker);
@@ -50,13 +50,9 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
   const host: AppHost = {
     auth: {
       getSession: async () => publish(broker.snapshot),
-      adoptSession: (tokens) => serialize(() => broker.adoptSession(tokens).then(publish)),
-      renewSession: () => serialize(() => broker.renewSession().then(publish)),
-      signOut: () =>
-        serialize(async () => {
-          await broker.signOut();
-          publish(broker.snapshot);
-        }),
+      adoptSession: (tokens) => serialize(() => broker.adoptSession(tokens)),
+      renewSession: () => serialize(() => broker.renewSession()),
+      signOut: () => serialize(() => broker.signOut()),
       organizationRoster: () => fetchOrganizationRoster(authRequest),
       organize: (command) => organizeOrganization(authRequest, command),
       onSessionChange: sessions.subscribe,
@@ -87,6 +83,6 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
     authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) =>
       broker.apiFetch(input, init),
     liveAccessToken: ({ force }: { readonly force: boolean }) => broker.liveAccessToken(force),
-    initialize: async () => publish(await broker.initialize()),
+    initialize: () => broker.initialize(),
   };
 };
