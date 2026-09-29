@@ -15,6 +15,7 @@ import type {
   SyncEntity,
 } from "@store/contracts";
 import {
+  coalesce,
   eq,
   inArray,
   or,
@@ -95,6 +96,22 @@ const invoiceItemFields = (item: Ref<InvoiceItemRow>) => ({
   updatedAt: item.updatedAt,
 });
 
+const UNCATEGORIZED = "Uncategorized";
+
+const productCategoryFields = (product: Ref<ProductRow>, category: Ref<CategoryRow>) => ({
+  id: product.categoryId,
+  name: coalesce(category.name, UNCATEGORIZED),
+  tracksPacks: coalesce(category.tracksPacks, true),
+  organizationId: coalesce(category.organizationId, product.organizationId),
+  createdByUserId: coalesce(category.createdByUserId, product.createdByUserId),
+  updatedByUserId: coalesce(category.updatedByUserId, product.updatedByUserId),
+  deviceId: coalesce(category.deviceId, product.deviceId),
+  operationId: coalesce(category.operationId, product.operationId),
+  rowVersion: coalesce(category.rowVersion, 0),
+  createdAt: coalesce(category.createdAt, product.createdAt),
+  updatedAt: coalesce(category.updatedAt, product.updatedAt),
+});
+
 const catalogProductFields = (
   query: InitialQueryBuilder,
   inventory: Pick<Inventory, "batches">,
@@ -120,7 +137,7 @@ const catalogProductFields = (
   rowVersion: product.rowVersion,
   createdAt: product.createdAt,
   updatedAt: product.updatedAt,
-  category: categoryFields(category),
+  category: productCategoryFields(product, category),
   batches: toArray(
     query
       .from({ batch: inventory.batches })
@@ -160,7 +177,7 @@ const productsWithCategory = (
 ) =>
   query
     .from({ product: inventory.products })
-    .innerJoin({ category: inventory.categories }, ({ product, category }) =>
+    .leftJoin({ category: inventory.categories }, ({ product, category }) =>
       eq(product.categoryId, category.id),
     );
 
