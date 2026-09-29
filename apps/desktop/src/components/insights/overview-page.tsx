@@ -77,9 +77,7 @@ export function OverviewPage({
         />
         <PlanningSheet />
       </PageActions>
-      <React.Suspense fallback={<LoadingSpinner className="min-h-96" label="Loading insights" />}>
-        <OverviewBody range={range} />
-      </React.Suspense>
+      <OverviewBody range={range} />
     </PageLayout>
   );
 }

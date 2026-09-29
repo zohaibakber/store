@@ -21,7 +21,6 @@ import {
 } from "@tanstack/react-table";
 import * as React from "react";
 
-import { LoadingSpinner } from "@/components/app/loading-spinner";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -323,9 +322,7 @@ export function RestockPage({
 }) {
   return (
     <PageLayout>
-      <React.Suspense fallback={<LoadingSpinner className="h-96" label="Loading restock plan" />}>
-        <RestockBody onViewChange={onViewChange} view={view} />
-      </React.Suspense>
+      <RestockBody onViewChange={onViewChange} view={view} />
     </PageLayout>
   );
 }
