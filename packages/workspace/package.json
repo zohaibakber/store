@@ -4,10 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./session-broker": "./src/session-broker.ts",
-    "./session-http": "./src/session-http.ts",
-    "./workspace": "./src/workspace.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "check": "tsc --noEmit",

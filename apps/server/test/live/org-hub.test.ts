@@ -12,13 +12,9 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
+import type { OrgHubContract } from "../../api";
 import { admissionHeaders, type HubAdmission, type HubAttachment } from "../../src/live/hub-core";
-import {
-  makeOrgHub,
-  type HubPlatform,
-  type HubState,
-  type OrgHubContract,
-} from "../../src/live/org-hub";
+import { makeOrgHub, type HubPlatform, type HubState } from "../../src/live/org-hub";
 
 const runtime = Context.make(RuntimeContext, {
   Type: "test",

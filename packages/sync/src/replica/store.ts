@@ -43,7 +43,7 @@ export type QueuedCommand = {
   readonly status: CommandStatus;
 };
 
-export type ReplicaSyncCursor = {
+type ReplicaSyncCursor = {
   readonly epoch: string;
   readonly appliedCommitSequence: string;
   readonly replicaId: string;
@@ -113,7 +113,7 @@ interface ReplicaRemoteApplyStore {
   readonly verifyAuthority: (input: VerifyAuthorityInput) => Effect.Effect<void, ReplicaStoreError>;
 }
 
-export type SnapshotImportProgress = {
+type SnapshotImportProgress = {
   readonly partsImported: number;
 };
 

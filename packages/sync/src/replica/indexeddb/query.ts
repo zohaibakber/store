@@ -72,14 +72,18 @@ export type IndexedDbResidualPredicate =
     }
   | { readonly _tag: "not"; readonly predicate: IndexedDbResidualPredicate };
 
+export type IndexedDbOrderClause = {
+  readonly column: string;
+  readonly direction: "asc" | "desc";
+  readonly nulls: "first" | "last";
+  readonly collation: "binary" | "nocase";
+};
+
 export type IndexedDbSubsetPlan = {
   readonly table: IndexedDbEntityTable;
   readonly scan: IndexedDbScan;
   readonly residual: IndexedDbResidualPredicate | undefined;
-  readonly orderBy: ReadonlyArray<{
-    readonly column: string;
-    readonly direction: "asc" | "desc";
-  }>;
+  readonly orderBy: ReadonlyArray<IndexedDbOrderClause>;
   readonly limit: number;
   readonly offset: number;
 };
@@ -125,7 +129,37 @@ const compareValues = (
   if (Option.isSome(leftNumber) && Option.isSome(rightNumber)) {
     return leftNumber.value - rightNumber.value;
   }
-  return stringifyCell(left).localeCompare(stringifyCell(right));
+  return compareCodeUnits(stringifyCell(left), stringifyCell(right));
+};
+
+const compareCodeUnits = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const collated = (
+  value: IndexedDbCellValue | undefined,
+  collation: IndexedDbOrderClause["collation"],
+): IndexedDbCellValue | undefined => {
+  if (collation !== "nocase") return value;
+  const text = decodeString(value);
+  return Option.isSome(text) ? foldAsciiCase(text.value) : value;
+};
+
+const compareOrdered = (
+  left: IndexedDbCellValue | undefined,
+  right: IndexedDbCellValue | undefined,
+  clause: IndexedDbOrderClause,
+): number => {
+  const leftMissing = left === null || left === undefined;
+  const rightMissing = right === null || right === undefined;
+  if (leftMissing || rightMissing) {
+    if (leftMissing && rightMissing) return 0;
+    return leftMissing === (clause.nulls === "first") ? -1 : 1;
+  }
+  const ranking = compareValues(
+    collated(left, clause.collation),
+    collated(right, clause.collation),
+  );
+  return clause.direction === "desc" ? -ranking : ranking;
 };
 
 const matchesCompare = (
@@ -352,13 +386,16 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
   return scan._tag === "generationPrefix" && scan.reverse ? prefix.reverse() : prefix;
 };
 
-const indexOrderColumn = (index: IndexedDbIndexName) => {
+const indexOrder = (
+  index: IndexedDbIndexName,
+): { readonly column: string; readonly collation?: "binary" | "nocase" } | undefined => {
   switch (index) {
     case "byCreatedAt":
-      return "createdAt";
+      return { column: "createdAt" };
     case "byName":
+      return { column: "name", collation: "binary" };
     case "byNameKey":
-      return "name";
+      return { column: "name", collation: "nocase" };
     case "byCategory":
     case "byProduct":
     case "byOperation":
@@ -373,18 +410,28 @@ const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
   if (rest.length > 0) return false;
   if (
     tieBreak !== undefined &&
-    (tieBreak.column !== "id" || tieBreak.direction !== first.direction)
+    (tieBreak.column !== "id" ||
+      tieBreak.direction !== first.direction ||
+      tieBreak.collation === "nocase")
   ) {
     return false;
   }
   const descending = first.direction === "desc";
+  const collation = first.collation;
   switch (plan.scan._tag) {
-    case "indexPrefix":
-      return indexOrderColumn(plan.scan.index) === first.column && descending === plan.scan.reverse;
+    case "indexPrefix": {
+      const order = indexOrder(plan.scan.index);
+      return (
+        order !== undefined &&
+        order.column === first.column &&
+        (order.collation === undefined || order.collation === collation) &&
+        descending === plan.scan.reverse
+      );
+    }
     case "indexEqualsOrdered":
-      return first.column === "name" && descending === plan.scan.reverse;
+      return first.column === "name" && collation === "nocase" && descending === plan.scan.reverse;
     case "generationPrefix":
-      return first.column === "id" && descending === plan.scan.reverse;
+      return first.column === "id" && collation === "binary" && descending === plan.scan.reverse;
     case "primaryEquals":
     case "indexEquals":
       return false;
@@ -630,8 +677,8 @@ const compareEntries =
   (orderBy: IndexedDbSubsetPlan["orderBy"]) =>
   (left: SortEntry, right: SortEntry): number => {
     for (const [index, clause] of orderBy.entries()) {
-      const ranking = compareValues(left.keys[index], right.keys[index]);
-      if (ranking !== 0) return clause.direction === "desc" ? -ranking : ranking;
+      const ranking = compareOrdered(left.keys[index], right.keys[index], clause);
+      if (ranking !== 0) return ranking;
     }
     return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
   };

@@ -1,4 +1,5 @@
 import type { ReplicaInsightsWindow, SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import { replicaState } from "@store/db/replica.schema";
 import {
   layerOwnedHttpSync,
   ReplicaStore,
@@ -17,17 +18,12 @@ import {
   SqliteReplica,
   type SqliteReplicaHandle,
 } from "@store/sync/sql-client";
+import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 
-import {
-  readCaughtUpAtSqlite,
-  readCommandOutcomesSqlite,
-  type CommandOutcome,
-  type ReplicaSyncProgress,
-} from "./command-outcome";
 import { layerCommitForwarding } from "./commit-forwarding";
 import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
 import { readSqliteInsightsFacts } from "./insights-sqlite";
@@ -61,13 +57,18 @@ export type SqliteReplicaIdentity = {
   readonly replicaId: string;
 };
 
-const STAMP_SQL = `select activeGeneration as generation, localCommitVersion as version from replica_state where id = 'singleton'`;
-
 export const readReplicaStamp = Effect.fn("ReplicaNodeSqlite.readStamp")(function* (
   handle: SqliteReplicaHandle,
   workspaceToken: string,
 ) {
-  const rows = yield* handle.sql.unsafe(STAMP_SQL);
+  const rows = yield* handle.db
+    .select({
+      generation: replicaState.activeGeneration,
+      version: replicaState.localCommitVersion,
+    })
+    .from(replicaState)
+    .where(eq(replicaState.id, "singleton"))
+    .all();
   const decoded = decodeReplicaStampRow(rows[0]);
   return {
     workspaceToken,
@@ -132,15 +133,24 @@ export const seedReplicaIdentity = Effect.fn("ReplicaNodeSqlite.seedIdentity")(f
   handle: SqliteReplicaHandle,
   identity: SqliteReplicaIdentity,
 ) {
-  const existing = yield* handle.sql.unsafe(`select id from replica_state where id = 'singleton'`);
+  const existing = yield* handle.db
+    .select({ id: replicaState.id })
+    .from(replicaState)
+    .where(eq(replicaState.id, "singleton"))
+    .all();
   if (existing.length > 0) return;
-  yield* handle.sql.unsafe(
-    `insert into replica_state (
-      id, organizationId, userId, replicaId, epoch, incarnation,
-      appliedCommitSequence, nextClientSequence, localCommitVersion, activeGeneration
-    ) values ('singleton', ?, ?, ?, '1', 'local', '0', '1', 0, 1)`,
-    [identity.organizationId, identity.userId, identity.replicaId],
-  );
+  yield* handle.db.insert(replicaState).values({
+    id: "singleton",
+    organizationId: identity.organizationId,
+    userId: identity.userId,
+    replicaId: identity.replicaId,
+    epoch: "1",
+    incarnation: "local",
+    appliedCommitSequence: "0",
+    nextClientSequence: "1",
+    localCommitVersion: 0,
+    activeGeneration: 1,
+  });
 });
 
 export const layerSeededReplica = <E, R>(
@@ -160,10 +170,6 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader &
     readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
     readonly stamp: () => Promise<ReplicaQueryStamp>;
     readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
-    readonly readCommandOutcomes: (
-      operationIds: ReadonlyArray<string>,
-    ) => Promise<ReadonlyArray<CommandOutcome>>;
-    readonly readSyncProgress: () => Promise<ReplicaSyncProgress>;
     readonly readCommandAllocation: () => Promise<{
       readonly epoch: string;
       readonly nextClientSequence: string;
@@ -191,7 +197,7 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
   readonly identity: SqliteReplicaIdentity;
   readonly databaseIdentity: string;
   readonly transport: Layer.Layer<SyncTransportService, TransportError>;
-  readonly live?: OwnedLiveHost;
+  readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
 };
 
@@ -199,7 +205,6 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
 ): Promise<SqliteReplicaSyncSession> => {
   const workspaceToken = input.databaseIdentity;
-  const sessionOpenedAt = Date.now();
   const publisher = createReplicaCommitPublisher();
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
@@ -241,23 +246,17 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
   return {
     engine: "sqlite",
     replicaId,
-    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.sql)),
+    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.db)),
     readPendingRowIds: (entity) =>
-      withHandle((handle) => readPendingRowIdsSqlite(handle.sql, entity)),
+      withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
     stamp: () => withHandle((handle) => readReplicaStamp(handle, workspaceToken)),
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
     readInsights: (window) =>
       withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
     summarizeSubset: (spec) =>
       withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
-    readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
-    readCommandOutcomes: (operationIds) =>
-      withHandle((handle) => readCommandOutcomesSqlite(handle.sql, operationIds)),
-    readSyncProgress: async () => ({
-      sessionOpenedAt,
-      caughtUpAt: await withHandle((handle) => readCaughtUpAtSqlite(handle.sql)),
-    }),
-    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
+    readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
+    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.db)),
     enqueueLocal: async (envelope, createdAt) => {
       const queued = await runtime.runPromise(store.enqueueCommand(envelope, createdAt));
       return { changed: queued.notice !== undefined, status: queued.value.status };

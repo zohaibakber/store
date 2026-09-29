@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import { ReplicaClientSequence } from "@store/contracts";
-import { LAST_UNIT_REPLICA_A, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_REPLICA_A,
+  lastUnitBuyerAEnvelope,
+} from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -123,5 +127,33 @@ describe("replica store contract", () => {
           yield* indexed.dispose();
         }),
       ),
+  );
+
+  it.effect("reads batches with pending sale overlays applied", () =>
+    Effect.gen(function* () {
+      const indexed = yield* makeIndexedDbReplicaStore({
+        databaseName,
+        databaseIdentity: "idb-contract",
+        identity: {
+          organizationId: lastUnitBuyerAEnvelope.organizationId,
+          userId: "user-1",
+          replicaId: LAST_UNIT_REPLICA_A,
+        },
+        indexedDB,
+        IDBKeyRange,
+      });
+      yield* indexed.applyTransactionGroup(seedCatalogGroup);
+      yield* indexed.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+      const read = yield* indexed.querySubset({
+        table: "batches",
+        scan: { _tag: "primaryEquals", id: LAST_UNIT_BATCH_ID },
+        residual: { _tag: "compare", column: "id", op: "eq", value: LAST_UNIT_BATCH_ID },
+        orderBy: [],
+        limit: 1,
+        offset: 0,
+      });
+      expect(read.rows.map((row) => [row["packQuantity"], row["unitQuantity"]])).toEqual([[0, 9]]);
+      yield* indexed.dispose();
+    }),
   );
 });

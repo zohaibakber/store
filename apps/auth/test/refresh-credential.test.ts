@@ -18,25 +18,4 @@ describe("resolveRefreshCredential", () => {
       refreshToken: bodyToken,
     });
   });
-
-  it("uses a valid cookie as Browser when the body has no token", () => {
-    expect(
-      resolveRefreshCredential({
-        cookie: cookieToken,
-        bodyToken: undefined,
-      }),
-    ).toEqual({
-      client: { _tag: "Browser" },
-      refreshToken: cookieToken,
-    });
-  });
-
-  it("ignores a cookie that is not a refresh token", () => {
-    expect(
-      resolveRefreshCredential({
-        cookie: "",
-        bodyToken: undefined,
-      }),
-    ).toBeUndefined();
-  });
 });

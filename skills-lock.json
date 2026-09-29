@@ -37,12 +37,6 @@
       "skillPath": "plugins/expo/skills/expo-ui/SKILL.md",
       "computedHash": "5cbb2f0049e4d3a51cf6450b2d0032684e0881681a8f3dcea21b94164352fe61"
     },
-    "heroui-native": {
-      "source": "heroui-inc/heroui",
-      "sourceType": "github",
-      "skillPath": "skills/heroui-native/SKILL.md",
-      "computedHash": "d2fc03a13d03678d40799726a144ba72ba1cb08126176ddbf0a0461c901aef29"
-    },
     "improve-codebase-architecture": {
       "source": "mattpocock/skills",
       "sourceType": "github",

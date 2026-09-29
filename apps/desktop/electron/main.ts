@@ -13,10 +13,10 @@ import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "
 
 import { analyseInvoiceUpload } from "../src/lib/invoice-upload";
 import { AuthBroker } from "./auth";
+import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
-import { registerLegacyMigrationIpc } from "./legacy-migration";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import {
   isOAuthCallbackUrl,
@@ -26,8 +26,6 @@ import {
 import {
   desktopRendererOrigin,
   desktopRendererUrl,
-  isLegacyPowerSyncWorkerPath,
-  makeDesktopContentSecurityPolicy,
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
@@ -66,7 +64,6 @@ initDesktopSentry();
 let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
-let disposeLegacyMigration: (() => void) | undefined;
 let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
@@ -139,33 +136,17 @@ const publishOAuthCallback = (url: string) => {
   deliverOAuthCallback();
 };
 
-const rendererCspInput = {
+const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
   apiOrigin: new URL(API_BASE_URL).origin,
   authOrigin: new URL(AUTH_BASE_URL).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
-};
-const rendererCsp = makeDesktopContentSecurityPolicy(rendererCspInput);
-const legacyPowerSyncWorkerCsp = makeDesktopContentSecurityPolicy({
-  ...rendererCspInput,
-  wasm: true,
 });
-
-const rendererCspFor = (pathname: string) =>
-  isLegacyPowerSyncWorkerPath(pathname) ? legacyPowerSyncWorkerCsp : rendererCsp;
 
 const allowedRendererOrigins = () =>
   [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
     Boolean(value),
   );
-
-const rendererCspForUrl = (url: string) => {
-  if (!URL.canParse(url)) return rendererCsp;
-  const parsed = new URL(url);
-  return allowedRendererOrigins().includes(`${parsed.protocol}//${parsed.host}`)
-    ? rendererCspFor(parsed.pathname)
-    : rendererCsp;
-};
 
 const assertRendererIpc = (frame: Electron.WebFrameMain | null | undefined) =>
   assertTrustedIpcSender(frame, allowedRendererOrigins());
@@ -175,7 +156,7 @@ function registerRendererCsp() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        "Content-Security-Policy": [rendererCspForUrl(details.url)],
+        "Content-Security-Policy": [rendererCsp],
       },
     });
   });
@@ -351,7 +332,6 @@ const shutdown = makeShutdownCoordinator({
     const results = await Promise.allSettled([
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
-      Promise.resolve(disposeLegacyMigration?.()),
       Promise.resolve(replicaWorker?.dispose()),
     ]);
     const failures = results.filter(
@@ -393,7 +373,7 @@ void app.whenReady().then(async () => {
     scheme: ELECTRON_PROTOCOL,
     rendererRoot: RENDERER_DIST,
     developmentServerUrl: VITE_DEV_SERVER_URL,
-    contentSecurityPolicy: rendererCspFor,
+    contentSecurityPolicy: rendererCsp,
   });
   registerRendererCsp();
   denyAllSessionPermissionRequests(session.defaultSession);
@@ -401,11 +381,6 @@ void app.whenReady().then(async () => {
   registerNewSaleAccelerator();
   registerAuthIpc();
   registerServerIpc();
-  disposeLegacyMigration = registerLegacyMigrationIpc({
-    ipcMain,
-    userDataPath: app.getPath("userData"),
-    allowedOrigins: allowedRendererOrigins,
-  });
   createWindow();
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({

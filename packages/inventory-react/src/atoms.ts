@@ -124,6 +124,7 @@ const INSIGHT_ENTITIES: ReadonlySet<SyncEntity> = new Set([
   "invoiceItem",
 ]);
 const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
+export const CANDIDATE_QUERY_SEPARATOR = "\n";
 const INSIGHTS_SETTLE = Duration.millis(750);
 const INSIGHTS_ROLLOVER = Duration.minutes(15);
 
@@ -180,6 +181,11 @@ export type WorkspaceAtoms = {
   ) => (
     query: string,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
+  readonly productCandidates: (
+    limit: number,
+  ) => (
+    queries: string,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
   readonly commandExecution: Atom.Writable<CommandExecutionState>;
   readonly insights: Atom.Atom<
     AsyncResult.AsyncResult<InsightsReport, WorkspaceReadError | InsightsError>
@@ -235,6 +241,19 @@ export const createWorkspaceAtoms = (
         Atom.make(sources.searchProducts(query, limit)).pipe(
           refreshOnCommits(sources, PRODUCT_ENTITIES),
         ),
+      ),
+    ),
+    productCandidates: Atom.family((limit: number) =>
+      Atom.family((queries: string) =>
+        Atom.make(
+          Effect.forEach(queries === "" ? [] : queries.split(CANDIDATE_QUERY_SEPARATOR), (query) =>
+            sources.searchProducts(query, limit),
+          ).pipe(
+            Effect.map((groups) => [
+              ...new Map(groups.flat().map((row) => [row.id, row])).values(),
+            ]),
+          ),
+        ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
       ),
     ),
     productPage: Atom.family((request: ProductListRequest) =>

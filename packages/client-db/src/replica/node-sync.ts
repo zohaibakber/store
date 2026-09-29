@@ -17,7 +17,7 @@ export const openNodeReplicaSyncSession = (input: {
   readonly identity: NodeReplicaSyncIdentity;
   readonly databaseIdentity: string;
   readonly transport: SyncTransport;
-  readonly live?: OwnedLiveHost;
+  readonly live: OwnedLiveHost;
 }): Promise<NodeReplicaSyncSession> =>
   openSqliteReplicaSyncSession({
     replica: SqliteReplica.layer(input.path),

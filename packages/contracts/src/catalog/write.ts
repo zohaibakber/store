@@ -35,14 +35,14 @@ const BatchWriteFields = Schema.Struct({
   unitQuantity: Schema.Natural,
 });
 
-export const CategoryUpsertWrite = Schema.Struct({
+const CategoryUpsertWrite = Schema.Struct({
   entity: Schema.Literal("category"),
   action: Schema.Literal("upsert"),
   id: CategoryId,
   expectedRowVersion: Schema.NullOr(CatalogRowVersion),
   row: CategoryWriteFields,
 });
-export type CategoryUpsertWrite = typeof CategoryUpsertWrite.Type;
+type CategoryUpsertWrite = typeof CategoryUpsertWrite.Type;
 
 const CategoryDeleteWrite = Schema.Struct({
   entity: Schema.Literal("category"),
@@ -51,14 +51,14 @@ const CategoryDeleteWrite = Schema.Struct({
   expectedRowVersion: CatalogRowVersion,
 });
 
-export const ProductUpsertWrite = Schema.Struct({
+const ProductUpsertWrite = Schema.Struct({
   entity: Schema.Literal("product"),
   action: Schema.Literal("upsert"),
   id: ProductId,
   expectedRowVersion: Schema.NullOr(CatalogRowVersion),
   row: ProductWriteFields,
 });
-export type ProductUpsertWrite = typeof ProductUpsertWrite.Type;
+type ProductUpsertWrite = typeof ProductUpsertWrite.Type;
 
 const ProductDeleteWrite = Schema.Struct({
   entity: Schema.Literal("product"),
@@ -67,7 +67,7 @@ const ProductDeleteWrite = Schema.Struct({
   expectedRowVersion: CatalogRowVersion,
 });
 
-export const BatchUpsertWrite = Schema.Struct({
+const BatchUpsertWrite = Schema.Struct({
   entity: Schema.Literal("batch"),
   action: Schema.Literal("upsert"),
   id: BatchId,
@@ -76,7 +76,7 @@ export const BatchUpsertWrite = Schema.Struct({
   note: Schema.NullOr(Schema.String.check(Schema.isMaxLength(500))),
   row: BatchWriteFields,
 });
-export type BatchUpsertWrite = typeof BatchUpsertWrite.Type;
+type BatchUpsertWrite = typeof BatchUpsertWrite.Type;
 
 const BatchDeleteWrite = Schema.Struct({
   entity: Schema.Literal("batch"),

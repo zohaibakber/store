@@ -30,9 +30,11 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { Api, OrgHub } from "../server/api";
 import { ephemeralStoreLayer } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
 import { authRoutes, buildOncePerIsolate, workerRuntimeServices } from "./src/http";
+import { hubRevocationLayer } from "./src/hub-revocation";
 import { writeJwksAssets } from "./src/jwks-asset";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./src/limits";
 import { resolveProductionAuthHostname } from "./src/public-hostname";
@@ -48,7 +50,7 @@ export const AuthLive = Auth.make(
   Effect.gen(function* () {
     const database = yield* AuthDatabase;
     const { stage } = yield* Alchemy.Stack;
-    const published = stage === "prod" || stage === "nightly";
+    const published = stage === "prod";
     const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
       Config.withDefault(""),
@@ -102,7 +104,7 @@ export const AuthLive = Auth.make(
     const databaseBinding = yield* Cloudflare.D1.QueryDatabase(databaseResource);
     const { stage } = yield* Alchemy.Stack;
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const published = stage === "prod" || stage === "nightly";
+    const published = stage === "prod";
 
     const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
@@ -175,6 +177,9 @@ export const AuthLive = Auth.make(
       );
     }
 
+    const orgHubs = yield* globalThis.__ALCHEMY_RUNTIME__ ? OrgHub.from("Api") : OrgHub.from(Api);
+    const execution = yield* Cloudflare.WorkerExecutionContext;
+
     const isolateServices = yield* workerRuntimeServices;
     const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
     const DependenciesLive = Layer.mergeAll(
@@ -194,6 +199,7 @@ export const AuthLive = Auth.make(
         callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
         nativeClientIds: googleNativeClientIds,
       }),
+      hubRevocationLayer(orgHubs, (effect) => execution.waitUntil(effect)),
     );
     const runtime = yield* Effect.exit(
       Effect.gen(function* () {

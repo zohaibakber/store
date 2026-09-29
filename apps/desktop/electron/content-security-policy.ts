@@ -3,21 +3,14 @@ const liveSocketOrigin = (apiOrigin: string): string => {
   return `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
 };
 
-const LEGACY_POWERSYNC_WORKER = /^\/assets\/WASQLiteDB\.worker-[A-Za-z0-9_-]+\.js$/u;
-
-export const isLegacyPowerSyncWorkerPath = (pathname: string) =>
-  LEGACY_POWERSYNC_WORKER.test(pathname);
-
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
   readonly apiOrigin: string;
   readonly authOrigin: string;
   readonly development: boolean;
-  readonly wasm?: boolean;
 }) => {
   const scriptSources = [
     "'self'",
-    ...(input.wasm === true ? ["'wasm-unsafe-eval'"] : []),
     ...(input.development ? ["'unsafe-eval'", "'unsafe-inline'"] : []),
   ];
   const connectSources = [

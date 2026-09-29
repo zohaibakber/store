@@ -301,7 +301,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       },
       atoms,
     );
-    return { ...tables, atoms, actions, replica, actor };
+    return { ...tables, atoms, actions };
   });
 
 export const openInventoryWorkspace = (

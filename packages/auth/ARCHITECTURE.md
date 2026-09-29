@@ -1,14 +1,11 @@
-# First-party authentication design
+# Authentication design
 
-## Problem
+## Scope
 
-Tabaaq used to delegate identity, sessions, organizations, UI state, and token
-refresh to Clerk. That kept the first release small, and it also spread vendor
-IDs and lifecycle rules through the API, Electron main process, React renderer,
-Android app, synchronization, deployment config, and CSP.
-
-First-party auth owns those concerns now. An authenticated organization ID
-still scopes the same Postgres rows and local replica on every client.
+Tabaaq owns identity, sessions, organizations, and token refresh. The auth
+Worker issues tokens; the API, the Electron main process, the web renderer, and
+the Android app consume them. An authenticated organization ID scopes the same
+Postgres rows and local replica on every client.
 
 ## Usage (caller's view)
 
@@ -267,48 +264,6 @@ apps/auth/
 apps/server/
   src/auth/session.ts  local public-key JWT verification and workspace projection
 ```
-
-## Arena candidates
-
-### Candidate A: opaque sessions for every request
-
-Every client sends an opaque session token. The API calls the auth service or
-reads the session database on each request. This follows the auth book most
-literally and makes revocation immediate. It lost because offline verification
-is impossible and the API gains a hard auth-service dependency on every sync
-connection. The public interface is small, but the runtime coupling is too
-large.
-
-### Candidate B: pure JWT with rotating refresh in KV
-
-The auth Worker issues a long-lived JWT access token plus a rotating refresh
-token stored in KV. The API stays independent and the implementation is small.
-It failed the consistency screen. KV can return stale values and stale negative
-lookups for 60 seconds or more. Rotation replay, logout, and logout-everywhere
-would have timing-dependent behavior.
-
-### Candidate C: short JWT access plus authoritative D1 refresh session
-
-The API verifies short access JWTs locally. D1 serializes refresh rotation and
-revocation, and consumes short-lived, single-purpose challenges. This keeps
-the API independent, permits bounded offline use, and preserves server-side
-session control. Its implementation has more cryptographic and storage code,
-but callers see less of it.
-
-## Synthesis decision
-
-Candidate C is the base. Candidate A contributed separate session IDs and
-secrets, hashed secrets at rest, and explicit server invalidation. Candidate B
-contributed local JWT verification and PKCE-shaped native OAuth. The Better
-Auth-shaped candidate contributed one shared client and a browser/native
-transport split, but its plugin and callback framework was rejected. Tabaaq has
-three known clients and does not need a general authentication framework.
-
-All candidates were screened for the architect red flags. Candidate C groups
-code by owned knowledge, not request order. Repository and provider adapters
-add storage or protocol policy rather than forwarding methods. Storage rows and
-Google response types stay private. The client and service operations each
-complete a user-visible transition, so callers do not coordinate hidden stages.
 
 ## Tradeoffs accepted
 

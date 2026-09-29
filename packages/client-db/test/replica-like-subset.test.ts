@@ -65,7 +65,7 @@ describe("like subset predicates", () => {
       }),
     );
     expect(statement.sql).toBe(
-      `SELECT * FROM "products" WHERE "name" LIKE ? ORDER BY "name" COLLATE NOCASE ASC LIMIT ?`,
+      `select "id", "name", "categoryId", "aisle", "composition", "strength", "unitsPerPack", "purchasePrice", "retailPrice", "unitPrice", "visible", "createdAt", "updatedAt", "organizationId", "createdByUserId", "updatedByUserId", "deviceId", "operationId", "rowVersion" from "products" where "products"."name" like ? order by "products"."name" COLLATE NOCASE asc limit ?`,
     );
     const plan = await replica.query(`EXPLAIN QUERY PLAN ${statement.sql}`, statement.parameters);
     const details = plan.map((row) => String(row["detail"])).join("\n");

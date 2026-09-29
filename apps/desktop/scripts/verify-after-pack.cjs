@@ -34,18 +34,7 @@ const forbiddenRendererMarkers = [
   "OpfsWorker",
 ];
 
-const forbiddenRendererReplicaSqlMarkers = ['SELECT * FROM "'];
-
-const legacyPowerSyncAssets = [
-  /^\/dist\/assets\/powersync-reader-[\w-]+\.js$/u,
-  /^\/dist\/assets\/WASQLiteDB\.worker-[\w-]+\.js$/u,
-  /^\/dist\/assets\/(?:mc-)?wa-sqlite(?:-async)?-[\w-]+\.(?:js|wasm)$/u,
-  /^\/dist\/assets\/OPFSWriteAheadVFS-[\w-]+\.js$/u,
-];
-const legacyPowerSyncMarkers = new Set(["wa-sqlite"]);
-
-const isLegacyPowerSyncAsset = (entry) =>
-  legacyPowerSyncAssets.some((pattern) => pattern.test(entry));
+const forbiddenRendererReplicaSqlMarkers = ["overlay_command"];
 
 const forbiddenServerMarkers = [
   "ORGANIZATION_STORE",
@@ -134,10 +123,9 @@ const verifyDesktopAsar = (archivePath) => {
 
   const wasmSqliteAssets = entries.filter(
     (entry) =>
-      !isLegacyPowerSyncAsset(entry) &&
-      (/wa-sqlite/u.test(entry) ||
-        /sql-sqlite-wasm/u.test(entry) ||
-        /replica-sqlite\.worker/u.test(entry)),
+      /wa-sqlite/u.test(entry) ||
+      /sql-sqlite-wasm/u.test(entry) ||
+      /replica-sqlite\.worker/u.test(entry),
   );
   if (wasmSqliteAssets.length > 0) {
     fail("SQLite WASM / OPFS worker assets reached the desktop artifact", wasmSqliteAssets);
@@ -177,7 +165,6 @@ const verifyDesktopAsar = (archivePath) => {
   for (const entry of rendererEntries) {
     const source = extractFile(archivePath, rawByPosix.get(entry).slice(1)).toString("utf8");
     for (const marker of forbiddenRendererMarkers) {
-      if (isLegacyPowerSyncAsset(entry) && legacyPowerSyncMarkers.has(marker)) continue;
       if (source.includes(marker)) rendererLeaks.push(`${entry}: ${marker}`);
     }
     for (const marker of forbiddenRendererReplicaSqlMarkers) {
@@ -242,7 +229,6 @@ module.exports = afterPack;
 module.exports.verifyDesktopAsar = verifyDesktopAsar;
 module.exports.forbiddenRendererMarkers = forbiddenRendererMarkers;
 module.exports.forbiddenRendererReplicaSqlMarkers = forbiddenRendererReplicaSqlMarkers;
-module.exports.isLegacyPowerSyncAsset = isLegacyPowerSyncAsset;
 
 if (require.main === module) {
   const archivePath = process.argv[2];

@@ -178,7 +178,7 @@ const textFilter = (filters: ColumnFiltersState, id: string) => {
   return isText(value) && value.trim() !== "" ? value : undefined;
 };
 
-export const productTableFilters = (
+const productTableFilters = (
   view: ProductListView,
   categories: ReadonlyArray<CategoryOption>,
 ): ColumnFiltersState => {
@@ -192,7 +192,7 @@ export const productTableFilters = (
   ];
 };
 
-export const viewWithFilters = (
+const viewWithFilters = (
   view: ProductListView,
   filters: ColumnFiltersState,
   categories: ReadonlyArray<CategoryOption>,
@@ -211,7 +211,7 @@ export const viewWithFilters = (
   };
 };
 
-export const viewWithSorting = (view: ProductListView, sorting: SortingState): ProductListView => {
+const viewWithSorting = (view: ProductListView, sorting: SortingState): ProductListView => {
   const [first] = sorting;
   return first && isSortColumn(first.id)
     ? { ...view, sort: first.id, desc: first.desc, page: 0 }

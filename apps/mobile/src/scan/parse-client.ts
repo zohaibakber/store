@@ -66,7 +66,7 @@ const errorMessage = (response: HttpClientResponse.HttpClientResponse) =>
     Effect.orElseSucceed(() => null),
   );
 
-export const productScanUrl = (baseUrl: string): string =>
+const productScanUrl = (baseUrl: string): string =>
   new URL("/api/product-scans", baseUrl).toString();
 
 export const parseProductScan = Effect.fn("ProductScan.parse")(

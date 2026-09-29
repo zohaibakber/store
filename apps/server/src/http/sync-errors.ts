@@ -12,7 +12,6 @@ import { publicError } from "./errors";
 const syncProtocolHttpError = (error: SyncProtocolError) => {
   switch (error.code) {
     case "ORGANIZATION_MISMATCH":
-    case "ACTOR_MISMATCH":
     case "REPLICA_OWNED_BY_OTHER":
       return SyncForbidden.make(publicError(error.code, error.message));
     case "OPERATION_ID_REUSED":
@@ -25,7 +24,6 @@ const syncProtocolHttpError = (error: SyncProtocolError) => {
     case "REPLICA_UNKNOWN":
     case "SNAPSHOT_REQUIRED":
     case "SNAPSHOT_UNAVAILABLE":
-    case "IMPORT_IDENTITY_MISMATCH":
     case "INCARNATION_MISMATCH":
       return SyncConflict.make(publicError(error.code, error.message));
     default:

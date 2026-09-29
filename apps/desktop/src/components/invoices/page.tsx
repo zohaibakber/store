@@ -9,7 +9,17 @@ import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
-function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
+function InvoicesPage({
+  invoices,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}: {
+  invoices: readonly Invoice[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+}) {
   const navigate = useNavigate();
   const table = useInvoicesTable(invoices);
 
@@ -26,7 +36,7 @@ function InvoicesPage({ invoices }: { invoices: readonly Invoice[] }) {
         </Button>
       </PageActions>
       <PageLayout>
-        <InvoicesTable />
+        <InvoicesTable hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
       </PageLayout>
     </DataTable>
   );

@@ -43,12 +43,12 @@ const manifest: SnapshotManifest = {
   parts: [
     {
       partNumber: 1,
-      objectKey: "parts/1",
       byteLength: 1,
       sha256: SnapshotPartHash.make("a".repeat(64)),
     },
   ],
   entityCounts: [{ entity: "batch", rowCount: 1 }],
+  digestVersion: 3,
 };
 
 const partPayload: SnapshotPartPayload = {
@@ -162,7 +162,7 @@ describe("IndexedDB staged snapshot activation", () => {
         yield* store.importSnapshotPart(manifest, partPayload);
 
         const liveBeforeActivate = yield* store.querySubset(batchPlan(LAST_UNIT_BATCH_ID));
-        expect(liveBeforeActivate.rows[0]?.unitQuantity).toBe(10);
+        expect(liveBeforeActivate.rows[0]?.unitQuantity).toBe(9);
 
         const activated = yield* store.activateSnapshot(manifest.snapshotId);
         expect(activated.notice?.generationId).toBe("2");
@@ -172,7 +172,7 @@ describe("IndexedDB staged snapshot activation", () => {
         expect(after.generationId).toBe("2");
 
         const liveAfter = yield* store.querySubset(batchPlan(LAST_UNIT_BATCH_ID));
-        expect(liveAfter.rows[0]?.unitQuantity).toBe(8);
+        expect(liveAfter.rows[0]?.unitQuantity).toBe(7);
 
         const status = yield* store.readCommandStatus(lastUnitBuyerAEnvelope.operationId);
         expect(status).toBe("pending");

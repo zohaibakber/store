@@ -1,13 +1,9 @@
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   compareDecimalSequence,
-  digestVersionEntities,
-  PartitionDigestVersion,
-  snapshotDigestVersion,
+  PARTITION_ENTITIES,
   syncProtocolError,
   type SnapshotManifest,
   type SnapshotPartPayload,
-  type SyncEntity,
   type SyncSubscription,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
@@ -28,7 +24,7 @@ import { decodeEntity, decodeRowJson, decodeSubscription, encodeRowJson } from "
 import { loadReplicaState, loadStockIndex, parseStoredEnvelope } from "./commands";
 import { byClientSequence, byEntityDependency, decideOverlays } from "./decisions";
 import { clearPendingProjection, reapplyPendingProjections } from "./pending";
-import { clearEntityRows, insertEntityRows, writeEntityRow } from "./rows";
+import { clearEntityRows, insertEntityRows } from "./rows";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
 type SnapshotActivation = {
@@ -88,23 +84,16 @@ const stageSnapshotRows = Effect.fn("ReplicaImport.stageSnapshotRows")(function*
   }
 });
 
-const decodeDigestVersion = Schema.decodeUnknownOption(PartitionDigestVersion);
-
-const importDigestVersion = (stored: number | null): PartitionDigestVersion =>
-  Option.getOrElse(decodeDigestVersion(stored), () => CATALOG_PARTITION_DIGEST_VERSION);
-
 const promoteStagedSnapshot = Effect.fn("ReplicaImport.promoteStagedSnapshot")(function* (
   tx: ReplicaDb,
   snapshotId: string,
-  digestVersion: PartitionDigestVersion,
 ) {
   const rows = yield* tx
     .select()
     .from(snapshotStagedRows)
     .where(eq(snapshotStagedRows.snapshotId, snapshotId))
     .all();
-  const replaced = new Set<SyncEntity>(digestVersionEntities(digestVersion));
-  for (const entity of replaced) {
+  for (const entity of PARTITION_ENTITIES) {
     yield* clearEntityRows(tx, entity);
   }
   const staged = Array.groupBy(rows, (row) => decodeEntity(row.entity));
@@ -113,14 +102,11 @@ const promoteStagedSnapshot = Effect.fn("ReplicaImport.promoteStagedSnapshot")(f
     byEntityDependency,
   );
   for (const { entity } of entities) {
-    const decoded = (staged[entity] ?? []).map((row) => decodeRowJson(row.rowJson));
-    if (replaced.has(entity)) {
-      yield* insertEntityRows(tx, entity, decoded);
-      continue;
-    }
-    for (const row of decoded) {
-      yield* writeEntityRow(tx, entity, row);
-    }
+    yield* insertEntityRows(
+      tx,
+      entity,
+      (staged[entity] ?? []).map((row) => decodeRowJson(row.rowJson)),
+    );
   }
   yield* tx.delete(snapshotStagedRows).where(eq(snapshotStagedRows.snapshotId, snapshotId));
 });
@@ -144,7 +130,6 @@ export const beginSnapshotImport = Effect.fn("ReplicaImport.beginSnapshotImport"
     stage: "importing",
     partsImported: 0,
     partsTotal: manifest.parts.length,
-    digestVersion: snapshotDigestVersion(manifest),
   });
   return stageOf({
     stage: "importing",
@@ -258,7 +243,7 @@ export const activateSnapshotGeneration = Effect.fn("ReplicaImport.activateSnaps
       );
     }
     const state = yield* loadReplicaState(tx);
-    yield* promoteStagedSnapshot(tx, snapshotId, importDigestVersion(importRow.digestVersion));
+    yield* promoteStagedSnapshot(tx, snapshotId);
     yield* integrateCoveredCommands(tx, importRow.horizon);
     yield* recomputePendingOverlays(tx);
     yield* reapplyPendingProjections(tx);

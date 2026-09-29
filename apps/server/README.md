@@ -5,7 +5,8 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 - `GET /api/health`
 - `GET /api/auth/session` and `GET /api/auth/get-session`
 - `POST /api/sync/commands`, `POST /api/sync/replicas`, `POST /api/sync/pull`
-- `POST /api/sync/snapshots`
+- `GET /api/sync/receipts/:operationId`
+- `POST /api/sync/snapshots`, `GET /api/sync/snapshots/:snapshotId/parts/:partNumber`
 - `GET /api/sync/live` (WebSocket upgrade; the bearer token travels in
   `Sec-WebSocket-Protocol` and the socket is held by the organization's
   `OrgHub` Durable Object, which fans out each commit and stores nothing)
@@ -17,10 +18,10 @@ from `Authorization: Bearer` and trusts the organization membership in the
 signed claims. Auth users, organizations, memberships, and refresh sessions
 live in D1.
 
-Inventory commands are authoritative in PlanetScale Postgres. The Worker
-authenticates each `/api/sync/commands` call and commits it in one PostgreSQL
-transaction through Hyperdrive. `dev` and `prod` provision that database;
-nightly does not, and its sync routes answer `SYNC_NOT_PROVISIONED`.
+Inventory commands are authoritative in Postgres: PlanetScale in `prod`, Neon
+in `dev`. Each sync route verifies the token and runs one `select sync.<fn>()`
+through Hyperdrive; the SQL functions own validation, locking, decisions,
+receipts, and the change log.
 
 ## Infrastructure
 
@@ -29,27 +30,24 @@ The Worker, its bindings, and the local dev port live in `infra.ts`.
 `alchemy.run.ts` composes the API Worker, auth Worker, website, and inventory
 Postgres database into one stack.
 
-Alchemy provisions the auth D1 database, Workers AI, an R2 snapshot bucket, and
-a product-scan rate limiter on every published stage. `dev` and `prod` also
-provision PlanetScale Postgres and Hyperdrive, and only those stages register
-the maintenance Cron trigger (`*/5 * * * *`, declared in `infra.ts`) that
-advances retention floors above active download leases and the newest published
-snapshot, deletes change-log history in bounded batches, and steps staged
-snapshot jobs within a per-run budget.
+Alchemy provisions the auth D1 database, Workers AI, rate limiters, the
+`OrgHub` Durable Object, inventory Postgres, and Hyperdrive on each stage. The
+maintenance Cron trigger (`*/5 * * * *`, declared in `infra.ts`) runs
+`sync.maintain`, which advances retention floors, deletes change-log history in
+bounded batches, expires leases, and prunes or rebuilds snapshots within a
+per-run budget.
 
 Run deployments from the repository root and always pass a stage:
 
 ```sh
 pnpm run plan:dev
 pnpm run deploy:dev
-pnpm run plan:nightly
-pnpm run deploy:nightly
 pnpm run plan:prod
 pnpm run deploy:prod
 ```
 
-Secrets come from gitignored `.env.dev`, `.env.nightly`, and `.env.prod` files. Use different
-JWT keys and peppers for each stage. Nightly does not provision PlanetScale.
+Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
+JWT keys and peppers for each stage.
 
 ## Local development
 
@@ -90,6 +88,6 @@ because invoice items and stock movements reference them; categories, invoices,
 and invoice items are deleted physically.
 
 `/api/sync/pull` returns whole transaction groups within a row and encoded-byte
-budget, and computes a partition digest only when the client sets
-`includeDigest` and the page reaches the horizon. Clients ask for one on the
+budget, and computes the partition digest only when the client sends
+`digestVersion` and the page reaches the horizon. Clients ask for one on the
 shared cadence policy, not on every pull.

@@ -8,7 +8,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { UnsupportedSubsetQuery } from "./errors";
-import type { InventorySubsetSpec, SubsetLeafPredicate, SubsetPredicate } from "./subset-spec";
+import {
+  resolveSubsetOrder,
+  type InventorySubsetSpec,
+  type SubsetLeafPredicate,
+  type SubsetPredicate,
+} from "./subset-spec";
 
 const isStringScalar = Schema.is(Schema.String);
 const isIndexEqualsScalar = Schema.is(Schema.Union([Schema.String, Schema.Number]));
@@ -223,7 +228,7 @@ export const planIndexedDbSubset = (
         table: tableFor(spec),
         scan: unfilteredScan(spec.source, spec.orderBy),
         residual: toResidual(spec.where),
-        orderBy: spec.orderBy,
+        orderBy: resolveSubsetOrder(spec),
         limit: spec.limit,
         offset: spec.offset,
       } satisfies IndexedDbSubsetPlan;
@@ -233,7 +238,7 @@ export const planIndexedDbSubset = (
       table: tableFor(spec),
       scan,
       residual: residualFromLeaves(leaves, consumed),
-      orderBy: spec.orderBy,
+      orderBy: resolveSubsetOrder(spec),
       limit: spec.limit,
       offset: spec.offset,
     } satisfies IndexedDbSubsetPlan;

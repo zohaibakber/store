@@ -21,20 +21,13 @@ export const noticeFromState = (
   stamp: ReplicaReadStamp,
   touchedEntities: ReplicaCommitNotice["touchedEntities"] = [],
   touchedKeys: ReadonlyArray<string> = [],
-  commandStatuses?: ReplicaCommitNotice["commandStatuses"],
-): ReplicaCommitNotice => {
-  const notice: ReplicaCommitNotice = {
-    databaseIdentity,
-    generationId: stamp.generationId,
-    localCommitVersion: stamp.localCommitVersion,
-    touchedEntities,
-    touchedKeys,
-  };
-  if (commandStatuses !== undefined) {
-    return { ...notice, commandStatuses };
-  }
-  return notice;
-};
+): ReplicaCommitNotice => ({
+  databaseIdentity,
+  generationId: stamp.generationId,
+  localCommitVersion: stamp.localCommitVersion,
+  touchedEntities,
+  touchedKeys,
+});
 
 type ReplicaCommitHub = {
   readonly publish: (notice: ReplicaCommitNotice | undefined) => Effect.Effect<void>;

@@ -28,7 +28,7 @@ export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
 
 export type OwnedHttpSyncOptions = {
   readonly databaseIdentity: string;
-  readonly live?: OwnedLiveHost;
+  readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
 };
 
@@ -88,34 +88,27 @@ const ownHttpSync = (
     );
     const owner = yield* SubscriptionRef.make(false);
     const cursor = yield* store.readSyncCursor();
-    const live =
-      options.live === undefined
-        ? undefined
-        : yield* makeLiveSocket(
-            { ...options.live, replicaId: cursor.replicaId },
-            {
-              onFrame: (frame) =>
-                engine.applyLiveFrame(frame).pipe(
-                  Effect.flatMap((outcome) =>
-                    outcome._tag === "pull" ? inner.wake("live", outcome.hint) : Effect.void,
-                  ),
-                  Effect.catch(() => inner.wake("live")),
-                ),
-              setConnected: inner.setLiveConnected,
-              maxBytes: engine.pullMaxBytes,
-            },
-          );
+    const live = yield* makeLiveSocket(
+      { ...options.live, replicaId: cursor.replicaId },
+      {
+        onFrame: (frame) =>
+          engine.applyLiveFrame(frame).pipe(
+            Effect.flatMap((outcome) =>
+              outcome._tag === "pull" ? inner.wake("live", outcome.hint) : Effect.void,
+            ),
+            Effect.catch(() => inner.wake("live")),
+          ),
+        setConnected: inner.setLiveConnected,
+        maxBytes: engine.pullMaxBytes,
+      },
+    );
     const scheduler: SyncSchedulerContract = {
       ...inner,
       wake: (reason, hint) =>
         inner
           .wake(reason, hint)
           .pipe(
-            Effect.andThen(
-              live !== undefined && (reason === "focus" || reason === "reconnect")
-                ? live.nudge
-                : Effect.void,
-            ),
+            Effect.andThen(reason === "focus" || reason === "reconnect" ? live.nudge : Effect.void),
           ),
       setNetworkOwner: (owned) =>
         inner.setNetworkOwner(owned).pipe(Effect.andThen(SubscriptionRef.set(owner, owned))),
@@ -125,15 +118,13 @@ const ownHttpSync = (
       scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
     );
     yield* scheduler.wake("startup");
-    if (live !== undefined) {
-      const liveLoop = live.run.pipe(Effect.ensuring(inner.setLiveConnected(false)));
-      yield* SubscriptionRef.changes(owner).pipe(
-        Stream.changes,
-        Stream.switchMap((owned) => (owned ? Stream.fromEffect(liveLoop) : Stream.empty)),
-        Stream.runDrain,
-        Effect.forkScoped,
-      );
-    }
+    const liveLoop = live.run.pipe(Effect.ensuring(inner.setLiveConnected(false)));
+    yield* SubscriptionRef.changes(owner).pipe(
+      Stream.changes,
+      Stream.switchMap((owned) => (owned ? Stream.fromEffect(liveLoop) : Stream.empty)),
+      Stream.runDrain,
+      Effect.forkScoped,
+    );
     return scheduler;
   });
 

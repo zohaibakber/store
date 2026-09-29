@@ -736,9 +736,15 @@ function MovementReference({
 export function ProductStockMovementsCard({
   product,
   movements,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: {
   product: Product;
   movements: readonly StockMovement[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const batchNumbers = useMemo(
@@ -750,9 +756,13 @@ export function ProductStockMovementsCard({
   return (
     <FrameCard
       action={
-        movements.length > MOVEMENT_PREVIEW ? (
+        movements.length > MOVEMENT_PREVIEW || hasMore ? (
           <Button onClick={() => setExpanded(!expanded)} size="xs" variant="ghost">
-            {expanded ? "Show less" : `Show all ${formatNumber(movements.length)}`}
+            {expanded
+              ? "Show less"
+              : hasMore
+                ? "Show more"
+                : `Show all ${formatNumber(movements.length)}`}
           </Button>
         ) : undefined
       }
@@ -806,6 +816,13 @@ export function ProductStockMovementsCard({
             })}
           </TableBody>
         </Table>
+      )}
+      {expanded && hasMore && (
+        <div className="flex justify-center border-t p-2">
+          <Button loading={loadingMore} onClick={onLoadMore} size="xs" variant="ghost">
+            Load older movements
+          </Button>
+        </div>
       )}
     </FrameCard>
   );

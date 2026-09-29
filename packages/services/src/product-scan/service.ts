@@ -4,25 +4,16 @@ import {
   type ProductScanMode,
   productScanResultJsonSchema,
 } from "@store/contracts/server-api.schema";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { parseUnitsPerPack, salvageUnitsPerPack } from "../invoice-extraction/pack-size";
 import { parseModelJson } from "../model-json";
 
-export class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
+class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
   message: Schema.String,
   cause: Schema.Defect(),
 }) {}
-
-export class ProductScanService extends Context.Service<
-  ProductScanService,
-  {
-    readonly parse: (input: ProductScanInput) => Effect.Effect<ProductScanResult, ProductScanError>;
-  }
->()("@store/services/ProductScanService") {}
 
 type ModelScalar = string | number | boolean | null;
 
@@ -49,10 +40,6 @@ export interface ProductScanAiClient {
     readonly jsonSchema: object;
     readonly signal: AbortSignal;
   }) => Promise<ProductScanModelOutput>;
-}
-
-interface ProductScanConfig {
-  readonly ai: ProductScanAiClient;
 }
 
 const instructions = [
@@ -178,32 +165,29 @@ const requestContent = (mode: ProductScanMode, recognizedText: string) =>
     encodeJsonString(recognizedText),
   ].join("\n");
 
-export const productScanLayer = (config: ProductScanConfig) =>
-  Layer.succeed(ProductScanService, {
-    parse: Effect.fn("ProductScan.parse")(
-      function* (input: ProductScanInput) {
-        const raw = yield* Effect.tryPromise((signal) =>
-          config.ai.generate({
-            messages: [
-              { role: "system", content: instructions },
-              { role: "user", content: requestContent(input.mode, input.recognizedText) },
-            ],
-            jsonSchema: productScanResultJsonSchema,
-            signal,
+export const parseProductScan = Effect.fn("ProductScan.parse")(
+  function* (ai: ProductScanAiClient, input: ProductScanInput) {
+    const raw = yield* Effect.tryPromise((signal) =>
+      ai.generate({
+        messages: [
+          { role: "system", content: instructions },
+          { role: "user", content: requestContent(input.mode, input.recognizedText) },
+        ],
+        jsonSchema: productScanResultJsonSchema,
+        signal,
+      }),
+    ).pipe(Effect.timeout("15 seconds"));
+    const parsed = yield* Effect.try(() => parseModelJson<ProductScanModelObject>(raw));
+    return yield* Schema.decodeUnknownEffect(ProductScanResult)(normalizeResult(parsed));
+  },
+  (effect) =>
+    effect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProductScanError({
+            message: "Could not parse the recognized product text.",
+            cause,
           }),
-        ).pipe(Effect.timeout("15 seconds"));
-        const parsed = yield* Effect.try(() => parseModelJson<ProductScanModelObject>(raw));
-        return yield* Schema.decodeUnknownEffect(ProductScanResult)(normalizeResult(parsed));
-      },
-      (effect) =>
-        effect.pipe(
-          Effect.mapError(
-            (cause) =>
-              new ProductScanError({
-                message: "Could not parse the recognized product text.",
-                cause,
-              }),
-          ),
-        ),
+      ),
     ),
-  });
+);

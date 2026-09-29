@@ -109,13 +109,13 @@ const json = (value: string) => JSON.stringify(value);
 export const helloFrame = (cursor: HubCursor) =>
   `{"_tag":"hello","epoch":${json(cursor.epoch)},"horizon":${json(cursor.horizon)}}`;
 
-export const wakeFrame = (cursor: HubCursor) =>
+const wakeFrame = (cursor: HubCursor) =>
   `{"_tag":"wake","epoch":${json(cursor.epoch)},"horizon":${json(cursor.horizon)}}`;
 
-export const resumeFrame = (cursor: HubCursor) =>
+const resumeFrame = (cursor: HubCursor) =>
   `{"_tag":"resume","epoch":${json(cursor.epoch)},"reason":"epoch_changed","fromCommitSequence":"0"}`;
 
-export const transactionsFrame = (publish: HubPublish) =>
+const transactionsFrame = (publish: HubPublish) =>
   `{"_tag":"transactions","epoch":${json(publish.epoch)},"subscription":${json(OPERATIONAL_SUBSCRIPTION)},"schemaVersion":${SYNC_SCHEMA_VERSION},"fromCommitSequence":${json(publish.horizon)},"toCommitSequence":${json(publish.horizon)},"transactions":[${publish.group}]}`;
 
 export const advanceCursor = (current: HubCursor | undefined, next: HubCursor): HubCursor =>

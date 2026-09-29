@@ -86,12 +86,6 @@ export const CASE_INSENSITIVE_ORDER_COLUMNS = {
   stockMovements: new Set<string>(),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
-export const HISTORY_SOURCES: ReadonlySet<InventoryCollectionSource> = new Set([
-  "invoices",
-  "invoiceItems",
-  "stockMovements",
-]);
-
 export const MAX_IN_VALUES = 200;
 
 export const MAX_LIKE_PATTERN_LENGTH = 256;

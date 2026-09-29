@@ -97,9 +97,6 @@ const openAuthority = (organizationId: string, policy: SnapshotPolicy = SNAPSHOT
     );
     yield* db.insert(inventoryState).values({
       organizationId,
-      status: "ready",
-      importId: "import-test",
-      releaseId: "release-test",
       incarnation: "incarnation-test",
       epoch: LAST_UNIT_EPOCH,
       commitSequence: "2",
@@ -227,6 +224,9 @@ describe("postgres snapshot acquisition", () => {
       { entity: "category", rowCount: 1 },
       { entity: "product", rowCount: 1 },
       { entity: "batch", rowCount: 1 },
+      { entity: "invoice", rowCount: 0 },
+      { entity: "invoiceItem", rowCount: 0 },
+      { entity: "stockMovement", rowCount: 0 },
     ]);
     expect(result.part.rows.map((row) => [row.entity, row.entityId])).toEqual([
       ["category", "general"],
@@ -237,7 +237,6 @@ describe("postgres snapshot acquisition", () => {
     expect(result.encoded.result.sha256).toBe(sha256Hex(result.encoded.result.json));
     expect(result.manifest.parts[0]).toEqual({
       partNumber: 1,
-      objectKey: `${organizationId}/${result.manifest.snapshotId}/1`,
       byteLength: Buffer.byteLength(result.encoded.result.json, "utf8"),
       sha256: result.encoded.result.sha256,
     });

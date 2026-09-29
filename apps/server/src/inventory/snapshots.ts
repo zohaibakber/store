@@ -1,6 +1,5 @@
 import {
   AcquireSnapshotResult,
-  CATALOG_PARTITION_DIGEST_VERSION,
   MAX_SNAPSHOT_PART_BYTES,
   MAX_SNAPSHOT_PART_ROWS,
   SNAPSHOT_LEASE_LIFETIME_MILLIS,
@@ -14,16 +13,14 @@ import { and, eq, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
 import type { EncodedSnapshotPart, InventoryActor } from "./model";
 import {
   databaseError,
-  inventoryPostgresUnavailable,
   protocol,
-  requireReady,
+  requireState,
   runStatement,
   type InventoryDrizzle,
 } from "./postgres";
@@ -73,8 +70,7 @@ const acquireStatement = (
     ${policy.lagTransactions}::bigint,
     ${policy.minimumRebuildMillis}::bigint,
     ${now}::bigint,
-    ${policy.partBytes}::integer,
-    ${request.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION}::integer
+    ${policy.partBytes}::integer
   )::text as "result"
 `;
 
@@ -105,8 +101,6 @@ const readEncodedSnapshotPart = Effect.fn("InventorySnapshots.readEncodedSnapsho
   const [row] = yield* runStatement(
     db
       .select({
-        status: inventoryState.status,
-        releaseId: inventoryState.releaseId,
         publishedId: snapshotJobs.snapshotId,
         payloadJson: snapshotParts.payloadJson,
         sha256: snapshotParts.sha256,
@@ -130,7 +124,7 @@ const readEncodedSnapshotPart = Effect.fn("InventorySnapshots.readEncodedSnapsho
       .where(eq(inventoryState.organizationId, actor.organizationId))
       .limit(1),
   );
-  const found = yield* requireReady(row);
+  const found = yield* requireState(row);
   if (found.publishedId === null) {
     return yield* protocol("SNAPSHOT_UNAVAILABLE", "No snapshot is published for this id.");
   }
@@ -172,11 +166,3 @@ export const makeInventorySnapshots = (
     ),
   });
 };
-
-export const InventorySnapshotsUnavailable = Layer.succeed(
-  InventorySnapshots,
-  InventorySnapshots.of({
-    acquireSnapshot: () => Effect.fail(inventoryPostgresUnavailable),
-    readSnapshotPartEncoded: () => Effect.fail(inventoryPostgresUnavailable),
-  }),
-);

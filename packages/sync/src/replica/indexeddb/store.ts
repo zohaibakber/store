@@ -1,12 +1,11 @@
 import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   partitionDigestOf,
   STOCK_MOVEMENT_ROW_VERSION,
   type CommandReceipt,
-  type PartitionDigestVersion,
   type PartitionEntity,
+  type PartitionLeafSource,
   type RegisterReplicaResult,
   type SnapshotId,
   type SnapshotManifest,
@@ -62,7 +61,6 @@ import {
   decideCoverageAfterPull,
   decideEnqueue,
   decideReceipt,
-  hasPendingDigestRows,
   isStaleClaim,
   nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
@@ -76,7 +74,6 @@ import {
   IndexedDbIdentityMismatch,
   IndexedDbQuotaExceeded,
   IndexedDbUnavailable,
-  IndexedDbUpgradeBlocked,
   mapReplicaStoreFailure,
   ReplicaStorageError,
 } from "../errors";
@@ -127,7 +124,7 @@ import {
   beginIndexedDbSnapshotImport,
   importIndexedDbSnapshotPart,
 } from "./snapshot";
-import { makeIndexedDbStockCache } from "./stock";
+import { makeIndexedDbStockCache, readVisibleStockContext, withVisibleStockCells } from "./stock";
 
 export type IndexedDbReplicaIdentity = {
   readonly organizationId: string;
@@ -164,11 +161,6 @@ const SNAPSHOT_TABLES = [...ENTITY_TABLES, "snapshot_imports", "snapshot_staged_
 
 const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   if (cause instanceof IndexedDbDatabase.IndexedDbDatabaseError) {
-    if (cause.reason === "Blocked") {
-      return IndexedDbUpgradeBlocked.make({
-        message: "IndexedDB upgrade is blocked by another connection.",
-      });
-    }
     return ReplicaStorageError.make({ message: `IndexedDB ${cause.reason}` });
   }
   if (cause instanceof DOMException && cause.name === "QuotaExceededError") {
@@ -235,48 +227,32 @@ const firstRow = <A>(rows: ReadonlyArray<A>): A | undefined => rows[0];
 const outboxRow = (api: ReplicaQueryBuilder, operationId: string) =>
   api.from("command_outbox").select().equals(operationId).pipe(Effect.map(firstRow));
 
-const indexedDbLocalDigest = (api: ReplicaQueryBuilder, version: PartitionDigestVersion) =>
+const indexedDbLocalDigest = (api: ReplicaQueryBuilder) =>
   Effect.gen(function* () {
-    const marks = yield* api.from("pending_row_marks").select();
-    if (
-      hasPendingDigestRows(
-        version,
-        marks.map((mark) => ({ entity: decodeEntity(mark.entity) })),
-      )
-    ) {
-      return undefined;
-    }
+    const marks = yield* api.from("pending_row_marks").count();
+    if (marks > 0) return undefined;
     const state = yield* requireState(api);
     const [lower, upper] = generationBounds(state.activeGeneration);
     const versioned =
-      (entity: PartitionEntity) => (row: { readonly id: string; readonly rowVersion: number }) => ({
+      (entity: PartitionEntity) =>
+      (row: { readonly id: string; readonly rowVersion: number }): PartitionLeafSource => ({
         entity,
         entityId: row.id,
         rowVersion: row.rowVersion,
       });
-    const catalog = [
+    const movements = yield* api.from("stock_movements").select().between(lower, upper);
+    return yield* partitionDigestOf([
       ...(yield* api.from("categories").select().between(lower, upper)).map(versioned("category")),
       ...(yield* api.from("products").select().between(lower, upper)).map(versioned("product")),
       ...(yield* api.from("batches").select().between(lower, upper)).map(versioned("batch")),
-    ];
-    if (version === CATALOG_PARTITION_DIGEST_VERSION)
-      return yield* partitionDigestOf(catalog, version);
-    const movements = yield* api.from("stock_movements").select().between(lower, upper);
-    return yield* partitionDigestOf(
-      [
-        ...catalog,
-        ...(yield* api.from("invoices").select().between(lower, upper)).map(versioned("invoice")),
-        ...(yield* api.from("invoice_items").select().between(lower, upper)).map(
-          versioned("invoiceItem"),
-        ),
-        ...movements.map((row) => ({
-          entity: "stockMovement" as const,
-          entityId: row.id,
-          rowVersion: STOCK_MOVEMENT_ROW_VERSION,
-        })),
-      ],
-      version,
-    );
+      ...(yield* api.from("invoices").select().between(lower, upper)).map(versioned("invoice")),
+      ...(yield* api.from("invoice_items").select().between(lower, upper)).map(
+        versioned("invoiceItem"),
+      ),
+      ...movements.map((row) =>
+        versioned("stockMovement")({ id: row.id, rowVersion: STOCK_MOVEMENT_ROW_VERSION }),
+      ),
+    ]);
   });
 
 const undoLocalEffects = (
@@ -325,11 +301,11 @@ interface IndexedDbOutboxReader {
   >;
 }
 
-export type IndexedDbReplicaStoreContract = ReplicaStoreContract &
+type IndexedDbReplicaStoreContract = ReplicaStoreContract &
   IndexedDbSubsetReader &
   IndexedDbOutboxReader;
 
-export type DisposableIndexedDbReplicaStore = IndexedDbReplicaStoreContract & {
+type DisposableIndexedDbReplicaStore = IndexedDbReplicaStoreContract & {
   readonly dispose: () => Effect.Effect<void>;
 };
 
@@ -372,9 +348,7 @@ const makeScopedIndexedDbReplicaStore = (
       after: ReplicaReadStamp,
       touchedEntities: ReplicaCommitNotice["touchedEntities"] = [],
       touchedKeys: ReadonlyArray<string> = [],
-      commandStatuses?: ReplicaCommitNotice["commandStatuses"],
-    ) =>
-      noticeFromState(input.databaseIdentity, after, touchedEntities, touchedKeys, commandStatuses);
+    ) => noticeFromState(input.databaseIdentity, after, touchedEntities, touchedKeys);
 
     yield* withQuery((api) =>
       Effect.gen(function* () {
@@ -392,6 +366,8 @@ const makeScopedIndexedDbReplicaStore = (
               nextClientSequence: "1",
               localCommitVersion: 0,
               activeGeneration: 1,
+              caughtUpAt: null,
+              registeredAt: null,
             }),
           );
           return;
@@ -467,7 +443,6 @@ const makeScopedIndexedDbReplicaStore = (
               after,
               touchedEntitiesWithStock(projection.touchedEntities),
               projection.touchedKeys,
-              [{ operationId: envelope.operationId, status: decision.status }],
             ),
           };
         }),
@@ -501,7 +476,7 @@ const makeScopedIndexedDbReplicaStore = (
               outcomeUncertain: next.outcomeUncertain,
               envelope,
             },
-            notice: notice(after, [], [], [{ operationId: next.operationId, status: "sending" }]),
+            notice: notice(after),
           };
         }),
       );
@@ -535,7 +510,6 @@ const makeScopedIndexedDbReplicaStore = (
               after,
               touchedEntitiesWithStock(restored?.touchedEntities),
               restored?.touchedKeys ?? [],
-              [{ operationId: receipt.operationId, status: decision.status }],
             ),
           };
         }),
@@ -552,7 +526,7 @@ const makeScopedIndexedDbReplicaStore = (
           yield* api.from("command_outbox").upsert({ ...row, ...RELEASED_CLAIM_FIELDS });
           const after = yield* bumpCommitVersion(api, state);
           const status = RELEASED_CLAIM_FIELDS.status;
-          return { value: status, notice: notice(after, [], [], [{ operationId, status }]) };
+          return { value: status, notice: notice(after) };
         }),
       );
 
@@ -631,9 +605,7 @@ const makeScopedIndexedDbReplicaStore = (
           );
           const write = readwrite(api, ["replica_coverage"]);
           const localDigest =
-            page.digest === undefined
-              ? undefined
-              : yield* indexedDbLocalDigest(api, page.digest.version);
+            page.digest === undefined ? undefined : yield* indexedDbLocalDigest(api);
           const next = decideCoverageAfterPull(localDigest, page.digest);
           if (next._tag === "repair") {
             yield* logPartitionDivergence(page.subscription, next.diverged);
@@ -817,7 +789,7 @@ const makeScopedIndexedDbReplicaStore = (
                 envelopeJson: row.envelopeJson,
                 receiptJson: row.receiptJson,
               })),
-              caughtUpAt: state.caughtUpAt ?? null,
+              caughtUpAt: state.caughtUpAt,
             } satisfies ReplicaOutboxActivity;
           }),
         ),
@@ -836,7 +808,7 @@ const makeScopedIndexedDbReplicaStore = (
           epoch: state.epoch,
           appliedCommitSequence: state.appliedCommitSequence,
           replicaId: state.replicaId,
-          registered: state.registeredAt !== undefined,
+          registered: state.registeredAt !== null,
         })),
       adoptRegistration,
       enqueueCommand,
@@ -925,14 +897,28 @@ const makeScopedIndexedDbReplicaStore = (
       querySubset: (plan: IndexedDbSubsetPlan) =>
         withQuery((api) =>
           api.withTransaction({
-            tables: [plan.table, "replica_state"],
+            tables:
+              plan.table === "batches"
+                ? [
+                    plan.table,
+                    "stock_overlays",
+                    "pending_row_marks",
+                    "command_outbox",
+                    "replica_state",
+                  ]
+                : [plan.table, "replica_state"],
             mode: "readonly",
             durability: "strict",
           })(
             Effect.gen(function* () {
               const state = yield* requireState(api);
               const rows = yield* executeIndexedDbSubset(api, state.activeGeneration, plan);
-              return { stamp: stampOf(state), rows };
+              if (plan.table !== "batches") return { stamp: stampOf(state), rows };
+              const overlays = yield* readVisibleStockContext(api);
+              return {
+                stamp: stampOf(state),
+                rows: rows.map((row) => withVisibleStockCells(row, overlays)),
+              };
             }),
           ),
         ),
@@ -989,7 +975,6 @@ export {
   IndexedDbIdentityMismatch,
   IndexedDbQuotaExceeded,
   IndexedDbUnavailable,
-  IndexedDbUpgradeBlocked,
 };
 
 export type {

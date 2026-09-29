@@ -1,6 +1,5 @@
 import {
   assertCanChangeUnitsPerPack,
-  assertCanDeleteBatch,
   assertCanDeleteCategory,
   assertCanDeleteProduct,
   createdMutationMetadata,
@@ -34,7 +33,7 @@ export type CatalogWriteIds = {
 
 const CATALOG_IMPORT_ROWS_PER_LINE = 2;
 
-export const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(
+const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(
   MAX_CATALOG_WRITE_ROWS / CATALOG_IMPORT_ROWS_PER_LINE,
 );
 
@@ -376,24 +375,6 @@ export const projectUpdateBatch = (
       },
     ],
     row,
-  };
-};
-
-export const projectDeleteBatch = (
-  context: CatalogProjectionContext,
-  id: BatchRow["id"],
-): CatalogDeleteProjection => {
-  const current = requiredRow(context.tables.batches.state.get(id), "This batch");
-  assertCanDeleteBatch(current);
-  return {
-    writes: [
-      {
-        entity: "batch",
-        action: "delete",
-        id: current.id,
-        expectedRowVersion: current.rowVersion,
-      },
-    ],
   };
 };
 

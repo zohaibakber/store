@@ -6,13 +6,7 @@ import * as Planetscale from "alchemy/Planetscale";
 import * as RemovalPolicy from "alchemy/RemovalPolicy";
 import * as Effect from "effect/Effect";
 
-import { stageUsesNeonInventory } from "./stage";
-
-export {
-  stageUsesInventoryPostgres,
-  stageUsesNeonInventory,
-  stageUsesPlanetscaleInventory,
-} from "./stage";
+export const stageUsesNeonInventory = (stage: string) => stage === "dev";
 
 const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
   schema: "packages/db/src/postgres/schema.ts",

@@ -1,4 +1,5 @@
 import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore } from "@store/sync/browser";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "@store/sync/sql-client";
 import {
@@ -7,11 +8,11 @@ import {
   SqliteReplica,
   type SqliteReplicaHandle,
 } from "@store/sync/sqlite";
+import { eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
-import { readCommandOutcomesSqlite } from "./command-outcome";
 import { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
 import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
@@ -73,9 +74,10 @@ export const openNodeReplicaSqlite = async (
       runReplicaTransaction(handle, () =>
         Effect.gen(function* () {
           yield* write(handle);
-          yield* handle.sql.unsafe(
-            `update replica_state set localCommitVersion = localCommitVersion + 1 where id = 'singleton'`,
-          );
+          yield* handle.db
+            .update(replicaState)
+            .set({ localCommitVersion: sql`${replicaState.localCommitVersion} + 1` })
+            .where(eq(replicaState.id, "singleton"));
           return yield* readReplicaStamp(handle, workspaceToken);
         }),
       ),
@@ -110,13 +112,11 @@ export const openNodeReplicaSqlite = async (
     replicaId,
     stamp,
     query,
-    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.sql)),
+    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.db)),
     readPendingRowIds: (entity) =>
-      withHandle((handle) => readPendingRowIdsSqlite(handle.sql, entity)),
-    readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.sql)),
-    readCommandOutcomes: (operationIds) =>
-      withHandle((handle) => readCommandOutcomesSqlite(handle.sql, operationIds)),
-    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.sql)),
+      withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
+    readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
+    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.db)),
     enqueueLocal,
     readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
     readInsights: (window) =>

@@ -36,18 +36,18 @@ export type LiveSocketHost = {
   readonly network?: LiveNetworkSignal;
 };
 
-export type LiveSocketHandlers = {
+type LiveSocketHandlers = {
   readonly onFrame: (frame: SyncLiveServerFrame) => Effect.Effect<void>;
   readonly setConnected: (connected: boolean) => Effect.Effect<void>;
   readonly maxBytes: Effect.Effect<number | undefined>;
 };
 
-export type LiveSocket = {
+type LiveSocket = {
   readonly run: Effect.Effect<never>;
   readonly nudge: Effect.Effect<void>;
 };
 
-export const LIVE_SOCKET_POLICY = {
+const LIVE_SOCKET_POLICY = {
   openTimeoutMillis: 15_000,
   keepaliveMillis: 30_000,
   pongTimeoutMillis: 10_000,
@@ -91,7 +91,7 @@ export const liveSocketUrl = (
   return url.href;
 };
 
-export const browserNetworkSignal = (): LiveNetworkSignal | undefined => {
+const browserNetworkSignal = (): LiveNetworkSignal | undefined => {
   if (!("addEventListener" in globalThis) || !("navigator" in globalThis)) return undefined;
   const navigator = globalThis.navigator;
   if (!("onLine" in navigator)) return undefined;

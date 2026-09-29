@@ -2,7 +2,6 @@ import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as IndexedDbTable from "@effect/platform-browser/IndexedDbTable";
 import * as IndexedDbVersion from "@effect/platform-browser/IndexedDbVersion";
-import { PartitionDigestVersion } from "@store/contracts";
 import {
   CommandStatus,
   ReplicaBatchRow,
@@ -37,8 +36,8 @@ export const ReplicaStateRow = Schema.Struct({
   nextClientSequence: NonEmptyString,
   localCommitVersion: NonNegativeInteger,
   activeGeneration: PositiveInteger,
-  caughtUpAt: Schema.optionalKey(NonNegativeInteger),
-  registeredAt: Schema.optionalKey(NonNegativeInteger),
+  caughtUpAt: Schema.NullOr(NonNegativeInteger),
+  registeredAt: Schema.NullOr(NonNegativeInteger),
 });
 export type ReplicaStateRow = typeof ReplicaStateRow.Type;
 
@@ -64,7 +63,7 @@ const CoverageRow = Schema.Struct({
   state: Schema.Literals(["awaiting_snapshot", "downloaded"]),
   throughCommitSequence: Schema.NullOr(NonEmptyString),
   digest: Schema.NullOr(NonEmptyString),
-  verifiedAt: Schema.optionalKey(Schema.NullOr(NonNegativeInteger)),
+  verifiedAt: Schema.NullOr(NonNegativeInteger),
 });
 
 const SnapshotImportRow = Schema.Struct({
@@ -75,7 +74,6 @@ const SnapshotImportRow = Schema.Struct({
   stage: Schema.Literals(["importing", "caught_up", "activated", "failed"]),
   partsImported: NonNegativeInteger,
   partsTotal: NonNegativeInteger,
-  digestVersion: Schema.optionalKey(PartitionDigestVersion),
 });
 
 const StockOverlayRow = Schema.Struct({
@@ -189,16 +187,6 @@ class CategoryTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
-class ProductTableV1 extends IndexedDbTable.make({
-  name: "products",
-  schema: withGeneration(ReplicaProductRow.fields),
-  keyPath: ["generation", "id"],
-  indexes: {
-    byCategory: ["generation", "categoryId"],
-  },
-  durability: "strict",
-}) {}
-
 export const foldAsciiCase = (value: string): string =>
   value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
 
@@ -274,38 +262,6 @@ class ReplicaV1 extends IndexedDbVersion.make(
   SnapshotImportTable,
   StockOverlayTable,
   StagedSnapshotTable,
-  CategoryTable,
-  ProductTableV1,
-  BatchTable,
-  InvoiceTable,
-  InvoiceItemTable,
-  StockMovementTable,
-) {}
-
-class ReplicaV2 extends IndexedDbVersion.make(
-  ReplicaStateTable,
-  OutboxTable,
-  CoverageTable,
-  SnapshotImportTable,
-  StockOverlayTable,
-  StagedSnapshotTable,
-  PendingRowMarkTable,
-  PendingRowJournalTable,
-  CategoryTable,
-  ProductTableV1,
-  BatchTable,
-  InvoiceTable,
-  InvoiceItemTable,
-  StockMovementTable,
-) {}
-
-class ReplicaV3 extends IndexedDbVersion.make(
-  ReplicaStateTable,
-  OutboxTable,
-  CoverageTable,
-  SnapshotImportTable,
-  StockOverlayTable,
-  StagedSnapshotTable,
   PendingRowMarkTable,
   PendingRowJournalTable,
   CategoryTable,
@@ -316,24 +272,7 @@ class ReplicaV3 extends IndexedDbVersion.make(
   StockMovementTable,
 ) {}
 
-class ReplicaV4 extends IndexedDbVersion.make(
-  ReplicaStateTable,
-  OutboxTable,
-  CoverageTable,
-  SnapshotImportTable,
-  StockOverlayTable,
-  StagedSnapshotTable,
-  PendingRowMarkTable,
-  PendingRowJournalTable,
-  CategoryTable,
-  ProductTable,
-  BatchTable,
-  InvoiceTable,
-  InvoiceItemTable,
-  StockMovementTable,
-) {}
-
-export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
+export class ReplicaIndexedDb extends IndexedDbDatabase.make(
   ReplicaV1,
   Effect.fn("ReplicaIndexedDb.init")(function* (api) {
     yield* api.createObjectStore("replica_state");
@@ -346,10 +285,16 @@ export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
     yield* api.createIndex("stock_overlays", "byCommand");
     yield* api.createObjectStore("snapshot_staged_rows");
     yield* api.createIndex("snapshot_staged_rows", "bySnapshot");
+    yield* api.createObjectStore("pending_row_marks");
+    yield* api.createIndex("pending_row_marks", "byOperation");
+    yield* api.createObjectStore("pending_row_journal");
+    yield* api.createIndex("pending_row_journal", "byOperation");
     yield* api.createObjectStore("categories");
     yield* api.createIndex("categories", "byName");
     yield* api.createObjectStore("products");
     yield* api.createIndex("products", "byCategory");
+    yield* api.createIndex("products", "byNameKey");
+    yield* api.createIndex("products", "byCategoryName");
     yield* api.createObjectStore("batches");
     yield* api.createIndex("batches", "byProduct");
     yield* api.createObjectStore("invoices");
@@ -359,38 +304,6 @@ export class ReplicaIndexedDbV1 extends IndexedDbDatabase.make(
     yield* api.createIndex("invoice_items", "byInvoice");
     yield* api.createObjectStore("stock_movements");
     yield* api.createIndex("stock_movements", "byProduct");
-  }),
-) {}
-
-class ReplicaIndexedDbV2 extends ReplicaIndexedDbV1.add(
-  ReplicaV2,
-  Effect.fn("ReplicaIndexedDb.addPendingProjections")(function* (_from, api) {
-    yield* api.createObjectStore("pending_row_marks");
-    yield* api.createIndex("pending_row_marks", "byOperation");
-    yield* api.createObjectStore("pending_row_journal");
-    yield* api.createIndex("pending_row_journal", "byOperation");
-  }),
-) {}
-
-class ReplicaIndexedDbV3 extends ReplicaIndexedDbV2.add(
-  ReplicaV3,
-  Effect.fn("ReplicaIndexedDb.addProductNameOrder")(function* (from, api) {
-    yield* api.createIndex("products", "byNameKey");
-    yield* api.createIndex("products", "byCategoryName");
-    const rows = yield* from.from("products").select();
-    yield* api
-      .from("products")
-      .upsertAll(rows.map(({ generation, ...row }) => storedProduct(generation, row)));
-  }),
-) {}
-
-export class ReplicaIndexedDb extends ReplicaIndexedDbV3.add(
-  ReplicaV4,
-  Effect.fn("ReplicaIndexedDb.reverifyHistoryCoverage")(function* (from, api) {
-    const rows = yield* from.from("replica_coverage").select();
-    yield* api
-      .from("replica_coverage")
-      .upsertAll(rows.map((row) => ({ ...row, verifiedAt: null })));
   }),
 ) {}
 

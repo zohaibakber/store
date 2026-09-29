@@ -4,7 +4,6 @@ import type {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
-  ReplicaHandle,
   StockMovementRow,
 } from "@store/client-db";
 import type {
@@ -35,8 +34,6 @@ export type Inventory = {
   readonly stockMovements: InventoryCollection<StockMovementRow>;
   readonly actions: InventoryActions;
   readonly atoms: WorkspaceAtoms;
-  readonly replica: ReplicaHandle;
-  readonly actor: InventoryActor;
   readonly dispose: () => Promise<void>;
 };
 

@@ -1,9 +1,4 @@
-import type {
-  DemandForecast,
-  InsightSeverity,
-  OrderSuggestion,
-  StockStatus,
-} from "@store/services/insights";
+import type { DemandForecast, OrderSuggestion, StockStatus } from "@store/services/insights";
 
 import { EMPTY, formatCount } from "@/lib/format";
 
@@ -30,13 +25,6 @@ export const HEALTH_ORDER: ReadonlyArray<StockStatus> = [
   "overstock",
   "dead",
 ];
-
-export const SEVERITY_TONE = {
-  critical: "error",
-  warning: "warning",
-  info: "info",
-  positive: "success",
-} satisfies Record<InsightSeverity, Tone>;
 
 const decimal = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 const percent = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 0 });

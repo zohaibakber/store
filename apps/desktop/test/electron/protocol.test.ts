@@ -1,20 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  isLegacyPowerSyncWorkerPath,
-  makeDesktopContentSecurityPolicy,
-} from "../../electron/content-security-policy";
+import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
 import { isOAuthCallbackUrl } from "../../electron/oauth-callback";
 import { developmentRendererTarget } from "../../electron/protocol";
 import { isAllowedRendererNavigation } from "../../electron/renderer-navigation";
 
-const policyFor = (options: { readonly development?: boolean; readonly wasm?: boolean } = {}) =>
+const policyFor = (options: { readonly development?: boolean } = {}) =>
   makeDesktopContentSecurityPolicy({
     scheme: "com.tabaaq.desktop",
     apiOrigin: options.development ? "http://localhost:8787" : "https://api.tabaaq.app",
     authOrigin: options.development ? "http://localhost:8788" : "https://auth.tabaaq.app",
     development: options.development ?? false,
-    wasm: options.wasm ?? false,
   });
 
 const directive = (policy: string, name: string) =>
@@ -30,17 +26,8 @@ describe("desktop content security policy", () => {
     expect(scriptSources).toContain("'unsafe-inline'");
   });
 
-  it("keeps production script-src to self and wasm eval to the legacy PowerSync worker", () => {
+  it("keeps production script-src to self", () => {
     expect(directive(policyFor(), "script-src")).toEqual(["script-src", "'self'"]);
-    expect(directive(policyFor({ wasm: true }), "script-src")).toEqual([
-      "script-src",
-      "'self'",
-      "'wasm-unsafe-eval'",
-    ]);
-    expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-CKuXHS5K.js")).toBe(true);
-    expect(isLegacyPowerSyncWorkerPath("/assets/index-CKuXHS5K.js")).toBe(false);
-    expect(isLegacyPowerSyncWorkerPath("/assets/WASQLiteDB.worker-x.js/../index.js")).toBe(false);
-    expect(isLegacyPowerSyncWorkerPath("/WASQLiteDB.worker-CKuXHS5K.js")).toBe(false);
   });
 
   it("limits production connections, frames, and workers to known origins", () => {
@@ -49,7 +36,6 @@ describe("desktop content security policy", () => {
     expect(connectSources).toContain("https://*.ingest.sentry.io");
     expect(connectSources).toContain("https://*.ingest.us.sentry.io");
     expect(connectSources).toContain("wss://api.tabaaq.app");
-    expect(connectSources).not.toContain("https://*.powersync.journeyapps.com");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");
     expect(policy).not.toContain("challenges.cloudflare.com");

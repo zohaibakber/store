@@ -93,7 +93,7 @@ describe("proxied sync transport", () => {
           retentionFloor: "0",
         };
         const bodies: Array<string | null> = [];
-        const answers = [{ ...receipt, page }, receipt];
+        const answers = [{ ...receipt, page }];
         const transport = makeProxySyncTransport(async (request) => {
           bodies.push(request.bodyText);
           return { ok: true, status: 200, bodyText: JSON.stringify(answers[bodies.length - 1]) };
@@ -104,14 +104,12 @@ describe("proxied sync transport", () => {
           maxBytes: 262_144,
         };
         const withPage = yield* transport.submitCommand(request);
-        const legacy = yield* transport.submitCommand(lastUnitBuyerAEnvelope);
         expect(JSON.parse(bodies[0] ?? "{}")).toMatchObject({
           afterCommitSequence: "3",
           maxBytes: 262_144,
         });
         expect(withPage.page?.horizon).toBe("4");
         expect(withPage.page?.transactions).toHaveLength(1);
-        expect(legacy).toEqual(receipt);
       }),
     ));
 

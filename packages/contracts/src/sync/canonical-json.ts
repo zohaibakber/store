@@ -3,7 +3,7 @@ import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
-export const compareCodeUnits = Order.String;
+const compareCodeUnits = Order.String;
 
 type JsonValue = typeof Schema.Json.Type;
 

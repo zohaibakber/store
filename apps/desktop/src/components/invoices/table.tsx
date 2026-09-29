@@ -27,6 +27,7 @@ import {
   DataTablePagination,
   type DataTableColumnMeta,
 } from "@/components/shared/data-table";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDateTime, formatNumber } from "@/lib/format";
 
@@ -113,11 +114,26 @@ export function useInvoicesTable(invoices: readonly Invoice[]) {
   });
 }
 
-export function InvoicesTable() {
+export function InvoicesTable({
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}: {
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+}) {
   return (
     <DataTableContent>
       <DataTableFooter>
-        <DataTablePagination />
+        <div className="flex items-center gap-2">
+          <DataTablePagination className="flex-1" />
+          {hasMore && (
+            <Button loading={loadingMore} onClick={onLoadMore} size="xs" variant="ghost">
+              Load older invoices
+            </Button>
+          )}
+        </div>
       </DataTableFooter>
     </DataTableContent>
   );

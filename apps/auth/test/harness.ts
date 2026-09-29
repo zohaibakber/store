@@ -547,23 +547,19 @@ export interface Harness {
   readonly layer: Layer.Layer<AuthService | RuntimeContext>;
 }
 
-export const harness = (
-  options: { readonly googleProfile?: GoogleProfile; readonly withoutHubs?: boolean } = {},
-): Harness => {
+export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}): Harness => {
   const store = emptyStore();
   const issued: Array<IssueAccessTokenInput> = [];
   const revocations: Array<HubRevocationCall> = [];
-  const hubs = options.withoutHubs
-    ? Layer.empty
-    : Layer.succeed(
-        HubRevocation,
-        HubRevocation.of({
-          revoke: (organizationId, userId) =>
-            Effect.sync(() => {
-              revocations.push({ organizationId, userId });
-            }),
+  const hubs = Layer.succeed(
+    HubRevocation,
+    HubRevocation.of({
+      revoke: (organizationId, userId) =>
+        Effect.sync(() => {
+          revocations.push({ organizationId, userId });
         }),
-      );
+    }),
+  );
 
   const dependencies = Layer.mergeAll(
     Layer.succeed(AuthRepository, AuthRepository.of(fakeRepository(store))),

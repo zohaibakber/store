@@ -29,7 +29,6 @@ test("stocked products cannot be deleted or have their pack size changed", () =>
   const batches = [
     {
       productId: "product-1",
-      deletedAt: null,
       packQuantity: 1,
       unitQuantity: 0,
     },
@@ -44,7 +43,7 @@ test("stocked products cannot be deleted or have their pack size changed", () =>
   expect(() => assertCanDeleteBatch({ packQuantity: 1, unitQuantity: 0 })).toThrow(
     catalogWriteError.batchHasStock,
   );
-  expect(() =>
-    assertCanDeleteCategory([{ categoryId: "category-1", deletedAt: null }], "category-1"),
-  ).toThrow(catalogWriteError.categoryHasProducts);
+  expect(() => assertCanDeleteCategory([{ categoryId: "category-1" }], "category-1")).toThrow(
+    catalogWriteError.categoryHasProducts,
+  );
 });

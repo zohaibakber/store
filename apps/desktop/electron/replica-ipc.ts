@@ -1,8 +1,9 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 
 import * as NodeWorker from "@effect/platform-node/NodeWorker";
+import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -16,7 +17,6 @@ import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender
 import {
   REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_OUTCOMES_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
@@ -26,14 +26,12 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
-  REPLICA_SYNC_PROGRESS_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
 import {
-  ReplicaCommandOutcomesInput,
   ReplicaEnqueueInput,
   ReplicaOpenInput,
   ReplicaReadInsightsInput,
@@ -97,8 +95,6 @@ const CHANNEL_METHODS = {
   [REPLICA_READ_INSIGHTS_CHANNEL]: "readInsights",
   [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: "summarizeSubset",
   [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
-  [REPLICA_COMMAND_OUTCOMES_CHANNEL]: "readCommandOutcomes",
-  [REPLICA_SYNC_PROGRESS_CHANNEL]: "readSyncProgress",
   [REPLICA_ALLOCATION_CHANNEL]: "readCommandAllocation",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueLocal",
   [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
@@ -123,6 +119,16 @@ export type ReplicaIpcListener = (
   input: ReplicaIpcInput,
 ) => Promise<ReplicaIpcResult>;
 
+const prepareReplicaDirectory = async (directory: string) => {
+  await mkdir(directory, { recursive: true });
+  const stale = (await readdir(directory)).filter(
+    (name) => !name.startsWith(REPLICA_STORAGE_PREFIX),
+  );
+  await Promise.allSettled(
+    stale.map((name) => rm(path.join(directory, name), { force: true, recursive: true })),
+  );
+};
+
 const UNBOUNDED_WORKER_RPC_CONCURRENCY = Number.MAX_SAFE_INTEGER;
 
 const spawnNodeReplicaWorker: SpawnReplicaWorker = (workerPath) =>
@@ -143,7 +149,6 @@ const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
 const decodeReadInsightsInput = Schema.decodeUnknownSync(ReplicaReadInsightsInput);
 const decodeSummarizeSubsetInput = Schema.decodeUnknownSync(ReplicaSummarizeSubsetInput);
 const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
-const decodeCommandOutcomesInput = Schema.decodeUnknownSync(ReplicaCommandOutcomesInput);
 
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {
@@ -276,12 +281,12 @@ export const registerReplicaWorkerIpc = (options: {
         Effect.forkScoped,
       );
       const replicaDirectory = path.join(options.userDataPath, "replicas");
-      yield* Effect.promise(() => mkdir(replicaDirectory, { recursive: true }));
+      yield* Effect.promise(() => prepareReplicaDirectory(replicaDirectory));
       const engine = yield* client.Open({
         ...identity,
         databasePath: path.join(
           replicaDirectory,
-          `${identity.organizationId}-${identity.userId}.sqlite`,
+          sqliteReplicaFileName(`${identity.organizationId}-${identity.userId}`),
         ),
         apiBaseUrl: options.apiBaseUrl,
       });
@@ -342,14 +347,6 @@ export const registerReplicaWorkerIpc = (options: {
     },
     [REPLICA_OUTBOX_CHANNEL]: (event, input) =>
       withSession(event, input, "outbox read", (client) => client.ReadOutboxStatuses()),
-    [REPLICA_COMMAND_OUTCOMES_CHANNEL]: async (event, input) => {
-      const read = decodeCommandOutcomesInput(input);
-      return withSession(event, read.workspaceToken, "command outcome read", (client) =>
-        client.ReadCommandOutcomes({ operationIds: read.operationIds }),
-      );
-    },
-    [REPLICA_SYNC_PROGRESS_CHANNEL]: (event, input) =>
-      withSession(event, input, "sync progress read", (client) => client.ReadSyncProgress()),
     [REPLICA_ALLOCATION_CHANNEL]: (event, input) =>
       withSession(event, input, "command allocation", (client) => client.ReadCommandAllocation()),
     [REPLICA_ENQUEUE_CHANNEL]: async (event, input) => {

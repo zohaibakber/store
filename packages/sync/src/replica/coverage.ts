@@ -93,10 +93,7 @@ export const markCoverageRepair = (tx: ReplicaDb, subscription: SyncSubscription
 
 export const updateCoverageFromPull = Effect.fn("ReplicaCoverage.updateCoverageFromPull")(
   function* (tx: ReplicaDb, pulled: SyncPullResult, appliedThrough: string) {
-    const localDigest =
-      pulled.digest === undefined
-        ? undefined
-        : yield* sqlitePartitionDigest(tx, pulled.digest.version);
+    const localDigest = pulled.digest === undefined ? undefined : yield* sqlitePartitionDigest(tx);
     const next = decideCoverageAfterPull(localDigest, pulled.digest);
     if (next._tag === "repair") {
       yield* logPartitionDivergence(pulled.subscription, next.diverged);

@@ -2,7 +2,6 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
-  CATALOG_PARTITION_DIGEST_VERSION,
   PARTITION_DIGEST_VERSION,
   type SyncCommandEnvelope,
   type SyncPullRequest,
@@ -85,9 +84,6 @@ const openCommands = (organizationId: string, unitQuantity = 1) =>
     const userId = "user-1";
     yield* db.insert(inventoryState).values({
       organizationId,
-      status: "ready",
-      importId: "import-test",
-      releaseId: "release-test",
       incarnation: "incarnation-test",
       epoch: LAST_UNIT_EPOCH,
       commitSequence: "0",
@@ -510,25 +506,20 @@ describe("postgres inventory commands", () => {
     expect(outcome.retried.page?.transactions.map((group) => group.commitSequence)).toEqual(["2"]);
   });
 
-  it("omits the page for old clients and for cursors the log cannot serve", async () => {
+  it("omits the page for a cursor the log cannot serve", async () => {
     const organizationId = decodeOrganizationId("org-submit-no-page");
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
         const { commands } = yield* openCommands(organizationId);
-        const legacy = yield* commands.submit(
-          actor,
-          envelopeFor(organizationId, lastUnitBuyerAEnvelope),
-        );
+        yield* commands.commit(actor, envelopeFor(organizationId, lastUnitBuyerAEnvelope));
         const ahead = yield* commands.submit(actor, {
           ...envelopeFor(organizationId, lastUnitBuyerBEnvelope),
           afterCommitSequence: OrgCommitSequence.make("9"),
         });
-        return { legacy, ahead };
+        return { ahead };
       }),
     );
-    expect(outcome.legacy.decision).toBe("accepted");
-    expect("page" in outcome.legacy).toBe(false);
     expect(outcome.ahead.decision).toBe("rejected");
     expect("page" in outcome.ahead).toBe(false);
   });
@@ -601,7 +592,10 @@ describe("postgres inventory commands", () => {
     expect(outcome.accepted.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
     expect(outcome.rejected.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
     expect(outcome.replayed.fanout).toBeNull();
-    expect(outcome.replayed.body).toBe(outcome.accepted.body);
+    expect(JSON.parse(outcome.replayed.body)).toMatchObject({
+      operationId: first.operationId,
+      commitSequence: "1",
+    });
     expect(JSON.parse(outcome.accepted.fanout?.group ?? "null")).toEqual(page.transactions[0]);
     expect(JSON.parse(outcome.rejected.fanout?.group ?? "null")).toEqual(page.transactions[1]);
     expect(page.transactions[1]).toMatchObject({ decision: "rejected", changes: [] });
@@ -644,13 +638,7 @@ describe("postgres inventory commands", () => {
             digestVersion: PARTITION_DIGEST_VERSION,
           }),
         );
-        const digestedCatalog = yield* countStatements(
-          commands.pullEncoded(actor, {
-            ...pullFromStart,
-            digestVersion: CATALOG_PARTITION_DIGEST_VERSION,
-          }),
-        );
-        return { register, caughtUp, behind, replayed, pulled, digested, digestedCatalog };
+        return { register, caughtUp, behind, replayed, pulled, digested };
       }),
     );
     for (const [name, count] of Object.entries(counted)) {
@@ -661,7 +649,6 @@ describe("postgres inventory commands", () => {
       });
     }
     expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({ version: 3 });
-    expect(JSON.parse(counted.digestedCatalog.result.json).digest).toMatchObject({ version: 2 });
     expect(JSON.parse(counted.caughtUp.result.body).page.transactions).toHaveLength(1);
     expect(JSON.parse(counted.behind.result.body).page.transactions).toHaveLength(2);
     expect(JSON.parse(counted.replayed.result.body).page.transactions).toHaveLength(2);

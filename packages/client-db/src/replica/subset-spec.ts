@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import {
+  CASE_INSENSITIVE_ORDER_COLUMNS,
   INVENTORY_COLLECTION_SOURCES,
   MAX_DISTINCT_COLUMNS,
   MAX_IN_VALUES,
@@ -50,16 +51,36 @@ export const SubsetPredicate: Schema.Codec<SubsetPredicate> = Schema.Union([
   Schema.TaggedStruct("not", { predicate: NestedPredicate }),
 ]);
 
+export const SubsetOrderClause = Schema.Struct({
+  column: SubsetColumn,
+  direction: Schema.Literals(["asc", "desc"]),
+  nulls: Schema.optionalKey(Schema.Literals(["first", "last"])),
+  collation: Schema.optionalKey(Schema.Literals(["binary", "nocase"])),
+});
+export type SubsetOrderClause = typeof SubsetOrderClause.Type;
+
 export const InventorySubsetSpec = Schema.Struct({
   source: Schema.Literals(INVENTORY_COLLECTION_SOURCES),
   where: Schema.optionalKey(SubsetPredicate),
-  orderBy: Schema.Array(
-    Schema.Struct({ column: SubsetColumn, direction: Schema.Literals(["asc", "desc"]) }),
-  ),
+  orderBy: Schema.Array(SubsetOrderClause),
   limit: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
   offset: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
 });
 export type InventorySubsetSpec = typeof InventorySubsetSpec.Type;
+
+export type ResolvedSubsetOrderClause = Required<SubsetOrderClause>;
+
+export const resolveSubsetOrder = (
+  spec: Pick<InventorySubsetSpec, "source" | "orderBy">,
+): ReadonlyArray<ResolvedSubsetOrderClause> =>
+  spec.orderBy.map((clause) => ({
+    column: clause.column,
+    direction: clause.direction,
+    nulls: clause.nulls ?? (clause.direction === "asc" ? "first" : "last"),
+    collation:
+      clause.collation ??
+      (CASE_INSENSITIVE_ORDER_COLUMNS[spec.source].has(clause.column) ? "nocase" : "binary"),
+  }));
 
 export const InventorySubsetSummarySpec = Schema.Struct({
   source: Schema.Literals(INVENTORY_COLLECTION_SOURCES),

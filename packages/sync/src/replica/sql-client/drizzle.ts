@@ -20,7 +20,7 @@ import type { SqlClient } from "effect/unstable/sql/SqlClient";
 import type { Row } from "effect/unstable/sql/SqlConnection";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
-export interface ReplicaQueryEffectHKT extends QueryEffectHKTBase {
+interface ReplicaQueryEffectHKT extends QueryEffectHKTBase {
   readonly error: EffectDrizzleQueryError;
   readonly context: never;
 }

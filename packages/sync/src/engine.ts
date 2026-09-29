@@ -43,19 +43,19 @@ import {
 import type { SyncCatchUpOutcome } from "./scheduler";
 import { SyncTransportService, type SyncTransport, type SyncTransportError } from "./transport";
 
-export type SyncEngineProgress = {
+type SyncEngineProgress = {
   readonly uploading: boolean;
   readonly downloading: boolean;
   readonly feed: ReplicaFeedMode;
 };
 
-export type SyncEngineError =
+type SyncEngineError =
   | SyncTransportError
   | SyncProtocolError
   | ReplicaCoverageRepairRequired
   | ReplicaStoreError;
 
-export type LiveFrameOutcome =
+type LiveFrameOutcome =
   | { readonly _tag: "applied" }
   | { readonly _tag: "current" }
   | { readonly _tag: "pull"; readonly hint?: SyncLiveWakeHint };
@@ -82,7 +82,7 @@ const contiguousFrom = (frame: TransactionsFrame, appliedCommitSequence: string)
   return frame.transactions.at(-1)?.commitSequence === frame.toCommitSequence;
 };
 
-export interface SyncEngineContract {
+interface SyncEngineContract {
   readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
   readonly saveCommand: (
@@ -138,7 +138,7 @@ export type SyncEngineMutex = {
   ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 };
 
-export type SyncEngineOptions = {
+type SyncEngineOptions = {
   readonly digestVerificationIntervalMillis?: number;
   readonly pullMaxBytes?: number;
 };
@@ -289,7 +289,6 @@ export const makeSyncEngineFromReplicaStore = (
       envelope: SyncCommandEnvelope,
     ) {
       const cursor = yield* withPermit(cursorFromStore(store));
-      if (cursor.epoch !== envelope.epoch) return envelope;
       const request: SyncSubmitCommandRequest = {
         ...envelope,
         afterCommitSequence: OrgCommitSequence.make(cursor.appliedCommitSequence),

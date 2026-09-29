@@ -48,13 +48,6 @@ export default Alchemy.Stack(
       name: "Development",
     });
 
-    yield* GitHub.Environment("Nightly", {
-      owner: repository.owner,
-      repository: repository.name,
-      name: "Nightly",
-      deploymentBranchPolicy: { customBranchPolicies: ["nightly"] },
-    });
-
     yield* GitHub.Environment("Production", {
       owner: repository.owner,
       repository: repository.name,

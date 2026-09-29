@@ -18,22 +18,18 @@ import type { InventoryDatabaseError, InventoryError } from "./errors";
 import type {
   EncodedJsonBody,
   EncodedSnapshotPart,
-  InventorySyncActor,
+  InventoryActor,
   SubmittedCommand,
 } from "./model";
-import { inventoryPostgresUnavailable } from "./postgres";
 import type { InventorySnapshotsContract } from "./snapshots";
 
 export class SyncUnavailableError extends Schema.TaggedError<SyncUnavailableError>()(
   "SyncUnavailableError",
   {
-    code: Schema.Literals(["SYNC_NOT_PROVISIONED", "SYNC_UNAVAILABLE"]),
+    code: Schema.Literal("SYNC_UNAVAILABLE"),
     message: Schema.String,
   },
 ) {}
-
-const syncUnavailableError = (message: string) =>
-  SyncUnavailableError.make({ code: "SYNC_NOT_PROVISIONED", message });
 
 const syncDatabaseFailure = (error: InventoryDatabaseError) =>
   Effect.logError("inventory.database_failed", error.cause ?? error.message).pipe(
@@ -52,27 +48,27 @@ export type SyncAuthorityError = SyncProtocolError | SyncUnavailableError;
 
 export interface SyncAuthorityContract {
   readonly registerReplica: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     request: RegisterReplicaRequest,
   ) => Effect.Effect<RegisterReplicaResult, SyncAuthorityError, RuntimeContext>;
   readonly submitCommand: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     bodyText: string,
   ) => Effect.Effect<SubmittedCommand, SyncAuthorityError | SyncRequestMalformed, RuntimeContext>;
   readonly getReceipt: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     operationId: string,
   ) => Effect.Effect<CommandReceipt | undefined, SyncAuthorityError, RuntimeContext>;
   readonly pull: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     request: SyncPullRequest,
   ) => Effect.Effect<EncodedJsonBody, SyncAuthorityError, RuntimeContext>;
   readonly acquireSnapshot: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     request: AcquireSnapshotRequest,
   ) => Effect.Effect<AcquireSnapshotResult, SyncAuthorityError, RuntimeContext>;
   readonly readSnapshotPart: (
-    actor: InventorySyncActor,
+    actor: InventoryActor,
     snapshotId: SnapshotId,
     partNumber: number,
   ) => Effect.Effect<EncodedSnapshotPart, SyncAuthorityError, RuntimeContext>;
@@ -82,15 +78,10 @@ export class SyncAuthority extends Context.Service<SyncAuthority, SyncAuthorityC
   "@store/server/SyncAuthority",
 ) {}
 
-const unavailableFrom = (error: InventoryDatabaseError) =>
-  error === inventoryPostgresUnavailable
-    ? Effect.fail(syncUnavailableError(error.message))
-    : syncDatabaseFailure(error);
-
 const toSyncAuthorityError = <A, R>(
   effect: Effect.Effect<A, InventoryError, R>,
 ): Effect.Effect<A, SyncAuthorityError, R> =>
-  effect.pipe(Effect.catchTag("InventoryDatabaseError", unavailableFrom));
+  effect.pipe(Effect.catchTag("InventoryDatabaseError", syncDatabaseFailure));
 
 export const makeInventorySyncAuthority = (stores: {
   readonly commands: InventoryCommandsContract;
@@ -101,7 +92,7 @@ export const makeInventorySyncAuthority = (stores: {
   submitCommand: (actor, bodyText) =>
     stores.commands
       .submitRaw(actor, bodyText)
-      .pipe(Effect.catchTag("InventoryDatabaseError", unavailableFrom)),
+      .pipe(Effect.catchTag("InventoryDatabaseError", syncDatabaseFailure)),
   getReceipt: (actor, operationId) =>
     toSyncAuthorityError(stores.commands.receipt(actor, operationId)),
   pull: (actor, request) => toSyncAuthorityError(stores.commands.pullEncoded(actor, request)),

@@ -1,5 +1,4 @@
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   CommandReceipt,
   MAX_SYNC_PULL_TRANSACTIONS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
@@ -13,7 +12,6 @@ import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Number from "effect/Number";
 import * as Schema from "effect/Schema";
 
@@ -21,11 +19,10 @@ import type { InventoryError } from "./errors";
 import type { EncodedJsonBody, InventoryActor, SubmittedCommand } from "./model";
 import {
   databaseError,
-  inventoryPostgresUnavailable,
   isDataException,
   protocol,
   randomHex,
-  requireReady,
+  requireState,
   runStatement,
   withSerializationRetry,
   type InventoryDrizzle,
@@ -33,14 +30,14 @@ import {
 
 const PULL_ENVELOPE_HEADROOM_BYTES = 16_384;
 
-export const PULL_PAYLOAD_BUDGET_BYTES = MAX_TRANSPORT_PAYLOAD_BYTES - PULL_ENVELOPE_HEADROOM_BYTES;
+const PULL_PAYLOAD_BUDGET_BYTES = MAX_TRANSPORT_PAYLOAD_BYTES - PULL_ENVELOPE_HEADROOM_BYTES;
 
 const clampPullByteBudget = Number.clamp({
   minimum: MIN_PULL_BYTE_BUDGET,
   maximum: PULL_PAYLOAD_BUDGET_BYTES,
 });
 
-export const pullByteBudget = (maxBytes: number | undefined): number =>
+const pullByteBudget = (maxBytes: number | undefined): number =>
   maxBytes === undefined ? PULL_PAYLOAD_BUDGET_BYTES : clampPullByteBudget(maxBytes);
 
 const FunctionFailure = {
@@ -66,11 +63,7 @@ const SubmittedRows = Schema.Tuple([
 ]);
 
 const ReceiptRows = Schema.Array(
-  Schema.Struct({
-    status: Schema.String,
-    release_id: Schema.NullOr(Schema.String),
-    receipt: Schema.NullOr(Schema.fromJsonString(CommandReceipt)),
-  }),
+  Schema.Struct({ receipt: Schema.NullOr(Schema.fromJsonString(CommandReceipt)) }),
 );
 
 const decodeEncodedRows = Schema.decodeUnknownEffect(EncodedRows);
@@ -150,8 +143,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
           ${request.afterCommitSequence}::text,
           ${request.limit ?? MAX_SYNC_PULL_TRANSACTIONS}::integer,
           ${pullByteBudget(request.maxBytes)}::integer,
-          ${request.digestVersion !== undefined}::boolean,
-          ${request.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION}::integer
+          ${request.digestVersion !== undefined}::boolean
         )`,
         "objects",
       ),
@@ -243,7 +235,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
       const rows = yield* runStatement(
         db.execute(
-          sql`select "s"."status", "s"."release_id",
+          sql`select
             case when "r"."operation_id" is null then null else sync.receipt_frame("r") end as "receipt"
           from "inventory_state" as "s"
           left join "command_receipts" as "r"
@@ -253,20 +245,9 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
           "objects",
         ),
       ).pipe(Effect.flatMap(decodedWith(decodeReceiptRows)));
-      const row = rows[0];
-      yield* requireReady(row === undefined ? undefined : { ...row, releaseId: row.release_id });
-      return row?.receipt ?? undefined;
+      const row = yield* requireState(rows[0]);
+      return row.receipt ?? undefined;
     }),
     pullEncoded,
   });
 };
-
-export const InventoryCommandsUnavailable = Layer.succeed(
-  InventoryCommands,
-  InventoryCommands.of({
-    register: () => Effect.fail(inventoryPostgresUnavailable),
-    submitRaw: () => Effect.fail(inventoryPostgresUnavailable),
-    receipt: () => Effect.fail(inventoryPostgresUnavailable),
-    pullEncoded: () => Effect.fail(inventoryPostgresUnavailable),
-  }),
-);

@@ -1,9 +1,6 @@
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   compareDecimalSequence,
-  snapshotDigestVersion,
   syncProtocolError,
-  type PartitionDigestVersion,
   type SnapshotId,
   type SnapshotManifest,
   type SnapshotPartPayload,
@@ -57,25 +54,10 @@ const promoteStagedSnapshot = (api: ReplicaQueryBuilder, generation: number, sna
     yield* api.from("snapshot_staged_rows").delete("bySnapshot").equals(snapshotId);
   });
 
-const retireGeneration = (
-  api: ReplicaQueryBuilder,
-  from: number,
-  to: number,
-  digestVersion: PartitionDigestVersion,
-) =>
+const retireGeneration = (api: ReplicaQueryBuilder, from: number, to: number) =>
   Effect.gen(function* () {
     if (from === to) return;
     const [lower, upper] = generationBounds(from);
-    if (digestVersion === CATALOG_PARTITION_DIGEST_VERSION) {
-      const invoices = yield* api.from("invoices").select().between(lower, upper);
-      const items = yield* api.from("invoice_items").select().between(lower, upper);
-      const movements = yield* api.from("stock_movements").select().between(lower, upper);
-      yield* api.from("invoices").upsertAll(invoices.map((row) => ({ ...row, generation: to })));
-      yield* api.from("invoice_items").upsertAll(items.map((row) => ({ ...row, generation: to })));
-      yield* api
-        .from("stock_movements")
-        .upsertAll(movements.map((row) => ({ ...row, generation: to })));
-    }
     yield* api.from("categories").delete().between(lower, upper);
     yield* api.from("products").delete().between(lower, upper);
     yield* api.from("batches").delete().between(lower, upper);
@@ -129,7 +111,6 @@ export const beginIndexedDbSnapshotImport = (
       stage: "importing",
       partsImported: 0,
       partsTotal: manifest.parts.length,
-      digestVersion: snapshotDigestVersion(manifest),
     });
     return { partsImported: 0 };
   });
@@ -195,12 +176,7 @@ export const activateIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: 
       );
     }
     yield* promoteStagedSnapshot(api, importRow.generation, snapshotId);
-    yield* retireGeneration(
-      api,
-      state.activeGeneration,
-      importRow.generation,
-      importRow.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION,
-    );
+    yield* retireGeneration(api, state.activeGeneration, importRow.generation);
     yield* integrateCoveredCommands(api, importRow.horizon);
     yield* recomputePendingOverlays(api, importRow.generation);
     yield* reapplyIndexedDbPendingProjections(api, importRow.generation, {
@@ -219,6 +195,7 @@ export const activateIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: 
       state: "downloaded",
       throughCommitSequence: importRow.horizon,
       digest: null,
+      verifiedAt: null,
     });
     yield* api.from("snapshot_imports").upsert({
       ...importRow,

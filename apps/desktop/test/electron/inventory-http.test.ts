@@ -30,14 +30,6 @@ describe("desktop inventory HTTP allowlist", () => {
 
   it.each([
     ["POST", "/api/inventory/mutations"],
-    ["POST", "/api/inventory/imports"],
-    ["POST", "/api/inventory/invoices"],
-    ["POST", "/api/inventory/legacy-migrations"],
-    ["POST", "/api/inventory/not-a-command"],
-    ["GET", "/api/inventory/legacy-migrations"],
-    ["GET", "/api/inventory/legacy-migrations/job-123"],
-    ["GET", "/api/inventory/products"],
-    ["GET", "/api/powersync/credentials"],
     ["POST", "/api/sync/live-tickets"],
     ["GET", "/api/sync/live?replicaId=replica-a&subscription=operational"],
     ["POST", "/api/sync/live"],

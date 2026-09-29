@@ -2,6 +2,7 @@ import { nextInvoiceNumber } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
+import { drainSubset } from "./replica/collection-read";
 import {
   decodeBatchSqliteRows,
   decodeCategorySqliteRows,
@@ -15,7 +16,7 @@ import {
   type InventoryCollectionSource,
 } from "./replica/sources";
 import type { SqliteResultRow } from "./replica/sqlite-row";
-import type { InventorySubsetSpec, SubsetPredicate } from "./replica/subset-spec";
+import type { SubsetPredicate } from "./replica/subset-spec";
 import type { ReplicaSubsetReader } from "./replica/types";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
@@ -32,46 +33,31 @@ export type CatalogRowsRequest = {
   readonly batchesOfProductIds?: Iterable<string>;
 };
 
-const PAGE_ROWS = DEFAULT_COLLECTION_MAXIMUM_ROWS;
-
-const withAfter = (where: SubsetPredicate | undefined, after: string | undefined) => {
-  if (after === undefined) return where;
-  const cursor: SubsetPredicate = { _tag: "compare", column: "id", op: "gt", value: after };
-  return where ? { _tag: "and" as const, predicates: [where, cursor] } : cursor;
-};
-
 const readPage = async <Row>(
   reader: ReplicaSubsetReader,
   source: InventoryCollectionSource,
   decode: DecodeRows<Row>,
-  where: SubsetPredicate | undefined,
+  where: SubsetPredicate,
   limit: number,
 ) => {
-  const spec: InventorySubsetSpec = {
+  const read = await reader.readSubset({
     source,
+    where,
     orderBy: [{ column: "id", direction: "asc" }],
     limit,
     offset: 0,
-  };
-  const read = await reader.readSubset(where ? { ...spec, where } : spec);
-  return { count: read.rows.length, rows: await Effect.runPromise(decode(read.rows)) };
+  });
+  return Effect.runPromise(decode(read.rows));
 };
 
-const readAll = async <Row extends { readonly id: string }>(
+const readAll = async <Row>(
   reader: ReplicaSubsetReader,
   source: InventoryCollectionSource,
   decode: DecodeRows<Row>,
   where?: SubsetPredicate,
 ): Promise<ReadonlyArray<Row>> => {
-  const rows: Array<Row> = [];
-  let after: string | undefined;
-  for (;;) {
-    const page = await readPage(reader, source, decode, withAfter(where, after), PAGE_ROWS);
-    rows.push(...page.rows);
-    const last = page.rows.at(-1);
-    if (page.count < PAGE_ROWS || last === undefined) return rows;
-    after = last.id;
-  }
+  const read = await drainSubset(reader, source, where, DEFAULT_COLLECTION_MAXIMUM_ROWS);
+  return Effect.runPromise(decode(read.rows));
 };
 
 const readWhereIn = async <Row extends { readonly id: string }>(
@@ -138,7 +124,7 @@ export const readCatalogRows = async (
               value: request.anyProductInCategory,
             },
             1,
-          ).then((page) => page.rows),
+          ),
       readWhereIn<BatchRow>(reader, "batches", decodeBatchSqliteRows, "id", request.batchIds),
       readWhereIn<BatchRow>(
         reader,

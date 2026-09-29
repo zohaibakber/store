@@ -4,15 +4,13 @@ import { and, eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 
 import type { InventoryError } from "./errors";
 import type { InventoryActor } from "./model";
 import {
   integerTextFromNumeric,
-  inventoryPostgresUnavailable,
   protocol,
-  requireReady,
+  requireState,
   runStatement,
   type InventoryDrizzle,
 } from "./postgres";
@@ -30,8 +28,6 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
   const [row] = yield* runStatement(
     db
       .select({
-        status: inventoryState.status,
-        releaseId: inventoryState.releaseId,
         epoch: inventoryState.epoch,
         commitSequence: inventoryState.commitSequence,
         ownerUserId: replicas.ownerUserId,
@@ -47,7 +43,7 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
       .where(eq(inventoryState.organizationId, actor.organizationId))
       .limit(1),
   );
-  const state = yield* requireReady(row);
+  const state = yield* requireState(row);
   if (state.ownerUserId === null) {
     return yield* protocol("REPLICA_UNKNOWN", "This replica is not registered.");
   }
@@ -60,7 +56,7 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
   } satisfies LiveHorizon;
 });
 
-export const LIVE_HORIZON_SHARING = {
+const LIVE_HORIZON_SHARING = {
   maxAgeMillis: 1_000,
   capacity: 1_024,
 } as const;
@@ -95,7 +91,7 @@ const makeSharedHorizonReader = (
   });
 };
 
-export interface InventoryLiveContract {
+interface InventoryLiveContract {
   readonly readLiveHorizon: (
     actor: InventoryActor,
     replicaId: string,
@@ -116,10 +112,3 @@ export const makeInventoryLive = (db: InventoryDrizzle): InventoryLiveContract =
     }),
   });
 };
-
-export const InventoryLiveUnavailable = Layer.succeed(
-  InventoryLive,
-  InventoryLive.of({
-    readLiveHorizon: () => Effect.fail(inventoryPostgresUnavailable),
-  }),
-);

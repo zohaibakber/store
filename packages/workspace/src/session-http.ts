@@ -28,9 +28,11 @@ export class RequestError extends Schema.TaggedError<RequestError>()("Workspace.
 }) {}
 
 export const RefreshedTokenSet = TokenSet.pipe(
-  Schema.fieldsAssign({ workspace: Schema.optionalKey(AuthenticatedWorkspaceSnapshot) }),
+  Schema.fieldsAssign({ workspace: AuthenticatedWorkspaceSnapshot }),
 );
 export interface RefreshedTokenSet extends Schema.Schema.Type<typeof RefreshedTokenSet> {}
+
+type UnrefreshedTokenSet = TokenSet & { readonly workspace?: undefined };
 
 export const refreshedTokens = (refreshed: TokenSet): TokenSet =>
   Struct.pick(refreshed, ["accessToken", "accessExpiresAt", "refreshToken", "refreshExpiresAt"]);
@@ -147,7 +149,7 @@ export class SessionHttpClient {
     return this.#tokens;
   }
 
-  ensureFreshAccess(force = false): Promise<RefreshedTokenSet | null> {
+  ensureFreshAccess(force = false): Promise<RefreshedTokenSet | UnrefreshedTokenSet | null> {
     const tokens = this.#tokens.get();
     if (!this.#needsRefresh(tokens, force)) return Promise.resolve(tokens);
     if (this.#refreshInFlight) return this.#refreshInFlight;

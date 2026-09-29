@@ -1,16 +1,15 @@
 import { SyncNotFound } from "@store/contracts/sync/http-errors";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/organization";
 import { StoreApi } from "../http/api";
-import { publicError, retryAfter } from "../http/errors";
+import { publicError } from "../http/errors";
 import { mapSyncError } from "../http/sync-errors";
 import { MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
-import type { EncodedSnapshotPart, InventorySyncActor } from "../inventory/model";
+import type { EncodedSnapshotPart, InventoryActor } from "../inventory/model";
 import { SyncAuthority, type SyncAuthorityError } from "../inventory/sync-authority";
 import { LiveFanout } from "../live/fanout";
 
@@ -61,15 +60,14 @@ const boundedBodyText = (request: HttpServerRequest.HttpServerRequest) =>
         ),
       );
 
-const syncActor = (identity: CurrentOrganizationContext): InventorySyncActor => ({
+const syncActor = (identity: CurrentOrganizationContext): InventoryActor => ({
   organizationId: identity.organizationId,
   userId: identity.user.id,
-  authorizationExpiresAt: identity.session.expiresAt,
 });
 
 const asActor = <A, R>(
   span: string,
-  run: (actor: InventorySyncActor) => Effect.Effect<A, SyncAuthorityError, R>,
+  run: (actor: InventoryActor) => Effect.Effect<A, SyncAuthorityError, R>,
 ) =>
   CurrentOrganization.pipe(
     Effect.flatMap((identity) => run(syncActor(identity))),
@@ -82,7 +80,7 @@ export const SyncHandlers = HttpApiBuilder.group(
   "sync",
   Effect.fn("SyncHandlers.make")(function* (handlers) {
     const authority = yield* SyncAuthority;
-    const fanout = yield* Effect.serviceOption(LiveFanout);
+    const fanout = yield* LiveFanout;
 
     return handlers
       .handle("registerReplica", ({ payload }) =>
@@ -94,8 +92,8 @@ export const SyncHandlers = HttpApiBuilder.group(
             const bodyText = yield* boundedBodyText(request);
             if (bodyText === undefined) return commandTooLargeResponse();
             const submitted = yield* authority.submitCommand(actor, bodyText);
-            if (submitted.fanout !== null && Option.isSome(fanout)) {
-              yield* fanout.value.publish(actor.organizationId, submitted.fanout);
+            if (submitted.fanout !== null) {
+              yield* fanout.publish(actor.organizationId, submitted.fanout);
             }
             return encodedJsonResponse(submitted.body);
           }).pipe(
@@ -122,11 +120,7 @@ export const SyncHandlers = HttpApiBuilder.group(
         ),
       )
       .handle("acquireSnapshot", ({ payload }) =>
-        asActor("acquireSnapshot", (actor) => authority.acquireSnapshot(actor, payload)).pipe(
-          Effect.tap((result) =>
-            result._tag === "building" ? retryAfter(result.retryAfterMillis) : Effect.void,
-          ),
-        ),
+        asActor("acquireSnapshot", (actor) => authority.acquireSnapshot(actor, payload)),
       )
       .handle("readSnapshotPart", ({ params, request }) =>
         asActor("readSnapshotPart", (actor) =>

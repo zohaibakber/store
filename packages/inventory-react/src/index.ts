@@ -10,8 +10,8 @@ export {
   stockPolicyAtom,
   type CommandExecutionState,
 } from "./atoms";
-export { CatalogOpenFailure, StaleCatalogLease, WorkspaceReadFailure } from "./errors";
-export type { InventoryHost, InventoryScope, ReplicaOpenIdentity } from "./host";
+export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+export type { InventoryHost, ReplicaOpenIdentity } from "./host";
 export {
   createAppCatalogLifetime,
   createCatalogLifetime,
@@ -19,7 +19,6 @@ export {
   type CatalogLifetime,
   type CatalogReplica,
 } from "./lifetime";
-export { enqueueReplicaCommand } from "./actions";
 export { inventoryScopeId, openInventoryWorkspace } from "./open";
 export {
   InventoryProvider,
@@ -34,20 +33,22 @@ export {
 export {
   useCatalogCategories,
   useCatalogProduct,
-  useCatalogProducts,
+  useCatalogProductCandidates,
   useCatalogProductSearch,
-  useCatalogStockMovements,
+  useStockMovementHistory,
   useCatalogProductLookup,
   useInventoryInvoice,
   useInventoryInvoices,
+  useInvoiceHistory,
   usePendingRowIds,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
   useSuspenseCatalogProducts,
-  useSuspenseCatalogStockMovements,
+  useSuspenseStockMovementHistory,
   useSuspenseCatalogSuggestions,
   useSuspenseInventoryInvoice,
   useSuspenseInventoryInvoices,
+  useSuspenseInvoiceHistory,
   useSuspenseProductSearch,
 } from "./queries";
 export {
@@ -58,10 +59,7 @@ export {
   type SearchableProduct,
 } from "./search";
 export {
-  MAX_PRODUCT_PAGE_SIZE,
-  PRODUCT_FACET_COLUMNS,
   PRODUCT_SORT_COLUMNS,
-  type ProductFacetColumn,
   type ProductFacets,
   type ProductListFilters,
   type ProductListRequest,
@@ -77,7 +75,6 @@ export {
   useProductInsight,
   useRefreshInventoryInsights,
   useStockPolicy,
-  type InventoryInsights,
 } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
-export type { Inventory, InventoryActions, InventoryActor, InventoryState } from "./types";
+export type { Inventory, InventoryActions } from "./types";

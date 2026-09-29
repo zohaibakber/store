@@ -1,10 +1,10 @@
 import { decodeCategoryId } from "@store/contracts/ids";
-import { createCollection, IR } from "@tanstack/db";
+import { createCollection, createLiveQueryCollection, IR } from "@tanstack/db";
 import * as Effect from "effect/Effect";
 import { describe, expect, it, vi } from "vitest";
 
 import { sqliteCollectionOptions } from "../src/replica/collection";
-import { decodeCategorySqliteRows } from "../src/replica/decode";
+import { decodeCategorySqliteRows, decodeProductSqliteRows } from "../src/replica/decode";
 import { openNodeReplicaSqlite } from "../src/replica/node-sqlite";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "../src/replica/sources";
 import type {
@@ -13,7 +13,7 @@ import type {
   ReplicaSubsetReader,
   SqliteResultRow,
 } from "../src/replica/types";
-import type { CategoryRow } from "../src/rows";
+import type { CategoryRow, ProductRow } from "../src/rows";
 
 const identity = {
   organizationId: "org-1",
@@ -62,22 +62,41 @@ const insertCategory = (replica: NodeReplica, id: string, name: string) =>
     [id],
   );
 
-const startCollection = (replica: NodeReplica) => {
-  const options = sqliteCollectionOptions(descriptor, {
-    executor: replica,
-    changeFeed: replica,
-  });
-  const collection = createCollection(options);
-  collection.subscribeChanges(() => undefined);
-  return { collection, options };
-};
+const insertProduct = (replica: NodeReplica, id: string, name: string, aisle: string | null) =>
+  replica.withWrite(
+    (handle) =>
+      Effect.asVoid(
+        handle.sql.unsafe(
+          `insert into products (
+            id, name, aisle, createdAt, updatedAt,
+            organizationId, createdByUserId, updatedByUserId, deviceId, operationId
+          ) values (?, ?, ?, 1, 1, ?, ?, ?, ?, 'seed')`,
+          [
+            id,
+            name,
+            aisle,
+            identity.organizationId,
+            identity.userId,
+            identity.userId,
+            identity.replicaId,
+          ],
+        ),
+      ),
+    ["product"],
+    [id],
+  );
+
+const byIds = (ids: ReadonlyArray<string>) =>
+  new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(ids)]);
+
+const startCollection = (replica: NodeReplica) =>
+  createCollection(sqliteCollectionOptions(descriptor, { executor: replica, changeFeed: replica }));
 
 describe("sqliteCollectionOptions", () => {
   it("publishes a change committed between listener registration and the baseline read", async () => {
     const token = "workspace-a";
     const generation = "1";
     const late = categoryRow("late", "Late");
-    const queued: Array<(notice: ReplicaCommitNotice) => void> = [];
     let reads = 0;
     const executor: ReplicaSubsetReader = {
       readSubset: async () => {
@@ -104,91 +123,110 @@ describe("sqliteCollectionOptions", () => {
         };
       },
     };
-    const options = sqliteCollectionOptions(descriptor, {
-      executor,
-      changeFeed: {
-        subscribe: (listener) => {
-          queued.push(listener);
-          listener({
-            workspaceToken: token,
-            generationId: generation,
-            localCommitVersion: 2,
-            touchedEntities: ["category"],
-            touchedKeys: ["late"],
-          });
-          return () => undefined;
+    const collection = createCollection(
+      sqliteCollectionOptions(descriptor, {
+        executor,
+        changeFeed: {
+          subscribe: (listener: (notice: ReplicaCommitNotice) => void) => {
+            listener({
+              workspaceToken: token,
+              generationId: generation,
+              localCommitVersion: 2,
+              touchedEntities: ["category"],
+              touchedKeys: ["late"],
+            });
+            return () => undefined;
+          },
         },
-      },
+      }),
+    );
+    collection.subscribeChanges(() => undefined, {
+      includeInitialState: true,
+      whereExpression: byIds(["late"]),
     });
-    const collection = createCollection(options);
-    collection.subscribeChanges(() => undefined);
-    await options.utils.loadSubset({
-      where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("late")]),
-      limit: 10,
-    });
-    expect(collection.get("late")?.name).toBe("Late");
+    await vi.waitFor(() => expect(collection.get("late")?.name).toBe("Late"));
     expect(reads).toBe(2);
   });
 
-  it("reference-counts overlapping acquisitions and releases them independently", async () => {
+  it("reference-counts overlapping subscriptions and releases them independently", async () => {
     const replica = await openNodeReplicaSqlite(identity);
     await insertCategory(replica, "shared", "Shared");
     await insertCategory(replica, "only-a", "Only A");
     await insertCategory(replica, "only-b", "Only B");
-    const { collection, options } = startCollection(replica);
-    const first = {
-      where: new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(["shared", "only-a"])]),
-      limit: 10,
-    };
-    const second = {
-      where: new IR.Func("in", [new IR.PropRef(["id"]), new IR.Value(["shared", "only-b"])]),
-      limit: 10,
-    };
-    await options.utils.loadSubset(first);
-    await options.utils.loadSubset(second);
-    expect(collection.get("shared")?.name).toBe("Shared");
-    expect(collection.get("only-a")?.name).toBe("Only A");
-    expect(collection.get("only-b")?.name).toBe("Only B");
-    options.utils.unloadSubset(first);
+    const collection = startCollection(replica);
+    const first = collection.subscribeChanges(() => undefined, {
+      includeInitialState: true,
+      whereExpression: byIds(["shared", "only-a"]),
+    });
+    const second = collection.subscribeChanges(() => undefined, {
+      includeInitialState: true,
+      whereExpression: byIds(["shared", "only-b"]),
+    });
+    await vi.waitFor(() => {
+      expect(collection.get("only-a")?.name).toBe("Only A");
+      expect(collection.get("only-b")?.name).toBe("Only B");
+    });
+    first.unsubscribe();
     await vi.waitFor(() => expect(collection.get("only-a")).toBeUndefined());
     expect(collection.get("shared")?.name).toBe("Shared");
     expect(collection.get("only-b")?.name).toBe("Only B");
-    options.utils.unloadSubset(second);
+    second.unsubscribe();
     await vi.waitFor(() => expect(collection.get("shared")).toBeUndefined());
     expect(collection.get("only-b")).toBeUndefined();
-    replica.close();
-  });
-
-  it("keeps rows while a released subset is reacquired before its reload lands", async () => {
-    const replica = await openNodeReplicaSqlite(identity);
-    await insertCategory(replica, "kept", "Kept");
-    const { collection, options } = startCollection(replica);
-    const subset = {
-      where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("kept")]),
-      limit: 10,
-    };
-    await options.utils.loadSubset(subset);
-    const busy = options.utils.loadSubset({ limit: 10 });
-    const reacquired = options.utils.loadSubset(subset);
-    options.utils.unloadSubset(subset);
-    expect(collection.get("kept")?.name).toBe("Kept");
-    await Promise.all([busy, reacquired]);
-    expect(collection.get("kept")?.name).toBe("Kept");
     replica.close();
   });
 
   it("publishes nothing from a disposed workspace", async () => {
     const replica = await openNodeReplicaSqlite(identity);
     await insertCategory(replica, "keep", "Keep");
-    const { collection, options } = startCollection(replica);
-    await options.utils.loadSubset({
-      where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("keep")]),
-      limit: 10,
+    const collection = startCollection(replica);
+    collection.subscribeChanges(() => undefined, {
+      includeInitialState: true,
+      whereExpression: byIds(["keep"]),
     });
-    expect(collection.get("keep")?.name).toBe("Keep");
+    await vi.waitFor(() => expect(collection.get("keep")?.name).toBe("Keep"));
     await collection.cleanup();
     await insertCategory(replica, "after", "After");
     expect(collection.get("after")).toBeUndefined();
+    replica.close();
+  });
+
+  it("loads the same window SQLite orders, including case and nulls", async () => {
+    const replica = await openNodeReplicaSqlite(identity);
+    await insertProduct(replica, "p-lower", "apple", "a");
+    await insertProduct(replica, "p-upper", "Banana", "B");
+    await insertProduct(replica, "p-null", "cherry", null);
+    await insertProduct(replica, "p-last", "Date", "c");
+    const products = createCollection(
+      sqliteCollectionOptions<ProductRow>(
+        {
+          id: "test:products",
+          source: "products",
+          syncMode: "on-demand",
+          maximumRows: DEFAULT_COLLECTION_MAXIMUM_ROWS,
+          getKey: (row) => row.id,
+          decodeRows: decodeProductSqliteRows,
+        },
+        { executor: replica, changeFeed: replica },
+      ),
+    );
+    const byName = createLiveQueryCollection((query) =>
+      query
+        .from({ product: products })
+        .orderBy(({ product }) => product.name, "asc")
+        .limit(2)
+        .select(({ product }) => ({ id: product.id })),
+    );
+    const byAisle = createLiveQueryCollection((query) =>
+      query
+        .from({ product: products })
+        .orderBy(({ product }) => product.aisle, { direction: "desc", nulls: "first" })
+        .limit(2)
+        .select(({ product }) => ({ id: product.id })),
+    );
+    await Promise.all([byName.preload(), byAisle.preload()]);
+    expect(byName.toArray.map((row) => row.id)).toEqual(["p-upper", "p-last"]);
+    expect(byAisle.toArray.map((row) => row.id)).toEqual(["p-null", "p-last"]);
     replica.close();
   });
 });

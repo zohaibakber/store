@@ -57,7 +57,6 @@ const TEST_POLICY: MaintenancePolicy = {
   deleteBatchTransactions: 2,
   deleteBatchesPerStep: 2,
   expiredLeaseBatchRows: 50,
-  expiredTicketBatchRows: 2,
   retainedPublishedSnapshots: 2,
   prunedSnapshotsPerStep: 5,
   snapshotRowDeleteBatchRows: 500,
@@ -155,9 +154,6 @@ const seedOrganization = (organizationId: string, head: number) =>
     const db = yield* openDrizzle;
     yield* db.insert(inventoryState).values({
       organizationId,
-      status: "ready",
-      importId: "import-test",
-      releaseId: "release-test",
       incarnation: "incarnation-test",
       epoch: LAST_UNIT_EPOCH,
       commitSequence: String(head),
@@ -223,7 +219,6 @@ const publishSnapshot = (
     horizon,
     entityCountsJson: "{}",
     publishedAt,
-    digestVersion: 3,
   });
 
 const grantLease = (
@@ -458,7 +453,6 @@ describe("postgres inventory maintenance", () => {
             organizationId,
             snapshotId: `snapshot-${horizon}`,
             partNumber: 1,
-            objectKey: `${organizationId}/snapshot-${horizon}/1`,
             byteLength: 2,
             sha256: "0".repeat(64),
             payloadJson: "[]",

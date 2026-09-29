@@ -11,22 +11,23 @@ import * as HttpServer from "effect/unstable/http/HttpServer";
 
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
-import { InventoryAuthorityUnavailable } from "../../src/inventory/authority";
-import { InventoryCommands } from "../../src/inventory/commands";
-import { InventorySnapshots } from "../../src/inventory/snapshots";
-import {
-  makeInventorySyncAuthority,
-  SyncAuthority,
-  type SyncAuthorityContract,
-} from "../../src/inventory/sync-authority";
+import { SyncAuthority, type SyncAuthorityContract } from "../../src/inventory/sync-authority";
+import { LiveFanout } from "../../src/live/fanout";
 
-export const unprovisionedSyncAuthority = makeInventorySyncAuthority(
-  Effect.runSync(
-    Effect.all({ commands: InventoryCommands, snapshots: InventorySnapshots }).pipe(
-      Effect.provide(InventoryAuthorityUnavailable),
-    ),
-  ),
-);
+const unused = () => Effect.die("unused");
+
+export const unusedSyncAuthority: SyncAuthorityContract = {
+  registerReplica: unused,
+  submitCommand: unused,
+  getReceipt: unused,
+  pull: unused,
+  acquireSnapshot: unused,
+  readSnapshotPart: unused,
+};
+
+export const silentLiveFanout = Layer.succeed(LiveFanout, {
+  publish: () => Effect.void,
+});
 
 const sessionFor = (role: "owner" | "admin" | "member") =>
   AuthSession.make({
@@ -138,9 +139,8 @@ export const workerHandlerFor = async (
 ) => {
   const app = ServerRoutes.pipe(
     Layer.provide(Layer.succeed(ServerRuntime, runtimeFor(authenticated, options, invoiceAi))),
-    Layer.provide(
-      Layer.succeed(SyncAuthority, options.syncAuthority ?? unprovisionedSyncAuthority),
-    ),
+    Layer.provide(Layer.succeed(SyncAuthority, options.syncAuthority ?? unusedSyncAuthority)),
+    Layer.provide(silentLiveFanout),
     Layer.provide(HttpServer.layerServices),
   );
   const serveRequest = await Effect.runPromise(

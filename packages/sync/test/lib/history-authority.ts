@@ -1,20 +1,16 @@
 import {
   AuthorityIncarnation,
-  CATALOG_PARTITION_DIGEST_VERSION,
-  digestVersionEntities,
-  isCatalogPartitionEntity,
   OPERATIONAL_SUBSCRIPTION,
+  PARTITION_DIGEST_VERSION,
+  PARTITION_ENTITIES,
   OrgCommitSequence,
   SnapshotId,
   SnapshotPartHash,
   STOCK_MOVEMENT_ROW_VERSION,
   syncProtocolError,
-  type AcquireSnapshotRequest,
-  type PartitionDigestVersion,
   type SnapshotManifest,
   type SnapshotPartPayload,
   type SnapshotRow,
-  type SyncPullRequest,
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
@@ -84,7 +80,7 @@ const saleMovementRow = (id: string, invoiceId: string, operationId: string) => 
   createdAt: FIXTURE_NOW,
 });
 
-export const saleGroup = (input: {
+const saleGroup = (input: {
   readonly commitSequence: string;
   readonly operationId: string;
   readonly invoiceId: string;
@@ -135,11 +131,9 @@ export const historicSales = (invoices: number, itemsPerInvoice: number) =>
     }),
   );
 
-export type HistoryAuthority = {
+type HistoryAuthority = {
   readonly partition: AuthorityPartition;
   readonly log: Ref.Ref<ReadonlyArray<SyncTransactionGroup>>;
-  readonly pulls: Ref.Ref<ReadonlyArray<SyncPullRequest>>;
-  readonly acquired: Ref.Ref<ReadonlyArray<AcquireSnapshotRequest>>;
   readonly snapshotParts: Ref.Ref<ReadonlyMap<number, SnapshotPartPayload>>;
 };
 
@@ -152,20 +146,9 @@ export const makeHistoryAuthority = Effect.fn("HistoryAuthority.make")(function*
   return {
     partition,
     log: yield* Ref.make(log),
-    pulls: yield* Ref.make<ReadonlyArray<SyncPullRequest>>([]),
-    acquired: yield* Ref.make<ReadonlyArray<AcquireSnapshotRequest>>([]),
     snapshotParts: yield* Ref.make<ReadonlyMap<number, SnapshotPartPayload>>(new Map()),
   } satisfies HistoryAuthority;
 });
-
-export const commitToHistoryAuthority = (
-  authority: HistoryAuthority,
-  group: SyncTransactionGroup,
-) =>
-  Effect.gen(function* () {
-    commitToAuthority(authority.partition, group);
-    yield* Ref.update(authority.log, (log) => [...log, group]);
-  });
 
 const headOf = (log: ReadonlyArray<SyncTransactionGroup>) =>
   log.at(-1)?.commitSequence ?? OrgCommitSequence.make("0");
@@ -179,29 +162,22 @@ const dependencyRank = {
   stockMovement: 5,
 } as const;
 
-const snapshotManifest = (
-  authority: HistoryAuthority,
-  horizon: OrgCommitSequence,
-  digestVersion: PartitionDigestVersion,
-) =>
+const CATALOG_ENTITIES = new Set(["category", "product", "batch"]);
+
+const snapshotManifest = (authority: HistoryAuthority, horizon: OrgCommitSequence) =>
   Effect.gen(function* () {
-    const rows = [...authority.partition.values()]
-      .filter(
-        (row) =>
-          digestVersion > CATALOG_PARTITION_DIGEST_VERSION || isCatalogPartitionEntity(row.entity),
-      )
-      .sort(
-        (left, right) =>
-          dependencyRank[left.entity] - dependencyRank[right.entity] ||
-          (left.entityId < right.entityId ? -1 : left.entityId > right.entityId ? 1 : 0),
-      );
-    const catalogRows = rows.filter((row) => isCatalogPartitionEntity(row.entity));
-    const historyRows = rows.filter((row) => !isCatalogPartitionEntity(row.entity));
+    const rows = [...authority.partition.values()].sort(
+      (left, right) =>
+        dependencyRank[left.entity] - dependencyRank[right.entity] ||
+        (left.entityId < right.entityId ? -1 : left.entityId > right.entityId ? 1 : 0),
+    );
+    const catalogRows = rows.filter((row) => CATALOG_ENTITIES.has(row.entity));
+    const historyRows = rows.filter((row) => !CATALOG_ENTITIES.has(row.entity));
     const chunks: ReadonlyArray<ReadonlyArray<SnapshotRow>> = [
       ...(catalogRows.length === 0 ? [[]] : Array.chunksOf(catalogRows, SNAPSHOT_PART_ROWS)),
       ...Array.chunksOf(historyRows, SNAPSHOT_PART_ROWS),
     ];
-    const snapshotId = SnapshotId.make(`snapshot-${horizon}-v${digestVersion}`);
+    const snapshotId = SnapshotId.make(`snapshot-${horizon}`);
     const parts = new Map(
       chunks.map((chunk, index) => [
         index + 1,
@@ -209,7 +185,7 @@ const snapshotManifest = (
       ]),
     );
     yield* Ref.set(authority.snapshotParts, parts);
-    const manifest: SnapshotManifest = {
+    return {
       snapshotId,
       epoch: LAST_UNIT_EPOCH,
       subscription: OPERATIONAL_SUBSCRIPTION,
@@ -217,17 +193,15 @@ const snapshotManifest = (
       horizon,
       parts: [...parts.keys()].map((partNumber) => ({
         partNumber,
-        objectKey: `parts/${partNumber}`,
         byteLength: 1,
         sha256: SnapshotPartHash.make("a".repeat(64)),
       })),
-      entityCounts: digestVersionEntities(digestVersion).map((entity) => ({
+      entityCounts: PARTITION_ENTITIES.map((entity) => ({
         entity,
         rowCount: rows.filter((row) => row.entity === entity).length,
       })),
-    };
-    if (digestVersion === CATALOG_PARTITION_DIGEST_VERSION) return manifest;
-    return { ...manifest, digestVersion } satisfies SnapshotManifest;
+      digestVersion: PARTITION_DIGEST_VERSION,
+    } satisfies SnapshotManifest;
   });
 
 export const historyAuthorityTransport = (
@@ -239,7 +213,6 @@ export const historyAuthorityTransport = (
   getReceipt: () => Effect.succeed(undefined),
   pull: (request) =>
     Effect.gen(function* () {
-      yield* Ref.update(authority.pulls, (pulls) => [...pulls, request]);
       const log = yield* Ref.get(authority.log);
       const transactions = log.filter(
         (group) => BigInt(group.commitSequence) > BigInt(request.afterCommitSequence),
@@ -256,19 +229,11 @@ export const historyAuthorityTransport = (
         retentionFloor: OrgCommitSequence.make("0"),
       };
       if (request.digestVersion === undefined) return page;
-      return {
-        ...page,
-        digest: yield* authorityDigest(authority.partition, request.digestVersion),
-      };
+      return { ...page, digest: yield* authorityDigest(authority.partition) };
     }),
-  acquireSnapshot: (request) =>
+  acquireSnapshot: () =>
     Effect.gen(function* () {
-      yield* Ref.update(authority.acquired, (requests) => [...requests, request]);
-      const manifest = yield* snapshotManifest(
-        authority,
-        headOf(yield* Ref.get(authority.log)),
-        request.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION,
-      );
+      const manifest = yield* snapshotManifest(authority, headOf(yield* Ref.get(authority.log)));
       return { _tag: "ready" as const, manifest };
     }),
   readSnapshotPart: (_snapshotId, partNumber) =>

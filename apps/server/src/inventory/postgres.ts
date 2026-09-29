@@ -33,14 +33,10 @@ export const integerTextFromNumeric = (value: string) =>
 export const randomHex = (byteCount: number): string =>
   Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(byteCount)));
 
-export const requireReady = <
-  S extends { readonly status: string; readonly releaseId: string | null },
->(
-  state: S | undefined,
-) =>
-  state && state.status === "ready" && state.releaseId !== null
-    ? Effect.succeed(state)
-    : protocol("EPOCH_MISMATCH", "This organization inventory is not ready.");
+export const requireState = <S>(state: S | undefined) =>
+  state === undefined
+    ? protocol("EPOCH_MISMATCH", "This organization inventory is not ready.")
+    : Effect.succeed(state);
 
 const MAX_SERIALIZATION_RETRIES = 4;
 
@@ -90,8 +86,4 @@ export const openInventoryDrizzle = Effect.gen(function* () {
   const inventoryHyperdrive = yield* InventoryHyperdrive;
   const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(inventoryHyperdrive);
   return yield* DrizzlePostgres.Postgres(hyperdrive.connectionString).pipe(Effect.orDie);
-});
-
-export const inventoryPostgresUnavailable = InventoryDatabaseError.make({
-  message: "Inventory Postgres is not provisioned for this stage.",
 });

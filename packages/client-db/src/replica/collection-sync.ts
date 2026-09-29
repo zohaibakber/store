@@ -1,10 +1,11 @@
 import type { SyncEntity } from "@store/contracts";
-import type {
-  LoadSubsetFn,
-  LoadSubsetOptions,
-  SyncConfig,
-  SyncConfigRes,
-  UnloadSubsetFn,
+import {
+  getLoadSubsetDemandKey,
+  type LoadSubsetFn,
+  type LoadSubsetOptions,
+  type SyncConfig,
+  type SyncConfigRes,
+  type UnloadSubsetFn,
 } from "@tanstack/db";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -14,10 +15,11 @@ import * as Semaphore from "effect/Semaphore";
 import type { InvoiceCoherenceEntity, InvoiceCoherenceGate } from "./coherence";
 import { decrementRowRef, publishSubsetWindow } from "./collection-publish";
 import type { PlannedRead } from "./collection-read";
-import { subsetWindowKey } from "./subset-window";
+import type { InventoryCollectionSyncMode } from "./sources";
 import type {
   InventoryCollectionRow,
   ReplicaCommitNotice,
+  ReplicaQueryStamp,
   SqliteCollectionDependencies,
 } from "./types";
 
@@ -27,7 +29,8 @@ type SyncParams<Row extends InventoryCollectionRow> = Parameters<
 
 type Acquisition<Row extends InventoryCollectionRow> = {
   readonly key: string;
-  readonly options: LoadSubsetOptions;
+  readonly read: () => Promise<PlannedRead<Row>>;
+  readonly windowed: boolean;
   refs: number;
   keys: Set<string>;
   rows: Map<string, Row>;
@@ -36,17 +39,32 @@ type Acquisition<Row extends InventoryCollectionRow> = {
 type CollectionSyncDescriptor<Row extends InventoryCollectionRow> = {
   readonly getKey: (row: Row) => string;
   readonly id: string;
+  readonly syncMode: InventoryCollectionSyncMode;
   readonly coherenceEntity?: InvoiceCoherenceEntity;
 };
 
+export type CollectionReaders<Row extends InventoryCollectionRow> = {
+  readonly subset: (options: LoadSubsetOptions) => Promise<PlannedRead<Row>>;
+  readonly source: () => Promise<PlannedRead<Row>>;
+  readonly keys: (keys: ReadonlyArray<string>) => Promise<ReadonlyArray<PlannedRead<Row>>>;
+};
+
+type StampAdoption = "stale" | "current" | "truncate";
+
+const UNCONSTRAINED_DEMAND = "unconstrained";
+
+const SOURCE_DEMAND = "source";
+
 export const startCollectionSync = <Row extends InventoryCollectionRow>(
-  readCurrent: (options: LoadSubsetOptions) => Promise<PlannedRead<Row>>,
+  readers: CollectionReaders<Row>,
   descriptor: CollectionSyncDescriptor<Row>,
   dependencies: SqliteCollectionDependencies,
   params: SyncParams<Row>,
   relevant: (notice: ReplicaCommitNotice) => boolean,
 ): SyncConfigRes & { readonly loadSubset: LoadSubsetFn; readonly unloadSubset: UnloadSubsetFn } => {
   const acquisitions = new Map<string, Acquisition<Row>>();
+  const owners = new WeakMap<LoadSubsetOptions, Acquisition<Row>>();
+  const released = new WeakSet<LoadSubsetOptions>();
   const rowRefs = new Map<string, number>();
   let activeToken: string | undefined;
   let activeGeneration: string | undefined;
@@ -73,15 +91,38 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
 
   const enqueue = (work: () => Promise<void>): Promise<void> => Effect.runPromise(serialized(work));
 
+  const enqueueDetached = (failure: string, work: () => Promise<void>): void => {
+    Effect.runFork(
+      serialized(work).pipe(Effect.catchCause((cause) => Effect.logError(failure, cause))),
+    );
+  };
+
   const fenced = (notice: ReplicaCommitNotice): boolean =>
     !disposed && activeToken !== undefined && notice.workspaceToken === activeToken;
+
+  const adopt = (stamp: ReplicaQueryStamp): StampAdoption => {
+    if (disposed) return "stale";
+    if (activeToken !== undefined && stamp.workspaceToken !== activeToken) return "stale";
+    activeToken = stamp.workspaceToken;
+    if (activeGeneration === undefined || activeGeneration === stamp.generationId) {
+      activeGeneration = stamp.generationId;
+      return "current";
+    }
+    rowRefs.clear();
+    for (const held of acquisitions.values()) {
+      held.keys = new Set();
+      held.rows = new Map();
+    }
+    activeGeneration = stamp.generationId;
+    return "truncate";
+  };
 
   const applyPublished = async (
     acquisition: Acquisition<Row>,
     current: PlannedRead<Row>,
     touchedEntities: ReadonlyArray<SyncEntity>,
+    adoption: StampAdoption,
     signal?: AbortSignal,
-    truncate = false,
   ): Promise<void> => {
     const run = async () => {
       const published = publishSubsetWindow(
@@ -91,8 +132,8 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         acquisition.rows,
         current.rows,
         rowRefs,
-        signal,
-        truncate,
+        adoption === "truncate" ? undefined : signal,
+        adoption === "truncate",
       );
       acquisition.keys = published.keys;
       acquisition.rows = published.rows;
@@ -105,37 +146,46 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     await run();
   };
 
-  const refillAcquisition = async (
+  const withRetainedRows = async (
     acquisition: Acquisition<Row>,
-    touchedEntities: ReadonlyArray<SyncEntity> = [],
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    if (disposed || activeToken === undefined) return;
-    const current = await readCurrent(acquisition.options);
-    if (current.stamp.workspaceToken !== activeToken) return;
-    const truncate = current.stamp.generationId !== activeGeneration;
-    if (truncate) {
-      rowRefs.clear();
-      for (const held of acquisitions.values()) {
-        held.keys = new Set();
-        held.rows = new Map();
-      }
-      activeGeneration = current.stamp.generationId;
+    window: PlannedRead<Row>,
+  ): Promise<PlannedRead<Row>> => {
+    if (!acquisition.windowed) return window;
+    const shown = new Set(window.rows.map(descriptor.getKey));
+    const departed = [...acquisition.keys].filter((key) => !shown.has(key));
+    if (departed.length === 0) return window;
+    const retained = await readers.keys(departed);
+    if (retained.some((read) => read.stamp.generationId !== window.stamp.generationId)) {
+      return window;
     }
-    await applyPublished(acquisition, current, touchedEntities, signal, truncate);
+    return {
+      stamp: window.stamp,
+      rows: [...window.rows, ...retained.flatMap((read) => read.rows)],
+    };
   };
 
-  const refreshAcquisitions = async (): Promise<void> => {
-    const touched = lastTouched;
+  const refill = async (
+    acquisition: Acquisition<Row>,
+    touchedEntities: ReadonlyArray<SyncEntity>,
+  ): Promise<StampAdoption> => {
+    if (disposed || activeToken === undefined) return "stale";
+    const current = await withRetainedRows(acquisition, await acquisition.read());
+    const adoption = adopt(current.stamp);
+    if (adoption === "stale") return adoption;
+    await applyPublished(acquisition, current, touchedEntities, adoption);
+    return adoption;
+  };
+
+  const refreshAcquisitions = async (touchedEntities: ReadonlyArray<SyncEntity>) => {
     for (const acquisition of acquisitions.values()) {
-      await refillAcquisition(acquisition, touched);
+      if ((await refill(acquisition, touchedEntities)) === "truncate") return;
     }
   };
 
   const refreshWorker = Effect.gen(function* () {
     yield* refreshRequested.await;
     yield* refreshRequested.close;
-    yield* serialized(refreshAcquisitions);
+    yield* serialized(() => refreshAcquisitions(lastTouched));
   }).pipe(
     Effect.catchCauseIf(
       (cause) => !Cause.hasInterrupts(cause),
@@ -145,7 +195,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     Effect.runFork,
   );
 
-  const replay = async (fromVersion: number, signal?: AbortSignal): Promise<void> => {
+  const replay = async (fromVersion: number): Promise<void> => {
     const notices = queued.splice(0);
     let version = fromVersion;
     for (const notice of notices) {
@@ -154,11 +204,34 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       version = notice.localCommitVersion;
       lastTouched = notice.touchedEntities;
     }
-    if (version > fromVersion) {
-      for (const acquisition of acquisitions.values()) {
-        await refillAcquisition(acquisition, lastTouched, signal);
-      }
-    }
+    if (version > fromVersion) await refreshAcquisitions(lastTouched);
+  };
+
+  const acquire = async (
+    key: string,
+    read: () => Promise<PlannedRead<Row>>,
+    windowed: boolean,
+    cancelled: () => boolean,
+    own: (acquisition: Acquisition<Row>) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const current = await read();
+    if (cancelled()) return;
+    const adoption = adopt(current.stamp);
+    if (adoption === "stale") return;
+    const acquisition: Acquisition<Row> = {
+      key,
+      read,
+      windowed,
+      refs: 1,
+      keys: new Set(),
+      rows: new Map(),
+    };
+    acquisitions.set(key, acquisition);
+    own(acquisition);
+    await applyPublished(acquisition, current, [], adoption, signal);
+    await replay(current.stamp.localCommitVersion);
+    syncStarted = true;
   };
 
   const beginListeningForCommits = (): (() => void) =>
@@ -177,53 +250,70 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
 
   const loadSubset: LoadSubsetFn = (options) =>
     enqueue(async () => {
-      if (disposed) return;
-      if (options.signal?.aborted) return;
-      const key = subsetWindowKey(options);
+      const cancelled = () => disposed || released.has(options) || options.signal?.aborted === true;
+      if (cancelled()) return;
+      const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
       const existing = acquisitions.get(key);
       if (existing) {
         existing.refs += 1;
-        await refillAcquisition(existing, lastTouched, options.signal);
+        owners.set(options, existing);
         return;
       }
-      const current = await readCurrent(options);
-      if (options.signal?.aborted) return;
-      if (activeToken !== undefined && current.stamp.workspaceToken !== activeToken) {
-        return;
-      }
-      activeToken = current.stamp.workspaceToken;
-      activeGeneration = current.stamp.generationId;
-      const acquisition: Acquisition<Row> = {
+      await acquire(
         key,
-        options,
-        refs: 1,
-        keys: new Set(),
-        rows: new Map(),
-      };
-      await applyPublished(acquisition, current, [], options.signal);
-      acquisitions.set(key, acquisition);
-      await replay(current.stamp.localCommitVersion, options.signal);
-      syncStarted = true;
+        () => readers.subset(options),
+        options.limit !== undefined,
+        cancelled,
+        (acquisition) => owners.set(options, acquisition),
+        options.signal,
+      );
     });
 
   const unloadSubset: UnloadSubsetFn = (options) => {
-    void enqueue(async () => {
-      if (disposed) return;
-      const key = subsetWindowKey(options);
-      const acquisition = acquisitions.get(key);
-      if (!acquisition) return;
+    if (released.has(options)) return;
+    released.add(options);
+    enqueueDetached("ReplicaCollection.unload_failed", async () => {
+      const acquisition = owners.get(options);
+      if (disposed || acquisition === undefined) return;
+      owners.delete(options);
       acquisition.refs -= 1;
       if (acquisition.refs > 0) return;
-      acquisitions.delete(key);
-      params.begin();
+      if (acquisitions.get(acquisition.key) === acquisition) acquisitions.delete(acquisition.key);
+      const deleted: Array<string> = [];
       for (const rowKey of acquisition.keys) {
-        if (decrementRowRef(rowRefs, rowKey) === 0) params.write({ type: "delete", key: rowKey });
+        if (decrementRowRef(rowRefs, rowKey) === 0) deleted.push(rowKey);
       }
+      if (deleted.length === 0) return;
+      params.begin();
+      for (const rowKey of deleted) params.write({ type: "delete", key: rowKey });
       await params.commit();
     });
   };
 
-  params.markReady();
+  if (descriptor.syncMode === "eager") {
+    Effect.runFork(
+      serialized(() =>
+        acquire(
+          SOURCE_DEMAND,
+          readers.source,
+          false,
+          () => disposed,
+          () => undefined,
+        ),
+      ).pipe(
+        Effect.matchCause({
+          onSuccess: () => {
+            if (!disposed) params.markReady();
+          },
+          onFailure: (cause) => {
+            if (!disposed) params.markError(Cause.squash(cause));
+          },
+        }),
+      ),
+    );
+  } else {
+    params.markReady();
+  }
 
   return {
     loadSubset,

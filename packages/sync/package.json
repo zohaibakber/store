@@ -6,9 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
-    "./migrations": "./src/migrations.ts",
     "./replica/indexeddb": "./src/replica/indexeddb/store.ts",
-    "./replica/migrate-pending": "./src/replica/migrate-pending.ts",
+    "./replica/storage-name": "./src/replica/storage-name.ts",
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts"
   },

@@ -6,16 +6,15 @@ import * as Effect from "effect/Effect";
 import type { CommitFanout } from "../inventory/model";
 import type { HubPublish } from "./hub-core";
 
-export interface OrgHubStub {
+interface OrgHubStub {
   readonly publish: (input: HubPublish) => Effect.Effect<number, unknown, RuntimeContext>;
-  readonly revoke: (userId: string) => Effect.Effect<number, unknown, RuntimeContext>;
 }
 
-export interface OrgHubNamespace {
+interface OrgHubNamespace {
   readonly getByName: (organizationId: string) => OrgHubStub;
 }
 
-export type RunInBackground = (
+type RunInBackground = (
   effect: Effect.Effect<void, never, RuntimeContext>,
 ) => Effect.Effect<void, never, RuntimeContext>;
 
@@ -23,10 +22,6 @@ export interface LiveFanoutContract {
   readonly publish: (
     organizationId: string,
     fanout: CommitFanout,
-  ) => Effect.Effect<void, never, RuntimeContext>;
-  readonly revoke: (
-    organizationId: string,
-    userId: string,
   ) => Effect.Effect<void, never, RuntimeContext>;
 }
 
@@ -55,12 +50,5 @@ export const makeLiveFanout = (
             originReplicaId: fanout.originReplicaId,
           }),
         ).pipe(Effect.asVoid, logFailure("live.publish_failed")),
-      ),
-    revoke: (organizationId, userId) =>
-      runInBackground(
-        Effect.suspend(() => hubs.getByName(organizationId).revoke(userId)).pipe(
-          Effect.asVoid,
-          logFailure("live.revoke_failed"),
-        ),
       ),
   });

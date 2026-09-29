@@ -1,6 +1,5 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   partitionDigestOf,
   PartitionDigestReport,
   STOCK_MOVEMENT_ROW_VERSION,
@@ -40,7 +39,6 @@ const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient>) =>
   );
 
 const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const ADVERSARIAL_TEXT = [
   "plain",
@@ -64,7 +62,7 @@ const metadata = (organizationId: string, index: number, rowVersion: number) => 
   rowVersion,
 });
 
-const RowText = Schema.Struct({ id: Schema.String, json: Schema.String, jsonb: Schema.String });
+const RowText = Schema.Struct({ id: Schema.String, json: Schema.String });
 const decodeRowTexts = Schema.decodeUnknownSync(Schema.Array(RowText));
 const DigestRow = Schema.Struct({ digest: Schema.fromJsonString(PartitionDigestReport) });
 const decodeDigestRows = Schema.decodeUnknownSync(Schema.Array(DigestRow));
@@ -192,15 +190,15 @@ describe("sync row builders and partition digests", () => {
       Effect.gen(function* () {
         const seeded = yield* seed(organizationId);
         const categoryTexts = yield* seeded.db.execute(
-          sql`select "c"."id", "sync"."category_json"("c")::text as "json", "sync"."category_row"("c")::text as "jsonb" from ${categories} as "c" where "c"."organization_id" = ${organizationId}`,
+          sql`select "c"."id", "sync"."category_json"("c")::text as "json" from ${categories} as "c" where "c"."organization_id" = ${organizationId}`,
           "objects",
         );
         const productTexts = yield* seeded.db.execute(
-          sql`select "p"."id", "sync"."product_json"("p")::text as "json", "sync"."product_row"("p")::text as "jsonb" from ${products} as "p" where "p"."organization_id" = ${organizationId}`,
+          sql`select "p"."id", "sync"."product_json"("p")::text as "json" from ${products} as "p" where "p"."organization_id" = ${organizationId}`,
           "objects",
         );
         const batchTexts = yield* seeded.db.execute(
-          sql`select "b"."id", "sync"."batch_json"("b")::text as "json", "sync"."batch_row"("b")::text as "jsonb" from ${batches} as "b" where "b"."organization_id" = ${organizationId}`,
+          sql`select "b"."id", "sync"."batch_json"("b")::text as "json" from ${batches} as "b" where "b"."organization_id" = ${organizationId}`,
           "objects",
         );
         const selectedProducts = yield* seeded.db
@@ -228,7 +226,6 @@ describe("sync row builders and partition digests", () => {
         const row = rows.get(text.id);
         expect(row).toBeDefined();
         expect(text.json).toBe(encodeRowJson(row));
-        expect(decodeJson(text.jsonb)).toStrictEqual(decodeJson(encodeRowJson(row)));
       }
     }
   });
@@ -243,12 +240,6 @@ describe("sync row builders and partition digests", () => {
             .execute(statement, "objects")
             .pipe(Effect.map((rows) => decodeDigestRows(rows)[0]?.digest));
         const history = yield* digestOf(
-          sql`select "sync"."partition_digest"(${organizationId}, 3)::text as "digest"`,
-        );
-        const catalog = yield* digestOf(
-          sql`select "sync"."partition_digest"(${organizationId}, 2)::text as "digest"`,
-        );
-        const legacy = yield* digestOf(
           sql`select "sync"."partition_digest"(${organizationId})::text as "digest"`,
         );
         const itemIds = yield* seeded.db
@@ -300,30 +291,18 @@ describe("sync row builders and partition digests", () => {
           })),
         ];
         const empty = yield* digestOf(
-          sql`select "sync"."partition_digest"(${"org-without-rows"}, 3)::text as "digest"`,
-        );
-        const emptyCatalog = yield* digestOf(
           sql`select "sync"."partition_digest"(${"org-without-rows"})::text as "digest"`,
         );
         return {
           history,
-          catalog,
-          legacy,
           clientHistory: yield* partitionDigestOf(sources),
-          clientCatalog: yield* partitionDigestOf(sources, CATALOG_PARTITION_DIGEST_VERSION),
           empty,
           emptyClient: yield* partitionDigestOf([]),
-          emptyCatalog,
-          emptyCatalogClient: yield* partitionDigestOf([], CATALOG_PARTITION_DIGEST_VERSION),
         };
       }),
     );
     expect(outcome.history).toEqual(outcome.clientHistory);
     expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 6 - 2);
-    expect(outcome.catalog).toEqual(outcome.clientCatalog);
-    expect(outcome.legacy).toEqual(outcome.clientCatalog);
-    expect(outcome.clientCatalog.count).toBe(ADVERSARIAL_TEXT.length * 3 - 2);
     expect(outcome.empty).toEqual(outcome.emptyClient);
-    expect(outcome.emptyCatalog).toEqual(outcome.emptyCatalogClient);
   });
 });

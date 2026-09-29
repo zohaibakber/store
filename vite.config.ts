@@ -38,11 +38,7 @@ export default defineConfig({
     "*": "vp check --fix",
   },
   test: {
-    include: [
-      "apps/*/test/**/*.test.{ts,tsx}",
-      "packages/*/test/**/*.test.ts",
-      "scripts/migrate-cloudflare/test/**/*.test.ts",
-    ],
+    include: ["apps/*/test/**/*.test.{ts,tsx}", "packages/*/test/**/*.test.ts"],
     server: {
       deps: {
         inline: ["@effect/vitest"],
@@ -96,7 +92,6 @@ export default defineConfig({
           "apps/desktop/electron/inventory-http.ts",
           "apps/desktop/electron/inventory-http-channels.ts",
           "apps/desktop/test/electron/inventory-http.test.ts",
-          "scripts/migrate-cloudflare/**/*.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",

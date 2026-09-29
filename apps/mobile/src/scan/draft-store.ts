@@ -6,10 +6,10 @@ import { Directory, File, Paths } from "expo-file-system";
 
 import { type ScanDraft, ScanDraftJson } from "./model";
 
-export class DraftStorageError extends Schema.TaggedError<DraftStorageError>()(
-  "DraftStorageError",
-  { message: Schema.String, cause: Schema.Defect() },
-) {}
+class DraftStorageError extends Schema.TaggedError<DraftStorageError>()("DraftStorageError", {
+  message: Schema.String,
+  cause: Schema.Defect(),
+}) {}
 
 export class DraftStore extends Context.Service<
   DraftStore,

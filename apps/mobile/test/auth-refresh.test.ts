@@ -32,7 +32,7 @@ const harness = () => {
     needsRefresh: refreshTokenNeedsRefresh,
     refreshSession: async () => {
       refreshes += 1;
-      return tokens.get();
+      return null;
     },
   });
   return { authenticatedFetch: makeAuthenticatedFetch(http), sent, refreshes: () => refreshes };

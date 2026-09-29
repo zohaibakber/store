@@ -11,9 +11,7 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
 
-const updateChannel = process.env["STORE_UPDATE_CHANNEL"] ?? "latest";
 const electronDefines = {
-  __UPDATE_CHANNEL__: JSON.stringify(updateChannel),
   "import.meta.env.VITE_API_URL": JSON.stringify(process.env["VITE_API_URL"] ?? ""),
   "import.meta.env.VITE_AUTH_URL": JSON.stringify(process.env["VITE_AUTH_URL"] ?? ""),
   "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(process.env["VITE_SENTRY_DSN"] ?? ""),
@@ -96,9 +94,6 @@ export default defineConfig(({ command, mode }) => ({
   },
   resolve: {
     tsconfigPaths: true,
-  },
-  optimizeDeps: {
-    exclude: ["@powersync/web", "@journeyapps/wa-sqlite"],
   },
   worker: {
     format: "es",

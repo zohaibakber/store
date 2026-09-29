@@ -45,7 +45,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   staticData: { breadcrumb: "Home" },
 });
 
-export function RootLayout() {
+function RootLayout() {
   return (
     <AuthProvider>
       <ToastProvider>

@@ -1,7 +1,6 @@
 import {
   PARTITION_ENTITIES,
   partitionDigestOf,
-  type PartitionDigestVersion,
   type PartitionEntity,
   type SnapshotRow,
   type SyncLogChange,
@@ -40,8 +39,8 @@ const partitionLeaves = (rows: Iterable<SnapshotRow>) =>
       : [],
   );
 
-export const authorityDigest = (partition: AuthorityPartition, version?: PartitionDigestVersion) =>
-  partitionDigestOf(partitionLeaves(partition.values()), version);
+export const authorityDigest = (partition: AuthorityPartition) =>
+  partitionDigestOf(partitionLeaves(partition.values()));
 
 type PostgresMutableMetadata = {
   readonly organizationId: string;

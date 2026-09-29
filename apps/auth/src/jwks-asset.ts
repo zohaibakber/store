@@ -4,10 +4,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-export const JWKS_ASSET_PATH = "/.well-known/jwks.json";
+const JWKS_ASSET_PATH = "/.well-known/jwks.json";
 const JWKS_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 
-export const jwksAssetHeaders = `${JWKS_ASSET_PATH}\n  Cache-Control: ${JWKS_CACHE_CONTROL}\n`;
+const jwksAssetHeaders = `${JWKS_ASSET_PATH}\n  Cache-Control: ${JWKS_CACHE_CONTROL}\n`;
 
 const encodeJwks = Schema.encodeEffect(Schema.fromJsonString(AuthJwks));
 

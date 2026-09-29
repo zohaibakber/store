@@ -10,9 +10,7 @@ import {
   resolveProductionHostname,
 } from "../apps/server/src/runtime/production-domain.ts";
 
-export const EDGE_OWNER_STAGE = "prod";
-
-export const API_RATE_LIMIT = {
+const API_RATE_LIMIT = {
   period: 10,
   requestsPerPeriod: 50,
   mitigationTimeout: 10,
@@ -22,11 +20,7 @@ const PATH = "http.request.uri.path";
 
 const quoted = (value: string) => JSON.stringify(value);
 
-const labelWithin = (hostname: string, zone: string) =>
-  hostname.endsWith(`.${zone}`) ? hostname.slice(0, -(zone.length + 1)) : undefined;
-
-const hostFamily = (label: string, zone: string) =>
-  `(starts_with(http.host, ${quoted(`${label}.`)}) and ends_with(http.host, ${quoted(`.${zone}`)}))`;
+const withinZone = (hostname: string, zone: string) => hostname.endsWith(`.${zone}`);
 
 const pathOutside = (exact: ReadonlyArray<string>, prefixes: ReadonlyArray<string>) =>
   `not (${[
@@ -34,43 +28,39 @@ const pathOutside = (exact: ReadonlyArray<string>, prefixes: ReadonlyArray<strin
     ...prefixes.map((prefix) => `starts_with(${PATH}, ${quoted(prefix)})`),
   ].join(" or ")})`;
 
-export interface EdgeHostnames {
+interface EdgeHostnames {
   readonly zone: string;
   readonly apiHostname: string;
   readonly authHostname: string;
 }
 
-export const edgeFirewallRules = ({ zone, apiHostname, authHostname }: EdgeHostnames) => {
-  const apiLabel = labelWithin(apiHostname, zone);
-  const authLabel = labelWithin(authHostname, zone);
-  return [
-    ...(apiLabel
-      ? [
-          {
-            ref: "tabaaq_api_paths",
-            description: "Block API hosts outside /api/",
-            action: "block",
-            expression: `${hostFamily(apiLabel, zone)} and ${pathOutside(["/", "/api"], ["/api/"])}`,
-          },
-        ]
-      : []),
-    ...(authLabel
-      ? [
-          {
-            ref: "tabaaq_auth_paths",
-            description: "Block auth hosts outside /v1/ and /.well-known/",
-            action: "block",
-            expression: `${hostFamily(authLabel, zone)} and ${pathOutside(
-              ["/", "/health"],
-              ["/v1/", "/.well-known/"],
-            )}`,
-          },
-        ]
-      : []),
-  ];
-};
+const edgeFirewallRules = ({ zone, apiHostname, authHostname }: EdgeHostnames) => [
+  ...(withinZone(apiHostname, zone)
+    ? [
+        {
+          ref: "tabaaq_api_paths",
+          description: "Block API hosts outside /api/",
+          action: "block",
+          expression: `http.host eq ${quoted(apiHostname)} and ${pathOutside(["/", "/api"], ["/api/"])}`,
+        },
+      ]
+    : []),
+  ...(withinZone(authHostname, zone)
+    ? [
+        {
+          ref: "tabaaq_auth_paths",
+          description: "Block auth hosts outside /v1/ and /.well-known/",
+          action: "block",
+          expression: `http.host eq ${quoted(authHostname)} and ${pathOutside(
+            ["/", "/health"],
+            ["/v1/", "/.well-known/"],
+          )}`,
+        },
+      ]
+    : []),
+];
 
-export const apiRateLimitRules = [
+const apiRateLimitRules = [
   {
     ref: "tabaaq_api_rate_limit",
     description: "Rate limit /api/ per IP",
@@ -83,7 +73,7 @@ export const apiRateLimitRules = [
   },
 ];
 
-export const resolveEdgeHostnames = Effect.gen(function* () {
+const resolveEdgeHostnames = Effect.gen(function* () {
   const domains = yield* productionDomainConfig;
   const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
     Config.withDefault(""),
@@ -104,7 +94,7 @@ export const Edge = Effect.gen(function* () {
   const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
   const enabled = yield* Config.Boolean("EDGE_WAF_ENABLED").pipe(Config.withDefault(false));
   const hostnames = yield* resolveEdgeHostnames;
-  if (!enabled || localDevelopment || stage !== EDGE_OWNER_STAGE || !hostnames) return undefined;
+  if (!enabled || localDevelopment || stage !== "prod" || !hostnames) return undefined;
   const firewallRules = edgeFirewallRules(hostnames);
   if (firewallRules.length === 0) return undefined;
   const zone = yield* Cloudflare.Zone.Zone("EdgeZone", { name: hostnames.zone }).pipe(

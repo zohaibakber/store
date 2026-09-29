@@ -6,7 +6,7 @@ export type StabilityConfig = {
   readonly sameItemSimilarity: number;
 };
 
-export const AUTO_CAPTURE: StabilityConfig = {
+const AUTO_CAPTURE: StabilityConfig = {
   minimumTokens: 4,
   holdMillis: 700,
   cooldownMillis: 1500,

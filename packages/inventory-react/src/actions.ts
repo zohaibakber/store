@@ -52,7 +52,7 @@ const withProjectedProduct = (
   };
 };
 
-export const enqueueReplicaCommand = async (
+const enqueueReplicaCommand = async (
   replica: ReplicaHandle,
   actor: InventoryActor,
   commandId: string,

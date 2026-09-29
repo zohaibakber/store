@@ -143,21 +143,29 @@ function BatchList({ catalog }: { readonly catalog: BatchCatalog | null }) {
 }
 
 function BatchWithCatalog() {
-  const matchCandidate = useCatalogMatcher();
+  const drafts = useScanDrafts();
+  const identities = React.useMemo(
+    () => drafts.drafts.filter((draft) => draft.mode === "batch").map(identityOf),
+    [drafts.drafts],
+  );
+  const { matcher: matchCandidate, isLoading } = useCatalogMatcher(identities);
   const commit = useScanCommit();
   const { preferredId } = useCategoryChoices();
-  const catalog = React.useMemo<BatchCatalog>(
-    () => ({
-      matcher: (identity) => {
-        const candidate = matchCandidate(identity);
-        return candidate === null
-          ? null
-          : { id: candidate.id, name: candidate.name, unitsPerPack: candidate.unitsPerPack };
-      },
-      commit,
-      categoryId: preferredId,
-    }),
-    [matchCandidate, commit, preferredId],
+  const catalog = React.useMemo<BatchCatalog | null>(
+    () =>
+      isLoading
+        ? null
+        : {
+            matcher: (identity) => {
+              const candidate = matchCandidate(identity);
+              return candidate === null
+                ? null
+                : { id: candidate.id, name: candidate.name, unitsPerPack: candidate.unitsPerPack };
+            },
+            commit,
+            categoryId: preferredId,
+          },
+    [isLoading, matchCandidate, commit, preferredId],
   );
   return <BatchList catalog={catalog} />;
 }

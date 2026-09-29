@@ -27,7 +27,7 @@ export type SyncWakeReason =
   | "ownership"
   | "live";
 
-export type SyncWake = {
+type SyncWake = {
   readonly reason: SyncWakeReason;
   readonly hint?: SyncLiveWakeHint;
 };
@@ -85,7 +85,7 @@ export type SyncSchedulerContract = {
   readonly shutdown: Effect.Effect<void>;
 };
 
-export type SyncSchedulerHandlers = {
+type SyncSchedulerHandlers = {
   readonly register?: () => Effect.Effect<void, SyncFailureCause>;
   readonly drainUpload: () => Effect.Effect<void, SyncFailureCause>;
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncFailureCause>;

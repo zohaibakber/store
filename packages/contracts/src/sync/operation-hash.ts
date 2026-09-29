@@ -21,6 +21,3 @@ const canonicalText = <Payload>(payload: Payload) => canonicalJson(payload) ?? "
 
 export const canonicalPayloadHash = <Payload>(payload: Payload) =>
   Encoding.encodeHex(sha256(utf8.encode(canonicalText(payload))));
-
-export const nativeCanonicalPayloadHash = <Payload>(payload: Payload): Effect.Effect<string> =>
-  Effect.suspend(() => sha256Hex(canonicalText(payload)));

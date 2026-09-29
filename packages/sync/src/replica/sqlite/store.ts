@@ -104,7 +104,6 @@ export const makeSqliteReplicaStore = (
             after,
             touchedEntitiesWithStock(saved.projection?.touchedEntities),
             saved.projection?.touchedKeys ?? [],
-            [{ operationId: envelope.operationId, status: saved.status }],
           ),
       ).pipe(
         Effect.map((committed) => ({
@@ -117,15 +116,7 @@ export const makeSqliteReplicaStore = (
       commit(
         "SqliteReplicaStore.claimNextUpload",
         (tx) => claimNextUpload(tx, input),
-        (claim, after) =>
-          claim &&
-          noticeFromState(
-            databaseIdentity,
-            after,
-            [],
-            [],
-            [{ operationId: claim.operationId, status: "sending" }],
-          ),
+        (claim, after) => claim && noticeFromState(databaseIdentity, after),
       );
 
     const settleClaim = (claimId: string, receipt: CommandReceipt) =>
@@ -139,7 +130,6 @@ export const makeSqliteReplicaStore = (
             after,
             touchedEntitiesWithStock(settled.restored?.touchedEntities),
             settled.restored?.touchedKeys ?? [],
-            [{ operationId: receipt.operationId, status: settled.status }],
           ),
       ).pipe(
         Effect.map((committed) => ({ value: committed.value?.status, notice: committed.notice })),
@@ -153,19 +143,13 @@ export const makeSqliteReplicaStore = (
             yield* verifyReplicaIncarnation(tx, page.incarnation);
             const settled = yield* settleUploadClaim(tx, claimId, receipt);
             const applied = yield* applyPullResult(tx, page);
-            const status = yield* commandStatus(tx, receipt.operationId);
-            return { settled, applied, status };
+            return { settled, applied };
           }),
         (value, after) =>
-          noticeFromState(
-            databaseIdentity,
-            after,
-            SYNC_ENTITIES,
-            [...(value.settled?.restored?.touchedKeys ?? []), ...value.applied.touchedKeys],
-            value.status === undefined
-              ? undefined
-              : [{ operationId: receipt.operationId, status: value.status }],
-          ),
+          noticeFromState(databaseIdentity, after, SYNC_ENTITIES, [
+            ...(value.settled?.restored?.touchedKeys ?? []),
+            ...value.applied.touchedKeys,
+          ]),
       ).pipe(
         Effect.map((committed) => ({
           value: {
@@ -181,8 +165,7 @@ export const makeSqliteReplicaStore = (
       commit(
         "SqliteReplicaStore.releaseUploadClaim",
         (tx) => releaseUploadClaim(tx, operationId, claimId),
-        (status, after) =>
-          status && noticeFromState(databaseIdentity, after, [], [], [{ operationId, status }]),
+        (status, after) => status && noticeFromState(databaseIdentity, after),
       );
 
     const recoverStale = (staleBefore: number) =>

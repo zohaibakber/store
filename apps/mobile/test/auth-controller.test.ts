@@ -8,7 +8,8 @@ import {
   type GoogleIdentity,
   type SessionVault,
 } from "../src/auth/controller";
-import { statusOf, type LastOrganization, type StoredSession } from "../src/auth/model";
+import type { LastOrganization, StoredSession } from "../src/auth/model";
+import { statusOf } from "./auth-status";
 
 const API = "https://api.example.test";
 const AUTH = "https://auth.example.test";
@@ -56,7 +57,6 @@ const makeServer = () => {
   const calls: Array<string> = [];
   let counter = 0;
   let mode: "online" | "offline" | "down" = "online";
-  let refreshCarriesWorkspace = false;
 
   const issue = (email: string) => {
     counter += 1;
@@ -141,11 +141,8 @@ const makeServer = () => {
         refreshTokens.delete(body.refreshToken);
         const issued = issue(email);
         const user = users.get(email);
-        return json(
-          refreshCarriesWorkspace && user !== undefined
-            ? { ...issued, workspace: snapshot(user) }
-            : issued,
-        );
+        if (user === undefined) return failure(401, "UNAUTHENTICATED", "Sign in to continue.");
+        return json({ ...issued, workspace: snapshot(user) });
       }
       case "POST auth/v1/session/logout":
         refreshTokens.delete(body.refreshToken);
@@ -222,9 +219,6 @@ const makeServer = () => {
     },
     expireAccessTokens: () => {
       accessTokens.clear();
-    },
-    sendWorkspaceOnRefresh: () => {
-      refreshCarriesWorkspace = true;
     },
     renameOrganization: (id: string, name: string) => {
       const organization = organizations.get(id);
@@ -437,7 +431,6 @@ describe("auth controller", () => {
 
   it("adopts the workspace a refresh carries without reading the session back", async () => {
     const server = makeServer();
-    server.sendWorkspaceOnRefresh();
     const storage = makeVault();
     const controller = makeController(server, storage.vault);
     await controller.start();
@@ -464,7 +457,6 @@ describe("auth controller", () => {
 
   it("restores a session with an expired access token from one refresh and no session read", async () => {
     const server = makeServer();
-    server.sendWorkspaceOnRefresh();
     const storage = makeVault();
     const first = makeController(server, storage.vault);
     await first.start();

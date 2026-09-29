@@ -216,8 +216,8 @@ describe("organization invitations", () => {
 });
 
 describe("organization role guards", () => {
-  const withTeam = (options: { readonly withoutHubs?: boolean } = {}) => {
-    const instance = harness(options);
+  const withTeam = () => {
+    const instance = harness();
     const owner = seedUser(instance.store, { id: "owner", email: "owner@example.com" });
     const admin = seedUser(instance.store, { id: "admin", email: "admin@example.com" });
     const member = seedUser(instance.store, { id: "member", email: "member@example.com" });
@@ -365,26 +365,6 @@ describe("organization role guards", () => {
     expect(team.instance.revocations).toEqual([
       { organizationId: team.organizationId, userId: team.admin.id },
     ]);
-  });
-
-  it("removes and demotes members when no live hub is bound", async () => {
-    const team = withTeam({ withoutHubs: true });
-    const demoted = await command(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.admin.id,
-      role: "member",
-    });
-    const removed = await command(team.instance, team.ownerToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.admin.id,
-    });
-    expect({ demoted, removed }).toEqual({
-      demoted: { _tag: "Applied" },
-      removed: { _tag: "Applied" },
-    });
-    expect(team.instance.revocations).toEqual([]);
   });
 
   it("hides an organization the caller does not belong to", async () => {

@@ -1,8 +1,7 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   catalogWriteError,
-  isCatalogPartitionEntity,
+  MAX_TRANSPORT_PAYLOAD_BYTES,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
@@ -48,11 +47,10 @@ import * as Redacted from "effect/Redacted";
 import * as SqlError from "effect/unstable/sql/SqlError";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { makeInventoryCommands, PULL_PAYLOAD_BUDGET_BYTES } from "../../src/inventory/commands";
+import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";
 import { withSerializationRetry } from "../../src/inventory/postgres";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
-import { pullGroupByteLength } from "./oracle/commit";
 import { typedCommands } from "./typed-commands";
 
 const OCCURRED_AT = 1_700_000_000_000;
@@ -186,9 +184,6 @@ const openCatalog = (organizationId: string, commitSequence = "0") =>
     );
     yield* db.insert(inventoryState).values({
       organizationId,
-      status: "ready",
-      importId: "import-test",
-      releaseId: "release-test",
       incarnation: "incarnation-test",
       epoch: LAST_UNIT_EPOCH,
       commitSequence,
@@ -271,8 +266,10 @@ const activePartitionRows = (db: CatalogDb, organizationId: string) =>
     return rows;
   });
 
+const CATALOG_ENTITIES = new Set(["category", "product", "batch"]);
+
 const catalogRowsOf = (rows: ReadonlyArray<PartitionLeafSource>) =>
-  rows.filter((row) => isCatalogPartitionEntity(row.entity));
+  rows.filter((row) => CATALOG_ENTITIES.has(row.entity));
 
 describe("postgres catalog writes", () => {
   beforeAll(async () => {
@@ -767,7 +764,7 @@ describe("postgres catalog writes", () => {
             operationId: `bulk-${commitSequence}`,
             decision: "accepted",
             epoch: LAST_UNIT_EPOCH,
-            byteLength: pullGroupByteLength(`bulk-${commitSequence}`, changes),
+            byteLength: changes.reduce((total, change) => total + change.rowJson.length, 128),
           });
           yield* db.insert(inventoryChanges).values(changes);
         }
@@ -776,7 +773,7 @@ describe("postgres catalog writes", () => {
         return { first, second };
       }),
     );
-    expect(PULL_PAYLOAD_BUDGET_BYTES).toBeLessThan(2 * 1_200_000);
+    expect(MAX_TRANSPORT_PAYLOAD_BYTES).toBeLessThan(2 * 1_200_000);
     expect(outcome.first.transactions).toHaveLength(1);
     expect(outcome.first.transactions[0]?.changes).toHaveLength(2);
     expect(outcome.first.nextCommitSequence).toBe("1");
@@ -802,34 +799,16 @@ describe("postgres catalog writes", () => {
         const partial = yield* commands.pull(actor, { ...pullFrom("0", true), limit: 1 });
         const complete = yield* commands.pull(actor, pullFrom("0", true));
         const withoutDigest = yield* commands.pull(actor, pullFrom("0"));
-        const legacy = yield* commands.pull(actor, { ...pullFrom("0"), includeDigest: true });
-        const catalogOnly = yield* commands.pull(actor, {
-          ...pullFrom("0"),
-          digestVersion: CATALOG_PARTITION_DIGEST_VERSION,
-        });
         const rows = yield* activePartitionRows(db, organizationId);
         const expected = yield* partitionDigestOf(rows);
-        const expectedCatalog = yield* partitionDigestOf(rows, CATALOG_PARTITION_DIGEST_VERSION);
-        return {
-          partial,
-          complete,
-          withoutDigest,
-          legacy,
-          catalogOnly,
-          rows,
-          expected,
-          expectedCatalog,
-        };
+        return { partial, complete, withoutDigest, rows, expected };
       }),
     );
     expect(outcome.partial.digest).toBeUndefined();
     expect(outcome.withoutDigest.digest).toBeUndefined();
-    expect(outcome.legacy.digest).toBeUndefined();
     expect(outcome.rows.some((row) => row.entity === "stockMovement")).toBe(true);
     expect(outcome.complete.digest).toEqual(outcome.expected);
     expect(outcome.complete.digest?.version).toBe(3);
-    expect(outcome.catalogOnly.digest).toEqual(outcome.expectedCatalog);
-    expect(outcome.catalogOnly.digest?.version).toBe(2);
   });
 
   it("retries a statement that Postgres aborts with a serialization failure", async () => {

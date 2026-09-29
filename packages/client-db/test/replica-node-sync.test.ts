@@ -37,6 +37,7 @@ describe("openNodeReplicaSyncSession", () => {
       identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
       databaseIdentity: "node-sync-recovery",
       transport: failingTransport(),
+      live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
     });
     const seen: Array<ReplicaSyncHealth> = [];
     const unsubscribe = session.subscribeSyncHealth((health) => {

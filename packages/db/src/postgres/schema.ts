@@ -247,9 +247,6 @@ export const inventoryState = pgTable(
   "inventory_state",
   {
     organizationId: tenantId(),
-    status: text("status").$type<"importing" | "ready">().notNull(),
-    importId: text("import_id").notNull(),
-    releaseId: text("release_id"),
     incarnation: text("incarnation").notNull(),
     epoch: text("epoch").notNull(),
     commitSequence: numericDecimalString("commit_sequence"),
@@ -265,7 +262,6 @@ export const inventoryState = pgTable(
       table.maintainedAt,
       table.organizationId,
     ),
-    check("inventory_state_status", sql`${table.status} in ('importing', 'ready')`),
     check(
       "inventory_state_sequences_nonnegative",
       sql`${table.commitSequence} >= 0 and ${table.retentionFloor} >= 0`,
@@ -401,8 +397,6 @@ export const snapshotJobs = pgTable(
     horizon: numericDecimalString("horizon"),
     entityCountsJson: text("entity_counts_json").notNull(),
     publishedAt: epochMilliseconds("published_at").notNull(),
-    digestVersion: integer("digest_version").notNull().default(2),
-    catalogParts: integer("catalog_parts"),
   },
   (table) => [
     primaryKey({
@@ -445,7 +439,6 @@ export const snapshotParts = pgTable(
     organizationId: tenantId(),
     snapshotId: text("snapshot_id").notNull(),
     partNumber: integer("part_number").notNull(),
-    objectKey: text("object_key").notNull(),
     byteLength: integer("byte_length").notNull(),
     sha256: text("sha256").notNull(),
     payloadJson: text("payload_json").notNull(),

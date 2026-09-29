@@ -1,15 +1,12 @@
 import {
   compareDecimalSequence,
-  digestVersionEntities,
   divergedPartitionEntities,
   incrementDecimalSequence,
   SyncCommandEnvelope,
-  syncEntityDependencyOrder,
   syncProtocolError,
   type CommandReceipt,
   type PartitionDigest,
   type PartitionDigestReport,
-  type PartitionDigestVersion,
   type PartitionEntity,
   type SyncEntity,
   type SyncProtocolError,
@@ -75,6 +72,15 @@ export const SYNC_ENTITIES: ReadonlyArray<SyncEntity> = [
   "stockMovement",
 ];
 
+const syncEntityDependencyOrder = {
+  category: 0,
+  product: 1,
+  batch: 2,
+  invoice: 2,
+  invoiceItem: 3,
+  stockMovement: 4,
+} as const satisfies Record<SyncEntity, number>;
+
 export const byEntityDependency: Order.Order<{ readonly entity: SyncEntity }> = Order.mapInput(
   Order.Number,
   (row) => syncEntityDependencyOrder[row.entity],
@@ -98,6 +104,28 @@ export const withOverlays = (
   );
 
 export const EMPTY_STOCK: VisibleStock = { packQuantity: 0, unitQuantity: 0 };
+
+export type SequencedOverlay = {
+  readonly packDelta: number;
+  readonly unitDelta: number;
+  readonly clientSequence: string | undefined;
+};
+
+export const withPendingOverlays = (
+  base: VisibleStock,
+  overlays: ReadonlyArray<SequencedOverlay>,
+  absoluteSequence: string | undefined,
+): VisibleStock =>
+  withOverlays(
+    base,
+    absoluteSequence === undefined
+      ? overlays
+      : overlays.filter(
+          (overlay) =>
+            overlay.clientSequence === undefined ||
+            compareDecimalSequence(overlay.clientSequence, absoluteSequence) > 0,
+        ),
+  );
 
 const overlayDeltasForInvoice = (
   operationId: string,
@@ -229,7 +257,6 @@ export const decideReceipt = (
       ),
     );
   }
-  if (status === "abandoned") return Result.succeed({ _tag: "noop", status });
   if (status === "integrated") {
     return receipt.decision === "accepted"
       ? Result.succeed({ _tag: "refreshIntegrated", status: "integrated" })
@@ -328,14 +355,6 @@ export const decideCoverageAfterPull = (
     return { _tag: "repair", diverged: divergedPartitionEntities(local, pulled) };
   }
   return { _tag: "record", digest: pulled.digest, verified: true };
-};
-
-export const hasPendingDigestRows = (
-  version: PartitionDigestVersion,
-  pendingMarks: ReadonlyArray<{ readonly entity: SyncEntity }>,
-): boolean => {
-  const entities = digestVersionEntities(version);
-  return pendingMarks.some((mark) => entities.some((entity) => entity === mark.entity));
 };
 
 export type JournalHolder = {

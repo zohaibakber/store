@@ -58,8 +58,6 @@ export type AuthEvent =
   | { readonly _tag: "SessionEnded" }
   | { readonly _tag: "SignedOut" };
 
-export type SessionStatus = "loading" | "signedOut" | "needsOrganization" | "signedIn";
-
 export const initialAuthState: AuthState = { _tag: "Loading" };
 
 const signedOut = (notice: string | null): AuthState => ({ _tag: "SignedOut", notice });
@@ -85,7 +83,7 @@ const active = (account: Account, confirmed: boolean): AuthState => ({
   confirmed: confirmed && account.organization !== null,
 });
 
-export const remembersOrganization = (
+const remembersOrganization = (
   account: Account,
   lastOrganization: LastOrganization | null,
 ): boolean =>
@@ -126,21 +124,6 @@ export const transition = (state: AuthState, event: AuthEvent): AuthState => {
       return signedOut(null);
     default: {
       const _exhaustive: never = event;
-      return _exhaustive;
-    }
-  }
-};
-
-export const statusOf = (state: AuthState): SessionStatus => {
-  switch (state._tag) {
-    case "Loading":
-      return "loading";
-    case "SignedOut":
-      return "signedOut";
-    case "Active":
-      return state.confirmed ? "signedIn" : "needsOrganization";
-    default: {
-      const _exhaustive: never = state;
       return _exhaustive;
     }
   }

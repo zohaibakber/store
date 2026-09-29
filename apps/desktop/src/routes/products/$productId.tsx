@@ -57,7 +57,7 @@ import { EMPTY, formatDate, formatNumber } from "@/lib/format";
 import {
   useInventoryActions,
   useSuspenseCatalogProduct,
-  useSuspenseCatalogStockMovements,
+  useSuspenseStockMovementHistory,
 } from "@/lib/inventory";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -89,7 +89,7 @@ function ProductDetailPage() {
   const { productId } = Route.useParams();
   const { addStock } = Route.useSearch();
   const catalogProduct = useSuspenseCatalogProduct(productId);
-  const movements = useSuspenseCatalogStockMovements(productId);
+  const movements = useSuspenseStockMovementHistory(productId);
   const { deleteProduct } = useInventoryActions();
   const navigate = useNavigate();
 
@@ -199,7 +199,12 @@ function ProductDetailContent({
   product,
 }: {
   readonly addStockOpen: boolean;
-  readonly movements: ReadonlyArray<StockMovement>;
+  readonly movements: {
+    readonly data: ReadonlyArray<StockMovement>;
+    readonly hasNextPage: boolean;
+    readonly isFetchingNextPage: boolean;
+    readonly fetchNextPage: () => Promise<void>;
+  };
   readonly onAddStockOpenChange: (open: boolean) => void;
   readonly onDelete: () => Promise<void>;
   readonly onEdit: () => void;
@@ -296,7 +301,13 @@ function ProductDetailContent({
             <ProductBatchesCard product={product} />
             <ProductStockPlan productId={product.id} />
           </div>
-          <ProductStockMovementsCard movements={movements} product={product} />
+          <ProductStockMovementsCard
+            hasMore={movements.hasNextPage}
+            loadingMore={movements.isFetchingNextPage}
+            movements={movements.data}
+            onLoadMore={() => void movements.fetchNextPage()}
+            product={product}
+          />
         </div>
       </PageContent>
     </PageLayout>

@@ -1,7 +1,9 @@
 import {
   CommandReceipt,
+  OrgCommitSequence,
   SyncPullResult,
   SyncSubmitCommandResult,
+  type SyncCommandEnvelope,
   type SyncPullRequest,
   type SyncSubmitCommandRequest,
 } from "@store/contracts";
@@ -17,19 +19,24 @@ const decodeSubmitResult = Schema.decodeUnknownEffect(
 );
 const decodePullResult = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncPullResult));
 
+type SubmitRequest = SyncCommandEnvelope & Partial<SyncSubmitCommandRequest>;
+
 export const typedCommands = (commands: InventoryCommandsContract) => {
-  const submitEncoded = (actor: InventoryActor, request: SyncSubmitCommandRequest) =>
+  const submitEncoded = (actor: InventoryActor, request: SubmitRequest) =>
     commands
-      .submitRaw(actor, JSON.stringify(request))
+      .submitRaw(
+        actor,
+        JSON.stringify({ afterCommitSequence: OrgCommitSequence.make("0"), ...request }),
+      )
       .pipe(Effect.catchTag("SyncRequestMalformed", (error) => Effect.die(error)));
   return {
     ...commands,
     submitEncoded,
-    commit: (actor: InventoryActor, request: SyncSubmitCommandRequest) =>
+    commit: (actor: InventoryActor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
         Effect.flatMap((submitted) => Effect.orDie(decodeReceipt(submitted.body))),
       ),
-    submit: (actor: InventoryActor, request: SyncSubmitCommandRequest) =>
+    submit: (actor: InventoryActor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
         Effect.flatMap((submitted) => Effect.orDie(decodeSubmitResult(submitted.body))),
       ),

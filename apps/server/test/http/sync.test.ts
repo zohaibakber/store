@@ -1,4 +1,4 @@
-import { SnapshotId, SyncPullResult, syncProtocolError } from "@store/contracts";
+import { SyncPullResult, syncProtocolError } from "@store/contracts";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import * as Cause from "effect/Cause";
@@ -11,16 +11,7 @@ import {
   makeInventorySyncAuthority,
   type SyncAuthorityContract,
 } from "../../src/inventory/sync-authority";
-import { appFor, workerHandlerFor } from "../lib/app";
-
-const unusedAuthority: SyncAuthorityContract = {
-  registerReplica: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  pull: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  readSnapshotPart: () => Effect.die("unused"),
-  submitCommand: () => Effect.die("unused"),
-};
+import { appFor, unusedSyncAuthority as unusedAuthority, workerHandlerFor } from "../lib/app";
 
 const pullPost = {
   method: "POST",
@@ -39,14 +30,6 @@ describe("sync HTTP", () => {
   it("requires an authenticated organization", async () => {
     const response = await appFor(false).request("/api/sync/commands", commandPost());
     expect(response.status).toBe(401);
-  });
-
-  it("returns 503 until the organization store is provisioned", async () => {
-    const response = await appFor(true).request("/api/sync/commands", commandPost());
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({
-      error: { code: "SYNC_NOT_PROVISIONED" },
-    });
   });
 
   it("answers database failures with a generic message and no SQL text", async () => {
@@ -140,30 +123,4 @@ describe("sync HTTP", () => {
     expect(revalidated.status).toBe(304);
     expect(revalidated.headers.get("etag")).toBe(`"${sha256}"`);
   });
-
-  it.each([
-    [15_000, "15"],
-    [1_001, "2"],
-  ])(
-    "tells a caller to retry a building snapshot after %i ms as Retry-After %s",
-    async (retryAfterMillis, header) => {
-      const syncAuthority: SyncAuthorityContract = {
-        ...unusedAuthority,
-        acquireSnapshot: () =>
-          Effect.succeed({
-            _tag: "building" as const,
-            snapshotId: SnapshotId.make("snap-building"),
-            retryAfterMillis,
-          }),
-      };
-      const response = await appFor(true, { syncAuthority }).request("/api/sync/snapshots", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ epoch: "1", subscription: "operational" }),
-      });
-      expect(response.status).toBe(200);
-      expect(response.headers.get("retry-after")).toBe(header);
-      expect(await response.json()).toMatchObject({ _tag: "building", retryAfterMillis });
-    },
-  );
 });

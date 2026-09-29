@@ -3,7 +3,7 @@ import * as Output from "alchemy/Output";
 import * as Effect from "effect/Effect";
 
 import { Auth } from "../auth/infra.ts";
-import { Api } from "../server/infra.ts";
+import { Api } from "../server/api.ts";
 import {
   productionDomainConfig,
   requireProductionHostname,

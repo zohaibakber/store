@@ -34,11 +34,6 @@ export const compareDecimalSequence: Order.Order<string> = Order.mapInput(
 
 export const incrementDecimalSequence = (value: string): string => String(BigInt(value) + 1n);
 
-const DECIMAL_SEQUENCE_DIGITS = 20;
-
-export const padDecimalSequence = (value: string): string =>
-  String(BigInt(value)).padStart(DECIMAL_SEQUENCE_DIGITS, "0");
-
 export const unpadDecimalSequence = (value: string): string => String(BigInt(value));
 
 export const SyncEpoch = DecimalSequence.pipe(Schema.brand("SyncEpoch"));
@@ -55,47 +50,24 @@ const PayloadHash = Sha256Hex;
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
 
-export const CATALOG_PARTITION_DIGEST_VERSION = 2;
+export const PARTITION_DIGEST_VERSION = 3 as const;
 
-export const PARTITION_DIGEST_VERSION = 3;
-
-export const PartitionDigestVersion = Schema.Literals([
-  CATALOG_PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION,
-]);
+export const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
 export type PartitionDigestVersion = typeof PartitionDigestVersion.Type;
 
-const CatalogEntityDigests = Schema.Struct({
-  category: PartitionDigest,
-  product: PartitionDigest,
-  batch: PartitionDigest,
-});
-
-export const CatalogPartitionDigestReport = Schema.Struct({
-  version: Schema.Literal(CATALOG_PARTITION_DIGEST_VERSION),
-  digest: PartitionDigest,
-  count: Schema.Natural,
-  entities: CatalogEntityDigests,
-});
-export type CatalogPartitionDigestReport = typeof CatalogPartitionDigestReport.Type;
-
-export const HistoryPartitionDigestReport = Schema.Struct({
-  version: Schema.Literal(PARTITION_DIGEST_VERSION),
+export const PartitionDigestReport = Schema.Struct({
+  version: PartitionDigestVersion,
   digest: PartitionDigest,
   count: Schema.Natural,
   entities: Schema.Struct({
-    ...CatalogEntityDigests.fields,
+    category: PartitionDigest,
+    product: PartitionDigest,
+    batch: PartitionDigest,
     invoice: PartitionDigest,
     invoiceItem: PartitionDigest,
     stockMovement: PartitionDigest,
   }),
 });
-export type HistoryPartitionDigestReport = typeof HistoryPartitionDigestReport.Type;
-
-export const PartitionDigestReport = Schema.Union([
-  CatalogPartitionDigestReport,
-  HistoryPartitionDigestReport,
-]);
 export type PartitionDigestReport = typeof PartitionDigestReport.Type;
 
 export const AuthorityIncarnation = SyncIdentifier.pipe(Schema.brand("AuthorityIncarnation"));
@@ -105,15 +77,12 @@ export const MAX_TRANSPORT_PAYLOAD_BYTES = 900_000;
 
 export const MIN_PULL_BYTE_BUDGET = 65_536;
 
-export const PullByteBudget = PositiveInt;
-export type PullByteBudget = typeof PullByteBudget.Type;
+const PullByteBudget = PositiveInt;
+type PullByteBudget = typeof PullByteBudget.Type;
 
 export const SyncProtocolCode = Schema.Literals([
   "ORGANIZATION_MISMATCH",
-  "ACTOR_MISMATCH",
   "INVALID_OPERATION",
-  "INVALID_DEVICE",
-  "INVALID_OCCURRED_AT",
   "OPERATION_ID_REUSED",
   "INSUFFICIENT_STOCK",
   "INVOICE_IDENTITY_CONFLICT",
@@ -126,13 +95,10 @@ export const SyncProtocolCode = Schema.Literals([
   "REPLICA_OWNED_BY_OTHER",
   "COMMAND_IDENTITY_MISMATCH",
   "INVALID_PAYLOAD_HASH",
-  "IMPORT_IDENTITY_MISMATCH",
   "SNAPSHOT_REQUIRED",
   "SNAPSHOT_UNAVAILABLE",
   "SCHEMA_VERSION_UNSUPPORTED",
-  "TICKET_INVALID",
   "INCARNATION_MISMATCH",
-  "COMMAND_ABANDONED",
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
@@ -173,7 +139,7 @@ export type SyncCommandEnvelope = typeof SyncCommandEnvelope.Type;
 
 export const SyncSubmitCommandRequest = SyncCommandEnvelope.pipe(
   Schema.fieldsAssign({
-    afterCommitSequence: Schema.optionalKey(OrgCommitSequence),
+    afterCommitSequence: OrgCommitSequence,
     maxBytes: Schema.optionalKey(PullByteBudget),
   }),
 );
@@ -181,25 +147,25 @@ export type SyncSubmitCommandRequest = typeof SyncSubmitCommandRequest.Type;
 
 const CommandDecision = Schema.Literals(["accepted", "rejected"]);
 
-export const AcceptedInvoiceResult = Schema.Struct({
+const AcceptedInvoiceResult = Schema.Struct({
   _tag: Schema.Literal("issueInvoice"),
   invoiceId: InvoiceId,
   invoiceNumber: PositiveInt,
 });
-export type AcceptedInvoiceResult = typeof AcceptedInvoiceResult.Type;
+type AcceptedInvoiceResult = typeof AcceptedInvoiceResult.Type;
 
-export const AcceptedCatalogWriteResult = Schema.Struct({
+const AcceptedCatalogWriteResult = Schema.Struct({
   _tag: Schema.Literal("catalogWrite"),
   rowsWritten: Schema.Natural,
 });
-export type AcceptedCatalogWriteResult = typeof AcceptedCatalogWriteResult.Type;
+type AcceptedCatalogWriteResult = typeof AcceptedCatalogWriteResult.Type;
 
-export const RejectedCommandResult = Schema.Struct({
+const RejectedCommandResult = Schema.Struct({
   _tag: Schema.Literal("rejected"),
   code: SyncProtocolCode,
   message: Schema.String,
 });
-export type RejectedCommandResult = typeof RejectedCommandResult.Type;
+type RejectedCommandResult = typeof RejectedCommandResult.Type;
 
 export const CommandReceipt = Schema.Struct({
   operationId: SyncIdentifier,
@@ -236,7 +202,6 @@ export const SyncPullRequest = Schema.Struct({
   limit: Schema.optionalKey(
     PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SYNC_PULL_TRANSACTIONS)),
   ),
-  includeDigest: Schema.optionalKey(Schema.Boolean),
   digestVersion: Schema.optionalKey(PartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });

@@ -9,12 +9,9 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 
 import type { InventoryHttpBridge } from "./inventory-http-channels";
-import type { LegacyMigrationBridge } from "./legacy-migration-channels";
 import type { ReplicaIpcBridge } from "./replica-channels";
 
 declare global {
-  const __UPDATE_CHANNEL__: string;
-
   namespace NodeJS {
     interface ProcessEnv {
       APP_ROOT: string;
@@ -26,7 +23,6 @@ declare global {
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
     replica?: ReplicaIpcBridge;
-    legacyMigration?: LegacyMigrationBridge;
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };

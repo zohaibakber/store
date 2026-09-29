@@ -2,11 +2,12 @@ import { CommandReceipt, SyncCommandEnvelope, type RegisterReplicaResult } from 
 import {
   batches,
   commandOutbox,
+  pendingRowMarks,
   products,
   replicaState,
   stockOverlays,
 } from "@store/db/replica.schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 
@@ -22,7 +23,8 @@ import {
   nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
-  withOverlays,
+  withPendingOverlays,
+  type VisibleStock,
 } from "./decisions";
 import { ReplicaStorageError } from "./errors";
 import { replicaCatalogLookup, restorePendingProjection, writePendingProjection } from "./pending";
@@ -91,17 +93,73 @@ const updateOutbox = (tx: ReplicaDb, operationId: string, fields: Partial<Outbox
 const selectOutboxRow = (tx: ReplicaDb, operationId: string) =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get();
 
+const loadVisibleStock = Effect.fn("ReplicaCommands.loadVisibleStock")(function* (
+  tx: ReplicaDb,
+  batchId?: string,
+) {
+  const batchRows = yield* (
+    batchId === undefined
+      ? tx.select().from(batches)
+      : tx.select().from(batches).where(eq(batches.id, batchId))
+  ).all();
+  const overlayRows = yield* (
+    batchId === undefined
+      ? tx.select().from(stockOverlays)
+      : tx.select().from(stockOverlays).where(eq(stockOverlays.batchId, batchId))
+  ).all();
+  const markRows = yield* tx
+    .select()
+    .from(pendingRowMarks)
+    .where(
+      batchId === undefined
+        ? eq(pendingRowMarks.entity, "batch")
+        : and(eq(pendingRowMarks.entity, "batch"), eq(pendingRowMarks.entityId, batchId)),
+    )
+    .all();
+  const operationIds = [
+    ...new Set([
+      ...overlayRows.map((overlay) => overlay.commandId),
+      ...markRows.map((mark) => mark.operationId),
+    ]),
+  ];
+  const sequenceRows =
+    operationIds.length === 0
+      ? []
+      : yield* tx
+          .select({
+            operationId: commandOutbox.operationId,
+            clientSequence: commandOutbox.clientSequence,
+          })
+          .from(commandOutbox)
+          .where(inArray(commandOutbox.operationId, operationIds))
+          .all();
+  const sequenceOf = new Map(sequenceRows.map((row) => [row.operationId, row.clientSequence]));
+  const absoluteSequence = new Map(
+    markRows.map((mark) => [mark.entityId, sequenceOf.get(mark.operationId)]),
+  );
+  const overlaysByBatch = Array.groupBy(overlayRows, (overlay) => overlay.batchId);
+  return new Map<string, VisibleStock>(
+    batchRows.map((batch) => [
+      batch.id,
+      withPendingOverlays(
+        batch,
+        (overlaysByBatch[batch.id] ?? []).map((overlay) => ({
+          packDelta: overlay.packDelta,
+          unitDelta: overlay.unitDelta,
+          clientSequence: sequenceOf.get(overlay.commandId),
+        })),
+        absoluteSequence.get(batch.id),
+      ),
+    ]),
+  );
+});
+
 export const loadStockIndex = Effect.fn("ReplicaCommands.loadStockIndex")(function* (
   tx: ReplicaDb,
 ) {
   const productRows = yield* tx.select().from(products).all();
-  const batchRows = yield* tx.select().from(batches).all();
-  const overlayRows = yield* tx.select().from(stockOverlays).all();
+  const stock = yield* loadVisibleStock(tx);
   const unitsPerPack = new Map(productRows.map((row) => [row.id, row.unitsPerPack]));
-  const overlaysByBatch = Array.groupBy(overlayRows, (overlay) => overlay.batchId);
-  const stock = new Map(
-    batchRows.map((batch) => [batch.id, withOverlays(batch, overlaysByBatch[batch.id] ?? [])]),
-  );
   return {
     unitsPerPackFor: (productId: string) => unitsPerPack.get(productId) ?? 1,
     stockFor: (batchId: string) => stock.get(batchId) ?? EMPTY_STOCK,
@@ -112,14 +170,7 @@ export const visibleBatchStock = Effect.fn("ReplicaCommands.visibleBatchStock")(
   tx: ReplicaDb,
   batchId: string,
 ) {
-  const batch = yield* tx.select().from(batches).where(eq(batches.id, batchId)).get();
-  if (!batch) return undefined;
-  const overlays = yield* tx
-    .select()
-    .from(stockOverlays)
-    .where(eq(stockOverlays.batchId, batchId))
-    .all();
-  return withOverlays(batch, overlays);
+  return (yield* loadVisibleStock(tx, batchId)).get(batchId);
 });
 
 export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function* (

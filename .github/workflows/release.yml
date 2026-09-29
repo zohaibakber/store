@@ -106,7 +106,6 @@ jobs:
         working-directory: apps/desktop
         run: vp run release
         env:
-          STORE_UPDATE_CHANNEL: latest
           # Publishes to this repo directly now that it's public; the default
           # GITHUB_TOKEN has contents:write (see workflow permissions above).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

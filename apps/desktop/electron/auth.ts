@@ -10,7 +10,6 @@ import {
 import {
   MemoryTokenStore,
   RefreshedTokenSet,
-  RequestError,
   SessionHttpClient,
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
@@ -37,8 +36,6 @@ type PersistedAuth = typeof PersistedAuth.Type;
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
-export { RequestError };
-
 export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #http: SessionHttpClient;
   readonly #tokens: MemoryTokenStore;
@@ -56,9 +53,6 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
       needsRefresh: refreshTokenNeedsRefresh,
       refreshSession: () => this.#rotateTokens(),
-      afterRefresh: async (refreshed) => {
-        if (refreshed.workspace === undefined) await loadSessionSnapshot(this.#hooks);
-      },
       requestHeaders: () => ({ "electron-origin": this.#electronOrigin }),
     });
     this.#hooks = {
@@ -93,9 +87,10 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     if (persisted) {
       this.#tokens.set(persisted.tokens);
       this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
-      const refreshed = await this.#http.ensureFreshAccess().catch(() => null);
-      if (refreshed?.workspace !== undefined) return this.#snapshot;
-      if (this.#tokens.get()) return loadSessionSnapshot(this.#hooks);
+      const rotated =
+        refreshTokenNeedsRefresh(persisted.tokens) &&
+        (await this.#http.ensureFreshAccess().catch(() => null)) !== null;
+      return rotated ? this.#snapshot : loadSessionSnapshot(this.#hooks);
     }
     return this.#snapshot;
   }
@@ -203,13 +198,8 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       throw requestErrorFromPayload(payload, response.status);
     }
     const refreshed = Schema.decodeUnknownSync(Schema.fromJsonString(RefreshedTokenSet))(bodyText);
-    const next = refreshedTokens(refreshed);
-    this.#tokens.set(next);
-    if (refreshed.workspace === undefined) {
-      await this.#writePersisted({ snapshot: this.#snapshot, tokens: next });
-    } else {
-      await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
-    }
+    this.#tokens.set(refreshedTokens(refreshed));
+    await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
     return refreshed;
   }
 }

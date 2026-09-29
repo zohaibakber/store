@@ -19,7 +19,6 @@ import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import { layerCommitForwarding } from "./commit-forwarding";
-import { validateSummarySpec } from "./compile";
 import { planIndexedDbSubset } from "./indexeddb-plan";
 import { createReplicaCommitPublisher } from "./publisher";
 import { MAX_DISTINCT_VALUES } from "./sources";
@@ -34,6 +33,7 @@ import type {
   ReplicaSummaryRead,
   SqliteResultRow,
 } from "./types";
+import { validateSummarySpec } from "./validate";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
 
 export type OpenIndexedDbReplicaInput = {

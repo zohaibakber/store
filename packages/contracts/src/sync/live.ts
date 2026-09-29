@@ -13,7 +13,7 @@ export const LIVE_SOCKET_PATH = "/api/sync/live";
 
 export const LIVE_SOCKET_PROTOCOL = "tabaaq.sync.v1";
 
-export const LIVE_BEARER_PROTOCOL_PREFIX = "bearer.";
+const LIVE_BEARER_PROTOCOL_PREFIX = "bearer.";
 
 export const LIVE_SOCKET_PING = "ping";
 

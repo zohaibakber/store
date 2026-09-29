@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;
-export const MAX_INSIGHTS_WINDOW_DAYS = 400;
+const MAX_INSIGHTS_WINDOW_DAYS = 400;
 export const MAX_INSIGHTS_PRODUCTS = 20_000;
 export const MAX_INSIGHTS_BATCHES = 60_000;
 export const MAX_INSIGHTS_SALES = 250_000;
@@ -58,19 +58,17 @@ export const InsightsSaleFact = Schema.Struct({
 });
 export type InsightsSaleFact = typeof InsightsSaleFact.Type;
 
-export const InsightsDayFact = Schema.Struct({
+const InsightsDayFact = Schema.Struct({
   day: Integer,
   invoices: NonNegativeInteger,
   revenue: Schema.Number,
 });
-export type InsightsDayFact = typeof InsightsDayFact.Type;
 
-export const InsightsHourFact = Schema.Struct({
+const InsightsHourFact = Schema.Struct({
   hour: Integer.check(Schema.isBetween({ minimum: 0, maximum: 23 })),
   invoices: NonNegativeInteger,
   revenue: Schema.Number,
 });
-export type InsightsHourFact = typeof InsightsHourFact.Type;
 
 export const ReplicaInsightsFacts = Schema.Struct({
   window: ReplicaInsightsWindow,
@@ -86,7 +84,7 @@ export type ReplicaInsightsFacts = typeof ReplicaInsightsFacts.Type;
 export const insightsDayOf = (epochMillis: number, utcOffsetMinutes: number) =>
   Math.floor((epochMillis + utcOffsetMinutes * 60_000) / INSIGHTS_DAY_MILLIS);
 
-export const insightsHourOf = (epochMillis: number, utcOffsetMinutes: number) => {
+const insightsHourOf = (epochMillis: number, utcOffsetMinutes: number) => {
   const local = epochMillis + utcOffsetMinutes * 60_000;
   const withinDay = ((local % INSIGHTS_DAY_MILLIS) + INSIGHTS_DAY_MILLIS) % INSIGHTS_DAY_MILLIS;
   return Math.floor(withinDay / INSIGHTS_HOUR_MILLIS);
@@ -108,15 +106,15 @@ type InsightsInvoiceLine = {
   readonly salePrice: number;
 };
 
-export type InsightsSalesAccumulator = {
+type InsightsSalesAccumulator = {
   readonly addInvoice: (
     invoice: InsightsInvoice,
     lines: ReadonlyArray<InsightsInvoiceLine>,
   ) => boolean;
   readonly result: () => {
     readonly sales: ReadonlyArray<InsightsSaleFact>;
-    readonly days: ReadonlyArray<InsightsDayFact>;
-    readonly hours: ReadonlyArray<InsightsHourFact>;
+    readonly days: ReadonlyArray<typeof InsightsDayFact.Type>;
+    readonly hours: ReadonlyArray<typeof InsightsHourFact.Type>;
     readonly truncated: boolean;
   };
 };

@@ -12,22 +12,11 @@ import { ipcRenderer, contextBridge } from "electron";
 
 import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
 import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
-import {
-  LEGACY_MIGRATION_ARCHIVE_EXISTS_CHANNEL,
-  LEGACY_MIGRATION_PURGE_CHANNEL,
-  LEGACY_MIGRATION_READ_ARCHIVE_CHANNEL,
-  LEGACY_MIGRATION_READ_STATE_CHANNEL,
-  LEGACY_MIGRATION_WRITE_ARCHIVE_CHANNEL,
-  LEGACY_MIGRATION_WRITE_REPORT_CHANNEL,
-  LEGACY_MIGRATION_WRITE_STATE_CHANNEL,
-  type LegacyMigrationBridge,
-} from "./legacy-migration-channels";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
   REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_OUTCOMES_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
@@ -37,7 +26,6 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
-  REPLICA_SYNC_PROGRESS_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
   type ReplicaIpcBridge,
@@ -81,9 +69,6 @@ const replica: ReplicaIpcBridge = {
   summarizeSubset: (input) => ipcRenderer.invoke(REPLICA_SUMMARIZE_SUBSET_CHANNEL, input),
   readOutboxStatuses: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
-  readCommandOutcomes: (input) => ipcRenderer.invoke(REPLICA_COMMAND_OUTCOMES_CHANNEL, input),
-  readSyncProgress: (workspaceToken) =>
-    ipcRenderer.invoke(REPLICA_SYNC_PROGRESS_CHANNEL, workspaceToken),
   readCommandAllocation: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_ALLOCATION_CHANNEL, workspaceToken),
   enqueueLocal: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),
@@ -98,19 +83,6 @@ const replica: ReplicaIpcBridge = {
 };
 
 contextBridge.exposeInMainWorld("replica", replica);
-
-const legacyMigration: LegacyMigrationBridge = {
-  readState: (organizationId) =>
-    ipcRenderer.invoke(LEGACY_MIGRATION_READ_STATE_CHANNEL, organizationId),
-  writeState: (state) => ipcRenderer.invoke(LEGACY_MIGRATION_WRITE_STATE_CHANNEL, state),
-  writeArchive: (archive) => ipcRenderer.invoke(LEGACY_MIGRATION_WRITE_ARCHIVE_CHANNEL, archive),
-  readArchive: (file) => ipcRenderer.invoke(LEGACY_MIGRATION_READ_ARCHIVE_CHANNEL, file),
-  archiveExists: (file) => ipcRenderer.invoke(LEGACY_MIGRATION_ARCHIVE_EXISTS_CHANNEL, file),
-  writeReport: (report) => ipcRenderer.invoke(LEGACY_MIGRATION_WRITE_REPORT_CHANNEL, report),
-  purgeDeadFiles: () => ipcRenderer.invoke(LEGACY_MIGRATION_PURGE_CHANNEL),
-};
-
-contextBridge.exposeInMainWorld("legacyMigration", legacyMigration);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

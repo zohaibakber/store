@@ -87,7 +87,12 @@ describe("IndexedDB subset paging", () => {
       });
 
       const byPrice = yield* store.querySubset(
-        plan({ orderBy: [{ column: "retailPrice", direction: "desc" }], offset: 300 }),
+        plan({
+          orderBy: [
+            { column: "retailPrice", direction: "desc", nulls: "last", collation: "binary" },
+          ],
+          offset: 300,
+        }),
       );
       expect(byPrice.rows.map((row) => row["id"])).toEqual(
         [...indexes]
@@ -97,14 +102,19 @@ describe("IndexedDB subset paging", () => {
       );
 
       const tail = yield* store.querySubset(
-        plan({ orderBy: [{ column: "id", direction: "asc" }], offset: 600 }),
+        plan({
+          orderBy: [{ column: "id", direction: "asc", nulls: "first", collation: "binary" }],
+          offset: 600,
+        }),
       );
       expect(tail.rows.map((row) => row["id"])).toEqual(indexes.slice(600).map(idOf));
 
       const odd = yield* store.querySubset(
         plan({
           residual: { _tag: "compare", column: "categoryId", op: "eq", value: "c-odd" },
-          orderBy: [{ column: "retailPrice", direction: "asc" }],
+          orderBy: [
+            { column: "retailPrice", direction: "asc", nulls: "first", collation: "binary" },
+          ],
           offset: 280,
         }),
       );
@@ -120,8 +130,8 @@ describe("IndexedDB subset paging", () => {
         plan({
           scan: { _tag: "indexPrefix", index: "byNameKey", reverse: false },
           orderBy: [
-            { column: "name", direction: "asc" },
-            { column: "id", direction: "asc" },
+            { column: "name", direction: "asc", nulls: "first", collation: "nocase" },
+            { column: "id", direction: "asc", nulls: "first", collation: "binary" },
           ],
           offset: 510,
         }),
@@ -134,8 +144,8 @@ describe("IndexedDB subset paging", () => {
         plan({
           scan: { _tag: "indexPrefix", index: "byNameKey", reverse: true },
           orderBy: [
-            { column: "name", direction: "desc" },
-            { column: "id", direction: "desc" },
+            { column: "name", direction: "desc", nulls: "last", collation: "nocase" },
+            { column: "id", direction: "desc", nulls: "last", collation: "binary" },
           ],
           offset: 40,
         }),
@@ -149,8 +159,8 @@ describe("IndexedDB subset paging", () => {
           scan: { _tag: "indexPrefix", index: "byNameKey", reverse: false },
           residual: { _tag: "like", column: "name", pattern: "%beta%" },
           orderBy: [
-            { column: "name", direction: "asc" },
-            { column: "id", direction: "asc" },
+            { column: "name", direction: "asc", nulls: "first", collation: "nocase" },
+            { column: "id", direction: "asc", nulls: "first", collation: "binary" },
           ],
           offset: 280,
         }),
@@ -173,8 +183,8 @@ describe("IndexedDB subset paging", () => {
             reverse: false,
           },
           orderBy: [
-            { column: "name", direction: "asc" },
-            { column: "id", direction: "asc" },
+            { column: "name", direction: "asc", nulls: "first", collation: "nocase" },
+            { column: "id", direction: "asc", nulls: "first", collation: "binary" },
           ],
           offset: 280,
         }),
@@ -190,8 +200,8 @@ describe("IndexedDB subset paging", () => {
             reverse: true,
           },
           orderBy: [
-            { column: "name", direction: "desc" },
-            { column: "id", direction: "desc" },
+            { column: "name", direction: "desc", nulls: "last", collation: "nocase" },
+            { column: "id", direction: "desc", nulls: "last", collation: "binary" },
           ],
         }),
       );
@@ -253,8 +263,8 @@ describe("IndexedDB subset paging", () => {
               },
               residual: { _tag: "like", column: "id", pattern: "p-%" },
               orderBy: [
-                { column: "name", direction },
-                { column: "id", direction },
+                { column: "name", direction, nulls: "first", collation: "nocase" },
+                { column: "id", direction, nulls: "first", collation: "binary" },
               ],
               limit: 600,
               offset: 0,
@@ -268,8 +278,8 @@ describe("IndexedDB subset paging", () => {
               scan: { _tag: "indexPrefix", index: "byNameKey", reverse: direction === "desc" },
               residual: { _tag: "like", column: "id", pattern: "p-%" },
               orderBy: [
-                { column: "name", direction },
-                { column: "id", direction },
+                { column: "name", direction, nulls: "first", collation: "nocase" },
+                { column: "id", direction, nulls: "first", collation: "binary" },
               ],
               limit: 600,
               offset: 0,

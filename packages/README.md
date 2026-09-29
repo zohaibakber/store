@@ -13,6 +13,8 @@
   failures, and the typed `SyncHttpApi` client. The shared entrypoint stays
   native-free (`test/browser-boundary.test.ts` enforces it); SQLite lives
   behind `@store/sync/sqlite` and IndexedDB behind `@store/sync/browser`.
+- `inventory-react`. React bindings over the replica (atoms, queries, sync
+  status, insights) shared by the desktop renderer and the mobile app.
 - `workspace`. Shared session HTTP, token renewal, and organization clients.
 - `services`. Application services shared by multiple apps.
 
@@ -21,4 +23,5 @@ Package tests mirror the source domains under `test`.
 `@store/client-db` owns the replica open used by each host. Hosts supply a
 replica opener plus authenticated fetch. Electron opens the replica in a
 main-process Node worker over `node:sqlite` and proxies sync HTTP; the browser
-host opens the IndexedDB replica. Replicas hard-delete on a `delete` change.
+host opens the IndexedDB replica; mobile opens op-sqlite. See
+`docs/architecture.md` for the whole system. Replicas hard-delete on a `delete` change.

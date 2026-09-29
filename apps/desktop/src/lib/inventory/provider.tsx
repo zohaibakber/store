@@ -8,7 +8,6 @@ import {
 import type * as React from "react";
 
 import { PageLoading } from "@/components/app/loading-spinner";
-import { LegacyMigrationRunner } from "@/lib/legacy-migration/runner";
 
 export function InventoryProvider({
   children,
@@ -23,7 +22,6 @@ export function InventoryProvider({
 }) {
   return (
     <SharedInventoryProvider catalog={catalog} host={host} lease={lease} scope={lease.scope}>
-      <LegacyMigrationRunner apiBaseUrl={host.apiBaseUrl} />
       <InventoryOpenFailure>{children}</InventoryOpenFailure>
     </SharedInventoryProvider>
   );

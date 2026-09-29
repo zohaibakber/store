@@ -3,10 +3,6 @@ export interface InventoryActor {
   readonly userId: string;
 }
 
-export interface InventorySyncActor extends InventoryActor {
-  readonly authorizationExpiresAt: number;
-}
-
 export interface EncodedJsonBody {
   readonly json: string;
 }

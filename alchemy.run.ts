@@ -8,14 +8,10 @@ import * as Layer from "effect/Layer";
 
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Website } from "./apps/desktop/infra.ts";
-import { Api, ApiLive } from "./apps/server/infra.ts";
+import { Api } from "./apps/server/api.ts";
+import { ApiLive } from "./apps/server/infra.ts";
 import { Edge } from "./infra/edge.ts";
-import { InventoryDatabaseId } from "./packages/db/src/postgres/infra.ts";
-import {
-  stageUsesInventoryPostgres,
-  stageUsesNeonInventory,
-  stageUsesPlanetscaleInventory,
-} from "./packages/db/src/postgres/stage.ts";
+import { InventoryDatabaseId, stageUsesNeonInventory } from "./packages/db/src/postgres/infra.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",
@@ -24,14 +20,13 @@ export default Alchemy.Stack(
       Cloudflare.providers(),
       Drizzle.providers(),
       Layer.unwrap(
-        Alchemy.Stage.pipe(
-          Effect.map((stage) =>
-            stageUsesNeonInventory(stage)
-              ? Neon.providers()
-              : stageUsesPlanetscaleInventory(stage)
-                ? Planetscale.providers()
-                : Layer.empty,
-          ),
+        Effect.map(Alchemy.Stage, (stage) =>
+          stageUsesNeonInventory(stage) ? Neon.providers() : Layer.empty,
+        ),
+      ),
+      Layer.unwrap(
+        Effect.map(Alchemy.Stage, (stage) =>
+          stageUsesNeonInventory(stage) ? Layer.empty : Planetscale.providers(),
         ),
       ),
     ),
@@ -41,18 +36,8 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const auth = yield* Auth;
     const api = yield* Api;
-    const websiteUrl = stage === "prod" || stage === "nightly" ? (yield* Website).url : undefined;
+    const websiteUrl = stage === "prod" ? (yield* Website).url : undefined;
     const edge = yield* Edge;
-    if (!stageUsesInventoryPostgres(stage)) {
-      return {
-        stage,
-        websiteUrl,
-        authUrl: auth.url,
-        apiUrl: api.url,
-        workerName: api.workerName,
-        edge,
-      };
-    }
     const inventoryDatabaseId = yield* InventoryDatabaseId;
     return {
       stage,
@@ -63,5 +48,5 @@ export default Alchemy.Stack(
       edge,
       inventoryDatabaseId,
     };
-  }).pipe(Effect.provide(Layer.mergeAll(ApiLive, AuthLive))),
+  }).pipe(Effect.provide(AuthLive.pipe(Layer.provideMerge(ApiLive)))),
 );

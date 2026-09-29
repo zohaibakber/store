@@ -121,7 +121,7 @@ describe("IndexedDB subset query path", () => {
         table: "invoices",
         scan: { _tag: "indexPrefix", index: "byCreatedAt", reverse: true },
         residual: undefined,
-        orderBy: [{ column: "createdAt", direction: "desc" }],
+        orderBy: [{ column: "createdAt", direction: "desc", nulls: "last", collation: "binary" }],
         limit: 1,
         offset: 0,
       });
@@ -180,7 +180,7 @@ describe("IndexedDB subset query path", () => {
             table: "products",
             scan: { _tag: "generationPrefix", reverse: false },
             residual: { _tag: "like", column, pattern },
-            orderBy: [{ column: "id", direction: "asc" }],
+            orderBy: [{ column: "id", direction: "asc", nulls: "first", collation: "binary" }],
             limit: 20,
             offset: 0,
           })

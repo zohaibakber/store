@@ -2,11 +2,7 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { parseUnitsPerPack, salvageUnitsPerPack } from "../src/invoice-extraction/pack-size";
-import {
-  invoiceExtractionLayer,
-  InvoiceExtractionService,
-  type InvoiceAiClient,
-} from "../src/invoice-extraction/service";
+import { extractInvoice, type InvoiceAiClient } from "../src/invoice-extraction/service";
 
 describe("pack size parsing", () => {
   it.each<[string | number, number]>([
@@ -58,12 +54,7 @@ const pdfAi = (): InvoiceAiClient => ({
 });
 
 const extract = (files: ReadonlyArray<File>, ai: InvoiceAiClient) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const service = yield* InvoiceExtractionService;
-      return yield* service.extract(files);
-    }).pipe(Effect.provide(invoiceExtractionLayer({ ai }))),
-  );
+  Effect.runPromise(extractInvoice(ai, files));
 
 describe("InvoiceExtraction.extract", () => {
   it("parses quoted names, pack notation, and thousand-separated prices from a CSV", async () => {

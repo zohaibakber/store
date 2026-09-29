@@ -91,9 +91,6 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
       fetch: this.#fetch,
       needsRefresh: cookieSessionNeedsRefresh,
       refreshSession: () => this.#refreshWithCookie(),
-      afterRefresh: async (refreshed) => {
-        if (refreshed.workspace === undefined) await loadSessionSnapshot(this.#hooks);
-      },
     });
     this.#hooks = {
       http: this.#http,
@@ -191,9 +188,7 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     const refreshed = decodeRefreshed(bodyText);
     this.#tokens.set(refreshedTokens(refreshed));
     this.#hint.mark();
-    if (refreshed.workspace !== undefined) {
-      await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
-    }
+    await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
     return refreshed;
   }
 }

@@ -1,11 +1,10 @@
 import {
   type CatalogProductSearchResult,
   useCatalogCategories,
+  useCatalogProductCandidates,
   useCatalogProductSearch,
-  useCatalogReplica,
   useInventoryActions,
 } from "@store/inventory-react";
-import { useLiveQuery } from "@tanstack/react-db";
 import * as React from "react";
 
 import type { CommitPlan, MatchedProduct } from "./fields";
@@ -35,7 +34,7 @@ const searchQuery = (identity: ScanIdentity): string => {
   return ingredient ?? "";
 };
 
-export const toMatch = (result: CatalogProductSearchResult): ScanMatch => ({
+const toMatch = (result: CatalogProductSearchResult): ScanMatch => ({
   product: {
     id: result.product.id,
     name: result.product.name,
@@ -70,19 +69,26 @@ export const useProductChoices = (query: string) => {
   return { choices, isLoading: search.isLoading };
 };
 
-export const useCatalogMatcher = () => {
-  const inventory = useCatalogReplica();
-  const products = useLiveQuery(
-    (builder) => builder.from({ product: inventory.products }),
-    [inventory],
+const MATCHER_CANDIDATES = 25;
+
+const candidateQueries = (identity: ScanIdentity): ReadonlyArray<string> => [
+  brandQuery(identity),
+  identity.composition ?? "",
+];
+
+export const useCatalogMatcher = (identities: ReadonlyArray<ScanIdentity>) => {
+  const candidates = useCatalogProductCandidates(
+    identities.flatMap(candidateQueries),
+    MATCHER_CANDIDATES,
   );
-  return React.useCallback(
+  const matcher = React.useCallback(
     (identity: ScanIdentity): CatalogCandidate | null =>
       identity.name === null && identity.composition === null
         ? null
-        : pickCatalogMatch(products.data, identity),
-    [products.data],
+        : pickCatalogMatch(candidates.data, identity),
+    [candidates.data],
   );
+  return { matcher, isLoading: candidates.isLoading };
 };
 
 export type ExecutablePlan = Exclude<CommitPlan, { readonly _tag: "Invalid" }>;

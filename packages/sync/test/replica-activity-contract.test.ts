@@ -59,8 +59,8 @@ const sqliteHarness = Effect.fn("activity.sqlite")(function* () {
   return {
     store,
     incarnation: "incarnation-test",
-    readActivity: () => readOutboxActivitySqlite(handle.sql),
-    readPendingRowIds: (entity) => readPendingRowIdsSqlite(handle.sql, entity),
+    readActivity: () => readOutboxActivitySqlite(handle.db),
+    readPendingRowIds: (entity) => readPendingRowIdsSqlite(handle.db, entity),
     close: () => Scope.close(scope, Exit.void),
   } satisfies ActivityHarness;
 });

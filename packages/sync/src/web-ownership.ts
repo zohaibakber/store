@@ -5,7 +5,7 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-export type CrossTabNotice = {
+type CrossTabNotice = {
   readonly generationId: string;
   readonly localCommitVersion: number;
 };
@@ -17,7 +17,7 @@ const CrossTabNoticeSchema = Schema.Struct({
 
 const decodeCrossTabNotice = Schema.decodeUnknownOption(CrossTabNoticeSchema);
 
-export type WebNetworkOwnership = {
+type WebNetworkOwnership = {
   readonly tryAcquire: (
     onOwner: () => Effect.Effect<void>,
   ) => Effect.Effect<{ readonly release: Effect.Effect<void> }>;

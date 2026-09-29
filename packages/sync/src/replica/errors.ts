@@ -25,11 +25,6 @@ export class IndexedDbQuotaExceeded extends Schema.TaggedError<IndexedDbQuotaExc
   { message: Schema.String },
 ) {}
 
-export class IndexedDbUpgradeBlocked extends Schema.TaggedError<IndexedDbUpgradeBlocked>()(
-  "IndexedDbUpgradeBlocked",
-  { message: Schema.String },
-) {}
-
 export class IndexedDbCorruptRecord extends Schema.TaggedError<IndexedDbCorruptRecord>()(
   "IndexedDbCorruptRecord",
   { message: Schema.String, store: Schema.String },
@@ -56,7 +51,6 @@ export type ReplicaStorageFailure =
   | ReplicaStorageError
   | IndexedDbUnavailable
   | IndexedDbQuotaExceeded
-  | IndexedDbUpgradeBlocked
   | IndexedDbCorruptRecord
   | IndexedDbIdentityMismatch;
 
@@ -66,7 +60,6 @@ export const isReplicaStorageFailure = (cause: unknown): cause is ReplicaStorage
   cause instanceof ReplicaStorageError ||
   cause instanceof IndexedDbUnavailable ||
   cause instanceof IndexedDbQuotaExceeded ||
-  cause instanceof IndexedDbUpgradeBlocked ||
   cause instanceof IndexedDbCorruptRecord ||
   cause instanceof IndexedDbIdentityMismatch;
 

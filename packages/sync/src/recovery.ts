@@ -10,7 +10,7 @@ import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
 
 import type { ReplicaSnapshotImportStore, ReplicaStoreError } from "./replica/store";
-import { SyncTransportUnavailable, type SyncTransport, type SyncTransportError } from "./transport";
+import type { SyncTransport, SyncTransportError } from "./transport";
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
 
@@ -30,14 +30,6 @@ export const recoverRequiredSnapshot = (
       ...request,
       digestVersion: PARTITION_DIGEST_VERSION,
     });
-    if (acquired._tag === "building") {
-      return yield* Effect.fail(
-        SyncTransportUnavailable.make({
-          message: "The server is still publishing a snapshot for this subscription.",
-          retryAfterMillis: acquired.retryAfterMillis,
-        }),
-      );
-    }
     const { manifest } = acquired;
     const progress = yield* store.beginSnapshotImport(manifest);
     const remaining = Arr.sort(

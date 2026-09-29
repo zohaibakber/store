@@ -2,19 +2,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { InventoryCommands, InventoryCommandsUnavailable, makeInventoryCommands } from "./commands";
-import { InventoryLive, InventoryLiveUnavailable, makeInventoryLive } from "./live-horizon";
-import {
-  InventoryMaintenance,
-  InventoryMaintenanceUnavailable,
-  makeInventoryMaintenance,
-} from "./maintenance";
+import { InventoryCommands, makeInventoryCommands } from "./commands";
+import { InventoryLive, makeInventoryLive } from "./live-horizon";
+import { InventoryMaintenance, makeInventoryMaintenance } from "./maintenance";
 import { openInventoryDrizzle } from "./postgres";
-import {
-  InventorySnapshots,
-  InventorySnapshotsUnavailable,
-  makeInventorySnapshots,
-} from "./snapshots";
+import { InventorySnapshots, makeInventorySnapshots } from "./snapshots";
 
 export const InventoryAuthorityLive = Layer.effectContext(
   Effect.gen(function* () {
@@ -26,11 +18,4 @@ export const InventoryAuthorityLive = Layer.effectContext(
       Context.add(InventoryMaintenance, makeInventoryMaintenance(db)),
     );
   }),
-);
-
-export const InventoryAuthorityUnavailable = Layer.mergeAll(
-  InventoryCommandsUnavailable,
-  InventorySnapshotsUnavailable,
-  InventoryLiveUnavailable,
-  InventoryMaintenanceUnavailable,
 );

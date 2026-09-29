@@ -4,11 +4,6 @@ import { pathToFileURL } from "node:url";
 import { ELECTRON_RENDERER_HOST } from "@store/auth/security";
 import { net, protocol } from "electron";
 
-export {
-  isLegacyPowerSyncWorkerPath,
-  makeDesktopContentSecurityPolicy,
-} from "./content-security-policy";
-
 export const desktopRendererOrigin = (scheme: string) => `${scheme}://${ELECTRON_RENDERER_HOST}`;
 
 export const desktopRendererUrl = (scheme: string) => `${desktopRendererOrigin(scheme)}/`;
@@ -70,7 +65,7 @@ export const registerDesktopProtocolHandler = (input: {
   readonly scheme: string;
   readonly rendererRoot: string;
   readonly developmentServerUrl?: string;
-  readonly contentSecurityPolicy: (pathname: string) => string;
+  readonly contentSecurityPolicy: string;
 }) => {
   protocol.handle(input.scheme, async (request) => {
     const requestUrl = new URL(request.url);
@@ -92,7 +87,7 @@ export const registerDesktopProtocolHandler = (input: {
         (init as RequestInit & { duplex: "half" }).duplex = "half";
       }
       const response = await net.fetch(target.toString(), init);
-      return withContentSecurityPolicy(response, input.contentSecurityPolicy(requestUrl.pathname));
+      return withContentSecurityPolicy(response, input.contentSecurityPolicy);
     }
 
     const requestedPath = decodeURIComponent(requestUrl.pathname);
@@ -106,6 +101,6 @@ export const registerDesktopProtocolHandler = (input: {
       return new Response(null, { status: 404 });
     }
     const response = await net.fetch(pathToFileURL(filePath).toString());
-    return withContentSecurityPolicy(response, input.contentSecurityPolicy(requestUrl.pathname));
+    return withContentSecurityPolicy(response, input.contentSecurityPolicy);
   });
 };

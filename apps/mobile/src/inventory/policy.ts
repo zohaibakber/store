@@ -1,7 +1,5 @@
-import { inventoryReplicaScope } from "@store/client-db";
+import { inventoryReplicaScope, sqliteReplicaFileName } from "@store/client-db";
 import * as Schema from "effect/Schema";
-
-const REPLICA_FILE_PREFIX = "tabaaq-replica-v1";
 
 const MobileExtra = Schema.Struct({
   apiBaseUrl: Schema.String.check(Schema.isMinLength(1)),
@@ -14,7 +12,9 @@ export const replicaDatabaseName = (
   organizationId: string,
   userId: string,
 ): string =>
-  `${REPLICA_FILE_PREFIX}-${encodeURIComponent(`${inventoryReplicaScope(apiBaseUrl, organizationId)}:${userId}`)}.sqlite`;
+  sqliteReplicaFileName(
+    encodeURIComponent(`${inventoryReplicaScope(apiBaseUrl, organizationId)}:${userId}`),
+  );
 
 export type NetworkReachability = {
   readonly type?: string;
@@ -25,7 +25,7 @@ export type NetworkReachability = {
 export const isReachable = (state: NetworkReachability): boolean =>
   state.isInternetReachable ?? state.isConnected ?? false;
 
-export const METERED_PULL_MAX_BYTES = 262_144;
+const METERED_PULL_MAX_BYTES = 262_144;
 
 const METERED_NETWORK_TYPES: ReadonlySet<string> = new Set(["CELLULAR", "BLUETOOTH"]);
 

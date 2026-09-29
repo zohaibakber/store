@@ -5,7 +5,6 @@ import {
   projectCreateBatch,
   projectCreateCategory,
   projectCreateProduct,
-  projectDeleteBatch,
   projectDeleteCategory,
   projectDeleteProduct,
   projectImportInventory,
@@ -158,15 +157,6 @@ describe("catalog projection", () => {
           productId,
         ),
       "Clear remaining stock before deleting this product.",
-    ],
-    [
-      "a batch delete while stock remains",
-      () =>
-        projectDeleteBatch(
-          contextWith({ batches: collectionOf([{ ...emptyBatch, packQuantity: 1 }]) }),
-          batchId,
-        ),
-      "Clear remaining stock before deleting this batch.",
     ],
     [
       "a negative quantity",

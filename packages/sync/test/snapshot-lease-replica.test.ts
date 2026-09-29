@@ -1,7 +1,6 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
-  SnapshotId,
   syncProtocolError,
   type AcquireSnapshotRequest,
 } from "@store/contracts";
@@ -30,14 +29,9 @@ const recordingTransport = () => {
   const transport = stubTransport({
     pull: () => Effect.fail(syncProtocolError("SNAPSHOT_REQUIRED", "Behind retained history.")),
     acquireSnapshot: (request) =>
-      Effect.sync(() => {
-        requests.push(request);
-        return {
-          _tag: "building" as const,
-          snapshotId: SnapshotId.make("snapshot-building"),
-          retryAfterMillis: 1_000,
-        };
-      }),
+      Effect.sync(() => requests.push(request)).pipe(
+        Effect.andThen(Effect.fail(syncProtocolError("SNAPSHOT_UNAVAILABLE", "No snapshot yet."))),
+      ),
   });
   return { requests, transport };
 };

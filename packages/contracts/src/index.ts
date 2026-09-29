@@ -8,8 +8,6 @@ export * from "./store/invoice-allocation";
 export * from "./store/schema";
 export * from "./sync/canonical-json";
 export * from "./sync/digest";
-export * from "./sync/directory";
-export * from "./sync/entity-semantics";
 export * from "./sync/live";
 export * from "./sync/protocol";
 export * from "./sync/replica-insights";

@@ -10,7 +10,7 @@ import { makeReplayChannel } from "@/replay-channel";
 
 import { WebAuthBroker, type WebAuthBrokerOptions } from "./auth-broker";
 
-export const SIGN_IN_PATH = "/sign-in";
+const SIGN_IN_PATH = "/sign-in";
 
 type BrowserLocation = Pick<Location, "origin" | "href" | "pathname" | "assign">;
 type BrowserHistory = Pick<History, "state" | "replaceState">;

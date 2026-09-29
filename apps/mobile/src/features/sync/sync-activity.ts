@@ -26,9 +26,7 @@ const REASONS: ReadonlyMap<string, string> = new Map([
   ["ENTITY_RELATION_INVALID", "Linked item is missing"],
   ["ENTITY_WRITE_FAILED", "Couldn't be saved on the server"],
   ["INVOICE_IDENTITY_CONFLICT", "Invoice number already used"],
-  ["IMPORT_IDENTITY_MISMATCH", "Import didn't match the catalog"],
   ["INVALID_OPERATION", "Not allowed"],
-  ["COMMAND_ABANDONED", "Dropped"],
 ]);
 
 const commandNoun = (rejected: RejectedCommand) =>
@@ -51,7 +49,7 @@ const pendingLabel = (count: number): string => {
   return `${formatCount(count)} changes waiting to upload`;
 };
 
-export const rejectedRowView = (rejected: RejectedCommand): RejectedRowView => ({
+const rejectedRowView = (rejected: RejectedCommand): RejectedRowView => ({
   key: rejected.operationId,
   title: `${commandNoun(rejected)}: ${rejectionReason(rejected.code)}`,
   detail: rejected.message,

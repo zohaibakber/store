@@ -87,15 +87,8 @@ vp run build:web
 `connect-src` names the configured API and auth origins. Published stages
 deploy it from `infra.ts` as a static SPA on `PRODUCTION_DOMAIN`.
 
-## Release channels
+## Releases
 
-Push testable work to `nightly`. After checks pass, CI deploys the isolated
-Nightly cloud stage (auth, API, and R2 snapshots, without PlanetScale) and
-publishes a `-nightly.<run>.<attempt>` GitHub prerelease. That build uses the
-`nightly` Electron update manifest and displays as `Tabaaq Nightly` with the
-orange icon.
-
-Stable installs read only the `latest` update manifest. To ship tested work,
-merge `nightly` into `main`, open the `CI` workflow in GitHub Actions, select the
-`main` branch, enable `deploy_production`, and run it. A normal push to `main`
-only verifies the commit and cannot deploy production.
+Every push to `main` deploys production and then publishes a desktop release
+through electron-builder to GitHub Releases. Installed apps update from the
+`latest` feed.

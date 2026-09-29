@@ -8,7 +8,6 @@ import {
   publicHostnameFrom,
   resolveAuthSecurity,
 } from "@store/auth/security";
-import { stageUsesInventoryPostgres } from "@store/db/postgres/stage";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
@@ -17,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 
+import { Api, OrgHub } from "./api";
 import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
 import {
   authenticateHeaders,
@@ -30,14 +30,14 @@ import {
   workerRuntimeServices,
 } from "./src/http/app";
 import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
-import { InventoryAuthorityLive, InventoryAuthorityUnavailable } from "./src/inventory/authority";
+import { InventoryAuthorityLive } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
 import { InventoryLive } from "./src/inventory/live-horizon";
 import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
 import { makeInventorySyncAuthority, SyncAuthority } from "./src/inventory/sync-authority";
 import { LiveFanout, makeLiveFanout } from "./src/live/fanout";
-import { OrgHub, OrgHubLive } from "./src/live/org-hub";
+import { OrgHubLive } from "./src/live/org-hub";
 import { LiveRoutes } from "./src/live/route";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
@@ -51,12 +51,10 @@ import {
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
 
-export class Api extends Cloudflare.Worker<Api, {}, OrgHub>()("Api") {}
-
 export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const published = stage === "prod" || stage === "nightly";
+    const published = stage === "prod";
     const apiHostname =
       !globalThis.__ALCHEMY_RUNTIME__ && published
         ? requireProductionApiHostname(yield* productionDomainConfig)
@@ -75,23 +73,22 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const authorityLayer = stageUsesInventoryPostgres(stage)
-      ? InventoryAuthorityLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding))
-      : InventoryAuthorityUnavailable;
     const inventory = yield* Effect.all({
       commands: InventoryCommands,
       snapshots: InventorySnapshots,
       live: InventoryLive,
       maintenance: InventoryMaintenance,
-    }).pipe(Effect.provide(authorityLayer));
-    if (stageUsesInventoryPostgres(stage)) {
-      yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
-        inventory.maintenance.runScheduled().pipe(
-          Effect.tap((progress) => Effect.log("inventory maintenance run", progress)),
-          Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
-        ),
-      );
-    }
+    }).pipe(
+      Effect.provide(
+        InventoryAuthorityLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding)),
+      ),
+    );
+    yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
+      inventory.maintenance.runScheduled().pipe(
+        Effect.tap((progress) => Effect.log("inventory maintenance run", progress)),
+        Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
+      ),
+    );
     const syncAuthority = makeInventorySyncAuthority(inventory);
     const hubs = yield* OrgHub;
     const execution = yield* Cloudflare.WorkerExecutionContext;
@@ -124,7 +121,7 @@ export const ApiLive = Api.make(
       Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
     );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const published = stage === "prod" || stage === "nightly";
+    const published = stage === "prod";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
     const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
     if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && published) {

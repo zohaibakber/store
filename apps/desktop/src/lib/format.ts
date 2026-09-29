@@ -33,14 +33,6 @@ export const parseExpiryDate = (value: string | null): number | null => {
   return null;
 };
 
-const utcDay = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
-export const formatUtcDay = (day: string) => utcDay.format(new Date(`${day}T00:00:00Z`));
-
 export const EMPTY = "—";
 
 const pluralRules = new Intl.PluralRules("en");

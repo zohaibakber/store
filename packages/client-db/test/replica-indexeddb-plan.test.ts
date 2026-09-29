@@ -74,7 +74,7 @@ describe("planIndexedDbSubset", () => {
           orderBy: [
             {
               expression: new IR.PropRef(["createdAt"]),
-              compareOptions: { direction: "desc", nulls: "last", stringSort: "locale" },
+              compareOptions: { direction: "desc", nulls: "last", stringSort: "lexical" },
             },
           ],
           limit: 25,

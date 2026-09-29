@@ -24,13 +24,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
 import { ServerRuntime, type ServerRuntimeContract } from "../../src/http/runtime";
 import { makeInventoryLive } from "../../src/inventory/live-horizon";
-import { inventoryPostgresUnavailable } from "../../src/inventory/postgres";
+import { databaseError } from "../../src/inventory/postgres";
 import { SyncAuthority } from "../../src/inventory/sync-authority";
-import { LiveFanout, type LiveFanoutContract } from "../../src/live/fanout";
 import { HUB_ADMISSION_HEADERS } from "../../src/live/hub-core";
 import { LiveRoutes, liveSocketHandler, type LiveRouteDependencies } from "../../src/live/route";
 import { startAuthorityPostgres, type AuthorityPostgres } from "../inventory/authority-postgres";
-import { unprovisionedSyncAuthority } from "../lib/app";
+import { silentLiveFanout, unusedSyncAuthority } from "../lib/app";
 import { countStatements } from "../lib/statement-count";
 
 const GOOD_TOKEN = "header.payload.signature";
@@ -97,10 +96,6 @@ const makeFixture = (
         }),
     }),
   };
-  const fanout: LiveFanoutContract = {
-    publish: () => Effect.void,
-    revoke: () => Effect.void,
-  };
   const readLiveHorizon: LiveRouteDependencies["readLiveHorizon"] =
     options.readLiveHorizon ??
     ((actor) =>
@@ -114,8 +109,8 @@ const makeFixture = (
       LiveRoutes({ hubs, getSession: serverRuntime.getSession, readLiveHorizon }),
     ).pipe(
       Layer.provide(Layer.succeed(ServerRuntime, serverRuntime)),
-      Layer.provide(Layer.succeed(SyncAuthority, unprovisionedSyncAuthority)),
-      Layer.provide(Layer.succeed(LiveFanout, fanout)),
+      Layer.provide(Layer.succeed(SyncAuthority, unusedSyncAuthority)),
+      Layer.provide(silentLiveFanout),
       Layer.provide(HttpServer.layerServices),
     );
     const serveRequest = await Effect.runPromise(
@@ -188,9 +183,9 @@ describe("GET /api/sync/live", () => {
     });
   });
 
-  it("answers 503 when the organization has no sync store", async () => {
+  it("answers 503 when the sync store fails", async () => {
     const fixture = makeFixture({
-      readLiveHorizon: () => Effect.fail(inventoryPostgresUnavailable),
+      readLiveHorizon: () => Effect.fail(databaseError(new Error("connection refused"))),
     });
     const response = await fixture.serve("/api/sync/live?replicaId=replica-a", {
       headers: socketHeaders(GOOD_TOKEN),
@@ -255,9 +250,6 @@ describe("live upgrade on Postgres", () => {
         const db = yield* PgDrizzle.makeWithDefaults();
         yield* db.insert(inventoryState).values({
           organizationId: "org-1",
-          status: "ready",
-          importId: "import-test",
-          releaseId: "release-test",
           incarnation: "incarnation-test",
           epoch: LAST_UNIT_EPOCH,
           commitSequence: "12",

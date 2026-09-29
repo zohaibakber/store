@@ -37,12 +37,12 @@ const manifest: SnapshotManifest = {
   parts: [
     {
       partNumber: 1,
-      objectKey: "parts/1",
       byteLength: 1,
       sha256: SnapshotPartHash.make("a".repeat(64)),
     },
   ],
   entityCounts: [{ entity: "batch", rowCount: 1 }],
+  digestVersion: 3,
 };
 
 const partPayload: SnapshotPartPayload = {

@@ -1,14 +1,6 @@
-import type { SyncConfig } from "@tanstack/db";
-import * as Schema from "effect/Schema";
+import { deepEquals, type SyncConfig } from "@tanstack/db";
 
 import type { InventoryCollectionRow } from "./types";
-
-const jsonEquivalence = Schema.toEquivalence(Schema.Json);
-
-const toJson = Schema.decodeUnknownSync(Schema.Json);
-
-const rowEquivalence = (previous: InventoryCollectionRow, next: InventoryCollectionRow): boolean =>
-  jsonEquivalence(toJson(previous), toJson(next));
 
 type SyncParams<Row extends InventoryCollectionRow> = Parameters<
   SyncConfig<Row, string>["sync"]
@@ -27,9 +19,6 @@ export const decrementRowRef = (counts: Map<string, number>, key: string): numbe
   counts.set(key, next);
   return next;
 };
-
-const rowUnchanged = <Row extends InventoryCollectionRow>(previous: Row, next: Row): boolean =>
-  previous === next || rowEquivalence(previous, next);
 
 export const publishSubsetWindow = <Row extends InventoryCollectionRow>(
   params: SyncParams<Row>,
@@ -58,7 +47,7 @@ export const publishSubsetWindow = <Row extends InventoryCollectionRow>(
     const previous = previousRows.get(key);
     incrementRowRef(rowRefs, key);
     if (previousKeys.has(key)) decrementRowRef(rowRefs, key);
-    if (existed && previous !== undefined && rowUnchanged(previous, row)) {
+    if (existed && previous !== undefined && deepEquals(previous, row)) {
       nextByKey.set(key, previous);
       continue;
     }

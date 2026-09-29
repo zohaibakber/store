@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 
 import { generationBounds } from "./query";
 import type { ReplicaQueryBuilder } from "./schema";
+import { readVisibleStockContext, withVisibleStock } from "./stock";
 
 const INVOICE_ITEM_READ_CONCURRENCY = 24;
 
@@ -25,7 +26,10 @@ export const readIndexedDbInsights = (
       .select()
       .between(lower, upper)
       .limit(MAX_INSIGHTS_PRODUCTS + 1);
-    const batches = yield* api.from("batches").select().between(lower, upper);
+    const overlays = yield* readVisibleStockContext(api);
+    const batches = (yield* api.from("batches").select().between(lower, upper)).map((batch) =>
+      withVisibleStock(batch, overlays),
+    );
     const invoices = yield* api
       .from("invoices")
       .select("byCreatedAt")

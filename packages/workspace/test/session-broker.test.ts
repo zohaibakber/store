@@ -41,7 +41,7 @@ describe("session snapshot persistence", () => {
       authBaseUrl: "https://auth.example.com",
       tokens: { get: () => tokens, set: vi.fn() },
       fetch: vi.fn(async () => Response.json(authenticated)),
-      refreshSession: async () => tokens,
+      refreshSession: async () => null,
       needsRefresh: () => false,
     });
 
@@ -91,7 +91,7 @@ describe("session snapshot persistence", () => {
     expect(http.tokens.get()).toBeNull();
   });
 
-  it("renews from the workspace a refresh carries and reads the session only without it", async () => {
+  it("renews from the workspace a refresh carries without reading the session", async () => {
     const issue = (suffix: string) =>
       TokenSet.make({
         accessToken: AccessToken.make(`access-${suffix}`),
@@ -99,7 +99,7 @@ describe("session snapshot persistence", () => {
         refreshToken: RefreshToken.make(`session-${suffix}.secret`),
         refreshExpiresAt: Date.now() + 120_000,
       });
-    const renewWith = async (carriesWorkspace: boolean) => {
+    const renew = async () => {
       let local: WorkspaceSnapshot = { ...authenticated, isOnline: false };
       const persisted: Array<WorkspaceSnapshot> = [];
       const reads: Array<string> = [];
@@ -117,7 +117,6 @@ describe("session snapshot persistence", () => {
           refreshSession: async () => {
             const next = issue("new");
             store.set(next);
-            if (!carriesWorkspace) return next;
             const workspace = {
               ...authenticated,
               user: { ...authenticated.user, name: "Renewed" },
@@ -140,14 +139,10 @@ describe("session snapshot persistence", () => {
       return { renewed, reads, persisted };
     };
 
-    const adopted = await renewWith(true);
+    const adopted = await renew();
     expect(adopted.reads).toEqual([]);
     expect(adopted.renewed).toMatchObject({ status: "authenticated", isOnline: true });
     expect(adopted.renewed.user?.name).toBe("Renewed");
     expect(adopted.persisted).toHaveLength(1);
-
-    const legacy = await renewWith(false);
-    expect(legacy.reads).toEqual(["https://api.example.com/api/auth/session"]);
-    expect(legacy.renewed.user?.name).toBe("Owner");
   });
 });

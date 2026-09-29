@@ -1,9 +1,4 @@
 import {
-  CommandOutcome,
-  CommandOutcomeIds,
-  ReplicaSyncProgress,
-} from "@store/client-db/command-outcome";
-import {
   InventorySubsetSpec,
   InventorySubsetSummary,
   InventorySubsetSummarySpec,
@@ -45,11 +40,6 @@ export const ReplicaReadInsightsInput = Schema.Struct({
   window: ReplicaInsightsWindow,
 });
 
-export const ReplicaCommandOutcomesInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  operationIds: CommandOutcomeIds,
-});
-
 export const ReplicaEnqueueInput = Schema.Struct({
   workspaceToken: NonEmptyString,
   envelope: SyncCommandEnvelope,
@@ -86,7 +76,7 @@ const ReplicaSubsetRows = Schema.Struct({
   ),
 });
 
-export const MAX_PROXY_TIMEOUT_MILLIS = 120_000;
+const MAX_PROXY_TIMEOUT_MILLIS = 120_000;
 
 export const ProxyFetchRequest = Schema.Struct({
   requestId: NonEmptyString,
@@ -144,15 +134,6 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   }),
   Rpc.make("ReadOutboxStatuses", {
     success: Schema.Array(CommandStatus),
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadCommandOutcomes", {
-    payload: { operationIds: CommandOutcomeIds },
-    success: Schema.Array(CommandOutcome),
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadSyncProgress", {
-    success: ReplicaSyncProgress,
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("ReadCommandAllocation", {

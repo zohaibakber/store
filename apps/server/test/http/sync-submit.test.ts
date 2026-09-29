@@ -1,7 +1,6 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import { AuthSession, EmailAddress, OrganizationId, SessionId, UserId } from "@store/auth";
 import { OrgCommitSequence, type SyncCommandEnvelope } from "@store/contracts";
-import { SyncHttpApi } from "@store/contracts/sync/api";
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
@@ -22,7 +21,6 @@ import * as Redacted from "effect/Redacted";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildOncePerIsolate, recoverUnexpected, ServerRoutes } from "../../src/http/app";
@@ -40,7 +38,7 @@ import {
 } from "../../src/inventory/sync-authority";
 import { LiveFanout, type LiveFanoutContract } from "../../src/live/fanout";
 import { startAuthorityPostgres, type AuthorityPostgres } from "../inventory/authority-postgres";
-import { unprovisionedSyncAuthority } from "../lib/app";
+import { unusedSyncAuthority } from "../lib/app";
 import { countStatements } from "../lib/statement-count";
 
 const USER_ID = "user-1";
@@ -98,7 +96,6 @@ const serverFor = async (authority: SyncAuthorityContract) => {
       Effect.sync(() => {
         published.push({ organizationId, fanout: value });
       }),
-    revoke: () => Effect.void,
   };
   const app = ServerRoutes.pipe(
     Layer.provide(Layer.succeed(ServerRuntime, serverRuntime)),
@@ -113,25 +110,6 @@ const serverFor = async (authority: SyncAuthorityContract) => {
     recoverUnexpected(serveRequest).pipe(Effect.provideContext(runtimeContext)),
   );
   return { handler, published };
-};
-
-const typedSubmitBaseline = (): WebHandler => {
-  const handlers = HttpApiBuilder.group(SyncHttpApi, "sync", (group) =>
-    Effect.succeed(
-      group
-        .handle("registerReplica", unused)
-        .handle("submitCommand", unused)
-        .handle("getReceipt", unused)
-        .handle("pull", unused)
-        .handle("acquireSnapshot", unused)
-        .handle("readSnapshotPart", unused),
-    ),
-  );
-  const app = HttpApiBuilder.layer(SyncHttpApi).pipe(
-    Layer.provide(handlers),
-    Layer.provide(HttpServer.layerServices),
-  );
-  return HttpRouter.toWebHandler(app, { disableLogger: true }).handler;
 };
 
 const commandRequest = (body: BodyInit, headers: Record<string, string> = {}) =>
@@ -150,7 +128,7 @@ const snapshotOf = async (response: Response) => ({
 const recordingAuthority = () => {
   const bodies: Array<string> = [];
   const authority: SyncAuthorityContract = {
-    ...unprovisionedSyncAuthority,
+    ...unusedSyncAuthority,
     submitCommand: (_actor, bodyText) =>
       Effect.sync(() => {
         bodies.push(bodyText);
@@ -208,9 +186,6 @@ describe("POST /api/sync/commands on Postgres", () => {
       };
       yield* db.insert(inventoryState).values({
         organizationId,
-        status: "ready",
-        importId: "import-test",
-        releaseId: "release-test",
         incarnation: "incarnation-test",
         epoch: LAST_UNIT_EPOCH,
         commitSequence: "0",
@@ -308,7 +283,13 @@ describe("POST /api/sync/commands on Postgres", () => {
             afterCommitSequence: OrgCommitSequence.make("0"),
           }),
         );
-        const replayed = yield* send(handler, JSON.stringify(lastUnitBuyerAEnvelope));
+        const replayed = yield* send(
+          handler,
+          JSON.stringify({
+            ...lastUnitBuyerAEnvelope,
+            afterCommitSequence: OrgCommitSequence.make("1"),
+          }),
+        );
         return { accepted, replayed, published: [...published] };
       }),
     );
@@ -331,23 +312,13 @@ describe("POST /api/sync/commands on Postgres", () => {
     });
   });
 
-  it("answers malformed and misshapen bodies exactly as the typed route did", async () => {
-    const baseline = typedSubmitBaseline();
+  it("answers malformed and misshapen bodies with an empty 400", async () => {
     const bodies = ["{bad", "", "[1]", '"text"', "null"];
     const outcome = await onPostgres("org-malformed", ({ handler }) =>
-      Effect.forEach(bodies, (body) =>
-        Effect.gen(function* () {
-          const raw = yield* send(handler, body);
-          const typed = yield* Effect.promise(async () =>
-            snapshotOf(await baseline(commandRequest(body))),
-          );
-          return { body, raw, typed };
-        }),
-      ),
+      Effect.forEach(bodies, (body) => send(handler, body)),
     );
-    for (const { body, raw, typed } of outcome) {
-      expect({ input: body, ...raw }).toEqual({ input: body, ...typed });
-      expect(raw.status).toBe(400);
+    for (const response of outcome) {
+      expect(response).toMatchObject({ status: 400, body: "" });
     }
   });
 
@@ -361,7 +332,14 @@ describe("POST /api/sync/commands on Postgres", () => {
 
   it("refuses an envelope for another organization with the protocol code", async () => {
     const outcome = await onPostgres("org-other", ({ handler }) =>
-      send(handler, JSON.stringify({ ...lastUnitBuyerAEnvelope, organizationId: "org-other" })),
+      send(
+        handler,
+        JSON.stringify({
+          ...lastUnitBuyerAEnvelope,
+          organizationId: "org-other",
+          afterCommitSequence: OrgCommitSequence.make("0"),
+        }),
+      ),
     );
     expect(outcome.status).toBe(403);
     expect(JSON.parse(outcome.body)).toMatchObject({
@@ -389,7 +367,15 @@ describe("POST /api/sync/commands on Postgres", () => {
         const malformed = yield* countStatements(Effect.flip(commands.submitRaw(actor, "{bad")));
         const listBody = yield* countStatements(Effect.flip(commands.submitRaw(actor, "[1]")));
         const foreign = yield* countStatements(
-          Effect.flip(commands.submitRaw(actor, JSON.stringify(lastUnitBuyerAEnvelope))),
+          Effect.flip(
+            commands.submitRaw(
+              actor,
+              JSON.stringify({
+                ...lastUnitBuyerAEnvelope,
+                afterCommitSequence: OrgCommitSequence.make("0"),
+              }),
+            ),
+          ),
         );
         return { committed, behind, malformed, listBody, foreign };
       }),

@@ -18,8 +18,7 @@ type RegistrationReplicaState = {
   readonly replicaId: string;
   readonly epoch: string;
   readonly incarnation: string;
-  readonly appliedCommitSequence: string;
-  readonly registeredAt?: number | null | undefined;
+  readonly registeredAt: number | null;
 };
 
 type RegistrationOutboxCommand = {
@@ -85,15 +84,8 @@ export const decideRegistration = (
       message: "The authority registered a different replica identity.",
     };
   }
-  const registered = state.registeredAt !== undefined && state.registeredAt !== null;
-  const fresh =
-    !registered &&
-    state.incarnation === PLACEHOLDER_INCARNATION &&
-    state.appliedCommitSequence === "0";
-  if (!fresh) {
-    const mismatch = identityMismatch(state, authority);
-    if (mismatch !== undefined) return mismatch;
-    if (registered) return { _tag: "unchanged" };
+  if (state.registeredAt !== null) {
+    return identityMismatch(state, authority) ?? { _tag: "unchanged" };
   }
   const allocations = Array.sort(
     outbox.filter((command) => UNRECEIPTED_COMMAND_STATUSES.includes(command.status)),

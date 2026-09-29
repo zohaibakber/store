@@ -1,9 +1,7 @@
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
-  digestVersionEntities,
+  PARTITION_ENTITIES,
   partitionDigestReport,
   STOCK_MOVEMENT_ROW_VERSION,
-  type PartitionDigestVersion,
   type PartitionEntity,
   type PartitionLeafList,
   type SyncSubscription,
@@ -24,7 +22,7 @@ import * as Schema from "effect/Schema";
 import { ReplicaStorageError } from "./errors";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
-const CatalogLeafListsRow = Schema.Struct({
+const LeafListsRow = Schema.Struct({
   pendingCount: Schema.Number,
   categoryCount: Schema.Number,
   categoryLeaves: Schema.NullOr(Schema.String),
@@ -32,10 +30,6 @@ const CatalogLeafListsRow = Schema.Struct({
   productLeaves: Schema.NullOr(Schema.String),
   batchCount: Schema.Number,
   batchLeaves: Schema.NullOr(Schema.String),
-});
-
-const HistoryLeafListsRow = Schema.Struct({
-  ...CatalogLeafListsRow.fields,
   invoiceCount: Schema.Number,
   invoiceLeaves: Schema.NullOr(Schema.String),
   invoiceItemCount: Schema.Number,
@@ -44,8 +38,7 @@ const HistoryLeafListsRow = Schema.Struct({
   stockMovementLeaves: Schema.NullOr(Schema.String),
 });
 
-const decodeCatalogRow = Schema.decodeUnknownEffect(CatalogLeafListsRow);
-const decodeHistoryRow = Schema.decodeUnknownEffect(HistoryLeafListsRow);
+const decodeLeafListsRow = Schema.decodeUnknownEffect(LeafListsRow);
 
 type LeafTable =
   | typeof categories
@@ -76,12 +69,9 @@ const leafSelections = (entity: PartitionEntity) => {
     (select group_concat("leaf", char(10) order by "leaf") from (select ${`${entity}:`} || ${table.id} || ':' || ${rowVersion} as "leaf" from ${table})) as ${sql.identifier(`${entity}Leaves`)}`;
 };
 
-const leafListsStatement = (version: PartitionDigestVersion) => {
-  const entities = digestVersionEntities(version);
-  return sql`select
-    (select count(*) from ${pendingRowMarks} where ${inArray(pendingRowMarks.entity, [...entities])}) as "pendingCount",
-    ${sql.join(entities.map(leafSelections), sql`, `)}`;
-};
+const leafListsStatement = sql`select
+    (select count(*) from ${pendingRowMarks} where ${inArray(pendingRowMarks.entity, [...PARTITION_ENTITIES])}) as "pendingCount",
+    ${sql.join(PARTITION_ENTITIES.map(leafSelections), sql`, `)}`;
 
 const listOf = (count: number, leaves: string | null): PartitionLeafList => ({
   count,
@@ -93,33 +83,17 @@ const malformed = () =>
 
 export const sqlitePartitionDigest = Effect.fn("ReplicaDigest.sqlitePartitionDigest")(function* (
   tx: ReplicaDb,
-  version: PartitionDigestVersion,
 ) {
-  const raw = yield* tx.get<unknown>(leafListsStatement(version));
-  if (version === CATALOG_PARTITION_DIGEST_VERSION) {
-    const row = yield* decodeCatalogRow(raw).pipe(Effect.mapError(malformed));
-    if (row.pendingCount > 0) return undefined;
-    return yield* partitionDigestReport({
-      version,
-      lists: {
-        category: listOf(row.categoryCount, row.categoryLeaves),
-        product: listOf(row.productCount, row.productLeaves),
-        batch: listOf(row.batchCount, row.batchLeaves),
-      },
-    });
-  }
-  const row = yield* decodeHistoryRow(raw).pipe(Effect.mapError(malformed));
+  const raw = yield* tx.get<unknown>(leafListsStatement);
+  const row = yield* decodeLeafListsRow(raw).pipe(Effect.mapError(malformed));
   if (row.pendingCount > 0) return undefined;
   return yield* partitionDigestReport({
-    version,
-    lists: {
-      category: listOf(row.categoryCount, row.categoryLeaves),
-      product: listOf(row.productCount, row.productLeaves),
-      batch: listOf(row.batchCount, row.batchLeaves),
-      invoice: listOf(row.invoiceCount, row.invoiceLeaves),
-      invoiceItem: listOf(row.invoiceItemCount, row.invoiceItemLeaves),
-      stockMovement: listOf(row.stockMovementCount, row.stockMovementLeaves),
-    },
+    category: listOf(row.categoryCount, row.categoryLeaves),
+    product: listOf(row.productCount, row.productLeaves),
+    batch: listOf(row.batchCount, row.batchLeaves),
+    invoice: listOf(row.invoiceCount, row.invoiceLeaves),
+    invoiceItem: listOf(row.invoiceItemCount, row.invoiceItemLeaves),
+    stockMovement: listOf(row.stockMovementCount, row.stockMovementLeaves),
   });
 });
 

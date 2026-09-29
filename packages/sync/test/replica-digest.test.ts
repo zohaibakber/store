@@ -128,27 +128,14 @@ const expectedSources = (): ReadonlyArray<PartitionLeafSource> =>
   ]);
 
 describe("replica partition digest", () => {
-  it.effect("computes the history digest in one SQLite statement as the shared contract", () =>
+  it.effect("computes the partition digest in one SQLite statement as the shared contract", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const store = yield* seed();
-        const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx, 3));
-        const expected = yield* partitionDigestOf([...expectedSources()].reverse(), 3);
+        const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx));
+        const expected = yield* partitionDigestOf([...expectedSources()].reverse());
         expect(local).toEqual(expected);
         expect(expected.count).toBe(ADVERSARIAL_IDS.length * 6);
-      }),
-    ),
-  );
-
-  it.effect("keeps the catalog digest for version 2 and ignores history rows", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const store = yield* seed();
-        const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx, 2));
-        const expected = yield* partitionDigestOf([...expectedSources()].reverse(), 2);
-        expect(local).toEqual(expected);
-        expect(local?.version).toBe(2);
-        expect(expected.count).toBe(ADVERSARIAL_IDS.length * 3);
       }),
     ),
   );
@@ -157,7 +144,7 @@ describe("replica partition digest", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const store = yield* openReplicaStore();
-        const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx, 3));
+        const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx));
         expect(local).toEqual(yield* partitionDigestOf([]));
       }),
     ),
@@ -172,14 +159,10 @@ describe("replica partition digest", () => {
             yield* tx
               .insert(pendingRowMarks)
               .values({ entity: "invoice", entityId: "i-a", operationId: "pending-1" });
-            return {
-              history: yield* sqlitePartitionDigest(tx, 3),
-              catalog: yield* sqlitePartitionDigest(tx, 2),
-            };
+            return yield* sqlitePartitionDigest(tx);
           }),
         );
-        expect(local.history).toBeUndefined();
-        expect(local.catalog?.version).toBe(2);
+        expect(local).toBeUndefined();
       }),
     ),
   );

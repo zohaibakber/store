@@ -36,14 +36,7 @@ export const commandOutbox = sqliteTable(
   {
     operationId: text().primaryKey().notNull(),
     status: text({
-      enum: [
-        "pending",
-        "sending",
-        "accepted_awaiting_integration",
-        "integrated",
-        "rejected",
-        "abandoned",
-      ],
+      enum: ["pending", "sending", "accepted_awaiting_integration", "integrated", "rejected"],
     }).notNull(),
     envelopeJson: text().notNull(),
     receiptJson: text(),
@@ -76,7 +69,6 @@ export const snapshotImports = sqliteTable("snapshot_imports", {
   stage: text({ enum: ["importing", "caught_up", "activated", "failed"] }).notNull(),
   partsImported: integer({ mode: "number" }).notNull().default(0),
   partsTotal: integer({ mode: "number" }).notNull(),
-  digestVersion: integer({ mode: "number" }),
 });
 
 export const stockOverlays = sqliteTable(

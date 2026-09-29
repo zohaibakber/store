@@ -5,13 +5,13 @@ import { authConfigFrom } from "../src/auth/config";
 import {
   SESSION_ENDED_NOTICE,
   initialAuthState,
-  statusOf,
   transition,
   type Account,
   type AuthEvent,
   type AuthState,
 } from "../src/auth/model";
 import { CODE_LIFETIME_MS, describeFailure, failureFacts } from "../src/auth/problems";
+import { statusOf } from "./auth-status";
 
 const account = (organizationId: string | null = "org-1"): Account => ({
   userId: "user-1",

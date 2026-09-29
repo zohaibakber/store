@@ -1,5 +1,5 @@
 import { MAX_INVOICE_UPLOAD_BYTES, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
-import { InvoiceExtractionService, invoiceExtractionLayer } from "@store/services";
+import { extractInvoice } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as Multipart from "effect/unstable/http/Multipart";
@@ -113,9 +113,7 @@ export const UploadHandlers = HttpApiBuilder.group(
           );
 
         const ai = yield* runtime.invoiceAi;
-        return yield* InvoiceExtractionService.pipe(
-          Effect.flatMap((service) => service.extract(files)),
-          Effect.provide(invoiceExtractionLayer({ ai })),
+        return yield* extractInvoice(ai, files).pipe(
           Effect.tapError((cause) =>
             Effect.logError("Invoice extraction failed").pipe(
               Effect.annotateLogs({ cause: cause.message }),

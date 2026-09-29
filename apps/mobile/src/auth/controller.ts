@@ -146,7 +146,7 @@ const canRename = (role: string) => role === "owner" || role === "admin";
 
 const decodeSnapshot = Schema.decodeUnknownOption(WorkspaceSnapshot);
 
-const decodeRefreshedWorkspace = Schema.decodeUnknownOption(AuthenticatedWorkspaceSnapshot);
+const decodeRefreshedWorkspace = Schema.decodeUnknownEffect(AuthenticatedWorkspaceSnapshot);
 
 const sessionEnded = failed(problem("sessionEnded", SESSION_ENDED_NOTICE));
 
@@ -241,14 +241,9 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     }
     const next = refreshedTokens(result.success);
     tokens.set(next);
-    const workspace = decodeRefreshedWorkspace(result.success.workspace);
-    const current = activeAccount();
-    if (Option.isSome(workspace) && current !== null) {
-      yield* adoptAccount(accountFromWorkspace(workspace.value));
-      return Struct.assign(next, { workspace: workspace.value }) satisfies RefreshedTokenSet;
-    }
-    if (current !== null) yield* persist(current);
-    return next;
+    const workspace = yield* decodeRefreshedWorkspace(result.success.workspace).pipe(Effect.orDie);
+    if (activeAccount() !== null) yield* adoptAccount(accountFromWorkspace(workspace));
+    return Struct.assign(next, { workspace }) satisfies RefreshedTokenSet;
   });
 
   const loadAccount = async (): Promise<Account> => {
@@ -294,9 +289,6 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     fetch: options.fetch,
     needsRefresh: refreshTokenNeedsRefresh,
     refreshSession: () => inSession(refreshTokens(), null),
-    afterRefresh: async (refreshed) => {
-      if (refreshed.workspace === undefined) void reloadAccount();
-    },
   });
 
   const authRequest = (pathname: string, init?: JsonRequestInit) =>
@@ -458,12 +450,10 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
         name: name.value,
         slug: Option.getOrNull(slug),
       });
-      const refreshed = await http.ensureFreshAccess(true);
-      if (refreshed?.workspace !== undefined) return done;
+      return (await http.ensureFreshAccess(true)) === null ? sessionEnded : done;
     } catch (cause) {
       return failure(cause);
     }
-    return reloadAccount();
   };
 
   const confirmOrganization = async (input: { readonly name?: string }): Promise<ActionResult> => {
@@ -494,11 +484,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       if (result._tag !== "Joined") {
         return failed(problem("rejected", "The invitation could not be used."));
       }
-      const refreshed = await http.ensureFreshAccess(true);
-      if (refreshed?.workspace === undefined) {
-        const reloaded = await reloadAccount();
-        if (reloaded._tag === "Failed") return reloaded;
-      }
+      if ((await http.ensureFreshAccess(true)) === null) return sessionEnded;
       const account = activeAccount();
       if (account?.organization?.id !== result.organization.id) {
         return failed(problem("unavailable", "You joined the store. Try again in a moment."));

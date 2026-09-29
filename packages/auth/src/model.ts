@@ -202,13 +202,13 @@ export const SignOutInput = Schema.Struct({
 });
 export interface SignOutInput extends Schema.Schema.Type<typeof SignOutInput> {}
 
-export const AuthUser = Schema.Struct({
+const AuthUser = Schema.Struct({
   id: UserId,
   name: Schema.String,
   email: EmailAddress,
   image: Schema.NullOr(Schema.String),
 });
-export interface AuthUser extends Schema.Schema.Type<typeof AuthUser> {}
+interface AuthUser extends Schema.Schema.Type<typeof AuthUser> {}
 
 export const AuthOrganizationMembership = Schema.Struct({
   id: OrganizationId,
@@ -220,13 +220,13 @@ export interface AuthOrganizationMembership extends Schema.Schema.Type<
   typeof AuthOrganizationMembership
 > {}
 
-export const AuthSessionRecord = Schema.Struct({
+const AuthSessionRecord = Schema.Struct({
   id: SessionId,
   userId: UserId,
   activeOrganizationId: OrganizationId,
   expiresAt: Schema.Number,
 });
-export interface AuthSessionRecord extends Schema.Schema.Type<typeof AuthSessionRecord> {}
+interface AuthSessionRecord extends Schema.Schema.Type<typeof AuthSessionRecord> {}
 
 export const AuthSession = Schema.Struct({
   user: AuthUser,
@@ -235,14 +235,14 @@ export const AuthSession = Schema.Struct({
 });
 export interface AuthSession extends Schema.Schema.Type<typeof AuthSession> {}
 
-export const SessionWorkspace = Schema.Struct({
+const SessionWorkspace = Schema.Struct({
   status: Schema.Literal("authenticated"),
   user: AuthUser,
   activeOrganization: AuthOrganizationMembership,
   organizations: Schema.Array(AuthOrganizationMembership),
   isOnline: Schema.Boolean,
 });
-export interface SessionWorkspace extends Schema.Schema.Type<typeof SessionWorkspace> {}
+interface SessionWorkspace extends Schema.Schema.Type<typeof SessionWorkspace> {}
 
 export const sessionWorkspaceFromClaims = (
   claims: Omit<AccessClaims, "sessionId" | "expiresAt">,
@@ -262,9 +262,7 @@ export const sessionWorkspaceFromClaims = (
   };
 };
 
-export const RefreshedSession = TokenSet.pipe(
-  Schema.fieldsAssign({ workspace: Schema.optionalKey(SessionWorkspace) }),
-);
+export const RefreshedSession = TokenSet.pipe(Schema.fieldsAssign({ workspace: SessionWorkspace }));
 export interface RefreshedSession extends Schema.Schema.Type<typeof RefreshedSession> {}
 
 export const OrganizationMember = Schema.Struct({

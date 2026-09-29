@@ -1,6 +1,6 @@
 import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
 import type { Invoice } from "@store/contracts";
-import { useInventoryInvoices } from "@store/inventory-react";
+import { useInvoiceHistory } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { useRouter } from "expo-router";
 import * as React from "react";
@@ -14,8 +14,6 @@ import { SCAN_FAB_CLEARANCE } from "../scan-fab";
 import { InvoiceRow } from "./invoice-row";
 import { invoiceSubtitle, invoiceTitle } from "./invoice-text";
 
-const INVOICE_LIST_LIMIT = 200;
-
 const keyOf = (invoice: Invoice) => invoice.id;
 
 export function InvoiceList({
@@ -28,7 +26,7 @@ export function InvoiceList({
   readonly onScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }) {
   const { push } = useRouter();
-  const invoices = useInventoryInvoices(INVOICE_LIST_LIMIT);
+  const invoices = useInvoiceHistory();
 
   const openInvoice = React.useCallback(
     (invoiceId: string) => push({ pathname: "/sales/[invoiceId]", params: { invoiceId } }),
@@ -53,12 +51,11 @@ export function InvoiceList({
       body="Invoices issued on the desktop app show up here after they sync."
     />
   );
-  const footer =
-    invoices.data.length >= INVOICE_LIST_LIMIT ? (
-      <Text size="xs" tone="muted" style={styles.footer}>
-        Showing the latest {INVOICE_LIST_LIMIT} invoices.
-      </Text>
-    ) : null;
+  const footer = invoices.isFetchingNextPage ? (
+    <Text size="xs" tone="muted" style={styles.footer}>
+      Loading older sales
+    </Text>
+  ) : null;
 
   return (
     <View style={styles.list}>
@@ -69,6 +66,7 @@ export function InvoiceList({
         keyExtractor={keyOf}
         ListEmptyComponent={empty}
         ListFooterComponent={footer}
+        onEndReached={invoices.hasNextPage ? () => void invoices.fetchNextPage() : undefined}
         onRefresh={onRefresh}
         onScroll={onScroll}
         refreshing={refreshing}

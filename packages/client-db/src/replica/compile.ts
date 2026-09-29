@@ -1,26 +1,53 @@
-import * as Effect from "effect/Effect";
-
-import { UnsupportedSubsetQuery } from "./errors";
+import * as schema from "@store/db/replica.schema";
 import {
-  CASE_INSENSITIVE_ORDER_COLUMNS,
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  lte,
+  not,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias, QueryBuilder, type SQLiteColumn, type SQLiteTable } from "drizzle-orm/sqlite-core";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+import type { UnsupportedSubsetQuery } from "./errors";
+import {
   DISTINCT_COLUMNS,
   FILTER_COLUMNS,
   MAX_DISTINCT_VALUES,
   ORDER_COLUMNS,
-  SOURCE_TABLE,
+  type InventoryCollectionSource,
 } from "./sources";
-import type {
-  InventorySubsetSpec,
-  InventorySubsetSummarySpec,
-  SubsetPredicate,
-  SubsetScalar,
+import {
+  resolveSubsetOrder,
+  type InventorySubsetSpec,
+  type InventorySubsetSummarySpec,
+  type SubsetPredicate,
+  type SubsetScalar,
 } from "./subset-spec";
 import type { SqliteParameter } from "./types";
+import { allowlisted, rejectColumn } from "./validate";
+
+export { validateSummarySpec } from "./validate";
 
 type SqliteSubsetStatement = {
   readonly sql: string;
   readonly parameters: ReadonlyArray<SqliteParameter>;
 };
+
+const queryBuilder = new QueryBuilder();
 
 const toSqliteParameter = (value: SubsetScalar): SqliteParameter => {
   switch (value) {
@@ -33,93 +60,177 @@ const toSqliteParameter = (value: SubsetScalar): SqliteParameter => {
   }
 };
 
-const COMPARISON_SQL = { eq: "=", gt: ">", gte: ">=", lt: "<", lte: "<=" } as const;
+const SOURCE_TABLES = {
+  categories: schema.categories,
+  products: schema.products,
+  batches: schema.batches,
+  invoices: schema.invoices,
+  invoiceItems: schema.invoiceItems,
+  stockMovements: schema.stockMovements,
+} satisfies Record<InventoryCollectionSource, SQLiteTable>;
 
-const rejectColumn = (column: string) =>
-  new UnsupportedSubsetQuery({
-    message: `Unsupported subset query: column ${column} is not allowlisted`,
-    reason: `column ${column} is not allowlisted`,
-  });
+const sequenceAfter = (later: SQLiteColumn, earlier: SQLiteColumn) =>
+  sql`(length(${later}) > length(${earlier}) OR (length(${later}) = length(${earlier}) AND ${later} > ${earlier}))`;
 
-const allowlisted = (
-  column: string,
-  columns: ReadonlySet<string>,
-): Effect.Effect<string, UnsupportedSubsetQuery> =>
-  columns.has(column) ? Effect.succeed(`"${column}"`) : Effect.fail(rejectColumn(column));
+const overlayCommand = alias(schema.commandOutbox, "overlay_command");
+const absoluteCommand = alias(schema.commandOutbox, "absolute_command");
+
+const overlaySum = (delta: SQLiteColumn) =>
+  sql`coalesce(${queryBuilder
+    .select({ total: sql`sum(${delta})` })
+    .from(schema.stockOverlays)
+    .leftJoin(overlayCommand, eq(overlayCommand.operationId, schema.stockOverlays.commandId))
+    .where(
+      and(
+        eq(schema.stockOverlays.batchId, schema.batches.id),
+        sql`NOT EXISTS ${queryBuilder
+          .select({ one: sql`1` })
+          .from(schema.pendingRowMarks)
+          .innerJoin(
+            absoluteCommand,
+            eq(absoluteCommand.operationId, schema.pendingRowMarks.operationId),
+          )
+          .where(
+            and(
+              sql`${schema.pendingRowMarks.entity} = 'batch'`,
+              eq(schema.pendingRowMarks.entityId, schema.batches.id),
+              not(sequenceAfter(overlayCommand.clientSequence, absoluteCommand.clientSequence)),
+            ),
+          )}`,
+      ),
+    )}, 0)`;
+
+export const visibleBatches = queryBuilder.$with("visible_batches").as(
+  queryBuilder
+    .select({
+      id: schema.batches.id,
+      productId: schema.batches.productId,
+      batchNumber: schema.batches.batchNumber,
+      expiresAt: schema.batches.expiresAt,
+      packQuantity:
+        sql<number>`${schema.batches.packQuantity} + ${overlaySum(schema.stockOverlays.packDelta)}`.as(
+          "packQuantity",
+        ),
+      unitQuantity:
+        sql<number>`${schema.batches.unitQuantity} + ${overlaySum(schema.stockOverlays.unitDelta)}`.as(
+          "unitQuantity",
+        ),
+      createdAt: schema.batches.createdAt,
+      updatedAt: schema.batches.updatedAt,
+      organizationId: schema.batches.organizationId,
+      createdByUserId: schema.batches.createdByUserId,
+      updatedByUserId: schema.batches.updatedByUserId,
+      deviceId: schema.batches.deviceId,
+      operationId: schema.batches.operationId,
+      rowVersion: schema.batches.rowVersion,
+    })
+    .from(schema.batches),
+);
+
+const COMPARISONS = { eq, gt, gte, lt, lte } as const;
 
 const lowerPredicate = (
   predicate: SubsetPredicate,
   columns: ReadonlySet<string>,
-): Effect.Effect<SqliteSubsetStatement, UnsupportedSubsetQuery> =>
+  lookup: Record<string, SQLiteColumn>,
+): Effect.Effect<SQL, UnsupportedSubsetQuery> =>
   Effect.gen(function* () {
+    const column = (name: string) =>
+      allowlisted(name, columns).pipe(
+        Effect.flatMap((allowed) => {
+          const found = lookup[allowed];
+          return found ? Effect.succeed(found) : Effect.fail(rejectColumn(allowed));
+        }),
+      );
     switch (predicate._tag) {
       case "and":
       case "or": {
-        const fragments = yield* Effect.forEach(predicate.predicates, (inner) =>
-          lowerPredicate(inner, columns),
+        const inner = yield* Effect.forEach(predicate.predicates, (nested) =>
+          lowerPredicate(nested, columns, lookup),
         );
-        const joiner = predicate._tag === "and" ? " AND " : " OR ";
-        return {
-          sql: `(${fragments.map((fragment) => fragment.sql).join(joiner)})`,
-          parameters: fragments.flatMap((fragment) => fragment.parameters),
-        };
+        if (predicate._tag === "and") return and(...inner) ?? sql`1`;
+        return or(...inner) ?? sql`0`;
       }
-      case "not": {
-        const inner = yield* lowerPredicate(predicate.predicate, columns);
-        return { sql: `NOT (${inner.sql})`, parameters: inner.parameters };
-      }
+      case "not":
+        return sql`NOT (${yield* lowerPredicate(predicate.predicate, columns, lookup)})`;
       case "isNull":
-        return { sql: `${yield* allowlisted(predicate.column, columns)} IS NULL`, parameters: [] };
+        return isNull(yield* column(predicate.column));
       case "in": {
-        const column = yield* allowlisted(predicate.column, columns);
-        if (predicate.values.length === 0) return { sql: "0", parameters: [] };
-        const parameters = predicate.values.map(toSqliteParameter);
-        return {
-          sql: `${column} IN (${parameters.map(() => "?").join(", ")})`,
-          parameters,
-        };
+        const target = yield* column(predicate.column);
+        if (predicate.values.length === 0) return sql`0`;
+        return inArray(target, predicate.values.map(toSqliteParameter));
       }
       case "compare":
-        return {
-          sql: `${yield* allowlisted(predicate.column, columns)} ${COMPARISON_SQL[predicate.op]} ?`,
-          parameters: [toSqliteParameter(predicate.value)],
-        };
+        return COMPARISONS[predicate.op](
+          yield* column(predicate.column),
+          toSqliteParameter(predicate.value),
+        );
       case "like":
-        return {
-          sql: `${yield* allowlisted(predicate.column, columns)} LIKE ?`,
-          parameters: [predicate.pattern],
-        };
+        return like(yield* column(predicate.column), predicate.pattern);
     }
   });
+
+const SqliteParameterSchema = Schema.Union([
+  Schema.String,
+  Schema.Number,
+  Schema.BigInt,
+  Schema.Null,
+  Schema.Uint8Array,
+]);
+
+const decodeParameters = Schema.decodeUnknownSync(Schema.Array(SqliteParameterSchema));
+
+const toStatement = (query: { toSQL: () => { sql: string; params: Array<unknown> } }) => {
+  const built = query.toSQL();
+  return {
+    sql: built.sql,
+    parameters: decodeParameters(built.params),
+  };
+};
 
 export const lowerSqliteSubset = (
   spec: InventorySubsetSpec,
 ): Effect.Effect<SqliteSubsetStatement, UnsupportedSubsetQuery> =>
   Effect.gen(function* () {
+    const relation = spec.source === "batches" ? visibleBatches : SOURCE_TABLES[spec.source];
+    const lookup: Record<string, SQLiteColumn> =
+      spec.source === "batches"
+        ? {
+            id: visibleBatches.id,
+            organizationId: visibleBatches.organizationId,
+            productId: visibleBatches.productId,
+            expiresAt: visibleBatches.expiresAt,
+          }
+        : getTableColumns(SOURCE_TABLES[spec.source]);
     const where = spec.where
-      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source])
+      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source], lookup)
       : undefined;
-    const orderBy = yield* Effect.forEach(spec.orderBy, (clause) =>
+    const orderBy = yield* Effect.forEach(resolveSubsetOrder(spec), (clause) =>
       allowlisted(clause.column, ORDER_COLUMNS[spec.source]).pipe(
-        Effect.map((column) => {
-          const collation = CASE_INSENSITIVE_ORDER_COLUMNS[spec.source].has(clause.column)
-            ? " COLLATE NOCASE"
-            : "";
-          return `${column}${collation} ${clause.direction === "desc" ? "DESC" : "ASC"}`;
+        Effect.flatMap((name) => {
+          const target = lookup[name];
+          return target ? Effect.succeed(target) : Effect.fail(rejectColumn(name));
+        }),
+        Effect.map((target) => {
+          const collated = clause.collation === "nocase" ? sql`${target} COLLATE NOCASE` : target;
+          const directed = clause.direction === "desc" ? desc(collated) : asc(collated);
+          const defaultNulls = clause.direction === "asc" ? "first" : "last";
+          if (clause.nulls === defaultNulls) return directed;
+          return sql`${directed} ${clause.nulls === "first" ? sql`NULLS FIRST` : sql`NULLS LAST`}`;
         }),
       ),
     );
-    const whereSql = where ? ` WHERE ${where.sql}` : "";
-    const orderSql = orderBy.length === 0 ? "" : ` ORDER BY ${orderBy.join(", ")}`;
-    const offsetSql = spec.offset > 0 ? " OFFSET ?" : "";
-    const offsetParameters: ReadonlyArray<SqliteParameter> = spec.offset > 0 ? [spec.offset] : [];
-    return {
-      sql: `SELECT * FROM "${SOURCE_TABLE[spec.source]}"${whereSql}${orderSql} LIMIT ?${offsetSql}`,
-      parameters: [...(where?.parameters ?? []), spec.limit, ...offsetParameters],
-    };
+    const base = queryBuilder
+      .with(...(spec.source === "batches" ? [visibleBatches] : []))
+      .select()
+      .from(relation)
+      .where(where)
+      .orderBy(...orderBy)
+      .limit(spec.limit);
+    return toStatement(spec.offset > 0 ? base.offset(spec.offset) : base);
   });
 
-export type SqliteSummaryStatements = {
+type SqliteSummaryStatements = {
   readonly count: SqliteSubsetStatement;
   readonly distinct: ReadonlyArray<{
     readonly column: string;
@@ -131,57 +242,38 @@ export const lowerSqliteSummary = (
   spec: InventorySubsetSummarySpec,
 ): Effect.Effect<SqliteSummaryStatements, UnsupportedSubsetQuery> =>
   Effect.gen(function* () {
-    const table = `"${SOURCE_TABLE[spec.source]}"`;
+    const table = SOURCE_TABLES[spec.source];
+    const lookup: Record<string, SQLiteColumn> = getTableColumns(table);
     const where = spec.where
-      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source])
+      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source], lookup)
       : undefined;
-    const whereSql = where ? ` WHERE ${where.sql}` : "";
-    const whereParameters = where?.parameters ?? [];
     const distinct = yield* Effect.forEach(spec.distinct, (column) =>
       allowlisted(column, DISTINCT_COLUMNS[spec.source]).pipe(
-        Effect.map((quoted) => ({
+        Effect.flatMap((name) => {
+          const target = lookup[name];
+          return target ? Effect.succeed(target) : Effect.fail(rejectColumn(name));
+        }),
+        Effect.map((target) => ({
           column,
-          statement: {
-            sql: `SELECT min(trim(${quoted})) AS value FROM ${table}${whereSql}${
-              where ? " AND" : " WHERE"
-            } ${quoted} IS NOT NULL AND trim(${quoted}) <> '' GROUP BY lower(trim(${quoted})) ORDER BY value COLLATE NOCASE LIMIT ?`,
-            parameters: [...whereParameters, MAX_DISTINCT_VALUES],
-          },
+          statement: toStatement(
+            queryBuilder
+              .select({ value: sql<string>`min(trim(${target}))`.as("value") })
+              .from(table)
+              .where(and(where, isNotNull(target), sql`trim(${target}) <> ''`))
+              .groupBy(sql`lower(trim(${target}))`)
+              .orderBy(sql`value COLLATE NOCASE`)
+              .limit(MAX_DISTINCT_VALUES),
+          ),
         })),
       ),
     );
     return {
-      count: {
-        sql: `SELECT count(*) AS count FROM ${table}${whereSql}`,
-        parameters: whereParameters,
-      },
+      count: toStatement(
+        queryBuilder
+          .select({ count: sql<number>`count(*)`.as("count") })
+          .from(table)
+          .where(where),
+      ),
       distinct,
     };
-  });
-
-const predicateColumns = (predicate: SubsetPredicate): ReadonlyArray<string> => {
-  switch (predicate._tag) {
-    case "and":
-    case "or":
-      return predicate.predicates.flatMap(predicateColumns);
-    case "not":
-      return predicateColumns(predicate.predicate);
-    case "compare":
-    case "in":
-    case "isNull":
-    case "like":
-      return [predicate.column];
-  }
-};
-
-export const validateSummarySpec = (
-  spec: InventorySubsetSummarySpec,
-): Effect.Effect<InventorySubsetSummarySpec, UnsupportedSubsetQuery> =>
-  Effect.gen(function* () {
-    const filters = spec.where ? predicateColumns(spec.where) : [];
-    yield* Effect.forEach(filters, (column) => allowlisted(column, FILTER_COLUMNS[spec.source]));
-    yield* Effect.forEach(spec.distinct, (column) =>
-      allowlisted(column, DISTINCT_COLUMNS[spec.source]),
-    );
-    return spec;
   });

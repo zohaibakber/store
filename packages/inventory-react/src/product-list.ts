@@ -33,7 +33,7 @@ export const PRODUCT_FACET_COLUMNS = [
 ] as const;
 export type ProductFacetColumn = (typeof PRODUCT_FACET_COLUMNS)[number];
 
-export const MAX_PRODUCT_PAGE_SIZE = 100;
+const MAX_PRODUCT_PAGE_SIZE = 100;
 
 const MAX_SEARCH_LENGTH = 120;
 
@@ -60,7 +60,7 @@ const exactly = (column: string, value: string): SubsetPredicate => ({
   pattern: value,
 });
 
-export const productListWhere = (filters: ProductListFilters): SubsetPredicate | undefined => {
+const productListWhere = (filters: ProductListFilters): SubsetPredicate | undefined => {
   const predicates: Array<SubsetPredicate> = [
     ...searchTokens((filters.search ?? "").slice(0, MAX_SEARCH_LENGTH)).map(containsToken),
     ...(filters.categoryId
@@ -74,7 +74,7 @@ export const productListWhere = (filters: ProductListFilters): SubsetPredicate |
   return predicates.length === 1 ? predicates[0] : { _tag: "and", predicates };
 };
 
-export const productPageSpec = (request: ProductListRequest): InventorySubsetSpec => {
+const productPageSpec = (request: ProductListRequest): InventorySubsetSpec => {
   const pageSize = Math.min(MAX_PRODUCT_PAGE_SIZE, Math.max(1, Math.floor(request.pageSize)));
   const where = productListWhere(request.filters);
   const spec: InventorySubsetSpec = {
@@ -89,7 +89,7 @@ export const productPageSpec = (request: ProductListRequest): InventorySubsetSpe
   return where ? { ...spec, where } : spec;
 };
 
-export const productSummarySpec = (
+const productSummarySpec = (
   filters: ProductListFilters,
   distinct: ReadonlyArray<ProductFacetColumn>,
 ): InventorySubsetSummarySpec => {

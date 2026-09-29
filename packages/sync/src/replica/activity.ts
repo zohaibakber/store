@@ -19,7 +19,7 @@ export type OutboxActivityRow = {
   readonly receiptJson: string | null;
 };
 
-export type OutboxStatusCount = {
+type OutboxStatusCount = {
   readonly status: CommandStatus;
   readonly count: number;
 };

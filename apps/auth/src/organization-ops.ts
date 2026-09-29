@@ -18,7 +18,7 @@ import * as Effect from "effect/Effect";
 
 import { hashInvitationSecret, INVITATION_TTL_MS, randomSecret } from "./crypto";
 import { authError } from "./errors";
-import { noHubRevocation, type HubRevocationContract } from "./hub-revocation";
+import type { HubRevocationContract } from "./hub-revocation";
 import { enforceAuthLimit, type AuthLimits } from "./limits";
 import { type AuthRepositoryApi, type InvitationRecord, type MembershipRecord } from "./repository";
 import type { SessionOps } from "./session-ops";
@@ -41,7 +41,7 @@ export const makeOrganizationOps = (
   sessions: Pick<SessionOps, "authorize">,
   configuration: OrganizationOpsConfiguration,
   limits: AuthLimits,
-  hubs: HubRevocationContract = noHubRevocation,
+  hubs: HubRevocationContract,
 ) => {
   const hashInvite = (secret: string) =>
     hashInvitationSecret(configuration.refreshTokenPepper, secret);

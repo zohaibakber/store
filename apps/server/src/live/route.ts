@@ -23,7 +23,7 @@ import type { LiveHorizon } from "../inventory/live-horizon";
 import type { InventoryActor } from "../inventory/model";
 import { admissionHeaders, withoutAdmissionHeaders } from "./hub-core";
 
-export interface OrgHubFetcher {
+interface OrgHubFetcher {
   readonly getByName: (organizationId: string) => {
     readonly fetch: (
       request: HttpServerRequest.HttpServerRequest,
@@ -55,7 +55,7 @@ const horizonFailure = (error: InventoryError) =>
       ? refuse(403, error.code, error.message)
       : refuse(409, error.code, error.message);
 
-export const freshUpgradeResponse = (
+const freshUpgradeResponse = (
   response: HttpServerResponse.HttpServerResponse,
 ): HttpServerResponse.HttpServerResponse => {
   const body = response.body;

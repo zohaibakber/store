@@ -1,9 +1,11 @@
 import { CommandStatus, type SyncEntity } from "@store/contracts";
+import { commandOutbox, pendingRowMarks, replicaState } from "@store/db/replica.schema";
+import { count, desc, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { SqlClient } from "effect/unstable/sql/SqlClient";
 
 import { MAX_REJECTED_ACTIVITY_ROWS, type ReplicaOutboxActivity } from "../activity";
+import type { ReplicaDb } from "../sql-client/drizzle";
 
 const StatusCountRow = Schema.Struct({ status: CommandStatus, count: Schema.Number });
 
@@ -24,26 +26,44 @@ const decodeRejectedOutboxRows = Schema.decodeUnknownEffect(Schema.Array(Rejecte
 const decodeCaughtUpRow = Schema.decodeUnknownEffect(CaughtUpRow);
 const decodePendingRowIdRows = Schema.decodeUnknownEffect(Schema.Array(PendingRowIdRow));
 
+const ACTIVITY_STATUSES = [
+  "pending",
+  "sending",
+  "accepted_awaiting_integration",
+  "rejected",
+] as const;
+
 export const readOutboxActivitySqlite = Effect.fn("SqliteReplicaActivity.readOutboxActivity")(
-  function* (sql: SqlClient) {
-    const statusCounts = yield* sql
-      .unsafe(
-        `select status, count(*) as count from command_outbox
-          where status in ('pending', 'sending', 'accepted_awaiting_integration', 'rejected')
-          group by status`,
-      )
+  function* (db: ReplicaDb) {
+    const statusCounts = yield* db
+      .select({ status: commandOutbox.status, count: count() })
+      .from(commandOutbox)
+      .where(inArray(commandOutbox.status, ACTIVITY_STATUSES))
+      .groupBy(commandOutbox.status)
+      .all()
       .pipe(Effect.flatMap(decodeStatusCountRows), Effect.orDie);
-    const rejected = yield* sql
-      .unsafe(
-        `select operationId, clientSequence, createdAt, envelopeJson, receiptJson from command_outbox
-          where status = 'rejected'
-          order by length(clientSequence) desc, clientSequence desc
-          limit ?`,
-        [MAX_REJECTED_ACTIVITY_ROWS],
+    const rejected = yield* db
+      .select({
+        operationId: commandOutbox.operationId,
+        clientSequence: commandOutbox.clientSequence,
+        createdAt: commandOutbox.createdAt,
+        envelopeJson: commandOutbox.envelopeJson,
+        receiptJson: commandOutbox.receiptJson,
+      })
+      .from(commandOutbox)
+      .where(eq(commandOutbox.status, "rejected"))
+      .orderBy(
+        desc(sql`length(${commandOutbox.clientSequence})`),
+        desc(commandOutbox.clientSequence),
       )
+      .limit(MAX_REJECTED_ACTIVITY_ROWS)
+      .all()
       .pipe(Effect.flatMap(decodeRejectedOutboxRows), Effect.orDie);
-    const state = yield* sql
-      .unsafe(`select caughtUpAt from replica_state where id = 'singleton'`)
+    const state = yield* db
+      .select({ caughtUpAt: replicaState.caughtUpAt })
+      .from(replicaState)
+      .where(eq(replicaState.id, "singleton"))
+      .all()
       .pipe(
         Effect.flatMap((rows) => decodeCaughtUpRow(rows[0])),
         Effect.orDie,
@@ -53,9 +73,12 @@ export const readOutboxActivitySqlite = Effect.fn("SqliteReplicaActivity.readOut
 );
 
 export const readPendingRowIdsSqlite = Effect.fn("SqliteReplicaActivity.readPendingRowIds")(
-  function* (sql: SqlClient, entity: SyncEntity) {
-    const rows = yield* sql
-      .unsafe(`select entityId from pending_row_marks where entity = ?`, [entity])
+  function* (db: ReplicaDb, entity: SyncEntity) {
+    const rows = yield* db
+      .select({ entityId: pendingRowMarks.entityId })
+      .from(pendingRowMarks)
+      .where(eq(pendingRowMarks.entity, entity))
+      .all()
       .pipe(Effect.flatMap(decodePendingRowIdRows), Effect.orDie);
     return rows.map((row) => row.entityId);
   },

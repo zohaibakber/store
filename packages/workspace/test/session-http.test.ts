@@ -1,8 +1,10 @@
-import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
+import { AccessToken, RefreshToken } from "@store/auth";
+import { decodeAuthenticatedWorkspace } from "@store/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   MemoryTokenStore,
+  RefreshedTokenSet,
   RequestError,
   SessionHttpClient,
   cookieSessionNeedsRefresh,
@@ -10,8 +12,17 @@ import {
   requestErrorFromPayload,
 } from "../src/session-http";
 
+const workspace = decodeAuthenticatedWorkspace({
+  status: "authenticated",
+  user: { id: "user-1", name: "Owner", email: "owner@example.com" },
+  activeOrganization: null,
+  organizations: [],
+  isOnline: true,
+});
+
 const tokens = (accessExpiresAt: number) =>
-  TokenSet.make({
+  RefreshedTokenSet.make({
+    workspace,
     accessToken: AccessToken.make("access"),
     accessExpiresAt,
     refreshToken: RefreshToken.make("refresh.secret"),
@@ -67,7 +78,7 @@ describe("SessionHttpClient", () => {
       authBaseUrl: "http://localhost:8788/",
       tokens: store,
       fetch,
-      refreshSession: async () => store.get(),
+      refreshSession: async () => null,
       needsRefresh: cookieSessionNeedsRefresh,
     });
 
@@ -83,8 +94,8 @@ describe("SessionHttpClient", () => {
     const store = new MemoryTokenStore();
     store.set(tokens(Date.now() + 1_000));
     let refreshes = 0;
-    let release!: (value: TokenSet) => void;
-    const refreshed = new Promise<TokenSet>((resolve) => {
+    let release!: (value: RefreshedTokenSet) => void;
+    const refreshed = new Promise<RefreshedTokenSet>((resolve) => {
       release = resolve;
     });
     const client = new SessionHttpClient({
@@ -136,7 +147,8 @@ describe("SessionHttpClient", () => {
   it("keeps a refresh started during afterRefresh in flight so no refresh token is reused", async () => {
     const store = new MemoryTokenStore();
     const rotated = (serial: number) =>
-      TokenSet.make({
+      RefreshedTokenSet.make({
+        workspace,
         accessToken: AccessToken.make(`access-${serial}`),
         accessExpiresAt: Date.now() + 10_000,
         refreshToken: RefreshToken.make(`refresh-${serial}.secret`),
@@ -195,7 +207,7 @@ describe("SessionHttpClient", () => {
       authBaseUrl: "http://localhost:8788",
       tokens: store,
       fetch,
-      refreshSession: async () => store.get(),
+      refreshSession: async () => null,
       needsRefresh: refreshTokenNeedsRefresh,
       requestHeaders: () => ({ "electron-origin": "app://app" }),
     });
@@ -223,7 +235,7 @@ describe("SessionHttpClient", () => {
       fetch,
       refreshSession: async () => {
         refreshes += 1;
-        const refreshed = TokenSet.make({
+        const refreshed = RefreshedTokenSet.make({
           ...tokens(Date.now() + 120_000),
           accessToken: AccessToken.make("refreshed"),
         });
@@ -267,7 +279,7 @@ describe("SessionHttpClient", () => {
       authBaseUrl: "http://localhost:8788",
       tokens: store,
       fetch: vi.fn().mockResolvedValue(new Response("not-json", { status: 200 })),
-      refreshSession: async () => store.get(),
+      refreshSession: async () => null,
       needsRefresh: refreshTokenNeedsRefresh,
     });
 

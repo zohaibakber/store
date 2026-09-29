@@ -10,7 +10,6 @@ import {
   IndexedDbIdentityMismatch,
   IndexedDbQuotaExceeded,
   IndexedDbUnavailable,
-  IndexedDbUpgradeBlocked,
   ReplicaStorageError,
 } from "../src/replica/errors";
 import {
@@ -126,7 +125,6 @@ describe("transport failure taxonomy", () => {
       ReplicaStorageError.make({ message: "disk" }),
       IndexedDbUnavailable.make({ message: "unavailable" }),
       IndexedDbQuotaExceeded.make({ message: "quota" }),
-      IndexedDbUpgradeBlocked.make({ message: "blocked" }),
       IndexedDbCorruptRecord.make({ message: "corrupt", store: "command_outbox" }),
       IndexedDbIdentityMismatch.make({
         message: "identity",

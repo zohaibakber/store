@@ -13,6 +13,7 @@ import * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { OrgHub, type OrgHubContract } from "../../api";
 import {
   admissionFromHeaders,
   advanceCursor,
@@ -29,29 +30,7 @@ import {
   type HubSocket,
 } from "./hub-core";
 
-export interface OrgHubContract {
-  readonly fetch: Effect.Effect<
-    HttpServerResponse.HttpServerResponse,
-    never,
-    HttpServerRequest.HttpServerRequest | RuntimeContext
-  >;
-  readonly publish: (input: HubPublish) => Effect.Effect<number, never, RuntimeContext>;
-  readonly revoke: (userId: string) => Effect.Effect<number, never, RuntimeContext>;
-  readonly webSocketMessage: (
-    socket: Cloudflare.WebSocket,
-    message: string | ArrayBuffer,
-  ) => Effect.Effect<void>;
-  readonly webSocketClose: (
-    socket: Cloudflare.WebSocket,
-    code: number,
-    reason: string,
-    wasClean: boolean,
-  ) => Effect.Effect<void>;
-}
-
-export class OrgHub extends Cloudflare.DurableObject<OrgHub, OrgHubContract>()("OrgHub") {}
-
-export const hubSocket = (socket: Cloudflare.WebSocket): HubSocket => ({
+const hubSocket = (socket: Cloudflare.WebSocket): HubSocket => ({
   attachment: () => Option.getOrUndefined(decodeHubAttachment(socket.deserializeAttachment())),
   remember: (attachment) => socket.serializeAttachment<HubAttachment>(attachment),
   send: (text) => socket.ws.send(text),
@@ -67,7 +46,7 @@ export interface HubPlatform {
   readonly upgrade: (client: WebSocket) => HttpServerResponse.HttpServerResponse;
 }
 
-export const workerdHubPlatform: HubPlatform = {
+const workerdHubPlatform: HubPlatform = {
   autoResponse: () => new WebSocketRequestResponsePair(LIVE_SOCKET_PING, LIVE_SOCKET_PONG),
   pair: () => {
     const pair = new WebSocketPair();

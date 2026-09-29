@@ -31,24 +31,10 @@ const listenPort = () =>
 
 export type AuthorityPostgres = {
   readonly connectionString: string;
-  readonly createDatabase: (name: string) => Promise<string>;
   readonly close: () => Promise<void>;
 };
 
-type MigrationClient = {
-  readonly query: (statement: string) => Promise<void>;
-};
-
-export type AuthorityPostgresOptions = {
-  readonly seedBeforeMigration?: {
-    readonly migration: string;
-    readonly seed: (query: (statement: string) => Promise<void>) => Promise<void>;
-  };
-};
-
-export const startAuthorityPostgres = async (
-  options: AuthorityPostgresOptions = {},
-): Promise<AuthorityPostgres> => {
+export const startAuthorityPostgres = async (): Promise<AuthorityPostgres> => {
   const directory = await mkdtemp(path.join(tmpdir(), "store-inventory-authority-"));
   const port = await listenPort();
   const password = "postgres";
@@ -63,28 +49,20 @@ export const startAuthorityPostgres = async (
   });
   await database.initialise();
   await database.start();
-  const createDatabase = async (name: string, migrationOptions: AuthorityPostgresOptions = {}) => {
+  const createDatabase = async (name: string) => {
     await database.createDatabase(name);
     const client = database.getPgClient(name);
     await client.connect();
     try {
-      await applyMigrations(
-        {
-          query: async (statement) => {
-            await client.query(statement);
-          },
-        },
-        migrationOptions,
-      );
+      for (const statement of await migrationStatements()) await client.query(statement);
     } finally {
       await client.end();
     }
     return `postgres://postgres:${password}@127.0.0.1:${port}/${name}`;
   };
-  const connectionString = await createDatabase("inventory", options);
+  const connectionString = await createDatabase("inventory");
   return {
     connectionString,
-    createDatabase: (name) => createDatabase(name),
     close: async () => {
       await database.stop();
       await rm(directory, { recursive: true, force: true });
@@ -92,24 +70,18 @@ export const startAuthorityPostgres = async (
   };
 };
 
-const applyMigrations = async (client: MigrationClient, options: AuthorityPostgresOptions) => {
+const migrationStatements = async () => {
   const entries = (await readdir(migrationsDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  const seedBefore = options.seedBeforeMigration;
-  if (seedBefore !== undefined && !entries.includes(seedBefore.migration)) {
-    throw new Error(`Unknown migration ${seedBefore.migration}.`);
-  }
+  const statements: Array<string> = [];
   for (const entry of entries) {
-    if (seedBefore !== undefined && entry === seedBefore.migration) {
-      await seedBefore.seed(client.query);
-    }
     const sql = await readFile(path.join(migrationsDir, entry, "migration.sql"), "utf8");
     for (const statement of sql.split("--> statement-breakpoint")) {
       const trimmed = statement.trim();
-      if (trimmed.length === 0) continue;
-      await client.query(trimmed);
+      if (trimmed.length > 0) statements.push(trimmed);
     }
   }
+  return statements;
 };

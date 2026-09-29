@@ -9,6 +9,7 @@ import {
   browserTokens,
   fakeSessionServer,
   memoryStorage,
+  refreshedSession,
 } from "./fake-session-server";
 
 const makeBroker = (server: ReturnType<typeof fakeSessionServer>, storage = memoryStorage()) => ({
@@ -39,40 +40,28 @@ describe("WebAuthBroker cold start", () => {
     expect(snapshot).toMatchObject({ status: "unauthenticated", isOnline: true });
   });
 
-  it("refreshes through the cookie, then loads the session with the new access token", async () => {
+  it("refreshes through the cookie and adopts the workspace it carries", async () => {
     const server = fakeSessionServer({
-      [`POST ${AUTH}/v1/session/refresh`]: () => Response.json(browserTokens("fresh")),
-      [`GET ${API}/api/auth/session`]: () => Response.json(authenticatedWorkspace),
+      [`POST ${AUTH}/v1/session/refresh`]: () => refreshedSession(),
     });
     const { broker, storage } = makeBroker(server, expectedSession());
 
     const snapshot = await broker.initialize();
 
-    expect(server.requests[0]).toMatchObject({
-      method: "POST",
-      credentials: "include",
-      body: "{}",
-      authorization: null,
+    expect(server.requests).toEqual([
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: "{}",
+        authorization: null,
+      }),
+    ]);
+    expect(snapshot).toMatchObject({
+      status: "authenticated",
+      isOnline: true,
+      activeOrganization: { id: "o1" },
     });
-    expect(server.requests[1]).toMatchObject({
-      credentials: "omit",
-      authorization: "Bearer fresh",
-    });
-    expect(snapshot).toMatchObject({ status: "authenticated", activeOrganization: { id: "o1" } });
     expect(storage.entries.get(HINT_KEY)).toBe("1");
-  });
-
-  it("adopts a workspace piggybacked on the refresh without a second round trip", async () => {
-    const server = fakeSessionServer({
-      [`POST ${AUTH}/v1/session/refresh`]: () =>
-        Response.json({ ...browserTokens(), workspace: authenticatedWorkspace }),
-    });
-    const { broker } = makeBroker(server, expectedSession());
-
-    const snapshot = await broker.initialize();
-
-    expect(server.requests).toHaveLength(1);
-    expect(snapshot).toMatchObject({ status: "authenticated", isOnline: true });
   });
 
   it("forgets the session when the refresh cookie is rejected", async () => {
@@ -201,8 +190,7 @@ describe("WebAuthBroker authenticated fetch", () => {
     let pulls = 0;
     const server = fakeSessionServer({
       [`GET ${API}/api/auth/session`]: () => Response.json(authenticatedWorkspace),
-      [`POST ${AUTH}/v1/session/refresh`]: () =>
-        Response.json({ ...browserTokens("rotated"), workspace: authenticatedWorkspace }),
+      [`POST ${AUTH}/v1/session/refresh`]: () => refreshedSession("rotated"),
       [`GET ${API}/api/sync/pull`]: () => {
         pulls += 1;
         return pulls === 1 ? Response.json({}, { status: 401 }) : Response.json({ ok: true });

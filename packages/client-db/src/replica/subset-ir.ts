@@ -1,11 +1,16 @@
-import { IR } from "@tanstack/db";
+import { parseOrderByExpression, type IR } from "@tanstack/db";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { UnsupportedSubsetQuery } from "./errors";
-import { FILTER_COLUMNS, HISTORY_SOURCES, MAX_IN_VALUES, ORDER_COLUMNS } from "./sources";
+import { FILTER_COLUMNS, MAX_IN_VALUES, ORDER_COLUMNS } from "./sources";
 import { ComparisonList, ComparisonScalar } from "./sqlite-row";
-import type { InventorySubsetSpec, SubsetPredicate, SubsetScalar } from "./subset-spec";
+import type {
+  InventorySubsetSpec,
+  SubsetOrderClause,
+  SubsetPredicate,
+  SubsetScalar,
+} from "./subset-spec";
 import type {
   CompileSubsetInput,
   InventoryCollectionDescriptor,
@@ -51,25 +56,33 @@ const parseList = (
     }),
   );
 
-const columnFromRef = (
-  expression: IR.BasicExpression,
+const isColumnName = Schema.is(Schema.String);
+
+const columnFromPath = (
+  path: ReadonlyArray<string | number>,
   columns: ReadonlySet<string>,
 ): Effect.Effect<string, UnsupportedSubsetQuery> => {
-  if (expression.type !== "ref") return fail("expected a direct column reference");
-  const path = expression.path;
   if (path.length === 0 || path.length > 2)
     return fail("nested property references are unsupported");
   const column = path.length === 2 ? path[1] : path[0];
-  if (column === undefined) return fail("column reference is empty");
+  if (!isColumnName(column)) return fail("column reference is not a name");
   if (path.length === 2) {
     const aliasOrColumn = path[0];
-    if (aliasOrColumn !== undefined && columns.has(aliasOrColumn) && aliasOrColumn !== column) {
+    if (isColumnName(aliasOrColumn) && columns.has(aliasOrColumn) && aliasOrColumn !== column) {
       return fail("nested property references are unsupported");
     }
   }
   if (!columns.has(column)) return fail(`column ${column} is not allowlisted`);
   return Effect.succeed(column);
 };
+
+const columnFromRef = (
+  expression: IR.BasicExpression,
+  columns: ReadonlySet<string>,
+): Effect.Effect<string, UnsupportedSubsetQuery> =>
+  expression.type === "ref"
+    ? columnFromPath(expression.path, columns)
+    : fail("expected a direct column reference");
 
 const compileExpression = (
   expression: IR.BasicExpression,
@@ -151,62 +164,37 @@ const compileExpression = (
 const compileOrder = (
   orderBy: IR.OrderBy | undefined,
   columns: ReadonlySet<string>,
-): Effect.Effect<
-  ReadonlyArray<{ readonly column: string; readonly direction: "asc" | "desc" }>,
-  UnsupportedSubsetQuery
-> => {
-  if (orderBy === undefined || orderBy.length === 0) return Effect.succeed([]);
-  return Effect.gen(function* () {
-    const clauses: Array<{ column: string; direction: "asc" | "desc" }> = [];
-    for (const clause of orderBy) {
+): Effect.Effect<ReadonlyArray<SubsetOrderClause>, UnsupportedSubsetQuery> =>
+  Effect.gen(function* () {
+    const parsed = yield* Effect.try({
+      try: () => parseOrderByExpression(orderBy),
+      catch: () => unsupported("ordering must reference a column"),
+    });
+    const clauses: Array<SubsetOrderClause> = [];
+    for (const clause of parsed) {
+      if (clause.stringSort === "locale") {
+        return yield* fail("locale string ordering has no replica collation; order lexically");
+      }
       clauses.push({
-        column: yield* columnFromRef(clause.expression, columns),
-        direction: clause.compareOptions.direction === "desc" ? "desc" : "asc",
+        column: yield* columnFromPath(clause.field, columns),
+        direction: clause.direction,
+        nulls: clause.nulls,
+        collation: "binary",
       });
     }
     return clauses;
   });
-};
 
-const KEY_COLUMNS: ReadonlySet<string> = new Set([
-  "id",
-  "invoiceId",
-  "productId",
-  "batchId",
-  "operationId",
-  "invoiceNumber",
-]);
+export type InventoryRead =
+  | { readonly _tag: "window"; readonly spec: InventorySubsetSpec }
+  | { readonly _tag: "drain"; readonly where?: SubsetPredicate };
 
-const keyBounded = (predicate: SubsetPredicate, orderColumns: ReadonlySet<string>): boolean => {
-  switch (predicate._tag) {
-    case "compare":
-      return (
-        predicate.op === "eq" &&
-        (KEY_COLUMNS.has(predicate.column) || orderColumns.has(predicate.column))
-      );
-    case "in":
-      return KEY_COLUMNS.has(predicate.column);
-    case "and":
-      return predicate.predicates.some((child) => keyBounded(child, orderColumns));
-    case "or":
-      return (
-        predicate.predicates.length > 0 &&
-        predicate.predicates.every((child) => keyBounded(child, orderColumns))
-      );
-    case "isNull":
-    case "like":
-    case "not":
-      return false;
-  }
-};
-
-export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
+const compileFilter = <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   options: CompileSubsetInput,
-): Effect.Effect<InventorySubsetSpec, UnsupportedSubsetQuery> =>
+) =>
   Effect.gen(function* () {
     const filterColumns = FILTER_COLUMNS[descriptor.source];
-    const orderColumns = ORDER_COLUMNS[descriptor.source];
     let where: SubsetPredicate | undefined;
     if (options.where) {
       where = yield* compileExpression(options.where, filterColumns);
@@ -215,24 +203,37 @@ export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
       const cursorWhere = yield* compileExpression(options.cursor.whereFrom, filterColumns);
       where = where ? { _tag: "and", predicates: [where, cursorWhere] } : cursorWhere;
     }
-    const orderBy = yield* compileOrder(options.orderBy, orderColumns);
-    const history = HISTORY_SOURCES.has(descriptor.source);
+    const orderBy = yield* compileOrder(options.orderBy, ORDER_COLUMNS[descriptor.source]);
+    return { where, orderBy };
+  });
+
+export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
+  descriptor: InventoryCollectionDescriptor<Row>,
+  options: CompileSubsetInput,
+): Effect.Effect<InventorySubsetSpec, UnsupportedSubsetQuery> =>
+  Effect.gen(function* () {
+    const { where, orderBy } = yield* compileFilter(descriptor, options);
     const limit = options.limit;
-    if (history && limit === undefined && !(where && keyBounded(where, orderColumns))) {
-      return yield* fail("history sources require a bounded limit");
-    }
-    const boundedLimit = limit ?? descriptor.maximumRows;
-    if (boundedLimit < 1) return yield* fail("limit must be a positive bound");
-    if (boundedLimit > descriptor.maximumRows) {
+    if (limit === undefined) return yield* fail("a subset window requires a limit");
+    if (limit < 1) return yield* fail("limit must be a positive bound");
+    if (limit > descriptor.maximumRows) {
       return yield* fail("limit exceeds the collection row bound");
     }
     const offset = options.cursor ? 0 : (options.offset ?? 0);
     if (offset < 0) return yield* fail("offset must be zero or greater");
-    const spec: InventorySubsetSpec = {
-      source: descriptor.source,
-      orderBy,
-      limit: boundedLimit,
-      offset,
-    };
+    const spec: InventorySubsetSpec = { source: descriptor.source, orderBy, limit, offset };
     return where ? { ...spec, where } : spec;
+  });
+
+export const planInventoryRead = <Row extends InventoryCollectionRow>(
+  descriptor: InventoryCollectionDescriptor<Row>,
+  options: CompileSubsetInput,
+): Effect.Effect<InventoryRead, UnsupportedSubsetQuery> =>
+  Effect.gen(function* () {
+    if (options.limit !== undefined) {
+      return { _tag: "window" as const, spec: yield* analyzeInventorySubset(descriptor, options) };
+    }
+    if ((options.offset ?? 0) !== 0) return yield* fail("an offset requires a limit");
+    const { where } = yield* compileFilter(descriptor, options);
+    return where ? { _tag: "drain" as const, where } : { _tag: "drain" as const };
   });

@@ -16,7 +16,7 @@ export type ScanField =
   | "batchNumber"
   | "expiresAt";
 
-export const SCAN_FIELDS: ReadonlyArray<ScanField> = [
+const SCAN_FIELDS: ReadonlyArray<ScanField> = [
   "name",
   "composition",
   "strength",

@@ -201,7 +201,7 @@ describe("postgres command integrity", () => {
     expect(result.pull.transactions[0]?.changes).toHaveLength(0);
   });
 
-  it("provisions a ready inventory state when an organization registers its first replica", async () => {
+  it("provisions an inventory state when an organization registers its first replica", async () => {
     const organizationId = decodeOrganizationId("integrity-fresh");
     const result = await run(
       Effect.gen(function* () {
@@ -225,12 +225,10 @@ describe("postgres command integrity", () => {
       nextClientSequence: "1",
     });
     expect(result.state).toMatchObject({
-      status: "ready",
       epoch: "1",
       commitSequence: "0",
       retentionFloor: "0",
     });
-    expect(result.state?.releaseId).not.toBeNull();
     expect(result.state?.incarnation).toBe(result.registration.incarnation);
     expect(result.committed.decision).toBe("accepted");
   });

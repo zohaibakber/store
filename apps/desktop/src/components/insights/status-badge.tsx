@@ -13,7 +13,7 @@ const DOT = {
   secondary: "bg-muted-foreground/64",
 } satisfies Record<Tone, string>;
 
-export function ToneDot({ tone }: { readonly tone: Tone }) {
+function ToneDot({ tone }: { readonly tone: Tone }) {
   return <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", DOT[tone])} />;
 }
 

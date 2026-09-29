@@ -22,6 +22,9 @@ export const browserTokens = (accessToken = "access-token") =>
     refreshExpiresAt: Date.now() + 60 * 60_000,
   });
 
+export const refreshedSession = (accessToken?: string) =>
+  Response.json({ ...browserTokens(accessToken), workspace: authenticatedWorkspace });
+
 export type RecordedRequest = {
   readonly method: string;
   readonly url: string;

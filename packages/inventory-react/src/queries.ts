@@ -20,10 +20,10 @@ import {
   inArray,
   or,
   toArray,
+  useLiveInfiniteQuery,
   useLiveQuery,
   useLiveSuspenseQuery,
   type InitialQueryBuilder,
-  type LiveQueryOptions,
   type Ref,
 } from "@tanstack/react-db";
 import * as Arr from "effect/Array";
@@ -31,13 +31,15 @@ import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as React from "react";
 
-import { minuteClockAtom, stockPolicyAtom } from "./atoms";
+import { CANDIDATE_QUERY_SEPARATOR, minuteClockAtom, stockPolicyAtom } from "./atoms";
 import { useSuspenseProductFacets } from "./product-list-hooks";
 import { useCatalogReplica } from "./provider";
 import { catalogProductSearchResults, type CatalogProductSearchResult } from "./search";
 import type { Inventory } from "./types";
 
 const PRODUCT_IDS_PER_PREDICATE = 32;
+
+const HISTORY_PAGE_SIZE = 50;
 
 const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
   Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
@@ -184,7 +186,7 @@ const productsWithCategory = (
 const categoriesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
     .from({ category: inventory.categories })
-    .orderBy(({ category }) => category.name, "asc")
+    .orderBy(({ category }) => category.name, { direction: "asc", stringSort: "locale" })
     .select(({ category }) => categoryFields(category));
 
 const productsQuery = (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
@@ -196,15 +198,15 @@ const productsQuery = (inventory: Inventory, limit: number) => (query: InitialQu
 const productQuery = (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
   productsWithCategory(query, inventory)
     .where(({ product }) => eq(product.id, productId))
-    .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
+    .select(({ product, category }) => catalogProductFields(query, inventory, product, category))
+    .findOne();
 
 const stockMovementsQuery =
-  (inventory: Inventory, productId: string, limit: number) => (query: InitialQueryBuilder) =>
+  (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
     query
       .from({ movement: inventory.stockMovements })
       .where(({ movement }) => eq(movement.productId, productId))
       .orderBy(({ movement }) => movement.createdAt, "desc")
-      .limit(limit)
       .select(({ movement }) => ({
         id: movement.id,
         productId: movement.productId,
@@ -221,18 +223,18 @@ const stockMovementsQuery =
         createdAt: movement.createdAt,
       }));
 
-const invoicesQuery = (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
+const invoicesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
     .from({ invoice: inventory.invoices })
     .orderBy(({ invoice }) => invoice.createdAt, "desc")
-    .limit(limit)
     .select(({ invoice }) => invoiceFields(query, inventory, invoice));
 
 const invoiceQuery = (inventory: Inventory, invoiceId: string) => (query: InitialQueryBuilder) =>
   query
     .from({ invoice: inventory.invoices })
     .where(({ invoice }) => eq(invoice.id, invoiceId))
-    .select(({ invoice }) => invoiceFields(query, inventory, invoice));
+    .select(({ invoice }) => invoiceFields(query, inventory, invoice))
+    .findOne();
 
 export const useCatalogCategories = () => {
   const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
@@ -240,108 +242,86 @@ export const useCatalogCategories = () => {
   return { ...live, data };
 };
 
-export const useCatalogProducts = (limit = 100) => {
-  const live = useLiveQuery({ query: productsQuery(useCatalogReplica(), limit) });
-  const data: ReadonlyArray<Product> = live.data;
-  return { ...live, data };
-};
-
 export const useCatalogProduct = (productId: string) => {
   const live = useLiveQuery({ query: productQuery(useCatalogReplica(), productId) });
-  const data: Product | undefined = live.data[0];
+  const data: Product | undefined = live.data;
   return { ...live, data };
 };
 
-export const useCatalogStockMovements = (productId: string, limit = 50) => {
-  const live = useLiveQuery({ query: stockMovementsQuery(useCatalogReplica(), productId, limit) });
+export const useStockMovementHistory = (productId: string, pageSize = HISTORY_PAGE_SIZE) => {
+  const live = useLiveInfiniteQuery(stockMovementsQuery(useCatalogReplica(), productId), {
+    pageSize,
+  });
   const data: ReadonlyArray<StockMovement> = live.data;
   return { ...live, data };
 };
 
-const invoicesConfig = (inventory: Inventory, limit: number) => ({
-  queryKey: [inventory.invoices.id, "invoices", limit],
-  query: invoicesQuery(inventory, limit),
-});
+export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) => {
+  const inventory = useCatalogReplica();
+  const live = useLiveQuery({ query: (query) => invoicesQuery(inventory)(query).limit(limit) });
+  const data: ReadonlyArray<Invoice> = live.data;
+  return { ...live, data };
+};
 
-const invoiceConfig = (inventory: Inventory, invoiceId: string) => ({
-  queryKey: [inventory.invoices.id, "invoice", invoiceId],
-  query: invoiceQuery(inventory, invoiceId),
-});
-
-export const useInventoryInvoices = (limit = 50) => {
-  const live = useLiveQuery(invoicesConfig(useCatalogReplica(), limit));
+export const useInvoiceHistory = (pageSize = HISTORY_PAGE_SIZE) => {
+  const live = useLiveInfiniteQuery(invoicesQuery(useCatalogReplica()), { pageSize });
   const data: ReadonlyArray<Invoice> = live.data;
   return { ...live, data };
 };
 
 export const useInventoryInvoice = (invoiceId: string) => {
-  const live = useLiveQuery(invoiceConfig(useCatalogReplica(), invoiceId));
-  const data: Invoice | undefined = live.data[0];
+  const live = useLiveQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) });
+  const data: Invoice | undefined = live.data;
   return { ...live, data };
 };
 
-const usePreloadedLiveQuery = <Config extends LiveQueryOptions>(
-  inventory: Inventory,
-  config: Config,
-): Config => {
-  void inventory.dbClient.preloadLiveQuery(config).catch(() => undefined);
-  return config;
-};
+export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
+  useLiveSuspenseQuery({ query: categoriesQuery(useCatalogReplica()) }).data;
 
-const categoriesConfig = (inventory: Inventory) => ({
-  queryKey: [inventory.categories.id, "categories"],
-  query: categoriesQuery(inventory),
-});
+export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> =>
+  useLiveSuspenseQuery({ query: productsQuery(useCatalogReplica(), limit) }).data;
 
-export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> => {
-  const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, categoriesConfig(inventory))).data;
-};
+export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
+  useLiveSuspenseQuery({ query: productQuery(useCatalogReplica(), productId) }).data;
 
-export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> => {
-  const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(
-    usePreloadedLiveQuery(inventory, {
-      queryKey: [inventory.products.id, "products", limit],
-      query: productsQuery(inventory, limit),
-    }),
-  ).data;
-};
+const untilPaged = <Row, Live extends { readonly isReady: boolean }>(
+  firstPage: ReadonlyArray<Row>,
+  live: Live & { readonly data: ReadonlyArray<Row>; readonly hasNextPage: boolean },
+  pageSize: number,
+) =>
+  live.isReady
+    ? live
+    : { ...live, data: firstPage.slice(0, pageSize), hasNextPage: firstPage.length > pageSize };
 
-export const useSuspenseCatalogProduct = (productId: string): Product | undefined => {
-  const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(
-    usePreloadedLiveQuery(inventory, {
-      queryKey: [inventory.products.id, "product", productId],
-      query: productQuery(inventory, productId),
-    }),
-  ).data[0];
-};
-
-export const useSuspenseCatalogStockMovements = (
+export const useSuspenseStockMovementHistory = (
   productId: string,
-  limit = 50,
-): ReadonlyArray<StockMovement> => {
+  pageSize = HISTORY_PAGE_SIZE,
+) => {
   const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(
-    usePreloadedLiveQuery(inventory, {
-      queryKey: [inventory.stockMovements.id, "stockMovements", productId, limit],
-      query: stockMovementsQuery(inventory, productId, limit),
-    }),
-  ).data;
+  const firstPage: ReadonlyArray<StockMovement> = useLiveSuspenseQuery({
+    query: (query) => stockMovementsQuery(inventory, productId)(query).limit(pageSize + 1),
+  }).data;
+  const live = useLiveInfiniteQuery(stockMovementsQuery(inventory, productId), { pageSize });
+  const data: ReadonlyArray<StockMovement> = live.data;
+  return untilPaged(firstPage, { ...live, data }, pageSize);
 };
 
-export const useSuspenseInventoryInvoices = (limit = 50): ReadonlyArray<Invoice> => {
+export const useSuspenseInventoryInvoices = (limit = HISTORY_PAGE_SIZE): ReadonlyArray<Invoice> => {
   const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, invoicesConfig(inventory, limit)))
+  return useLiveSuspenseQuery({ query: (query) => invoicesQuery(inventory)(query).limit(limit) })
     .data;
 };
 
-export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined => {
+export const useSuspenseInvoiceHistory = (pageSize = HISTORY_PAGE_SIZE) => {
   const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery(usePreloadedLiveQuery(inventory, invoiceConfig(inventory, invoiceId)))
-    .data[0];
+  const firstPage = useSuspenseInventoryInvoices(pageSize + 1);
+  const live = useLiveInfiniteQuery(invoicesQuery(inventory), { pageSize });
+  const data: ReadonlyArray<Invoice> = live.data;
+  return untilPaged(firstPage, { ...live, data }, pageSize);
 };
+
+export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
+  useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data;
 
 const batchesForIds = (
   builder: InitialQueryBuilder,
@@ -368,15 +348,10 @@ export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArr
   const inventory = useCatalogReplica();
   const rows = useAtomSuspense(inventory.atoms.productSearch(limit)(query)).value;
   const ids = rows.map((row) => row.id);
-  const categories = useLiveSuspenseQuery(
-    usePreloadedLiveQuery(inventory, categoriesConfig(inventory)),
-  ).data;
-  const batches = useLiveSuspenseQuery(
-    usePreloadedLiveQuery(inventory, {
-      queryKey: [inventory.batches.id, "batchesForProducts", ...ids],
-      query: (builder: InitialQueryBuilder) => batchesForIds(builder, inventory, ids),
-    }),
-  ).data;
+  const categories = useLiveSuspenseQuery({ query: categoriesQuery(inventory) }).data;
+  const batches = useLiveSuspenseQuery({
+    query: (builder: InitialQueryBuilder) => batchesForIds(builder, inventory, ids),
+  }).data;
   return React.useMemo(() => {
     const categoryById = new Map(categories.map((category) => [category.id, category]));
     const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
@@ -392,6 +367,21 @@ export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArr
 export const useSuspenseCatalogSuggestions = (): ProductSuggestions => {
   const facets = useSuspenseProductFacets();
   return { names: facets.name, aisles: facets.aisle, compositions: facets.composition };
+};
+
+const NO_CANDIDATES: ReadonlyArray<ProductRow> = [];
+
+export const useCatalogProductCandidates = (queries: ReadonlyArray<string>, limit = 25) => {
+  const inventory = useCatalogReplica();
+  const key = [...new Set(queries.map((query) => query.trim()).filter((query) => query !== ""))]
+    .sort()
+    .join(CANDIDATE_QUERY_SEPARATOR);
+  const result = useAtomValue(inventory.atoms.productCandidates(limit)(key));
+  return {
+    data: AsyncResult.getOrElse(result, () => NO_CANDIDATES),
+    isLoading: key !== "" && !AsyncResult.isSuccess(result) && !AsyncResult.isFailure(result),
+    isError: AsyncResult.isFailure(result),
+  };
 };
 
 export const useCatalogProductLookup = () =>

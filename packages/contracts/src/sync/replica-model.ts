@@ -45,7 +45,6 @@ export const CommandStatus = Schema.Literals([
   "accepted_awaiting_integration",
   "integrated",
   "rejected",
-  "abandoned",
 ]);
 export type CommandStatus = typeof CommandStatus.Type;
 
@@ -61,14 +60,6 @@ export const ReplicaCommitNotice = Schema.Struct({
   localCommitVersion: Schema.Natural,
   touchedEntities: Schema.Array(SyncEntity),
   touchedKeys: Schema.Array(Schema.String),
-  commandStatuses: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        operationId: Schema.NonEmptyString,
-        status: CommandStatus,
-      }),
-    ),
-  ),
 });
 export type ReplicaCommitNotice = typeof ReplicaCommitNotice.Type;
 

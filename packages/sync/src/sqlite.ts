@@ -1,7 +1,4 @@
-export {
-  layerSqliteReplicaStore,
-  makeSqliteReplicaStore,
-  runReplicaTransaction,
-} from "./sql-client";
-export type { ReplicaDb, ReplicaOpenError, SqliteReplicaHandle } from "./sql-client";
+export { runReplicaTransaction } from "./replica/sql-client/handle";
+export type { SqliteReplicaHandle } from "./replica/sql-client/handle";
+export { layerSqliteReplicaStore, makeSqliteReplicaStore } from "./replica/sqlite/store";
 export { openReplicaStore, SqliteReplica } from "./replica/storage";

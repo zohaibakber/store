@@ -26,8 +26,6 @@ export type RunInBackground = (
   effect: Effect.Effect<void, never, RuntimeContext>,
 ) => Effect.Effect<void, never, RuntimeContext>;
 
-export const noHubRevocation: HubRevocationContract = { revoke: () => Effect.void };
-
 export const makeHubRevocation = (
   hubs: RevocableHubs,
   runInBackground: RunInBackground,

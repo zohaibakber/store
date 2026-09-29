@@ -1,4 +1,4 @@
-import { ProductScanService, productScanLayer } from "@store/services";
+import { parseProductScan } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -41,9 +41,7 @@ export const ProductScanHandlers = HttpApiBuilder.group(
         }
 
         const ai = yield* runtime.productScanAi;
-        return yield* ProductScanService.pipe(
-          Effect.flatMap((service) => service.parse(payload)),
-          Effect.provide(productScanLayer({ ai })),
+        return yield* parseProductScan(ai, payload).pipe(
           Effect.tapError((cause) =>
             Effect.logError("Product scan parsing failed").pipe(
               Effect.annotateLogs({ cause: cause.message }),

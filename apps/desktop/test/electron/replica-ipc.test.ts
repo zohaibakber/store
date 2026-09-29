@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -13,7 +13,6 @@ import { assertTrustedIpcSender, isTrustedIpcSenderFrame } from "../../electron/
 import {
   REPLICA_ALLOCATION_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_OUTCOMES_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
@@ -23,7 +22,6 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
-  REPLICA_SYNC_PROGRESS_CHANNEL,
   REPLICA_WAKE_CHANNEL,
   type ReplicaCommitEvent,
   type ReplicaSyncHealthEvent,
@@ -120,15 +118,6 @@ const setupIpc = () => {
         },
       }),
     ReadOutboxStatuses: () => Effect.succeed(["pending" as const]),
-    ReadCommandOutcomes: ({ operationIds }) =>
-      Effect.succeed(
-        operationIds.map((operationId) => ({
-          operationId,
-          status: "rejected" as const,
-          rejection: { code: "ENTITY_CONFLICT", message: "Exists." },
-        })),
-      ),
-    ReadSyncProgress: () => Effect.succeed({ sessionOpenedAt: 10, caughtUpAt: 20 }),
     ReadCommandAllocation: () => Effect.succeed({ epoch: "1", nextClientSequence: "4" }),
     EnqueueLocal: ({ envelope: received }) =>
       Effect.succeed({ changed: received.operationId === "op-1", status: "pending" }),
@@ -281,6 +270,8 @@ describe("replica worker IPC contract", () => {
       sent,
     } = setupIpc();
     const event = senderEvent(7);
+    mkdirSync(path.join(userDataPath, "replicas"));
+    writeFileSync(path.join(userDataPath, "replicas", "org-1-user-1.sqlite-wal"), "");
 
     const opened = await open(event);
     expect(opened.engine).toBe("sqlite");
@@ -288,11 +279,11 @@ describe("replica worker IPC contract", () => {
     expect(boots).toEqual([
       {
         ...openInput,
-        databasePath: path.join(userDataPath, "replicas", "org-1-user-1.sqlite"),
+        databasePath: path.join(userDataPath, "replicas", "tabaaq-replica-v2-org-1-user-1.sqlite"),
         apiBaseUrl: "https://api.tabaaq.local",
       },
     ]);
-    expect(existsSync(path.join(userDataPath, "replicas"))).toBe(true);
+    expect(readdirSync(path.join(userDataPath, "replicas"))).toEqual([]);
 
     await vi.waitFor(() => {
       expect(sent).toHaveLength(2);
@@ -362,28 +353,6 @@ describe("replica worker IPC contract", () => {
       }),
     ).rejects.toThrow();
     await expect(invoke(REPLICA_OUTBOX_CHANNEL, event, token)).resolves.toEqual(["pending"]);
-    await expect(
-      invoke(REPLICA_COMMAND_OUTCOMES_CHANNEL, event, {
-        workspaceToken: token,
-        operationIds: ["op-1"],
-      }),
-    ).resolves.toEqual([
-      {
-        operationId: "op-1",
-        status: "rejected",
-        rejection: { code: "ENTITY_CONFLICT", message: "Exists." },
-      },
-    ]);
-    await expect(
-      invoke(REPLICA_COMMAND_OUTCOMES_CHANNEL, event, {
-        workspaceToken: token,
-        operationIds: Array.from({ length: 201 }, (_, index) => `op-${index}`),
-      }),
-    ).rejects.toThrow();
-    await expect(invoke(REPLICA_SYNC_PROGRESS_CHANNEL, event, token)).resolves.toEqual({
-      sessionOpenedAt: 10,
-      caughtUpAt: 20,
-    });
     await expect(invoke(REPLICA_ALLOCATION_CHANNEL, event, token)).resolves.toEqual({
       epoch: "1",
       nextClientSequence: "4",

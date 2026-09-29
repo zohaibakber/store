@@ -15,7 +15,6 @@ import * as Queue from "effect/Queue";
 
 import { recoverRequiredSnapshot, SNAPSHOT_PART_FETCH_CONCURRENCY } from "../src/recovery";
 import type { ReplicaSnapshotImportStore } from "../src/replica/store";
-import { dispositionFor, SyncTransportUnavailable } from "../src/transport";
 import { stubTransport } from "./lib/engine-fixture";
 
 const acquireRequest = {
@@ -24,24 +23,6 @@ const acquireRequest = {
 };
 
 describe("snapshot recovery", () => {
-  it.effect("retries a building snapshot after the server's retry hint", () =>
-    Effect.gen(function* () {
-      const transport = stubTransport({
-        acquireSnapshot: () =>
-          Effect.succeed({
-            _tag: "building" as const,
-            snapshotId: SnapshotId.make("snapshot-building"),
-            retryAfterMillis: 5_000,
-          }),
-      });
-      const result = yield* Effect.flip(
-        recoverRequiredSnapshot(transport, recordingImportStore(0), acquireRequest),
-      );
-      expect(result).toBeInstanceOf(SyncTransportUnavailable);
-      expect(dispositionFor(result)).toEqual({ _tag: "retry", delayMillis: 5_000 });
-    }),
-  );
-
   it.effect("fetches parts concurrently and still imports them in manifest order", () =>
     Effect.gen(function* () {
       const manifest = manifestWithParts(4);
@@ -105,11 +86,11 @@ const manifestWithParts = (count: number): SnapshotManifest => ({
   horizon: OrgCommitSequence.make("9"),
   parts: Array.from({ length: count }, (_, index) => ({
     partNumber: index + 1,
-    objectKey: `parts/${index + 1}`,
     byteLength: 1,
     sha256: SnapshotPartHash.make("a".repeat(64)),
   })),
   entityCounts: [],
+  digestVersion: 3,
 });
 
 const partPayload = (snapshotId: SnapshotId, partNumber: number): SnapshotPartPayload => ({

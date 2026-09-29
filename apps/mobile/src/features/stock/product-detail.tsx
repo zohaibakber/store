@@ -6,7 +6,7 @@ import {
   stockPolicyAtom,
   summarizeProductStock,
   useCatalogProduct,
-  useCatalogStockMovements,
+  useStockMovementHistory,
 } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Stack, useRouter } from "expo-router";
@@ -33,7 +33,6 @@ import {
   stockAttention,
 } from "./stock-state";
 
-const MOVEMENT_LIMIT = 50;
 const SAVED_NOTICE_MILLIS = 4000;
 
 type DetailItem =
@@ -75,7 +74,7 @@ export function ProductDetail({ productId }: { readonly productId: string }) {
 function ProductDetailBody({ product }: { readonly product: Product }) {
   const { push } = useRouter();
   const insets = useSafeAreaInsets();
-  const movements = useCatalogStockMovements(product.id, MOVEMENT_LIMIT);
+  const movements = useStockMovementHistory(product.id);
   const policy = useAtomValue(stockPolicyAtom);
   const now = useAtomValue(minuteClockAtom);
   const [receiving, setReceiving] = React.useState(false);
@@ -209,6 +208,7 @@ function ProductDetailBody({ product }: { readonly product: Product }) {
         getItemType={typeOf}
         keyExtractor={keyOf}
         ListHeaderComponent={summary}
+        onEndReached={movements.hasNextPage ? () => void movements.fetchNextPage() : undefined}
         renderItem={renderItem}
       />
       <ReceiveBatchSheet

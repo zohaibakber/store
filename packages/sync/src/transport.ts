@@ -74,7 +74,7 @@ export type SyncTransportError =
 
 export type SyncFailure = SyncTransportError | SyncProtocolError;
 
-export type SyncCycleFailure =
+type SyncCycleFailure =
   | SyncFailure
   | ReplicaStorageFailure
   | ReplicaCoverageRepairRequired

@@ -7,9 +7,19 @@ import {
   type ReplicaInsightsFacts,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
-import type { SqliteReplicaHandle } from "@store/sync/sql-client";
+import {
+  categories,
+  invoiceItems,
+  invoices,
+  products,
+  replicaState,
+} from "@store/db/replica.schema";
+import type { ReplicaDb, SqliteReplicaHandle } from "@store/sync/sql-client";
+import { and, count, eq, gte, lt, ne, or, sql, sum } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
+import { visibleBatches } from "./compile";
 
 const Flag = Schema.Number;
 
@@ -54,42 +64,133 @@ const HourFactRow = Schema.Struct({
   revenue: Schema.Number,
 });
 
-const PRODUCTS_SQL = `select p.id as id, p.name as name, p.categoryId as categoryId,
-  c.name as categoryName, coalesce(c.tracksPacks, 1) as tracksPacks,
-  max(p.unitsPerPack, 1) as unitsPerPack,
-  p.purchasePrice as purchasePrice, p.retailPrice as retailPrice, p.unitPrice as unitPrice,
-  p.visible as visible, p.createdAt as createdAt
-  from products p left join categories c on c.id = p.categoryId
-  order by p.id limit ?`;
+const utcOffset = (offset: number) => sql`cast(${offset} as integer)`;
 
-const BATCHES_SQL = `select productId, batchNumber, packQuantity, unitQuantity, expiresAt
-  from batches where packQuantity <> 0 or unitQuantity <> 0
-  order by productId, expiresAt limit ?`;
+const currentOrganization = (db: ReplicaDb) =>
+  db
+    .select({ organizationId: replicaState.organizationId })
+    .from(replicaState)
+    .where(eq(replicaState.id, "singleton"));
 
-const WINDOWED_INVOICES = `from invoices i
-  where i.organizationId = (select organizationId from replica_state where id = 'singleton')
-    and i.createdAt >= ? and i.createdAt < ?`;
+const productsQuery = (db: ReplicaDb, limit: number) =>
+  db
+    .select({
+      id: products.id,
+      name: products.name,
+      categoryId: products.categoryId,
+      categoryName: categories.name,
+      tracksPacks: sql<number>`coalesce(${categories.tracksPacks}, 1)`.as("tracksPacks"),
+      unitsPerPack: sql<number>`max(${products.unitsPerPack}, 1)`.as("unitsPerPack"),
+      purchasePrice: products.purchasePrice,
+      retailPrice: products.retailPrice,
+      unitPrice: products.unitPrice,
+      visible: sql<number>`${products.visible}`.as("visible"),
+      createdAt: products.createdAt,
+    })
+    .from(products)
+    .leftJoin(categories, eq(categories.id, products.categoryId))
+    .orderBy(products.id)
+    .limit(limit)
+    .all();
 
-const SALES_SQL = `select ii.productId as productId,
-  (i.createdAt + cast(? as integer)) / ${INSIGHTS_DAY_MILLIS} as day,
-  sum(ii.baseUnitQuantity) as units,
-  coalesce(sum(ii.quantity * ii.salePrice), 0) as revenue
-  from invoices i
-  join invoice_items ii on ii.organizationId = i.organizationId and ii.invoiceId = i.id
-  where i.organizationId = (select organizationId from replica_state where id = 'singleton')
-    and i.createdAt >= ? and i.createdAt < ?
-  group by ii.productId, day
-  limit ?`;
+const batchesQuery = (db: ReplicaDb, limit: number) =>
+  db
+    .with(visibleBatches)
+    .select({
+      productId: visibleBatches.productId,
+      batchNumber: visibleBatches.batchNumber,
+      packQuantity: visibleBatches.packQuantity,
+      unitQuantity: visibleBatches.unitQuantity,
+      expiresAt: visibleBatches.expiresAt,
+    })
+    .from(visibleBatches)
+    .where(or(ne(visibleBatches.packQuantity, 0), ne(visibleBatches.unitQuantity, 0)))
+    .orderBy(visibleBatches.productId, visibleBatches.expiresAt)
+    .limit(limit)
+    .all();
 
-const DAYS_SQL = `select (i.createdAt + cast(? as integer)) / ${INSIGHTS_DAY_MILLIS} as day,
-  count(*) as invoices, coalesce(sum(i.total), 0) as revenue
-  ${WINDOWED_INVOICES}
-  group by day order by day`;
+const salesQuery = (
+  db: ReplicaDb,
+  offset: number,
+  window: ReplicaInsightsWindow,
+  limit: number,
+) => {
+  const day =
+    sql<number>`(${invoices.createdAt} + ${utcOffset(offset)}) / ${sql.raw(String(INSIGHTS_DAY_MILLIS))}`.as(
+      "day",
+    );
+  return db
+    .select({
+      productId: invoiceItems.productId,
+      day,
+      units: sum(invoiceItems.baseUnitQuantity).mapWith(Number).as("units"),
+      revenue:
+        sql<number>`coalesce(sum(${invoiceItems.quantity} * ${invoiceItems.salePrice}), 0)`.as(
+          "revenue",
+        ),
+    })
+    .from(invoices)
+    .innerJoin(
+      invoiceItems,
+      and(
+        eq(invoiceItems.organizationId, invoices.organizationId),
+        eq(invoiceItems.invoiceId, invoices.id),
+      ),
+    )
+    .where(
+      and(
+        eq(invoices.organizationId, currentOrganization(db)),
+        gte(invoices.createdAt, window.since),
+        lt(invoices.createdAt, window.until),
+      ),
+    )
+    .groupBy(invoiceItems.productId, day)
+    .limit(limit)
+    .all();
+};
 
-const HOURS_SQL = `select ((i.createdAt + cast(? as integer)) % ${INSIGHTS_DAY_MILLIS}) / ${INSIGHTS_HOUR_MILLIS} as hour,
-  count(*) as invoices, coalesce(sum(i.total), 0) as revenue
-  ${WINDOWED_INVOICES}
-  group by hour order by hour`;
+const windowedInvoices = (db: ReplicaDb, window: ReplicaInsightsWindow) =>
+  and(
+    eq(invoices.organizationId, currentOrganization(db)),
+    gte(invoices.createdAt, window.since),
+    lt(invoices.createdAt, window.until),
+  );
+
+const daysQuery = (db: ReplicaDb, offset: number, window: ReplicaInsightsWindow) => {
+  const day =
+    sql<number>`(${invoices.createdAt} + ${utcOffset(offset)}) / ${sql.raw(String(INSIGHTS_DAY_MILLIS))}`.as(
+      "day",
+    );
+  return db
+    .select({
+      day,
+      invoices: count().as("invoices"),
+      revenue: sql<number>`coalesce(sum(${invoices.total}), 0)`.as("revenue"),
+    })
+    .from(invoices)
+    .where(windowedInvoices(db, window))
+    .groupBy(day)
+    .orderBy(day)
+    .all();
+};
+
+const hoursQuery = (db: ReplicaDb, offset: number, window: ReplicaInsightsWindow) => {
+  const hour =
+    sql<number>`((${invoices.createdAt} + ${utcOffset(offset)}) % ${sql.raw(String(INSIGHTS_DAY_MILLIS))}) / ${sql.raw(String(INSIGHTS_HOUR_MILLIS))}`.as(
+      "hour",
+    );
+  return db
+    .select({
+      hour,
+      invoices: count().as("invoices"),
+      revenue: sql<number>`coalesce(sum(${invoices.total}), 0)`.as("revenue"),
+    })
+    .from(invoices)
+    .where(windowedInvoices(db, window))
+    .groupBy(hour)
+    .orderBy(hour)
+    .all();
+};
 
 const decodeRows = <S extends Schema.Top & { readonly DecodingServices: never }>(
   schema: S,
@@ -101,16 +202,12 @@ export const readSqliteInsightsFacts = Effect.fn("ReplicaNodeSqlite.readInsights
   window: ReplicaInsightsWindow,
 ) {
   const offset = window.utcOffsetMinutes * 60_000;
-  const productRows = yield* handle.sql.unsafe(PRODUCTS_SQL, [MAX_INSIGHTS_PRODUCTS + 1]);
-  const batchRows = yield* handle.sql.unsafe(BATCHES_SQL, [MAX_INSIGHTS_BATCHES + 1]);
-  const saleRows = yield* handle.sql.unsafe(SALES_SQL, [
-    offset,
-    window.since,
-    window.until,
-    MAX_INSIGHTS_SALES + 1,
-  ]);
-  const dayRows = yield* handle.sql.unsafe(DAYS_SQL, [offset, window.since, window.until]);
-  const hourRows = yield* handle.sql.unsafe(HOURS_SQL, [offset, window.since, window.until]);
+  const { db } = handle;
+  const productRows = yield* productsQuery(db, MAX_INSIGHTS_PRODUCTS + 1);
+  const batchRows = yield* batchesQuery(db, MAX_INSIGHTS_BATCHES + 1);
+  const saleRows = yield* salesQuery(db, offset, window, MAX_INSIGHTS_SALES + 1);
+  const dayRows = yield* daysQuery(db, offset, window);
+  const hourRows = yield* hoursQuery(db, offset, window);
   const products = yield* decodeRows(ProductFactRow, productRows.slice(0, MAX_INSIGHTS_PRODUCTS));
   const batches = yield* decodeRows(BatchFactRow, batchRows.slice(0, MAX_INSIGHTS_BATCHES));
   const sales = yield* decodeRows(SaleFactRow, saleRows.slice(0, MAX_INSIGHTS_SALES));

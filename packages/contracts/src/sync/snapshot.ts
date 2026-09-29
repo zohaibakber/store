@@ -3,7 +3,6 @@ import * as Struct from "effect/Struct";
 
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
-  CATALOG_PARTITION_DIGEST_VERSION,
   OrgCommitSequence,
   PartitionDigestVersion,
   SyncEpoch,
@@ -33,7 +32,6 @@ const SnapshotEntityCount = Schema.Struct({
 
 const SnapshotPartRef = Schema.Struct({
   partNumber: PositiveInt,
-  objectKey: Schema.NonEmptyString.check(Schema.isMaxLength(512)),
   byteLength: Schema.Natural,
   sha256: SnapshotPartHash,
 });
@@ -46,13 +44,9 @@ export const SnapshotManifest = Schema.Struct({
   horizon: OrgCommitSequence,
   parts: Schema.Array(SnapshotPartRef),
   entityCounts: Schema.Array(SnapshotEntityCount),
-  digestVersion: Schema.optionalKey(PartitionDigestVersion),
+  digestVersion: PartitionDigestVersion,
 });
 export type SnapshotManifest = typeof SnapshotManifest.Type;
-
-export const snapshotDigestVersion = (manifest: {
-  readonly digestVersion?: PartitionDigestVersion;
-}): PartitionDigestVersion => manifest.digestVersion ?? CATALOG_PARTITION_DIGEST_VERSION;
 
 export const SnapshotPartPayload = Schema.Struct({
   snapshotId: SnapshotId,
@@ -69,14 +63,8 @@ export const AcquireSnapshotRequest = Schema.Struct({
 });
 export type AcquireSnapshotRequest = typeof AcquireSnapshotRequest.Type;
 
-export const AcquireSnapshotResult = Schema.TaggedUnion({
-  ready: {
-    manifest: SnapshotManifest,
-  },
-  building: {
-    snapshotId: SnapshotId,
-    retryAfterMillis: PositiveInt,
-  },
+export const AcquireSnapshotResult = Schema.TaggedStruct("ready", {
+  manifest: SnapshotManifest,
 });
 export type AcquireSnapshotResult = typeof AcquireSnapshotResult.Type;
 

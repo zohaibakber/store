@@ -3,31 +3,20 @@ import {
   type InvoiceExtractionLine,
   invoiceExtractionJsonSchema,
 } from "@store/contracts/server-api.schema";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { parseModelJson } from "../model-json";
 import { parseCsvRecords } from "./csv";
 import { parseMajorCurrencyToMinor, parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
-export class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
+class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
   "InvoiceExtractionError",
   {
     message: Schema.String,
     cause: Schema.Defect(),
   },
 ) {}
-
-export class InvoiceExtractionService extends Context.Service<
-  InvoiceExtractionService,
-  {
-    readonly extract: (
-      files: ReadonlyArray<File>,
-    ) => Effect.Effect<InvoiceExtraction, InvoiceExtractionError>;
-  }
->()("@store/services/InvoiceExtractionService") {}
 
 type ModelScalar = string | number | boolean | null;
 
@@ -66,10 +55,6 @@ export interface InvoiceAiClient {
     readonly jsonSchema: object;
     readonly signal: AbortSignal;
   }) => Promise<InvoiceModelOutput>;
-}
-
-interface InvoiceAiConfig {
-  readonly ai: InvoiceAiClient;
 }
 
 const instructions = [
@@ -189,59 +174,56 @@ const documentsToMarkdown = (converted: ReadonlyArray<ConvertedDocument>) => {
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 };
 
-export const invoiceExtractionLayer = (config: InvoiceAiConfig) =>
-  Layer.succeed(InvoiceExtractionService, {
-    extract: Effect.fn("InvoiceExtraction.extract")(
-      function* (files: ReadonlyArray<File>) {
-        const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv"));
-        const csvContents = yield* Effect.tryPromise(() =>
-          Promise.all(csvFiles.map((file) => file.text())),
-        );
-        const csvLines = csvContents.flatMap(parseCsv).filter(hasReceivedStock);
-        const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
-        if (csvLines.length > 0 || !aiFiles.length)
-          return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
-            supplier: null,
-            invoiceNumber: null,
-            lines: csvLines,
-          });
+export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
+  function* (ai: InvoiceAiClient, files: ReadonlyArray<File>) {
+    const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv"));
+    const csvContents = yield* Effect.tryPromise(() =>
+      Promise.all(csvFiles.map((file) => file.text())),
+    );
+    const csvLines = csvContents.flatMap(parseCsv).filter(hasReceivedStock);
+    const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
+    if (csvLines.length > 0 || !aiFiles.length)
+      return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
+        supplier: null,
+        invoiceNumber: null,
+        lines: csvLines,
+      });
 
-        const converted = yield* Effect.tryPromise(() =>
-          config.ai.toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file }))),
-        ).pipe(Effect.timeout("15 seconds"));
-        for (const failure of converted.filter(isFailure)) {
-          yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
-            Effect.annotateLogs({ name: failure.name, error: failure.error }),
-          );
-        }
-        const documents = yield* Effect.try(() => documentsToMarkdown(converted));
-        if (!documents.length)
-          return yield* Effect.fail(
-            new Error("No readable text could be extracted from the attachments."),
-          );
+    const converted = yield* Effect.tryPromise(() =>
+      ai.toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file }))),
+    ).pipe(Effect.timeout("15 seconds"));
+    for (const failure of converted.filter(isFailure)) {
+      yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
+        Effect.annotateLogs({ name: failure.name, error: failure.error }),
+      );
+    }
+    const documents = yield* Effect.try(() => documentsToMarkdown(converted));
+    if (!documents.length)
+      return yield* Effect.fail(
+        new Error("No readable text could be extracted from the attachments."),
+      );
 
-        const raw = yield* Effect.tryPromise((signal) =>
-          config.ai.generate({
-            messages: [
-              { role: "system", content: instructions },
-              { role: "user", content: documents.join("\n\n") },
-            ],
-            jsonSchema: invoiceExtractionJsonSchema,
-            signal,
+    const raw = yield* Effect.tryPromise((signal) =>
+      ai.generate({
+        messages: [
+          { role: "system", content: instructions },
+          { role: "user", content: documents.join("\n\n") },
+        ],
+        jsonSchema: invoiceExtractionJsonSchema,
+        signal,
+      }),
+    ).pipe(Effect.timeout("30 seconds"));
+    const output = yield* Effect.try(() => parseModelJson<InvoiceModelObject>(raw));
+    return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
+  },
+  (effect) =>
+    effect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new InvoiceExtractionError({
+            message: "Could not extract invoice attachments.",
+            cause,
           }),
-        ).pipe(Effect.timeout("30 seconds"));
-        const output = yield* Effect.try(() => parseModelJson<InvoiceModelObject>(raw));
-        return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
-      },
-      (effect) =>
-        effect.pipe(
-          Effect.mapError(
-            (cause) =>
-              new InvoiceExtractionError({
-                message: "Could not extract invoice attachments.",
-                cause,
-              }),
-          ),
-        ),
+      ),
     ),
-  });
+);

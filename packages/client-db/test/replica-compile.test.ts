@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { lowerSqliteSubset } from "../src/replica/compile";
 import { UnsupportedSubsetQuery } from "../src/replica/errors";
 import { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_IN_VALUES } from "../src/replica/sources";
-import { analyzeInventorySubset } from "../src/replica/subset-ir";
+import { analyzeInventorySubset, planInventoryRead } from "../src/replica/subset-ir";
 import type { CompileSubsetInput, InventoryCollectionDescriptor } from "../src/replica/types";
 import type { CategoryRow } from "../src/rows";
 
@@ -25,8 +25,8 @@ const compileSqliteSubset = (
 
 const compare = {
   direction: "asc" as const,
-  nulls: "last" as const,
-  stringSort: "locale" as const,
+  nulls: "first" as const,
+  stringSort: "lexical" as const,
 };
 
 describe("lowerSqliteSubset", () => {
@@ -37,7 +37,9 @@ describe("lowerSqliteSubset", () => {
         limit: 20,
       }),
     );
-    expect(plan.sql).toBe(`SELECT * FROM "categories" WHERE "id" = ? LIMIT ?`);
+    expect(plan.sql).toBe(
+      `select "id", "name", "tracksPacks", "createdAt", "updatedAt", "organizationId", "createdByUserId", "updatedByUserId", "deviceId", "operationId", "rowVersion" from "categories" where "categories"."id" = ? limit ?`,
+    );
     expect(plan.parameters).toEqual(["cat-1", 20]);
   });
 
@@ -67,6 +69,20 @@ describe("lowerSqliteSubset", () => {
       },
     ],
     ["history without a limit", "invoices", {}],
+    ["a catalog read without a limit", "products", {}],
+    [
+      "locale string ordering",
+      "categories",
+      {
+        orderBy: [
+          {
+            expression: new IR.PropRef(["name"]),
+            compareOptions: { ...compare, stringSort: "locale" },
+          },
+        ],
+        limit: 20,
+      },
+    ],
     [
       "history bounded only by a range",
       "invoices",
@@ -104,38 +120,31 @@ describe("lowerSqliteSubset", () => {
         limit: 25,
       }),
     );
-    expect(plan.sql).toBe(`SELECT * FROM "invoices" WHERE "createdAt" < ? LIMIT ?`);
+    expect(plan.sql).toBe(
+      `select "id", "invoiceNumber", "customerName", "total", "createdAt", "updatedAt", "organizationId", "createdByUserId", "updatedByUserId", "deviceId", "operationId", "rowVersion" from "invoices" where "invoices"."createdAt" < ? limit ?`,
+    );
     expect(plan.parameters).toEqual([100, 25]);
   });
 
-  it("reads history without a limit when a key predicate bounds it", () => {
-    const invoiceItems: InventoryCollectionDescriptor<CategoryRow> = {
-      ...descriptor,
-      source: "invoiceItems",
-    };
-    const joined = Effect.runSync(
-      compileSqliteSubset(invoiceItems, {
-        where: new IR.Func("in", [new IR.PropRef(["invoiceId"]), new IR.Value(["inv-1", "inv-2"])]),
-      }),
-    );
-    expect(joined.sql).toBe(`SELECT * FROM "invoice_items" WHERE "invoiceId" IN (?, ?) LIMIT ?`);
-    expect(joined.parameters).toEqual(["inv-1", "inv-2", DEFAULT_COLLECTION_MAXIMUM_ROWS]);
-    const single = Effect.runSync(
-      compileSqliteSubset(invoiceItems, {
-        where: new IR.Func("eq", [new IR.PropRef(["invoiceId"]), new IR.Value("inv-1")]),
-      }),
-    );
-    expect(single.parameters).toEqual(["inv-1", DEFAULT_COLLECTION_MAXIMUM_ROWS]);
+  it("drains unlimited requests instead of windowing them", () => {
     const invoices: InventoryCollectionDescriptor<CategoryRow> = {
       ...descriptor,
       source: "invoices",
     };
-    const ties = Effect.runSync(
-      compileSqliteSubset(invoices, {
-        where: new IR.Func("eq", [new IR.PropRef(["createdAt"]), new IR.Value(1_790_000_000_000)]),
-      }),
+    expect(Effect.runSync(planInventoryRead(invoices, {}))).toEqual({ _tag: "drain" });
+    expect(
+      Effect.runSync(
+        planInventoryRead(invoices, {
+          where: new IR.Func("gt", [new IR.PropRef(["createdAt"]), new IR.Value(0)]),
+        }),
+      ),
+    ).toEqual({
+      _tag: "drain",
+      where: { _tag: "compare", column: "createdAt", op: "gt", value: 0 },
+    });
+    expect(() => Effect.runSync(planInventoryRead(invoices, { offset: 5 }))).toThrow(
+      UnsupportedSubsetQuery,
     );
-    expect(ties.parameters).toEqual([1_790_000_000_000, DEFAULT_COLLECTION_MAXIMUM_ROWS]);
   });
 
   it("rejects a received spec whose column is outside the source allowlist", () => {

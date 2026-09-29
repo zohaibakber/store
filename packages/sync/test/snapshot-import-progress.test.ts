@@ -33,11 +33,11 @@ const manifest: SnapshotManifest = {
   horizon: OrgCommitSequence.make("4"),
   parts: [1, 2, 3].map((partNumber) => ({
     partNumber,
-    objectKey: `parts/${partNumber}`,
     byteLength: 1,
     sha256: SnapshotPartHash.make("b".repeat(64)),
   })),
   entityCounts: [],
+  digestVersion: 3,
 };
 
 const part = (partNumber: number) => ({ snapshotId: manifest.snapshotId, partNumber, rows: [] });

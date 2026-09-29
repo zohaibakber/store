@@ -2,16 +2,10 @@ import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
-import {
-  databaseError,
-  inventoryPostgresUnavailable,
-  runStatement,
-  type InventoryDrizzle,
-} from "./postgres";
+import { databaseError, runStatement, type InventoryDrizzle } from "./postgres";
 import { SNAPSHOT_POLICY } from "./snapshots";
 
 export type MaintenancePolicy = {
@@ -22,7 +16,6 @@ export type MaintenancePolicy = {
   readonly deleteBatchTransactions: number;
   readonly deleteBatchesPerStep: number;
   readonly expiredLeaseBatchRows: number;
-  readonly expiredTicketBatchRows: number;
   readonly retainedPublishedSnapshots: number;
   readonly prunedSnapshotsPerStep: number;
   readonly snapshotRowDeleteBatchRows: number;
@@ -39,7 +32,6 @@ export const MAINTENANCE_POLICY = {
   deleteBatchTransactions: 500,
   deleteBatchesPerStep: 4,
   expiredLeaseBatchRows: 200,
-  expiredTicketBatchRows: 500,
   retainedPublishedSnapshots: 2,
   prunedSnapshotsPerStep: 5,
   snapshotRowDeleteBatchRows: 500,
@@ -53,7 +45,6 @@ const OrganizationMaintenance = Schema.Struct({
   floorAfter: Schema.String,
   deletedTransactions: Schema.Number,
   expiredLeases: Schema.Number,
-  expiredTickets: Schema.Number,
   prunedSnapshots: Schema.Number,
   builtSnapshot: Schema.Boolean,
   more: Schema.Boolean,
@@ -91,7 +82,6 @@ const policyJson = (policy: MaintenancePolicy): string =>
     deleteBatchTransactions: policy.deleteBatchTransactions,
     deleteBatchesPerStep: policy.deleteBatchesPerStep,
     expiredLeaseBatchRows: policy.expiredLeaseBatchRows,
-    expiredTicketBatchRows: policy.expiredTicketBatchRows,
     retainedPublishedSnapshots: policy.retainedPublishedSnapshots,
     prunedSnapshotsPerStep: policy.prunedSnapshotsPerStep,
     snapshotRowDeleteBatchRows: policy.snapshotRowDeleteBatchRows,
@@ -134,10 +124,3 @@ export const makeInventoryMaintenance = (
       return row.summary;
     }),
   });
-
-export const InventoryMaintenanceUnavailable = Layer.succeed(
-  InventoryMaintenance,
-  InventoryMaintenance.of({
-    runScheduled: () => Effect.fail(inventoryPostgresUnavailable),
-  }),
-);

@@ -301,12 +301,12 @@ const snapshotManifest: SnapshotManifest = {
   parts: [
     {
       partNumber: 1,
-      objectKey: "parts/1",
       byteLength: 1,
       sha256: SnapshotPartHash.make("b".repeat(64)),
     },
   ],
   entityCounts: [{ entity: "batch", rowCount: 1 }],
+  digestVersion: 3,
 };
 
 const snapshotPart: SnapshotPartPayload = {
@@ -737,36 +737,6 @@ for (const adapter of adapters) {
           const batchRows = yield* harness.rows("batch");
           expect(findRow(batchRows, SPARE_BATCH_ID)).toBeUndefined();
           expect(findRow(batchRows, LAST_UNIT_BATCH_ID)).toBeDefined();
-        }),
-      ),
-    );
-
-    it.effect("keeps invoices, items, and movements through snapshot recovery", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
-          const invoiceGroup = authoritativeInvoiceGroup({
-            operationId: lastUnitBuyerAEnvelope.operationId,
-            commitSequence: "5",
-            invoiceNumber: 7,
-          });
-          yield* harness.store.applyTransactionGroup(invoiceGroup);
-          const before = {
-            invoices: yield* harness.rows("invoice"),
-            items: yield* harness.rows("invoiceItem"),
-            movements: yield* harness.rows("stockMovement"),
-          };
-          expect(before.invoices).toHaveLength(1);
-          expect(before.items).toHaveLength(1);
-          expect(before.movements).toHaveLength(1);
-
-          yield* harness.store.beginSnapshotImport(snapshotManifest);
-          yield* harness.store.importSnapshotPart(snapshotManifest, snapshotPart);
-          yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
-
-          expect(yield* harness.rows("invoice")).toEqual(before.invoices);
-          expect(yield* harness.rows("invoiceItem")).toEqual(before.items);
-          expect(yield* harness.rows("stockMovement")).toEqual(before.movements);
         }),
       ),
     );

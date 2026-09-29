@@ -1,5 +1,5 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
-import { SyncSubmitCommandRequest } from "@store/contracts";
+import { OrgCommitSequence, SyncSubmitCommandRequest } from "@store/contracts";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -60,7 +60,10 @@ const BASES: ReadonlyArray<readonly [string, Schema.Json]> = [
   [
     "invoice",
     decodeJson(
-      Schema.encodeSync(Schema.fromJsonString(SyncSubmitCommandRequest))(lastUnitBuyerAEnvelope),
+      Schema.encodeSync(Schema.fromJsonString(SyncSubmitCommandRequest))({
+        ...lastUnitBuyerAEnvelope,
+        afterCommitSequence: OrgCommitSequence.make("0"),
+      }),
     ),
   ],
   [

@@ -1,63 +1,39 @@
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
 
 const STATEMENT_SEPARATOR = "--> statement-breakpoint";
 
 const LEDGER_TABLE = "__store_sync_migrations";
 
-const MIGRATION_KEY_PATTERN = /^[0-9a-z_]+$/u;
+const decodeLedgerRows = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ key: Schema.String })),
+);
 
-export class SyncMigrationKeyInvalid extends Schema.TaggedError<SyncMigrationKeyInvalid>()(
-  "SyncMigrationKeyInvalid",
-  { key: Schema.String },
-) {}
+const byKey = Order.mapInput(Order.String, ([key]: readonly [string, string]) => key);
 
-type SqliteMigrationTarget<E> = {
-  readonly execute: (
-    statement: string,
-    parameters: ReadonlyArray<string>,
-  ) => Effect.Effect<void, E>;
-  readonly appliedKeys: (statement: string) => Effect.Effect<ReadonlyArray<string>, E>;
-};
-
-export const migrationStatements = (migration: string): ReadonlyArray<string> =>
+const migrationStatements = (migration: string): ReadonlyArray<string> =>
   migration
     .split(STATEMENT_SEPARATOR)
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0);
 
-const LedgerRows = Schema.Array(Schema.Struct({ key: Schema.String }));
-
-const decodeLedgerRows = Schema.decodeUnknownSync(LedgerRows);
-
-export const sqlClientMigrationTarget = (sql: SqlClient): SqliteMigrationTarget<SqlError> => ({
-  execute: (statement, parameters) => Effect.asVoid(sql.unsafe(statement, parameters)),
-  appliedKeys: (statement) =>
-    sql.unsafe(statement).pipe(Effect.map((rows) => decodeLedgerRows(rows).map((row) => row.key))),
-});
-
-export const runMigrations = <E>(
+export const runMigrations = Effect.fn("ReplicaMigrations.run")(function* (
+  sql: SqlClient,
   migrations: Record<string, string>,
-  target: SqliteMigrationTarget<E>,
-): Effect.Effect<void, E | SyncMigrationKeyInvalid> =>
-  Effect.gen(function* () {
-    yield* target.execute(
-      `create table if not exists ${LEDGER_TABLE} (key text primary key not null)`,
-      [],
-    );
-    const applied = new Set(yield* target.appliedKeys(`select key from ${LEDGER_TABLE}`));
-    for (const key of Object.keys(migrations).sort()) {
-      if (applied.has(key)) continue;
-      if (!MIGRATION_KEY_PATTERN.test(key)) {
-        return yield* Effect.fail(new SyncMigrationKeyInvalid({ key }));
-      }
-      const migration = migrations[key];
-      if (migration === undefined) continue;
-      for (const statement of migrationStatements(migration)) {
-        yield* target.execute(statement, []);
-      }
-      yield* target.execute(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
+) {
+  yield* sql.unsafe(`create table if not exists ${LEDGER_TABLE} (key text primary key not null)`);
+  const ledger = yield* sql
+    .unsafe(`select key from ${LEDGER_TABLE}`)
+    .pipe(Effect.flatMap(decodeLedgerRows), Effect.orDie);
+  const applied = new Set(ledger.map((row) => row.key));
+  for (const [key, migration] of Arr.sort(Object.entries(migrations), byKey)) {
+    if (applied.has(key)) continue;
+    for (const statement of migrationStatements(migration)) {
+      yield* sql.unsafe(statement);
     }
-  });
+    yield* sql.unsafe(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
+  }
+});
