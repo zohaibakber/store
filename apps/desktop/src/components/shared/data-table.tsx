@@ -9,26 +9,29 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Column, ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
-import { Children, createContext, isValidElement, use, useEffect, useRef } from "react";
+import { Children, createContext, isValidElement, use, useEffect, useId, useRef } from "react";
 import type React from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+} from "@/components/ui/combobox";
 import { Frame, FrameFooter } from "@/components/ui/frame";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Kbd } from "@/components/ui/kbd";
+import { Label } from "@/components/ui/label";
 import {
   Menu,
   MenuCheckboxItem,
   MenuGroup,
   MenuGroupLabel,
-  MenuItem,
   MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "@/components/ui/menu";
 import {
@@ -38,6 +41,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Popover, PopoverPopup, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -261,33 +265,35 @@ interface DataTableFilterOptionProps {
   options: ReadonlyArray<string>;
 }
 
-const ALL_FILTER_VALUES = "__data-table-all-values__";
-
 function DataTableFilterOption({ columnId, label, options }: DataTableFilterOptionProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const value = column?.getFilterValue?.() || ALL_FILTER_VALUES;
+  const current = column?.getFilterValue?.();
+  const value = isString(current) && current !== "" ? current : null;
+  const id = useId();
 
   return (
-    <MenuSub>
-      <MenuSubTrigger>{label}</MenuSubTrigger>
-      <MenuSubPopup className="w-48">
-        <MenuRadioGroup
-          onValueChange={(nextValue) =>
-            column?.setFilterValue?.(nextValue === ALL_FILTER_VALUES ? undefined : nextValue)
-          }
-          value={value}
-        >
-          <MenuRadioItem value={ALL_FILTER_VALUES}>All {label.toLowerCase()}</MenuRadioItem>
-          <MenuSeparator />
-          {options.map((option) => (
-            <MenuRadioItem key={option} value={option}>
-              {option}
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-      </MenuSubPopup>
-    </MenuSub>
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Combobox
+        autoHighlight
+        items={[...options]}
+        onValueChange={(next: string | null) => column?.setFilterValue?.(next ?? undefined)}
+        value={value}
+      >
+        <ComboboxInput id={id} placeholder={`Any ${label.toLowerCase()}`} showClear size="sm" />
+        <ComboboxPopup>
+          <ComboboxEmpty>No matches</ComboboxEmpty>
+          <ComboboxList>
+            {(option: string) => (
+              <ComboboxItem key={option} value={option}>
+                <span className="truncate">{option}</span>
+              </ComboboxItem>
+            )}
+          </ComboboxList>
+        </ComboboxPopup>
+      </Combobox>
+    </div>
   );
 }
 
@@ -309,8 +315,8 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
   });
 
   return (
-    <Menu>
-      <MenuTrigger
+    <Popover>
+      <PopoverTrigger
         render={
           <Button
             aria-label="Filter table"
@@ -329,21 +335,22 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
           </Button>
         }
       />
-      <MenuPopup align="end" className="w-44">
-        <MenuGroup>
-          <MenuGroupLabel>Filter by</MenuGroupLabel>
+      <PopoverPopup align="end" className="w-72">
+        <div className="flex flex-col gap-3">
           {children}
-        </MenuGroup>
-        <MenuSeparator />
-        <MenuItem
-          disabled={filteredColumns.length === 0}
-          onClick={() => table.clearFilters(optionColumnIds)}
-        >
-          <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
-          Clear filters
-        </MenuItem>
-      </MenuPopup>
-    </Menu>
+          <Button
+            className="self-end"
+            disabled={filteredColumns.length === 0}
+            onClick={() => table.clearFilters(optionColumnIds)}
+            size="sm"
+            variant="ghost"
+          >
+            <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
+            Clear filters
+          </Button>
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }
 

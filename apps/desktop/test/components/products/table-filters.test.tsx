@@ -76,19 +76,18 @@ function ProductTableHarness() {
   );
 }
 
-const clickMenuItem = (item: HTMLElement) => {
-  fireEvent.pointerDown(item, { pointerType: "mouse" });
-  fireEvent.click(item, { detail: 1 });
+const openFilters = async () => {
+  const trigger = screen.getByRole("button", { name: "Filter products" });
+  if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+  await screen.findByRole("button", { name: "Clear filters" });
 };
 
 const choose = async (filter: string, option: string) => {
-  const trigger = screen.getByRole("button", { name: "Filter products" });
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: "ArrowDown" });
-  const submenu = await screen.findByRole("menuitem", { name: filter });
-  submenu.focus();
-  fireEvent.keyDown(submenu, { key: "ArrowRight" });
-  clickMenuItem(await screen.findByRole("menuitemradio", { name: option }));
+  await openFilters();
+  const input = screen.getByRole("combobox", { name: filter });
+  input.focus();
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: option }));
 };
 
 test("product filters become a replica query view and clear together", async () => {
@@ -106,10 +105,8 @@ test("product filters become a replica query view and clear together", async () 
     page: 0,
   });
 
-  const trigger = screen.getByRole("button", { name: "Filter products" });
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: "ArrowDown" });
-  clickMenuItem(await screen.findByRole("menuitem", { name: "Clear filters" }));
+  await openFilters();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
   expect(views.at(-1)).toMatchObject({
     category: undefined,
     composition: undefined,

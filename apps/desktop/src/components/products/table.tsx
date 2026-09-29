@@ -87,6 +87,9 @@ const columns = columnHelper.columns([
         to="/products/$productId"
       >
         {getValue()}
+        {row.original.strength && (
+          <span className="ms-1.5 font-normal text-muted-foreground">{row.original.strength}</span>
+        )}
       </Link>
     ),
     enableHiding: false,
@@ -141,7 +144,7 @@ const columns = columnHelper.columns([
   columnHelper.accessor((product) => product.strength ?? "", {
     id: "strength",
     header: "Strength",
-    cell: ({ getValue }) => textCell(getValue()),
+    enableHiding: false,
     enableSorting: false,
     meta: { label: "Strength" },
   }),
@@ -254,7 +257,12 @@ export function useProductsTable(input: {
     onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
       onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters), categories)),
     initialState: {
-      columnVisibility: { purchasePrice: false, unitsPerPack: false, updatedAt: false },
+      columnVisibility: {
+        purchasePrice: false,
+        strength: false,
+        unitsPerPack: false,
+        updatedAt: false,
+      },
     },
   });
 }

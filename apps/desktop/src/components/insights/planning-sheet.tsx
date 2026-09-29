@@ -9,9 +9,9 @@ import {
   ControlGroupNumberInput,
   ControlGroupText,
 } from "@/components/shared/control-group";
+import { FrameCard } from "@/components/shared/frame-card";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
 import {
   Sheet,
@@ -29,14 +29,17 @@ import { useStockPolicy } from "@/lib/inventory";
 
 type WholeKey = Exclude<keyof StockPolicy, "serviceLevel">;
 
-const WHOLE_FIELDS: ReadonlyArray<{
+type WholeField = {
   readonly key: WholeKey;
   readonly label: string;
   readonly description: string;
   readonly unit: string;
   readonly min: number;
   readonly max: number;
-}> = [
+  readonly group: "reorder" | "alerts";
+};
+
+const WHOLE_FIELDS: ReadonlyArray<WholeField> = [
   {
     key: "leadDays",
     label: "Supplier lead time",
@@ -44,6 +47,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "days",
     min: 0,
     max: 90,
+    group: "reorder",
   },
   {
     key: "coverDays",
@@ -52,6 +56,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "days",
     min: 1,
     max: 120,
+    group: "reorder",
   },
   {
     key: "minimumUnits",
@@ -60,6 +65,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "units",
     min: 0,
     max: 10_000,
+    group: "reorder",
   },
   {
     key: "expiryWarningDays",
@@ -68,6 +74,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "days",
     min: 7,
     max: 365,
+    group: "alerts",
   },
   {
     key: "deadStockDays",
@@ -76,6 +83,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "days",
     min: 14,
     max: 365,
+    group: "alerts",
   },
   {
     key: "overstockDays",
@@ -84,6 +92,7 @@ const WHOLE_FIELDS: ReadonlyArray<{
     unit: "days",
     min: 30,
     max: 730,
+    group: "alerts",
   },
 ];
 
@@ -104,6 +113,26 @@ const closestServiceLevel = (level: number): ServiceLevelValue =>
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
 
+function SettingRow({
+  children,
+  description,
+  label,
+}: {
+  readonly children: React.ReactNode;
+  readonly description: string;
+  readonly label: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
 function PlanningForm({
   initial,
   onSave,
@@ -114,6 +143,26 @@ function PlanningForm({
   const [draft, setDraft] = React.useState(initial);
   const field = (key: WholeKey, value: number | null) =>
     setDraft((current) => ({ ...current, [key]: value ?? current[key] }));
+  const wholeRow = (entry: WholeField) => (
+    <SettingRow description={entry.description} key={entry.key} label={entry.label}>
+      <div className="w-28">
+        <ControlGroup>
+          <ControlGroupNumberInput
+            aria-label={entry.label}
+            inputProps={{ "aria-label": entry.label, className: "text-end" }}
+            max={entry.max}
+            min={entry.min}
+            onValueChange={(value) => field(entry.key, value)}
+            step={1}
+            value={draft[entry.key]}
+          />
+          <ControlGroupAddon>
+            <ControlGroupText>{entry.unit}</ControlGroupText>
+          </ControlGroupAddon>
+        </ControlGroup>
+      </div>
+    </SettingRow>
+  );
 
   return (
     <Form
@@ -130,51 +179,46 @@ function PlanningForm({
     >
       <SheetPanel>
         <div className="grid gap-4">
-          <Field>
-            <FieldLabel>Service level</FieldLabel>
-            <SegmentedRadio
-              label="Service level"
-              onValueChange={(value) =>
-                setDraft((current) => ({ ...current, serviceLevel: Number(value) }))
-              }
-              options={SERVICE_LEVELS}
-              value={closestServiceLevel(draft.serviceLevel)}
-            />
-            <FieldDescription>
-              Chance of not running out during a delivery. Best sellers get 2 points more, the long
-              tail 5 points less.
-            </FieldDescription>
-          </Field>
-          {WHOLE_FIELDS.map((entry) => (
-            <Field key={entry.key}>
-              <FieldLabel>{entry.label}</FieldLabel>
-              <div className="w-40">
-                <ControlGroup>
-                  <ControlGroupNumberInput
-                    aria-label={entry.label}
-                    inputProps={{ "aria-label": entry.label }}
-                    max={entry.max}
-                    min={entry.min}
-                    onValueChange={(value) => field(entry.key, value)}
-                    step={1}
-                    value={draft[entry.key]}
-                  />
-                  <ControlGroupAddon>
-                    <ControlGroupText>{entry.unit}</ControlGroupText>
-                  </ControlGroupAddon>
-                </ControlGroup>
-              </div>
-              <FieldDescription>{entry.description}</FieldDescription>
-            </Field>
-          ))}
+          <FrameCard flush title="Reordering">
+            <div className="divide-y">
+              <SettingRow
+                description="Odds of not running out before a delivery. Best sellers +2, long tail −5."
+                label="Service level"
+              >
+                <SegmentedRadio
+                  label="Service level"
+                  onValueChange={(value) =>
+                    setDraft((current) => ({ ...current, serviceLevel: Number(value) }))
+                  }
+                  options={SERVICE_LEVELS}
+                  value={closestServiceLevel(draft.serviceLevel)}
+                />
+              </SettingRow>
+              {WHOLE_FIELDS.filter((entry) => entry.group === "reorder").map(wholeRow)}
+            </div>
+          </FrameCard>
+          <FrameCard flush title="Alerts">
+            <div className="divide-y">
+              {WHOLE_FIELDS.filter((entry) => entry.group === "alerts").map(wholeRow)}
+            </div>
+          </FrameCard>
         </div>
       </SheetPanel>
-      <SheetFooter>
-        <Button onClick={() => setDraft(DEFAULT_STOCK_POLICY)} type="button" variant="ghost">
-          Reset
+      <SheetFooter className="sm:justify-between">
+        <Button
+          onClick={() => setDraft(DEFAULT_STOCK_POLICY)}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Reset to defaults
         </Button>
-        <SheetClose render={<Button variant="ghost" />}>Cancel</SheetClose>
-        <Button type="submit">Save</Button>
+        <div className="flex gap-2">
+          <SheetClose render={<Button size="sm" variant="ghost" />}>Cancel</SheetClose>
+          <Button size="sm" type="submit">
+            Save
+          </Button>
+        </div>
       </SheetFooter>
     </Form>
   );
@@ -189,11 +233,11 @@ export function PlanningSheet() {
         <HugeiconsIcon aria-hidden="true" icon={Settings02Icon} />
         Planning
       </SheetTrigger>
-      <SheetPopup>
+      <SheetPopup className="sm:max-w-xl" variant="inset">
         <SheetHeader>
-          <SheetTitle>Planning settings</SheetTitle>
+          <SheetTitle>Planning</SheetTitle>
           <SheetDescription>
-            Reorder points, order sizes, and alerts use these. They are saved on this device.
+            Reorder points, order sizes and alerts use these. Saved on this device.
           </SheetDescription>
         </SheetHeader>
         {open ? (
