@@ -2,7 +2,7 @@ import { Download01Icon, InformationCircleIcon } from "@hugeicons/core-free-icon
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatPrice } from "@store/services/format";
 import type { InsightsReport, ProductInsight, StockStatus } from "@store/services/insights";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
@@ -254,6 +254,7 @@ function RestockBody({
 }) {
   const { report } = useInventoryInsights();
   const navigate = useNavigate();
+  const router = useRouter();
   const counts = React.useMemo(
     () =>
       Object.fromEntries(
@@ -277,6 +278,12 @@ function RestockBody({
     <DataTable
       onRowClick={(row) =>
         navigate({ to: "/products/$productId", params: { productId: row.original.productId } })
+      }
+      onRowPreload={(row) =>
+        void router.preloadRoute({
+          to: "/products/$productId",
+          params: { productId: row.original.productId },
+        })
       }
       className="gap-3"
       table={table}

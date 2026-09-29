@@ -5,9 +5,11 @@ import {
   redirect,
   useRouterState,
 } from "@tanstack/react-router";
+import { Suspense } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { AppLoading } from "@/components/app/loading";
+import { PageLoading } from "@/components/app/loading-spinner";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
@@ -73,7 +75,13 @@ function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [sidebarOpen, setSidebarOpen] = useSidebarPreference();
   const chrome = access.chrome({ pathname });
-  if (chrome._tag === "Bare") return <Outlet />;
+  if (chrome._tag === "Bare") {
+    return (
+      <Suspense fallback={<AppLoading />}>
+        <Outlet />
+      </Suspense>
+    );
+  }
 
   const lease = catalog.lease();
   const shell = (
@@ -93,7 +101,9 @@ function AppShell() {
               <SiteHeader />
               {inventory && lease ? (
                 <InventoryReady>
-                  <Outlet />
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
                 </InventoryReady>
               ) : (
                 <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>

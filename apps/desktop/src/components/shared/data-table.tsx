@@ -151,6 +151,7 @@ interface DataTablePaginationAccess {
 interface DataTableContextValue {
   table: DataTableInstance;
   onRowClick?: (row: DataTableRow) => void;
+  onRowPreload?: (row: DataTableRow) => void;
 }
 
 const DataTableContext = createContext<DataTableContextValue | null>(null);
@@ -167,11 +168,13 @@ interface DataTableProps<
 > extends React.ComponentProps<"div"> {
   table: ReactTable<TFeatures, TData>;
   onRowClick?: (row: Row<TFeatures, TData>) => void;
+  onRowPreload?: (row: Row<TFeatures, TData>) => void;
 }
 
 function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   table,
   onRowClick,
+  onRowPreload,
   className,
   ...props
 }: DataTableProps<TFeatures, TData>) {
@@ -233,7 +236,11 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   return (
     <DataTableContext
       // SAFETY: TanStack rows are consumed only through the structural DataTableRow API.
-      value={{ table: contextTable, onRowClick: onRowClick as DataTableContextValue["onRowClick"] }}
+      value={{
+        table: contextTable,
+        onRowClick: onRowClick as DataTableContextValue["onRowClick"],
+        onRowPreload: onRowPreload as DataTableContextValue["onRowPreload"],
+      }}
     >
       <div className={cn("flex w-full flex-col", className)} data-slot="data-table" {...props} />
     </DataTableContext>
@@ -520,7 +527,7 @@ function DataTableColumnHeader({ column, title, className, ...props }: DataTable
 }
 
 function DataTableContent({ className, children, ...props }: React.ComponentProps<"div">) {
-  const { table, onRowClick } = useDataTable();
+  const { table, onRowClick, onRowPreload } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
     <div
@@ -565,6 +572,7 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
                   className={cn(onRowClick && "cursor-pointer")}
                   key={row.id}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onPointerEnter={onRowPreload ? () => onRowPreload(row) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

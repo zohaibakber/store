@@ -31,6 +31,7 @@ type Acquisition<Row extends InventoryCollectionRow> = {
   readonly key: string;
   readonly read: () => Promise<PlannedRead<Row>>;
   readonly windowed: boolean;
+  published: boolean;
   refs: number;
   keys: Set<string>;
   rows: Map<string, Row>;
@@ -223,6 +224,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       key,
       read,
       windowed,
+      published: false,
       refs: 1,
       keys: new Set(),
       rows: new Map(),
@@ -230,6 +232,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     acquisitions.set(key, acquisition);
     own(acquisition);
     await applyPublished(acquisition, current, [], adoption, signal);
+    acquisition.published = true;
     await replay(current.stamp.localCommitVersion);
     syncStarted = true;
   };
@@ -248,11 +251,17 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
 
   const unsubscribe = beginListeningForCommits();
 
-  const loadSubset: LoadSubsetFn = (options) =>
-    enqueue(async () => {
-      const cancelled = () => disposed || released.has(options) || options.signal?.aborted === true;
+  const loadSubset: LoadSubsetFn = (options) => {
+    const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
+    const cancelled = () => disposed || released.has(options) || options.signal?.aborted === true;
+    const published = acquisitions.get(key);
+    if (published?.published && !cancelled()) {
+      published.refs += 1;
+      owners.set(options, published);
+      return true;
+    }
+    return enqueue(async () => {
       if (cancelled()) return;
-      const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
       const existing = acquisitions.get(key);
       if (existing) {
         existing.refs += 1;
@@ -268,6 +277,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         options.signal,
       );
     });
+  };
 
   const unloadSubset: UnloadSubsetFn = (options) => {
     if (released.has(options)) return;

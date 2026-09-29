@@ -2,9 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { CategoriesTable } from "@/components/products/categories";
 import { PageLayout } from "@/components/shared/page-layout";
-import { useSuspenseCatalogCategories } from "@/lib/inventory";
+import {
+  preloadCatalogCategories,
+  preloadInventory,
+  useSuspenseCatalogCategories,
+} from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/categories")({
+  loader: ({ context }) => preloadInventory(context, preloadCatalogCategories),
   component: CategoriesPage,
   staticData: { breadcrumb: "Categories" },
 });

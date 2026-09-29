@@ -1,5 +1,15 @@
 export {
   PRODUCT_SORT_COLUMNS,
+  preloadAll,
+  preloadCatalogCategories,
+  preloadCatalogProduct,
+  preloadInventoryInsights,
+  preloadInventoryInvoice,
+  preloadInventoryInvoices,
+  preloadInvoiceHistory,
+  preloadProductFacets,
+  preloadProductList,
+  preloadStockMovementHistory,
   useCatalogIsReady,
   useCatalogProductLookup,
   useInventoryActions,
@@ -25,4 +35,5 @@ export {
   type ProductListRequest,
   type ProductSortColumn,
 } from "@store/inventory-react";
+export { preloadInventory } from "./preload";
 export { InventoryProvider, InventoryReady } from "./provider";

@@ -55,6 +55,10 @@ import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
 import { EMPTY, formatDate, formatNumber } from "@/lib/format";
 import {
+  preloadAll,
+  preloadCatalogProduct,
+  preloadInventory,
+  preloadStockMovementHistory,
   useInventoryActions,
   useSuspenseCatalogProduct,
   useSuspenseStockMovementHistory,
@@ -66,6 +70,13 @@ const productSearch = formValidator(
 );
 
 export const Route = createFileRoute("/products/$productId")({
+  loader: ({ context, params }) =>
+    preloadInventory(context, (inventory) =>
+      preloadAll([
+        preloadCatalogProduct(inventory, params.productId),
+        preloadStockMovementHistory(inventory, params.productId),
+      ]),
+    ),
   validateSearch: productSearch,
   component: ProductDetailPage,
   errorComponent: ProductDetailError,

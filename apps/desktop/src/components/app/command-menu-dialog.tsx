@@ -24,7 +24,7 @@ import { productStock } from "@store/contracts/store-helpers";
 import { useInventoryInvoices } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import type { StockStatus } from "@store/services/insights";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Fragment,
   Suspense,
@@ -389,6 +389,7 @@ function PaletteResults({
   readonly searchQuery: string;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [highlighted, setHighlighted] = useState<Entry | undefined>(undefined);
   const close = useMemo(() => () => onOpenChange(false), [onOpenChange]);
@@ -398,6 +399,19 @@ function PaletteResults({
   const trimmed = searchQuery.trim();
   const products = useSuspenseProductSearch(trimmed, PRODUCT_LIMIT);
   const invoices = useInventoryInvoices(INVOICE_WINDOW).data;
+
+  const highlight = (entry: Entry | undefined) => {
+    setHighlighted(entry);
+    const target = entryTarget(entry);
+    if (target) {
+      void router.preloadRoute({ to: "/products/$productId", params: { productId: target.id } });
+    } else if (entry?.kind === "invoice") {
+      void router.preloadRoute({
+        to: "/invoices/$invoiceId",
+        params: { invoiceId: entry.invoice.id },
+      });
+    }
+  };
 
   const openInvoice = (invoice: Invoice) => {
     close();
@@ -594,7 +608,7 @@ function PaletteResults({
       items={groups}
       itemToStringValue={(item: Entry) => item.id}
       keepHighlight
-      onItemHighlighted={(item: Entry | undefined) => setHighlighted(item)}
+      onItemHighlighted={highlight}
       onValueChange={onQueryChange}
       open
       value={query}

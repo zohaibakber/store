@@ -1,6 +1,6 @@
 import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
 
@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import { formValidator } from "@/lib/form-schema";
 import {
   PRODUCT_SORT_COLUMNS,
+  preloadInventory,
+  preloadProductList,
   useSuspenseCatalogCategories,
   useSuspenseProductCount,
   useSuspenseProductFacets,
@@ -38,23 +40,31 @@ import { cn } from "@/lib/utils";
 
 const Text = Schema.String.check(Schema.isMaxLength(120));
 
-const productsSearch = formValidator(
-  Schema.Struct({
-    q: lenientSearchParam(Text),
-    category: lenientSearchParam(Text),
-    aisle: lenientSearchParam(Text),
-    composition: lenientSearchParam(Text),
-    strength: lenientSearchParam(Text),
-    sort: lenientSearchParam(Schema.Literals(PRODUCT_SORT_COLUMNS)),
-    desc: lenientSearchParam(Schema.Boolean),
-    page: lenientSearchParam(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
-    size: lenientSearchParam(Schema.Literals(PRODUCT_PAGE_SIZES)),
-  }),
-);
+const ProductsSearch = Schema.Struct({
+  q: lenientSearchParam(Text),
+  category: lenientSearchParam(Text),
+  aisle: lenientSearchParam(Text),
+  composition: lenientSearchParam(Text),
+  strength: lenientSearchParam(Text),
+  sort: lenientSearchParam(Schema.Literals(PRODUCT_SORT_COLUMNS)),
+  desc: lenientSearchParam(Schema.Boolean),
+  page: lenientSearchParam(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  size: lenientSearchParam(Schema.Literals(PRODUCT_PAGE_SIZES)),
+});
 
-export const Route = createFileRoute("/products/")({
-  validateSearch: productsSearch,
-  component: ProductsPage,
+const productsSearch = formValidator(ProductsSearch);
+
+const viewFor = (search: typeof ProductsSearch.Type): ProductListView => ({
+  ...DEFAULT_PRODUCT_LIST_VIEW,
+  q: search.q,
+  category: search.category,
+  aisle: search.aisle,
+  composition: search.composition,
+  strength: search.strength,
+  sort: search.sort ?? DEFAULT_PRODUCT_LIST_VIEW.sort,
+  desc: search.desc ?? DEFAULT_PRODUCT_LIST_VIEW.desc,
+  page: search.page ?? DEFAULT_PRODUCT_LIST_VIEW.page,
+  size: search.size ?? DEFAULT_PRODUCT_LIST_VIEW.size,
 });
 
 const requestFor = (view: ProductListView): ProductListRequest => ({
@@ -82,24 +92,19 @@ const searchFor = (view: ProductListView) => ({
   size: view.size === DEFAULT_PRODUCT_LIST_VIEW.size ? undefined : view.size,
 });
 
+export const Route = createFileRoute("/products/")({
+  validateSearch: productsSearch,
+  loader: ({ context, location }) =>
+    preloadInventory(context, (inventory) =>
+      preloadProductList(inventory, requestFor(viewFor(location.search))),
+    ),
+  component: ProductsPage,
+});
+
 function ProductsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const view = React.useMemo<ProductListView>(
-    () => ({
-      ...DEFAULT_PRODUCT_LIST_VIEW,
-      q: search.q,
-      category: search.category,
-      aisle: search.aisle,
-      composition: search.composition,
-      strength: search.strength,
-      sort: search.sort ?? DEFAULT_PRODUCT_LIST_VIEW.sort,
-      desc: search.desc ?? DEFAULT_PRODUCT_LIST_VIEW.desc,
-      page: search.page ?? DEFAULT_PRODUCT_LIST_VIEW.page,
-      size: search.size ?? DEFAULT_PRODUCT_LIST_VIEW.size,
-    }),
-    [search],
-  );
+  const view = React.useMemo(() => viewFor(search), [search]);
   const request = React.useMemo(() => requestFor(view), [view]);
   const shownRequest = React.useDeferredValue(request);
   return (
@@ -124,6 +129,7 @@ function ProductsContent({
   readonly view: ProductListView;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const categories = useSuspenseCatalogCategories();
   const facets = useSuspenseProductFacets();
   const page = useSuspenseProductPage(request);
@@ -140,6 +146,9 @@ function ProductsContent({
   return (
     <DataTable
       onRowClick={(row) => navigate({ to: "/products/$productId", params: { productId: row.id } })}
+      onRowPreload={(row) =>
+        void router.preloadRoute({ to: "/products/$productId", params: { productId: row.id } })
+      }
       table={table}
     >
       <PageActions>

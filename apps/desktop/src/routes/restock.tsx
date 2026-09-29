@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import { InsightsError } from "@/components/insights/insights-error";
 import { RESTOCK_VIEWS, RestockPage, type RestockView } from "@/components/insights/restock-page";
 import { formValidator } from "@/lib/form-schema";
+import { preloadInventory, preloadInventoryInsights } from "@/lib/inventory";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const DEFAULT_VIEW: RestockView = "action";
@@ -14,6 +15,7 @@ const restockSearch = formValidator(
 
 export const Route = createFileRoute("/restock")({
   validateSearch: restockSearch,
+  loader: ({ context }) => preloadInventory(context, preloadInventoryInsights),
   component: RestockRoute,
   errorComponent: InsightsError,
   staticData: { breadcrumb: "Restock" },

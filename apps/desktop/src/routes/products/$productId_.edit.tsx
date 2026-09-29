@@ -5,12 +5,25 @@ import * as Schema from "effect/Schema";
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
 import {
+  preloadAll,
+  preloadCatalogCategories,
+  preloadCatalogProduct,
+  preloadInventory,
+  preloadProductFacets,
   useSuspenseCatalogSuggestions,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
 } from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/$productId_/edit")({
+  loader: ({ context, params }) =>
+    preloadInventory(context, (inventory) =>
+      preloadAll([
+        preloadCatalogCategories(inventory),
+        preloadCatalogProduct(inventory, params.productId),
+        preloadProductFacets(inventory),
+      ]),
+    ),
   component: EditProductPage,
   staticData: { breadcrumb: "Edit product" },
 });

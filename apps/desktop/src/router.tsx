@@ -1,14 +1,11 @@
 import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 
-import { PageLoading } from "@/components/app/loading-spinner";
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";
 import type { ReplayChannel } from "@/replay-channel";
 import { routeTree } from "@/routeTree.gen";
 import type { WorkspaceSession } from "@/session/workspace-session";
-
-const replicaCatalogPreload = false;
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
@@ -26,12 +23,12 @@ export const getRouter = (input: {
       inventory: input.inventory ?? null,
     },
     history: input.history,
-    defaultPreload: replicaCatalogPreload,
+    defaultPreload: "intent",
+    defaultPreloadStaleTime: 0,
     defaultGcTime: 60_000,
     defaultPreloadGcTime: 15_000,
     scrollRestoration: true,
     scrollToTopSelectors: ["[data-scroll-restoration-id='app-content']"],
-    defaultPendingComponent: PageLoading,
     defaultErrorComponent: RouteError,
   });
 

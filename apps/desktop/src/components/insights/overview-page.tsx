@@ -1,7 +1,6 @@
 import type { SalesRange } from "@store/services/insights";
 import * as React from "react";
 
-import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
@@ -48,9 +47,7 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ExpiringSoon report={report} />
-        <React.Suspense fallback={<LoadingSpinner className="h-64" />}>
-          <RecentInvoices />
-        </React.Suspense>
+        <RecentInvoices />
       </div>
     </>
   );

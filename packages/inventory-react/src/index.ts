@@ -78,3 +78,15 @@ export {
 } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
 export type { Inventory, InventoryActions } from "./types";
+export {
+  preloadAll,
+  preloadCatalogCategories,
+  preloadCatalogProduct,
+  preloadInventoryInsights,
+  preloadInventoryInvoice,
+  preloadInventoryInvoices,
+  preloadInvoiceHistory,
+  preloadProductFacets,
+  preloadProductList,
+  preloadStockMovementHistory,
+} from "./preload";

@@ -24,8 +24,10 @@ import {
 import { formatRelativeTime } from "@/lib/format";
 import { useSuspenseInventoryInvoices } from "@/lib/inventory";
 
+export const RECENT_INVOICE_LIMIT = 5;
+
 export function RecentInvoices() {
-  const invoices = useSuspenseInventoryInvoices(5);
+  const invoices = useSuspenseInventoryInvoices(RECENT_INVOICE_LIMIT);
   return (
     <FrameCard
       action={

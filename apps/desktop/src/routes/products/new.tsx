@@ -2,9 +2,20 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { useSuspenseCatalogSuggestions, useSuspenseCatalogCategories } from "@/lib/inventory";
+import {
+  preloadAll,
+  preloadCatalogCategories,
+  preloadInventory,
+  preloadProductFacets,
+  useSuspenseCatalogSuggestions,
+  useSuspenseCatalogCategories,
+} from "@/lib/inventory";
 
 export const Route = createFileRoute("/products/new")({
+  loader: ({ context }) =>
+    preloadInventory(context, (inventory) =>
+      preloadAll([preloadCatalogCategories(inventory), preloadProductFacets(inventory)]),
+    ),
   component: NewProductPage,
   staticData: { breadcrumb: "Add product" },
 });

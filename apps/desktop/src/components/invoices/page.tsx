@@ -1,7 +1,7 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 
 import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
 import { DataTable, DataTableFilter } from "@/components/shared/data-table";
@@ -21,11 +21,15 @@ function InvoicesPage({
   onLoadMore: () => void;
 }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const table = useInvoicesTable(invoices);
 
   return (
     <DataTable
       onRowClick={(row) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })}
+      onRowPreload={(row) =>
+        void router.preloadRoute({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })
+      }
       table={table}
     >
       <PageActions>

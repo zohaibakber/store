@@ -39,7 +39,7 @@ import type { Inventory } from "./types";
 
 const PRODUCT_IDS_PER_PREDICATE = 32;
 
-const HISTORY_PAGE_SIZE = 50;
+export const HISTORY_PAGE_SIZE = 50;
 
 const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
   Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
@@ -183,7 +183,7 @@ const productsWithCategory = (
       eq(product.categoryId, category.id),
     );
 
-const categoriesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
+export const categoriesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
     .from({ category: inventory.categories })
     .orderBy(({ category }) => category.name, { direction: "asc", stringSort: "locale" })
@@ -195,13 +195,14 @@ const productsQuery = (inventory: Inventory, limit: number) => (query: InitialQu
     .limit(limit)
     .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
 
-const productQuery = (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
-  productsWithCategory(query, inventory)
-    .where(({ product }) => eq(product.id, productId))
-    .select(({ product, category }) => catalogProductFields(query, inventory, product, category))
-    .findOne();
+export const productQuery =
+  (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
+    productsWithCategory(query, inventory)
+      .where(({ product }) => eq(product.id, productId))
+      .select(({ product, category }) => catalogProductFields(query, inventory, product, category))
+      .findOne();
 
-const stockMovementsQuery =
+export const stockMovementsQuery =
   (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
     query
       .from({ movement: inventory.stockMovements })
@@ -223,18 +224,19 @@ const stockMovementsQuery =
         createdAt: movement.createdAt,
       }));
 
-const invoicesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
+export const invoicesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
     .from({ invoice: inventory.invoices })
     .orderBy(({ invoice }) => invoice.createdAt, "desc")
     .select(({ invoice }) => invoiceFields(query, inventory, invoice));
 
-const invoiceQuery = (inventory: Inventory, invoiceId: string) => (query: InitialQueryBuilder) =>
-  query
-    .from({ invoice: inventory.invoices })
-    .where(({ invoice }) => eq(invoice.id, invoiceId))
-    .select(({ invoice }) => invoiceFields(query, inventory, invoice))
-    .findOne();
+export const invoiceQuery =
+  (inventory: Inventory, invoiceId: string) => (query: InitialQueryBuilder) =>
+    query
+      .from({ invoice: inventory.invoices })
+      .where(({ invoice }) => eq(invoice.id, invoiceId))
+      .select(({ invoice }) => invoiceFields(query, inventory, invoice))
+      .findOne();
 
 export const useCatalogCategories = () => {
   const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
