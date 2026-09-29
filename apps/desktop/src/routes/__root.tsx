@@ -16,6 +16,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAppUpdater } from "@/hooks/use-app-updater";
+import { useSidebarPreference } from "@/hooks/use-sidebar-preference";
 import type { HostAccessPolicy } from "@/host-access";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory";
@@ -70,6 +71,7 @@ function AuthenticatedLayout() {
 function AppShell() {
   const { access, inventory, catalog } = Route.useRouteContext();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [sidebarOpen, setSidebarOpen] = useSidebarPreference();
   const chrome = access.chrome({ pathname });
   if (chrome._tag === "Bare") return <Outlet />;
 
@@ -77,7 +79,11 @@ function AppShell() {
   const shell = (
     <TooltipProvider>
       <CommandMenuProvider>
-        <SidebarProvider className="h-svh min-h-0 overflow-hidden" defaultOpen={false}>
+        <SidebarProvider
+          className="h-svh min-h-0 overflow-hidden"
+          onOpenChange={setSidebarOpen}
+          open={sidebarOpen}
+        >
           <AppSidebar />
           <SidebarInset
             className="min-h-0 scrollbar-none overflow-y-auto"
