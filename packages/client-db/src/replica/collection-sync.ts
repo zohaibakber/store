@@ -207,17 +207,20 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     });
 
   const unloadSubset: UnloadSubsetFn = (options) => {
-    const key = subsetWindowKey(options);
-    const acquisition = acquisitions.get(key);
-    if (!acquisition) return;
-    acquisition.refs -= 1;
-    if (acquisition.refs > 0) return;
-    acquisitions.delete(key);
-    params.begin();
-    for (const rowKey of acquisition.keys) {
-      if (decrementRowRef(rowRefs, rowKey) === 0) params.write({ type: "delete", key: rowKey });
-    }
-    void params.commit();
+    void enqueue(async () => {
+      if (disposed) return;
+      const key = subsetWindowKey(options);
+      const acquisition = acquisitions.get(key);
+      if (!acquisition) return;
+      acquisition.refs -= 1;
+      if (acquisition.refs > 0) return;
+      acquisitions.delete(key);
+      params.begin();
+      for (const rowKey of acquisition.keys) {
+        if (decrementRowRef(rowRefs, rowKey) === 0) params.write({ type: "delete", key: rowKey });
+      }
+      await params.commit();
+    });
   };
 
   params.markReady();

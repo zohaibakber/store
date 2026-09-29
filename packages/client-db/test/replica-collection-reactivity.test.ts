@@ -1,5 +1,5 @@
 import { createCollection, IR } from "@tanstack/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createInvoiceCoherenceGate, sqliteCollectionOptions } from "../src/replica/collection";
 import { decodeCategorySqliteRows } from "../src/replica/decode";
@@ -67,7 +67,7 @@ describe("collection reactivity", () => {
     options.utils.unloadSubset(first);
     expect(collection.get("shared")?.name).toBe("Shared");
     options.utils.unloadSubset(second);
-    expect(collection.get("shared")).toBeUndefined();
+    await vi.waitFor(() => expect(collection.get("shared")).toBeUndefined());
   });
 
   it("coalesces rapid commits to the newest version", async () => {

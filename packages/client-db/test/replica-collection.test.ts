@@ -1,7 +1,7 @@
 import { decodeCategoryId } from "@store/contracts/ids";
 import { createCollection, IR } from "@tanstack/db";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { sqliteCollectionOptions } from "../src/replica/collection";
 import { decodeCategorySqliteRows } from "../src/replica/decode";
@@ -150,12 +150,30 @@ describe("sqliteCollectionOptions", () => {
     expect(collection.get("only-a")?.name).toBe("Only A");
     expect(collection.get("only-b")?.name).toBe("Only B");
     options.utils.unloadSubset(first);
+    await vi.waitFor(() => expect(collection.get("only-a")).toBeUndefined());
     expect(collection.get("shared")?.name).toBe("Shared");
-    expect(collection.get("only-a")).toBeUndefined();
     expect(collection.get("only-b")?.name).toBe("Only B");
     options.utils.unloadSubset(second);
-    expect(collection.get("shared")).toBeUndefined();
+    await vi.waitFor(() => expect(collection.get("shared")).toBeUndefined());
     expect(collection.get("only-b")).toBeUndefined();
+    replica.close();
+  });
+
+  it("keeps rows while a released subset is reacquired before its reload lands", async () => {
+    const replica = await openNodeReplicaSqlite(identity);
+    await insertCategory(replica, "kept", "Kept");
+    const { collection, options } = startCollection(replica);
+    const subset = {
+      where: new IR.Func("eq", [new IR.PropRef(["id"]), new IR.Value("kept")]),
+      limit: 10,
+    };
+    await options.utils.loadSubset(subset);
+    const busy = options.utils.loadSubset({ limit: 10 });
+    const reacquired = options.utils.loadSubset(subset);
+    options.utils.unloadSubset(subset);
+    expect(collection.get("kept")?.name).toBe("Kept");
+    await Promise.all([busy, reacquired]);
+    expect(collection.get("kept")?.name).toBe("Kept");
     replica.close();
   });
 
