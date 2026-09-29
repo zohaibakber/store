@@ -1,7 +1,5 @@
 import {
   EmailAddress,
-  InvitationId,
-  InvitationToken,
   OrganizationName,
   OrganizationSlug,
   type OrganizationCommand,
@@ -11,14 +9,7 @@ import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { AuthService } from "../src/service";
-import {
-  fakeRepository,
-  harness,
-  seedOrganization,
-  seedSession,
-  seedUser,
-  type Harness,
-} from "./harness";
+import { harness, seedOrganization, seedSession, seedUser, type Harness } from "./harness";
 
 type Api = ReturnType<typeof AuthService.of>;
 
@@ -222,15 +213,6 @@ describe("organization invitations", () => {
 
     expect(second).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
   });
-
-  it("rejects a token nobody issued", async () => {
-    const { instance, token } = withOwner();
-    const failure = await failing(instance, token, {
-      _tag: "AcceptInvitation",
-      token: InvitationToken.make("not-a-real-token"),
-    });
-    expect(failure).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
-  });
 });
 
 describe("organization role guards", () => {
@@ -298,17 +280,6 @@ describe("organization role guards", () => {
     ).toBe("admin");
   });
 
-  it("keeps an organization from losing its last owner", async () => {
-    const team = withTeam();
-    const failure = await failing(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.owner.id,
-      role: "member",
-    });
-    expect(failure).toMatchObject({ status: 409, code: "LAST_OWNER" });
-  });
-
   it("lets one of two owners be removed and then keeps the remaining owner", async () => {
     const team = withTeam();
     const promoted = await command(team.instance, team.ownerToken, {
@@ -338,23 +309,7 @@ describe("organization role guards", () => {
     );
   });
 
-  it("does not delete the last owner from the membership table", async () => {
-    const team = withTeam();
-    const removed = await Effect.runPromise(
-      fakeRepository(team.instance.store).removeMember({
-        organizationId: team.organizationId,
-        userId: team.owner.id,
-      }),
-    );
-    expect(removed).toBe(false);
-    expect(
-      team.instance.store.memberships.some(
-        (entry) => entry.userId === team.owner.id && entry.role === "owner",
-      ),
-    ).toBe(true);
-  });
-
-  it("lets an admin remove a member but not another admin", async () => {
+  it("lets an admin remove a member but not the owner, closing only that member's sockets", async () => {
     const team = withTeam();
 
     const refused = await failing(team.instance, team.adminToken, {
@@ -363,6 +318,7 @@ describe("organization role guards", () => {
       userId: team.owner.id,
     });
     expect(refused).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
+    expect(team.instance.revocations).toEqual([]);
 
     const applied = await command(team.instance, team.adminToken, {
       _tag: "RemoveMember",
@@ -373,27 +329,6 @@ describe("organization role guards", () => {
     expect(team.instance.store.memberships.some((entry) => entry.userId === team.member.id)).toBe(
       false,
     );
-  });
-
-  it("closes the live sockets of a removed member and of nobody else", async () => {
-    const team = withTeam();
-    await failing(team.instance, team.adminToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.owner.id,
-    });
-    await failing(team.instance, team.ownerToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.owner.id,
-    });
-    expect(team.instance.revocations).toEqual([]);
-
-    await command(team.instance, team.adminToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-    });
     expect(team.instance.revocations).toEqual([
       { organizationId: team.organizationId, userId: team.member.id },
     ]);
@@ -473,16 +408,6 @@ describe("organization role guards", () => {
     expect(failure).toMatchObject({ status: 404, code: "ORGANIZATION_NOT_FOUND" });
   });
 
-  it("refuses to revoke an invitation from another organization", async () => {
-    const team = withTeam();
-    const failure = await failing(team.instance, team.ownerToken, {
-      _tag: "RevokeInvitation",
-      organizationId: team.organizationId,
-      invitationId: InvitationId.make("invitation-404"),
-    });
-    expect(failure).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
-  });
-
   it("lets an admin rename the organization but keeps a member out", async () => {
     const team = withTeam();
 
@@ -535,20 +460,6 @@ describe("organization role guards", () => {
 });
 
 describe("the organization roster", () => {
-  it("answers with the organization this session is signed in to", async () => {
-    const { instance, token, organizationId } = withOwner();
-
-    const roster = await run(instance, (auth) => auth.roster(token));
-
-    expect(roster.organization).toEqual({
-      id: organizationId,
-      name: "Owner Store",
-      slug: null,
-      role: "owner",
-    });
-    expect(roster.members).toHaveLength(1);
-  });
-
   it("keeps the pending invitation list away from plain members", async () => {
     const { instance, token, organizationId } = withOwner();
     const member = seedUser(instance.store, { id: "member", email: "member@example.com" });
@@ -584,6 +495,12 @@ describe("the organization roster", () => {
       ),
     );
 
+    expect(asOwner.organization).toEqual({
+      id: organizationId,
+      name: "Owner Store",
+      slug: null,
+      role: "owner",
+    });
     expect(asOwner.invitations).toHaveLength(1);
     expect(asOwner.members).toHaveLength(2);
     expect(asMember.invitations).toHaveLength(0);

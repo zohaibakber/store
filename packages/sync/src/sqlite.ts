@@ -1,7 +1,6 @@
 export {
   layerSqliteReplicaStore,
   makeSqliteReplicaStore,
-  openReplicaStoreFromClient,
   runReplicaTransaction,
 } from "./sql-client";
 export type { ReplicaDb, ReplicaOpenError, SqliteReplicaHandle } from "./sql-client";

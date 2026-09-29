@@ -18,9 +18,9 @@ import {
 
 export const FIXTURE_USER_ID = "user-1";
 
-export const FIXTURE_CATEGORY_ID = "general";
+const FIXTURE_CATEGORY_ID = "general";
 
-export const FIXTURE_OCCURRED_AT = 1_700_000_000_000;
+const FIXTURE_OCCURRED_AT = 1_700_000_000_000;
 
 export const seedReplicaTenUnits = (path?: string) =>
   Effect.gen(function* () {
@@ -99,7 +99,7 @@ export const withSeededReplica = <A, E, R>(
 ): Effect.Effect<A, E, Exclude<R, Scope.Scope>> =>
   Effect.scoped(Effect.flatMap(seedReplicaTenUnits(path), use));
 
-export const invoiceCommandOf = (
+const invoiceCommandOf = (
   envelope: SyncCommandEnvelope,
 ): Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }> => {
   if (envelope.command._tag !== "issueInvoice") {

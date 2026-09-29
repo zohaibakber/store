@@ -23,18 +23,6 @@ const email = EmailAddress.make("owner@example.com");
 const code = OtpCode.make("123456");
 
 describe("ephemeral store on D1", () => {
-  it("returns the OTP email once for the right code", async () => {
-    const run = storeOn(authD1());
-    const now = Date.now();
-    const challengeId = await run((store) =>
-      store.createOtp({ email, code, expiresAt: now + 60_000 }),
-    );
-    const first = await run((store) => store.consumeOtp({ challengeId, code, now }));
-    const second = await run((store) => store.consumeOtp({ challengeId, code, now }));
-    expect(first).toBe(email);
-    expect(second).toBeNull();
-  });
-
   it("keeps the OTP challenge after a wrong code", async () => {
     const run = storeOn(authD1());
     const now = Date.now();

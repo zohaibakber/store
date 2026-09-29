@@ -1,9 +1,4 @@
-import {
-  CommandReceipt,
-  SyncCommandEnvelope,
-  syncProtocolError,
-  type RegisterReplicaResult,
-} from "@store/contracts";
+import { CommandReceipt, SyncCommandEnvelope, type RegisterReplicaResult } from "@store/contracts";
 import {
   batches,
   commandOutbox,
@@ -25,7 +20,6 @@ import {
   EMPTY_STOCK,
   isStaleClaim,
   nextUploadClaim,
-  OUTSTANDING_COMMAND_STATUSES,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
   withOverlays,
@@ -279,14 +273,6 @@ export const releaseUploadClaim = Effect.fn("ReplicaCommands.releaseUploadClaim"
   return RELEASED_CLAIM_FIELDS.status;
 });
 
-const hasUnsentCommands = (tx: ReplicaDb) =>
-  tx
-    .select({ operationId: commandOutbox.operationId })
-    .from(commandOutbox)
-    .where(inArray(commandOutbox.status, [...OUTSTANDING_COMMAND_STATUSES]))
-    .get()
-    .pipe(Effect.map((row) => row !== undefined));
-
 export const verifyReplicaIncarnation = Effect.fn("ReplicaCommands.verifyReplicaIncarnation")(
   function* (tx: ReplicaDb, incarnation: string) {
     const state = yield* loadReplicaState(tx);
@@ -299,39 +285,6 @@ export const verifyAuthorityHeadNotBehind = Effect.fn(
 )(function* (tx: ReplicaDb, authorityHorizon: string) {
   const state = yield* loadReplicaState(tx);
   yield* Effect.fromResult(checkAuthorityHead(state.appliedCommitSequence, authorityHorizon));
-});
-
-export const openReplicaIdentity = Effect.fn("ReplicaCommands.openReplicaIdentity")(function* (
-  tx: ReplicaDb,
-  input: {
-    readonly replicaId: string;
-    readonly adoptPendingOutbox: boolean;
-  },
-) {
-  const state = yield* loadReplicaState(tx);
-  if (state.replicaId === input.replicaId) return;
-  const unsent = yield* hasUnsentCommands(tx);
-  if (unsent && !input.adoptPendingOutbox) {
-    return yield* Effect.fail(
-      syncProtocolError(
-        "REPLICA_OWNED_BY_OTHER",
-        "Unsent commands remain for the previous replica identity.",
-      ),
-    );
-  }
-  if (unsent) {
-    const rows = yield* tx.select().from(commandOutbox).all();
-    for (const row of rows) {
-      const envelope = yield* parseStoredEnvelope(row);
-      yield* updateOutbox(tx, row.operationId, {
-        envelopeJson: encodeEnvelopeJson({ ...envelope, replicaId: input.replicaId }),
-      });
-    }
-  }
-  yield* tx
-    .update(replicaState)
-    .set({ replicaId: input.replicaId, registeredAt: null })
-    .where(eq(replicaState.id, state.id));
 });
 
 export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaRegistration")(

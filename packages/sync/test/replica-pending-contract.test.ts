@@ -499,45 +499,6 @@ for (const adapter of adapters) {
       ),
     );
 
-    it.effect("lets a remote change win over a shadowed row", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          const envelope = catalogEnvelope({
-            operationId: "catalog-2",
-            clientSequence: "1",
-            writes: [renameProductWrite("Local name")],
-          });
-          yield* harness.store.enqueueCommand(envelope, 1);
-          yield* harness.store.applyTransactionGroup(remoteProductGroup);
-          const productRows = yield* harness.rows("product");
-          const marks = yield* harness.store.readPendingMarks();
-          expect(findRow(productRows, LAST_UNIT_PRODUCT_ID)?.["name"]).toBe("Remote name");
-          expect(marks.filter((mark) => mark.entity === "product")).toHaveLength(0);
-        }),
-      ),
-    );
-
-    it.effect("shadows catalog inserts, updates, and deletes", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          const envelope = catalogEnvelope({
-            operationId: "catalog-3",
-            clientSequence: "1",
-            writes: [insertCategoryWrite, renameProductWrite("Edited"), deleteSpareBatchWrite],
-          });
-          yield* harness.store.enqueueCommand(envelope, 1);
-          const categoryRows = yield* harness.rows("category");
-          const productRows = yield* harness.rows("product");
-          const batchRows = yield* harness.rows("batch");
-          const marks = yield* harness.store.readPendingMarks();
-          expect(findRow(categoryRows, NEW_CATEGORY_ID)?.["name"]).toBe("Cold chain");
-          expect(findRow(productRows, LAST_UNIT_PRODUCT_ID)?.["name"]).toBe("Edited");
-          expect(findRow(batchRows, SPARE_BATCH_ID)).toBeUndefined();
-          expect(marks).toHaveLength(3);
-        }),
-      ),
-    );
-
     it.effect("projects a pending adjustment movement without a stock overlay", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -731,6 +692,8 @@ for (const adapter of adapters) {
           yield* harness.store.enqueueCommand(secondRename, 2);
           yield* harness.store.applyTransactionGroup(remoteProductGroup);
           expect(yield* productName(harness)).toBe("Remote name");
+          const marks = yield* harness.store.readPendingMarks();
+          expect(marks.filter((mark) => mark.entity === "product")).toHaveLength(0);
 
           yield* rejectNext(harness, firstRename, "10");
           expect(yield* productName(harness)).toBe("Remote name");

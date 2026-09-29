@@ -38,22 +38,17 @@ test("a failure returns to idle so the next check can run", () => {
   ).toBe("idle");
 });
 
-test("an available event is withheld unless nothing is downloading", () => {
-  const available: UpdaterEvent = { type: "available", version: "1.2.3" };
-  expect(forwardsToRenderer("idle", available)).toBe(true);
-  expect(forwardsToRenderer("downloading", available)).toBe(false);
-  expect(forwardsToRenderer("downloaded", available)).toBe(false);
-});
+const available: UpdaterEvent = { type: "available", version: "1.2.3" };
+const failed: UpdaterEvent = { type: "error", message: "boom", retrying: false, failure: "other" };
 
-test("an error during a download is withheld. The download reports it itself", () => {
-  const failed: UpdaterEvent = {
-    type: "error",
-    message: "boom",
-    retrying: false,
-    failure: "other",
-  };
-  expect(forwardsToRenderer("idle", failed)).toBe(true);
-  expect(forwardsToRenderer("downloading", failed)).toBe(false);
+test.each([
+  ["idle", available, true],
+  ["downloading", available, false],
+  ["downloaded", available, false],
+  ["idle", failed, true],
+  ["downloading", failed, false],
+] as const)("withholds availability and errors unless idle: %s %o", (phase, event, expected) => {
+  expect(forwardsToRenderer(phase, event)).toBe(expected);
 });
 
 test("progress and completion always reach the renderer", () => {
@@ -79,6 +74,7 @@ test("connectivity failures are classified apart from real ones", () => {
     expect(classifyUpdateFailure(message)).toBe("network");
 
   expect(classifyUpdateFailure("HttpError: 500 Internal Server Error")).toBe("other");
+  expect(updateFailureMessage("net::ERR_NETWORK_CHANGED")).toBe("You're offline.");
 });
 
 test("a release whose Linux metadata has not published yet is a delay, not a failure", () => {
@@ -90,8 +86,4 @@ test("a release whose Linux metadata has not published yet is a delay, not a fai
 test("other failures are reported by their first line", () => {
   expect(updateFailureMessage("Something broke\nstack frame\nstack frame")).toBe("Something broke");
   expect(updateFailureMessage("")).toBe("Unable to check for updates.");
-});
-
-test("connectivity is not reported as a Chromium net error", () => {
-  expect(updateFailureMessage("net::ERR_NETWORK_CHANGED")).toBe("You're offline.");
 });

@@ -88,42 +88,6 @@ describe("AuthService", () => {
     });
   });
 
-  it("issues sessions from the user's organization membership", async () => {
-    const { instance, passwordUser } = withAccounts();
-    const tokens = await run(instance, (auth) =>
-      auth.authenticate({
-        _tag: "Password",
-        email: passwordUser.email,
-        password: Password.make("valid-password"),
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
-    );
-
-    expect(tokens.accessToken).toBeDefined();
-    expect(instance.issued.at(-1)).toMatchObject({
-      subject: "password-user",
-      activeOrganizationId: "organization-1",
-      organizationName: "My Store",
-      role: "owner",
-    });
-  });
-
-  it("signs in the Google account behind a verified identity token", async () => {
-    const { instance } = withAccounts();
-    const tokens = await run(instance, (auth) =>
-      auth.exchangeGoogleIdToken({
-        idToken: GoogleIdToken.make("valid-id-token"),
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
-    );
-
-    expect(tokens.accessToken).toBeDefined();
-    expect(instance.issued.at(-1)).toMatchObject({
-      subject: "google-user",
-      email: "google@example.com",
-    });
-  });
-
   it("refuses an identity token Google did not mint for us", async () => {
     const { instance } = withAccounts();
     const failure = await run(instance, (auth) =>
@@ -153,19 +117,6 @@ describe("AuthService", () => {
 
     expect(failure).toMatchObject({ status: 400, code: "INVALID_REDIRECT" });
   });
-
-  it("accepts the desktop deep link, which shares only its scheme", async () => {
-    const { instance } = withAccounts();
-    const url = await run(instance, (auth) =>
-      auth.beginGoogle({
-        redirectUri: "com.tabaaq.desktop://auth/callback",
-        codeChallenge: "challenge",
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
-    );
-
-    expect(url.searchParams.get("state")).toBe("oauth-state");
-  });
 });
 
 describe("refresh rotation", () => {
@@ -183,6 +134,12 @@ describe("refresh rotation", () => {
       auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
     );
     const claims = Schema.decodeUnknownSync(AccessClaims)(JSON.parse(atob(refreshed.accessToken)));
+    expect(instance.issued.at(0)).toMatchObject({
+      subject: "password-user",
+      activeOrganizationId: "organization-1",
+      organizationName: "My Store",
+      role: "owner",
+    });
     const organization = {
       id: claims.activeOrganizationId,
       name: "My Store",

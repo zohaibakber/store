@@ -38,9 +38,6 @@ const NO_FLAGS: FieldFlags = {
   expiresAt: null,
 };
 
-export const normalizeScanText = (text: string): string =>
-  text.toLowerCase().replace(/\s+/g, " ").trim();
-
 const compact = (text: string): string => text.toLowerCase().replace(/\s+/g, "");
 
 export const textContains = (haystack: string, needle: string): boolean => {
@@ -261,9 +258,6 @@ export const commitSummary = (
   const name = values.name.trim() || "the product";
   return `Created ${name} with ${packsText(packs)}`;
 };
-
-export const defaultChoice = (match: MatchedProduct | null): CommitChoice =>
-  match === null ? "newProduct" : "addBatch";
 
 export const editedFields = (edits: ReviewEdits | undefined): ReadonlySet<ScanField> =>
   new Set(SCAN_FIELDS.filter((field) => edits?.[field] !== undefined));

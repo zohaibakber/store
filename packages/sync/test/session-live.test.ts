@@ -20,8 +20,8 @@ import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { accessTokenExpiresAt, liveSocketUrl, type LiveNetworkSignal } from "../src/live-socket";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
-import { startOwnedHttpSync } from "../src/session";
 import type { SyncTransport } from "../src/transport";
+import { startOwnedSync } from "./lib/owned-sync";
 
 const databaseName = "session-live";
 
@@ -162,18 +162,21 @@ const startLive = (options: { readonly token: string }) =>
     const tokenRequests: Array<{ readonly force: boolean }> = [];
     const pulls = yield* Ref.make(0);
     const network = controllableNetwork();
-    const owned = yield* startOwnedHttpSync(store, makeTransport(pulls), databaseName, {
-      apiBaseUrl: "https://api.tabaaq.test",
-      accessToken: async (request) => {
-        tokenRequests.push(request);
-        return options.token;
+    const owned = yield* startOwnedSync(store, makeTransport(pulls), {
+      databaseIdentity: databaseName,
+      live: {
+        apiBaseUrl: "https://api.tabaaq.test",
+        accessToken: async (request) => {
+          tokenRequests.push(request);
+          return options.token;
+        },
+        webSocket: (url, protocols) => {
+          const socket = new FakeSocket(url, protocols);
+          Queue.offerUnsafe(sockets, socket);
+          return socket;
+        },
+        network: network.signal,
       },
-      webSocket: (url, protocols) => {
-        const socket = new FakeSocket(url, protocols);
-        Queue.offerUnsafe(sockets, socket);
-        return socket;
-      },
-      network: network.signal,
     });
     const nextSocket = Effect.gen(function* () {
       yield* settle;

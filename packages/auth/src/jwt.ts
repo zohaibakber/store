@@ -20,7 +20,7 @@ import {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 export const AUTH_JWT_KEY_ID = "tabaaq-auth-v1";
-export const ACCESS_TOKEN_TTL_SECONDS = 3_600;
+const ACCESS_TOKEN_TTL_SECONDS = 3_600;
 
 const JsonWebKeySchema = Schema.Struct({
   kty: Schema.String,

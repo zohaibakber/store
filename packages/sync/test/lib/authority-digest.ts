@@ -52,7 +52,7 @@ type PostgresMutableMetadata = {
   readonly rowVersion: number;
 };
 
-export type PostgresCategoryRow = {
+type PostgresCategoryRow = {
   readonly id: string;
   readonly name: string;
   readonly tracksPacks: boolean;
@@ -60,7 +60,7 @@ export type PostgresCategoryRow = {
   readonly updatedAt: number;
 } & PostgresMutableMetadata;
 
-export type PostgresProductRow = {
+type PostgresProductRow = {
   readonly id: string;
   readonly name: string;
   readonly categoryId: string;
@@ -77,7 +77,7 @@ export type PostgresProductRow = {
   readonly deletedAt: number | null;
 } & PostgresMutableMetadata;
 
-export type PostgresBatchRow = {
+type PostgresBatchRow = {
   readonly id: string;
   readonly productId: string;
   readonly batchNumber: string | null;

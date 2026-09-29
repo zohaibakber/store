@@ -165,7 +165,7 @@ const anotherOwner = (store: Store, organizationId: OrganizationId, userId: User
       entry.organizationId === organizationId && entry.role === "owner" && entry.userId !== userId,
   );
 
-export const fakeRepository = (store: Store): AuthRepositoryApi => ({
+const fakeRepository = (store: Store): AuthRepositoryApi => ({
   findUserByEmail: (email) =>
     Effect.succeed(store.users.find((user) => user.email === email) ?? null),
   findUserById: (userId) => Effect.succeed(store.users.find((user) => user.id === userId) ?? null),

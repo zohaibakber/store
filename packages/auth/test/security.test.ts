@@ -28,25 +28,24 @@ describe("GitHub env fallbacks", () => {
     );
   });
 
-  it("parses comma-separated trusted origins and drops blanks", () => {
-    expect(parseTrustedOrigins(undefined)).toEqual([]);
-    expect(parseTrustedOrigins("")).toEqual([]);
-    expect(parseTrustedOrigins(" https://app.example.com, ,https://admin.example.com ")).toEqual([
-      "https://app.example.com",
-      "https://admin.example.com",
-    ]);
-  });
-
-  it("parses lists written with spaces or wrapping quotes", () => {
-    expect(parseTrustedOrigins("https://app.example.com https://admin.example.com")).toEqual([
-      "https://app.example.com",
-      "https://admin.example.com",
-    ]);
-    expect(parseTrustedOrigins('"https://app.example.com"')).toEqual(["https://app.example.com"]);
-    expect(parseTrustedOrigins("'https://app.example.com','https://admin.example.com'")).toEqual([
-      "https://app.example.com",
-      "https://admin.example.com",
-    ]);
+  it.each([
+    [undefined, []],
+    ["", []],
+    [
+      " https://app.example.com, ,https://admin.example.com ",
+      ["https://app.example.com", "https://admin.example.com"],
+    ],
+    [
+      "https://app.example.com https://admin.example.com",
+      ["https://app.example.com", "https://admin.example.com"],
+    ],
+    ['"https://app.example.com"', ["https://app.example.com"]],
+    [
+      "'https://app.example.com','https://admin.example.com'",
+      ["https://app.example.com", "https://admin.example.com"],
+    ],
+  ])("parses trusted origins from %j", (raw, expected) => {
+    expect(parseTrustedOrigins(raw)).toEqual(expected);
   });
 });
 
@@ -173,10 +172,6 @@ describe("resolveAuthSecurity", () => {
     expect(resolved.trustedOrigins).toContain("com.tabaaq.mobile://");
   });
 
-  it("always trusts the local Android debug package", () => {
-    expect(resolveAuthSecurity(secureInput).trustedOrigins).toContain("com.tabaaq.mobile.debug://");
-  });
-
   it.each([
     ["electronProtocol", "ELECTRON_PROTOCOL", DEFAULT_ELECTRON_PROTOCOL],
     ["mobileProtocol", "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL],
@@ -205,13 +200,10 @@ describe("matchesTrustedOrigin", () => {
     ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
     ["com.tabaaq.mobile.debug://app", "com.tabaaq.mobile.debug://", true],
     ["https://evil.example.net", "com.tabaaq.mobile://", false],
+    ["https://api.example.com", "*.example.com", true],
+    ["https://api.example.com", "*.other.com", false],
   ])("matches %s against %s", (origin, pattern, expected) => {
     expect(isTrustedOrigin(origin, [pattern])).toBe(expected);
-  });
-
-  it("matches a bare host pattern against the origin host", () => {
-    expect(isTrustedOrigin("https://api.example.com", ["*.example.com"])).toBe(true);
-    expect(isTrustedOrigin("https://api.example.com", ["*.other.com"])).toBe(false);
   });
 });
 

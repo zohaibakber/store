@@ -1,6 +1,5 @@
 import {
   OrgCommitSequence,
-  PartitionDigest,
   type SyncCoverage,
   type SyncPullResult,
   type SyncSubscription,
@@ -8,47 +7,14 @@ import {
 import { replicaCoverage } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
-import { decodeSubscription } from "./codecs";
 import { decideCoverageAfterPull } from "./decisions";
 import { logPartitionDivergence, sqlitePartitionDigest } from "./digest";
-import { ReplicaStorageError } from "./errors";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
 type DigestVerification = {
   readonly verifiedAt: number | undefined;
 };
-
-export const loadCoverage = Effect.fn("ReplicaCoverage.loadCoverage")(function* (
-  tx: ReplicaDb,
-  subscription: SyncSubscription,
-) {
-  const row = yield* tx
-    .select()
-    .from(replicaCoverage)
-    .where(eq(replicaCoverage.subscription, subscription))
-    .get();
-  if (!row) return undefined;
-  const decoded = decodeSubscription(row.subscription);
-  if (Option.isNone(decoded)) {
-    return yield* Effect.fail(
-      ReplicaStorageError.make({ message: "Replica coverage subscription is invalid." }),
-    );
-  }
-  if (row.state === "awaiting_snapshot") {
-    return { _tag: "awaitingSnapshot", subscription: decoded.value } satisfies SyncCoverage;
-  }
-  if (row.throughCommitSequence && row.digest) {
-    return {
-      _tag: "downloaded",
-      subscription: decoded.value,
-      throughCommitSequence: OrgCommitSequence.make(row.throughCommitSequence),
-      digest: PartitionDigest.make(row.digest),
-    } satisfies SyncCoverage;
-  }
-  return undefined;
-});
 
 const saveCoverage = Effect.fn("ReplicaCoverage.saveCoverage")(function* (
   tx: ReplicaDb,

@@ -33,8 +33,8 @@ import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import type { SyncSchedulerPolicy } from "../src/scheduler";
-import { startOwnedHttpSync, type OwnedHttpSync } from "../src/session";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
+import { startOwnedSync } from "./lib/owned-sync";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
@@ -241,9 +241,11 @@ const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
     Effect.flatMap((mutex) => makeSyncEngineFromReplicaStore(store, mutex, transport)),
   );
 
-const statusOf = (owned: OwnedHttpSync) => SubscriptionRef.get(owned.scheduler.status);
+type OwnedSync = Effect.Success<ReturnType<typeof startOwnedSync>>;
 
-const firstSettledStatus = (owned: OwnedHttpSync) =>
+const statusOf = (owned: OwnedSync) => SubscriptionRef.get(owned.scheduler.status);
+
+const firstSettledStatus = (owned: OwnedSync) =>
   SubscriptionRef.changes(owned.scheduler.status).pipe(
     Stream.filter((status) => status._tag !== "running"),
     Stream.runHead,
@@ -368,13 +370,10 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           { ...identity, epoch: "2" },
           { pullFailure: syncProtocolError("EPOCH_MISMATCH", "The authority was restored.") },
         );
-        const owned = yield* startOwnedHttpSync(
-          store,
-          authority.transport,
-          `registered-${databaseCounter}`,
-          undefined,
-          fastPolicy,
-        );
+        const owned = yield* startOwnedSync(store, authority.transport, {
+          databaseIdentity: `registered-${databaseCounter}`,
+          policy: fastPolicy,
+        });
         const settled = yield* firstSettledStatus(owned);
         yield* owned.dispose;
         expect(Option.getOrUndefined(settled)).toMatchObject({
@@ -395,20 +394,17 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           { epoch: "1", incarnation: "authority-g", nextClientSequence: "1" },
           { offlineRegistrations: 2, calls },
         );
-        const owned = yield* startOwnedHttpSync(
-          store,
-          authority.transport,
-          `offline-${databaseCounter}`,
-          undefined,
-          { ...fastPolicy, activePollMillis: 60_000, backoffMillis: [60_000] },
-        );
+        const owned = yield* startOwnedSync(store, authority.transport, {
+          databaseIdentity: `offline-${databaseCounter}`,
+          policy: { ...fastPolicy, activePollMillis: 60_000, backoffMillis: [60_000] },
+        });
         yield* awaitCall(calls, "register");
-        yield* owned.wake("reconnect");
+        yield* owned.scheduler.wake("reconnect");
         yield* awaitCall(calls, "register");
         expect(authority.counts).toMatchObject({ registers: 2, pulls: 0 });
         expect(yield* statusOf(owned)).toEqual({ _tag: "running" });
         yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
-        yield* owned.wake("reconnect");
+        yield* owned.scheduler.wake("reconnect");
         yield* awaitCall(calls, "pull");
         const status = yield* statusOf(owned);
         yield* owned.dispose;

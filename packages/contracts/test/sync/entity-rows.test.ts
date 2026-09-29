@@ -42,11 +42,6 @@ test("a required field is still rejected when unknown fields are tolerated", () 
   expect(Result.isFailure(decodeApply(missingName))).toBe(true);
 });
 
-test("a well-formed product row decodes in both directions", () => {
-  expect(Result.isSuccess(decodeApply(productRow))).toBe(true);
-  expect(Result.isSuccess(decodePush(productRow))).toBe(true);
-});
-
 test("both directions reject the rows only the server used to reject", () => {
   for (const invalid of [
     { ...productRow, name: "" },

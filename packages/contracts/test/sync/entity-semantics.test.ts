@@ -3,7 +3,6 @@ import {
   compareSyncEntityChanges,
   orderSyncEntityChanges,
   syncEntityChangeKey,
-  syncEntityDependencyOrder,
 } from "@store/contracts";
 import { expect, test } from "vitest";
 
@@ -13,12 +12,6 @@ const change = (entity: SyncEntity, entityId: string): SyncEntityChange => ({
   action: "upsert",
   rowVersion: 1,
   row: {},
-});
-
-test("every protocol entity has an explicit dependency rank", () => {
-  expect(Object.keys(syncEntityDependencyOrder).sort()).toEqual(
-    ["category", "product", "batch", "invoice", "invoiceItem", "stockMovement"].sort(),
-  );
 });
 
 test("changes have one deterministic total order", () => {

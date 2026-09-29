@@ -3,7 +3,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  ACCESS_TOKEN_TTL_SECONDS,
   AUTH_JWT_KEY_ID,
   EmailAddress,
   issueAccessToken,
@@ -69,7 +68,6 @@ describe("ES256 access tokens", () => {
     const { accessTokenTtlSeconds: _ttl, ...config } = await configuration();
     const issued = await Effect.runPromise(issueAccessToken(input, config));
 
-    expect(ACCESS_TOKEN_TTL_SECONDS).toBe(3_600);
     expect(issued.expiresAt).toBe(input.now + 3_600_000);
   });
 

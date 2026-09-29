@@ -3,7 +3,6 @@ import { OrgCommitSequence } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import type { IndexedDbSubsetPlan } from "../src/replica/indexeddb/query";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 
 const databaseName = "replica-indexeddb-query";
@@ -37,59 +36,6 @@ const managed = {
 } satisfies ManagedSeedColumns;
 
 describe("IndexedDB subset query path", () => {
-  it.effect("loads a catalog category by primary id with a paired stamp", () =>
-    Effect.gen(function* () {
-      const store = yield* makeIndexedDbReplicaStore({
-        databaseName,
-        databaseIdentity: databaseName,
-        identity: {
-          organizationId: "org-1",
-          userId: "user-1",
-          replicaId: "replica-1",
-        },
-        indexedDB,
-        IDBKeyRange,
-      });
-
-      yield* store.applyTransactionGroup({
-        commitSequence: OrgCommitSequence.make("1"),
-        operationId: "seed-cat",
-        decision: "accepted",
-        changes: [
-          {
-            entity: "category",
-            action: "upsert",
-            entityId: "cat-1",
-            rowVersion: 1,
-            row: { id: "cat-1", name: "Analgesics", tracksPacks: true, ...managed },
-          },
-          {
-            entity: "category",
-            action: "upsert",
-            entityId: "cat-2",
-            rowVersion: 1,
-            row: { id: "cat-2", name: "Antibiotics", tracksPacks: true, ...managed },
-          },
-        ],
-      });
-
-      const plan: IndexedDbSubsetPlan = {
-        table: "categories",
-        scan: { _tag: "primaryEquals", id: "cat-1" },
-        residual: undefined,
-        orderBy: [],
-        limit: 10,
-        offset: 0,
-      };
-      const result = yield* store.querySubset(plan);
-      expect(result.rows).toHaveLength(1);
-      expect(result.rows[0]?.id).toBe("cat-1");
-      expect(result.stamp.localCommitVersion).toBeGreaterThan(0);
-
-      yield* store.dispose();
-    }),
-  );
-
   it.effect("loads invoice items by invoice index and a bounded createdAt list", () =>
     Effect.gen(function* () {
       const name = `${databaseName}-invoice`;

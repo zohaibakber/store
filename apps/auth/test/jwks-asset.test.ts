@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { JWKS_CACHE_CONTROL, writeJwksAssets } from "../src/jwks-asset";
+import { writeJwksAssets } from "../src/jwks-asset";
 
 const directories: Array<string> = [];
 
@@ -38,6 +38,8 @@ describe("JWKS static asset", () => {
       publicJwks(publicJwk),
     );
     expect(written).not.toContain('"d"');
-    expect(assets.headers).toBe(`/.well-known/jwks.json\n  Cache-Control: ${JWKS_CACHE_CONTROL}\n`);
+    expect(assets.headers).toBe(
+      "/.well-known/jwks.json\n  Cache-Control: public, max-age=3600, stale-while-revalidate=86400\n",
+    );
   });
 });

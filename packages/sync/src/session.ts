@@ -10,8 +10,7 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { withDetachedScope } from "./detached-scope";
-import { cursorFromStore, SyncEngine, type SyncEngineContract } from "./engine";
+import { cursorFromStore, SyncEngine } from "./engine";
 import { makeLiveSocket, type LiveSocketHost } from "./live-socket";
 import { recoverRequiredSnapshot, type SnapshotRecoveryError } from "./recovery";
 import { SyncRecoveryRequired } from "./replica/errors";
@@ -21,18 +20,9 @@ import {
   SyncScheduler,
   type SyncSchedulerContract,
   type SyncSchedulerPolicy,
-  type SyncWakeReason,
 } from "./scheduler";
 import { SyncTransportService, type SyncTransport } from "./transport";
-import { makeWebNetworkOwnership, type WebNetworkOwnership } from "./web-ownership";
-
-export type OwnedHttpSync = {
-  readonly engine: SyncEngineContract;
-  readonly scheduler: SyncSchedulerContract;
-  readonly ownership: WebNetworkOwnership;
-  readonly wake: (reason?: SyncWakeReason) => Effect.Effect<void>;
-  readonly dispose: Effect.Effect<void>;
-};
+import { makeWebNetworkOwnership } from "./web-ownership";
 
 export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
 
@@ -74,7 +64,7 @@ export const recoverFrom = (
 const ownHttpSync = (
   options: OwnedHttpSyncOptions,
 ): Effect.Effect<
-  Omit<OwnedHttpSync, "wake" | "dispose">,
+  SyncSchedulerContract,
   ReplicaStoreError,
   ReplicaStore | SyncTransportService | SyncEngine | Scope.Scope
 > =>
@@ -144,7 +134,7 @@ const ownHttpSync = (
         Effect.forkScoped,
       );
     }
-    return { engine, scheduler, ownership };
+    return scheduler;
   });
 
 const engineOptions = (policy: SyncSchedulerPolicy | undefined) => ({
@@ -159,32 +149,6 @@ export const layerOwnedHttpSync = (
   SyncProtocolError | ReplicaStoreError,
   ReplicaStore | SyncTransportService
 > =>
-  Layer.effect(
-    SyncScheduler,
-    ownHttpSync(options).pipe(Effect.map((owned) => owned.scheduler)),
-  ).pipe(Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy))));
-
-export const startOwnedHttpSync = (
-  store: ReplicaStoreContract,
-  transport: SyncTransport,
-  databaseIdentity: string,
-  live?: OwnedLiveHost,
-  policy: SyncSchedulerPolicy = defaultHttpPollPolicy,
-): Effect.Effect<OwnedHttpSync> =>
-  Effect.gen(function* () {
-    const engine = yield* SyncEngine.make(engineOptions(policy));
-    const { value: owned, close } = yield* withDetachedScope(
-      ownHttpSync({ databaseIdentity, live, policy }).pipe(
-        Effect.provideService(SyncEngine, engine),
-      ),
-    );
-    return {
-      ...owned,
-      wake: (reason: SyncWakeReason = "localWrite") => owned.scheduler.wake(reason),
-      dispose: close,
-    } satisfies OwnedHttpSync;
-  }).pipe(
-    Effect.orDie,
-    Effect.provideService(ReplicaStore, store),
-    Effect.provideService(SyncTransportService, transport),
+  Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
+    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy))),
   );

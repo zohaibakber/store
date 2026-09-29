@@ -82,7 +82,7 @@ ${openApp}
 </html>`;
 };
 
-export const nativeOAuthHandoffHtml = (appUrl: URL) =>
+const nativeOAuthHandoffHtml = (appUrl: URL) =>
   page({
     title: "Signed in. Tabaaq",
     heading: "You're signed in",
@@ -91,7 +91,7 @@ export const nativeOAuthHandoffHtml = (appUrl: URL) =>
     actionLabel: "Open Tabaaq",
   });
 
-export const oauthCallbackErrorHtml = (message: string) =>
+const oauthCallbackErrorHtml = (message: string) =>
   page({
     title: "Sign-in didn't finish. Tabaaq",
     heading: "Sign-in didn't finish",

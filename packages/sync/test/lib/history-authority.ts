@@ -33,7 +33,7 @@ import type { SyncTransport } from "../../src/transport";
 import { authorityDigest, commitToAuthority, type AuthorityPartition } from "./authority-digest";
 import { FIXTURE_NOW } from "./pending-fixture";
 
-export const SNAPSHOT_PART_ROWS = 500;
+const SNAPSHOT_PART_ROWS = 500;
 
 const historyMetadata = (operationId: string) => ({
   createdAt: FIXTURE_NOW,
@@ -46,7 +46,7 @@ const historyMetadata = (operationId: string) => ({
   rowVersion: 1,
 });
 
-export const invoiceRow = (id: string, invoiceNumber: number, operationId: string) => ({
+const invoiceRow = (id: string, invoiceNumber: number, operationId: string) => ({
   id,
   invoiceNumber,
   customerName: null,
@@ -54,7 +54,7 @@ export const invoiceRow = (id: string, invoiceNumber: number, operationId: strin
   ...historyMetadata(operationId),
 });
 
-export const invoiceItemRow = (id: string, invoiceId: string, operationId: string) => ({
+const invoiceItemRow = (id: string, invoiceId: string, operationId: string) => ({
   id,
   invoiceId,
   productId: LAST_UNIT_PRODUCT_ID,
@@ -68,7 +68,7 @@ export const invoiceItemRow = (id: string, invoiceId: string, operationId: strin
   ...historyMetadata(operationId),
 });
 
-export const saleMovementRow = (id: string, invoiceId: string, operationId: string) => ({
+const saleMovementRow = (id: string, invoiceId: string, operationId: string) => ({
   id,
   productId: LAST_UNIT_PRODUCT_ID,
   batchId: LAST_UNIT_BATCH_ID,

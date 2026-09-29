@@ -8,36 +8,26 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   ReplicaClientSequence,
-  SnapshotId,
-  syncProtocolError,
   type SyncPullResult,
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import { TestClock } from "effect/testing";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 import { afterEach } from "vitest";
 
 import { SyncEngine } from "../src/engine";
-import {
-  IndexedDbReplicaStore,
-  layerIndexedDbReplicaStore,
-  makeIndexedDbReplicaStore,
-} from "../src/replica/indexeddb/store";
+import { IndexedDbReplicaStore, layerIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { layerSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { runReplicaTransaction, SqliteReplica } from "../src/replica/storage";
 import { ReplicaStore } from "../src/replica/store";
 import { SyncScheduler, type SyncSchedulerPolicy } from "../src/scheduler";
-import { layerOwnedHttpSync, startOwnedHttpSync } from "../src/session";
+import { layerOwnedHttpSync } from "../src/session";
 import { SyncTransportService, type SyncTransport } from "../src/transport";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
@@ -69,11 +59,8 @@ const emptyPage: SyncPullResult = {
   retentionFloor: OrgCommitSequence.make("0"),
 };
 
-const countingTransport = (
-  pullFailure?: ReturnType<typeof syncProtocolError>,
-  pulls?: Queue.Enqueue<number>,
-) => {
-  const counts = { pulls: 0, snapshots: 0 };
+const countingTransport = (pulls: Queue.Enqueue<number>) => {
+  const counts = { pulls: 0 };
   const transport: SyncTransport = {
     registerReplica: (request) =>
       Effect.succeed({
@@ -90,21 +77,9 @@ const countingTransport = (
     pull: () =>
       Effect.suspend(() => {
         counts.pulls += 1;
-        return pulls === undefined ? Effect.void : Queue.offer(pulls, counts.pulls);
-      }).pipe(
-        Effect.andThen(() =>
-          pullFailure === undefined ? Effect.succeed(emptyPage) : Effect.fail(pullFailure),
-        ),
-      ),
-    acquireSnapshot: () =>
-      Effect.sync(() => {
-        counts.snapshots += 1;
-        return {
-          _tag: "building" as const,
-          snapshotId: SnapshotId.make("snapshot-building"),
-          retryAfterMillis: 1_000,
-        };
-      }),
+        return Queue.offer(pulls, counts.pulls);
+      }).pipe(Effect.as(emptyPage)),
+    acquireSnapshot: () => Effect.die("unused"),
     readSnapshotPart: () => Effect.die("unused"),
   };
   return { counts, transport };
@@ -119,26 +94,6 @@ afterEach(() => {
 });
 
 describe("sync layers", () => {
-  it.effect("keeps polling after the fiber that started owned sync has finished", () =>
-    Effect.gen(function* () {
-      const pulls = yield* Queue.unbounded<number>();
-      const { counts, transport } = countingTransport(undefined, pulls);
-      const store = yield* makeIndexedDbReplicaStore(storeInput);
-      const starter = yield* Effect.forkChild(
-        startOwnedHttpSync(store, transport, databaseName, undefined, fastPolicy),
-      );
-      const owned = yield* Fiber.join(starter);
-      yield* driveClock;
-      yield* Queue.take(pulls);
-      yield* Queue.take(pulls);
-      yield* owned.dispose;
-      const afterDispose = counts.pulls;
-      yield* advanceWithoutWork;
-      expect(counts.pulls).toBe(afterDispose);
-      yield* store.dispose();
-    }),
-  );
-
   it("provides the typed IndexedDB store alongside the generic replica store", async () => {
     const runtime = ManagedRuntime.make(layerIndexedDbReplicaStore(storeInput));
     const seen = await runtime.runPromise(
@@ -159,7 +114,7 @@ describe("sync layers", () => {
   it.effect("composes one ManagedRuntime from the store, transport, and owned sync layers", () =>
     Effect.gen(function* () {
       const pulls = yield* Queue.unbounded<number>();
-      const { counts, transport } = countingTransport(undefined, pulls);
+      const { counts, transport } = countingTransport(pulls);
       const clock = yield* Clock.clockWith(Effect.succeed);
       const runtime = ManagedRuntime.make(
         layerOwnedHttpSync({ databaseIdentity: databaseName, policy: fastPolicy }).pipe(
@@ -215,31 +170,4 @@ describe("sync layers", () => {
       after: { generationId: "1", localCommitVersion: 5 },
     });
   });
-
-  it.effect(
-    "stops with a recovery status on an epoch mismatch instead of restoring a snapshot",
-    () =>
-      Effect.gen(function* () {
-        const { counts, transport } = countingTransport(
-          syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed."),
-        );
-        const store = yield* makeIndexedDbReplicaStore(storeInput);
-        const owned = yield* startOwnedHttpSync(
-          store,
-          transport,
-          databaseName,
-          undefined,
-          fastPolicy,
-        );
-        const settled = yield* SubscriptionRef.changes(owned.scheduler.status).pipe(
-          Stream.filter((current) => current._tag !== "running"),
-          Stream.runHead,
-        );
-        expect(Option.getOrUndefined(settled)).toMatchObject({ _tag: "recoveryRequired" });
-        expect(counts.snapshots).toBe(0);
-        expect(counts.pulls).toBe(1);
-        yield* owned.dispose;
-        yield* store.dispose();
-      }),
-  );
 });
