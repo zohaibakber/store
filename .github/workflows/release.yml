@@ -2,27 +2,14 @@ name: Release
 
 on:
   workflow_call:
-    inputs:
-      channel:
-        description: Update channel to publish
-        required: false
-        default: latest
-        type: string
     outputs:
       version:
         description: Desktop version published by this run
         value: ${{ jobs.version.outputs.version }}
   workflow_dispatch:
-    inputs:
-      channel:
-        description: Update channel to publish
-        required: true
-        default: latest
-        type: choice
-        options: [latest, nightly]
 
 concurrency:
-  group: desktop-release-${{ inputs.channel }}
+  group: desktop-release
   cancel-in-progress: false
 
 permissions:
@@ -52,14 +39,7 @@ jobs:
           else
             version="$(node -p "require('./apps/desktop/package.json').version")"
           fi
-          if [ "${{ inputs.channel }}" = "nightly" ]; then
-            version="${version}-nightly.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          fi
           while gh release view "v${version}" >/dev/null 2>&1; do
-            if [ "${{ inputs.channel }}" = "nightly" ]; then
-              echo "::error::Nightly release v${version} already exists."
-              exit 1
-            fi
             IFS=. read -r major minor patch <<< "$version"
             version="${major}.${minor}.$((patch + 1))"
           done
@@ -74,46 +54,43 @@ jobs:
         # Windows packaging is paused until its CI runtime is worth restoring.
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    # Same GitHub Environment as the matching Worker deploy, so desktop builds
-    # read the public API URL and protocol that deployment trusts.
-    environment: ${{ inputs.channel == 'nightly' && 'Nightly' || 'Production' }}
+    # Same GitHub Environment as the Worker deploy, so desktop builds read the
+    # public API URL and protocol that deployment trusts.
+    environment: Production
+    env:
+      # Environment variables, not secrets: an API hostname and a URL scheme
+      # are not confidential, and keeping them visible means a build that
+      # points somewhere unexpected is obvious in the logs rather than
+      # masked as ***.
+      VITE_API_URL: ${{ vars.VITE_API_URL }}
+      VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
+      VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+      ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
     steps:
       - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v6
+      - uses: voidzero-dev/setup-vp@v1.21.1
         with:
-          version: 11.22.0
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          node-version: "24"
+          cache: true
 
       - name: Check required configuration
         run: |
           if [ -z "${VITE_API_URL}" ]; then
             echo "::error::VITE_API_URL is empty." \
-                 "Set it on the selected GitHub Environment" \
+                 "Set it on the Production GitHub Environment" \
                  "or the packaged desktop app will talk to localhost."
             exit 1
           fi
           if [ -z "${VITE_AUTH_URL}" ]; then
             echo "::error::VITE_AUTH_URL is empty." \
-                 "Set it on the selected GitHub Environment or packaged sign-in cannot reach auth."
+                 "Set it on the Production GitHub Environment or packaged sign-in cannot reach auth."
             exit 1
           fi
           echo "VITE_API_URL=${VITE_API_URL}"
           echo "VITE_AUTH_URL=${VITE_AUTH_URL}"
           echo "VITE_SENTRY_DSN=${VITE_SENTRY_DSN:+set}"
           echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
-        env:
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
       - name: Set desktop app version
         run: |
@@ -127,21 +104,12 @@ jobs:
 
       - name: Build and publish
         working-directory: apps/desktop
-        run: pnpm run "${RELEASE_SCRIPT}"
+        run: vp run release
         env:
-          RELEASE_SCRIPT: ${{ inputs.channel == 'nightly' && 'release:nightly' || 'release' }}
-          STORE_UPDATE_CHANNEL: ${{ inputs.channel }}
+          STORE_UPDATE_CHANNEL: latest
           # Publishes to this repo directly now that it's public; the default
           # GITHUB_TOKEN has contents:write (see workflow permissions above).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Environment variables, not secrets: an API hostname and a URL scheme
-          # are not confidential, and keeping them visible means a build that
-          # points somewhere unexpected is obvious in the logs rather than
-          # masked as ***.
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
-          VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
 
   publish:
     needs: [version, release]
@@ -149,17 +117,10 @@ jobs:
     steps:
       - name: Publish complete release
         run: |
-          if [ "${{ inputs.channel }}" = "nightly" ]; then
-            gh release edit "v${{ needs.version.outputs.version }}" \
-              --draft=false \
-              --prerelease \
-              --latest=false
-          else
-            gh release edit "v${{ needs.version.outputs.version }}" \
-              --draft=false \
-              --prerelease=false \
-              --latest
-          fi
+          gh release edit "v${{ needs.version.outputs.version }}" \
+            --draft=false \
+            --prerelease=false \
+            --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
