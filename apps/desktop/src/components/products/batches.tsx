@@ -149,6 +149,7 @@ function BatchNumberField({ field }: { field: BatchTextField }) {
 }
 
 function BatchExpiryField({ field }: { field: BatchTextField }) {
+  const [year] = useState(() => new Date().getFullYear());
   return (
     <FormField
       description="Month and year, or pick an exact day."
@@ -163,8 +164,8 @@ function BatchExpiryField({ field }: { field: BatchTextField }) {
           value={field.state.value ? parseISODate(field.state.value) : undefined}
           onChange={(date) => field.handleChange(date ? formatISODate(date) : "")}
           onBlur={field.handleBlur}
-          startMonth={new Date(new Date().getFullYear() - 1, 0)}
-          endMonth={new Date(new Date().getFullYear() + 15, 11)}
+          startMonth={new Date(year - 1, 0)}
+          endMonth={new Date(year + 15, 11)}
         />
       )}
     </FormField>

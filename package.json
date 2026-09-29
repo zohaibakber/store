@@ -24,26 +24,26 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260927.1",
+    "@cloudflare/workers-types": "5.20260929.1",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@oxlint/plugins": "1.85.0",
+    "@oxlint/plugins": "1.86.0",
     "@shadcn/lint": "0.2.0",
     "@types/node": "^26.6.3",
     "alchemy": "catalog:",
     "effect": "catalog:",
-    "oxlint": "1.85.0",
-    "turbo": "^2.11.4",
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0-rc.1",
-    "vite-plus": "^1.0.0-rc.1",
-    "wrangler": "^4.141.0"
+    "oxlint": "1.86.0",
+    "turbo": "^2.11.5",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vite-plus": "^1.0.0",
+    "wrangler": "^4.142.0"
   },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "11.22.0",
+      "version": "11.27.1",
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.22.0"
+  "packageManager": "pnpm@11.27.1"
 }
