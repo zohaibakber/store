@@ -1,4 +1,4 @@
-import { OrganizationName, type AuthOrganizationMembership } from "@store/auth";
+import { OrganizationName, OrganizationSlug, type AuthOrganizationMembership } from "@store/auth";
 import { useForm } from "@tanstack/react-form";
 import * as Schema from "effect/Schema";
 
@@ -39,7 +39,7 @@ export function OrganizationProfileCard({
         _tag: "UpdateOrganization",
         organizationId: organization.id,
         name: OrganizationName.make(value.name.trim()),
-        slug: organization.slug ?? null,
+        slug: organization.slug ? OrganizationSlug.make(organization.slug) : null,
       });
       if (result) toastManager.add({ title: "Organization updated", type: "success" });
     },
