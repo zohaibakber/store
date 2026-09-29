@@ -294,7 +294,6 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     const tables = { dbClient, ...collections };
     const actor = actorFor(host, scope, replica);
     const actions = makeInventoryActions(
-      tables,
       actor,
       replica,
       () => {

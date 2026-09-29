@@ -1,7 +1,6 @@
 import {
   allocationsCoverInput,
   allocateInvoiceLine,
-  nextInvoiceNumber,
   withAllocationIds,
   type AllocatableBatch,
 } from "@store/contracts";
@@ -207,6 +206,3 @@ export const projectIssuedInvoice = (input: {
     movements,
   };
 };
-
-export const replicaInvoiceNumber = (invoices: Iterable<{ readonly invoiceNumber: number }>) =>
-  nextInvoiceNumber([...invoices].map((invoice) => invoice.invoiceNumber));

@@ -1,9 +1,10 @@
 import type {
   BatchRow,
   CategoryRow,
-  InvoiceRow,
+  InventorySubsetSpec,
   ProductRow,
   ReplicaHandle,
+  SqliteResultRow,
 } from "@store/client-db";
 import { syncProtocolError, type SyncCommandEnvelope } from "@store/contracts";
 import { decodeCategoryId, decodeProductId } from "@store/contracts/ids";
@@ -50,15 +51,9 @@ const product: ProductRow = {
   ...metadata,
 };
 
-const collectionOf = <Row extends { readonly id: string }>(rows: ReadonlyArray<Row>) => {
-  const map = new Map(rows.map((row) => [row.id, row]));
-  return {
-    state: {
-      get: (id: string) => map.get(id),
-      values: () => map.values(),
-    },
-  };
-};
+const categoryRecord = (row: CategoryRow) => ({ ...row, tracksPacks: row.tracksPacks ? 1 : 0 });
+
+const productRecord = (row: ProductRow) => ({ ...row, visible: row.visible ? 1 : 0 });
 
 const harness = (rows?: {
   readonly categories?: ReadonlyArray<CategoryRow>;
@@ -67,14 +62,23 @@ const harness = (rows?: {
   readonly rejectEnqueue?: Error;
 }) => {
   const enqueued: Array<SyncCommandEnvelope> = [];
+  const tables = {
+    batches: rows?.batches ?? [],
+    categories: (rows?.categories ?? [category]).map(categoryRecord),
+    products: (rows?.products ?? [product]).map(productRecord),
+    invoices: [],
+    invoiceItems: [],
+    stockMovements: [],
+  } satisfies Record<InventorySubsetSpec["source"], ReadonlyArray<SqliteResultRow>>;
   let nextClientSequence = 1n;
   const replica: ReplicaHandle = {
     workspaceToken: "workspace",
     engine: "sqlite" as const,
     stamp: async () => ({ workspaceToken: "workspace", generationId: "1", localCommitVersion: 1 }),
-    readSubset: async () => {
-      throw new Error("unused");
-    },
+    readSubset: async (spec: InventorySubsetSpec) => ({
+      stamp: { workspaceToken: "workspace", generationId: "1", localCommitVersion: 1 },
+      rows: tables[spec.source],
+    }),
     readInsights: async () => {
       throw new Error("unused");
     },
@@ -97,13 +101,7 @@ const harness = (rows?: {
     close: () => undefined,
   };
   const atoms = createWorkspaceAtoms();
-  const tables = {
-    batches: collectionOf(rows?.batches ?? []),
-    categories: collectionOf(rows?.categories ?? [category]),
-    products: collectionOf(rows?.products ?? [product]),
-    invoices: collectionOf<InvoiceRow>([]),
-  };
-  const actions = makeInventoryActions(tables, actor, replica, () => undefined, atoms);
+  const actions = makeInventoryActions(actor, replica, () => undefined, atoms);
   return { actions, atoms, enqueued };
 };
 
