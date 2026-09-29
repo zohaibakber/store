@@ -26,6 +26,12 @@ release. Add a tool name to select part of the graph. For example, run
 
 <!--VITE PLUS END-->
 
+## Tests
+
+Write tests freely to reproduce or verify a change, then delete them. Only
+commit a test when it is absolutely required, such as guarding a sync-engine
+invariant that nothing else covers. Don't add a test file per fix.
+
 ## Typography
 
 These rules apply to all UI work in `apps/desktop`. The tokens live in
