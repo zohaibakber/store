@@ -21,6 +21,7 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -42,6 +43,7 @@ jobs:
     needs: verify
     if: github.event_name != 'pull_request' && github.ref_name == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: Production
     concurrency:
       group: deploy-prod
@@ -93,8 +95,42 @@ jobs:
         run: bun alchemy deploy --stage "${STAGE}" --yes
 
   desktop:
-    needs: deploy
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref_name == 'main'
     permissions:
       contents: write
     secrets: inherit
     uses: ./.github/workflows/release.yml
+    with:
+      publish: false
+
+  publish-desktop:
+    needs: [deploy, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish complete release
+        run: |
+          gh release edit "v${{ needs.desktop.outputs.version }}" \
+            --draft=false \
+            --prerelease=false \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+
+  discard-desktop:
+    needs: [deploy, desktop]
+    if: failure() && needs.desktop.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Delete unpublished draft
+        run: gh release delete "v${{ needs.desktop.outputs.version }}" --yes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}

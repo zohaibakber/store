@@ -2,11 +2,21 @@ name: Release
 
 on:
   workflow_call:
+    inputs:
+      publish:
+        description: Publish the draft release once built
+        type: boolean
+        default: true
     outputs:
       version:
         description: Desktop version published by this run
         value: ${{ jobs.version.outputs.version }}
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the draft release once built
+        type: boolean
+        default: true
 
 concurrency:
   group: desktop-release
@@ -21,6 +31,7 @@ env:
 jobs:
   version:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -54,6 +65,7 @@ jobs:
         # Windows packaging is paused until its CI runtime is worth restoring.
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     # Same GitHub Environment as the Worker deploy, so desktop builds read the
     # public API URL and protocol that deployment trusts.
     environment: Production
@@ -112,7 +124,9 @@ jobs:
 
   publish:
     needs: [version, release]
+    if: inputs.publish
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Publish complete release
         run: |

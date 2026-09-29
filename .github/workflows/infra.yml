@@ -29,6 +29,7 @@ env:
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: ${{ inputs.stage == 'prod' && 'Production' || 'Development' }}
     env:
       CI: "1"

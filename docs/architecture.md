@@ -108,7 +108,7 @@ to the code they deploy. There are two stages:
 ## CI
 
 `.github/workflows/ci.yml` runs `vp check`, `vp run -r check`, and `vp test` on
-every change. Every push to `main` then deploys prod and runs
-`release.yml`, which bumps the patch version and publishes the desktop release
-through electron-builder. `infra.yml` is a manual plan or deploy for either
+every change. Every push to `main` then deploys prod while `release.yml` bumps
+the patch version and builds a draft desktop release through electron-builder.
+CI publishes the draft only after the deploy succeeds. `infra.yml` is a manual plan or deploy for either
 stage.

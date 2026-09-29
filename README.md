@@ -144,9 +144,10 @@ verification.
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
 Desktop releases are built by electron-builder
-(`electron-builder --publish always`) after each production deploy. Each run
-bumps the latest GitHub release patch and publishes a draft until Linux
-artifacts are present. `workflow_dispatch` on `.github/workflows/release.yml`
+(`electron-builder --publish always`) alongside each production deploy. Each
+run bumps the latest GitHub release patch and uploads a draft, which CI
+publishes once both the deploy and the Linux artifacts succeed, or deletes if
+the deploy fails. `workflow_dispatch` on `.github/workflows/release.yml`
 remains available for a packaging-only rebuild; it does not deploy
 infrastructure.
 
