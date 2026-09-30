@@ -1,10 +1,10 @@
 import type {
   CommandReceipt,
+  EnqueueCommandRequest,
   RegisterReplicaResult,
   SnapshotId,
   SnapshotManifest,
   SnapshotPartPayload,
-  SyncCommandEnvelope,
   SyncEntity,
   SyncPullResult,
   SyncSubscription,
@@ -18,6 +18,7 @@ import type {
 } from "@store/contracts/sync/replica-model";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
 import type { ClaimNextUploadInput, UploadClaim } from "./commands";
@@ -41,6 +42,7 @@ type PendingRowMarkEntry = {
 export type QueuedCommand = {
   readonly operationId: string;
   readonly status: CommandStatus;
+  readonly stamp: ReplicaReadStamp;
 };
 
 type ReplicaSyncCursor = {
@@ -66,8 +68,7 @@ interface ReplicaRegistrationStore {
 
 interface ReplicaCommandStore {
   readonly enqueueCommand: (
-    envelope: SyncCommandEnvelope,
-    createdAt: number,
+    request: EnqueueCommandRequest,
   ) => Effect.Effect<Committed<QueuedCommand>, ReplicaStoreError>;
 
   readonly readCommandStatus: (
@@ -117,19 +118,34 @@ type SnapshotImportProgress = {
   readonly partsImported: number;
 };
 
+export type SnapshotActivation =
+  | { readonly _tag: "activated" }
+  | {
+      readonly _tag: "needsAuthority";
+      readonly afterCommitSequence: string;
+      readonly throughCommitSequence: string;
+    };
+
 export interface ReplicaSnapshotImportStore {
   readonly beginSnapshotImport: (
     manifest: SnapshotManifest,
-  ) => Effect.Effect<SnapshotImportProgress, ReplicaStoreError>;
+  ) => Effect.Effect<SnapshotImportProgress, ReplicaStoreError, Scope.Scope>;
 
   readonly importSnapshotPart: (
     manifest: SnapshotManifest,
     part: SnapshotPartPayload,
   ) => Effect.Effect<void, ReplicaStoreError>;
 
+  readonly applyCandidateAuthority: (
+    snapshotId: SnapshotId,
+    page: SyncPullResult,
+  ) => Effect.Effect<string, ReplicaStoreError>;
+
+  readonly abandonSnapshot: (snapshotId: SnapshotId) => Effect.Effect<void, ReplicaStoreError>;
+
   readonly activateSnapshot: (
     snapshotId: SnapshotId,
-  ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
+  ) => Effect.Effect<Committed<SnapshotActivation>, ReplicaStoreError>;
 }
 
 interface ReplicaCoverageStore {

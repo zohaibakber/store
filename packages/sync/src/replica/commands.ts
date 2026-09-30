@@ -1,33 +1,33 @@
-import { CommandReceipt, SyncCommandEnvelope, type RegisterReplicaResult } from "@store/contracts";
 import {
-  batches,
-  commandOutbox,
-  pendingRowMarks,
-  products,
-  replicaState,
-  stockOverlays,
-} from "@store/db/replica.schema";
-import { and, eq, inArray } from "drizzle-orm";
-import * as Array from "effect/Array";
+  CommandReceipt,
+  incrementDecimalSequence,
+  SyncCommandEnvelope,
+  syncProtocolError,
+  type EnqueueCommandRequest,
+  type RegisterReplicaResult,
+} from "@store/contracts";
+import { canonicalPayloadHash } from "@store/contracts/operation-hash";
+import type { CommandStatus, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
+import { commandOutbox, replicaState, stockOverlays } from "@store/db/replica.schema";
+import { eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
+import { stampOf, withStockTouched } from "./commit-hub";
 import {
-  byClientSequence,
   checkAuthorityHead,
   checkIncarnation,
-  decideEnqueue,
+  decideEnqueueReplay,
+  decideOverlays,
   decideReceipt,
-  EMPTY_STOCK,
   isStaleClaim,
-  nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
-  withPendingOverlays,
-  type VisibleStock,
 } from "./decisions";
 import { ReplicaStorageError } from "./errors";
-import { replicaCatalogLookup, restorePendingProjection, writePendingProjection } from "./pending";
+import { readCommandContext, readVisibleBatchStock } from "./lookup";
+import { restorePendingProjection, writePendingProjection } from "./pending";
 import {
   checkEnqueueAllowed,
   type CommandProjection,
@@ -93,84 +93,12 @@ const updateOutbox = (tx: ReplicaDb, operationId: string, fields: Partial<Outbox
 const selectOutboxRow = (tx: ReplicaDb, operationId: string) =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get();
 
-const loadVisibleStock = Effect.fn("ReplicaCommands.loadVisibleStock")(function* (
-  tx: ReplicaDb,
-  batchId?: string,
-) {
-  const batchRows = yield* (
-    batchId === undefined
-      ? tx.select().from(batches)
-      : tx.select().from(batches).where(eq(batches.id, batchId))
-  ).all();
-  const overlayRows = yield* (
-    batchId === undefined
-      ? tx.select().from(stockOverlays)
-      : tx.select().from(stockOverlays).where(eq(stockOverlays.batchId, batchId))
-  ).all();
-  const markRows = yield* tx
-    .select()
-    .from(pendingRowMarks)
-    .where(
-      batchId === undefined
-        ? eq(pendingRowMarks.entity, "batch")
-        : and(eq(pendingRowMarks.entity, "batch"), eq(pendingRowMarks.entityId, batchId)),
-    )
-    .all();
-  const operationIds = [
-    ...new Set([
-      ...overlayRows.map((overlay) => overlay.commandId),
-      ...markRows.map((mark) => mark.operationId),
-    ]),
-  ];
-  const sequenceRows =
-    operationIds.length === 0
-      ? []
-      : yield* tx
-          .select({
-            operationId: commandOutbox.operationId,
-            clientSequence: commandOutbox.clientSequence,
-          })
-          .from(commandOutbox)
-          .where(inArray(commandOutbox.operationId, operationIds))
-          .all();
-  const sequenceOf = new Map(sequenceRows.map((row) => [row.operationId, row.clientSequence]));
-  const absoluteSequence = new Map(
-    markRows.map((mark) => [mark.entityId, sequenceOf.get(mark.operationId)]),
-  );
-  const overlaysByBatch = Array.groupBy(overlayRows, (overlay) => overlay.batchId);
-  return new Map<string, VisibleStock>(
-    batchRows.map((batch) => [
-      batch.id,
-      withPendingOverlays(
-        batch,
-        (overlaysByBatch[batch.id] ?? []).map((overlay) => ({
-          packDelta: overlay.packDelta,
-          unitDelta: overlay.unitDelta,
-          clientSequence: sequenceOf.get(overlay.commandId),
-        })),
-        absoluteSequence.get(batch.id),
-      ),
-    ]),
-  );
-});
-
-export const loadStockIndex = Effect.fn("ReplicaCommands.loadStockIndex")(function* (
-  tx: ReplicaDb,
-) {
-  const productRows = yield* tx.select().from(products).all();
-  const stock = yield* loadVisibleStock(tx);
-  const unitsPerPack = new Map(productRows.map((row) => [row.id, row.unitsPerPack]));
-  return {
-    unitsPerPackFor: (productId: string) => unitsPerPack.get(productId) ?? 1,
-    stockFor: (batchId: string) => stock.get(batchId) ?? EMPTY_STOCK,
-  };
-});
-
 export const visibleBatchStock = Effect.fn("ReplicaCommands.visibleBatchStock")(function* (
   tx: ReplicaDb,
   batchId: string,
 ) {
-  return (yield* loadVisibleStock(tx, batchId)).get(batchId);
+  const { organizationId } = yield* loadReplicaState(tx);
+  return yield* readVisibleBatchStock(tx, organizationId, batchId);
 });
 
 export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function* (
@@ -184,57 +112,103 @@ export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function
 export const parseStoredEnvelope = (row: OutboxRow) => decodeStoredEnvelope(row);
 
 type SavedLocalCommand = {
-  readonly status: CommandOutboxStatus;
+  readonly status: CommandStatus;
+  readonly stamp: ReplicaReadStamp;
+  readonly changed: boolean;
   readonly projection: CommandProjection | undefined;
+  readonly stockBatchIds: ReadonlyArray<string>;
 };
+
+const decodeEnvelope = Schema.decodeUnknownEffect(SyncCommandEnvelope);
 
 export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(function* (
   tx: ReplicaDb,
-  envelope: SyncCommandEnvelope,
-  createdAt: number,
+  request: EnqueueCommandRequest,
 ) {
-  const existing = yield* selectOutboxRow(tx, envelope.operationId);
+  const existing = yield* selectOutboxRow(tx, request.operationId);
   const state = yield* loadReplicaState(tx);
-  const index = yield* loadStockIndex(tx);
-  const existingEntry = existing
-    ? { status: existing.status, envelope: yield* parseStoredEnvelope(existing) }
-    : undefined;
-  const decision = yield* Effect.fromResult(
-    decideEnqueue(state, existingEntry, envelope, index.unitsPerPackFor, index.stockFor),
+  const payloadHash = canonicalPayloadHash(request.command);
+  const replay = yield* Effect.fromResult(
+    decideEnqueueReplay(
+      existing
+        ? { status: existing.status, envelope: yield* parseStoredEnvelope(existing) }
+        : undefined,
+      payloadHash,
+    ),
   );
-  if (decision._tag === "replay") {
-    return { status: decision.status, projection: undefined } satisfies SavedLocalCommand;
+  if (replay !== undefined) {
+    return {
+      status: replay,
+      stamp: stampOf(state),
+      changed: false,
+      projection: undefined,
+      stockBatchIds: [],
+    } satisfies SavedLocalCommand;
   }
-  const lookup = yield* replicaCatalogLookup(tx);
-  yield* checkEnqueueAllowed(envelope, lookup, index.unitsPerPackFor, index.stockFor);
-  for (const overlay of decision.overlays) {
+  const envelope = yield* decodeEnvelope({
+    organizationId: state.organizationId,
+    epoch: state.epoch,
+    replicaId: state.replicaId,
+    clientSequence: state.nextClientSequence,
+    operationId: request.operationId,
+    payloadHash,
+    command: request.command,
+  }).pipe(Effect.mapError((error) => syncProtocolError("INVALID_OPERATION", error.message)));
+  const context = yield* readCommandContext(tx, state.organizationId, envelope.command, {
+    checkRules: true,
+    withStock: true,
+  });
+  yield* checkEnqueueAllowed(envelope, context.lookup, context.unitsPerPackFor, context.stockFor);
+  const overlays = decideOverlays(envelope, context.unitsPerPackFor);
+  for (const overlay of overlays) {
     yield* tx.insert(stockOverlays).values(overlay);
   }
-  const projection = yield* writePendingProjection(tx, envelope);
+  const projection = yield* writePendingProjection(
+    tx,
+    envelope,
+    { organizationId: state.organizationId, userId: state.userId },
+    context.lookup,
+  );
   yield* tx.insert(commandOutbox).values({
     operationId: envelope.operationId,
     status: "pending",
     envelopeJson: encodeEnvelopeJson(envelope),
     receiptJson: null,
     clientSequence: envelope.clientSequence,
-    createdAt,
+    createdAt: request.occurredAt,
   });
+  const localCommitVersion = state.localCommitVersion + 1;
   yield* tx
     .update(replicaState)
     .set({
-      nextClientSequence: decision.nextClientSequence,
-      localCommitVersion: state.localCommitVersion + 1,
+      nextClientSequence: incrementDecimalSequence(state.nextClientSequence),
+      localCommitVersion,
     })
     .where(eq(replicaState.id, state.id));
-  return { status: "pending", projection } satisfies SavedLocalCommand;
+  return {
+    status: "pending",
+    stamp: stampOf({ activeGeneration: state.activeGeneration, localCommitVersion }),
+    changed: true,
+    projection,
+    stockBatchIds: [...new Set(overlays.map((overlay) => overlay.batchId))],
+  } satisfies SavedLocalCommand;
 });
 
 const undoLocalEffects = Effect.fn("ReplicaCommands.undoLocalEffects")(function* (
   tx: ReplicaDb,
   operationId: string,
 ) {
+  const overlays = yield* tx
+    .select({ batchId: stockOverlays.batchId })
+    .from(stockOverlays)
+    .where(eq(stockOverlays.commandId, operationId))
+    .all();
   yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, operationId));
-  return yield* restorePendingProjection(tx, operationId);
+  const restored = yield* restorePendingProjection(tx, operationId);
+  return withStockTouched(
+    restored,
+    overlays.map((overlay) => overlay.batchId),
+  );
 });
 
 export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(function* (
@@ -247,12 +221,13 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
     .where(eq(commandOutbox.status, "sending"))
     .get();
   if (outstanding) return undefined;
-  const pending = yield* tx
+  const row = yield* tx
     .select()
     .from(commandOutbox)
     .where(eq(commandOutbox.status, "pending"))
-    .all();
-  const row = nextUploadClaim(Array.sort(pending, byClientSequence));
+    .orderBy(sql`length(${commandOutbox.clientSequence})`, commandOutbox.clientSequence)
+    .limit(1)
+    .get();
   if (!row) return undefined;
   const envelope = yield* parseStoredEnvelope(row);
   const attempts = row.attempts + 1;

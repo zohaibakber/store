@@ -19,6 +19,7 @@ import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { IndexedDbSubsetPlan } from "../src/replica/indexeddb/query";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { enqueueRequestOf } from "./lib/enqueue";
 
 const databaseName = "replica-idb-snapshot";
 
@@ -153,7 +154,7 @@ describe("IndexedDB staged snapshot activation", () => {
           ],
         });
 
-        yield* store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+        yield* store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
         const before = yield* store.readStamp();
         expect(before.generationId).toBe("1");
 

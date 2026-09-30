@@ -1,0 +1,1 @@
+CREATE INDEX `stock_overlays_batch_id_idx` ON `stock_overlays` (`batchId`);

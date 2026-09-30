@@ -31,9 +31,13 @@ export const runMigrations = Effect.fn("ReplicaMigrations.run")(function* (
   const applied = new Set(ledger.map((row) => row.key));
   for (const [key, migration] of Arr.sort(Object.entries(migrations), byKey)) {
     if (applied.has(key)) continue;
-    for (const statement of migrationStatements(migration)) {
-      yield* sql.unsafe(statement);
-    }
-    yield* sql.unsafe(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
+    yield* sql.withTransaction(
+      Effect.gen(function* () {
+        for (const statement of migrationStatements(migration)) {
+          yield* sql.unsafe(statement);
+        }
+        yield* sql.unsafe(`insert into ${LEDGER_TABLE} (key) values (?)`, [key]);
+      }),
+    );
   }
 });

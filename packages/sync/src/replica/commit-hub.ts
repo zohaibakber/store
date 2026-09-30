@@ -4,9 +4,7 @@ import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
-export const touchedEntitiesWithStock = (
-  entities: ReadonlyArray<SyncEntity> | undefined,
-): ReadonlyArray<SyncEntity> => [...new Set<SyncEntity>(["batch", ...(entities ?? [])])];
+import { SYNC_ENTITIES } from "./decisions";
 
 export const stampOf = (state: {
   readonly activeGeneration: number;
@@ -42,3 +40,39 @@ export const makeReplicaCommitHub = (): Effect.Effect<ReplicaCommitHub> =>
       commits: Stream.fromPubSub(hub),
     } satisfies ReplicaCommitHub;
   });
+
+export type TouchedSet = {
+  readonly touchedEntities: ReadonlyArray<SyncEntity>;
+  readonly touchedKeys: ReadonlyArray<string>;
+};
+
+export const EMPTY_TOUCHED: TouchedSet = { touchedEntities: [], touchedKeys: [] };
+
+const stockKey = (batchId: string): string => `batch:${batchId}`;
+
+export const mergeTouched = (...parts: ReadonlyArray<TouchedSet>): TouchedSet => ({
+  touchedEntities: [...new Set(parts.flatMap((part) => part.touchedEntities))],
+  touchedKeys: [...new Set(parts.flatMap((part) => part.touchedKeys))],
+});
+
+export const withStockTouched = (
+  touched: TouchedSet,
+  batchIds: ReadonlyArray<string>,
+): TouchedSet =>
+  batchIds.length === 0
+    ? touched
+    : mergeTouched(touched, {
+        touchedEntities: ["batch"],
+        touchedKeys: batchIds.map(stockKey),
+      });
+
+export const touchedOfChange = (entity: SyncEntity, entityId: string): TouchedSet => ({
+  touchedEntities: [entity],
+  touchedKeys: [`${entity}:${entityId}`],
+});
+
+export const touchedOfKey = (key: string): TouchedSet => {
+  const separator = key.indexOf(":");
+  const entity = SYNC_ENTITIES.find((name) => name === key.slice(0, separator));
+  return { touchedEntities: entity === undefined ? [] : [entity], touchedKeys: [key] };
+};

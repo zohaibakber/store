@@ -137,6 +137,13 @@ export const SyncCommandEnvelope = Schema.Struct({
 });
 export type SyncCommandEnvelope = typeof SyncCommandEnvelope.Type;
 
+export const EnqueueCommandRequest = Schema.Struct({
+  operationId: SyncIdentifier,
+  command: SyncCommand,
+  occurredAt: Schema.Natural,
+});
+export type EnqueueCommandRequest = typeof EnqueueCommandRequest.Type;
+
 export const SyncSubmitCommandRequest = SyncCommandEnvelope.pipe(
   Schema.fieldsAssign({
     afterCommitSequence: OrgCommitSequence,

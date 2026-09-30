@@ -1,22 +1,19 @@
 import {
   compareDecimalSequence,
   divergedPartitionEntities,
-  incrementDecimalSequence,
-  SyncCommandEnvelope,
   syncProtocolError,
   type CommandReceipt,
   type PartitionDigest,
   type PartitionDigestReport,
   type PartitionEntity,
+  type SyncCommand,
+  type SyncCommandEnvelope,
   type SyncEntity,
   type SyncProtocolError,
 } from "@store/contracts";
 import type { CommandStatus } from "@store/contracts/sync/replica-model";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
-
-const envelopesEqual = Schema.toEquivalence(SyncCommandEnvelope);
 
 export type VisibleStock = {
   readonly packQuantity: number;
@@ -29,25 +26,6 @@ export type StockOverlayDelta = {
   readonly packDelta: number;
   readonly unitDelta: number;
 };
-
-type ReplicaIdentitySnapshot = {
-  readonly organizationId: string;
-  readonly epoch: string;
-  readonly replicaId: string;
-  readonly nextClientSequence: string;
-};
-
-type EnqueueDecision =
-  | {
-      readonly _tag: "accepted";
-      readonly status: "pending";
-      readonly overlays: ReadonlyArray<StockOverlayDelta>;
-      readonly nextClientSequence: string;
-    }
-  | {
-      readonly _tag: "replay";
-      readonly status: CommandStatus;
-    };
 
 type AllocationTake = {
   readonly productId: string;
@@ -91,7 +69,7 @@ export const byClientSequence: Order.Order<{ readonly clientSequence: string }> 
   (row) => row.clientSequence,
 );
 
-export const withOverlays = (
+const withOverlays = (
   base: VisibleStock,
   overlays: ReadonlyArray<{ readonly packDelta: number; readonly unitDelta: number }>,
 ): VisibleStock =>
@@ -131,90 +109,45 @@ const overlayDeltasForInvoice = (
   operationId: string,
   allocations: ReadonlyArray<AllocationTake>,
   unitsPerPackFor: (productId: string) => number,
-  stockFor: (batchId: string) => VisibleStock,
-): ReadonlyArray<StockOverlayDelta> => {
-  const overlays: Array<StockOverlayDelta> = [];
-  const working = new Map<string, VisibleStock>();
-  for (const take of allocations) {
+): ReadonlyArray<StockOverlayDelta> =>
+  allocations.map((take) => {
     const unitsPerPack = unitsPerPackFor(take.productId);
-    const current = working.get(take.batchId) ?? stockFor(take.batchId);
     const packDeltaRaw = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
     const unitDeltaRaw =
       take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    const packDelta = Object.is(packDeltaRaw, -0) ? 0 : packDeltaRaw;
-    const unitDelta = Object.is(unitDeltaRaw, -0) ? 0 : unitDeltaRaw;
-    working.set(take.batchId, withOverlays(current, [{ packDelta, unitDelta }]));
-    overlays.push({ commandId: operationId, batchId: take.batchId, packDelta, unitDelta });
-  }
-  return overlays;
-};
+    return {
+      commandId: operationId,
+      batchId: take.batchId,
+      packDelta: Object.is(packDeltaRaw, -0) ? 0 : packDeltaRaw,
+      unitDelta: Object.is(unitDeltaRaw, -0) ? 0 : unitDeltaRaw,
+    };
+  });
 
 export const decideOverlays = (
-  envelope: SyncCommandEnvelope,
+  command: { readonly operationId: string; readonly command: SyncCommand },
   unitsPerPackFor: (productId: string) => number,
-  stockFor: (batchId: string) => VisibleStock,
 ): ReadonlyArray<StockOverlayDelta> => {
-  if (envelope.command._tag !== "issueInvoice") return [];
+  if (command.command._tag !== "issueInvoice") return [];
   return overlayDeltasForInvoice(
-    envelope.operationId,
-    envelope.command.payload.allocations,
+    command.operationId,
+    command.command.payload.allocations,
     unitsPerPackFor,
-    stockFor,
   );
 };
 
-export const decideEnqueue = (
-  identity: ReplicaIdentitySnapshot,
+export const decideEnqueueReplay = (
   existing:
     | {
         readonly status: CommandStatus;
-        readonly envelope: SyncCommandEnvelope;
+        readonly envelope: Pick<SyncCommandEnvelope, "payloadHash">;
       }
     | undefined,
-  envelope: SyncCommandEnvelope,
-  unitsPerPackFor: (productId: string) => number,
-  stockFor: (batchId: string) => VisibleStock,
-): Result.Result<EnqueueDecision, SyncProtocolError> => {
-  if (existing) {
-    return envelopesEqual(existing.envelope, envelope)
-      ? Result.succeed({ _tag: "replay", status: existing.status })
-      : Result.fail(syncProtocolError("OPERATION_ID_REUSED", "The local command id was reused."));
-  }
-  if (envelope.organizationId !== identity.organizationId) {
-    return Result.fail(
-      syncProtocolError(
-        "ORGANIZATION_MISMATCH",
-        "The local command belongs to another organization.",
-      ),
-    );
-  }
-  if (envelope.epoch !== identity.epoch) {
-    return Result.fail(
-      syncProtocolError("EPOCH_MISMATCH", "The local command uses another epoch."),
-    );
-  }
-  if (envelope.replicaId !== identity.replicaId) {
-    return Result.fail(
-      syncProtocolError(
-        "COMMAND_IDENTITY_MISMATCH",
-        "The local command belongs to another replica.",
-      ),
-    );
-  }
-  if (envelope.clientSequence !== identity.nextClientSequence) {
-    return Result.fail(
-      syncProtocolError(
-        "REPLICA_SEQUENCE_GAP",
-        `Expected replica sequence ${identity.nextClientSequence}, received ${envelope.clientSequence}.`,
-      ),
-    );
-  }
-  return Result.succeed({
-    _tag: "accepted",
-    status: "pending",
-    overlays: decideOverlays(envelope, unitsPerPackFor, stockFor),
-    nextClientSequence: incrementDecimalSequence(identity.nextClientSequence),
-  });
+  payloadHash: string,
+): Result.Result<CommandStatus | undefined, SyncProtocolError> => {
+  if (existing === undefined) return Result.succeed(undefined);
+  return existing.envelope.payloadHash === payloadHash
+    ? Result.succeed(existing.status)
+    : Result.fail(syncProtocolError("OPERATION_ID_REUSED", "The local command id was reused."));
 };
 
 export const checkStoredEnvelope = (
@@ -386,17 +319,5 @@ export const decideJournalRestore = (
   return successor ? { _tag: "handDown", successor: successor.operationId } : { _tag: "leave" };
 };
 
-export const freeCategoryName = (name: string, taken: ReadonlySet<string>): string => {
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${name} (${suffix})`;
-    if (!taken.has(candidate)) return candidate;
-  }
-};
-
-export const freeInvoiceNumber = (
-  invoiceNumber: number,
-  others: ReadonlyArray<{ readonly invoiceNumber: number }>,
-): number =>
-  others.some((other) => other.invoiceNumber === invoiceNumber)
-    ? others.reduce((highest, other) => Math.max(highest, other.invoiceNumber), invoiceNumber) + 1
-    : invoiceNumber;
+export const freeInvoiceNumber = (invoiceNumber: number, highestOtherNumber: number): number =>
+  Math.max(highestOtherNumber, invoiceNumber) + 1;

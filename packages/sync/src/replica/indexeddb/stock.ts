@@ -1,11 +1,7 @@
-import type { SyncCommandEnvelope } from "@store/contracts";
-import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 
 import {
-  EMPTY_STOCK,
-  withOverlays,
   withPendingOverlays,
   type SequencedOverlay,
   type StockOverlayDelta,
@@ -28,42 +24,59 @@ const sequenceOf = (api: ReplicaQueryBuilder, operationId: string) =>
     .equals(operationId)
     .pipe(Effect.map((rows) => rows[0]?.clientSequence));
 
-const readBatchOverlays = (
-  api: ReplicaQueryBuilder,
-  batchId: string,
-  overlays: ReadonlyArray<StockOverlayDelta>,
-): Effect.Effect<BatchOverlays, unknown> =>
+const absoluteSequenceOf = (api: ReplicaQueryBuilder, batchId: string) =>
   Effect.gen(function* () {
     const [mark] = yield* api.from("pending_row_marks").select().equals(["batch", batchId]);
-    const absoluteSequence = mark ? yield* sequenceOf(api, mark.operationId) : undefined;
-    const sequenced = yield* Effect.forEach(overlays, (overlay) =>
-      sequenceOf(api, overlay.commandId).pipe(
-        Effect.map((clientSequence) => ({
-          packDelta: overlay.packDelta,
-          unitDelta: overlay.unitDelta,
-          clientSequence,
-        })),
-      ),
-    );
-    return { overlays: sequenced, absoluteSequence };
+    return mark ? yield* sequenceOf(api, mark.operationId) : undefined;
   });
 
-const visibleStockOf = (base: VisibleStock, batch: BatchOverlays | undefined): VisibleStock =>
-  batch === undefined ? base : withPendingOverlays(base, batch.overlays, batch.absoluteSequence);
+const contextOf = (
+  api: ReplicaQueryBuilder,
+  overlays: ReadonlyArray<StockOverlayDelta>,
+): Effect.Effect<VisibleStockContext, unknown> =>
+  Effect.gen(function* () {
+    const sequences = new Map<string, string | undefined>();
+    const byBatch = new Map<string, Array<StockOverlayDelta>>();
+    for (const overlay of overlays) {
+      if (!sequences.has(overlay.commandId)) {
+        sequences.set(overlay.commandId, yield* sequenceOf(api, overlay.commandId));
+      }
+      const grouped = byBatch.get(overlay.batchId);
+      if (grouped === undefined) byBatch.set(overlay.batchId, [overlay]);
+      else grouped.push(overlay);
+    }
+    const context = new Map<string, BatchOverlays>();
+    for (const [batchId, batchOverlays] of byBatch) {
+      context.set(batchId, {
+        overlays: batchOverlays.map((overlay) => ({
+          packDelta: overlay.packDelta,
+          unitDelta: overlay.unitDelta,
+          clientSequence: sequences.get(overlay.commandId),
+        })),
+        absoluteSequence: yield* absoluteSequenceOf(api, batchId),
+      });
+    }
+    return context;
+  });
 
 export const readVisibleStockContext = (
   api: ReplicaQueryBuilder,
 ): Effect.Effect<VisibleStockContext, unknown> =>
-  Effect.gen(function* () {
-    const overlays = yield* api.from("stock_overlays").select();
-    const grouped = Array.groupBy(overlays, (overlay) => overlay.batchId);
-    const entries = yield* Effect.forEach(Object.entries(grouped), ([batchId, batchOverlays]) =>
-      readBatchOverlays(api, batchId, batchOverlays).pipe(
-        Effect.map((batch) => [batchId, batch] as const),
-      ),
-    );
-    return new Map(entries);
-  });
+  api
+    .from("stock_overlays")
+    .select()
+    .pipe(Effect.flatMap((overlays) => contextOf(api, overlays)));
+
+export const readVisibleStockContextOf = (
+  api: ReplicaQueryBuilder,
+  batchIds: Iterable<string>,
+): Effect.Effect<VisibleStockContext, unknown> =>
+  Effect.forEach(new Set(batchIds), (batchId) =>
+    api.from("stock_overlays").select("byBatch").equals(batchId),
+  ).pipe(Effect.flatMap((overlays) => contextOf(api, overlays.flat())));
+
+const visibleStockOf = (base: VisibleStock, batch: BatchOverlays | undefined): VisibleStock =>
+  batch === undefined ? base : withPendingOverlays(base, batch.overlays, batch.absoluteSequence);
 
 export const withVisibleStock = <Row extends VisibleStock & { readonly id: string }>(
   row: Row,
@@ -73,64 +86,46 @@ export const withVisibleStock = <Row extends VisibleStock & { readonly id: strin
   return batch === undefined ? row : { ...row, ...visibleStockOf(row, batch) };
 };
 
-export const withVisibleStockCells = (
-  row: IndexedDbSubsetRow,
-  context: VisibleStockContext,
-): IndexedDbSubsetRow => {
+const stockCellsOf = (row: IndexedDbSubsetRow) => {
   const id = row["id"];
   const packQuantity = row["packQuantity"];
   const unitQuantity = row["unitQuantity"];
-  if (
-    !Predicate.isString(id) ||
-    !Predicate.isNumber(packQuantity) ||
-    !Predicate.isNumber(unitQuantity)
-  ) {
-    return row;
-  }
-  return withVisibleStock({ ...row, id, packQuantity, unitQuantity }, context);
+  return Predicate.isString(id) &&
+    Predicate.isNumber(packQuantity) &&
+    Predicate.isNumber(unitQuantity)
+    ? { id, packQuantity, unitQuantity }
+    : undefined;
 };
 
-type IndexedDbStockCache = {
-  readonly load: (envelope: SyncCommandEnvelope) => Effect.Effect<void, unknown>;
-  readonly unitsPerPackFor: (productId: string) => number;
-  readonly stockFor: (batchId: string) => VisibleStock;
-  readonly applyOverlay: (overlay: StockOverlayDelta) => void;
-};
-
-export const makeIndexedDbStockCache = (
+export const withVisibleStockRows = (
   api: ReplicaQueryBuilder,
-  generation: number,
-): IndexedDbStockCache => {
-  const unitsPerPack = new Map<string, number>();
-  const stock = new Map<string, VisibleStock>();
-  const stockFor = (batchId: string) => stock.get(batchId) ?? EMPTY_STOCK;
-  return {
-    load: (envelope) =>
-      Effect.gen(function* () {
-        if (envelope.command._tag !== "issueInvoice") return;
-        for (const take of envelope.command.payload.allocations) {
-          if (!unitsPerPack.has(take.productId)) {
-            const products = yield* api
-              .from("products")
-              .select()
-              .equals([generation, take.productId]);
-            unitsPerPack.set(take.productId, products[0]?.unitsPerPack ?? 1);
-          }
-          if (!stock.has(take.batchId)) {
-            const batches = yield* api.from("batches").select().equals([generation, take.batchId]);
-            const overlays = yield* api
-              .from("stock_overlays")
-              .select("byBatch")
-              .equals(take.batchId);
-            const batch = yield* readBatchOverlays(api, take.batchId, overlays);
-            stock.set(take.batchId, visibleStockOf(batches[0] ?? EMPTY_STOCK, batch));
-          }
-        }
-      }),
-    unitsPerPackFor: (productId) => unitsPerPack.get(productId) ?? 1,
-    stockFor,
-    applyOverlay: (overlay) => {
-      stock.set(overlay.batchId, withOverlays(stockFor(overlay.batchId), [overlay]));
-    },
-  };
-};
+  rows: ReadonlyArray<IndexedDbSubsetRow>,
+): Effect.Effect<ReadonlyArray<IndexedDbSubsetRow>, unknown> =>
+  Effect.gen(function* () {
+    const stocked = rows.flatMap((row) => {
+      const cells = stockCellsOf(row);
+      return cells === undefined ? [] : [cells.id];
+    });
+    if (stocked.length === 0) return rows;
+    const context = yield* readVisibleStockContextOf(api, stocked);
+    return rows.map((row) => {
+      const cells = stockCellsOf(row);
+      return cells === undefined ? row : withVisibleStock({ ...row, ...cells }, context);
+    });
+  });
+
+export const readVisibleStock = (
+  api: ReplicaQueryBuilder,
+  batchRows: ReadonlyArray<VisibleStock & { readonly id: string }>,
+): Effect.Effect<ReadonlyMap<string, VisibleStock>, unknown> =>
+  readVisibleStockContextOf(
+    api,
+    batchRows.map((batch) => batch.id),
+  ).pipe(
+    Effect.map(
+      (context) =>
+        new Map<string, VisibleStock>(
+          batchRows.map((batch) => [batch.id, visibleStockOf(batch, context.get(batch.id))]),
+        ),
+    ),
+  );

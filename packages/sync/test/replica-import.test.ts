@@ -13,18 +13,20 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import { batches, commandOutbox, replicaState, snapshotStagedRows } from "@store/db/replica.schema";
-import { eq, inArray } from "drizzle-orm";
+import { batches, commandOutbox, replicaState } from "@store/db/replica.schema";
+import { eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { commandStatus, saveLocalCommand, visibleBatchStock } from "../src/replica/commands";
 import {
-  activateSnapshotGeneration,
   beginSnapshotImport,
   importSnapshotPart,
+  stepSnapshotActivation,
 } from "../src/replica/import";
+import { clearRetiredStep } from "../src/replica/sqlite/generation";
 import { runReplicaTransaction } from "../src/replica/storage";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { withSeededReplica } from "./lib/replica-fixture";
 
 const manifest: SnapshotManifest = {
@@ -74,7 +76,7 @@ const partPayload: SnapshotPartPayload = {
 };
 
 describe("replica snapshot import", () => {
-  it("stages snapshot parts without writing live tables", async () => {
+  it("imports snapshot parts into the standby set without writing live tables", async () => {
     const seen = await Effect.runPromise(
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
@@ -82,11 +84,7 @@ describe("replica snapshot import", () => {
             yield* beginSnapshotImport(tx, manifest);
             const first = yield* importSnapshotPart(tx, manifest, partPayload);
             const second = yield* importSnapshotPart(tx, manifest, partPayload);
-            const staged = yield* tx
-              .select()
-              .from(snapshotStagedRows)
-              .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
-              .all();
+            const staged = yield* tx.all<unknown>(sql`select 1 from batches_standby`);
             const batch = yield* tx
               .select()
               .from(batches)
@@ -113,10 +111,12 @@ describe("replica snapshot import", () => {
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             yield* beginSnapshotImport(tx, manifest);
             yield* importSnapshotPart(tx, manifest, partPayload);
-            yield* activateSnapshotGeneration(tx, manifest.snapshotId);
+            yield* Effect.repeat(stepSnapshotActivation(tx, manifest.snapshotId), {
+              until: (step) => step._tag !== "progressed",
+            });
             const outstanding = (yield* tx
               .select()
               .from(commandOutbox)
@@ -136,11 +136,8 @@ describe("replica snapshot import", () => {
               .from(commandOutbox)
               .where(eq(commandOutbox.operationId, lastUnitBuyerAEnvelope.operationId))
               .get();
-            const staged = yield* tx
-              .select()
-              .from(snapshotStagedRows)
-              .where(eq(snapshotStagedRows.snapshotId, manifest.snapshotId))
-              .all();
+            yield* Effect.repeat(clearRetiredStep(tx), { until: (step) => !step.remaining });
+            const staged = yield* tx.all<unknown>(sql`select 1 from batches_standby`);
             return {
               outstanding,
               status,

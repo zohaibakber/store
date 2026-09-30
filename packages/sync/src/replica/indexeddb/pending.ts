@@ -1,19 +1,23 @@
-import { SyncEntity, type SyncCommandEnvelope, type SyncEntityChange } from "@store/contracts";
+import { type SyncCommandEnvelope, type SyncEntity, type SyncEntityChange } from "@store/contracts";
+import type { SyncCommand } from "@store/contracts";
 import { replicaEntitySchemas } from "@store/contracts/sync/replica-model";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { decodeEntity, decodeRowJson, decodeStoredEnvelope, encodeRowJson } from "../codecs";
+import { nextFreeCategoryName } from "../collisions";
 import {
   byClientSequence,
   byEntityDependency,
   decideJournalRestore,
-  freeCategoryName,
+  EMPTY_STOCK,
   freeInvoiceNumber,
   OUTSTANDING_COMMAND_STATUSES,
   type JournalHolder,
+  type VisibleStock,
 } from "../decisions";
+import { loadCatalog, type CatalogReads } from "../footprint";
 import {
   projectCommand,
   type CommandProjection,
@@ -24,13 +28,8 @@ import {
   type ReplicaEntityRowImage,
 } from "../projection";
 import { generationBounds } from "./query";
-import {
-  outboxWithStatus,
-  productImage,
-  storedProduct,
-  type PendingRowJournalEntry,
-  type ReplicaQueryBuilder,
-} from "./schema";
+import { outboxWithStatus, productImage, storedProduct, type ReplicaQueryBuilder } from "./schema";
+import { readVisibleStock } from "./stock";
 
 const firstImage = <A extends { readonly generation: number }>(
   rows: ReadonlyArray<A>,
@@ -144,24 +143,125 @@ export const removeEntityRow = (
   }
 };
 
-export const indexedDbCatalogLookup = (
+const isStocked = (batch: { readonly packQuantity: number; readonly unitQuantity: number }) =>
+  batch.packQuantity > 0 || batch.unitQuantity > 0;
+
+const definedImages = <A>(images: ReadonlyArray<A | undefined>): ReadonlyArray<A> =>
+  images.flatMap((image) => (image === undefined ? [] : [image]));
+
+const indexedDbCatalogReads = (
   api: ReplicaQueryBuilder,
   generation: number,
-): Effect.Effect<ReplicaCatalogLookup, unknown> =>
+): CatalogReads<unknown, never> => ({
+  rowsOf: (footprint) =>
+    Effect.gen(function* () {
+      const categoryRows = yield* Effect.forEach(footprint.categoryIds, (id) =>
+        api.from("categories").select().equals([generation, id]).pipe(Effect.map(firstImage)),
+      );
+      const productRows = yield* Effect.forEach(footprint.productIds, (id) =>
+        api
+          .from("products")
+          .select()
+          .equals([generation, id])
+          .pipe(Effect.map((rows) => (rows[0] ? productImage(rows[0]) : undefined))),
+      );
+      const batchRows = yield* Effect.forEach(footprint.batchIds, (id) =>
+        api.from("batches").select().equals([generation, id]).pipe(Effect.map(firstImage)),
+      );
+      return {
+        categories: definedImages(categoryRows),
+        products: definedImages(productRows),
+        batches: definedImages(batchRows),
+      };
+    }),
+  productInCategory: (categoryId) =>
+    api
+      .from("products")
+      .select("byCategory")
+      .equals([generation, categoryId])
+      .limit(1)
+      .pipe(Effect.map((rows) => (rows[0] ? { categoryId } : undefined))),
+  stockedBatchOfProduct: (productId) =>
+    api
+      .from("batches")
+      .select("byProduct")
+      .equals([generation, productId])
+      .pipe(Effect.map((rows) => firstImage(rows.filter(isStocked)))),
+});
+
+export const readIndexedDbCommandContext = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  command: SyncCommand,
+  options: { readonly checkRules: boolean; readonly withStock: boolean },
+) =>
   Effect.gen(function* () {
-    const [lower, upper] = generationBounds(generation);
-    const categoryRows = yield* api.from("categories").select().between(lower, upper);
-    const productRows = yield* api.from("products").select().between(lower, upper);
-    const batchRows = yield* api.from("batches").select().between(lower, upper);
+    const { rows, lookup } = yield* loadCatalog(command, indexedDbCatalogReads(api, generation), {
+      checkRules: options.checkRules,
+    });
+    const stock = options.withStock
+      ? yield* readVisibleStock(api, rows.batches)
+      : new Map<string, VisibleStock>();
     return {
-      category: (categoryId) => categoryRows.find((row) => row.id === categoryId),
-      product: (productId) => productRows.find((row) => row.id === productId),
-      batch: (batchId) => batchRows.find((row) => row.id === batchId),
-      productsByCategory: (categoryId) =>
-        productRows.filter((row) => row.categoryId === categoryId),
-      batchesByProduct: (productId) => batchRows.filter((row) => row.productId === productId),
-    } satisfies ReplicaCatalogLookup;
+      lookup,
+      unitsPerPackFor: (productId: string) => lookup.product(productId)?.unitsPerPack ?? 1,
+      stockFor: (batchId: string) => stock.get(batchId) ?? EMPTY_STOCK,
+    };
   });
+
+export const readIndexedDbUnitsPerPack = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  productIds: ReadonlyArray<string>,
+): Effect.Effect<(productId: string) => number, unknown> =>
+  Effect.gen(function* () {
+    const rows = yield* Effect.forEach([...new Set(productIds)], (id) =>
+      api.from("products").select().equals([generation, id]),
+    );
+    const unitsPerPack = new Map<string, number>(
+      rows.flat().map((row) => [row.id, row.unitsPerPack]),
+    );
+    return (productId: string) => unitsPerPack.get(productId) ?? 1;
+  });
+
+const invoiceNumberHolder = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  invoiceNumber: number,
+  excludedId: string,
+) =>
+  api
+    .from("invoices")
+    .select("byInvoiceNumber")
+    .equals([generation, invoiceNumber])
+    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
+
+const highestInvoiceNumber = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  excludedId?: string,
+) => {
+  const [lower, upper] = generationBounds(generation);
+  return api
+    .from("invoices")
+    .select("byInvoiceNumber")
+    .between(lower, upper)
+    .reverse()
+    .limit(excludedId === undefined ? 1 : 2)
+    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)?.invoiceNumber ?? 0));
+};
+
+const categoryNameHolder = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  name: string,
+  excludedId: string,
+) =>
+  api
+    .from("categories")
+    .select("byName")
+    .equals([generation, name])
+    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
 
 const pendingMark = (api: ReplicaQueryBuilder, entity: SyncEntity, entityId: string) =>
   api
@@ -206,23 +306,32 @@ export const writeIndexedDbPendingProjection = (
       if (projected.row === null) {
         yield* removeEntityRow(api, generation, projected.entity, projected.entityId);
       } else if (projected.entity === "invoice" && resolveCollisions) {
-        const [lower, upper] = generationBounds(generation);
-        const others = (yield* api.from("invoices").select().between(lower, upper)).filter(
-          (other) => other.id !== projected.row.id,
+        const holder = yield* invoiceNumberHolder(
+          api,
+          generation,
+          projected.row.invoiceNumber,
+          projected.row.id,
         );
         yield* writeEntityRow(api, generation, projected.entity, {
           ...projected.row,
-          invoiceNumber: freeInvoiceNumber(projected.row.invoiceNumber, others),
+          invoiceNumber: holder
+            ? freeInvoiceNumber(
+                projected.row.invoiceNumber,
+                yield* highestInvoiceNumber(api, generation, projected.row.id),
+              )
+            : projected.row.invoiceNumber,
         });
       } else if (projected.entity === "category" && resolveCollisions) {
-        const [lower, upper] = generationBounds(generation);
-        const others = (yield* api.from("categories").select().between(lower, upper)).filter(
-          (other) => other.id !== projected.row.id,
-        );
-        const name = others.some((other) => other.name === projected.row.name)
-          ? freeCategoryName(projected.row.name, new Set(others.map((other) => other.name)))
-          : projected.row.name;
-        yield* writeEntityRow(api, generation, projected.entity, { ...projected.row, name });
+        const category = projected.row;
+        const holder = yield* categoryNameHolder(api, generation, category.name, category.id);
+        const name = holder
+          ? yield* nextFreeCategoryName(category.name, (candidate) =>
+              categoryNameHolder(api, generation, candidate, category.id).pipe(
+                Effect.map((other) => other !== undefined),
+              ),
+            )
+          : category.name;
+        yield* writeEntityRow(api, generation, projected.entity, { ...category, name });
       } else {
         yield* writeEntityRow(api, generation, projected.entity, projected.row);
       }
@@ -242,18 +351,19 @@ export const renumberIndexedDbCollidingInvoice = (
   operationId: string,
 ): Effect.Effect<string | undefined, unknown> =>
   Effect.gen(function* () {
-    const [lower, upper] = generationBounds(generation);
-    const rows = yield* api.from("invoices").select().between(lower, upper);
-    const collision = rows.find(
-      (row) => row.invoiceNumber === incoming.invoiceNumber && row.id !== incoming.id,
+    const collision = yield* invoiceNumberHolder(
+      api,
+      generation,
+      incoming.invoiceNumber,
+      incoming.id,
     );
     if (!collision) return undefined;
     const mark = yield* pendingMark(api, "invoice", collision.id);
     if (mark === undefined || mark === operationId) return undefined;
-    const nextNumber =
-      rows.reduce((highest, row) => Math.max(highest, row.invoiceNumber), incoming.invoiceNumber) +
-      1;
-    yield* api.from("invoices").upsert({ ...collision, invoiceNumber: nextNumber });
+    const highest = yield* highestInvoiceNumber(api, generation);
+    yield* api
+      .from("invoices")
+      .upsert({ ...collision, invoiceNumber: freeInvoiceNumber(incoming.invoiceNumber, highest) });
     return `invoice:${collision.id}`;
   });
 
@@ -264,16 +374,18 @@ export const renameIndexedDbCollidingCategory = (
   operationId: string,
 ): Effect.Effect<string | undefined, unknown> =>
   Effect.gen(function* () {
-    const [lower, upper] = generationBounds(generation);
-    const rows = yield* api.from("categories").select().between(lower, upper);
-    const collision = rows.find((row) => row.name === incoming.name && row.id !== incoming.id);
+    const collision = yield* categoryNameHolder(api, generation, incoming.name, incoming.id);
     if (!collision) return undefined;
     const mark = yield* pendingMark(api, "category", collision.id);
     if (mark === undefined || mark === operationId) return undefined;
-    const taken = new Set([incoming.name, ...rows.map((row) => row.name)]);
-    yield* api
-      .from("categories")
-      .upsert({ ...collision, name: freeCategoryName(collision.name, taken) });
+    const name = yield* nextFreeCategoryName(collision.name, (candidate) =>
+      candidate === incoming.name
+        ? Effect.succeed(true)
+        : categoryNameHolder(api, generation, candidate, "").pipe(
+            Effect.map((other) => other !== undefined),
+          ),
+    );
+    yield* api.from("categories").upsert({ ...collision, name });
     return `category:${collision.id}`;
   });
 
@@ -302,15 +414,17 @@ const clientSequenceOf = (api: ReplicaQueryBuilder, operationId: string) =>
 
 const journalHolders = (
   api: ReplicaQueryBuilder,
-  journal: ReadonlyArray<PendingRowJournalEntry>,
   entity: SyncEntity,
   entityId: string,
   excludedOperationId: string,
 ): Effect.Effect<ReadonlyArray<JournalHolder>, unknown> =>
   Effect.gen(function* () {
+    const entries = yield* api
+      .from("pending_row_journal")
+      .select("byEntity")
+      .equals([entity, entityId]);
     const holders: Array<JournalHolder> = [];
-    for (const entry of journal) {
-      if (entry.entity !== entity || entry.entityId !== entityId) continue;
+    for (const entry of entries) {
       if (entry.operationId === excludedOperationId) continue;
       const clientSequence = yield* clientSequenceOf(api, entry.operationId);
       if (clientSequence !== undefined) {
@@ -330,17 +444,18 @@ export const restoreIndexedDbPendingProjection = (
       operationId,
       clientSequence: (yield* clientSequenceOf(api, operationId)) ?? "0",
     };
-    const journal = yield* api.from("pending_row_journal").select();
+    const journal = yield* api
+      .from("pending_row_journal")
+      .select("byOperation")
+      .equals(operationId);
     const touchedEntities = new Set<SyncEntity>();
     const touchedKeys: Array<string> = [];
     const ordered = Array.sort(
-      journal
-        .filter((entry) => entry.operationId === operationId)
-        .map((entry) => ({
-          entity: decodeEntity(entry.entity),
-          entityId: entry.entityId,
-          priorRowJson: entry.priorRowJson,
-        })),
+      journal.map((entry) => ({
+        entity: decodeEntity(entry.entity),
+        entityId: entry.entityId,
+        priorRowJson: entry.priorRowJson,
+      })),
       byEntityDependency,
     );
     const restores: Array<{
@@ -351,7 +466,7 @@ export const restoreIndexedDbPendingProjection = (
     }> = [];
     for (const entry of ordered) {
       const mark = yield* pendingMark(api, entry.entity, entry.entityId);
-      const others = yield* journalHolders(api, journal, entry.entity, entry.entityId, operationId);
+      const others = yield* journalHolders(api, entry.entity, entry.entityId, operationId);
       const decision = decideJournalRestore(rejected, mark, others);
       if (decision._tag === "handDown") {
         yield* api.from("pending_row_journal").upsert({
@@ -386,11 +501,7 @@ export const resolveIndexedDbRemoteRow = (
   entityId: string,
 ) =>
   Effect.gen(function* () {
-    const journal = yield* api.from("pending_row_journal").select();
-    for (const entry of journal) {
-      if (entry.entity !== entity || entry.entityId !== entityId) continue;
-      yield* api.from("pending_row_journal").delete().equals([entry.operationId, entity, entityId]);
-    }
+    yield* api.from("pending_row_journal").delete("byEntity").equals([entity, entityId]);
     yield* api.from("pending_row_marks").delete().equals([entity, entityId]);
   });
 
@@ -407,8 +518,11 @@ export const reapplyIndexedDbPendingProjections = (
     );
     const outstanding = Array.sort(byStatus.flat(), byClientSequence);
     for (const row of outstanding) {
-      const lookup = yield* indexedDbCatalogLookup(api, generation);
       const envelope = yield* decodeStoredEnvelope(row);
+      const { lookup } = yield* readIndexedDbCommandContext(api, generation, envelope.command, {
+        checkRules: false,
+        withStock: false,
+      });
       yield* writeIndexedDbPendingProjection(api, generation, actor, lookup, envelope, true);
     }
   });
