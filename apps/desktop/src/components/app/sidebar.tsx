@@ -31,8 +31,8 @@ import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
 import { SidebarSyncStatus } from "@/lib/inventory/sync-status";
 
 function RestockCountReady() {
-  const { out, critical, low } = useInventoryInsights().report.counts;
-  const count = out + critical + low;
+  const counts = useInventoryInsights().summary?.counts;
+  const count = counts === undefined ? 0 : counts.out + counts.critical + counts.low;
   if (count === 0) return null;
   return (
     <SidebarMenuBadge aria-label={`${count} products need restocking`}>

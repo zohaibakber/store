@@ -8,13 +8,9 @@ import {
   PackageIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { InsightsSummary } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type {
-  InsightsReport,
-  SalesPeriod,
-  StockStatus,
-  TopProduct,
-} from "@store/services/insights";
+import type { SalesPeriod, StockStatus, TopProduct } from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -55,8 +51,6 @@ import { StatusBadge, StatusDot } from "./status-badge";
 const ATTENTION_LIMIT = 6;
 const REVENUE_CHART_HEIGHT = 160;
 const WEEKDAY_CHART_HEIGHT = 128;
-
-const ACTION_STATUSES: ReadonlySet<StockStatus> = new Set(["out", "critical", "low"]);
 
 const HEALTH_VIEW = {
   out: "out",
@@ -135,19 +129,20 @@ function ProductLink({
 
 export function AttentionFeed({
   className,
-  report,
+  summary,
 }: {
   readonly className?: string;
-  readonly report: InsightsReport;
+  readonly summary: InsightsSummary;
 }) {
-  const products = report.products.filter((insight) => ACTION_STATUSES.has(insight.status));
-  const shown = products.slice(0, ATTENTION_LIMIT);
-  const notes = report.alerts.filter((alert) => alert.productId === null);
+  const shown = summary.attention.slice(0, ATTENTION_LIMIT);
+  const notes = summary.alerts.filter((alert) => alert.productId === null);
   return (
     <FrameCard
       action={<ViewAll to="/restock">Restock plan</ViewAll>}
       className={className}
-      description={products.length > 0 ? formatCount(products.length, "product") : undefined}
+      description={
+        summary.attentionCount > 0 ? formatCount(summary.attentionCount, "product") : undefined
+      }
       flush
       title="Needs attention"
     >
@@ -238,15 +233,15 @@ export function AttentionFeed({
   );
 }
 
-export function StockHealth({ report }: { readonly report: InsightsReport }) {
-  const tracked = HEALTH_ORDER.reduce((total, status) => total + report.counts[status], 0);
+export function StockHealth({ summary }: { readonly summary: InsightsSummary }) {
+  const tracked = HEALTH_ORDER.reduce((total, status) => total + summary.counts[status], 0);
   return (
     <FrameCard description={formatCount(tracked, "product")} flush title="Stock health">
       <div className="flex flex-col gap-1 p-2">
         <ul aria-label="Products by stock status" className="flex flex-col">
           {HEALTH_ORDER.map((status) => {
             const meta = STATUS_META[status];
-            const count = report.counts[status];
+            const count = summary.counts[status];
             return (
               <li
                 className="relative flex h-8 items-center gap-3 rounded-md px-2 hover:bg-accent/40"
@@ -274,11 +269,11 @@ export function StockHealth({ report }: { readonly report: InsightsReport }) {
             );
           })}
         </ul>
-        {report.inventory.reorderCount > 0 ? (
+        {summary.inventory.reorderCount > 0 ? (
           <p className="px-2 pb-1 text-xs text-muted-foreground tabular-nums">
-            {formatCount(report.inventory.reorderCount, "product")} to order
-            {report.inventory.reorderCost > 0
-              ? ` · about ${formatPrice(report.inventory.reorderCost)}`
+            {formatCount(summary.inventory.reorderCount, "product")} to order
+            {summary.inventory.reorderCost > 0
+              ? ` · about ${formatPrice(summary.inventory.reorderCost)}`
               : ""}
           </p>
         ) : null}
@@ -423,19 +418,19 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
   );
 }
 
-export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
-  const peakWeekday = report.sales.weekdays.reduce(
+export function SalesRhythm({ summary }: { readonly summary: InsightsSummary }) {
+  const peakWeekday = summary.sales.weekdays.reduce(
     (best, day) => (day.revenue > best.revenue ? day : best),
     { weekday: -1, revenue: 0 },
   );
   const rows = React.useMemo(
     () =>
-      report.sales.weekdays.map((day) => ({ ...day, peak: day.weekday === peakWeekday.weekday })),
-    [report.sales.weekdays, peakWeekday.weekday],
+      summary.sales.weekdays.map((day) => ({ ...day, peak: day.weekday === peakWeekday.weekday })),
+    [summary.sales.weekdays, peakWeekday.weekday],
   );
   const definition = React.useMemo(() => createWeekdayChart(rows), [rows]);
-  const peakHour = report.sales.peakHour;
-  const busiestHours = [...report.sales.hours]
+  const peakHour = summary.sales.peakHour;
+  const busiestHours = [...summary.sales.hours]
     .filter((entry) => entry.invoices > 0)
     .sort((left, right) => right.invoices - left.invoices)
     .slice(0, 3);
@@ -494,11 +489,11 @@ export function SalesRhythm({ report }: { readonly report: InsightsReport }) {
   );
 }
 
-export function ExpiringSoon({ report }: { readonly report: InsightsReport }) {
-  const batches = report.expiring.slice(0, 6);
+export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary }) {
+  const batches = summary.expiring.slice(0, 6);
   return (
     <FrameCard
-      description={`Within ${formatCount(report.policy.expiryWarningDays, "day")}`}
+      description={`Within ${formatCount(summary.policy.expiryWarningDays, "day")}`}
       flush
       title="Expiring soon"
     >

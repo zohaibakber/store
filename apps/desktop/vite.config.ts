@@ -146,6 +146,8 @@ export default defineConfig(({ command, mode }) => ({
                   input: {
                     main: path.resolve("electron/main.ts"),
                     "replica-worker": path.resolve("electron/replica-worker.ts"),
+                    "replica-reader": path.resolve("electron/replica-reader.ts"),
+                    "analytics-worker": path.resolve("electron/analytics-worker.ts"),
                   },
                   external: ["electron", "electron-updater"],
                   output: { entryFileNames: "[name].js" },

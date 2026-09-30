@@ -37,5 +37,8 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.27.1"
+  "packageManager": "pnpm@11.27.1",
+  "op-sqlite": {
+    "fts5": true
+  }
 }

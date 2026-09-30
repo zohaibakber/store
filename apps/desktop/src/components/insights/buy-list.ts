@@ -12,45 +12,42 @@ const cell = (value: string | number) => {
 
 const money = (paisa: number | null) => (paisa === null ? "" : (paisa / 100).toFixed(2));
 
-export const buyListCsv = (insights: ReadonlyArray<ProductInsight>) =>
-  [
-    [
-      "Product",
-      "Category",
-      "Class",
-      "Status",
-      "Usable units",
-      "Units per day",
-      "Days of cover",
-      "Reorder point",
-      "Order quantity",
-      "Order unit",
-      "Order base units",
-      "Estimated cost",
-    ],
-    ...insights.flatMap((insight) =>
-      insight.order === null
-        ? []
-        : [
-            [
-              insight.name,
-              insight.categoryName ?? "",
-              insight.abc,
-              STATUS_META[insight.status].label,
-              insight.usableUnits,
-              insight.demand.dailyRate.toFixed(2),
-              insight.daysOfCover === null ? "" : Math.floor(insight.daysOfCover),
-              insight.reorderPoint,
-              insight.order.quantity,
-              insight.order.unit,
-              insight.order.baseUnits,
-              money(insight.order.cost),
-            ],
-          ],
-    ),
-  ]
-    .map((row) => row.map(cell).join(","))
-    .join("\r\n");
+const HEADER = [
+  "Product",
+  "Category",
+  "Class",
+  "Status",
+  "Usable units",
+  "Units per day",
+  "Days of cover",
+  "Reorder point",
+  "Order quantity",
+  "Order unit",
+  "Order base units",
+  "Estimated cost",
+];
+
+const csvLine = (values: ReadonlyArray<string | number>) => values.map(cell).join(",");
+
+export const buyListHeader = () => csvLine(HEADER);
+
+export const buyListLine = (insight: ProductInsight): string | null =>
+  insight.order === null
+    ? null
+    : csvLine([
+        insight.name,
+        insight.categoryName ?? "",
+        insight.abc,
+        STATUS_META[insight.status].label,
+        insight.usableUnits,
+        insight.demand.dailyRate.toFixed(2),
+        insight.daysOfCover === null ? "" : Math.floor(insight.daysOfCover),
+        insight.reorderPoint,
+        insight.order.quantity,
+        insight.order.unit,
+        insight.order.baseUnits,
+        money(insight.order.cost),
+      ]);
 
 export const downloadText = (filename: string, text: string, type: string) => {
   const url = URL.createObjectURL(new Blob([text], { type }));

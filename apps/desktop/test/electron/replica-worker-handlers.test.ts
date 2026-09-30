@@ -8,7 +8,8 @@ import * as Stream from "effect/Stream";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ReplicaWorkerRpcs } from "../../electron/replica-rpc";
+import { makeReplicaReaderHandlers } from "../../electron/replica-reader-handlers";
+import { ReplicaReaderRpcs, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
 import { makeReplicaWorkerHandlers } from "../../electron/replica-worker-handlers";
 
 const directories: Array<string> = [];
@@ -20,14 +21,51 @@ afterEach(() => {
 
 const withWorker = <A, E>(
   use: (client: Effect.Success<ReturnType<typeof makeClient>>) => Effect.Effect<A, E>,
+  openSession?: Parameters<typeof makeReplicaWorkerHandlers>[1],
+  config = boot(),
 ) =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const handlers = yield* Layer.build(makeReplicaWorkerHandlers());
+        const handlers = yield* Layer.build(
+          makeReplicaWorkerHandlers(Effect.succeed(config), openSession),
+        );
         return yield* use(yield* makeClient().pipe(Effect.provideContext(handlers)));
       }),
     ),
+  );
+
+const withReader = (databasePath: string) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const handlers = yield* Layer.build(
+        makeReplicaReaderHandlers(Effect.succeed({ databasePath })),
+      );
+      const client = yield* RpcTest.makeClient(ReplicaReaderRpcs).pipe(
+        Effect.provideContext(handlers),
+      );
+      const readerEngine = yield* client.Engine();
+      const read = yield* client.ReadSubset({
+        spec: {
+          source: "categories",
+          orderBy: [{ column: "name", direction: "asc" }],
+          limit: 5,
+          offset: 0,
+        },
+      });
+      const rejected = yield* client
+        .ReadSubset({
+          spec: {
+            source: "categories",
+            where: { _tag: "compare", column: "productId", op: "eq", value: "p-1" },
+            orderBy: [],
+            limit: 5,
+            offset: 0,
+          },
+        })
+        .pipe(Effect.flip);
+      return { readerEngine, read, rejected };
+    }),
   );
 
 const makeClient = () => RpcTest.makeClient(ReplicaWorkerRpcs);
@@ -45,60 +83,52 @@ const boot = () => {
 };
 
 describe("replica worker handlers", () => {
-  it("refuses reads before the replica is open", async () => {
-    await expect(withWorker((client) => client.Stamp())).rejects.toMatchObject({
+  it("refuses reads when the replica engine is unavailable", async () => {
+    await expect(
+      withWorker(
+        (client) => client.Stamp(),
+        () => Promise.reject(new Error("no native sqlite")),
+      ),
+    ).rejects.toMatchObject({
       _tag: "ReplicaWorkerFailure",
       message: "Replica worker is not booted.",
     });
   });
 
-  it("lowers subset specs to SQL inside the worker and proxies sync through the parent", async () => {
-    const result = await withWorker((client) =>
-      Effect.gen(function* () {
-        const engine = yield* client.Open(boot());
-        const proxied = yield* client.ProxyRequests().pipe(Stream.take(1), Stream.runCollect);
-        const [request] = proxied;
-        if (request) {
-          yield* client.ProxyRespond({
-            requestId: request.requestId,
-            result: { ok: false, status: 503, bodyText: "offline" },
-          });
-        }
-        const read = yield* client.ReadSubset({
-          spec: {
-            source: "categories",
-            orderBy: [{ column: "name", direction: "asc" }],
-            limit: 5,
-            offset: 0,
-          },
-        });
-        const rejected = yield* client
-          .ReadSubset({
-            spec: {
-              source: "categories",
-              where: { _tag: "compare", column: "productId", op: "eq", value: "p-1" },
-              orderBy: [],
-              limit: 5,
-              offset: 0,
-            },
-          })
-          .pipe(Effect.flip);
-        const allocation = yield* client.ReadCommandAllocation();
-        return { engine, request, read, rejected, allocation };
-      }),
+  it("proxies sync through the parent and lowers subset specs on a separate reader", async () => {
+    const config = boot();
+    const result = await withWorker(
+      (client) =>
+        Effect.gen(function* () {
+          const engine = yield* client.Engine();
+          const proxied = yield* client.ProxyRequests().pipe(Stream.take(1), Stream.runCollect);
+          const [request] = proxied;
+          if (request) {
+            yield* client.ProxyRespond({
+              requestId: request.requestId,
+              result: { ok: false, status: 503, bodyText: "offline" },
+            });
+          }
+          const status = yield* client.ReadCommandStatus({ operationId: "op-unknown" });
+          const reads = yield* withReader(config.databasePath);
+          return { engine, request, status, ...reads };
+        }),
+      undefined,
+      config,
     );
     expect(result.engine).toBe("sqlite");
+    expect(result.readerEngine).toBe("sqlite");
     expect(result.request?.pathname.startsWith("/api/sync/")).toBe(true);
     expect(result.read.rows).toEqual([]);
     expect(result.read.stamp.localCommitVersion).toBeGreaterThanOrEqual(0);
     expect(result.rejected.message).toContain("column productId is not allowlisted");
-    expect(result.allocation).toEqual({ epoch: "1", nextClientSequence: "1" });
+    expect(result.status).toBeNull();
   });
 
   it("streams a recovery-required scheduler halt from the owned session", async () => {
     const health = await withWorker((client) =>
       Effect.gen(function* () {
-        yield* client.Open(boot());
+        yield* client.Engine();
         yield* client.ProxyRequests().pipe(
           Stream.mapEffect((request) =>
             client.ProxyRespond({
@@ -130,9 +160,12 @@ describe("replica worker handlers", () => {
     ]);
   });
 
-  it("ignores a foreground change before a replica is open", async () => {
-    await expect(withWorker((client) => client.SetForeground({ visible: false }))).resolves.toBe(
-      undefined,
-    );
+  it("ignores a foreground change when no replica is open", async () => {
+    await expect(
+      withWorker(
+        (client) => client.SetForeground({ visible: false }),
+        () => Promise.reject(new Error("no native sqlite")),
+      ),
+    ).resolves.toBe(undefined);
   });
 });

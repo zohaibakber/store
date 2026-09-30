@@ -1,14 +1,14 @@
 import {
+  InventorySubsetBatch,
   InventorySubsetSpec,
   InventorySubsetSummary,
   InventorySubsetSummarySpec,
 } from "@store/client-db/subset-spec";
 import {
   CommandStatus,
-  DecimalSequence,
+  EnqueueCommandRequest,
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
-  SyncCommandEnvelope,
 } from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
@@ -27,7 +27,19 @@ export const ReplicaOpenInput = Schema.Struct({
 
 export const ReplicaReadSubsetInput = Schema.Struct({
   workspaceToken: NonEmptyString,
+  requestId: NonEmptyString,
   spec: InventorySubsetSpec,
+});
+
+export const ReplicaReadBatchInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  requestId: NonEmptyString,
+  specs: InventorySubsetBatch,
+});
+
+export const ReplicaCancelReadInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  requestId: NonEmptyString,
 });
 
 export const ReplicaSummarizeSubsetInput = Schema.Struct({
@@ -42,8 +54,12 @@ export const ReplicaReadInsightsInput = Schema.Struct({
 
 export const ReplicaEnqueueInput = Schema.Struct({
   workspaceToken: NonEmptyString,
-  envelope: SyncCommandEnvelope,
-  createdAt: NonNegativeInteger,
+  request: EnqueueCommandRequest,
+});
+
+export const ReplicaCommandStatusInput = Schema.Struct({
+  workspaceToken: NonEmptyString,
+  operationId: NonEmptyString,
 });
 
 export const ReplicaWorkerBoot = Schema.Struct({
@@ -51,6 +67,8 @@ export const ReplicaWorkerBoot = Schema.Struct({
   databasePath: Schema.String,
   apiBaseUrl: Schema.String,
 });
+
+export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
 const ReplicaCommitStamp = Schema.Struct({
   generationId: NonEmptyString,
@@ -61,19 +79,32 @@ export const ReplicaCommitNotice = Schema.Struct({
   ...ReplicaCommitStamp.fields,
   touchedEntities: Schema.Array(Schema.String),
   touchedKeys: Schema.Array(Schema.String),
+  fullInvalidation: Schema.optionalKey(Schema.Boolean),
+  overflowedEntities: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 export const ReplicaSyncHealth = Schema.Union([
   Schema.TaggedStruct("running", {}),
   Schema.TaggedStruct("storageError", { message: Schema.String }),
-  Schema.TaggedStruct("recoveryRequired", { message: Schema.String }),
+  Schema.TaggedStruct("recoveryRequired", {
+    message: Schema.String,
+    retryable: Schema.optionalKey(Schema.Boolean),
+  }),
 ]);
+
+const ReplicaIpcRow = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.String, Schema.Number, Schema.Null]),
+);
 
 const ReplicaSubsetRows = Schema.Struct({
   stamp: ReplicaCommitStamp,
-  rows: Schema.Array(
-    Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Null])),
-  ),
+  rows: Schema.Array(ReplicaIpcRow),
+});
+
+const ReplicaBatchRows = Schema.Struct({
+  stamp: ReplicaCommitStamp,
+  reads: Schema.Array(Schema.Array(ReplicaIpcRow)),
 });
 
 const MAX_PROXY_TIMEOUT_MILLIS = 120_000;
@@ -111,15 +142,18 @@ export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailur
   { message: Schema.String },
 ) {}
 
-export const ReplicaWorkerRpcs = RpcGroup.make(
-  Rpc.make("Open", {
-    payload: ReplicaWorkerBoot,
-    success: Schema.Literals(["sqlite", "unavailable"]),
-  }),
-  Rpc.make("Stamp", { success: ReplicaCommitStamp, error: ReplicaWorkerFailure }),
+const EngineRpc = Rpc.make("Engine", { success: Schema.Literals(["sqlite", "unavailable"]) });
+
+export const ReplicaReaderRpcs = RpcGroup.make(
+  EngineRpc,
   Rpc.make("ReadSubset", {
     payload: { spec: InventorySubsetSpec },
     success: ReplicaSubsetRows,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("ReadBatch", {
+    payload: { specs: InventorySubsetBatch },
+    success: ReplicaBatchRows,
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("SummarizeSubset", {
@@ -127,6 +161,11 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     success: Schema.Struct({ stamp: ReplicaCommitStamp, summary: InventorySubsetSummary }),
     error: ReplicaWorkerFailure,
   }),
+);
+
+export const ReplicaWorkerRpcs = RpcGroup.make(
+  EngineRpc,
+  Rpc.make("Stamp", { success: ReplicaCommitStamp, error: ReplicaWorkerFailure }),
   Rpc.make("ReadInsights", {
     payload: { window: ReplicaInsightsWindow },
     success: Schema.Struct({ stamp: ReplicaCommitStamp, facts: ReplicaInsightsFacts }),
@@ -136,13 +175,18 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     success: Schema.Array(CommandStatus),
     error: ReplicaWorkerFailure,
   }),
-  Rpc.make("ReadCommandAllocation", {
-    success: Schema.Struct({ epoch: DecimalSequence, nextClientSequence: DecimalSequence }),
+  Rpc.make("EnqueueCommand", {
+    payload: { request: EnqueueCommandRequest },
+    success: Schema.Struct({
+      operationId: NonEmptyString,
+      status: CommandStatus,
+      stamp: ReplicaCommitStamp,
+    }),
     error: ReplicaWorkerFailure,
   }),
-  Rpc.make("EnqueueLocal", {
-    payload: { envelope: SyncCommandEnvelope, createdAt: NonNegativeInteger },
-    success: Schema.Struct({ changed: Schema.Boolean, status: NonEmptyString }),
+  Rpc.make("ReadCommandStatus", {
+    payload: { operationId: NonEmptyString },
+    success: Schema.NullOr(CommandStatus),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("SetForeground", {

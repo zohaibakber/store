@@ -21,7 +21,7 @@ const settled = (work: Promise<unknown>): Promise<void> =>
 
 const retire = (databaseName: string, handle: SqlClientReplicaHandle): Promise<void> => {
   const previous = disposals.get(databaseName) ?? Promise.resolve();
-  const done = previous.then(() => settled(handle.dispose()));
+  const done = previous.then(() => settled(handle.close()));
   disposals.set(databaseName, done);
   void done.then(() => {
     if (disposals.get(databaseName) === done) disposals.delete(databaseName);
@@ -65,9 +65,6 @@ export const createMobileInventoryHost = (input: {
     const replica: SqlClientReplicaHandle = {
       ...handle,
       close: () => {
-        void replica.dispose();
-      },
-      dispose: () => {
         if (retired === undefined) {
           input.listener.closed(replica);
           retired = retire(databaseName, handle);

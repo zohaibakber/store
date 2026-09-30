@@ -6,10 +6,11 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useInventoryInsights } from "@/lib/inventory";
 
+import { InsightsBuilding } from "./building";
+import { InsightsFreshness } from "./freshness";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
-import { InsightsRefreshing } from "./refreshing";
 import {
   AttentionFeed,
   ExpiringSoon,
@@ -31,22 +32,23 @@ const RANGE_FROM_VALUE = { "7": 7, "30": 30, "90": 90 } satisfies Record<RangeVa
 const VALUE_FROM_RANGE = { 7: "7", 30: "30", 90: "90" } satisfies Record<SalesRange, RangeValue>;
 
 function OverviewBody({ range }: { readonly range: SalesRange }) {
-  const { report } = useInventoryInsights();
-  const period = report.sales.periods[range];
+  const { summary, status } = useInventoryInsights();
+  if (summary === null) return <InsightsBuilding status={status} />;
+  const period = summary.sales.periods[range];
   return (
     <>
-      <KpiGrid period={period} report={report} />
+      <KpiGrid period={period} summary={summary} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <AttentionFeed className="lg:col-span-2" report={report} />
-        <StockHealth report={report} />
+        <AttentionFeed className="lg:col-span-2" summary={summary} />
+        <StockHealth summary={summary} />
       </div>
       <RevenueTrend period={period} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TopSellers period={period} />
-        <SalesRhythm report={report} />
+        <SalesRhythm summary={summary} />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ExpiringSoon report={report} />
+        <ExpiringSoon summary={summary} />
         <RecentInvoices />
       </div>
     </>
@@ -64,7 +66,7 @@ export function OverviewPage({
     <PageLayout>
       <PageActions>
         <React.Suspense fallback={null}>
-          <InsightsRefreshing />
+          <InsightsFreshness />
         </React.Suspense>
         <SegmentedRadio
           label="Reporting period"

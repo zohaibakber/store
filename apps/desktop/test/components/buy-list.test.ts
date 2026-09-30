@@ -1,7 +1,7 @@
 import { analyzeInsights, DEFAULT_STOCK_POLICY, insightsWindowFor } from "@store/services/insights";
 import { describe, expect, it } from "vitest";
 
-import { buyListCsv } from "@/components/insights/buy-list";
+import { buyListHeader, buyListLine } from "@/components/insights/buy-list";
 
 const DAY = 86_400_000;
 const now = Date.UTC(2026, 8, 20, 7);
@@ -61,9 +61,10 @@ const report = analyzeInsights(
   now,
 );
 
-describe("buyListCsv", () => {
+describe("buy list CSV", () => {
   it("exports only suggested orders and neutralizes spreadsheet formulas", () => {
-    const [header, ...rows] = buyListCsv(report.products).split("\r\n");
+    const header = buyListHeader();
+    const rows = report.products.flatMap((insight) => buyListLine(insight) ?? []);
     expect(header).toContain('"Order quantity"');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatch(/^"'=HYPERLINK\(""x""\)","Tablets","A","Out of stock"/u);

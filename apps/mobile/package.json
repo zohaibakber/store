@@ -65,5 +65,8 @@
     "@types/react": "~19.3.0",
     "typescript": "catalog:",
     "vitest": "5.0.2"
+  },
+  "op-sqlite": {
+    "fts5": true
   }
 }
