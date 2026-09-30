@@ -6,6 +6,11 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const bundles = [
   { name: "replica", migrations: "migrations/replica", out: "src/replica/migrations.gen.ts" },
+  {
+    name: "analytics",
+    migrations: "migrations/analytics",
+    out: "src/analytics/migrations.gen.ts",
+  },
 ];
 
 const readMigrations = (directory) => {

@@ -1,9 +1,11 @@
+import { generationState } from "@store/db/replica.schema";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/unstable/sql/SqlClient";
 
+import { makeReplicaDb } from "../sql-client/drizzle";
 import { GENERATION_TABLES } from "./generation";
 
 const ANALYSIS_LIMIT = 1_000;
@@ -22,10 +24,6 @@ const PLANNER_TURN_MILLIS = 250;
 
 type PlannerMaintenance = "optimized" | "seeding" | "deferred";
 
-const decodeStandbyRows = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ standby: Schema.String })),
-);
-
 const decodeNameRows = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ name: Schema.String })),
 );
@@ -42,17 +40,19 @@ export const maintainReplicaPlanner = Effect.fn("ReplicaPlanner.maintain")(funct
   sql: SqlClient,
   budgetMillis: number = PLANNER_TURN_MILLIS,
 ) {
+  const db = yield* makeReplicaDb(sql);
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const connection = yield* sql.reserve;
       const query = (statement: string) =>
         connection.execute(statement, [], undefined).pipe(Effect.orDie);
       const run = (statement: string) => connection.executeUnprepared(statement, [], undefined);
-      const generation = yield* query("select standby from generation_state").pipe(
-        Effect.flatMap(decodeStandbyRows),
-        Effect.orDie,
-      );
-      if (generation[0]?.standby !== "empty") return "deferred" satisfies PlannerMaintenance;
+      const generation = yield* db
+        .select({ standby: generationState.standby })
+        .from(generationState)
+        .get()
+        .pipe(Effect.provideService(sql.transactionService, [connection, 0]), Effect.orDie);
+      if (generation?.standby !== "empty") return "deferred" satisfies PlannerMaintenance;
       const analysed = yield* query(
         "select name from sqlite_master where type = 'table' and name = 'sqlite_stat1'",
       ).pipe(Effect.flatMap(decodeNameRows), Effect.orDie);

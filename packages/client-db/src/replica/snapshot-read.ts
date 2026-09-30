@@ -5,8 +5,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
-import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
+import { lowerSqliteSubset, lowerSqliteSummary, toStatement } from "./compile";
 import { UnsupportedSubsetQuery, type ReplicaSnapshotFailure } from "./errors";
+import { replicaStampQuery } from "./replica-queries";
 import { MAX_BATCH_ROWS, MAX_BATCH_SPECS } from "./sources";
 import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
@@ -35,8 +36,7 @@ export class ReplicaSnapshotReader extends Context.Service<
   ReplicaSnapshotRunner
 >()("@store/client-db/ReplicaSnapshotReader") {}
 
-const STAMP_SQL =
-  'select "activeGeneration" as generation, "localCommitVersion" as version from replica_state where id = \'singleton\'';
+const stampStatement = toStatement(replicaStampQuery);
 
 export const snapshotRunnerFromHandle =
   (handle: SqliteReplicaHandle): ReplicaSnapshotRunner =>
@@ -60,7 +60,7 @@ const readSnapshotStamp = (
   query: SnapshotQuery,
   workspaceToken: string,
 ): Effect.Effect<ReplicaQueryStamp, SnapshotFailure> =>
-  query(STAMP_SQL, []).pipe(
+  query(stampStatement.sql, stampStatement.parameters).pipe(
     Effect.map((rows) => {
       const decoded = decodeReplicaStampRow(rows[0]);
       return {

@@ -1,29 +1,35 @@
 import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 
 import {
-  INSIGHTS_DAY_MILLIS,
-  INSIGHTS_HOUR_MILLIS,
   insightsDayStart,
   type InsightsBatchFact,
   type InsightsProductFact,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
-import { and, eq, gte, lte, ne, or, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/sqlite-core";
+import { batches, invoiceItems, invoices, products } from "@store/db/replica.schema";
+import { and, count, eq, fillPlaceholders, gt, gte, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import { visibleBatches } from "../replica/compile";
+import {
+  batchFacts,
+  inJsonList,
+  invoiceDays,
+  invoiceHours,
+  productDaySales,
+  productFacts,
+  replicaQueryBuilder,
+  replicaStampQuery,
+  type InvoiceWindow,
+} from "../replica/replica-queries";
 import { analyticsFailure, type AnalyticsFailure } from "./errors";
 import type { SalesRow } from "./store";
 
 const BUSY_TIMEOUT_MILLIS = 5_000;
 const PREPARED_STATEMENTS = 64;
-const FIRST = "\u0000first";
-const LAST = "\u0000last";
-const ORGANIZATION = "\u0000organization";
 
 export type InventoryStamp = { readonly generation: string; readonly version: number };
 
@@ -68,54 +74,97 @@ export type InventorySource = {
   ) => Effect.Effect<A, E | AnalyticsFailure, R>;
 };
 
-const queryBuilder = new QueryBuilder();
+type Statement = { readonly sql: string; readonly params: Array<unknown> };
 
-const batchesBetweenStatement = (() => {
-  const built = queryBuilder
-    .with(visibleBatches)
-    .select({
-      productId: visibleBatches.productId,
-      batchNumber: visibleBatches.batchNumber,
-      packQuantity: visibleBatches.packQuantity,
-      unitQuantity: visibleBatches.unitQuantity,
-      expiresAt: visibleBatches.expiresAt,
-    })
-    .from(visibleBatches)
-    .where(
-      and(
-        eq(visibleBatches.organizationId, ORGANIZATION),
-        gte(visibleBatches.productId, FIRST),
-        lte(visibleBatches.productId, LAST),
-        or(ne(visibleBatches.packQuantity, 0), ne(visibleBatches.unitQuantity, 0)),
-      ),
-    )
-    .orderBy(visibleBatches.productId, visibleBatches.expiresAt)
-    .toSQL();
-  return { sql: built.sql, params: built.params };
-})();
+const statement = (query: { toSQL: () => Statement }): Statement => query.toSQL();
 
-const batchesForProductsStatement = (() => {
-  const built = queryBuilder
-    .with(visibleBatches)
-    .select({
-      productId: visibleBatches.productId,
-      batchNumber: visibleBatches.batchNumber,
-      packQuantity: visibleBatches.packQuantity,
-      unitQuantity: visibleBatches.unitQuantity,
-      expiresAt: visibleBatches.expiresAt,
-    })
-    .from(visibleBatches)
-    .where(
-      and(
-        eq(visibleBatches.organizationId, ORGANIZATION),
-        sql`${visibleBatches.productId} IN (SELECT value FROM json_each(${FIRST}))`,
-        or(ne(visibleBatches.packQuantity, 0), ne(visibleBatches.unitQuantity, 0)),
+const organization = sql.placeholder("organization");
+const list = sql.placeholder("ids");
+
+const invoiceWindow: InvoiceWindow = {
+  organization,
+  offset: sql.placeholder("offset"),
+  since: sql.placeholder("since"),
+  until: sql.placeholder("until"),
+};
+
+const statements = {
+  stamp: statement(replicaStampQuery),
+  productCount: statement(
+    replicaQueryBuilder
+      .select({ n: count().as("n") })
+      .from(products)
+      .where(eq(products.organizationId, organization)),
+  ),
+  productPage: statement(
+    productFacts({
+      organization,
+      visibleOnly: true,
+      where: gt(products.id, sql.placeholder("after")),
+    }).limit(sql.placeholder("limit")),
+  ),
+  productsByIds: statement(
+    productFacts({ organization, visibleOnly: true, where: inJsonList(products.id, list) }),
+  ),
+  batchesBetween: statement(
+    batchFacts({
+      organization,
+      where: and(
+        gte(visibleBatches.productId, sql.placeholder("first")),
+        lte(visibleBatches.productId, sql.placeholder("last")),
       ),
-    )
-    .orderBy(visibleBatches.productId, visibleBatches.expiresAt)
-    .toSQL();
-  return { sql: built.sql, params: built.params };
-})();
+    }),
+  ),
+  batchesForProducts: statement(
+    batchFacts({ organization, where: inJsonList(visibleBatches.productId, list) }),
+  ),
+  days: statement(invoiceDays(invoiceWindow)),
+  hours: statement(invoiceHours(invoiceWindow)),
+  sales: statement(productDaySales({ ...invoiceWindow, visibleOnly: true })),
+  salesForProducts: statement(
+    productDaySales({
+      ...invoiceWindow,
+      visibleOnly: true,
+      where: inJsonList(invoiceItems.productId, list),
+    }),
+  ),
+  batchProducts: statement(
+    replicaQueryBuilder
+      .select({ id: batches.id, productId: batches.productId })
+      .from(batches)
+      .where(and(eq(batches.organizationId, organization), inJsonList(batches.id, list))),
+  ),
+  invoiceIds: statement(
+    replicaQueryBuilder
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(and(eq(invoices.organizationId, organization), inJsonList(invoices.id, list))),
+  ),
+  invoiceProducts: statement(
+    replicaQueryBuilder
+      .selectDistinct({ productId: invoiceItems.productId })
+      .from(invoiceItems)
+      .where(
+        and(
+          eq(invoiceItems.organizationId, organization),
+          inJsonList(invoiceItems.invoiceId, list),
+        ),
+      ),
+  ),
+  invoiceItemProducts: statement(
+    replicaQueryBuilder
+      .select({ id: invoiceItems.id, productId: invoiceItems.productId })
+      .from(invoiceItems)
+      .where(and(eq(invoiceItems.organizationId, organization), inJsonList(invoiceItems.id, list))),
+  ),
+  categoryProducts: statement(
+    replicaQueryBuilder
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.organizationId, organization), inJsonList(products.categoryId, list)))
+      .limit(sql.placeholder("limit")),
+  ),
+};
 
 const ProductRow = Schema.Struct({
   id: Schema.String,
@@ -184,14 +233,6 @@ const keyParts = (key: string): { readonly entity: string; readonly id: string }
     : { entity: key.slice(0, separator), id: key.slice(separator + 1) };
 };
 
-const PRODUCT_COLUMNS = `p.id AS id, p.name AS name, p.categoryId AS categoryId, c.name AS categoryName,
-       coalesce(c.tracksPacks, 1) AS tracksPacks, max(p.unitsPerPack, 1) AS unitsPerPack,
-       p.purchasePrice AS purchasePrice, p.retailPrice AS retailPrice, p.unitPrice AS unitPrice,
-       p.visible AS visible, p.createdAt AS createdAt`;
-
-const PRODUCT_FROM = `FROM products p
-  LEFT JOIN categories c ON c.organizationId = p.organizationId AND c.id = p.categoryId`;
-
 const toProductFact = (row: typeof ProductRow.Type): InsightsProductFact => ({
   id: row.id,
   name: row.name,
@@ -208,126 +249,64 @@ const toProductFact = (row: typeof ProductRow.Type): InsightsProductFact => ({
 
 const makeSnapshot = (
   db: DatabaseSync,
-  statements: Map<string, StatementSync>,
+  prepared: Map<string, StatementSync>,
 ): InventorySnapshot => {
   const prepare = (query: string) => {
-    const cached = statements.get(query);
+    const cached = prepared.get(query);
     if (cached !== undefined) return cached;
-    if (statements.size >= PREPARED_STATEMENTS) statements.clear();
+    if (prepared.size >= PREPARED_STATEMENTS) prepared.clear();
     const created = db.prepare(query);
-    statements.set(query, created);
+    prepared.set(query, created);
     return created;
   };
-  const all = (query: string, parameters: ReadonlyArray<unknown>) =>
-    // SAFETY: parameters are strings and numbers, which node:sqlite accepts as bindings.
-    prepare(query).all(...(parameters as Array<SQLInputValue>));
-  const state = decodeState(
-    all(
-      `SELECT organizationId, activeGeneration AS generation, localCommitVersion AS version
-         FROM replica_state WHERE id = 'singleton'`,
-      [],
-    )[0],
-  );
+  const all = (query: Statement, values: Record<string, string | number> = {}) =>
+    // SAFETY: placeholders are filled with strings and numbers, which node:sqlite accepts as bindings.
+    prepare(query.sql).all(...(fillPlaceholders(query.params, values) as Array<SQLInputValue>));
+  const state = decodeState(all(statements.stamp)[0]);
   const organizationId = state.organizationId;
   const ids = (values: ReadonlyArray<string>) => JSON.stringify(values);
   return {
     organizationId,
     stamp: { generation: String(state.generation), version: state.version },
     productCount: () =>
-      Number(
-        all("SELECT count(*) AS n FROM products WHERE organizationId = ?", [organizationId])[0]?.[
-          "n"
-        ] ?? 0,
-      ),
+      Number(all(statements.productCount, { organization: organizationId })[0]?.["n"] ?? 0),
     productPage: (after, limit) =>
       decodeProducts(
-        all(
-          `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
-            WHERE p.organizationId = ? AND p.visible = 1 AND p.id > ?
-            ORDER BY p.id LIMIT ?`,
-          [organizationId, after, limit],
-        ),
+        all(statements.productPage, { organization: organizationId, after, limit }),
       ).map(toProductFact),
     productsByIds: (values) =>
       decodeProducts(
-        all(
-          `SELECT ${PRODUCT_COLUMNS} ${PRODUCT_FROM}
-            WHERE p.organizationId = ? AND p.visible = 1
-              AND p.id IN (SELECT value FROM json_each(?))
-            ORDER BY p.id`,
-          [organizationId, ids(values)],
-        ),
+        all(statements.productsByIds, { organization: organizationId, ids: ids(values) }),
       ).map(toProductFact),
-    batchesBetween: (firstId, lastId) =>
-      decodeBatches(
-        all(
-          batchesBetweenStatement.sql,
-          batchesBetweenStatement.params.map((param) =>
-            param === FIRST
-              ? firstId
-              : param === LAST
-                ? lastId
-                : param === ORGANIZATION
-                  ? organizationId
-                  : param,
-          ),
-        ),
-      ),
+    batchesBetween: (first, last) =>
+      decodeBatches(all(statements.batchesBetween, { organization: organizationId, first, last })),
     batchesForProducts: (values) =>
       decodeBatches(
-        all(
-          batchesForProductsStatement.sql,
-          batchesForProductsStatement.params.map((param) =>
-            param === FIRST ? ids(values) : param === ORGANIZATION ? organizationId : param,
-          ),
-        ),
+        all(statements.batchesForProducts, { organization: organizationId, ids: ids(values) }),
       ),
     windowFacts: (window) => {
-      const offset = window.utcOffsetMinutes * 60_000;
-      const days = decodeDays(
-        all(
-          `SELECT (createdAt + cast(? as integer)) / ${INSIGHTS_DAY_MILLIS} AS day, count(*) AS invoices,
-                  coalesce(sum(total), 0) AS revenue
-             FROM invoices
-            WHERE organizationId = ? AND createdAt >= ? AND createdAt < ?
-            GROUP BY day ORDER BY day`,
-          [offset, organizationId, window.since, window.until],
-        ),
-      );
-      const hours = decodeHours(
-        all(
-          `SELECT ((createdAt + cast(? as integer)) % ${INSIGHTS_DAY_MILLIS}) / ${INSIGHTS_HOUR_MILLIS} AS hour,
-                  count(*) AS invoices, coalesce(sum(total), 0) AS revenue
-             FROM invoices
-            WHERE organizationId = ? AND createdAt >= ? AND createdAt < ?
-            GROUP BY hour ORDER BY hour`,
-          [offset, organizationId, window.since, window.until],
-        ),
-      );
-      return { days, hours };
+      const bounds = {
+        organization: organizationId,
+        offset: window.utcOffsetMinutes * 60_000,
+        since: window.since,
+        until: window.until,
+      };
+      return {
+        days: decodeDays(all(statements.days, bounds)),
+        hours: decodeHours(all(statements.hours, bounds)),
+      };
     },
     sales: (range, productIds) => {
-      const restrict =
-        productIds === undefined ? "" : " AND ii.productId IN (SELECT value FROM json_each(?))";
-      const bounds = [
-        range.utcOffsetMinutes * 60_000,
-        organizationId,
-        insightsDayStart(range.firstDay, range.utcOffsetMinutes),
-        insightsDayStart(range.lastDay + 1, range.utcOffsetMinutes),
-      ];
+      const bounds = {
+        organization: organizationId,
+        offset: range.utcOffsetMinutes * 60_000,
+        since: insightsDayStart(range.firstDay, range.utcOffsetMinutes),
+        until: insightsDayStart(range.lastDay + 1, range.utcOffsetMinutes),
+      };
       return decodeSales(
-        all(
-          `SELECT ii.productId AS productId,
-                  CAST((i.createdAt + cast(? as integer)) / ${INSIGHTS_DAY_MILLIS} AS INTEGER) AS day,
-                  sum(ii.baseUnitQuantity) AS units,
-                  coalesce(sum(ii.quantity * ii.salePrice), 0) AS revenue
-             FROM invoices i
-            CROSS JOIN invoice_items ii ON ii.organizationId = i.organizationId AND ii.invoiceId = i.id
-            CROSS JOIN products p ON p.organizationId = ii.organizationId AND p.id = ii.productId
-            WHERE i.organizationId = ? AND p.visible = 1 AND i.createdAt >= ? AND i.createdAt < ?${restrict}
-            GROUP BY ii.productId, day`,
-          productIds === undefined ? bounds : [...bounds, ids(productIds)],
-        ),
+        productIds === undefined
+          ? all(statements.sales, bounds)
+          : all(statements.salesForProducts, { ...bounds, ids: ids(productIds) }),
       );
     },
     resolveTouched: (keys, maxProducts) => {
@@ -355,63 +334,34 @@ const makeSnapshot = (
       ]);
       for (const [entity, held] of grouped) {
         if (!known.has(entity)) unresolved = true;
-        const list = ids([...held]);
+        const scope = { organization: organizationId, ids: ids([...held]) };
         switch (entity) {
           case "product":
             for (const id of held) productIds.add(id);
             break;
           case "batch": {
-            const rows = decodeProductIds(
-              all(
-                `SELECT id, productId FROM batches
-                  WHERE organizationId = ? AND id IN (SELECT value FROM json_each(?))`,
-                [organizationId, list],
-              ),
-            );
+            const rows = decodeProductIds(all(statements.batchProducts, scope));
             if (rows.length < held.size) unresolved = true;
             for (const row of rows) productIds.add(row.productId);
             break;
           }
           case "invoice": {
-            const found = decodeIds(
-              all(
-                `SELECT id FROM invoices
-                  WHERE organizationId = ? AND id IN (SELECT value FROM json_each(?))`,
-                [organizationId, list],
-              ),
-            );
+            const found = decodeIds(all(statements.invoiceIds, scope));
             if (found.length < held.size) unresolved = true;
-            for (const row of decodeDistinctProducts(
-              all(
-                `SELECT DISTINCT productId FROM invoice_items
-                  WHERE organizationId = ? AND invoiceId IN (SELECT value FROM json_each(?))`,
-                [organizationId, list],
-              ),
-            )) {
+            for (const row of decodeDistinctProducts(all(statements.invoiceProducts, scope))) {
               productIds.add(row.productId);
             }
             break;
           }
           case "invoiceItem": {
-            const rows = decodeProductIds(
-              all(
-                `SELECT id, productId FROM invoice_items
-                  WHERE organizationId = ? AND id IN (SELECT value FROM json_each(?))`,
-                [organizationId, list],
-              ),
-            );
+            const rows = decodeProductIds(all(statements.invoiceItemProducts, scope));
             if (rows.length < held.size) unresolved = true;
             for (const row of rows) productIds.add(row.productId);
             break;
           }
           case "category": {
             const rows = decodeIds(
-              all(
-                `SELECT id FROM products
-                  WHERE organizationId = ? AND categoryId IN (SELECT value FROM json_each(?))
-                  LIMIT ?`,
-                [organizationId, list, maxProducts + 1],
-              ),
+              all(statements.categoryProducts, { ...scope, limit: maxProducts + 1 }),
             );
             if (rows.length > maxProducts) overflow = true;
             for (const row of rows) productIds.add(row.id);
@@ -441,7 +391,7 @@ export const openInventorySource = (
       }),
       (opened) => Effect.sync(() => opened.close()).pipe(Effect.ignore),
     );
-    const statements = new Map<string, StatementSync>();
+    const prepared = new Map<string, StatementSync>();
     const turn = yield* Semaphore.make(1);
     return {
       snapshot: (work) =>
@@ -451,7 +401,7 @@ export const openInventorySource = (
               try: () => {
                 db.exec("BEGIN");
                 try {
-                  return makeSnapshot(db, statements);
+                  return makeSnapshot(db, prepared);
                 } catch (cause) {
                   db.exec("ROLLBACK");
                   throw cause;

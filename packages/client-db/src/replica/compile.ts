@@ -2,6 +2,7 @@ import * as schema from "@store/db/replica.schema";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   getTableColumns,
@@ -14,6 +15,7 @@ import {
   lt,
   lte,
   not,
+  notExists,
   or,
   sql,
   type SQL,
@@ -83,20 +85,22 @@ const overlaySum = (delta: SQLiteColumn) =>
     .where(
       and(
         eq(schema.stockOverlays.batchId, schema.batches.id),
-        sql`NOT EXISTS ${queryBuilder
-          .select({ one: sql`1` })
-          .from(schema.pendingRowMarks)
-          .innerJoin(
-            absoluteCommand,
-            eq(absoluteCommand.operationId, schema.pendingRowMarks.operationId),
-          )
-          .where(
-            and(
-              sql`${schema.pendingRowMarks.entity} = 'batch'`,
-              eq(schema.pendingRowMarks.entityId, schema.batches.id),
-              not(sequenceAfter(overlayCommand.clientSequence, absoluteCommand.clientSequence)),
+        notExists(
+          queryBuilder
+            .select({ one: sql`1` })
+            .from(schema.pendingRowMarks)
+            .innerJoin(
+              absoluteCommand,
+              eq(absoluteCommand.operationId, schema.pendingRowMarks.operationId),
+            )
+            .where(
+              and(
+                eq(schema.pendingRowMarks.entity, "batch"),
+                eq(schema.pendingRowMarks.entityId, schema.batches.id),
+                not(sequenceAfter(overlayCommand.clientSequence, absoluteCommand.clientSequence)),
+              ),
             ),
-          )}`,
+        ),
       ),
     )}, 0)`;
 
@@ -198,7 +202,7 @@ const lowerPredicate = (
         return or(...inner) ?? sql`0`;
       }
       case "not":
-        return sql`NOT (${yield* lowerPredicate(predicate.predicate, columns, lookup)})`;
+        return not(yield* lowerPredicate(predicate.predicate, columns, lookup)) ?? sql`0`;
       case "isNull":
         return isNull(yield* column(predicate.column));
       case "in": {
@@ -226,7 +230,7 @@ const SqliteParameterSchema = Schema.Union([
 
 const decodeParameters = Schema.decodeUnknownSync(Schema.Array(SqliteParameterSchema));
 
-const toStatement = (query: { toSQL: () => { sql: string; params: Array<unknown> } }) => {
+export const toStatement = (query: { toSQL: () => { sql: string; params: Array<unknown> } }) => {
   const built = query.toSQL();
   return {
     sql: built.sql,
@@ -326,7 +330,7 @@ export const lowerSqliteSummary = (
     return {
       count: toStatement(
         queryBuilder
-          .select({ count: sql<number>`count(*)`.as("count") })
+          .select({ count: count().as("count") })
           .from(table)
           .where(where),
       ),

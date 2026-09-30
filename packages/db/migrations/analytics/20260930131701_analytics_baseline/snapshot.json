@@ -1,0 +1,764 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "e34f976f-8b8e-4322-aeea-8647a8540afe",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "expiring_batch",
+      "entityType": "tables"
+    },
+    {
+      "name": "insight_alert",
+      "entityType": "tables"
+    },
+    {
+      "name": "product_insight",
+      "entityType": "tables"
+    },
+    {
+      "name": "published",
+      "entityType": "tables"
+    },
+    {
+      "name": "run_sequence",
+      "entityType": "tables"
+    },
+    {
+      "name": "work_product",
+      "entityType": "tables"
+    },
+    {
+      "name": "work_sales",
+      "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "expiring_batch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productId",
+      "entityType": "columns",
+      "table": "expiring_batch"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "seq",
+      "entityType": "columns",
+      "table": "expiring_batch"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expiresAt",
+      "entityType": "columns",
+      "table": "expiring_batch"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "batchJson",
+      "entityType": "columns",
+      "table": "expiring_batch"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productId",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "severityRank",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "impact",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "alertJson",
+      "entityType": "columns",
+      "table": "insight_alert"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productId",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nameKey",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "abc",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "priority",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hasOrder",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revenue90d",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "unitCost",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "trend",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodRevenue7",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodUnits7",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodRevenue30",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodUnits30",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodRevenue90",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "periodUnits90",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "valueAtCost",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "valueAtRetail",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deadStockValue",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expiryRiskValue",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expiredValue",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reorderCost",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "missingCost",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "insightJson",
+      "entityType": "columns",
+      "table": "product_insight"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revision",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completedAt",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generatedAt",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sourceGeneration",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sourceVersion",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "policyVersion",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "algorithmVersion",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "today",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "utcOffsetMinutes",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productCount",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summaryJson",
+      "entityType": "columns",
+      "table": "published"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "run_sequence"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "work_product"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productId",
+      "entityType": "columns",
+      "table": "work_product"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "stagedJson",
+      "entityType": "columns",
+      "table": "work_product"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "runId",
+      "entityType": "columns",
+      "table": "work_sales"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "productId",
+      "entityType": "columns",
+      "table": "work_sales"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "day",
+      "entityType": "columns",
+      "table": "work_sales"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "units",
+      "entityType": "columns",
+      "table": "work_sales"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "revenue",
+      "entityType": "columns",
+      "table": "work_sales"
+    },
+    {
+      "columns": ["runId", "productId", "seq"],
+      "nameExplicit": false,
+      "name": "expiring_batch_pk",
+      "entityType": "pks",
+      "table": "expiring_batch"
+    },
+    {
+      "columns": ["runId", "productId", "kind"],
+      "nameExplicit": false,
+      "name": "insight_alert_pk",
+      "entityType": "pks",
+      "table": "insight_alert"
+    },
+    {
+      "columns": ["runId", "productId"],
+      "nameExplicit": false,
+      "name": "product_insight_pk",
+      "entityType": "pks",
+      "table": "product_insight"
+    },
+    {
+      "columns": ["runId", "productId"],
+      "nameExplicit": false,
+      "name": "work_product_pk",
+      "entityType": "pks",
+      "table": "work_product"
+    },
+    {
+      "columns": ["runId", "productId", "day"],
+      "nameExplicit": false,
+      "name": "work_sales_pk",
+      "entityType": "pks",
+      "table": "work_sales"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "published_pk",
+      "table": "published",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "run_sequence_pk",
+      "table": "run_sequence",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "runId",
+          "isExpression": false
+        },
+        {
+          "value": "expiresAt",
+          "isExpression": false
+        },
+        {
+          "value": "productId",
+          "isExpression": false
+        },
+        {
+          "value": "seq",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "expiring_batch_expiry_idx",
+      "entityType": "indexes",
+      "table": "expiring_batch"
+    },
+    {
+      "columns": [
+        {
+          "value": "runId",
+          "isExpression": false
+        },
+        {
+          "value": "severityRank",
+          "isExpression": false
+        },
+        {
+          "value": "\"impact\" DESC",
+          "isExpression": true
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "insight_alert_rank_idx",
+      "entityType": "indexes",
+      "table": "insight_alert"
+    },
+    {
+      "columns": [
+        {
+          "value": "runId",
+          "isExpression": false
+        },
+        {
+          "value": "\"priority\" DESC",
+          "isExpression": true
+        },
+        {
+          "value": "nameKey",
+          "isExpression": false
+        },
+        {
+          "value": "productId",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "hasOrder",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "product_insight_restock_idx",
+      "entityType": "indexes",
+      "table": "product_insight"
+    },
+    {
+      "value": "\"id\" = 1",
+      "name": "published_singleton",
+      "entityType": "checks",
+      "table": "published"
+    }
+  ],
+  "renames": []
+}

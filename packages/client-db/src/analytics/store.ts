@@ -1,3 +1,5 @@
+import type { SQLInputValue } from "node:sqlite";
+
 import {
   AnalyticsRun,
   DemandForecast,
@@ -14,9 +16,47 @@ import {
   type StockStatusCounts,
   type InsightsInventoryTotals,
 } from "@store/contracts";
+import {
+  expiringBatch,
+  insightAlert,
+  productInsight,
+  published,
+  runSequence,
+  workProduct,
+  workSales,
+} from "@store/db/analytics.schema";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  gte,
+  inArray,
+  is,
+  isNoop,
+  lt,
+  lte,
+  ne,
+  or,
+  Param,
+  Placeholder,
+  sql,
+  type Assume,
+  type InferSelectModel,
+  type Query,
+  type SQL,
+} from "drizzle-orm";
+import type {
+  SQLiteColumn,
+  SQLiteInsertValue,
+  SQLiteTable,
+  SQLiteUpdateSetSource,
+} from "drizzle-orm/sqlite-core";
 import * as Schema from "effect/Schema";
 
-import type { AnalyticsDatabase, AnalyticsParameter } from "./database";
+import type { AnalyticsDatabase } from "./database";
 
 const SEVERITY_RANK = { critical: 0, warning: 1, positive: 2, info: 3 } as const;
 const ALERT_TIE_CAP = 2_000;
@@ -34,7 +74,6 @@ const decodeAlert = Schema.decodeUnknownSync(alertJson);
 const decodeBatch = Schema.decodeUnknownSync(batchJson);
 const decodeSummary = Schema.decodeUnknownSync(summaryJson);
 const decodeRun = Schema.decodeUnknownSync(AnalyticsRun);
-const decodeTrend = Schema.decodeUnknownSync(DemandForecast.fields.trend);
 
 const stagedJson = Schema.fromJsonString(
   Schema.Struct({
@@ -167,34 +206,143 @@ type ClassifiedProduct = {
   readonly revenue90d: number;
 };
 
-const num = Schema.decodeUnknownSync(Schema.Number);
 const NO_INSIGHTS: ReadonlyArray<ProductInsight> = [];
 
-const jsonIds = (ids: ReadonlyArray<string>) => JSON.stringify(ids);
+const NO_INVENTORY: InsightsInventoryTotals = {
+  valueAtCost: 0,
+  valueAtRetail: 0,
+  deadStockValue: 0,
+  expiryRiskValue: 0,
+  expiredValue: 0,
+  reorderCost: 0,
+  reorderCount: 0,
+  missingCostCount: 0,
+};
+
+const PeriodProductRow = Schema.Struct({
+  productId: Schema.String,
+  name: Schema.String,
+  unitCost: Schema.NullOr(Schema.Number),
+  trend: DemandForecast.fields.trend,
+  revenue: Schema.Number,
+  units: Schema.Number,
+});
+const decodePeriodProduct = Schema.decodeUnknownSync(PeriodProductRow);
+
+const PERIOD_COLUMNS = [
+  [productInsight.periodRevenue7, productInsight.periodUnits7],
+  [productInsight.periodRevenue30, productInsight.periodUnits30],
+  [productInsight.periodRevenue90, productInsight.periodUnits90],
+] as const;
 
 const escapeLike = (term: string) => term.replace(/[\\%_]/gu, (match) => `\\${match}`);
 
 const isStockStatus = Schema.is(StockStatus);
 
-const inList = (values: ReadonlyArray<string>) => values.map(() => "?").join(", ");
+const inJson = (column: SQLiteColumn, values: ReadonlyArray<string | number>) =>
+  sql`${column} IN (SELECT value FROM json_each(${JSON.stringify(values)}))`;
+
+const notInJson = (column: SQLiteColumn, values: ReadonlyArray<string | number>) =>
+  sql`${column} NOT IN (SELECT value FROM json_each(${JSON.stringify(values)}))`;
+
+const total = (column: SQLiteColumn) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
+
+const placeholderKeys = (query: Query) =>
+  query.params.map((param) => {
+    if (
+      is(param, Param) &&
+      is(param.value, Placeholder) &&
+      param.codec === undefined &&
+      isNoop(param.encoder.mapToDriverValue) === true
+    ) {
+      return param.value.name;
+    }
+    throw new Error("Analytics upserts bind only placeholders of unencoded columns.");
+  });
+
+const upsert = <T extends SQLiteTable>(
+  db: AnalyticsDatabase,
+  table: T,
+  target: ReadonlyArray<SQLiteColumn>,
+) => {
+  const columns = Object.entries(getTableColumns(table));
+  const query = db.orm
+    .insert(table)
+    .values(
+      // SAFETY: every column of the table is bound to the placeholder named after its key.
+      Object.fromEntries(
+        columns.map(([key]) => [key, sql.placeholder(key)]),
+      ) as SQLiteInsertValue<T>,
+    )
+    .onConflictDoUpdate({
+      target: [...target],
+      // SAFETY: every non-key column of the table is set to its excluded value.
+      set: Object.fromEntries(
+        columns
+          .filter(([, column]) => !target.includes(column))
+          .map(([key, column]) => [key, sql`excluded.${sql.identifier(column.name)}`]),
+      ) as SQLiteUpdateSetSource<Assume<T, SQLiteTable>>,
+    })
+    .toSQL();
+  const statement = db.statement(query.sql);
+  const keys = placeholderKeys(query);
+  return (row: InferSelectModel<T>) => {
+    const values: Record<string, SQLInputValue> = row;
+    statement.run(...keys.map((key) => values[key] ?? null));
+  };
+};
 
 export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
-  const publishedRow = () =>
-    db.get(
-      `SELECT runId, revision, kind, completedAt, generatedAt, sourceGeneration, sourceVersion,
-              policyVersion, algorithmVersion, today, utcOffsetMinutes, productCount
-         FROM published WHERE id = 1`,
-    );
+  const { orm } = db;
+
+  const publishedRunQuery = orm
+    .select({
+      runId: published.runId,
+      revision: published.revision,
+      kind: published.kind,
+      completedAt: published.completedAt,
+      generatedAt: published.generatedAt,
+      sourceGeneration: published.sourceGeneration,
+      sourceVersion: published.sourceVersion,
+      policyVersion: published.policyVersion,
+      algorithmVersion: published.algorithmVersion,
+      today: published.today,
+      utcOffsetMinutes: published.utcOffsetMinutes,
+      productCount: published.productCount,
+    })
+    .from(published)
+    .where(eq(published.id, 1))
+    .prepare();
+
+  const upsertInsight = upsert(db, productInsight, [
+    productInsight.runId,
+    productInsight.productId,
+  ]);
+  const upsertAlert = upsert(db, insightAlert, [
+    insightAlert.runId,
+    insightAlert.productId,
+    insightAlert.kind,
+  ]);
+  const upsertBatch = upsert(db, expiringBatch, [
+    expiringBatch.runId,
+    expiringBatch.productId,
+    expiringBatch.seq,
+  ]);
+  const upsertSales = upsert(db, workSales, [workSales.runId, workSales.productId, workSales.day]);
+  const upsertStaged = upsert(db, workProduct, [workProduct.runId, workProduct.productId]);
+  const upsertPublished = upsert(db, published, [published.id]);
 
   const publishedRun = (): AnalyticsRun | undefined => {
-    const row = publishedRow();
+    const row = publishedRunQuery.get();
     return row === undefined ? undefined : decodeRun(row);
   };
 
+  const countWhere = (table: SQLiteTable, where: SQL | undefined) =>
+    orm.select({ n: count() }).from(table).where(where).get()?.n ?? 0;
+
   const summaryReader = (runId: number): SummaryReader => ({
     runId,
-    productCount: () =>
-      num(db.get("SELECT count(*) AS n FROM product_insight WHERE runId = ?", [runId])?.["n"]),
+    productCount: () => countWhere(productInsight, eq(productInsight.runId, runId)),
     statusCounts: () => {
       const counts = {
         out: 0,
@@ -205,233 +353,255 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
         healthy: 0,
         inactive: 0,
       } satisfies Record<StockStatus, number>;
-      for (const row of db.all(
-        "SELECT status, count(*) AS n FROM product_insight WHERE runId = ? GROUP BY status",
-        [runId],
-      )) {
-        const status: unknown = row["status"];
-        if (isStockStatus(status)) counts[status] = num(row["n"]);
+      for (const row of orm
+        .select({ status: productInsight.status, n: count() })
+        .from(productInsight)
+        .where(eq(productInsight.runId, runId))
+        .groupBy(productInsight.status)
+        .all()) {
+        if (isStockStatus(row.status)) counts[row.status] = row.n;
       }
       return counts;
     },
-    inventory: () => {
-      const row =
-        db.get(
-          `SELECT coalesce(sum(valueAtCost), 0) AS valueAtCost,
-                  coalesce(sum(valueAtRetail), 0) AS valueAtRetail,
-                  coalesce(sum(deadStockValue), 0) AS deadStockValue,
-                  coalesce(sum(expiryRiskValue), 0) AS expiryRiskValue,
-                  coalesce(sum(expiredValue), 0) AS expiredValue,
-                  coalesce(sum(reorderCost), 0) AS reorderCost,
-                  coalesce(sum(hasOrder), 0) AS reorderCount,
-                  coalesce(sum(missingCost), 0) AS missingCostCount
-             FROM product_insight WHERE runId = ?`,
-          [runId],
-        ) ?? {};
-      return {
-        valueAtCost: num(row["valueAtCost"]),
-        valueAtRetail: num(row["valueAtRetail"]),
-        deadStockValue: num(row["deadStockValue"]),
-        expiryRiskValue: num(row["expiryRiskValue"]),
-        expiredValue: num(row["expiredValue"]),
-        reorderCost: num(row["reorderCost"]),
-        reorderCount: num(row["reorderCount"]),
-        missingCostCount: num(row["missingCostCount"]),
-      };
-    },
+    inventory: () =>
+      orm
+        .select({
+          valueAtCost: total(productInsight.valueAtCost),
+          valueAtRetail: total(productInsight.valueAtRetail),
+          deadStockValue: total(productInsight.deadStockValue),
+          expiryRiskValue: total(productInsight.expiryRiskValue),
+          expiredValue: total(productInsight.expiredValue),
+          reorderCost: total(productInsight.reorderCost),
+          reorderCount: total(productInsight.hasOrder),
+          missingCostCount: total(productInsight.missingCost),
+        })
+        .from(productInsight)
+        .where(eq(productInsight.runId, runId))
+        .get() ?? NO_INVENTORY,
     alertCandidates: (limit) => {
-      const boundary = db.get(
-        `SELECT severityRank, impact FROM insight_alert WHERE runId = ?
-          ORDER BY severityRank, impact DESC LIMIT 1 OFFSET ?`,
-        [runId, Math.max(0, limit - 1)],
-      );
+      const boundary = orm
+        .select({ severityRank: insightAlert.severityRank, impact: insightAlert.impact })
+        .from(insightAlert)
+        .where(eq(insightAlert.runId, runId))
+        .orderBy(insightAlert.severityRank, desc(insightAlert.impact))
+        .limit(1)
+        .offset(Math.max(0, limit - 1))
+        .get();
+      const ranked = orm
+        .select({ alertJson: insightAlert.alertJson })
+        .from(insightAlert)
+        .$dynamic();
       const rows =
         boundary === undefined
-          ? db.all(
-              `SELECT alertJson FROM insight_alert WHERE runId = ?
-                ORDER BY severityRank, impact DESC`,
-              [runId],
-            )
-          : db.all(
-              `SELECT alertJson FROM insight_alert
-                WHERE runId = ? AND (severityRank < ? OR (severityRank = ? AND impact >= ?))
-                ORDER BY severityRank, impact DESC LIMIT ?`,
-              [
-                runId,
-                num(boundary["severityRank"]),
-                num(boundary["severityRank"]),
-                num(boundary["impact"]),
-                ALERT_TIE_CAP + limit,
-              ],
-            );
-      return rows.map((row) => decodeAlert(row["alertJson"]));
+          ? ranked
+              .where(eq(insightAlert.runId, runId))
+              .orderBy(insightAlert.severityRank, desc(insightAlert.impact))
+              .all()
+          : ranked
+              .where(
+                and(
+                  eq(insightAlert.runId, runId),
+                  or(
+                    lt(insightAlert.severityRank, boundary.severityRank),
+                    and(
+                      eq(insightAlert.severityRank, boundary.severityRank),
+                      gte(insightAlert.impact, boundary.impact),
+                    ),
+                  ),
+                ),
+              )
+              .orderBy(insightAlert.severityRank, desc(insightAlert.impact))
+              .limit(ALERT_TIE_CAP + limit)
+              .all();
+      return rows.map((row) => decodeAlert(row.alertJson));
     },
     attention: (limit) => {
-      const statuses = RESTOCK_VIEW_STATUSES.action;
-      const filter = `runId = ? AND status IN (${inList(statuses)})`;
-      const parameters: Array<AnalyticsParameter> = [runId, ...statuses];
+      const filter = and(
+        eq(productInsight.runId, runId),
+        inArray(productInsight.status, RESTOCK_VIEW_STATUSES.action),
+      );
       return {
-        rows: db
-          .all(
-            `SELECT insightJson FROM product_insight WHERE ${filter}
-              ORDER BY priority DESC, nameKey, productId LIMIT ?`,
-            [...parameters, limit],
-          )
-          .map((row) => decodeProduct(row["insightJson"])),
-        count: num(
-          db.get(`SELECT count(*) AS n FROM product_insight WHERE ${filter}`, parameters)?.["n"],
-        ),
+        rows: orm
+          .select({ insightJson: productInsight.insightJson })
+          .from(productInsight)
+          .where(filter)
+          .orderBy(desc(productInsight.priority), productInsight.nameKey, productInsight.productId)
+          .limit(limit)
+          .all()
+          .map((row) => decodeProduct(row.insightJson)),
+        count: countWhere(productInsight, filter),
       };
     },
     expiring: (limit) => ({
-      rows: db
-        .all(
-          `SELECT batchJson FROM expiring_batch WHERE runId = ?
-            ORDER BY expiresAt, productId, seq LIMIT ?`,
-          [runId, limit],
-        )
-        .map((row) => decodeBatch(row["batchJson"])),
-      count: num(
-        db.get("SELECT count(*) AS n FROM expiring_batch WHERE runId = ?", [runId])?.["n"],
-      ),
+      rows: orm
+        .select({ batchJson: expiringBatch.batchJson })
+        .from(expiringBatch)
+        .where(eq(expiringBatch.runId, runId))
+        .orderBy(expiringBatch.expiresAt, expiringBatch.productId, expiringBatch.seq)
+        .limit(limit)
+        .all()
+        .map((row) => decodeBatch(row.batchJson)),
+      count: countWhere(expiringBatch, eq(expiringBatch.runId, runId)),
     }),
     periodProducts: function* (slot) {
-      const revenue = ["periodRevenue7", "periodRevenue30", "periodRevenue90"][slot];
-      const units = ["periodUnits7", "periodUnits30", "periodUnits90"][slot];
-      for (const row of db.iterate(
-        `SELECT productId, name, unitCost, trend, ${revenue} AS revenue, ${units} AS units
-           FROM product_insight
-          WHERE runId = ? AND (${revenue} > 0 OR ${units} > 0)
-          ORDER BY productId`,
-        [runId],
-      )) {
-        yield {
-          productId: String(row["productId"]),
-          name: String(row["name"]),
-          revenue: num(row["revenue"]),
-          units: num(row["units"]),
-          unitCost: row["unitCost"] === null ? null : num(row["unitCost"]),
-          trend: decodeTrend(row["trend"]),
-        };
-      }
+      const [revenue, units] = PERIOD_COLUMNS[slot];
+      const query = orm
+        .select({
+          productId: productInsight.productId,
+          name: productInsight.name,
+          unitCost: productInsight.unitCost,
+          trend: productInsight.trend,
+          revenue: sql<number>`${revenue}`.as("revenue"),
+          units: sql<number>`${units}`.as("units"),
+        })
+        .from(productInsight)
+        .where(and(eq(productInsight.runId, runId), or(gt(revenue, 0), gt(units, 0))))
+        .orderBy(productInsight.productId)
+        .toSQL();
+      for (const row of db.iterate(query)) yield decodePeriodProduct(row);
     },
   });
 
   const insertAnalysis = (runId: number, analysis: ProductAnalysis) => {
     const { insight, contribution } = analysis;
-    db.run(
-      `INSERT OR REPLACE INTO product_insight (
-         runId, productId, name, nameKey, status, abc, priority, hasOrder, revenue90d, unitCost, trend,
-         periodRevenue7, periodUnits7, periodRevenue30, periodUnits30, periodRevenue90, periodUnits90,
-         valueAtCost, valueAtRetail, deadStockValue, expiryRiskValue, expiredValue, reorderCost,
-         missingCost, insightJson
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        runId,
-        insight.productId,
-        insight.name,
-        insight.name.toLowerCase(),
-        insight.status,
-        insight.abc,
-        insight.priority,
-        insight.order === null ? 0 : 1,
-        insight.revenue90d,
-        insight.unitCost,
-        insight.demand.trend,
-        analysis.periodRevenue[0],
-        analysis.periodUnits[0],
-        analysis.periodRevenue[1],
-        analysis.periodUnits[1],
-        analysis.periodRevenue[2],
-        analysis.periodUnits[2],
-        contribution.valueAtCost,
-        contribution.valueAtRetail,
-        contribution.deadStockValue,
-        contribution.expiryRiskValue,
-        contribution.expiredValue,
-        contribution.reorderCost,
-        contribution.missingCostCount,
-        encodeProduct(insight),
-      ],
-    );
+    upsertInsight({
+      runId,
+      productId: insight.productId,
+      name: insight.name,
+      nameKey: insight.name.toLowerCase(),
+      status: insight.status,
+      abc: insight.abc,
+      priority: insight.priority,
+      hasOrder: insight.order === null ? 0 : 1,
+      revenue90d: insight.revenue90d,
+      unitCost: insight.unitCost,
+      trend: insight.demand.trend,
+      periodRevenue7: analysis.periodRevenue[0],
+      periodUnits7: analysis.periodUnits[0],
+      periodRevenue30: analysis.periodRevenue[1],
+      periodUnits30: analysis.periodUnits[1],
+      periodRevenue90: analysis.periodRevenue[2],
+      periodUnits90: analysis.periodUnits[2],
+      valueAtCost: contribution.valueAtCost,
+      valueAtRetail: contribution.valueAtRetail,
+      deadStockValue: contribution.deadStockValue,
+      expiryRiskValue: contribution.expiryRiskValue,
+      expiredValue: contribution.expiredValue,
+      reorderCost: contribution.reorderCost,
+      missingCost: contribution.missingCostCount,
+      insightJson: encodeProduct(insight),
+    });
     for (const alert of analysis.alerts) {
-      db.run(
-        `INSERT OR REPLACE INTO insight_alert (runId, productId, kind, severityRank, impact, alertJson)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          runId,
-          insight.productId,
-          alert.kind,
-          SEVERITY_RANK[alert.severity],
-          alert.impact,
-          encodeAlert(alert),
-        ],
-      );
+      upsertAlert({
+        runId,
+        productId: insight.productId,
+        kind: alert.kind,
+        severityRank: SEVERITY_RANK[alert.severity],
+        impact: alert.impact,
+        alertJson: encodeAlert(alert),
+      });
     }
     analysis.expiring.forEach((batch, seq) => {
-      db.run(
-        `INSERT OR REPLACE INTO expiring_batch (runId, productId, seq, expiresAt, batchJson)
-         VALUES (?, ?, ?, ?, ?)`,
-        [runId, insight.productId, seq, batch.expiresAt, encodeBatch(batch)],
-      );
+      upsertBatch({
+        runId,
+        productId: insight.productId,
+        seq,
+        expiresAt: batch.expiresAt,
+        batchJson: encodeBatch(batch),
+      });
     });
   };
 
   const insertSales = (runId: number, rows: ReadonlyArray<SalesRow>) => {
     for (const row of rows) {
-      db.run(
-        `INSERT OR REPLACE INTO work_sales (runId, productId, day, units, revenue)
-         VALUES (?, ?, ?, ?, ?)`,
-        [runId, row.productId, row.day, row.units, row.revenue],
-      );
+      upsertSales({
+        runId,
+        productId: row.productId,
+        day: row.day,
+        units: row.units,
+        revenue: row.revenue,
+      });
     }
   };
 
   const insertStaged = (runId: number, entries: ReadonlyArray<StagedProduct>) => {
     for (const entry of entries) {
-      db.run(
-        "INSERT OR REPLACE INTO work_product (runId, productId, stagedJson) VALUES (?, ?, ?)",
-        [runId, entry.product.id, encodeStaged(entry)],
-      );
+      upsertStaged({ runId, productId: entry.product.id, stagedJson: encodeStaged(entry) });
     }
   };
 
   const deleteProducts = (runId: number, productIds: ReadonlyArray<string>) => {
-    const ids = jsonIds(productIds);
-    for (const table of ["product_insight", "insight_alert", "expiring_batch"]) {
-      db.run(
-        `DELETE FROM ${table} WHERE runId = ? AND productId IN (SELECT value FROM json_each(?))`,
-        [runId, ids],
-      );
+    for (const table of [productInsight, insightAlert, expiringBatch]) {
+      orm
+        .delete(table)
+        .where(and(eq(table.runId, runId), inJson(table.productId, productIds)))
+        .run();
     }
   };
 
   const filterClause = (runId: number, filters: RestockFilters) => {
-    const statuses = RESTOCK_VIEW_STATUSES[filters.view];
-    const clauses = [`runId = ?`, `status IN (${inList(statuses)})`];
-    const parameters: Array<AnalyticsParameter> = [runId, ...statuses];
-    if (filters.ordersOnly === true) clauses.push("hasOrder = 1");
     const term = filters.search?.trim().toLowerCase();
-    if (term !== undefined && term.length > 0) {
-      clauses.push("nameKey LIKE ? ESCAPE '\\'");
-      parameters.push(`%${escapeLike(term)}%`);
-    }
-    return { where: clauses.join(" AND "), parameters };
+    return and(
+      eq(productInsight.runId, runId),
+      inArray(productInsight.status, RESTOCK_VIEW_STATUSES[filters.view]),
+      filters.ordersOnly === true ? eq(productInsight.hasOrder, 1) : undefined,
+      term !== undefined && term.length > 0
+        ? sql`${productInsight.nameKey} LIKE ${`%${escapeLike(term)}%`} ESCAPE '\\'`
+        : undefined,
+    );
   };
+
+  const afterCursor = (cursor: RestockCursor) =>
+    or(
+      lt(productInsight.priority, cursor.priority),
+      and(
+        eq(productInsight.priority, cursor.priority),
+        or(
+          gt(productInsight.nameKey, cursor.nameKey),
+          and(
+            eq(productInsight.nameKey, cursor.nameKey),
+            gt(productInsight.productId, cursor.productId),
+          ),
+        ),
+      ),
+    );
+
+  const supersededTables = [
+    { table: productInsight, key: [productInsight.runId, productInsight.productId], results: true },
+    {
+      table: insightAlert,
+      key: [insightAlert.runId, insightAlert.productId, insightAlert.kind],
+      results: true,
+    },
+    {
+      table: expiringBatch,
+      key: [expiringBatch.runId, expiringBatch.productId, expiringBatch.seq],
+      results: true,
+    },
+    {
+      table: workSales,
+      key: [workSales.runId, workSales.productId, workSales.day],
+      results: false,
+    },
+    { table: workProduct, key: [workProduct.runId, workProduct.productId], results: false },
+  ] as const;
 
   return {
     published: (): PublishedRun | undefined => {
       const run = publishedRun();
       if (run === undefined) return undefined;
-      const row = db.get("SELECT summaryJson FROM published WHERE id = 1");
-      return row === undefined ? undefined : { run, summary: decodeSummary(row["summaryJson"]) };
+      const row = orm
+        .select({ summaryJson: published.summaryJson })
+        .from(published)
+        .where(eq(published.id, 1))
+        .get();
+      return row === undefined ? undefined : { run, summary: decodeSummary(row.summaryJson) };
     },
     publishedRun,
     allocateRun: (): number =>
-      db.transaction(() => {
-        db.run("INSERT INTO run_sequence DEFAULT VALUES");
-        return num(db.get("SELECT last_insert_rowid() AS id")?.["id"]);
-      }),
+      db.transaction(
+        () => orm.insert(runSequence).values({}).returning({ id: runSequence.id }).get().id,
+      ),
     writeProducts: (runId: number, analyses: ReadonlyArray<ProductAnalysis>) =>
       db.transaction(() => {
         for (const analysis of analyses) insertAnalysis(runId, analysis);
@@ -459,27 +629,7 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
           productCount: reader.productCount(),
         });
         const summary = input.summarize(reader, run);
-        db.run(
-          `INSERT OR REPLACE INTO published (
-             id, runId, revision, kind, completedAt, generatedAt, sourceGeneration, sourceVersion,
-             policyVersion, algorithmVersion, today, utcOffsetMinutes, productCount, summaryJson
-           ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            run.runId,
-            run.revision,
-            run.kind,
-            run.completedAt,
-            run.generatedAt,
-            run.sourceGeneration,
-            run.sourceVersion,
-            run.policyVersion,
-            run.algorithmVersion,
-            run.today,
-            run.utcOffsetMinutes,
-            run.productCount,
-            encodeSummary(summary),
-          ],
-        );
+        upsertPublished({ id: 1, ...run, summaryJson: encodeSummary(summary) });
         return run;
       }),
     discardSuperseded: (input: {
@@ -489,36 +639,32 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
     }): number =>
       db.transaction(() => {
         let removed = 0;
-        const tables = [
-          ["product_insight", "productId", input.keepResults],
-          ["insight_alert", "productId, kind", input.keepResults],
-          ["expiring_batch", "productId, seq", input.keepResults],
-          ["work_sales", "productId, day", input.keepWork],
-          ["work_product", "productId", input.keepWork],
-        ] as const;
-        for (const [table, key, keep] of tables) {
-          db.run(
-            `DELETE FROM ${table} WHERE (runId, ${key}) IN (
-               SELECT runId, ${key} FROM ${table}
-                WHERE runId NOT IN (SELECT value FROM json_each(?)) LIMIT ?)`,
-            [JSON.stringify(keep), input.limit],
-          );
-          removed += num(db.get("SELECT changes() AS n")?.["n"]);
+        for (const { table, key, results } of supersededTables) {
+          const columns = sql.join([...key], sql`, `);
+          const { changes } = orm
+            .delete(table)
+            .where(
+              sql`(${columns}) IN (SELECT ${columns} FROM ${table} WHERE ${notInJson(
+                table.runId,
+                results ? input.keepResults : input.keepWork,
+              )} LIMIT ${input.limit})`,
+            )
+            .run();
+          removed += Number(changes);
         }
         return removed;
       }),
-    checkpoint: () => db.run("PRAGMA wal_checkpoint(TRUNCATE)"),
+    checkpoint: () => db.checkpoint(),
     products: (ids: ReadonlyArray<string>) => {
       const run = publishedRun();
       if (run === undefined) return { run: undefined, insights: NO_INSIGHTS };
       const found = new Map(
-        db
-          .all(
-            `SELECT productId, insightJson FROM product_insight
-              WHERE runId = ? AND productId IN (SELECT value FROM json_each(?))`,
-            [run.runId, jsonIds(ids)],
-          )
-          .map((row) => [String(row["productId"]), decodeProduct(row["insightJson"])] as const),
+        orm
+          .select({ productId: productInsight.productId, insightJson: productInsight.insightJson })
+          .from(productInsight)
+          .where(and(eq(productInsight.runId, run.runId), inJson(productInsight.productId, ids)))
+          .all()
+          .map((row) => [row.productId, decodeProduct(row.insightJson)] as const),
       );
       return {
         run,
@@ -537,27 +683,17 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
       ) {
         return { run, rows: [], nextCursor: null, total: null, cursorExpired: true };
       }
-      const { where, parameters } = filterClause(run.runId, query.filters);
+      const filter = filterClause(run.runId, query.filters);
       const cursor = query.cursor;
-      let afterSql = "";
-      const afterParameters: Array<AnalyticsParameter> = [];
-      if (cursor !== null) {
-        afterSql = ` AND (priority < ? OR (priority = ? AND (nameKey > ? OR (nameKey = ? AND productId > ?))))`;
-        afterParameters.push(
-          cursor.priority,
-          cursor.priority,
-          cursor.nameKey,
-          cursor.nameKey,
-          cursor.productId,
-        );
-      }
-      const fetched = db.all(
-        `SELECT insightJson FROM product_insight WHERE ${where}${afterSql}
-          ORDER BY priority DESC, nameKey, productId LIMIT ?`,
-        [...parameters, ...afterParameters, query.limit + 1],
-      );
+      const fetched = orm
+        .select({ insightJson: productInsight.insightJson })
+        .from(productInsight)
+        .where(cursor === null ? filter : and(filter, afterCursor(cursor)))
+        .orderBy(desc(productInsight.priority), productInsight.nameKey, productInsight.productId)
+        .limit(query.limit + 1)
+        .all();
       const page = fetched.slice(0, query.limit);
-      const rows = page.map((row) => decodeProduct(row["insightJson"]));
+      const rows = page.map((row) => decodeProduct(row.insightJson));
       const last = rows.at(-1);
       const nextCursor: RestockCursor | null =
         fetched.length > query.limit && last !== undefined
@@ -569,12 +705,7 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
               productId: last.productId,
             }
           : null;
-      const total =
-        cursor === null
-          ? num(
-              db.get(`SELECT count(*) AS n FROM product_insight WHERE ${where}`, parameters)?.["n"],
-            )
-          : null;
+      const total = cursor === null ? countWhere(productInsight, filter) : null;
       return { run, rows, nextCursor, total, cursorExpired: false };
     },
     workSales: {
@@ -584,32 +715,41 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
         runId: number,
         firstDay: number,
         lastDay: number,
-      ): ReadonlyArray<RevenueEntry> =>
-        db
-          .all(
-            `SELECT productId AS id, sum(revenue) AS revenue
-               FROM work_sales
-              WHERE runId = ? AND day >= ? AND day <= ?
-              GROUP BY productId
-             HAVING sum(revenue) > 0
-              ORDER BY sum(revenue) DESC, productId`,
-            [runId, firstDay, lastDay],
+      ): ReadonlyArray<RevenueEntry> => {
+        const revenue = sql<number>`sum(${workSales.revenue})`.mapWith(Number);
+        return orm
+          .select({ id: workSales.productId, revenue })
+          .from(workSales)
+          .where(
+            and(
+              eq(workSales.runId, runId),
+              gte(workSales.day, firstDay),
+              lte(workSales.day, lastDay),
+            ),
           )
-          .map((row) => ({ id: String(row["id"]), revenue: num(row["revenue"]) })),
+          .groupBy(workSales.productId)
+          .having(gt(revenue, 0))
+          .orderBy(desc(revenue), workSales.productId)
+          .all();
+      },
       range: (runId: number, firstId: string, lastId: string): ReadonlyArray<SalesRow> =>
-        db
-          .all(
-            `SELECT productId, day, units, revenue FROM work_sales
-              WHERE runId = ? AND productId >= ? AND productId <= ?
-              ORDER BY productId, day`,
-            [runId, firstId, lastId],
+        orm
+          .select({
+            productId: workSales.productId,
+            day: workSales.day,
+            units: workSales.units,
+            revenue: workSales.revenue,
+          })
+          .from(workSales)
+          .where(
+            and(
+              eq(workSales.runId, runId),
+              gte(workSales.productId, firstId),
+              lte(workSales.productId, lastId),
+            ),
           )
-          .map((row) => ({
-            productId: String(row["productId"]),
-            day: num(row["day"]),
-            units: num(row["units"]),
-            revenue: num(row["revenue"]),
-          })),
+          .orderBy(workSales.productId, workSales.day)
+          .all(),
     },
     staged: {
       write: (runId: number, entries: ReadonlyArray<StagedProduct>) =>
@@ -623,52 +763,53 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
         },
       ) =>
         db.transaction(() => {
-          const ids = jsonIds(input.productIds);
-          for (const table of ["work_product", "work_sales"]) {
-            db.run(
-              `DELETE FROM ${table} WHERE runId = ? AND productId IN (SELECT value FROM json_each(?))`,
-              [runId, ids],
-            );
+          for (const table of [workProduct, workSales]) {
+            orm
+              .delete(table)
+              .where(and(eq(table.runId, runId), inJson(table.productId, input.productIds)))
+              .run();
           }
           insertStaged(runId, input.entries);
           insertSales(runId, input.sales);
         }),
-      count: (runId: number): number =>
-        num(db.get("SELECT count(*) AS n FROM work_product WHERE runId = ?", [runId])?.["n"]),
+      count: (runId: number): number => countWhere(workProduct, eq(workProduct.runId, runId)),
       page: (runId: number, after: string, limit: number): ReadonlyArray<StagedProduct> =>
-        db
-          .all(
-            `SELECT stagedJson FROM work_product WHERE runId = ? AND productId > ?
-              ORDER BY productId LIMIT ?`,
-            [runId, after, limit],
-          )
-          .map((row) => decodeStaged(row["stagedJson"])),
+        orm
+          .select({ stagedJson: workProduct.stagedJson })
+          .from(workProduct)
+          .where(and(eq(workProduct.runId, runId), gt(workProduct.productId, after)))
+          .orderBy(workProduct.productId)
+          .limit(limit)
+          .all()
+          .map((row) => decodeStaged(row.stagedJson)),
     },
     clearWork: (runId: number) =>
       db.transaction(() => {
-        db.run("DELETE FROM work_sales WHERE runId = ?", [runId]);
-        db.run("DELETE FROM work_product WHERE runId = ?", [runId]);
+        orm.delete(workSales).where(eq(workSales.runId, runId)).run();
+        orm.delete(workProduct).where(eq(workProduct.runId, runId)).run();
       }),
     rankingOf: (runId: number): ReadonlyArray<ClassifiedProduct> =>
-      db
-        .all(
-          `SELECT productId, abc, revenue90d FROM product_insight
-            WHERE runId = ? AND (revenue90d > 0 OR abc <> 'C')`,
-          [runId],
+      orm
+        .select({
+          productId: productInsight.productId,
+          abc: productInsight.abc,
+          revenue90d: productInsight.revenue90d,
+        })
+        .from(productInsight)
+        .where(
+          and(
+            eq(productInsight.runId, runId),
+            or(gt(productInsight.revenue90d, 0), ne(productInsight.abc, "C")),
+          ),
         )
-        .map((row) => ({
-          productId: String(row["productId"]),
-          abc: String(row["abc"]),
-          revenue90d: num(row["revenue90d"]),
-        })),
+        .all(),
     storedProductIds: (runId: number, ids: ReadonlyArray<string>): ReadonlyArray<string> =>
-      db
-        .all(
-          `SELECT productId FROM product_insight
-            WHERE runId = ? AND productId IN (SELECT value FROM json_each(?))`,
-          [runId, jsonIds(ids)],
-        )
-        .map((row) => String(row["productId"])),
+      orm
+        .select({ productId: productInsight.productId })
+        .from(productInsight)
+        .where(and(eq(productInsight.runId, runId), inJson(productInsight.productId, ids)))
+        .all()
+        .map((row) => row.productId),
   };
 };
 

@@ -1,6 +1,19 @@
 import { SyncTransactionGroup } from "@store/contracts";
-import { generationJournal, generationState } from "@store/db/replica.schema";
-import { eq, sql } from "drizzle-orm";
+import {
+  batches,
+  categories,
+  generationJournal,
+  generationState,
+  invoiceItems,
+  invoices,
+  pendingRowJournal,
+  pendingRowMarks,
+  products,
+  snapshotStagedRows,
+  stockMovements,
+  stockOverlays,
+} from "@store/db/replica.schema";
+import { eq, getTableName, max, sql } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -10,16 +23,16 @@ import { ReplicaStorageError } from "../errors";
 import type { ReplicaDb } from "../sql-client/drizzle";
 
 export const GENERATION_TABLES = [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-  "pending_row_marks",
-  "pending_row_journal",
-  "stock_overlays",
-] as const;
+  categories,
+  products,
+  batches,
+  invoices,
+  invoiceItems,
+  stockMovements,
+  pendingRowMarks,
+  pendingRowJournal,
+  stockOverlays,
+].map(getTableName);
 
 export const GENERATION_SEARCH_TABLES = ["products_search"] as const;
 
@@ -119,7 +132,7 @@ export const recordActiveMutation = Effect.fn("ReplicaGeneration.recordMutation"
 
 export const journalHead = Effect.fn("ReplicaGeneration.journalHead")(function* (tx: ReplicaDb) {
   const row = yield* tx
-    .select({ head: sql<number | null>`max(${generationJournal.seq})` })
+    .select({ head: max(generationJournal.seq) })
     .from(generationJournal)
     .get();
   return row?.head ?? 0;
@@ -159,16 +172,15 @@ export type BulkClear = "defer" | "allow";
 export const BULK_CLEAR_IDLE_MILLIS = 1_000;
 
 const BULK_CLEARED_TABLES: ReadonlyArray<string> = [
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-];
+  batches,
+  invoices,
+  invoiceItems,
+  stockMovements,
+].map(getTableName);
 
-const LEFTOVER_TARGETS: ReadonlyArray<CleanupTarget> = [
-  { table: "generation_journal", search: false, bulk: false },
-  { table: "snapshot_staged_rows", search: false, bulk: false },
-];
+const LEFTOVER_TARGETS: ReadonlyArray<CleanupTarget> = [generationJournal, snapshotStagedRows].map(
+  (table) => ({ table: getTableName(table), search: false, bulk: false }),
+);
 
 const RETIRED_TARGETS: ReadonlyArray<CleanupTarget> = [
   ...GENERATION_SEARCH_TABLES.map((table) => ({

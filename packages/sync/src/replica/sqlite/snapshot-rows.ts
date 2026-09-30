@@ -8,7 +8,7 @@ import {
   products,
   stockMovements,
 } from "@store/db/replica.schema";
-import { getTableColumns, sql, type SQL } from "drizzle-orm";
+import { getTableColumns, getTableName, sql, type SQL } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -17,17 +17,15 @@ import type { ReplicaDb } from "../sql-client/drizzle";
 import { standbyTable } from "./generation";
 
 const entityTables = {
-  category: { table: categories, name: "categories" },
-  product: { table: products, name: "products" },
-  batch: { table: batches, name: "batches" },
-  invoice: { table: invoices, name: "invoices" },
-  invoiceItem: { table: invoiceItems, name: "invoice_items" },
-  stockMovement: { table: stockMovements, name: "stock_movements" },
+  category: { table: categories, rowVersion: categories.rowVersion },
+  product: { table: products, rowVersion: products.rowVersion },
+  batch: { table: batches, rowVersion: batches.rowVersion },
+  invoice: { table: invoices, rowVersion: invoices.rowVersion },
+  invoiceItem: { table: invoiceItems, rowVersion: invoiceItems.rowVersion },
+  stockMovement: { table: stockMovements, rowVersion: undefined },
 } as const;
 
 const UPSERTED_ROWS_PER_STATEMENT = 400;
-
-const newerRowVersion = sql` where excluded."rowVersion" >= "rowVersion"`;
 
 const SnapshotCell = Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null]);
 type SnapshotCell = typeof SnapshotCell.Type;
@@ -45,7 +43,15 @@ const upsertStatement = (
   columns: ReadonlyArray<string>,
   rows: ReadonlyArray<SnapshotRecord>,
 ): SQL => {
-  const { name } = entityTables[entity];
+  const { table, rowVersion } = entityTables[entity];
+  const conflictTarget = sql.join(
+    [table.organizationId, table.id].map((column) => sql.identifier(column.name)),
+    sql`, `,
+  );
+  const newerRowVersion =
+    rowVersion === undefined
+      ? sql``
+      : sql` where excluded.${sql.identifier(rowVersion.name)} >= ${sql.identifier(rowVersion.name)}`;
   const columnList = sql.join(
     columns.map((column) => sql.identifier(column)),
     sql`, `,
@@ -64,7 +70,7 @@ const upsertStatement = (
     columns.map((column) => sql`${sql.identifier(column)} = excluded.${sql.identifier(column)}`),
     sql`, `,
   );
-  return sql`insert into ${sql.identifier(standbyTable(name))} (${columnList}) values ${tuples} on conflict ("organizationId", "id") do update set ${assignments}${entity === "stockMovement" ? sql`` : newerRowVersion}`;
+  return sql`insert into ${sql.identifier(standbyTable(getTableName(table)))} (${columnList}) values ${tuples} on conflict (${conflictTarget}) do update set ${assignments}${newerRowVersion}`;
 };
 
 const invalid = () =>

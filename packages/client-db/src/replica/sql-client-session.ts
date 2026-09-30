@@ -34,6 +34,7 @@ import { readSqliteInsightsFacts } from "./insights-sqlite";
 import { makeReplicaLifetime } from "./lifetime";
 import { readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
+import { replicaStampQuery } from "./replica-queries";
 import {
   layerHandleSnapshotReader,
   ReplicaSnapshotReader,
@@ -75,14 +76,7 @@ export const readReplicaStamp = Effect.fn("ReplicaNodeSqlite.readStamp")(functio
   handle: SqliteReplicaHandle,
   workspaceToken: string,
 ) {
-  const rows = yield* handle.db
-    .select({
-      generation: replicaState.activeGeneration,
-      version: replicaState.localCommitVersion,
-    })
-    .from(replicaState)
-    .where(eq(replicaState.id, "singleton"))
-    .all();
+  const rows = yield* handle.db.all(replicaStampQuery);
   const decoded = decodeReplicaStampRow(rows[0]);
   return {
     workspaceToken,
