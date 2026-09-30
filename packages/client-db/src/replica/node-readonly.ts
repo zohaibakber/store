@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as Cache from "effect/Cache";
@@ -15,7 +15,8 @@ import {
   type ReplicaSnapshotRunner,
   type SnapshotQuery,
 } from "./snapshot-read";
-import { decodeSqliteResultRow } from "./sqlite-row";
+
+export type NodeSqliteRow = Record<string, SQLOutputValue>;
 
 const READ_BUSY_TIMEOUT_MILLIS = 5_000;
 
@@ -46,16 +47,16 @@ export const openReadonlySnapshotRunner = (path: string) =>
         timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
       },
     );
-    const query: SnapshotQuery = (sql, parameters) =>
+    const query: SnapshotQuery<NodeSqliteRow> = (sql, parameters) =>
       Cache.get(statements, sql).pipe(
         Effect.flatMap((statement) =>
           Effect.try({
-            try: () => statement.all(...parameters).map((row) => decodeSqliteResultRow(row)),
+            try: () => statement.all(...parameters),
             catch: snapshotFailure,
           }),
         ),
       );
-    const runner: ReplicaSnapshotRunner = (work) =>
+    const runner: ReplicaSnapshotRunner<NodeSqliteRow> = (work) =>
       turn.withPermits(1)(
         Effect.acquireUseRelease(
           Effect.try({ try: () => db.exec("BEGIN"), catch: snapshotFailure }),

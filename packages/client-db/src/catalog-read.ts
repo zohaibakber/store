@@ -15,13 +15,13 @@ import {
   MAX_IN_VALUES,
   type InventoryCollectionSource,
 } from "./replica/sources";
-import type { SqliteResultRow } from "./replica/sqlite-row";
+import type { ReplicaRow } from "./replica/sqlite-row";
 import type { SubsetPredicate } from "./replica/subset-spec";
 import type { ReplicaSubsetReader } from "./replica/types";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
 
 type DecodeRows<Row> = (
-  rows: ReadonlyArray<SqliteResultRow>,
+  rows: ReadonlyArray<ReplicaRow>,
 ) => Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid>;
 
 export type CatalogRowsRequest = {

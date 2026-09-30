@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import { AuthHttpApi } from "./http-api";
@@ -107,17 +108,15 @@ const asClientError = (operation: string) =>
     return failure(operation, 0, "NETWORK_ERROR", message);
   });
 
-export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClientApi => {
-  const baseUrl = configuration.baseUrl.replace(/\/+$/u, "");
-  const fetch = configuration.fetch ?? globalThis.fetch;
-
-  const apiClient = Effect.runSync(
-    HttpApiClient.make(AuthHttpApi, { baseUrl }).pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(FetchHttpClient.Fetch, fetch),
+const make = Effect.fnUntraced(function* (baseUrl: string) {
+  const httpClient = yield* HttpClient.HttpClient;
+  const apiClient = yield* HttpApiClient.makeWith(AuthHttpApi, {
+    httpClient: HttpClient.transformResponse(
+      httpClient,
       Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
     ),
-  );
+    baseUrl: baseUrl.replace(/\/+$/u, ""),
+  });
 
   const identify = Effect.fn("AuthClient.identify")((input: IdentifyInputType) =>
     Schema.decodeUnknownEffect(IdentifyInput)(input).pipe(
@@ -194,7 +193,15 @@ export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClie
       ),
     ),
   });
-};
+});
 
-export const authClientLayer = (configuration: AuthClientConfiguration) =>
-  Layer.sync(AuthClient, () => makeAuthClient(configuration));
+export const authClientLayer = (configuration: { readonly baseUrl: string }) =>
+  Layer.effect(AuthClient, make(configuration.baseUrl));
+
+export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClientApi =>
+  Effect.runSync(
+    make(configuration.baseUrl).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(FetchHttpClient.Fetch, configuration.fetch ?? globalThis.fetch),
+    ),
+  );

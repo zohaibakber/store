@@ -9,10 +9,10 @@ import type {
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
   ReplicaQueryStamp,
+  ReplicaRow,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
   SqliteCollectionDependencies,
-  SqliteResultRow,
 } from "./types";
 
 export type PlannedRead<Row extends InventoryCollectionRow> = {
@@ -33,7 +33,7 @@ export const drainSubset = async (
   pageRows: number,
   signal?: AbortSignal,
 ): Promise<ReplicaSubsetRead> => {
-  const rows: Array<SqliteResultRow> = [];
+  const rows: Array<ReplicaRow> = [];
   let stamp: ReplicaQueryStamp | undefined;
   let after: string | undefined;
   for (;;) {

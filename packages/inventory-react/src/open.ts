@@ -35,7 +35,7 @@ import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
-import { makeInsightsSource } from "./insights-source";
+import { makeInsightsSource, type InsightsSource } from "./insights-source";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
@@ -105,6 +105,7 @@ const workspaceReadFailure = () => new WorkspaceReadFailure({ message: STORAGE_F
 const workspaceSources = (
   replica: ReplicaHandle,
   initialActivity: InventorySyncActivity | undefined,
+  insights: InsightsSource,
 ): WorkspaceAtomSources => ({
   changes: replica,
   initialActivity: initialActivity ?? EMPTY_SYNC_ACTIVITY,
@@ -120,7 +121,7 @@ const workspaceSources = (
   summarizeProducts: (filters, distinct) =>
     summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
   findProductsByNames: (names) => findProductsByNames(replica, names),
-  insights: makeInsightsSource(replica),
+  insights,
 });
 
 type CollectionDeps = {
@@ -276,9 +277,10 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       coherence: createInvoiceCoherenceGate(),
     });
     const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
+    const insights = yield* makeInsightsSource(replica);
     const atoms = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        createWorkspaceAtoms(outbox.status, workspaceSources(replica, outbox.activity)),
+        createWorkspaceAtoms(outbox.status, workspaceSources(replica, outbox.activity, insights)),
       ),
       (opened) => Effect.sync(() => opened.registry.dispose()),
     );

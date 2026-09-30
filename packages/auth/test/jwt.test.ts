@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -39,15 +40,21 @@ const input = {
   email: EmailAddress.make("owner@example.com"),
   name: "Owner",
   image: null,
-  now: 1_800_000_000_000,
 };
+
+const ISSUED_AT = 1_800_000_000_000;
+
+const onTestClock = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.runPromise(
+    TestClock.setTime(ISSUED_AT).pipe(Effect.andThen(effect), Effect.provide(TestClock.layer())),
+  );
 
 describe("ES256 access tokens", () => {
   it("round-trips offline workspace claims", async () => {
     const config = await configuration();
-    const issued = await Effect.runPromise(issueAccessToken(input, config));
+    const issued = await Effect.runPromise(issueAccessToken({ ...input, now: ISSUED_AT }, config));
     const claims = await Effect.runPromise(
-      verifyAccessToken(issued.token, config, input.now + 1_000),
+      verifyAccessToken(issued.token, config, ISSUED_AT + 1_000),
     );
 
     expect(claims).toEqual({
@@ -60,15 +67,15 @@ describe("ES256 access tokens", () => {
       email: "owner@example.com",
       name: "Owner",
       image: null,
-      expiresAt: input.now + 300_000,
+      expiresAt: ISSUED_AT + 300_000,
     });
   });
 
   it("issues one-hour access tokens by default", async () => {
     const { accessTokenTtlSeconds: _ttl, ...config } = await configuration();
-    const issued = await Effect.runPromise(issueAccessToken(input, config));
+    const issued = await onTestClock(issueAccessToken(input, config));
 
-    expect(issued.expiresAt).toBe(input.now + 3_600_000);
+    expect(issued.expiresAt).toBe(ISSUED_AT + 3_600_000);
   });
 
   it("publishes the same key id in access tokens and the public JWKS", async () => {
@@ -91,28 +98,39 @@ describe("ES256 access tokens", () => {
 
   it("rejects a token after its access lifetime", async () => {
     const config = await configuration();
-    const issued = await Effect.runPromise(issueAccessToken(input, config));
-    const failure = await Effect.runPromise(
-      Effect.flip(verifyAccessToken(issued.token, config, input.now + 300_000)),
+    const [claims, failure] = await onTestClock(
+      Effect.gen(function* () {
+        const issued = yield* issueAccessToken(input, config);
+        yield* TestClock.adjust("299999 millis");
+        const claims = yield* verifyAccessToken(issued.token, config);
+        yield* TestClock.adjust("1 millis");
+        const failure = yield* Effect.flip(verifyAccessToken(issued.token, config));
+        return [claims, failure] as const;
+      }),
     );
 
+    expect(claims.expiresAt).toBe(ISSUED_AT + 300_000);
     expect(failure.reason).toBe("Expired");
   });
 
   it("verifies many tokens with one imported key and still rejects a foreign signature", async () => {
     const config = await configuration();
     const foreign = await configuration();
-    const verify = await Effect.runPromise(makeAccessTokenVerifier(config));
-    const first = await Effect.runPromise(issueAccessToken(input, config));
-    const second = await Effect.runPromise(
-      issueAccessToken({ ...input, sessionId: SessionId.make("session-2") }, config),
+    const [claims, rejected] = await onTestClock(
+      Effect.gen(function* () {
+        const verify = yield* makeAccessTokenVerifier(config);
+        const first = yield* issueAccessToken(input, config);
+        const second = yield* issueAccessToken(
+          { ...input, sessionId: SessionId.make("session-2") },
+          config,
+        );
+        const forged = yield* issueAccessToken(input, foreign);
+        yield* TestClock.adjust("1 second");
+        const claims = yield* Effect.all([verify(first.token), verify(second.token)]);
+        const rejected = yield* Effect.flip(verify(forged.token));
+        return [claims, rejected] as const;
+      }),
     );
-    const forged = await Effect.runPromise(issueAccessToken(input, foreign));
-
-    const claims = await Effect.runPromise(
-      Effect.all([verify(first.token, input.now + 1_000), verify(second.token, input.now + 1_000)]),
-    );
-    const rejected = await Effect.runPromise(Effect.flip(verify(forged.token, input.now + 1_000)));
 
     expect(claims.map((claim) => claim.sessionId)).toEqual(["session-1", "session-2"]);
     expect(rejected.reason).toBe("InvalidSignature");
@@ -120,14 +138,16 @@ describe("ES256 access tokens", () => {
 
   it("reports an unusable verification key on each call instead of failing construction", async () => {
     const config = await configuration();
-    const issued = await Effect.runPromise(issueAccessToken(input, config));
-    const verify = await Effect.runPromise(
-      makeAccessTokenVerifier({
-        ...config,
-        publicJwk: { kty: "EC", crv: "P-256", x: "AA", y: "AA" },
+    const failure = await onTestClock(
+      Effect.gen(function* () {
+        const issued = yield* issueAccessToken(input, config);
+        const verify = yield* makeAccessTokenVerifier({
+          ...config,
+          publicJwk: { kty: "EC", crv: "P-256", x: "AA", y: "AA" },
+        });
+        return yield* Effect.flip(verify(issued.token));
       }),
     );
-    const failure = await Effect.runPromise(Effect.flip(verify(issued.token, input.now + 1_000)));
     expect(failure.reason).toBe("NoKey");
   });
 });

@@ -25,6 +25,7 @@ import {
 } from "@store/contracts";
 import { DEFAULT_STOCK_POLICY, StockPolicy } from "@store/services/insights";
 import {
+  Clock,
   Duration,
   Effect,
   Exit,
@@ -151,10 +152,11 @@ const refreshOnCommits =
     )(self);
   };
 
-const insightsContextOf = (policy: StockPolicy): InsightsContext => ({
-  policy,
-  utcOffsetMinutes: localUtcOffsetMinutes(Date.now()),
-});
+const insightsContextOf = (policy: StockPolicy): Effect.Effect<InsightsContext> =>
+  Effect.map(Clock.currentTimeMillis, (now) => ({
+    policy,
+    utcOffsetMinutes: localUtcOffsetMinutes(now),
+  }));
 
 const refreshOnInsightChanges =
   (source: InsightsSource) =>
@@ -249,25 +251,24 @@ export const createWorkspaceAtoms = (
 ): WorkspaceAtoms => {
   const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
   const insights = Atom.make((get) =>
-    sources.insights.readSummary(insightsContextOf(get(stockPolicyAtom))),
+    insightsContextOf(get(stockPolicyAtom)).pipe(Effect.flatMap(sources.insights.readSummary)),
   ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER), refreshOnInsightChanges(sources.insights));
   const productResolver = productInsightResolver(sources.insights);
   const restockPageAtom = Atom.family((key: string) =>
     Atom.make((get) =>
-      sources.insights.readRestockPage(
-        insightsContextOf(get(stockPolicyAtom)),
-        decodeRestockKey(key),
+      insightsContextOf(get(stockPolicyAtom)).pipe(
+        Effect.flatMap((context) =>
+          sources.insights.readRestockPage(context, decodeRestockKey(key)),
+        ),
       ),
     ).pipe(refreshOnInsightChanges(sources.insights)),
   );
   const productInsightAtom = Atom.family((productId: string) =>
     Atom.make((get) =>
-      Effect.request(
-        new ProductInsightRequest({
-          productId,
-          context: insightsContextOf(get(stockPolicyAtom)),
-        }),
-        productResolver,
+      insightsContextOf(get(stockPolicyAtom)).pipe(
+        Effect.flatMap((context) =>
+          Effect.request(new ProductInsightRequest({ productId, context }), productResolver),
+        ),
       ),
     ).pipe(refreshOnInsightChanges(sources.insights)),
   );
@@ -326,26 +327,27 @@ export const createWorkspaceAtoms = (
     restockPage: (request) => restockPageAtom(encodeRestockKey(request)),
     exportRestock: (filters) =>
       Stream.paginate<RestockCursor | null, ProductInsight, WorkspaceReadError>(null, (cursor) =>
-        sources.insights
-          .readRestockPage(insightsContextOf(registry.get(stockPolicyAtom)), {
-            filters: { ...filters, ordersOnly: true },
-            cursor,
-            limit: MAX_RESTOCK_PAGE_ROWS,
-          })
-          .pipe(
-            Effect.flatMap((page) =>
-              page.cursorExpired
-                ? Effect.fail(
-                    new WorkspaceReadFailure({
-                      message: "The insights were recalculated during the export. Try again.",
-                    }),
-                  )
-                : Effect.succeed([
-                    page.rows,
-                    page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
-                  ] as const),
-            ),
+        insightsContextOf(registry.get(stockPolicyAtom)).pipe(
+          Effect.flatMap((context) =>
+            sources.insights.readRestockPage(context, {
+              filters: { ...filters, ordersOnly: true },
+              cursor,
+              limit: MAX_RESTOCK_PAGE_ROWS,
+            }),
           ),
+          Effect.flatMap((page) =>
+            page.cursorExpired
+              ? Effect.fail(
+                  new WorkspaceReadFailure({
+                    message: "The insights were recalculated during the export. Try again.",
+                  }),
+                )
+              : Effect.succeed([
+                  page.rows,
+                  page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
+                ] as const),
+          ),
+        ),
       ),
     productInsight: productInsightAtom,
   };

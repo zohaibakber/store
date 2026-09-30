@@ -48,6 +48,7 @@ import {
   decodeReplicaStampRow,
   decodeSqliteResultRow,
   type OutboxCommandStatus,
+  type ReplicaRow,
 } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
@@ -234,7 +235,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     run(SqliteReplica.use(use).pipe(Effect.orDie));
 
   const withSnapshot = <A, E>(
-    use: (snapshot: ReplicaSnapshotRunner) => Effect.Effect<A, E>,
+    use: (snapshot: ReplicaSnapshotRunner<ReplicaRow>) => Effect.Effect<A, E>,
     options?: ReplicaReadOptions,
   ) => run(ReplicaSnapshotReader.use(use).pipe(Effect.orDie), options);
 

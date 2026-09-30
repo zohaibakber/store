@@ -11,47 +11,32 @@ import {
 } from "../rows";
 import { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource } from "./sources";
-import type { SqliteResultRow } from "./sqlite-row";
+import type { ReplicaRow } from "./sqlite-row";
 
-const sqliteBooleanFields = (row: SqliteResultRow, flagged: ReadonlySet<string>) =>
-  Object.fromEntries(
-    Object.entries(row).map(([key, value]) => {
-      if (flagged.has(key) && (value === 0 || value === 1)) return [key, value === 1];
-      return [key, value];
-    }),
-  );
+const SqliteBoolean = Schema.Union([Schema.Boolean, Schema.BooleanFromBit]);
 
-const sqliteRowsDecoder = <A>(
-  source: InventoryCollectionSource,
-  schema: Schema.Decoder<A>,
-  booleanFields: ReadonlyArray<string>,
-) => {
-  const flagged = new Set(booleanFields);
-  const decode = Schema.decodeUnknownEffect(schema);
+const sqliteRowsDecoder = <A>(source: InventoryCollectionSource, schema: Schema.Decoder<A>) => {
+  const decode = Schema.decodeUnknownEffect(Schema.Array(schema));
   const rowInvalid = (error: Schema.SchemaError) =>
     new ReplicaRowInvalid({ message: error.message, source });
-  return (
-    rows: ReadonlyArray<SqliteResultRow>,
-  ): Effect.Effect<ReadonlyArray<A>, ReplicaRowInvalid> =>
-    Effect.forEach(rows, (row) =>
-      decode(sqliteBooleanFields(row, flagged)).pipe(Effect.mapError(rowInvalid)),
-    );
+  return (rows: ReadonlyArray<ReplicaRow>): Effect.Effect<ReadonlyArray<A>, ReplicaRowInvalid> =>
+    decode(rows).pipe(Effect.mapError(rowInvalid));
 };
 
-export const decodeCategorySqliteRows = sqliteRowsDecoder("categories", CategoryRow, [
-  "tracksPacks",
-]);
-
-export const decodeProductSqliteRows = sqliteRowsDecoder("products", ProductRow, ["visible"]);
-
-export const decodeBatchSqliteRows = sqliteRowsDecoder("batches", BatchRow, []);
-
-export const decodeInvoiceSqliteRows = sqliteRowsDecoder("invoices", InvoiceRow, []);
-
-export const decodeInvoiceItemSqliteRows = sqliteRowsDecoder("invoiceItems", InvoiceItemRow, []);
-
-export const decodeStockMovementSqliteRows = sqliteRowsDecoder(
-  "stockMovements",
-  StockMovementRow,
-  [],
+export const decodeCategorySqliteRows = sqliteRowsDecoder<CategoryRow>(
+  "categories",
+  Schema.Struct({ ...CategoryRow.fields, tracksPacks: SqliteBoolean }),
 );
+
+export const decodeProductSqliteRows = sqliteRowsDecoder<ProductRow>(
+  "products",
+  Schema.Struct({ ...ProductRow.fields, visible: SqliteBoolean }),
+);
+
+export const decodeBatchSqliteRows = sqliteRowsDecoder("batches", BatchRow);
+
+export const decodeInvoiceSqliteRows = sqliteRowsDecoder("invoices", InvoiceRow);
+
+export const decodeInvoiceItemSqliteRows = sqliteRowsDecoder("invoiceItems", InvoiceItemRow);
+
+export const decodeStockMovementSqliteRows = sqliteRowsDecoder("stockMovements", StockMovementRow);

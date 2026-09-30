@@ -1,7 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { RefreshInput, SignOutInput, TokenSet, type TokenSet as TokenSetType } from "@store/auth";
+import {
+  TokenSet,
+  type OrganizationCommand,
+  type OrganizationCommandResult,
+  type OrganizationRoster,
+  type TokenSet as TokenSetType,
+} from "@store/auth";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
@@ -9,22 +15,26 @@ import {
 } from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
-  RefreshedTokenSet,
-  SessionHttpClient,
+  SessionHttp,
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
+  layerSessionHttp,
   loadSessionSnapshot,
-  refreshedTokens,
-  refreshTokenNeedsRefresh,
   renewSessionSnapshot,
-  requestErrorFromPayload,
-  type JsonRequestInit,
+  sessionFetch,
+  type SessionHttpApi,
   type SessionSnapshotHooks,
   type WorkspaceAuthAdapter,
 } from "@store/workspace";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { app, net, safeStorage } from "electron";
+
+import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/lib/invoice-upload";
 
 const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&
@@ -36,10 +46,16 @@ type PersistedAuth = typeof PersistedAuth.Type;
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
+const netFetch: typeof fetch = (url, init) => net.fetch(url instanceof URL ? url.href : url, init);
+
+const persistenceError = (cause: unknown) =>
+  cause instanceof Error ? cause : new Error("Could not persist the authenticated session.");
+
 export class AuthBroker implements WorkspaceAuthAdapter {
-  readonly #http: SessionHttpClient;
-  readonly #tokens: MemoryTokenStore;
+  readonly #tokens = new MemoryTokenStore();
   readonly #hooks: SessionSnapshotHooks;
+  readonly #runtime: ManagedRuntime.ManagedRuntime<SessionHttp, never>;
+  readonly apiFetch: typeof fetch;
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
 
   constructor(
@@ -47,97 +63,108 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     authBaseUrl: string,
     publishSession: (snapshot: WorkspaceSnapshot) => void,
   ) {
-    this.#tokens = new MemoryTokenStore();
-    this.#http = new SessionHttpClient({
-      apiBaseUrl: baseUrl,
-      authBaseUrl,
-      tokens: this.#tokens,
-      fetch: (url, init) => net.fetch(url instanceof URL ? url.href : url, init),
-      needsRefresh: refreshTokenNeedsRefresh,
-      refreshSession: () => this.#rotateTokens(),
-    });
+    const forget = Effect.promise(() =>
+      rm(this.#storagePath(), { force: true }).catch(() => undefined),
+    );
     this.#hooks = {
-      http: this.#http,
       getLocalSnapshot: () => this.#snapshot,
       publish: (snapshot) => {
         this.#snapshot = snapshot;
         publishSession(snapshot);
         return snapshot;
       },
-      clearAuthenticated: () => this.#clear(),
-      persistAuthenticated: async (snapshot) => {
-        const tokens = this.#tokens.get();
-        if (tokens) await this.#writePersisted({ snapshot, tokens });
-      },
+      clearAuthenticated: forget,
+      persistAuthenticated: (snapshot) =>
+        Effect.tryPromise({
+          try: async () => {
+            const tokens = this.#tokens.get();
+            if (tokens) await this.#writePersisted({ snapshot, tokens });
+          },
+          catch: persistenceError,
+        }),
     };
+    this.#runtime = ManagedRuntime.make(
+      layerSessionHttp({
+        apiBaseUrl: baseUrl,
+        authBaseUrl,
+        tokens: this.#tokens,
+        credential: "refreshToken",
+        onRefreshed: (refreshed) =>
+          adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace).pipe(Effect.asVoid),
+        onRejected: Effect.sync(() => this.#hooks.publish(unauthenticated(true))).pipe(
+          Effect.andThen(forget),
+        ),
+      }).pipe(
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, netFetch)),
+      ),
+    );
+    this.apiFetch = sessionFetch((effect, options) => this.#runtime.runPromise(effect, options));
   }
 
   get snapshot() {
     return this.#snapshot;
   }
 
-  ensureFreshAccess(force = false) {
-    return this.#http.ensureFreshAccess(force);
+  #use<A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E, SessionHttp>) {
+    return this.#runtime.runPromise(SessionHttp.use(f));
+  }
+
+  async liveAccessToken(force: boolean) {
+    const access = await this.#use((session) => session.ensureFreshAccess(force));
+    return access?.accessToken ?? null;
   }
 
   async initialize() {
     const persisted = await this.#readPersisted();
-    if (persisted) {
-      this.#tokens.set(persisted.tokens);
-      this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
-      const rotated =
-        refreshTokenNeedsRefresh(persisted.tokens) &&
-        (await this.#http.ensureFreshAccess().catch(() => null)) !== null;
-      return rotated ? this.#snapshot : loadSessionSnapshot(this.#hooks);
-    }
-    return this.#snapshot;
+    if (!persisted) return this.#snapshot;
+    this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
+    const hooks = this.#hooks;
+    return this.#use((session) =>
+      Effect.gen(function* () {
+        yield* session.setTokens(persisted.tokens);
+        const access = yield* session.ensureFreshAccess().pipe(Effect.orElseSucceed(() => null));
+        return access?.workspace === undefined
+          ? yield* loadSessionSnapshot(hooks)
+          : hooks.getLocalSnapshot();
+      }),
+    );
   }
 
   adoptSession(tokens: TokenSetType | null) {
-    return adoptSessionTokens(this.#hooks, tokens, {
-      onCleared: () => this.#clear(),
-    });
+    return this.#runtime.runPromise(
+      adoptSessionTokens(this.#hooks, tokens, { onCleared: this.#hooks.clearAuthenticated }),
+    );
   }
 
   renewSession() {
-    return renewSessionSnapshot(this.#hooks);
+    return this.#runtime.runPromise(renewSessionSnapshot(this.#hooks));
   }
 
-  async signOut() {
-    await this.#http.awaitRefreshInFlight()?.catch(() => undefined);
-    const refreshToken = this.#tokens.get()?.refreshToken;
-    this.#tokens.set(null);
-    if (refreshToken) {
-      await net
-        .fetch(`${this.#http.authBaseUrl}/v1/session/logout`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: Schema.encodeSync(Schema.fromJsonString(SignOutInput))(
-            SignOutInput.make({ refreshToken }),
-          ),
-        })
-        .catch(() => undefined);
-    }
-    this.#tokens.set(null);
-    await this.#clear();
+  signOut() {
+    const hooks = this.#hooks;
+    return this.#use((session) =>
+      Effect.gen(function* () {
+        yield* session.settled;
+        const tokens = session.tokens.get();
+        yield* session.setTokens(null);
+        yield* session.logout(tokens).pipe(Effect.ignore);
+        hooks.publish(unauthenticated(true));
+        if (hooks.clearAuthenticated !== undefined) yield* hooks.clearAuthenticated;
+      }),
+    );
   }
 
-  apiRequest(pathname: string, init?: JsonRequestInit) {
-    return this.#http.apiRequest(pathname, init);
+  organizationRoster(): Promise<OrganizationRoster> {
+    return this.#use((session) => session.organizationRoster);
   }
 
-  apiFetch(input: RequestInfo | URL, init?: RequestInit) {
-    return this.#http.apiFetch(input, init);
+  organize(command: OrganizationCommand): Promise<OrganizationCommandResult> {
+    return this.#use((session) => session.organize(command));
   }
 
-  authRequest(pathname: string, init?: JsonRequestInit) {
-    return this.#http.authRequest(pathname, init);
-  }
-
-  async #clear() {
-    this.#tokens.set(null);
-    this.#hooks.publish(unauthenticated(true));
-    await rm(this.#storagePath(), { force: true });
+  analyseInvoices(files: ReadonlyArray<InvoiceUploadFile>) {
+    return this.#runtime.runPromise(analyseInvoiceUpload(files));
   }
 
   #storagePath() {
@@ -167,32 +194,5 @@ export class AuthBroker implements WorkspaceAuthAdapter {
       safeStorage.encryptString(Schema.encodeSync(Schema.fromJsonString(PersistedAuth))(value)),
       { mode: 0o600 },
     );
-  }
-
-  async #rotateTokens(): Promise<RefreshedTokenSet | null> {
-    const tokens = this.#tokens.get();
-    if (!tokens?.refreshToken) return null;
-    const response = await net.fetch(`${this.#http.authBaseUrl}/v1/session/refresh`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: Schema.encodeSync(Schema.fromJsonString(RefreshInput))(
-        RefreshInput.make({ refreshToken: tokens.refreshToken }),
-      ),
-    });
-    const bodyText = await response.text();
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        await this.#clear();
-        return null;
-      }
-      const payload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(bodyText).pipe(
-        Option.getOrNull,
-      );
-      throw requestErrorFromPayload(payload, response.status);
-    }
-    const refreshed = Schema.decodeUnknownSync(Schema.fromJsonString(RefreshedTokenSet))(bodyText);
-    this.#tokens.set(refreshedTokens(refreshed));
-    await adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace);
-    return refreshed;
   }
 }

@@ -8,11 +8,12 @@ import type { SqlError } from "effect/unstable/sql/SqlError";
 import { lowerSqliteSubset, lowerSqliteSummary, toStatement } from "./compile";
 import type { ReplicaSnapshotFailure } from "./errors";
 import { replicaStampQuery } from "./replica-queries";
-import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
+import { decodeReplicaStampRow } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import type {
   ReplicaBatchRead,
   ReplicaQueryStamp,
+  ReplicaRow,
   ReplicaSubsetRead,
   ReplicaSummaryRead,
   SqliteParameter,
@@ -22,33 +23,27 @@ import { validateBatchSpecs } from "./validate";
 
 type SnapshotFailure = SqlError | ReplicaSnapshotFailure;
 
-export type SnapshotQuery = (
+export type SnapshotQuery<Row extends ReplicaRow = SqliteResultRow> = (
   sql: string,
   parameters: ReadonlyArray<SqliteParameter>,
-) => Effect.Effect<ReadonlyArray<SqliteResultRow>, SnapshotFailure>;
+) => Effect.Effect<ReadonlyArray<Row>, SnapshotFailure>;
 
-export type ReplicaSnapshotRunner = <A, E>(
-  work: (query: SnapshotQuery) => Effect.Effect<A, E>,
+export type ReplicaSnapshotRunner<Row extends ReplicaRow = SqliteResultRow> = <A, E>(
+  work: (query: SnapshotQuery<Row>) => Effect.Effect<A, E>,
 ) => Effect.Effect<A, E | SnapshotFailure>;
 
 export class ReplicaSnapshotReader extends Context.Service<
   ReplicaSnapshotReader,
-  ReplicaSnapshotRunner
+  ReplicaSnapshotRunner<ReplicaRow>
 >()("@store/client-db/ReplicaSnapshotReader") {}
 
 const stampStatement = toStatement(replicaStampQuery);
 
 export const snapshotRunnerFromHandle =
-  (handle: SqliteReplicaHandle): ReplicaSnapshotRunner =>
+  (handle: SqliteReplicaHandle): ReplicaSnapshotRunner<ReplicaRow> =>
   (work) =>
     handle.sql.withTransaction(
-      Effect.suspend(() =>
-        work((sql, parameters) =>
-          handle.sql
-            .unsafe(sql, parameters)
-            .pipe(Effect.map((rows) => rows.map((row) => decodeSqliteResultRow(row)))),
-        ),
-      ),
+      Effect.suspend(() => work((sql, parameters) => handle.sql.unsafe(sql, parameters))),
     );
 
 export const layerHandleSnapshotReader: Layer.Layer<ReplicaSnapshotReader, never, SqliteReplica> =
@@ -57,7 +52,7 @@ export const layerHandleSnapshotReader: Layer.Layer<ReplicaSnapshotReader, never
   );
 
 const readSnapshotStamp = (
-  query: SnapshotQuery,
+  query: SnapshotQuery<ReplicaRow>,
   workspaceToken: string,
 ): Effect.Effect<ReplicaQueryStamp, SnapshotFailure> =>
   query(stampStatement.sql, stampStatement.parameters).pipe(
@@ -74,11 +69,9 @@ const readSnapshotStamp = (
 const SummaryCountRow = Schema.Struct({ count: Schema.Number });
 const SummaryValueRow = Schema.Struct({ value: Schema.String });
 
-export const readSnapshotSubset = Effect.fn("ReplicaSnapshot.readSubset")(function* (
-  snapshot: ReplicaSnapshotRunner,
-  workspaceToken: string,
-  spec: InventorySubsetSpec,
-) {
+export const readSnapshotSubset = Effect.fn("ReplicaSnapshot.readSubset")(function* <
+  Row extends ReplicaRow,
+>(snapshot: ReplicaSnapshotRunner<Row>, workspaceToken: string, spec: InventorySubsetSpec) {
   const statement = yield* lowerSqliteSubset(spec);
   return yield* snapshot((query) =>
     Effect.gen(function* () {
@@ -89,8 +82,10 @@ export const readSnapshotSubset = Effect.fn("ReplicaSnapshot.readSubset")(functi
   );
 });
 
-export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function* (
-  snapshot: ReplicaSnapshotRunner,
+export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function* <
+  Row extends ReplicaRow,
+>(
+  snapshot: ReplicaSnapshotRunner<Row>,
   workspaceToken: string,
   specs: ReadonlyArray<InventorySubsetSpec>,
 ) {
@@ -99,7 +94,7 @@ export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function
   return yield* snapshot((query) =>
     Effect.gen(function* () {
       const stamp = yield* readSnapshotStamp(query, workspaceToken);
-      const reads: Array<ReadonlyArray<SqliteResultRow>> = [];
+      const reads: Array<ReadonlyArray<Row>> = [];
       for (const statement of statements) {
         reads.push(yield* query(statement.sql, statement.parameters));
       }
@@ -109,7 +104,7 @@ export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function
 });
 
 export const readSnapshotSummary = Effect.fn("ReplicaSnapshot.summarizeSubset")(function* (
-  snapshot: ReplicaSnapshotRunner,
+  snapshot: ReplicaSnapshotRunner<ReplicaRow>,
   workspaceToken: string,
   spec: InventorySubsetSummarySpec,
 ) {

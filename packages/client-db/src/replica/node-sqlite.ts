@@ -36,6 +36,7 @@ import type {
   ReplicaCommitNotice,
   ReplicaHandle,
   ReplicaReadOptions,
+  ReplicaRow,
   ReplicaSubsetReader,
   SqliteParameter,
   SqliteResultRow,
@@ -94,7 +95,7 @@ export const openNodeReplicaSqlite = async (
     run(SqliteReplica.use(use).pipe(Effect.orDie));
 
   const withSnapshot = <A, E>(
-    use: (snapshot: ReplicaSnapshotRunner) => Effect.Effect<A, E>,
+    use: (snapshot: ReplicaSnapshotRunner<ReplicaRow>) => Effect.Effect<A, E>,
     options?: ReplicaReadOptions,
   ) => run(ReplicaSnapshotReader.use(use).pipe(Effect.orDie), options);
 
@@ -170,7 +171,7 @@ export {
   seedReplicaIdentity,
 } from "./sql-client-session";
 export { openNodeReplicaSyncSession } from "./node-sync";
-export { openReadonlySnapshotRunner } from "./node-readonly";
+export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly";
 export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
 export type { ReplicaSnapshotRunner } from "./snapshot-read";
 export type { NodeReplicaSyncIdentity, NodeReplicaSyncSession } from "./node-sync";

@@ -1,21 +1,53 @@
 import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
 import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   adoptAuthenticatedSnapshot,
   loadSessionSnapshot,
   renewSessionSnapshot,
+  type SessionSnapshotHooks,
 } from "../src/session-broker";
-import { MemoryTokenStore, SessionHttpClient } from "../src/session-http";
+import { MemoryTokenStore, layerSessionHttp, type RefreshedTokenSet } from "../src/session-http";
 
 const authenticated = decodeAuthenticatedWorkspace({
   status: "authenticated",
-  user: { id: "user-1", name: "Owner", email: "owner@example.com" },
-  activeOrganization: null,
-  organizations: [],
+  user: { id: "user-1", name: "Owner", email: "owner@example.com", image: null },
+  activeOrganization: { id: "org-1", name: "Store", slug: null, role: "owner" },
+  organizations: [{ id: "org-1", name: "Store", slug: null, role: "owner" }],
   isOnline: true,
 });
+
+const issue = (suffix: string) =>
+  TokenSet.make({
+    accessToken: AccessToken.make(`access-${suffix}`),
+    accessExpiresAt: Date.now() + 60_000,
+    refreshToken: RefreshToken.make(`session-${suffix}.secret`),
+    refreshExpiresAt: Date.now() + 120_000,
+  });
+
+const sessionRuntime = (options: {
+  readonly store: MemoryTokenStore;
+  readonly fetch: typeof fetch;
+  readonly onRefreshed?: (refreshed: RefreshedTokenSet) => Effect.Effect<void>;
+}) =>
+  ManagedRuntime.make(
+    layerSessionHttp({
+      apiBaseUrl: "https://api.example.com",
+      authBaseUrl: "https://auth.example.com",
+      tokens: options.store,
+      credential: "refreshToken",
+      onRefreshed: options.onRefreshed ?? (() => Effect.void),
+      onRejected: Effect.void,
+    }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
+    ),
+  );
 
 describe("session snapshot persistence", () => {
   it("keeps a verified session authenticated when durable persistence fails", async () => {
@@ -30,27 +62,20 @@ describe("session snapshot persistence", () => {
       local = snapshot;
       return snapshot;
     });
-    const tokens = TokenSet.make({
-      accessToken: AccessToken.make("access-token"),
-      accessExpiresAt: Date.now() + 60_000,
-      refreshToken: RefreshToken.make("refresh-token"),
-      refreshExpiresAt: Date.now() + 120_000,
-    });
-    const http = new SessionHttpClient({
-      apiBaseUrl: "https://api.example.com",
-      authBaseUrl: "https://auth.example.com",
-      tokens: { get: () => tokens, set: vi.fn() },
-      fetch: vi.fn(async () => Response.json(authenticated)),
-      refreshSession: async () => null,
-      needsRefresh: () => false,
+    const store = new MemoryTokenStore();
+    store.set(issue("current"));
+    const runtime = sessionRuntime({
+      store,
+      fetch: async () => Response.json(authenticated),
     });
 
-    const result = await loadSessionSnapshot({
-      http,
-      getLocalSnapshot: () => local,
-      publish,
-      persistAuthenticated: () => Promise.reject(new Error("Secret store is locked.")),
-    });
+    const result = await runtime.runPromise(
+      loadSessionSnapshot({
+        getLocalSnapshot: () => local,
+        publish,
+        persistAuthenticated: () => Effect.fail(new Error("Secret store is locked.")),
+      }),
+    );
 
     expect(result).toMatchObject({
       status: "authenticated",
@@ -69,80 +94,65 @@ describe("session snapshot persistence", () => {
       local = snapshot;
       return snapshot;
     });
-    const clearAuthenticated = vi.fn(async () => undefined);
-    const http = new SessionHttpClient({
-      apiBaseUrl: "https://api.example.com",
-      authBaseUrl: "https://auth.example.com",
-      tokens: { get: () => null, set: vi.fn() },
-      fetch: vi.fn(),
-      refreshSession: async () => null,
-      needsRefresh: () => false,
-    });
+    const clearAuthenticated = vi.fn(() => undefined);
+    const store = new MemoryTokenStore();
+    const fetch = vi.fn(async () => Response.json(authenticated));
+    const runtime = sessionRuntime({ store, fetch });
 
-    const result = await loadSessionSnapshot({
-      http,
-      getLocalSnapshot: () => local,
-      publish,
-      clearAuthenticated,
-    });
+    const result = await runtime.runPromise(
+      loadSessionSnapshot({
+        getLocalSnapshot: () => local,
+        publish,
+        clearAuthenticated: Effect.sync(clearAuthenticated),
+      }),
+    );
 
     expect(result).toMatchObject({ status: "unauthenticated", isOnline: true });
     expect(clearAuthenticated).toHaveBeenCalledOnce();
-    expect(http.tokens.get()).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(store.get()).toBeNull();
   });
 
   it("renews from the workspace a refresh carries without reading the session", async () => {
-    const issue = (suffix: string) =>
-      TokenSet.make({
-        accessToken: AccessToken.make(`access-${suffix}`),
-        accessExpiresAt: Date.now() + 60_000,
-        refreshToken: RefreshToken.make(`session-${suffix}.secret`),
-        refreshExpiresAt: Date.now() + 120_000,
-      });
-    const renew = async () => {
-      let local: WorkspaceSnapshot = { ...authenticated, isOnline: false };
-      const persisted: Array<WorkspaceSnapshot> = [];
-      const reads: Array<string> = [];
-      const store = new MemoryTokenStore();
-      store.set(issue("old"));
-      const hooks = {
-        http: new SessionHttpClient({
-          apiBaseUrl: "https://api.example.com",
-          authBaseUrl: "https://auth.example.com",
-          tokens: store,
-          fetch: async (input) => {
-            reads.push(new Request(input).url);
-            return Response.json(authenticated);
-          },
-          refreshSession: async () => {
-            const next = issue("new");
-            store.set(next);
-            const workspace = {
-              ...authenticated,
-              user: { ...authenticated.user, name: "Renewed" },
-            };
-            await adoptAuthenticatedSnapshot(hooks, workspace);
-            return { ...next, workspace };
-          },
-          needsRefresh: (_tokens, force) => force,
-        }),
-        getLocalSnapshot: () => local,
-        publish: (snapshot: WorkspaceSnapshot) => {
-          local = snapshot;
-          return snapshot;
-        },
-        persistAuthenticated: async (snapshot: WorkspaceSnapshot) => {
+    let local: WorkspaceSnapshot = { ...authenticated, isOnline: false };
+    const persisted: Array<WorkspaceSnapshot> = [];
+    const reads: Array<string> = [];
+    const store = new MemoryTokenStore();
+    store.set(issue("old"));
+    const hooks: SessionSnapshotHooks = {
+      getLocalSnapshot: () => local,
+      publish: (snapshot) => {
+        local = snapshot;
+        return snapshot;
+      },
+      persistAuthenticated: (snapshot) =>
+        Effect.sync(() => {
           persisted.push(snapshot);
-        },
-      };
-      const renewed = await renewSessionSnapshot(hooks);
-      return { renewed, reads, persisted };
+        }),
     };
+    const runtime = sessionRuntime({
+      store,
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        if (request.url === "https://auth.example.com/v1/session/refresh") {
+          return Response.json({
+            ...issue("new"),
+            workspace: { ...authenticated, user: { ...authenticated.user, name: "Renewed" } },
+          });
+        }
+        reads.push(request.url);
+        return Response.json(authenticated);
+      },
+      onRefreshed: (refreshed) =>
+        adoptAuthenticatedSnapshot(hooks, refreshed.workspace).pipe(Effect.asVoid),
+    });
 
-    const adopted = await renew();
-    expect(adopted.reads).toEqual([]);
-    expect(adopted.renewed).toMatchObject({ status: "authenticated", isOnline: true });
-    expect(adopted.renewed.user?.name).toBe("Renewed");
-    expect(adopted.persisted).toHaveLength(1);
+    const renewed = await runtime.runPromise(renewSessionSnapshot(hooks));
+
+    expect(reads).toEqual([]);
+    expect(renewed).toMatchObject({ status: "authenticated", isOnline: true });
+    expect(renewed.user?.name).toBe("Renewed");
+    expect(persisted).toHaveLength(1);
+    expect(store.get()?.accessToken).toBe("access-new");
   });
 });

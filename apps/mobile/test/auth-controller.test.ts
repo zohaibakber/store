@@ -1,4 +1,4 @@
-import { TokenSet, makeAuthClient, nativeClient } from "@store/auth";
+import { TokenSet, nativeClient } from "@store/auth";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
@@ -256,7 +256,6 @@ const makeController = (
     apiBaseUrl: API,
     authBaseUrl: AUTH,
     fetch: server.fetch,
-    authClient: makeAuthClient({ baseUrl: AUTH, fetch: server.fetch }),
     vault,
     isOnline: async () => options.online ?? true,
     google: options.google ?? null,

@@ -1,4 +1,4 @@
-import { makeAuthClient, nativeClient } from "@store/auth";
+import { nativeClient } from "@store/auth";
 import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import * as Network from "expo-network";
@@ -33,12 +33,10 @@ const createNativeAuthController = () => {
   const config = authConfigFrom(
     Schema.decodeUnknownSync(MobileAuthExtra)(Constants.expoConfig?.extra),
   );
-  const send: typeof fetch = (input, init) => globalThis.fetch(input, init);
   return createAuthController({
     apiBaseUrl: config.apiBaseUrl,
     authBaseUrl: config.authBaseUrl,
-    fetch: send,
-    authClient: makeAuthClient({ baseUrl: config.authBaseUrl, fetch: send }),
+    fetch: (input, init) => globalThis.fetch(input, init),
     vault: secureSessionVault,
     isOnline: async () => {
       const state = await Network.getNetworkStateAsync();

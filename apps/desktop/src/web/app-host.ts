@@ -1,10 +1,8 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
-import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 
 import type { AppHost } from "@/host";
-import { analyseInvoiceUpload } from "@/lib/invoice-upload";
 import { altNewSaleShortcut } from "@/lib/new-sale-shortcut";
 import { makeReplayChannel } from "@/replay-channel";
 
@@ -45,7 +43,6 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
   const broker = new WebAuthBroker(options, publish);
   const serialize = <A>(transition: () => Promise<A>): Promise<A> =>
     Effect.runPromise(transitions.withPermit(Effect.promise(transition)));
-  const authRequest = broker.authRequest.bind(broker);
 
   const host: AppHost = {
     auth: {
@@ -53,8 +50,8 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
       adoptSession: (tokens) => serialize(() => broker.adoptSession(tokens)),
       renewSession: () => serialize(() => broker.renewSession()),
       signOut: () => serialize(() => broker.signOut()),
-      organizationRoster: () => fetchOrganizationRoster(authRequest),
-      organize: (command) => organizeOrganization(authRequest, command),
+      organizationRoster: () => broker.organizationRoster(),
+      organize: (command) => broker.organize(command),
       onSessionChange: sessions.subscribe,
     },
     signIn: {
@@ -73,15 +70,13 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
         return () => undefined;
       },
     },
-    analyseInvoices: (files) =>
-      analyseInvoiceUpload((pathname, init) => broker.apiRequest(pathname, init), files),
+    analyseInvoices: (files) => broker.analyseInvoices(files),
     newSaleShortcut: altNewSaleShortcut,
   };
 
   return {
     host,
-    authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) =>
-      broker.apiFetch(input, init),
+    authenticatedFetch: broker.apiFetch,
     liveAccessToken: ({ force }: { readonly force: boolean }) => broker.liveAccessToken(force),
     initialize: () => broker.initialize(),
   };

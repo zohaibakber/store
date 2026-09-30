@@ -26,6 +26,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerError from "effect/unstable/http/HttpServerError";
@@ -198,36 +199,33 @@ export const AuthLive = Auth.make(
         clientSecret: googleClientSecret,
         callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
         nativeClientIds: googleNativeClientIds,
-      }),
+      }).pipe(Layer.provide(FetchHttpClient.layer)),
       hubRevocationLayer(orgHubs, (effect) => execution.waitUntil(effect)),
     );
     const runtime = yield* Effect.exit(
-      Effect.gen(function* () {
-        const dependencies = yield* buildOncePerIsolate(
-          Layer.build(DependenciesLive),
-          isolateServices,
-        );
-        const ServiceLive = authServiceLayer({
-          developmentOtp,
-          trustedRedirects: security.trustedRedirects,
-          refreshTokenPepper,
-          limits: {
-            tenPerMinute: (key) => tenPerMinute.limit({ key }),
-            fivePerMinute: (key) => fivePerMinute.limit({ key }),
-          },
-        }).pipe(Layer.provide(Layer.succeedContext(dependencies)));
-        const RoutesLive = authRoutes({
-          baseUrl: security.baseURL,
-          publicJwk,
-          secureCookies: security.secureCookies,
-          trustedOrigins: security.trustedOrigins,
-        }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
-        const serveRequest = yield* buildOncePerIsolate(
-          HttpRouter.toHttpEffect(RoutesLive),
-          isolateServices,
-        );
-        return { serveRequest, repository: Context.get(dependencies, AuthRepository) };
-      }),
+      buildOncePerIsolate(
+        Effect.gen(function* () {
+          const dependencies = yield* Layer.build(DependenciesLive);
+          const ServiceLive = authServiceLayer({
+            developmentOtp,
+            trustedRedirects: security.trustedRedirects,
+            refreshTokenPepper,
+            limits: {
+              tenPerMinute: (key) => tenPerMinute.limit({ key }),
+              fivePerMinute: (key) => fivePerMinute.limit({ key }),
+            },
+          }).pipe(Layer.provide(Layer.succeedContext(dependencies)));
+          const RoutesLive = authRoutes({
+            baseUrl: security.baseURL,
+            publicJwk,
+            secureCookies: security.secureCookies,
+            trustedOrigins: security.trustedOrigins,
+          }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
+          const serveRequest = yield* HttpRouter.toHttpEffect(RoutesLive);
+          return { serveRequest, repository: Context.get(dependencies, AuthRepository) };
+        }),
+        isolateServices,
+      ),
     );
     yield* Cloudflare.Workers.cron(SESSION_PRUNE_POLICY.cronExpression, () =>
       Exit.isSuccess(runtime)

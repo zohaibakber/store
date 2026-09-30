@@ -15,8 +15,7 @@ import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
+import * as EffectRecord from "effect/Record";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import { layerCommitForwarding } from "./commit-forwarding";
@@ -24,7 +23,7 @@ import { planIndexedDbSubset } from "./indexeddb-plan";
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
 import { MAX_DISTINCT_VALUES } from "./sources";
-import { decodeSqliteResultRow, type OutboxCommandStatus } from "./sqlite-row";
+import type { OutboxCommandStatus } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
@@ -50,24 +49,8 @@ export type OpenIndexedDbReplicaInput = {
   };
 };
 
-const IndexedDbCell = Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null]);
-type IndexedDbCell = typeof IndexedDbCell.Type;
-const decodeIndexedDbCell = Schema.decodeUnknownOption(IndexedDbCell);
-
-const indexedDbCellToSqlite = (value: IndexedDbCell): string | number | null =>
-  value === true ? 1 : value === false ? 0 : value;
-
 const toSqliteResultRow = (row: IndexedDbSubsetRow): SqliteResultRow =>
-  decodeSqliteResultRow(
-    Object.fromEntries(
-      Object.entries(row).flatMap(([column, value]) => {
-        const decoded = decodeIndexedDbCell(value);
-        return Option.isSome(decoded)
-          ? [[column, indexedDbCellToSqlite(decoded.value)] as const]
-          : [];
-      }),
-    ),
-  );
+  EffectRecord.map(row, (value) => (value === true ? 1 : value === false ? 0 : value));
 
 const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
   input.sync === undefined

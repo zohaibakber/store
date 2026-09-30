@@ -1,6 +1,6 @@
-import type { SqliteResultRow } from "@store/client-db";
 import {
   openReadonlySnapshotRunner,
+  type NodeSqliteRow,
   readSnapshotBatch,
   readSnapshotSubset,
   readSnapshotSummary,
@@ -8,17 +8,22 @@ import {
 } from "@store/client-db/node-sqlite";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 
 import { ReplicaReaderRpcs, ReplicaWorkerFailure, type ReplicaReaderBoot } from "./replica-rpc";
 
 const toIpcRows = (
-  rows: ReadonlyArray<SqliteResultRow>,
+  rows: ReadonlyArray<NodeSqliteRow>,
 ): ReadonlyArray<Record<string, string | number | null>> =>
   rows.map((row) =>
     Object.fromEntries(
       Object.entries(row).map(([key, value]) => [
         key,
-        value instanceof Uint8Array ? Buffer.from(value).toString("base64") : value,
+        value instanceof Uint8Array
+          ? Buffer.from(value).toString("base64")
+          : Predicate.isBigInt(value)
+            ? Number(value)
+            : value,
       ]),
     ),
   );
@@ -46,7 +51,10 @@ export const makeReplicaReaderHandlers = <R>(
       );
 
       const withSnapshot = <A, E extends { readonly message: string }>(
-        use: (snapshot: ReplicaSnapshotRunner, workspaceToken: string) => Effect.Effect<A, E>,
+        use: (
+          snapshot: ReplicaSnapshotRunner<NodeSqliteRow>,
+          workspaceToken: string,
+        ) => Effect.Effect<A, E>,
       ): Effect.Effect<A, ReplicaWorkerFailure> =>
         Option.match(opened, {
           onNone: () =>

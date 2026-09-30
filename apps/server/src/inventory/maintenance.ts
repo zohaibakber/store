@@ -3,25 +3,27 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import type { InventoryError } from "./errors";
 import { databaseError, runStatement, type InventoryDrizzle } from "./postgres";
 import { SNAPSHOT_POLICY } from "./snapshots";
 
-export type MaintenancePolicy = {
-  readonly budgetMillis: number;
-  readonly organizationsPerRun: number;
-  readonly partRows: number;
-  readonly minimumRetainedTransactions: number;
-  readonly deleteBatchTransactions: number;
-  readonly deleteBatchesPerStep: number;
-  readonly expiredLeaseBatchRows: number;
-  readonly retainedPublishedSnapshots: number;
-  readonly prunedSnapshotsPerStep: number;
-  readonly snapshotRowDeleteBatchRows: number;
-  readonly lagTransactions: number;
-  readonly minimumRebuildMillis: number;
-};
+const MaintenancePolicy = Schema.Struct({
+  budgetMillis: Schema.Number,
+  organizationsPerRun: Schema.Number,
+  partRows: Schema.Number,
+  minimumRetainedTransactions: Schema.Number,
+  deleteBatchTransactions: Schema.Number,
+  deleteBatchesPerStep: Schema.Number,
+  expiredLeaseBatchRows: Schema.Number,
+  retainedPublishedSnapshots: Schema.Number,
+  prunedSnapshotsPerStep: Schema.Number,
+  snapshotRowDeleteBatchRows: Schema.Number,
+  lagTransactions: Schema.Number,
+  minimumRebuildMillis: Schema.Number,
+});
+export type MaintenancePolicy = typeof MaintenancePolicy.Type;
 
 export const MAINTENANCE_POLICY = {
   cronExpression: "*/5 * * * *",
@@ -65,28 +67,18 @@ export const MaintenanceSummary = Schema.Struct({
 });
 export type MaintenanceSummary = typeof MaintenanceSummary.Type;
 
-const MaintainRow = Schema.Struct({ summary: Schema.fromJsonString(MaintenanceSummary) });
-
-const decodeMaintainRows = Schema.decodeUnknownEffect(Schema.Array(MaintainRow));
-
-const PolicyJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Number));
-
-const encodePolicy = Schema.encodeSync(PolicyJson);
-
-const policyJson = (policy: MaintenancePolicy): string =>
-  encodePolicy({
-    budgetMillis: policy.budgetMillis,
-    organizationsPerRun: policy.organizationsPerRun,
-    partRows: policy.partRows,
-    minimumRetainedTransactions: policy.minimumRetainedTransactions,
-    deleteBatchTransactions: policy.deleteBatchTransactions,
-    deleteBatchesPerStep: policy.deleteBatchesPerStep,
-    expiredLeaseBatchRows: policy.expiredLeaseBatchRows,
-    retainedPublishedSnapshots: policy.retainedPublishedSnapshots,
-    prunedSnapshotsPerStep: policy.prunedSnapshotsPerStep,
-    snapshotRowDeleteBatchRows: policy.snapshotRowDeleteBatchRows,
-    lagTransactions: policy.lagTransactions,
-    minimumRebuildMillis: policy.minimumRebuildMillis,
+const makeMaintain = (db: InventoryDrizzle) =>
+  SqlSchema.findOne({
+    Request: Schema.Struct({
+      policy: Schema.fromJsonString(MaintenancePolicy),
+      now: Schema.Number,
+    }),
+    Result: Schema.Struct({ summary: Schema.fromJsonString(MaintenanceSummary) }),
+    execute: ({ policy, now }) =>
+      db.execute(
+        sql`select "sync"."maintain"(${policy}::jsonb, ${now}::bigint)::text as "summary"`,
+        "objects",
+      ),
   });
 
 interface InventoryMaintenanceContract {
@@ -103,24 +95,21 @@ export class InventoryMaintenance extends Context.Service<
 export const makeInventoryMaintenance = (
   db: InventoryDrizzle,
   defaults: MaintenancePolicy = MAINTENANCE_POLICY,
-): InventoryMaintenanceContract =>
-  InventoryMaintenance.of({
+): InventoryMaintenanceContract => {
+  const maintain = makeMaintain(db);
+  return InventoryMaintenance.of({
     runScheduled: Effect.fn("InventoryMaintenance.runScheduled")(function* (overrides) {
       const now = yield* Clock.currentTimeMillis;
-      const policy = policyJson({ ...defaults, ...overrides });
-      const raw = yield* runStatement(
-        db.execute(
-          sql`select "sync"."maintain"(${policy}::jsonb, ${now}::bigint)::text as "summary"`,
-          "objects",
+      const { summary } = yield* maintain({ policy: { ...defaults, ...overrides }, now }).pipe(
+        Effect.catchTag("NoSuchElementError", () =>
+          Effect.fail(databaseError(new Error("Maintenance returned no summary."))),
         ),
+        runStatement,
       );
-      const [row] = yield* decodeMaintainRows(raw).pipe(Effect.mapError(databaseError));
-      if (row === undefined) {
-        return yield* Effect.fail(databaseError(new Error("Maintenance returned no summary.")));
+      if (summary.failures.length > 0) {
+        yield* Effect.logWarning("inventory maintenance failures", summary.failures);
       }
-      if (row.summary.failures.length > 0) {
-        yield* Effect.logWarning("inventory maintenance failures", row.summary.failures);
-      }
-      return row.summary;
+      return summary;
     }),
   });
+};

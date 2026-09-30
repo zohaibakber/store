@@ -47,6 +47,7 @@ export type {
   ReplicaCommitNotice,
   ReplicaHandle,
   ReplicaSummaryReader,
+  ReplicaRow,
   ReplicaSubsetReader,
   SqliteResultRow,
 } from "./types";

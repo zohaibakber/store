@@ -16,7 +16,6 @@ import * as Schema from "effect/Schema";
 
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
-import { decodeSqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import {
   InventorySubsetSummary,
@@ -267,7 +266,7 @@ export const openElectronIpcReplicaHandle = async (
       );
       return {
         stamp: workspaceStamp(result.stamp),
-        rows: result.rows.map((row) => decodeSqliteResultRow(row)),
+        rows: result.rows,
       };
     },
     readBatch: async (specs, options) => {
@@ -277,7 +276,7 @@ export const openElectronIpcReplicaHandle = async (
       );
       return {
         stamp: workspaceStamp(result.stamp),
-        reads: result.reads.map((rows) => rows.map((row) => decodeSqliteResultRow(row))),
+        reads: result.reads,
       };
     },
     summarizeSubset: async (spec) => {

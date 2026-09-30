@@ -25,7 +25,7 @@ import type {
 import type { InvoiceCoherenceGate } from "./coherence";
 import type { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
-import type { OutboxCommandStatus, SqliteResultRow } from "./sqlite-row";
+import type { OutboxCommandStatus, ReplicaRow, SqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import type {
   InventorySubsetSpec,
@@ -43,7 +43,7 @@ export type InventoryCollectionRow =
 
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
-export type { SqliteResultRow };
+export type { ReplicaRow, SqliteResultRow };
 
 export type ReplicaCommitNotice = {
   readonly workspaceToken: string;
@@ -75,7 +75,7 @@ export type ReplicaQueryStamp = {
 
 export type ReplicaSubsetRead = {
   readonly stamp: ReplicaQueryStamp;
-  readonly rows: ReadonlyArray<SqliteResultRow>;
+  readonly rows: ReadonlyArray<ReplicaRow>;
 };
 
 export type ReplicaReadOptions = {
@@ -84,7 +84,7 @@ export type ReplicaReadOptions = {
 
 export type ReplicaBatchRead = {
   readonly stamp: ReplicaQueryStamp;
-  readonly reads: ReadonlyArray<ReadonlyArray<SqliteResultRow>>;
+  readonly reads: ReadonlyArray<ReadonlyArray<ReplicaRow>>;
 };
 
 export interface ReplicaSubsetReader {
@@ -182,7 +182,7 @@ export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = 
   readonly maximumRows: number;
   readonly getKey: (row: Row) => string;
   readonly decodeRows: (
-    rows: ReadonlyArray<SqliteResultRow>,
+    rows: ReadonlyArray<ReplicaRow>,
   ) => Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid>;
 };
 

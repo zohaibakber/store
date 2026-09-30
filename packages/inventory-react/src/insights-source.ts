@@ -12,10 +12,12 @@ import {
   type InsightsSummaryRead,
   type ProductInsight,
   type ProductInsightsRead,
+  type ReplicaInsightsWindow,
   type RestockCursor,
   type RestockFilters,
   type RestockPageRead,
   type RestockPageRequest,
+  type StockPolicy,
 } from "@store/contracts";
 import {
   analyzeInsights,
@@ -23,9 +25,15 @@ import {
   insightsWindowFor,
   type InsightsReport,
 } from "@store/services/insights";
+import * as Cache from "effect/Cache";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
+import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import { WorkspaceReadFailure } from "./errors";
@@ -79,18 +87,39 @@ const nativeSource = (analytics: ReplicaAnalytics): InsightsSource => ({
   changes: signals((notify) => analytics.subscribe(() => notify())),
 });
 
-type CachedReport = {
-  readonly key: string;
-  readonly revision: number;
+type FallbackReport = {
   readonly run: AnalyticsRun;
   readonly report: InsightsReport;
 };
 
-const runOf = (
-  report: InsightsReport,
-  revision: number,
-  stamp: { readonly generationId: string; readonly localCommitVersion: number },
-): AnalyticsRun => ({
+type ReportStamp = {
+  readonly generationId: string;
+  readonly localCommitVersion: number;
+};
+
+type ReportKey = ReportStamp & {
+  readonly policy: StockPolicy;
+  readonly utcOffsetMinutes: number;
+  readonly until: number;
+};
+
+const reportKeyOf = (
+  stamp: ReportStamp,
+  policy: StockPolicy,
+  window: ReplicaInsightsWindow,
+): ReportKey => ({
+  generationId: stamp.generationId,
+  localCommitVersion: stamp.localCommitVersion,
+  policy,
+  utcOffsetMinutes: window.utcOffsetMinutes,
+  until: window.until,
+});
+
+const REPORT_CAPACITY = 1;
+
+const closedFailure = () => new WorkspaceReadFailure({ message: "The workspace is closed." });
+
+const runOf = (report: InsightsReport, revision: number, stamp: ReportStamp): AnalyticsRun => ({
   runId: revision,
   revision,
   kind: "full",
@@ -105,8 +134,7 @@ const runOf = (
   productCount: report.products.length,
 });
 
-const summaryOf = (cached: CachedReport): InsightsSummary => {
-  const { report, run } = cached;
+const summaryOf = ({ report, run }: FallbackReport): InsightsSummary => {
   const attention = report.products.filter((insight) => ATTENTION_STATUSES.has(insight.status));
   return {
     run,
@@ -143,31 +171,44 @@ const cursorFor = (revision: number, insight: ProductInsight): RestockCursor => 
   productId: insight.productId,
 });
 
-const fallbackSource = (replica: ReplicaHandle): InsightsSource => {
-  let cached: CachedReport | undefined;
-  let revision = 0;
+const fallbackSource = Effect.fnUntraced(function* (replica: ReplicaHandle) {
+  const open = yield* Ref.make(true);
+  const revisions = yield* Ref.make(0);
+  const reports: Cache.Cache<ReportKey, FallbackReport, WorkspaceReadFailure> =
+    yield* Cache.makeWith(
+      (requested: ReportKey) =>
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const window = insightsWindowFor(now, requested.utcOffsetMinutes);
+          const read = yield* Effect.tryPromise({
+            try: () => replica.readInsights(window),
+            catch: readFailure,
+          });
+          const report = analyzeInsights(read.facts, requested.policy, now);
+          const revision = yield* Ref.updateAndGet(revisions, (current) => current + 1);
+          const produced: FallbackReport = { run: runOf(report, revision, read.stamp), report };
+          const key = reportKeyOf(read.stamp, requested.policy, window);
+          if (!Equal.equals(key, requested)) yield* Cache.set(reports, key, produced);
+          return produced;
+        }).pipe(Effect.withSpan("InventoryInsights.fallbackReport")),
+      {
+        capacity: REPORT_CAPACITY,
+        timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
+      },
+    );
+  yield* Effect.addFinalizer(() =>
+    Ref.set(open, false).pipe(Effect.andThen(Cache.invalidateAll(reports))),
+  );
   const load = (context: InsightsContext) =>
     Effect.gen(function* () {
+      if (!(yield* Ref.get(open))) return yield* Effect.fail(closedFailure());
       const stamp = yield* Effect.tryPromise({ try: () => replica.stamp(), catch: readFailure });
-      const now = Date.now();
-      const window = insightsWindowFor(now, context.utcOffsetMinutes);
-      const key = [
-        stamp.generationId,
-        stamp.localCommitVersion,
-        stockPolicyVersion(context.policy),
-        context.utcOffsetMinutes,
-        window.until,
-      ].join("|");
-      if (cached?.key === key) return cached;
-      const read = yield* Effect.tryPromise({
-        try: () => replica.readInsights(window),
-        catch: readFailure,
-      });
-      const report = analyzeInsights(read.facts, context.policy, now);
-      revision += 1;
-      cached = { key, revision, run: runOf(report, revision, read.stamp), report };
-      return cached;
-    }).pipe(Effect.withSpan("InventoryInsights.fallbackReport"));
+      const now = yield* Clock.currentTimeMillis;
+      return yield* Cache.get(
+        reports,
+        reportKeyOf(stamp, context.policy, insightsWindowFor(now, context.utcOffsetMinutes)),
+      );
+    });
   return {
     readSummary: (context) =>
       load(context).pipe(
@@ -195,7 +236,7 @@ const fallbackSource = (replica: ReplicaHandle): InsightsSource => {
     readRestockPage: (context, request) =>
       load(context).pipe(
         Effect.map((current): RestockPageRead => {
-          if (request.cursor !== null && request.cursor.runId !== current.revision) {
+          if (request.cursor !== null && request.cursor.runId !== current.run.revision) {
             return {
               run: current.run,
               rows: [],
@@ -218,7 +259,7 @@ const fallbackSource = (replica: ReplicaHandle): InsightsSource => {
             rows,
             nextCursor:
               start + request.limit < matching.length && last !== undefined
-                ? cursorFor(current.revision, last)
+                ? cursorFor(current.run.revision, last)
                 : null,
             total: cursor === null ? matching.length : null,
             cursorExpired: false,
@@ -229,11 +270,15 @@ const fallbackSource = (replica: ReplicaHandle): InsightsSource => {
     changes: signals((notify) => replica.subscribe(() => notify())).pipe(
       Stream.debounce(INSIGHTS_SETTLE),
     ),
-  };
-};
+  } satisfies InsightsSource;
+});
 
-export const makeInsightsSource = (replica: ReplicaHandle): InsightsSource =>
-  replica.analytics === undefined ? fallbackSource(replica) : nativeSource(replica.analytics);
+export const makeInsightsSource = (
+  replica: ReplicaHandle,
+): Effect.Effect<InsightsSource, never, Scope.Scope> =>
+  replica.analytics === undefined
+    ? fallbackSource(replica)
+    : Effect.succeed(nativeSource(replica.analytics));
 
 export const emptyInsightsSource: InsightsSource = {
   readSummary: () => Effect.succeed({ summary: null, status: FALLBACK_STATUS }),

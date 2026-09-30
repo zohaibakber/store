@@ -1,8 +1,10 @@
 import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
-import { MemoryTokenStore, SessionHttpClient, refreshTokenNeedsRefresh } from "@store/workspace";
+import { MemoryTokenStore, layerSessionHttp, sessionFetch } from "@store/workspace";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { describe, expect, it } from "vitest";
-
-import { makeAuthenticatedFetch } from "../src/auth/authenticated-fetch";
 
 const API = "https://api.example.test";
 const AUTH = "https://auth.example.test";
@@ -19,23 +21,27 @@ const harness = () => {
   const tokens = new MemoryTokenStore();
   tokens.set(expiringTokens());
   const sent: Array<string> = [];
-  let refreshes = 0;
   const send: typeof fetch = async (input, init) => {
     sent.push(new Request(input, init).url);
     return new Response(null, { status: 200 });
   };
-  const http = new SessionHttpClient({
-    apiBaseUrl: API,
-    authBaseUrl: AUTH,
-    tokens,
-    fetch: send,
-    needsRefresh: refreshTokenNeedsRefresh,
-    refreshSession: async () => {
-      refreshes += 1;
-      return null;
-    },
-  });
-  return { authenticatedFetch: makeAuthenticatedFetch(http), sent, refreshes: () => refreshes };
+  const runtime = ManagedRuntime.make(
+    layerSessionHttp({
+      apiBaseUrl: API,
+      authBaseUrl: AUTH,
+      tokens,
+      credential: "refreshToken",
+      onRefreshed: () => Effect.void,
+      onRejected: Effect.void,
+    }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
+    ),
+  );
+  return {
+    authenticatedFetch: sessionFetch((effect, options) => runtime.runPromise(effect, options)),
+    sent,
+  };
 };
 
 describe("authenticatedFetch", () => {
@@ -48,6 +54,5 @@ describe("authenticatedFetch", () => {
     await expect(test.authenticatedFetch(new URL("/v1/session", AUTH))).rejects.toThrow(TypeError);
 
     expect(test.sent).toEqual([]);
-    expect(test.refreshes()).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import {
+  AuthClient,
   EmailAddress,
   GoogleIdToken,
   InvitationToken,
@@ -7,37 +8,37 @@ import {
   OrganizationSlug,
   OtpCode,
   Password,
+  authClientLayer,
   normalizeEmail,
   type AuthClientApi,
   type AuthClientError,
   type AuthClientKind,
   type LoginRoute,
+  type OrganizationCommand,
   type TokenSet,
 } from "@store/auth";
-import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
   RequestError,
-  SessionHttpClient,
-  organizeOrganization,
-  refreshedTokens,
-  refreshTokenNeedsRefresh,
-  type JsonRequestInit,
-  type RefreshedTokenSet,
+  SessionHttp,
+  layerSessionHttp,
+  sessionFetch,
+  type SessionHttpApi,
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FiberSet from "effect/FiberSet";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Struct from "effect/Struct";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
-import { makeAuthenticatedFetch } from "./authenticated-fetch";
 import {
   SESSION_ENDED_NOTICE,
   accountFromWorkspace,
@@ -56,7 +57,6 @@ import {
   invalid,
   isNetworkFailure,
   problem,
-  rejectsRefresh,
   type AuthProblem,
   type FailureContext,
   type FailureFacts,
@@ -100,7 +100,6 @@ export interface AuthControllerOptions {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
   readonly fetch: typeof fetch;
-  readonly authClient: AuthClientApi;
   readonly vault: SessionVault;
   readonly isOnline: () => Promise<boolean>;
   readonly google: GoogleIdentity | null;
@@ -139,14 +138,7 @@ const failed = (reason: AuthProblem): Failed => ({ _tag: "Failed", problem: reas
 
 const startAgain = () => failed(invalid("Start again with your email."));
 
-const run = <A>(effect: Effect.Effect<A, AuthClientError>) =>
-  Effect.runPromise(Effect.result(effect));
-
 const canRename = (role: string) => role === "owner" || role === "admin";
-
-const decodeSnapshot = Schema.decodeUnknownOption(WorkspaceSnapshot);
-
-const decodeRefreshedWorkspace = Schema.decodeUnknownEffect(AuthenticatedWorkspaceSnapshot);
 
 const sessionEnded = failed(problem("sessionEnded", SESSION_ENDED_NOTICE));
 
@@ -157,9 +149,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
   const flowAtom = Atom.make<SignInFlow | null>(null).pipe(Atom.keepAlive);
   const tokens = new MemoryTokenStore();
   const sessionWork = Effect.runSync(
-    FiberSet.make<ActionResult | RefreshedTokenSet | null, AuthClientError>().pipe(
-      Scope.provide(Scope.makeUnsafe()),
-    ),
+    FiberSet.make<ActionResult, never>().pipe(Scope.provide(Scope.makeUnsafe())),
   );
   let started: Promise<void> | null = null;
 
@@ -198,11 +188,57 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       await options.vault.save({ version: 1, tokens: current, account }).catch(() => undefined);
     }).pipe(Effect.uninterruptible);
 
-  const inSession = <A extends ActionResult | RefreshedTokenSet | null, E extends AuthClientError>(
-    work: Effect.Effect<A, E>,
-    whenInterrupted: A,
+  const adoptAccount = Effect.fn("MobileAuth.adoptAccount")(function* (account: Account) {
+    yield* persist(account);
+    const remembered = yield* Effect.promise(lastOrganization);
+    dispatch({ _tag: "AccountRefreshed", account, lastOrganization: remembered });
+  });
+
+  const leaveSession = (event: AuthEvent) =>
+    Effect.gen(function* () {
+      const session = yield* SessionHttp;
+      yield* session.setTokens(null);
+      setFlow(null);
+      dispatch(event);
+      yield* FiberSet.clear(sessionWork);
+      yield* Effect.promise(() => options.vault.clear().catch(() => undefined));
+    });
+
+  const endSession = Effect.sync(() => {
+    runtime.runFork(leaveSession({ _tag: "SessionEnded" }));
+  });
+
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      layerSessionHttp({
+        apiBaseUrl: options.apiBaseUrl,
+        authBaseUrl: options.authBaseUrl,
+        tokens,
+        credential: "refreshToken",
+        onRefreshed: (refreshed) =>
+          activeAccount() === null
+            ? Effect.void
+            : adoptAccount(accountFromWorkspace(refreshed.workspace)),
+        onRejected: endSession,
+      }),
+      authClientLayer({ baseUrl: options.authBaseUrl }),
+    ).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
+    ),
+  );
+
+  const run = <A>(f: (client: AuthClientApi) => Effect.Effect<A, AuthClientError>) =>
+    runtime.runPromise(Effect.result(AuthClient.use(f)));
+
+  const withSession = <A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E>) =>
+    runtime.runPromise(SessionHttp.use(f));
+
+  const inSession = (
+    work: Effect.Effect<ActionResult, never, SessionHttp>,
+    whenInterrupted: ActionResult,
   ) =>
-    Effect.runPromise(
+    runtime.runPromise(
       FiberSet.run(sessionWork, work).pipe(
         Effect.flatMap(Fiber.await),
         Effect.flatMap((exit) =>
@@ -211,63 +247,20 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       ),
     );
 
-  const leaveSession = (event: AuthEvent) =>
-    Effect.gen(function* () {
-      tokens.set(null);
-      setFlow(null);
-      dispatch(event);
-      yield* FiberSet.clear(sessionWork);
-      yield* Effect.promise(() => options.vault.clear().catch(() => undefined));
-    });
-
-  const endSession = Effect.forkDetach(leaveSession({ _tag: "SessionEnded" }), {
-    startImmediately: true,
-  });
-
-  const adoptAccount = Effect.fn("MobileAuth.adoptAccount")(function* (account: Account) {
-    yield* persist(account);
-    const remembered = yield* Effect.promise(lastOrganization);
-    dispatch({ _tag: "AccountRefreshed", account, lastOrganization: remembered });
-  });
-
-  const refreshTokens = Effect.fn("MobileAuth.refreshTokens")(function* () {
-    const refreshToken = tokens.get()?.refreshToken;
-    if (!refreshToken) return null;
-    const result = yield* Effect.result(options.authClient.refresh({ refreshToken }));
-    if (Result.isFailure(result)) {
-      if (!rejectsRefresh(failureFacts(result.failure))) return yield* Effect.fail(result.failure);
-      yield* endSession;
-      return null;
-    }
-    const next = refreshedTokens(result.success);
-    tokens.set(next);
-    const workspace = yield* decodeRefreshedWorkspace(result.success.workspace).pipe(Effect.orDie);
-    if (activeAccount() !== null) yield* adoptAccount(accountFromWorkspace(workspace));
-    return Struct.assign(next, { workspace }) satisfies RefreshedTokenSet;
-  });
-
-  const loadAccount = async (): Promise<Account> => {
-    const refreshed = await http.ensureFreshAccess();
+  const fetchAccount = Effect.gen(function* () {
+    const session = yield* SessionHttp;
+    const refreshed = yield* session.ensureFreshAccess();
     if (refreshed?.workspace !== undefined) return accountFromWorkspace(refreshed.workspace);
-    const snapshot = decodeSnapshot(await http.apiRequest("/api/auth/session"));
-    if (Option.isNone(snapshot)) {
-      throw new RequestError({
-        status: 502,
-        code: "INVALID_SESSION",
-        message: "The server sent an unexpected session.",
-      });
-    }
-    if (snapshot.value.status !== "authenticated") {
-      throw new RequestError({
+    const snapshot = yield* session.workspace;
+    if (snapshot.status !== "authenticated") {
+      return yield* new RequestError({
         status: 401,
         code: "UNAUTHENTICATED",
         message: "Sign in to continue.",
       });
     }
-    return accountFromWorkspace(snapshot.value);
-  };
-
-  const fetchAccount = Effect.tryPromise({ try: loadAccount, catch: failureFacts });
+    return accountFromWorkspace(snapshot);
+  }).pipe(Effect.mapError(failureFacts));
 
   const refreshAccount = Effect.fn("MobileAuth.refreshAccount")(function* () {
     const loaded = yield* Effect.result(fetchAccount);
@@ -282,27 +275,23 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
 
   const reloadAccount = () => inSession(refreshAccount(), sessionEnded);
 
-  const http: SessionHttpClient = new SessionHttpClient({
-    apiBaseUrl: options.apiBaseUrl,
-    authBaseUrl: options.authBaseUrl,
-    tokens,
-    fetch: options.fetch,
-    needsRefresh: refreshTokenNeedsRefresh,
-    refreshSession: () => inSession(refreshTokens(), null),
-  });
-
-  const authRequest = (pathname: string, init?: JsonRequestInit) =>
-    http.authRequest(pathname, init);
+  const organize = (command: OrganizationCommand) =>
+    withSession((session) =>
+      session
+        .organize(command)
+        .pipe(
+          Effect.flatMap((result) =>
+            Effect.map(session.renewAccess, (renewed) => ({ result, renewed })),
+          ),
+        ),
+    );
 
   const signInWith = Effect.fn("MobileAuth.signInWith")(function* (issued: TokenSet) {
     const loaded = yield* Effect.result(fetchAccount);
     if (Result.isFailure(loaded)) {
-      tokens.set(null);
-      if (issued.refreshToken) {
-        yield* Effect.forkDetach(
-          Effect.ignore(options.authClient.signOut({ refreshToken: issued.refreshToken })),
-        );
-      }
+      const session = yield* SessionHttp;
+      yield* session.setTokens(null);
+      yield* Effect.forkDetach(Effect.ignore(session.logout(issued)));
       return yield* failedWith(loaded.failure);
     }
     yield* persist(loaded.success);
@@ -313,15 +302,16 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
   });
 
   const adopt = async (issued: TokenSet): Promise<ActionResult> => {
-    await Effect.runPromise(FiberSet.clear(sessionWork));
-    tokens.set(issued);
+    await withSession((session) =>
+      FiberSet.clear(sessionWork).pipe(Effect.andThen(session.setTokens(issued))),
+    );
     return inSession(signInWith(issued), done);
   };
 
   const identify = async (email: string): Promise<IdentifyResult> => {
     const address = Schema.decodeUnknownOption(EmailAddress)(normalizeEmail(email));
     if (Option.isNone(address)) return failed(invalid("Enter a valid email address.", "email"));
-    const result = await run(options.authClient.identify({ email: address.value }));
+    const result = await run((client) => client.identify({ email: address.value }));
     if (Result.isFailure(result)) return failure(result.failure);
     setFlow({ route: result.success, issuedAt: now() });
     return { _tag: "Routed", route: result.success._tag };
@@ -340,8 +330,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     if (flow === null || route?._tag !== "Otp") return startAgain();
     const otp = Schema.decodeUnknownOption(OtpCode)(code.trim());
     if (Option.isNone(otp)) return failed(invalid("Enter the 6-digit code.", "code"));
-    const result = await run(
-      options.authClient.authenticate({
+    const result = await run((client) =>
+      client.authenticate({
         _tag: "Otp",
         challengeId: route.challengeId,
         code: otp.value,
@@ -364,8 +354,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
         field: "password",
       });
     }
-    const result = await run(
-      options.authClient.authenticate({
+    const result = await run((client) =>
+      client.authenticate({
         _tag: "Password",
         email: route.email,
         password: decoded.value,
@@ -392,8 +382,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
         invalid("Use 10 to 100 characters, with no spaces at the start or end.", "password"),
       );
     }
-    const result = await run(
-      options.authClient.authenticate({
+    const result = await run((client) =>
+      client.authenticate({
         _tag: "RegisterPassword",
         email: route.email,
         name,
@@ -417,8 +407,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     if (Option.isNone(idToken)) {
       return failed(problem("rejected", "Google sign-in didn't finish. Try again."));
     }
-    const result = await run(
-      options.authClient.exchangeGoogleIdToken({ idToken: idToken.value, client: options.client }),
+    const result = await run((client) =>
+      client.exchangeGoogleIdToken({ idToken: idToken.value, client: options.client }),
     );
     if (Result.isFailure(result)) return failure(result.failure);
     return adopt(result.success);
@@ -444,13 +434,13 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       return failed(problem("rejected", "This store can't be renamed."));
     const slug = Schema.decodeUnknownOption(OrganizationSlug)(organization.slug);
     try {
-      await organizeOrganization(authRequest, {
+      const { renewed } = await organize({
         _tag: "UpdateOrganization",
         organizationId: organizationId.value,
         name: name.value,
         slug: Option.getOrNull(slug),
       });
-      return (await http.ensureFreshAccess(true)) === null ? sessionEnded : done;
+      return renewed === null ? sessionEnded : done;
     } catch (cause) {
       return failure(cause);
     }
@@ -477,14 +467,11 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       return failed(invalid("Paste the invitation code you were sent.", "invitation"));
     }
     try {
-      const result = await organizeOrganization(authRequest, {
-        _tag: "AcceptInvitation",
-        token: token.value,
-      });
+      const { result, renewed } = await organize({ _tag: "AcceptInvitation", token: token.value });
       if (result._tag !== "Joined") {
         return failed(problem("rejected", "The invitation could not be used."));
       }
-      if ((await http.ensureFreshAccess(true)) === null) return sessionEnded;
+      if (renewed === null) return sessionEnded;
       const account = activeAccount();
       if (account?.organization?.id !== result.organization.id) {
         return failed(problem("unavailable", "You joined the store. Try again in a moment."));
@@ -497,11 +484,10 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
   };
 
   const signOut = async () => {
-    await http.awaitRefreshInFlight()?.catch(() => null);
-    const refreshToken = tokens.get()?.refreshToken;
-    await Effect.runPromise(leaveSession({ _tag: "SignedOut" }));
+    const signedIn = await withSession((session) => session.settled.pipe(Effect.as(tokens.get())));
+    await runtime.runPromise(leaveSession({ _tag: "SignedOut" }));
     await options.google?.forget().catch(() => undefined);
-    if (refreshToken) void run(options.authClient.signOut({ refreshToken }));
+    void withSession((session) => session.logout(signedIn)).catch(() => undefined);
   };
 
   const restore = async () => {
@@ -509,7 +495,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       options.vault.load().catch(() => null),
       lastOrganization(),
     ]);
-    if (stored !== null) tokens.set(stored.tokens);
+    if (stored !== null) await withSession((session) => session.setTokens(stored.tokens));
     dispatch({ _tag: "Restored", account: stored?.account ?? null, lastOrganization: remembered });
     if (stored !== null) void reloadAccount();
   };
@@ -535,9 +521,11 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     confirmOrganization,
     joinOrganization,
     signOut,
-    authenticatedFetch: makeAuthenticatedFetch(http),
+    authenticatedFetch: sessionFetch((effect, runOptions) =>
+      runtime.runPromise(effect, runOptions),
+    ),
     liveAccessToken: async ({ force }) =>
-      (await http.ensureFreshAccess(force))?.accessToken ?? null,
+      (await withSession((session) => session.ensureFreshAccess(force)))?.accessToken ?? null,
   };
 };
 
