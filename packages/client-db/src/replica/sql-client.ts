@@ -32,7 +32,6 @@ export type SqlClientReplicaHandle = ReplicaHandle & {
   readonly wakeSync: (reason: SyncWakeReason) => Promise<void>;
   readonly setVisible: (visible: boolean) => Promise<void>;
   readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
-  readonly dispose: () => Promise<void>;
 };
 
 const layerFetchTransport = (apiBaseUrl: string, fetch: typeof globalThis.fetch) =>
@@ -64,21 +63,20 @@ export const openSqlClientReplicaHandle = async <E>(
     readPendingRowIds: session.readPendingRowIds,
     stamp: session.stamp,
     readSubset: session.readSubset,
+    readBatch: session.readBatch,
     readInsights: session.readInsights,
     summarizeSubset: session.summarizeSubset,
     readOutboxStatuses: session.readOutboxStatuses,
-    readCommandAllocation: session.readCommandAllocation,
-    enqueueLocal: session.enqueueLocal,
+    enqueueCommand: session.enqueueCommand,
+    readCommandStatus: session.readCommandStatus,
     wakeSyncUpload: () => {
-      void session.wake("localWrite");
+      void session.wake("localWrite").catch(() => undefined);
     },
     wakeSync: session.wake,
     setVisible: session.setVisible,
     setPullMaxBytes: session.setPullMaxBytes,
     subscribe: session.subscribe,
     subscribeSyncHealth: session.subscribeSyncHealth,
-    publish: session.publish,
     close: session.close,
-    dispose: session.dispose,
   };
 };

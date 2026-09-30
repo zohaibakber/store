@@ -5,7 +5,7 @@ import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { describe, expect, it } from "vitest";
 
-import { CatalogOpenFailure, StaleCatalogLease } from "../src/errors";
+import { CatalogBusy, CatalogOpenFailure, StaleCatalogLease } from "../src/errors";
 import type { InventoryHost } from "../src/host";
 import { createCatalogLifetime } from "../src/lifetime";
 
@@ -51,10 +51,11 @@ describe("catalog lifetime", () => {
       }),
     ));
 
-  it("opens the next lease after a hung dispose once the same-file wait elapses", () =>
+  it("answers busy instead of overlapping a hung dispose, then opens once disposal completes", () =>
     runTest(
       Effect.gen(function* () {
         const disposing = yield* Deferred.make<void>();
+        const finished = yield* Deferred.make<void>();
         let opens = 0;
         const catalog = createCatalogLifetime({
           open: async () => {
@@ -62,7 +63,7 @@ describe("catalog lifetime", () => {
             return {
               dispose: () => {
                 signal(disposing);
-                return hanging;
+                return Effect.runPromise(Deferred.await(finished));
               },
             };
           },
@@ -74,15 +75,20 @@ describe("catalog lifetime", () => {
         catalog.release();
         yield* Deferred.await(disposing);
         const second = catalog.claim(scope);
-        const opening = yield* Effect.forkChild(catalog.open(second, host));
+        const opening = yield* Effect.forkChild(Effect.flip(catalog.open(second, host)));
         yield* Effect.yieldNow;
         expect(opening.pollUnsafe()).toBeUndefined();
 
         yield* TestClock.adjust("20 millis");
-        yield* Fiber.join(opening);
+        const busy = yield* Fiber.join(opening);
 
+        expect(busy).toBeInstanceOf(CatalogBusy);
+        expect(opens).toBe(1);
+
+        yield* Deferred.succeed(finished, undefined);
+        yield* Effect.yieldNow;
+        yield* catalog.open(second, host);
         expect(opens).toBe(2);
-        expect(catalog.lease()).toBe(second);
       }),
     ));
 

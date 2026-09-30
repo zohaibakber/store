@@ -11,8 +11,10 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import {
+  catalogBusy,
   catalogOpenFailure,
   staleCatalogLease,
+  type CatalogBusy,
   type CatalogOpenFailure,
   type StaleCatalogLease,
 } from "./errors";
@@ -35,20 +37,20 @@ export type CatalogLifetime<Replica extends CatalogReplica = Inventory> = {
   readonly open: (
     lease: CatalogLease,
     host: InventoryHost,
-  ) => Effect.Effect<Replica, StaleCatalogLease | CatalogOpenFailure>;
+  ) => Effect.Effect<Replica, StaleCatalogLease | CatalogOpenFailure | CatalogBusy>;
 };
 
 type Tenancy<Replica> = {
   readonly lease: CatalogLease;
   readonly scope: Scope.Closeable;
   readonly opened: Deferred.Deferred<Replica>;
-  readonly opening: FiberHandle.FiberHandle<Replica, CatalogOpenFailure>;
+  readonly opening: FiberHandle.FiberHandle<Replica, CatalogOpenFailure | CatalogBusy>;
 };
 
 const makeTenancy = <Replica>(root: Scope.Scope, scope: InventoryScope) =>
   Effect.gen(function* () {
     const leaseScope = yield* Scope.fork(root);
-    const opening = yield* FiberHandle.make<Replica, CatalogOpenFailure>().pipe(
+    const opening = yield* FiberHandle.make<Replica, CatalogOpenFailure | CatalogBusy>().pipe(
       Scope.provide(leaseScope),
     );
     const opened = yield* Deferred.make<Replica>();
@@ -68,29 +70,40 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
   );
   let current: Tenancy<Replica> | null = null;
 
-  const inDatabaseTurn =
-    (databaseName: string) =>
-    <A, E>(work: Effect.Effect<A, E>): Effect.Effect<A, E> =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const turn = yield* RcMap.get(turns, databaseName);
-          yield* Effect.acquireRelease(turn.take(1), () => turn.release(1), {
-            interruptible: true,
-          }).pipe(Effect.timeoutOption(sameFileWait));
-          return yield* work;
-        }),
-      );
+  const holdingTurn = (databaseName: string) => {
+    const taking = (turn: Semaphore.Semaphore) =>
+      Effect.acquireRelease(turn.take(1), () => turn.release(1), { interruptible: true });
+    return {
+      within: <A, E>(work: Effect.Effect<A, E>): Effect.Effect<A, E | CatalogBusy> =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const turn = yield* RcMap.get(turns, databaseName);
+            const acquired = yield* Effect.timeoutOption(taking(turn), sameFileWait);
+            if (Option.isNone(acquired)) return yield* catalogBusy();
+            return yield* work;
+          }),
+        ),
+      eventually: <A, E>(work: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const turn = yield* RcMap.get(turns, databaseName);
+            yield* taking(turn);
+            return yield* work;
+          }),
+        ),
+    };
+  };
 
   const acquire = (tenancy: Tenancy<Replica>, host: InventoryHost) => {
-    const inTurn = inDatabaseTurn(input.databaseName(host, tenancy.lease.scope));
+    const turn = holdingTurn(input.databaseName(host, tenancy.lease.scope));
     return Effect.acquireRelease(
-      inTurn(
+      turn.within(
         Effect.tryPromise({
           try: () => input.open(host, tenancy.lease.scope),
           catch: catalogOpenFailure,
         }),
       ),
-      (replica) => inTurn(Effect.ignore(Effect.tryPromise(() => replica.dispose()))),
+      (replica) => turn.eventually(Effect.ignore(Effect.tryPromise(() => replica.dispose()))),
     ).pipe(
       Effect.tap((replica) => Deferred.succeed(tenancy.opened, replica)),
       Scope.provide(tenancy.scope),

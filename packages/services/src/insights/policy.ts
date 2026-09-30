@@ -1,20 +1,7 @@
-import { Schema } from "effect";
+import { StockPolicy, type AbcClass } from "@store/contracts/sync/replica-analytics";
 
-const between = (minimum: number, maximum: number) =>
-  Schema.Number.check(Schema.isBetween({ minimum, maximum }));
-const wholeBetween = (minimum: number, maximum: number) =>
-  Schema.Int.check(Schema.isBetween({ minimum, maximum }));
-
-export const StockPolicy = Schema.Struct({
-  leadDays: wholeBetween(0, 90),
-  coverDays: wholeBetween(1, 120),
-  serviceLevel: between(0.8, 0.995),
-  minimumUnits: wholeBetween(0, 10_000),
-  expiryWarningDays: wholeBetween(7, 365),
-  deadStockDays: wholeBetween(14, 365),
-  overstockDays: wholeBetween(30, 730),
-});
-export type StockPolicy = typeof StockPolicy.Type;
+export { StockPolicy };
+export type { AbcClass };
 
 export const DEFAULT_STOCK_POLICY: StockPolicy = {
   leadDays: 7,
@@ -25,8 +12,6 @@ export const DEFAULT_STOCK_POLICY: StockPolicy = {
   deadStockDays: 60,
   overstockDays: 150,
 };
-
-export type AbcClass = "A" | "B" | "C";
 
 const SERVICE_LEVEL_SHIFT = { A: 0.02, B: 0, C: -0.05 } satisfies Record<AbcClass, number>;
 

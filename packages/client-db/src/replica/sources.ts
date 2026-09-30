@@ -83,6 +83,10 @@ export const MAX_LIKE_PATTERN_LENGTH = 256;
 
 export const DEFAULT_COLLECTION_MAXIMUM_ROWS = 500;
 
+export const MAX_BATCH_SPECS = 6;
+
+export const MAX_BATCH_ROWS = 500;
+
 export const DISTINCT_COLUMNS = {
   categories: new Set<string>(),
   products: new Set(["categoryId", "name", "aisle", "composition", "strength"]),

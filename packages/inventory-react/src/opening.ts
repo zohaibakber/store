@@ -3,13 +3,13 @@ import * as Schedule from "effect/Schedule";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 
-import type { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+import type { CatalogBusy, CatalogOpenFailure, StaleCatalogLease } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
 import type { CatalogLease, CatalogLifetime } from "./lifetime";
 import type { Inventory, InventoryState } from "./types";
 
 export type CatalogOpening = Atom.Atom<
-  AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure>
+  AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure | CatalogBusy>
 >;
 
 const OPENING: InventoryState = { _tag: "Opening" };
@@ -46,13 +46,13 @@ export const openingCatalog = (
     return lifetime.open(claimed, host).pipe(
       Effect.retry({
         schedule: openRetrySchedule,
-        while: (failure) => failure._tag !== "StaleCatalogLease",
+        while: (failure) => failure._tag === "CatalogOpenFailure",
       }),
     );
   });
 
 export const inventoryState = (
-  result: AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure>,
+  result: AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure | CatalogBusy>,
   retry: () => void,
 ): InventoryState =>
   AsyncResult.matchWithWaiting(result, {

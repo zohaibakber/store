@@ -7,16 +7,22 @@ import * as Stream from "effect/Stream";
 import type { ReplicaCommitPublisher } from "./publisher";
 import type { ReplicaCommitNotice } from "./types";
 
-const toClientNotice = (
-  workspaceToken: string,
-  notice: StoreCommitNotice,
-): ReplicaCommitNotice => ({
-  workspaceToken,
-  generationId: notice.generationId,
-  localCommitVersion: notice.localCommitVersion,
-  touchedEntities: notice.touchedEntities,
-  touchedKeys: [...notice.touchedKeys],
-});
+const toClientNotice = (workspaceToken: string, notice: StoreCommitNotice): ReplicaCommitNotice =>
+  Object.assign(
+    {
+      workspaceToken,
+      generationId: notice.generationId,
+      localCommitVersion: notice.localCommitVersion,
+      touchedEntities: notice.touchedEntities,
+      touchedKeys: [...notice.touchedKeys],
+    },
+    notice.fullInvalidation === undefined
+      ? undefined
+      : { fullInvalidation: notice.fullInvalidation },
+    notice.overflowedEntities === undefined
+      ? undefined
+      : { overflowedEntities: [...notice.overflowedEntities] },
+  );
 
 export const layerCommitForwarding = (
   workspaceToken: string,

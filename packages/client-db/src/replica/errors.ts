@@ -15,3 +15,10 @@ export class ReplicaRowInvalid extends Schema.TaggedError<ReplicaRowInvalid>()(
     source: Schema.String,
   },
 ) {}
+
+export class ReplicaSnapshotFailure extends Schema.TaggedError<ReplicaSnapshotFailure>()(
+  "ReplicaSnapshotFailure",
+  {
+    message: Schema.String,
+  },
+) {}

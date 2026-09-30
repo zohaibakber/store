@@ -1,5 +1,6 @@
 import type { SyncEntity } from "@store/contracts";
 import {
+  deepEquals,
   getLoadSubsetDemandKey,
   type LoadSubsetFn,
   type LoadSubsetOptions,
@@ -9,11 +10,22 @@ import {
 } from "@tanstack/db";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FiberMap from "effect/FiberMap";
 import * as Latch from "effect/Latch";
+import * as Schedule from "effect/Schedule";
+import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import type { InvoiceCoherenceEntity, InvoiceCoherenceGate } from "./coherence";
-import { decrementRowRef, publishSubsetWindow } from "./collection-publish";
+import {
+  accumulateNotice,
+  invalidatedEntities,
+  invalidateEverything,
+  mergeAccumulators,
+  noticeAffects,
+  type NoticeAccumulator,
+} from "./collection-notices";
 import type { PlannedRead } from "./collection-read";
 import type { InventoryCollectionSyncMode } from "./sources";
 import type {
@@ -29,8 +41,7 @@ type SyncParams<Row extends InventoryCollectionRow> = Parameters<
 
 type Acquisition<Row extends InventoryCollectionRow> = {
   readonly key: string;
-  readonly read: () => Promise<PlannedRead<Row>>;
-  readonly windowed: boolean;
+  readonly read: (signal: AbortSignal) => Promise<PlannedRead<Row>>;
   published: boolean;
   refs: number;
   keys: Set<string>;
@@ -45,9 +56,8 @@ type CollectionSyncDescriptor<Row extends InventoryCollectionRow> = {
 };
 
 export type CollectionReaders<Row extends InventoryCollectionRow> = {
-  readonly subset: (options: LoadSubsetOptions) => Promise<PlannedRead<Row>>;
-  readonly source: () => Promise<PlannedRead<Row>>;
-  readonly keys: (keys: ReadonlyArray<string>) => Promise<ReadonlyArray<PlannedRead<Row>>>;
+  readonly subset: (options: LoadSubsetOptions, signal?: AbortSignal) => Promise<PlannedRead<Row>>;
+  readonly source: (signal?: AbortSignal) => Promise<PlannedRead<Row>>;
 };
 
 type StampAdoption = "stale" | "current" | "truncate";
@@ -56,50 +66,59 @@ const UNCONSTRAINED_DEMAND = "unconstrained";
 
 const SOURCE_DEMAND = "source";
 
+const REFRESH_RETRY = Schedule.min([
+  Schedule.exponential("50 millis").pipe(Schedule.jittered),
+  Schedule.spaced("5 seconds"),
+]);
+
+const attempt = <A>(evaluate: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
+
 export const startCollectionSync = <Row extends InventoryCollectionRow>(
   readers: CollectionReaders<Row>,
   descriptor: CollectionSyncDescriptor<Row>,
   dependencies: SqliteCollectionDependencies,
   params: SyncParams<Row>,
-  relevant: (notice: ReplicaCommitNotice) => boolean,
+  entity: SyncEntity,
 ): SyncConfigRes & { readonly loadSubset: LoadSubsetFn; readonly unloadSubset: UnloadSubsetFn } => {
+  const lifetime = Effect.runSync(Scope.make());
+  const requests = Effect.runSync(
+    FiberMap.make<number, void, unknown>().pipe(Scope.provide(lifetime)),
+  );
   const acquisitions = new Map<string, Acquisition<Row>>();
   const owners = new WeakMap<LoadSubsetOptions, Acquisition<Row>>();
   const released = new WeakSet<LoadSubsetOptions>();
+  const inflight = new Map<LoadSubsetOptions, number>();
   const rowRefs = new Map<string, number>();
+  const serial = Semaphore.makeUnsafe(1);
+  const coherence: InvoiceCoherenceGate | undefined = dependencies.coherence;
   let activeToken: string | undefined;
   let activeGeneration: string | undefined;
-  const queued: Array<ReplicaCommitNotice> = [];
-  let syncStarted = false;
+  let pending: NoticeAccumulator | undefined;
+  let listening: Scope.Closeable | undefined;
+  let refreshRequested: Latch.Latch | undefined;
+  let nextRequest = 0;
   let disposed = false;
-  const serial = Semaphore.makeUnsafe(1);
-  const refreshRequested = Latch.makeUnsafe(false);
-  const coherence: InvoiceCoherenceGate | undefined = dependencies.coherence;
-  const unregisterCoherence =
-    descriptor.coherenceEntity && coherence
-      ? coherence.registerSource(descriptor.coherenceEntity)
-      : undefined;
-  let lastTouched: ReadonlyArray<SyncEntity> = [];
 
-  const serialized = (work: () => Promise<void>): Effect.Effect<void> =>
-    Semaphore.withPermit(
-      serial,
-      Effect.tryPromise({
-        try: work,
-        catch: (cause) => cause,
-      }).pipe(Effect.orDie),
-    );
+  const serialized = <A, E>(work: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    Semaphore.withPermit(serial, work);
 
-  const enqueue = (work: () => Promise<void>): Promise<void> => Effect.runPromise(serialized(work));
-
-  const enqueueDetached = (failure: string, work: () => Promise<void>): void => {
+  const enqueueDetached = (failure: string, work: Effect.Effect<void, unknown>): void => {
     Effect.runFork(
       serialized(work).pipe(Effect.catchCause((cause) => Effect.logError(failure, cause))),
     );
   };
 
-  const fenced = (notice: ReplicaCommitNotice): boolean =>
-    !disposed && activeToken !== undefined && notice.workspaceToken === activeToken;
+  const live = (acquisition: Acquisition<Row>): boolean =>
+    !disposed && acquisitions.get(acquisition.key) === acquisition;
+
+  const clearHeld = (): void => {
+    rowRefs.clear();
+    for (const held of acquisitions.values()) {
+      held.keys = new Set();
+      held.rows = new Map();
+    }
+  };
 
   const adopt = (stamp: ReplicaQueryStamp): StampAdoption => {
     if (disposed) return "stale";
@@ -109,218 +128,352 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
       activeGeneration = stamp.generationId;
       return "current";
     }
-    rowRefs.clear();
-    for (const held of acquisitions.values()) {
-      held.keys = new Set();
-      held.rows = new Map();
-    }
+    clearHeld();
     activeGeneration = stamp.generationId;
     return "truncate";
   };
 
-  const applyPublished = async (
+  const wake = (): void => {
+    refreshRequested?.openUnsafe();
+  };
+
+  const onNotice = (notice: ReplicaCommitNotice): void => {
+    if (disposed || !noticeAffects(notice, entity)) return;
+    if (activeToken !== undefined && notice.workspaceToken !== activeToken) return;
+    pending = accumulateNotice(pending, notice);
+    wake();
+  };
+
+  const own = (key: string): void => {
+    rowRefs.set(key, (rowRefs.get(key) ?? 0) + 1);
+  };
+
+  const disown = (key: string): boolean => {
+    const next = (rowRefs.get(key) ?? 0) - 1;
+    if (next > 0) {
+      rowRefs.set(key, next);
+      return false;
+    }
+    rowRefs.delete(key);
+    return true;
+  };
+
+  const writeWindow = (
+    acquisition: Acquisition<Row>,
+    nextRows: ReadonlyArray<Row>,
+    signal: AbortSignal | undefined,
+    truncate: boolean,
+  ) => {
+    const nextByKey = new Map<string, Row>();
+    for (const row of nextRows) nextByKey.set(descriptor.getKey(row), row);
+    params.begin();
+    if (truncate) params.truncate();
+    for (const [key, row] of nextByKey) {
+      const existed = rowRefs.has(key);
+      const previous = acquisition.rows.get(key);
+      if (!acquisition.keys.has(key)) own(key);
+      if (existed && previous !== undefined && deepEquals(previous, row)) {
+        nextByKey.set(key, previous);
+        continue;
+      }
+      params.write({ type: existed ? "update" : "insert", value: row });
+    }
+    for (const key of acquisition.keys) {
+      if (nextByKey.has(key)) continue;
+      if (disown(key)) params.write({ type: "delete", key });
+    }
+    acquisition.keys = new Set(nextByKey.keys());
+    acquisition.rows = nextByKey;
+    return params.commit(signal);
+  };
+
+  const deleteRows = (keys: ReadonlyArray<string>) => {
+    if (keys.length === 0) return undefined;
+    params.begin();
+    for (const key of keys) params.write({ type: "delete", key });
+    return params.commit();
+  };
+
+  const releaseRows = (acquisition: Acquisition<Row>) => {
+    const deleted: Array<string> = [];
+    for (const rowKey of acquisition.keys) {
+      if (disown(rowKey)) deleted.push(rowKey);
+    }
+    acquisition.keys = new Set();
+    acquisition.rows = new Map();
+    return deleteRows(deleted);
+  };
+
+  const publish = (
     acquisition: Acquisition<Row>,
     current: PlannedRead<Row>,
     touchedEntities: ReadonlyArray<SyncEntity>,
     adoption: StampAdoption,
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    const run = async () => {
-      const published = publishSubsetWindow(
-        params,
-        descriptor,
-        acquisition.keys,
-        acquisition.rows,
-        current.rows,
-        rowRefs,
-        adoption === "truncate" ? undefined : signal,
-        adoption === "truncate",
-      );
-      acquisition.keys = published.keys;
-      acquisition.rows = published.rows;
-      await published.receipt;
-    };
+  ): Effect.Effect<void, unknown> => {
+    const commit = Effect.tryPromise({
+      try: (signal) => {
+        if (!live(acquisition)) return Promise.resolve();
+        const receipt = writeWindow(
+          acquisition,
+          current.rows,
+          adoption === "truncate" ? undefined : signal,
+          adoption === "truncate",
+        );
+        return Promise.resolve(receipt).then(() => undefined);
+      },
+      catch: (cause) => cause,
+    });
     if (descriptor.coherenceEntity && coherence) {
-      await coherence.publish(descriptor.coherenceEntity, current.stamp, touchedEntities, run);
-      return;
+      const coherenceEntity = descriptor.coherenceEntity;
+      return attempt(() =>
+        coherence.publish(coherenceEntity, current.stamp, touchedEntities, () =>
+          Effect.runPromise(commit),
+        ),
+      );
     }
-    await run();
+    return commit;
   };
 
-  const withRetainedRows = async (
-    acquisition: Acquisition<Row>,
-    window: PlannedRead<Row>,
-  ): Promise<PlannedRead<Row>> => {
-    if (!acquisition.windowed) return window;
-    const shown = new Set(window.rows.map(descriptor.getKey));
-    const departed = [...acquisition.keys].filter((key) => !shown.has(key));
-    if (departed.length === 0) return window;
-    const retained = await readers.keys(departed);
-    if (retained.some((read) => read.stamp.generationId !== window.stamp.generationId)) {
-      return window;
-    }
-    return {
-      stamp: window.stamp,
-      rows: [...window.rows, ...retained.flatMap((read) => read.rows)],
-    };
-  };
-
-  const refill = async (
+  const refill = (
     acquisition: Acquisition<Row>,
     touchedEntities: ReadonlyArray<SyncEntity>,
-  ): Promise<StampAdoption> => {
-    if (disposed || activeToken === undefined) return "stale";
-    const current = await withRetainedRows(acquisition, await acquisition.read());
-    const adoption = adopt(current.stamp);
-    if (adoption === "stale") return adoption;
-    await applyPublished(acquisition, current, touchedEntities, adoption);
-    return adoption;
-  };
-
-  const refreshAcquisitions = async (touchedEntities: ReadonlyArray<SyncEntity>) => {
-    for (const acquisition of acquisitions.values()) {
-      if ((await refill(acquisition, touchedEntities)) === "truncate") return;
-    }
-  };
-
-  const refreshWorker = Effect.gen(function* () {
-    yield* refreshRequested.await;
-    yield* refreshRequested.close;
-    yield* serialized(() => refreshAcquisitions(lastTouched));
-  }).pipe(
-    Effect.catchCauseIf(
-      (cause) => !Cause.hasInterrupts(cause),
-      (cause) => Effect.logError("ReplicaCollection.refresh_failed", cause),
-    ),
-    Effect.forever,
-    Effect.runFork,
-  );
-
-  const replay = async (fromVersion: number): Promise<void> => {
-    const notices = queued.splice(0);
-    let version = fromVersion;
-    for (const notice of notices) {
-      if (!fenced(notice) || !relevant(notice)) continue;
-      if (notice.localCommitVersion <= version) continue;
-      version = notice.localCommitVersion;
-      lastTouched = notice.touchedEntities;
-    }
-    if (version > fromVersion) await refreshAcquisitions(lastTouched);
-  };
-
-  const acquire = async (
-    key: string,
-    read: () => Promise<PlannedRead<Row>>,
-    windowed: boolean,
-    cancelled: () => boolean,
-    own: (acquisition: Acquisition<Row>) => void,
-    signal?: AbortSignal,
-  ): Promise<void> => {
-    const current = await read();
-    if (cancelled()) return;
-    const adoption = adopt(current.stamp);
-    if (adoption === "stale") return;
-    const acquisition: Acquisition<Row> = {
-      key,
-      read,
-      windowed,
-      published: false,
-      refs: 1,
-      keys: new Set(),
-      rows: new Map(),
-    };
-    acquisitions.set(key, acquisition);
-    own(acquisition);
-    await applyPublished(acquisition, current, [], adoption, signal);
-    acquisition.published = true;
-    await replay(current.stamp.localCommitVersion);
-    syncStarted = true;
-  };
-
-  const beginListeningForCommits = (): (() => void) =>
-    dependencies.changeFeed.subscribe((notice) => {
-      if (disposed) return;
-      if (activeToken === undefined || !syncStarted) {
-        queued.push(notice);
-        return;
-      }
-      if (!fenced(notice) || !relevant(notice)) return;
-      lastTouched = notice.touchedEntities;
-      refreshRequested.openUnsafe();
+  ): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      if (disposed || activeToken === undefined) return;
+      const window = yield* attempt(acquisition.read);
+      const adoption = adopt(window.stamp);
+      if (adoption === "stale") return;
+      yield* publish(acquisition, window, touchedEntities, adoption);
     });
 
-  const unsubscribe = beginListeningForCommits();
+  const refreshPending = Effect.suspend(() => {
+    if (disposed || acquisitions.size === 0 || pending === undefined) return Effect.void;
+    const drained = pending;
+    if (drained.workspaceToken !== activeToken) {
+      pending = undefined;
+      return Effect.void;
+    }
+    pending = undefined;
+    const touched = invalidatedEntities(drained);
+    return Effect.partition([...acquisitions.values()], (acquisition) =>
+      refill(acquisition, touched),
+    ).pipe(
+      Effect.flatMap(([failures]) => (failures.length === 0 ? Effect.void : Effect.fail(failures))),
+      Effect.onError(() =>
+        Effect.sync(() => {
+          pending = mergeAccumulators(drained, pending);
+        }),
+      ),
+    );
+  });
+
+  const refreshWorker = (latch: Latch.Latch) =>
+    Effect.gen(function* () {
+      yield* latch.await;
+      yield* latch.close;
+      yield* serialized(refreshPending).pipe(
+        Effect.tapError((failures) =>
+          Effect.logWarning("ReplicaCollection.refresh_retry", failures),
+        ),
+        Effect.retry(REFRESH_RETRY),
+      );
+    }).pipe(
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterrupts(cause),
+        (cause) => Effect.logError("ReplicaCollection.refresh_failed", cause),
+      ),
+      Effect.forever,
+    );
+
+  const startListening = (): void => {
+    if (listening !== undefined || disposed) return;
+    const scope = Effect.runSync(Scope.make());
+    const latch = Latch.makeUnsafe(false);
+    listening = scope;
+    refreshRequested = latch;
+    Effect.runSync(
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Effect.sync(() => dependencies.changeFeed.subscribe(onNotice)),
+          (unsubscribe) => Effect.sync(unsubscribe),
+        );
+        if (descriptor.coherenceEntity && coherence) {
+          const coherenceEntity = descriptor.coherenceEntity;
+          yield* Effect.acquireRelease(
+            Effect.sync(() => coherence.registerSource(coherenceEntity)),
+            (unregister) => Effect.sync(unregister),
+          );
+        }
+        yield* Effect.forkScoped(refreshWorker(latch));
+      }).pipe(Scope.provide(scope)),
+    );
+  };
+
+  const stopListening = (): void => {
+    const scope = listening;
+    if (scope === undefined) return;
+    listening = undefined;
+    refreshRequested = undefined;
+    pending = undefined;
+    activeToken = undefined;
+    activeGeneration = undefined;
+    rowRefs.clear();
+    Effect.runFork(Scope.close(scope, Exit.void));
+  };
+
+  const settle = (): void => {
+    if (disposed || descriptor.syncMode !== "on-demand") return;
+    if (inflight.size === 0 && acquisitions.size === 0) stopListening();
+  };
+
+  const discard = (acquisition: Acquisition<Row>): void => {
+    if (acquisitions.get(acquisition.key) !== acquisition) return;
+    acquisitions.delete(acquisition.key);
+    const receipt = releaseRows(acquisition);
+    if (receipt !== undefined) void Promise.resolve(receipt).catch(() => undefined);
+  };
+
+  const acquire = (
+    key: string,
+    read: (signal: AbortSignal) => Promise<PlannedRead<Row>>,
+    own: (acquisition: Acquisition<Row>) => void,
+    forget: () => void,
+  ): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      const current = yield* attempt(read);
+      const adoption = adopt(current.stamp);
+      if (adoption === "stale") return;
+      const acquisition: Acquisition<Row> = {
+        key,
+        read,
+        published: false,
+        refs: 1,
+        keys: new Set(),
+        rows: new Map(),
+      };
+      yield* Effect.suspend(() => {
+        acquisitions.set(key, acquisition);
+        own(acquisition);
+        return publish(acquisition, current, [], adoption);
+      }).pipe(
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit)
+            ? Effect.void
+            : Effect.sync(() => {
+                forget();
+                discard(acquisition);
+              }),
+        ),
+      );
+      acquisition.published = true;
+      if (adoption === "truncate") {
+        pending = invalidateEverything(pending, current.stamp);
+        wake();
+      } else if (pending !== undefined && pending.version > current.stamp.localCommitVersion) {
+        wake();
+      }
+    });
+
+  const settleRequest = (
+    options: LoadSubsetOptions,
+    exit: Exit.Exit<void, unknown>,
+    resolve: () => void,
+    reject: (cause: unknown) => void,
+  ): void => {
+    inflight.delete(options);
+    if (Exit.isFailure(exit) && !Cause.hasInterrupts(exit.cause)) reject(Cause.squash(exit.cause));
+    else resolve();
+    settle();
+  };
+
+  const interruptRequest = (id: number): void => {
+    Effect.runFork(FiberMap.remove(requests, id));
+  };
 
   const loadSubset: LoadSubsetFn = (options) => {
+    if (disposed || released.has(options) || options.signal?.aborted === true) return true;
     const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
-    const cancelled = () => disposed || released.has(options) || options.signal?.aborted === true;
     const published = acquisitions.get(key);
-    if (published?.published && !cancelled()) {
+    if (published?.published) {
       published.refs += 1;
       owners.set(options, published);
       return true;
     }
-    return enqueue(async () => {
-      if (cancelled()) return;
-      const existing = acquisitions.get(key);
-      if (existing) {
-        existing.refs += 1;
-        owners.set(options, existing);
-        return;
-      }
-      await acquire(
-        key,
-        () => readers.subset(options),
-        options.limit !== undefined,
-        cancelled,
-        (acquisition) => owners.set(options, acquisition),
-        options.signal,
-      );
+    startListening();
+    const id = (nextRequest += 1);
+    const body = serialized(
+      Effect.suspend(() => {
+        const existing = acquisitions.get(key);
+        if (existing) {
+          existing.refs += 1;
+          owners.set(options, existing);
+          return Effect.void;
+        }
+        return acquire(
+          key,
+          (signal) => readers.subset(options, signal),
+          (acquisition) => owners.set(options, acquisition),
+          () => owners.delete(options),
+        );
+      }),
+    );
+    return new Promise<void>((resolve, reject) => {
+      inflight.set(options, id);
+      const fiber = Effect.runSync(FiberMap.run(requests, id, body));
+      const abort = () => interruptRequest(id);
+      options.signal?.addEventListener("abort", abort, { once: true });
+      fiber.addObserver((exit) => {
+        options.signal?.removeEventListener("abort", abort);
+        settleRequest(options, exit, resolve, reject);
+      });
     });
   };
 
-  const unloadSubset: UnloadSubsetFn = (options) => {
-    if (released.has(options)) return;
-    released.add(options);
-    enqueueDetached("ReplicaCollection.unload_failed", async () => {
+  const release = (options: LoadSubsetOptions): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
       const acquisition = owners.get(options);
       if (disposed || acquisition === undefined) return;
       owners.delete(options);
       acquisition.refs -= 1;
       if (acquisition.refs > 0) return;
       if (acquisitions.get(acquisition.key) === acquisition) acquisitions.delete(acquisition.key);
-      const deleted: Array<string> = [];
-      for (const rowKey of acquisition.keys) {
-        if (decrementRowRef(rowRefs, rowKey) === 0) deleted.push(rowKey);
-      }
-      if (deleted.length === 0) return;
-      params.begin();
-      for (const rowKey of deleted) params.write({ type: "delete", key: rowKey });
-      await params.commit();
-    });
+      const receipt = releaseRows(acquisition);
+      if (receipt === undefined) return;
+      yield* attempt(async () => {
+        await receipt;
+      });
+    }).pipe(Effect.ensuring(Effect.sync(settle)));
+
+  const unloadSubset: UnloadSubsetFn = (options) => {
+    if (released.has(options)) return;
+    released.add(options);
+    const id = inflight.get(options);
+    if (id !== undefined) interruptRequest(id);
+    enqueueDetached("ReplicaCollection.unload_failed", release(options));
   };
 
   if (descriptor.syncMode === "eager") {
-    Effect.runFork(
-      serialized(() =>
-        acquire(
-          SOURCE_DEMAND,
-          readers.source,
-          false,
-          () => disposed,
-          () => undefined,
+    startListening();
+    const id = (nextRequest += 1);
+    const fiber = Effect.runSync(
+      FiberMap.run(
+        requests,
+        id,
+        serialized(
+          acquire(
+            SOURCE_DEMAND,
+            readers.source,
+            () => undefined,
+            () => undefined,
+          ),
         ),
-      ).pipe(
-        Effect.matchCause({
-          onSuccess: () => {
-            if (!disposed) params.markReady();
-          },
-          onFailure: (cause) => {
-            if (!disposed) params.markError(Cause.squash(cause));
-          },
-        }),
       ),
     );
+    fiber.addObserver((exit) => {
+      if (disposed) return;
+      if (Exit.isSuccess(exit)) params.markReady();
+      else if (!Cause.hasInterrupts(exit.cause)) params.markError(Cause.squash(exit.cause));
+    });
   } else {
     params.markReady();
   }
@@ -330,14 +483,17 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     unloadSubset,
     cleanup: () => {
       disposed = true;
+      const scope = listening;
+      listening = undefined;
+      refreshRequested = undefined;
+      pending = undefined;
       activeToken = undefined;
       activeGeneration = undefined;
-      refreshWorker.interruptUnsafe();
-      queued.length = 0;
       acquisitions.clear();
       rowRefs.clear();
-      unregisterCoherence?.();
-      unsubscribe();
+      inflight.clear();
+      if (scope !== undefined) Effect.runFork(Scope.close(scope, Exit.void));
+      Effect.runFork(Scope.close(lifetime, Exit.void));
     },
   };
 };

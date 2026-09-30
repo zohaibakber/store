@@ -11,24 +11,16 @@ import {
   projectUpdateProduct,
   readCatalogRows,
   readNextInvoiceNumber,
-  touchedEntitiesForCommand,
-  touchedKeysForCommand,
   type CatalogProjectionContext,
   type CatalogRowsRequest,
   type ProductRow,
   type ReplicaHandle,
 } from "@store/client-db";
-import { ReplicaClientSequence, SyncCommandEnvelope, SyncEpoch } from "@store/contracts";
+import type { SyncCommandEnvelope } from "@store/contracts";
 import type { CatalogRowWrite } from "@store/contracts/catalog-write";
-import { decodeOrganizationId } from "@store/contracts/ids";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import * as Schema from "effect/Schema";
 
 import type { CommandExecutionState, WorkspaceAtoms } from "./atoms";
 import type { InventoryActions, InventoryActor } from "./types";
-
-const decodeEpoch = Schema.decodeUnknownSync(SyncEpoch);
-const decodeClientSequence = Schema.decodeUnknownSync(ReplicaClientSequence);
 
 const withProjectedProduct = (
   context: CatalogProjectionContext,
@@ -52,37 +44,6 @@ const withProjectedProduct = (
   };
 };
 
-const enqueueReplicaCommand = async (
-  replica: ReplicaHandle,
-  actor: InventoryActor,
-  commandId: string,
-  command: SyncCommandEnvelope["command"],
-  occurredAt: number,
-): Promise<SyncCommandEnvelope> => {
-  const allocation = await replica.readCommandAllocation();
-  const envelope: SyncCommandEnvelope = {
-    organizationId: decodeOrganizationId(actor.organizationId),
-    epoch: decodeEpoch(allocation.epoch),
-    replicaId: actor.deviceId,
-    clientSequence: decodeClientSequence(allocation.nextClientSequence),
-    operationId: commandId,
-    payloadHash: canonicalPayloadHash(command),
-    command,
-  };
-  const enqueued = await replica.enqueueLocal(envelope, occurredAt);
-  if (enqueued.changed) {
-    const stamp = await replica.stamp();
-    replica.publish({
-      workspaceToken: stamp.workspaceToken,
-      generationId: stamp.generationId,
-      localCommitVersion: stamp.localCommitVersion,
-      touchedEntities: touchedEntitiesForCommand(envelope),
-      touchedKeys: touchedKeysForCommand(envelope),
-    });
-  }
-  return envelope;
-};
-
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error && cause.message ? cause.message : fallback;
 
@@ -95,11 +56,22 @@ export const makeInventoryActions = (
   const setCommandExecution = (state: CommandExecutionState) =>
     atoms.registry.set(atoms.commandExecution, state);
 
-  const enqueue = (
-    commandId: string,
+  const enqueue = async (
+    operationId: string,
     command: SyncCommandEnvelope["command"],
     occurredAt: number,
-  ) => enqueueReplicaCommand(replica, actor, commandId, command, occurredAt);
+  ): Promise<void> => {
+    const request = { operationId, command, occurredAt };
+    try {
+      await replica.enqueueCommand(request);
+    } catch (cause) {
+      const durable = await replica.readCommandStatus(operationId).catch(() => undefined);
+      if (durable !== undefined) return;
+      await replica.enqueueCommand(request).catch(() => {
+        throw cause;
+      });
+    }
+  };
 
   const runCommand = async <Result>(
     fallbackMessage: string,
@@ -167,6 +139,9 @@ export const makeInventoryActions = (
     );
 
   return {
+    retrySync: async () => {
+      await replica.retryRecovery?.();
+    },
     createCategory: (input) =>
       runCommand(
         "The category could not be saved locally.",

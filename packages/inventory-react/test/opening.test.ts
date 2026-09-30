@@ -35,7 +35,7 @@ describe("catalog opening", () => {
       ...replica,
       close: () => {
         closed = true;
-        replica.close();
+        return replica.close();
       },
     }));
     const catalog = appCatalog();

@@ -35,6 +35,7 @@ import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
+import { makeInsightsSource } from "./insights-source";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
@@ -119,14 +120,7 @@ const workspaceSources = (
   summarizeProducts: (filters, distinct) =>
     summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
   findProductsByNames: (names) => findProductsByNames(replica, names),
-  readInsights: (window) =>
-    Effect.tryPromise({
-      try: () => replica.readInsights(window),
-      catch: workspaceReadFailure,
-    }).pipe(
-      Effect.map((read) => read.facts),
-      Effect.withSpan("InventoryInsights.readFacts"),
-    ),
+  insights: makeInsightsSource(replica),
 });
 
 type CollectionDeps = {
@@ -261,7 +255,10 @@ const acquireReplica = (host: InventoryHost, scope: InventoryScope) =>
         }),
       catch: catalogOpenFailure,
     }),
-    (replica) => Effect.sync(() => replica.close()),
+    (replica) =>
+      Effect.tryPromise(() => replica.close()).pipe(
+        Effect.catch((cause) => Effect.logError("InventoryReplica.close_failed", cause)),
+      ),
   );
 
 const acquireDbClient = Effect.acquireRelease(

@@ -1,7 +1,13 @@
 import type {
+  CommandStatus,
+  EnqueueCommandRequest,
+  InsightsContext,
+  InsightsSummaryRead,
+  ProductInsightsRead,
   ReplicaInsightsFacts,
+  RestockPageRead,
+  RestockPageRequest,
   ReplicaInsightsWindow,
-  SyncCommandEnvelope,
   SyncEntity,
 } from "@store/contracts";
 import type { ReplicaOutboxActivity } from "@store/sync/browser";
@@ -45,6 +51,8 @@ export type ReplicaCommitNotice = {
   readonly localCommitVersion: number;
   readonly touchedEntities: ReadonlyArray<SyncEntity>;
   readonly touchedKeys: ReadonlyArray<string>;
+  readonly fullInvalidation?: boolean;
+  readonly overflowedEntities?: ReadonlyArray<SyncEntity>;
 };
 
 export type ReplicaChangeUnsubscribe = () => void;
@@ -70,8 +78,24 @@ export type ReplicaSubsetRead = {
   readonly rows: ReadonlyArray<SqliteResultRow>;
 };
 
+export type ReplicaReadOptions = {
+  readonly signal?: AbortSignal;
+};
+
+export type ReplicaBatchRead = {
+  readonly stamp: ReplicaQueryStamp;
+  readonly reads: ReadonlyArray<ReadonlyArray<SqliteResultRow>>;
+};
+
 export interface ReplicaSubsetReader {
-  readonly readSubset: (spec: InventorySubsetSpec) => Promise<ReplicaSubsetRead>;
+  readonly readSubset: (
+    spec: InventorySubsetSpec,
+    options?: ReplicaReadOptions,
+  ) => Promise<ReplicaSubsetRead>;
+  readonly readBatch?: (
+    specs: ReadonlyArray<InventorySubsetSpec>,
+    options?: ReplicaReadOptions,
+  ) => Promise<ReplicaBatchRead>;
 }
 
 export type ReplicaSummaryRead = {
@@ -92,28 +116,45 @@ export interface ReplicaInsightsReader {
   readonly readInsights: (window: ReplicaInsightsWindow) => Promise<ReplicaInsightsRead>;
 }
 
+export type ReplicaAnalyticsChange = {
+  readonly revision: number;
+  readonly state: "idle" | "building" | "refreshing";
+  readonly progress: { readonly done: number; readonly total: number } | null;
+};
+
+export interface ReplicaAnalytics {
+  readonly readSummary: (context: InsightsContext) => Promise<InsightsSummaryRead>;
+  readonly readProducts: (
+    context: InsightsContext,
+    ids: ReadonlyArray<string>,
+  ) => Promise<ProductInsightsRead>;
+  readonly readRestockPage: (
+    context: InsightsContext,
+    request: RestockPageRequest,
+  ) => Promise<RestockPageRead>;
+  readonly subscribe: (listener: (change: ReplicaAnalyticsChange) => void) => () => void;
+}
+
 type ReplicaHandleIdentity = {
   readonly workspaceToken: string;
   readonly engine?: "sqlite" | "indexeddb";
 };
 
 type ReplicaHandleLifecycle = {
-  readonly close: () => void;
+  readonly close: () => Promise<void>;
+  readonly retryRecovery?: () => Promise<void>;
+};
+
+export type EnqueuedCommand = {
+  readonly operationId: string;
+  readonly status: CommandStatus;
+  readonly stamp: ReplicaQueryStamp;
 };
 
 type ReplicaMutationSurface = {
   readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
-  readonly readCommandAllocation: () => Promise<{
-    readonly epoch: string;
-    readonly nextClientSequence: string;
-  }>;
-  readonly enqueueLocal: (
-    envelope: SyncCommandEnvelope,
-    createdAt: number,
-  ) => Promise<{
-    readonly changed: boolean;
-    readonly status: string;
-  }>;
+  readonly enqueueCommand: (request: EnqueueCommandRequest) => Promise<EnqueuedCommand>;
+  readonly readCommandStatus: (operationId: string) => Promise<CommandStatus | undefined>;
   readonly wakeSyncUpload?: () => void;
 };
 
@@ -126,14 +167,12 @@ export type ReplicaActivitySurface = {
 export type ReplicaHandle = ReplicaHandleIdentity &
   ReplicaHandleLifecycle &
   ReplicaSubsetReader &
-  ReplicaInsightsReader &
-  ReplicaSummaryReader &
+  ReplicaInsightsReader & { readonly analytics?: ReplicaAnalytics } & ReplicaSummaryReader &
   ReplicaChangeFeed &
   ReplicaSyncHealthFeed &
   ReplicaMutationSurface &
   ReplicaActivitySurface & {
     readonly stamp: () => Promise<ReplicaQueryStamp>;
-    readonly publish: (notice: ReplicaCommitNotice) => void;
   };
 
 export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = {

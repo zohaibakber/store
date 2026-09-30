@@ -34,7 +34,11 @@ import * as React from "react";
 import { CANDIDATE_QUERY_SEPARATOR, minuteClockAtom, stockPolicyAtom } from "./atoms";
 import { useSuspenseProductFacets } from "./product-list-hooks";
 import { useCatalogReplica } from "./provider";
-import { catalogProductSearchResults, type CatalogProductSearchResult } from "./search";
+import {
+  canonicalSearchQuery,
+  catalogProductSearchResults,
+  type CatalogProductSearchResult,
+} from "./search";
 import type { Inventory } from "./types";
 
 const PRODUCT_IDS_PER_PREDICATE = 32;
@@ -375,7 +379,7 @@ const NO_CANDIDATES: ReadonlyArray<ProductRow> = [];
 
 export const useCatalogProductCandidates = (queries: ReadonlyArray<string>, limit = 25) => {
   const inventory = useCatalogReplica();
-  const key = [...new Set(queries.map((query) => query.trim()).filter((query) => query !== ""))]
+  const key = [...new Set(queries.map(canonicalSearchQuery).filter((query) => query !== ""))]
     .sort()
     .join(CANDIDATE_QUERY_SEPARATOR);
   const result = useAtomValue(inventory.atoms.productCandidates(limit)(key));

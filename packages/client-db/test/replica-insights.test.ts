@@ -81,6 +81,6 @@ describe("SQLite insights read", () => {
       { productId: "p-1", day: 20_000, units: 6, revenue: 600 },
       { productId: "p-2", day: 20_000, units: 2, revenue: 400 },
     ]);
-    replica.close();
+    await replica.close();
   });
 });

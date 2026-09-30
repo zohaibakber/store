@@ -49,8 +49,8 @@ describe("openNodeReplicaSyncSession", () => {
         message: "The sync authority was restored or re-keyed; unsent commands are preserved.",
       });
     });
-    expect(await session.readCommandAllocation()).toEqual({ epoch: "1", nextClientSequence: "1" });
+    expect(await session.readCommandStatus("unknown-operation")).toBeUndefined();
     unsubscribe();
-    session.close();
+    await session.close();
   });
 });

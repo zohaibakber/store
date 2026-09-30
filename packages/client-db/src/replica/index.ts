@@ -12,7 +12,6 @@ export {
   decodeProductSqliteRows,
   decodeStockMovementSqliteRows,
 } from "./decode";
-export { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
 export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
 export type { ElectronReplicaBridge } from "./electron-ipc-handle";
 export { openIndexedDbReplicaHandle } from "./indexeddb-handle";
@@ -23,6 +22,13 @@ export {
 } from "@store/sync/replica/storage-name";
 export { inventoryReplicaScope } from "./scope";
 export { createInvoiceCoherenceGate, sqliteCollectionOptions } from "./collection";
+export {
+  accumulateNotice,
+  mergeAccumulators,
+  noticeAffects,
+  type NoticeAccumulator,
+} from "./collection-notices";
+export { NOTICE_BUFFER_CAPACITY, offerCoalescing } from "./notice-coalescing";
 export { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "./sources";
 export { syncStatusFromOutbox, syncStatusWithHealth } from "./status";
 export {
@@ -36,6 +42,7 @@ export type { InventorySyncStatus, ReplicaSyncHealth } from "./status";
 export type {
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
+  ReplicaAnalytics,
   ReplicaChangeFeed,
   ReplicaCommitNotice,
   ReplicaHandle,

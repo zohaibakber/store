@@ -10,7 +10,7 @@ export {
   stockPolicyAtom,
   type CommandExecutionState,
 } from "./atoms";
-export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+export { CatalogBusy, CatalogOpenFailure, StaleCatalogLease } from "./errors";
 export type { InventoryHost, ReplicaOpenIdentity } from "./host";
 export {
   createAppCatalogLifetime,
@@ -74,8 +74,11 @@ export {
   useInventoryInsights,
   useProductInsight,
   useRefreshInventoryInsights,
+  useRestockExport,
+  useRestockPage,
   useStockPolicy,
 } from "./insights";
+export type { InventoryInsights } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
 export type { Inventory, InventoryActions } from "./types";
 export {

@@ -92,6 +92,6 @@ describe("ordered limited invoice windows", () => {
     );
     await vi.waitFor(() => expect(shown()).toEqual([8, 6, 5]));
     expect(recent.utils.lastSubsetError).toBeUndefined();
-    replica.close();
+    await replica.close();
   });
 });
