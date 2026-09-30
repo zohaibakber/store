@@ -278,5 +278,6 @@ export const makeInventoryActions = (
           };
         },
       ),
+    syncNow: wakeSyncUpload,
   };
 };

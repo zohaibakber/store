@@ -10,8 +10,11 @@ import type { ReplicaChangeUnsubscribe } from "./types";
 export const subscribeSchedulerHealth =
   (scheduler: SyncSchedulerContract, lifetime: Scope.Scope) =>
   (listener: (health: ReplicaSyncHealth) => void): ReplicaChangeUnsubscribe => {
-    const fiber = SubscriptionRef.changes(scheduler.status).pipe(
-      Stream.map(syncHealthFromScheduler),
+    const fiber = Stream.zipLatest(
+      SubscriptionRef.changes(scheduler.status),
+      SubscriptionRef.changes(scheduler.syncing),
+    ).pipe(
+      Stream.map(([status, syncing]) => syncHealthFromScheduler(status, syncing)),
       Stream.runForEach((health) => Effect.sync(() => listener(health))),
       Effect.forkIn(lifetime),
       Effect.runSync,

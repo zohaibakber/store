@@ -1,4 +1,4 @@
-import { Login01Icon, LogoutIcon, SettingsIcon, UnfoldMoreIcon } from "@hugeicons/core-free-icons";
+import { Login01Icon, LogoutIcon, SettingsIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +23,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { signOut, useAuth } from "@/lib/auth";
+import { SidebarSyncButton } from "@/lib/inventory/sync-status";
 
 function UserIdentity({
   image,
@@ -31,7 +32,7 @@ function UserIdentity({
 }: {
   readonly image: string | null | undefined;
   readonly name: string;
-  readonly detail: string;
+  readonly detail?: string;
 }) {
   return (
     <>
@@ -41,7 +42,7 @@ function UserIdentity({
       </Avatar>
       <span className="grid min-w-0 flex-1 text-left leading-tight">
         <span className="truncate text-sm font-medium">{name}</span>
-        <span className="truncate text-xs text-muted-foreground">{detail}</span>
+        {detail ? <span className="truncate text-xs text-muted-foreground">{detail}</span> : null}
       </span>
     </>
   );
@@ -67,7 +68,6 @@ export function NavUser() {
   }
 
   const { user } = snapshot;
-  const organizationName = snapshot.activeOrganization?.name;
 
   return (
     <SidebarMenu>
@@ -76,17 +76,9 @@ export function NavUser() {
           <MenuTrigger
             render={<SidebarMenuButton aria-label="Account menu" size="lg" tooltip={user.name} />}
           >
-            <UserIdentity
-              detail={organizationName ?? user.email}
-              image={user.image}
-              name={user.name}
-            />
-            <HugeiconsIcon
-              aria-hidden="true"
-              className="ms-auto size-4 text-muted-foreground"
-              icon={UnfoldMoreIcon}
-            />
+            <UserIdentity image={user.image} name={user.name} />
           </MenuTrigger>
+          <SidebarSyncButton />
           <MenuPopup align="end" className="w-62" side={isMobile ? "top" : "right"}>
             <MenuGroup>
               <MenuGroupLabel>

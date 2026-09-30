@@ -10,7 +10,7 @@ export type InventorySyncStatus =
   | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
 
 export type ReplicaSyncHealth =
-  | { readonly _tag: "running" }
+  | { readonly _tag: "running"; readonly syncing?: boolean }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
 
@@ -27,7 +27,10 @@ export const syncStatusFromOutbox = (
   return { _tag: "caughtUp" };
 };
 
-export const syncHealthFromScheduler = (status: SyncSchedulerStatus): ReplicaSyncHealth => {
+export const syncHealthFromScheduler = (
+  status: SyncSchedulerStatus,
+  syncing: boolean,
+): ReplicaSyncHealth => {
   switch (status._tag) {
     case "storageError":
       return { _tag: "storageError", message: status.message };
@@ -41,7 +44,7 @@ export const syncHealthFromScheduler = (status: SyncSchedulerStatus): ReplicaSyn
     case "stopped":
       return { _tag: "recoveryRequired", message: status.message };
     case "running":
-      return { _tag: "running" };
+      return { _tag: "running", syncing };
   }
 };
 

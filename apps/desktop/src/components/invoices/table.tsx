@@ -18,6 +18,7 @@ import {
   tableFeatures,
   useTable,
 } from "@tanstack/react-table";
+import { useEffect } from "react";
 
 import { formatInvoiceTime } from "@/components/invoices/invoice-time";
 import {
@@ -27,7 +28,6 @@ import {
   DataTablePagination,
   type DataTableColumnMeta,
 } from "@/components/shared/data-table";
-import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDateTime, formatNumber } from "@/lib/format";
 
@@ -102,38 +102,29 @@ const columns = columnHelper.columns([
 ]);
 
 export function useInvoicesTable(invoices: readonly Invoice[]) {
-  return useTable({
+  const table = useTable({
     features,
     columns,
     data: invoices,
     getRowId: (invoice) => invoice.id,
+    autoResetPageIndex: false,
     initialState: {
       pagination: { pageIndex: 0, pageSize: 50 },
       sorting: [{ id: "createdAt", desc: true }],
     },
   });
+  const { columnFilters, sorting } = table.state;
+  useEffect(() => {
+    table.setPageIndex(0);
+  }, [table, columnFilters, sorting]);
+  return table;
 }
 
-export function InvoicesTable({
-  hasMore,
-  loadingMore,
-  onLoadMore,
-}: {
-  hasMore: boolean;
-  loadingMore: boolean;
-  onLoadMore: () => void;
-}) {
+export function InvoicesTable() {
   return (
     <DataTableContent>
       <DataTableFooter>
-        <div className="flex items-center gap-2">
-          <DataTablePagination className="flex-1" />
-          {hasMore && (
-            <Button loading={loadingMore} onClick={onLoadMore} size="xs" variant="ghost">
-              Load older invoices
-            </Button>
-          )}
-        </div>
+        <DataTablePagination />
       </DataTableFooter>
     </DataTableContent>
   );

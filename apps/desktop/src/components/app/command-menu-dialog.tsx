@@ -15,7 +15,7 @@ import {
   ShoppingCartAdd01Icon,
   SunMoonIcon,
   TagIcon,
-  Tag01Icon,
+  TagsIcon,
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -302,7 +302,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         id: "go-categories",
         label: "Go to Categories",
         keywords: "category groups",
-        icon: Tag01Icon,
+        icon: TagsIcon,
         run: () => {
           close();
           void navigate({ to: "/products/categories" });

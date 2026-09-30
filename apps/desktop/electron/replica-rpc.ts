@@ -84,7 +84,7 @@ export const ReplicaCommitNotice = Schema.Struct({
 });
 
 export const ReplicaSyncHealth = Schema.Union([
-  Schema.TaggedStruct("running", {}),
+  Schema.TaggedStruct("running", { syncing: Schema.optionalKey(Schema.Boolean) }),
   Schema.TaggedStruct("storageError", { message: Schema.String }),
   Schema.TaggedStruct("recoveryRequired", {
     message: Schema.String,

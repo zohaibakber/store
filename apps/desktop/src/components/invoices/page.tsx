@@ -30,6 +30,7 @@ function InvoicesPage({
       onRowPreload={(row) =>
         void router.preloadRoute({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })
       }
+      moreRows={{ hasMore, loading: loadingMore, onLoadMore }}
       table={table}
     >
       <PageActions>
@@ -40,7 +41,7 @@ function InvoicesPage({
         </Button>
       </PageActions>
       <PageLayout>
-        <InvoicesTable hasMore={hasMore} loadingMore={loadingMore} onLoadMore={onLoadMore} />
+        <InvoicesTable />
       </PageLayout>
     </DataTable>
   );

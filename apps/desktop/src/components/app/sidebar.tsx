@@ -1,10 +1,10 @@
 import {
   PackageIcon,
-  Folder01Icon,
   HomeIcon,
   Invoice01Icon,
   SettingsIcon,
   TagIcon,
+  TagsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
@@ -28,7 +28,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
-import { SidebarSyncStatus } from "@/lib/inventory/sync-status";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;
@@ -72,7 +71,7 @@ const navMain = [
       {
         title: "Categories",
         url: "/products/categories",
-        icon: <HugeiconsIcon icon={Folder01Icon} />,
+        icon: <HugeiconsIcon icon={TagsIcon} />,
       },
     ],
   },
@@ -106,7 +105,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <span>Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarSyncStatus />
         </SidebarMenu>
         <NavUser />
       </SidebarFooter>

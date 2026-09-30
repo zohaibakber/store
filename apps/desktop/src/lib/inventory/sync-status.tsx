@@ -1,10 +1,8 @@
 import {
   Alert02Icon,
   AlertCircleIcon,
-  CheckmarkCircle02Icon,
   DatabaseRestoreIcon,
-  FileAttachmentIcon,
-  Upload01Icon,
+  RefreshCwIcon,
   WifiOff01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -12,137 +10,100 @@ import {
   inventorySyncStatusLabel,
   useCatalogIsReady,
   useInventoryActions,
+  useInventorySyncing,
   useInventorySyncStatus,
   type InventorySyncStatus,
 } from "@store/inventory-react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { SidebarMenuAction } from "@/components/ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useOnline } from "@/hooks/use-online";
 import { cn } from "@/lib/utils";
 
-const statusIcon = (status: InventorySyncStatus) => {
+const attention = (status: InventorySyncStatus) => {
   switch (status._tag) {
-    case "savedLocally":
-      return FileAttachmentIcon;
-    case "pendingConfirmation":
-      return Upload01Icon;
-    case "caughtUp":
-      return CheckmarkCircle02Icon;
     case "rejected":
-      return Alert02Icon;
+      return { icon: Alert02Icon, tone: "text-destructive-foreground" };
     case "storageError":
-      return AlertCircleIcon;
+      return { icon: AlertCircleIcon, tone: "text-destructive-foreground" };
     case "recoveryRequired":
-      return DatabaseRestoreIcon;
+      return { icon: DatabaseRestoreIcon, tone: "text-warning-foreground" };
+    case "savedLocally":
+    case "pendingConfirmation":
+    case "caughtUp":
+      return null;
   }
 };
 
-const statusTone = (status: InventorySyncStatus) => {
-  switch (status._tag) {
-    case "savedLocally":
-      return "text-muted-foreground";
-    case "pendingConfirmation":
-      return "text-warning-foreground";
-    case "caughtUp":
-      return "text-success-foreground";
-    case "rejected":
-      return "text-destructive-foreground";
-    case "storageError":
-      return "text-destructive-foreground";
-    case "recoveryRequired":
-      return "text-warning-foreground";
-  }
-};
-
-const statusShortLabel = (status: InventorySyncStatus) => {
-  switch (status._tag) {
-    case "savedLocally":
-      return "Saved locally";
-    case "pendingConfirmation":
-      return "Syncing…";
-    case "caughtUp":
-      return "Synced";
-    case "rejected":
-      return "Sync rejected";
-    case "storageError":
-      return "Storage error";
-    case "recoveryRequired":
-      return "Needs recovery";
-  }
-};
-
-function InventorySyncStatusView({
-  online = true,
-  onRetry,
+function SyncButtonView({
+  online,
   status,
+  syncing,
+  onSync,
 }: {
-  readonly online?: boolean;
-  readonly onRetry?: () => void;
+  readonly online: boolean;
   readonly status: InventorySyncStatus;
+  readonly syncing: boolean;
+  readonly onSync: () => void;
 }) {
-  const label = inventorySyncStatusLabel(status);
-  const offline = !online && (status._tag === "caughtUp" || status._tag === "pendingConfirmation");
-  const shortLabel = offline ? "Offline" : statusShortLabel(status);
-  const icon = offline ? WifiOff01Icon : statusIcon(status);
-  const tone = offline ? "text-muted-foreground" : statusTone(status);
+  const [spinning, setSpinning] = useState(false);
+  if (syncing && !spinning) setSpinning(true);
+  const issue = attention(status);
+  const label = issue
+    ? inventorySyncStatusLabel(status)
+    : !online
+      ? "Offline. Changes sync when this device reconnects."
+      : syncing
+        ? "Syncing…"
+        : "Sync now";
+  const icon = issue?.icon ?? (online ? RefreshCwIcon : WifiOff01Icon);
   return (
-    <SidebarMenuItem>
-      <Popover>
-        <PopoverTrigger
-          render={
-            <SidebarMenuButton
-              aria-label={`Sync status: ${label}`}
-              size="sm"
-              tooltip={shortLabel}
-            />
-          }
-        >
-          <HugeiconsIcon aria-hidden="true" className={tone} icon={icon} />
-          <span className="text-muted-foreground">{shortLabel}</span>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-auto max-w-72" side="right">
-          <div className="flex flex-col gap-1 text-sm" role="status">
-            <div className="flex items-center gap-2">
-              <HugeiconsIcon
-                aria-hidden="true"
-                className={cn("size-4 shrink-0", statusTone(status))}
-                icon={statusIcon(status)}
-              />
-              <span>{label}</span>
-            </div>
-            {offline ? (
-              <p className="text-xs text-muted-foreground">
-                This device is offline. Changes are saved locally and sync when it reconnects.
-              </p>
-            ) : null}
-            {status._tag === "recoveryRequired" && status.retryable === true && onRetry ? (
-              <Button className="self-start" onClick={onRetry} size="xs" variant="outline">
-                Retry
-              </Button>
-            ) : null}
-          </div>
-        </PopoverContent>
-      </Popover>
-    </SidebarMenuItem>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <SidebarMenuAction
+            aria-label={label}
+            className="peer-data-[size=lg]/menu-button:top-3.5"
+            onAnimationIteration={() => {
+              if (!syncing) setSpinning(false);
+            }}
+            onClick={onSync}
+          />
+        }
+      >
+        <HugeiconsIcon
+          aria-hidden="true"
+          className={cn(
+            issue?.tone ?? "text-muted-foreground",
+            !issue && online && spinning && "animate-spin",
+          )}
+          icon={icon}
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="right">{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 
-export function SidebarSyncStatus() {
+export function SidebarSyncButton() {
   if (!useCatalogIsReady()) return null;
-  return <ReadySyncStatus />;
+  return <ReadySyncButton />;
 }
 
-function ReadySyncStatus() {
-  const { retrySync } = useInventoryActions();
+function ReadySyncButton() {
+  const { retrySync, syncNow } = useInventoryActions();
+  const status = useInventorySyncStatus();
   return (
-    <InventorySyncStatusView
+    <SyncButtonView
+      onSync={
+        status._tag === "recoveryRequired" && status.retryable === true
+          ? () => void retrySync().catch(() => undefined)
+          : syncNow
+      }
       online={useOnline()}
-      onRetry={() => {
-        void retrySync().catch(() => undefined);
-      }}
-      status={useInventorySyncStatus()}
+      status={status}
+      syncing={useInventorySyncing()}
     />
   );
 }

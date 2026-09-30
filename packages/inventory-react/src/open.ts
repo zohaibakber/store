@@ -211,12 +211,17 @@ const commitWakes = (replica: ReplicaHandle) =>
     { bufferSize: 1, strategy: "sliding" },
   );
 
-const followSyncHealth = (replica: ReplicaHandle) =>
+const sameHealth = (left: ReplicaSyncHealth, right: ReplicaSyncHealth) =>
+  left._tag === right._tag &&
+  (left._tag === "running" || right._tag === "running" || left.message === right.message);
+
+const followSyncHealth = (replica: ReplicaHandle, atoms: WorkspaceAtoms) =>
   Effect.gen(function* () {
     const health = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         replica.subscribeSyncHealth?.((next) => {
+          atoms.registry.set(atoms.syncing, next._tag === "running" && next.syncing === true);
           Effect.runSync(SubscriptionRef.set(health, next));
         }),
       ),
@@ -227,8 +232,11 @@ const followSyncHealth = (replica: ReplicaHandle) =>
 
 const followSyncStatus = (replica: ReplicaHandle, atoms: WorkspaceAtoms) =>
   Effect.gen(function* () {
-    const health = yield* followSyncHealth(replica);
-    yield* Stream.merge(commitWakes(replica), SubscriptionRef.changes(health)).pipe(
+    const health = yield* followSyncHealth(replica, atoms);
+    yield* Stream.merge(
+      commitWakes(replica),
+      SubscriptionRef.changes(health).pipe(Stream.changesWith(sameHealth)),
+    ).pipe(
       Stream.buffer({ capacity: 1, strategy: "sliding" }),
       Stream.mapEffect(() => Effect.all([readSyncSnapshot(replica), SubscriptionRef.get(health)])),
       Stream.runForEach(([snapshot, current]) =>

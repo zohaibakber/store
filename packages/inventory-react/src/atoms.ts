@@ -207,6 +207,7 @@ export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Writable<InventorySyncStatus>;
   readonly syncActivity: Atom.Writable<InventorySyncActivity>;
+  readonly syncing: Atom.Writable<boolean>;
   readonly pendingRowIds: (
     entity: SyncEntity,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlySet<string>, WorkspaceReadError>>;
@@ -294,6 +295,7 @@ export const createWorkspaceAtoms = (
     registry,
     syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
     syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
+    syncing: Atom.make(false).pipe(Atom.keepAlive),
     pendingRowIds: Atom.family((entity: SyncEntity) =>
       Atom.make(sources.readPendingRowIds(entity)).pipe(
         refreshOnCommits(sources, new Set([entity])),

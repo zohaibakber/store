@@ -78,6 +78,7 @@ export type SyncSchedulerStatus =
 
 export type SyncSchedulerContract = {
   readonly status: SubscriptionRef.SubscriptionRef<SyncSchedulerStatus>;
+  readonly syncing: SubscriptionRef.SubscriptionRef<boolean>;
   readonly wake: (reason: SyncWakeReason, hint?: SyncLiveWakeHint) => Effect.Effect<void>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void>;
   readonly setNetworkOwner: (owner: boolean) => Effect.Effect<void>;
@@ -175,6 +176,7 @@ const makeScheduler = <R>(
     const emptyPolls = yield* Ref.make(0);
     const retryAfter = yield* Ref.make<number | undefined>(undefined);
     const status = yield* SubscriptionRef.make<SyncSchedulerStatus>({ _tag: "running" });
+    const syncing = yield* SubscriptionRef.make(false);
     const maxRetryAfter = policy.maxRetryAfterMillis ?? DEFAULT_MAX_RETRY_AFTER_MILLIS;
 
     const backOff = Ref.update(emptyPolls, (n) => Math.min(n + 1, policy.backoffMillis.length));
@@ -210,9 +212,7 @@ const makeScheduler = <R>(
 
     const onFailure = (error: SyncFailureCause) => handleFailure(error, true);
 
-    const runCycle = Effect.gen(function* () {
-      const current = yield* Ref.get(visibility);
-      if (!current.owner) return;
+    const cycle = Effect.gen(function* () {
       const register = handlers.register;
       if (register !== undefined) {
         const registered = yield* register().pipe(
@@ -236,6 +236,13 @@ const makeScheduler = <R>(
           onSuccess: (outcome) => (outcome === "advanced" ? Ref.set(emptyPolls, 0) : backOff),
         }),
       );
+    });
+
+    const runCycle = Effect.gen(function* () {
+      const current = yield* Ref.get(visibility);
+      if (!current.owner) return;
+      yield* SubscriptionRef.set(syncing, true);
+      yield* cycle.pipe(Effect.ensuring(SubscriptionRef.set(syncing, false)));
     });
 
     const awaitWork: Effect.Effect<ReadonlyArray<QueuedWake>> = Effect.gen(function* () {
@@ -294,6 +301,7 @@ const makeScheduler = <R>(
 
     return {
       status,
+      syncing,
       wake: (reason, hint) =>
         Queue.offer(wakes, hint === undefined ? { reason } : { reason, hint }).pipe(Effect.asVoid),
       setVisible: (visible) => updateCadence((current) => ({ ...current, visible })),

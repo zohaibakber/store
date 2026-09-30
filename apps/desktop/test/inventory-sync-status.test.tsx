@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SidebarMenu, SidebarProvider } from "../src/components/ui/sidebar";
 import { InventoryProvider, InventoryReady } from "../src/lib/inventory/provider";
-import { SidebarSyncStatus } from "../src/lib/inventory/sync-status";
+import { SidebarSyncButton } from "../src/lib/inventory/sync-status";
 import { renderWithRouter } from "./lib/render";
 
 const inSidebar = (ui: ReactNode) => (
@@ -21,10 +21,9 @@ const inSidebar = (ui: ReactNode) => (
   </SidebarProvider>
 );
 
-const findStatusButton = (label: string) =>
-  screen.findByRole("button", { name: `Sync status: ${label}` });
+const findStatusButton = (label: string) => screen.findByRole("button", { name: label });
 
-describe("SidebarSyncStatus", () => {
+describe("SidebarSyncButton", () => {
   it("follows the owned session's scheduler halts into the sync status", async () => {
     const replica = await openNodeReplicaSqlite({
       organizationId: "org-1",
@@ -55,13 +54,13 @@ describe("SidebarSyncStatus", () => {
     const lease = catalog.claim({ organizationId: "org-1", userId: "user-1" });
     renderWithRouter(
       <InventoryProvider catalog={catalog} host={host} lease={lease}>
-        {inSidebar(<SidebarSyncStatus />)}
+        {inSidebar(<SidebarSyncButton />)}
         <InventoryReady>
           <p>Ready shell</p>
         </InventoryReady>
       </InventoryProvider>,
     );
-    expect(await findStatusButton("Caught up")).toBeTruthy();
+    expect(await findStatusButton("Sync now")).toBeTruthy();
     expect(screen.getByText("Ready shell")).toBeTruthy();
 
     act(() => {
@@ -77,7 +76,7 @@ describe("SidebarSyncStatus", () => {
     act(() => {
       emit({ _tag: "running" });
     });
-    expect(await findStatusButton("Caught up")).toBeTruthy();
+    expect(await findStatusButton("Sync now")).toBeTruthy();
     catalog.release();
     await vi.waitFor(() => {
       expect(listeners.size).toBe(0);
