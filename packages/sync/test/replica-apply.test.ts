@@ -27,6 +27,7 @@ import {
   visibleBatchStock,
 } from "../src/replica/commands";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { invoicePayloadOf, seedReplicaTenUnits, withSeededReplica } from "./lib/replica-fixture";
 
 const confirmedBatch = (unitQuantity: number, rowVersion = 2) => ({
@@ -102,7 +103,7 @@ describe("replica overlay apply", () => {
         runReplicaTransaction(store, (tx) =>
           Effect.gen(function* () {
             const start = yield* visibleBatchStock(tx, LAST_UNIT_BATCH_ID);
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             const overlaid = yield* visibleBatchStock(tx, LAST_UNIT_BATCH_ID);
             const pending = yield* commandStatus(tx, lastUnitBuyerAEnvelope.operationId);
             yield* applyTransactionGroup(tx, confirmedSale());
@@ -142,7 +143,7 @@ describe("replica overlay apply", () => {
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             const overlaid = yield* visibleBatchStock(tx, LAST_UNIT_BATCH_ID);
             yield* applyTransactionGroup(tx, otherTerminalSale(7, "1", 2));
             const stored = yield* tx
@@ -193,7 +194,7 @@ describe("replica overlay apply", () => {
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             yield* recordCommandReceipt(tx, acceptedReceipt());
             const accepted = yield* commandStatus(tx, lastUnitBuyerAEnvelope.operationId);
             const beforeDelta = yield* visibleBatchStock(tx, LAST_UNIT_BATCH_ID);
@@ -214,7 +215,7 @@ describe("replica overlay apply", () => {
       withSeededReplica((store) =>
         runReplicaTransaction(store, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             yield* applyTransactionGroup(tx, confirmedSale());
             const integrated = yield* commandStatus(tx, lastUnitBuyerAEnvelope.operationId);
             yield* recordCommandReceipt(tx, acceptedReceipt());
@@ -238,7 +239,9 @@ describe("replica command lifetime", () => {
     await Effect.runPromise(
       withSeededReplica(
         (store) =>
-          runReplicaTransaction(store, (tx) => saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1)),
+          runReplicaTransaction(store, (tx) =>
+            saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1)),
+          ),
         path,
       ),
     );
@@ -267,7 +270,7 @@ describe("replica command lifetime", () => {
           const store = yield* seedReplicaTenUnits();
           const failure = yield* runReplicaTransaction(store, (tx) =>
             Effect.gen(function* () {
-              yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+              yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
               return yield* Effect.fail("disk full");
             }),
           ).pipe(Effect.flip);

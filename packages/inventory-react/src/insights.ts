@@ -1,21 +1,34 @@
 import { useAtom, useAtomRefresh, useAtomSuspense } from "@effect/atom-react";
-import type { InsightsReport, ProductInsight } from "@store/services/insights";
+import type {
+  AnalyticsStatus,
+  InsightsSummary,
+  ProductInsight,
+  RestockPageRead,
+  RestockPageRequest,
+} from "@store/contracts";
 
 import { stockPolicyAtom } from "./atoms";
 import { useCatalogReplica } from "./provider";
 
 export type InventoryInsights = {
-  readonly report: InsightsReport;
+  readonly summary: InsightsSummary | null;
+  readonly status: AnalyticsStatus;
   readonly refreshing: boolean;
 };
 
 export const useInventoryInsights = (): InventoryInsights => {
   const result = useAtomSuspense(useCatalogReplica().atoms.insights);
-  return { report: result.value, refreshing: result.waiting };
+  const { summary, status } = result.value;
+  return { summary, status, refreshing: result.waiting || status.state !== "idle" };
 };
 
 export const useProductInsight = (productId: string): ProductInsight | null =>
   useAtomSuspense(useCatalogReplica().atoms.productInsight(productId)).value;
+
+export const useRestockPage = (request: RestockPageRequest): RestockPageRead =>
+  useAtomSuspense(useCatalogReplica().atoms.restockPage(request)).value;
+
+export const useRestockExport = () => useCatalogReplica().atoms.exportRestock;
 
 export const useRefreshInventoryInsights = () => useAtomRefresh(useCatalogReplica().atoms.insights);
 

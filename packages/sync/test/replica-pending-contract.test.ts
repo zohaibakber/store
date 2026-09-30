@@ -41,6 +41,7 @@ import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { enqueueRequestOf } from "./lib/enqueue";
 import {
   catalogEnvelope,
   deleteSpareBatchWrite,
@@ -356,7 +357,7 @@ for (const adapter of adapters) {
     it.effect("makes an offline invoice readable with a pending mark", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           const invoiceRows = yield* harness.rows("invoice");
           const itemRows = yield* harness.rows("invoiceItem");
           const movementRows = yield* harness.rows("stockMovement");
@@ -377,7 +378,7 @@ for (const adapter of adapters) {
     it.effect("replaces shadow rows with authoritative rows and clears the mark", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           yield* harness.store.applyTransactionGroup(
             authoritativeInvoiceGroup({
               operationId: lastUnitBuyerAEnvelope.operationId,
@@ -404,7 +405,7 @@ for (const adapter of adapters) {
             clientSequence: "1",
             writes: [insertCategoryWrite, renameProductWrite("Renamed")],
           });
-          yield* harness.store.enqueueCommand(envelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
           const shadowedCategories = yield* harness.rows("category");
           const shadowedProducts = yield* harness.rows("product");
           expect(findRow(shadowedCategories, NEW_CATEGORY_ID)).toBeDefined();
@@ -445,7 +446,7 @@ for (const adapter of adapters) {
     it.effect("keeps invoice items readable when their product is deleted", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           yield* harness.store.applyTransactionGroup(
             deleteGroup({
               entity: "product",
@@ -484,7 +485,7 @@ for (const adapter of adapters) {
             clientSequence: "1",
             writes: [deleteSpareBatchWrite],
           });
-          yield* harness.store.enqueueCommand(envelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
           const shadowed = yield* harness.rows("batch");
           expect(findRow(shadowed, SPARE_BATCH_ID)).toBeUndefined();
 
@@ -507,7 +508,7 @@ for (const adapter of adapters) {
             clientSequence: "1",
             writes: [restockBatchWrite({ movementId: "restock-1", unitQuantity: 25 })],
           });
-          yield* harness.store.enqueueCommand(envelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
           const batchRows = yield* harness.rows("batch");
           const movementRows = yield* harness.rows("stockMovement");
           const overlays = yield* harness.overlayCount();
@@ -522,8 +523,8 @@ for (const adapter of adapters) {
     it.effect("re-applies shadows for outstanding commands after snapshot activation", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
-          yield* harness.store.beginSnapshotImport(snapshotManifest);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
+          yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
           yield* harness.store.importSnapshotPart(snapshotManifest, snapshotPart);
           yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
           const invoiceRows = yield* harness.rows("invoice");
@@ -545,7 +546,9 @@ for (const adapter of adapters) {
             quantity: 50,
             invoiceNumber: 3,
           });
-          const failure = yield* Effect.flip(harness.store.enqueueCommand(envelope, 1));
+          const failure = yield* Effect.flip(
+            harness.store.enqueueCommand(enqueueRequestOf(envelope, 1)),
+          );
           expect(failure._tag).toBe("SyncProtocolError");
           const invoiceRows = yield* harness.rows("invoice");
           expect(invoiceRows).toHaveLength(0);
@@ -556,8 +559,10 @@ for (const adapter of adapters) {
     it.effect("produces no duplicate shadow rows on idempotent replay", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
-          const replay = yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 2);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
+          const replay = yield* harness.store.enqueueCommand(
+            enqueueRequestOf(lastUnitBuyerAEnvelope, 2),
+          );
           const itemRows = yield* harness.rows("invoiceItem");
           const marks = yield* harness.store.readPendingMarks();
           expect(replay.notice).toBeUndefined();
@@ -576,7 +581,7 @@ for (const adapter of adapters) {
             quantity: 1,
             invoiceNumber: 5,
           });
-          yield* harness.store.enqueueCommand(envelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
           const applied = yield* harness.store.applyTransactionGroup(
             authoritativeInvoiceGroup({
               operationId: "remote-invoice",
@@ -615,7 +620,7 @@ for (const adapter of adapters) {
     it.effect("keeps a command pending and claimable after many failed upload cycles", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           for (let attempt = 0; attempt < 20; attempt += 1) {
             const claimed = yield* harness.store.claimNextUpload({
               claimId: `claim-${attempt}`,
@@ -671,8 +676,8 @@ for (const adapter of adapters) {
     it.effect("restores the original row when two stacked renames are both rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(firstRename, 1);
-          yield* harness.store.enqueueCommand(secondRename, 2);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
           expect(yield* productName(harness)).toBe("Second");
 
           yield* rejectNext(harness, firstRename, "10");
@@ -688,8 +693,8 @@ for (const adapter of adapters) {
     it.effect("keeps a remote update when an earlier stacked rename is rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(firstRename, 1);
-          yield* harness.store.enqueueCommand(secondRename, 2);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
           yield* harness.store.applyTransactionGroup(remoteProductGroup);
           expect(yield* productName(harness)).toBe("Remote name");
           const marks = yield* harness.store.readPendingMarks();
@@ -708,8 +713,8 @@ for (const adapter of adapters) {
     it.effect("keeps a remotely deleted row deleted when shadowing renames are rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(firstRename, 1);
-          yield* harness.store.enqueueCommand(secondRename, 2);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
           yield* harness.store.applyTransactionGroup(
             deleteGroup({
               entity: "product",
@@ -731,7 +736,7 @@ for (const adapter of adapters) {
       withHarness((harness) =>
         Effect.gen(function* () {
           expect(findRow(yield* harness.rows("batch"), SPARE_BATCH_ID)).toBeDefined();
-          yield* harness.store.beginSnapshotImport(snapshotManifest);
+          yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
           yield* harness.store.importSnapshotPart(snapshotManifest, snapshotPart);
           yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
           const batchRows = yield* harness.rows("batch");
@@ -745,20 +750,22 @@ for (const adapter of adapters) {
       withHarness((harness) =>
         Effect.gen(function* () {
           yield* harness.store.enqueueCommand(
-            catalogEnvelope({
-              operationId: "local-tea",
-              clientSequence: "1",
-              writes: [
-                {
-                  entity: "category",
-                  action: "upsert",
-                  id: NEW_CATEGORY_ID,
-                  expectedRowVersion: null,
-                  row: { name: "Tea", tracksPacks: false },
-                },
-              ],
-            }),
-            1,
+            enqueueRequestOf(
+              catalogEnvelope({
+                operationId: "local-tea",
+                clientSequence: "1",
+                writes: [
+                  {
+                    entity: "category",
+                    action: "upsert",
+                    id: NEW_CATEGORY_ID,
+                    expectedRowVersion: null,
+                    row: { name: "Tea", tracksPacks: false },
+                  },
+                ],
+              }),
+              1,
+            ),
           );
           const teaPart: SnapshotPartPayload = {
             ...snapshotPart,
@@ -784,7 +791,7 @@ for (const adapter of adapters) {
               },
             ],
           };
-          yield* harness.store.beginSnapshotImport(snapshotManifest);
+          yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
           yield* harness.store.importSnapshotPart(snapshotManifest, teaPart);
           yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
           const categoryRows = yield* harness.rows("category");
@@ -804,7 +811,7 @@ for (const adapter of adapters) {
             clientSequence: "1",
             writes: [insertCategoryWrite],
           });
-          yield* harness.store.enqueueCommand(envelope, 1);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
           const applied = yield* harness.store.applyTransactionGroup(remoteColdChainGroup);
           const afterRemote = yield* harness.rows("category");
           expect(findRow(afterRemote, "remote-cold")?.["name"]).toBe("Cold chain");

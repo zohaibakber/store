@@ -89,13 +89,12 @@ const PendingRowMark = Schema.Struct({
   operationId: NonEmptyString,
 });
 
-export const PendingRowJournalEntry = Schema.Struct({
+const PendingRowJournalEntry = Schema.Struct({
   operationId: NonEmptyString,
   entity: NonEmptyString,
   entityId: NonEmptyString,
   priorRowJson: Schema.NullOr(NonEmptyString),
 });
-export type PendingRowJournalEntry = typeof PendingRowJournalEntry.Type;
 
 const StagedSnapshotRow = Schema.Struct({
   snapshotId: NonEmptyString,
@@ -235,6 +234,29 @@ class InvoiceTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
+class InvoiceTableV2 extends IndexedDbTable.make({
+  name: "invoices",
+  schema: withGeneration(ReplicaInvoiceRow.fields),
+  keyPath: ["generation", "id"],
+  indexes: {
+    byCreatedAt: ["generation", "createdAt"],
+    byOperation: ["generation", "operationId"],
+    byInvoiceNumber: ["generation", "invoiceNumber"],
+  },
+  durability: "strict",
+}) {}
+
+class PendingRowJournalTableV2 extends IndexedDbTable.make({
+  name: "pending_row_journal",
+  schema: PendingRowJournalEntry,
+  keyPath: ["operationId", "entity", "entityId"],
+  indexes: {
+    byOperation: "operationId",
+    byEntity: ["entity", "entityId"],
+  },
+  durability: "strict",
+}) {}
+
 class InvoiceItemTable extends IndexedDbTable.make({
   name: "invoice_items",
   schema: withGeneration(ReplicaInvoiceItemRow.fields),
@@ -272,6 +294,23 @@ class ReplicaV1 extends IndexedDbVersion.make(
   StockMovementTable,
 ) {}
 
+class ReplicaV2 extends IndexedDbVersion.make(
+  ReplicaStateTable,
+  OutboxTable,
+  CoverageTable,
+  SnapshotImportTable,
+  StockOverlayTable,
+  StagedSnapshotTable,
+  PendingRowMarkTable,
+  PendingRowJournalTableV2,
+  CategoryTable,
+  ProductTable,
+  BatchTable,
+  InvoiceTableV2,
+  InvoiceItemTable,
+  StockMovementTable,
+) {}
+
 export class ReplicaIndexedDb extends IndexedDbDatabase.make(
   ReplicaV1,
   Effect.fn("ReplicaIndexedDb.init")(function* (api) {
@@ -304,6 +343,12 @@ export class ReplicaIndexedDb extends IndexedDbDatabase.make(
     yield* api.createIndex("invoice_items", "byInvoice");
     yield* api.createObjectStore("stock_movements");
     yield* api.createIndex("stock_movements", "byProduct");
+  }),
+).add(
+  ReplicaV2,
+  Effect.fn("ReplicaIndexedDb.addLookupIndexes")(function* (_from, api) {
+    yield* api.createIndex("invoices", "byInvoiceNumber");
+    yield* api.createIndex("pending_row_journal", "byEntity");
   }),
 ) {}
 

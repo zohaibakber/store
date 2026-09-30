@@ -23,6 +23,7 @@ import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "../src/replica/sqlite/activity";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { enqueueRequestOf } from "./lib/enqueue";
 import {
   acceptedCatalogReceipt,
   catalogEnvelope,
@@ -105,7 +106,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           clientSequence: "1",
           writes: [renameProductWrite("Renamed")],
         });
-        yield* harness.store.enqueueCommand(submitted, 1);
+        yield* harness.store.enqueueCommand(enqueueRequestOf(submitted, 1));
         expect(yield* harness.readPendingRowIds("product")).toEqual([LAST_UNIT_PRODUCT_ID]);
         yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10 });
 
@@ -150,7 +151,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           clientSequence: "1",
           writes: [renameProductWrite("Renamed")],
         });
-        yield* harness.store.enqueueCommand(rejected, 1);
+        yield* harness.store.enqueueCommand(enqueueRequestOf(rejected, 1));
         expect(yield* harness.readPendingRowIds("product")).toEqual([LAST_UNIT_PRODUCT_ID]);
         yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10 });
         yield* harness.store.settleUploadClaim("claim-1", rejectedReceipt(rejected, "6"));
@@ -160,7 +161,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           clientSequence: "2",
           writes: [insertCategoryWrite],
         });
-        yield* harness.store.enqueueCommand(pending, 2);
+        yield* harness.store.enqueueCommand(enqueueRequestOf(pending, 2));
 
         const activity = yield* harness.readActivity();
         expect(

@@ -14,6 +14,7 @@ import { encodeEnvelopeJson } from "../src/replica/codecs";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { runReplicaTransaction } from "../src/replica/storage";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { seedCatalogGroup } from "./lib/pending-fixture";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
@@ -87,7 +88,7 @@ describe("replica store contract", () => {
 
           const sqliteHandle = yield* seedReplicaTenUnits();
           const sqlite = yield* makeSqliteReplicaStore(sqliteHandle, "sqlite-contract");
-          yield* sqlite.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* sqlite.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           yield* runReplicaTransaction(sqliteHandle, (tx) =>
             tx
               .update(commandOutbox)
@@ -107,7 +108,7 @@ describe("replica store contract", () => {
             IDBKeyRange,
           });
           yield* indexed.applyTransactionGroup(seedCatalogGroup);
-          yield* indexed.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+          yield* indexed.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
           yield* Effect.promise(() =>
             rewriteIndexedDbEnvelope(lastUnitBuyerAEnvelope.operationId, tampered),
           );
@@ -143,7 +144,7 @@ describe("replica store contract", () => {
         IDBKeyRange,
       });
       yield* indexed.applyTransactionGroup(seedCatalogGroup);
-      yield* indexed.enqueueCommand(lastUnitBuyerAEnvelope, 1);
+      yield* indexed.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
       const read = yield* indexed.querySubset({
         table: "batches",
         scan: { _tag: "primaryEquals", id: LAST_UNIT_BATCH_ID },

@@ -7,6 +7,7 @@ export {
   stockMovements,
 } from "../shared/store.schema";
 
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -49,7 +50,11 @@ export const commandOutbox = sqliteTable(
     commitSequence: text(),
   },
   (table) => [
-    index("command_outbox_status_client_sequence_idx").on(table.status, table.clientSequence),
+    index("command_outbox_status_sequence_idx").on(
+      table.status,
+      sql`length(${table.clientSequence})`,
+      table.clientSequence,
+    ),
   ],
 );
 
@@ -66,9 +71,31 @@ export const snapshotImports = sqliteTable("snapshot_imports", {
   generation: integer({ mode: "number" }).notNull(),
   subscription: text().notNull(),
   horizon: text().notNull(),
-  stage: text({ enum: ["importing", "caught_up", "activated", "failed"] }).notNull(),
+  stage: text({
+    enum: ["importing", "caught_up", "rebuilding", "replaying", "activated", "failed"],
+  }).notNull(),
   partsImported: integer({ mode: "number" }).notNull().default(0),
   partsTotal: integer({ mode: "number" }).notNull(),
+  candidateThrough: text().notNull().default("0"),
+  requiredThrough: text().notNull().default("0"),
+  journalCursor: integer({ mode: "number" }).notNull().default(0),
+  rebuildBoundary: integer({ mode: "number" }),
+  rebuildCursor: integer({ mode: "number" }).notNull().default(0),
+});
+
+export const generationState = sqliteTable("generation_state", {
+  id: text().primaryKey().notNull(),
+  standby: text({ enum: ["empty", "candidate", "retired"] }).notNull(),
+  candidateSnapshotId: text(),
+  statsStale: integer({ mode: "boolean" }).notNull().default(false),
+});
+
+export const generationJournal = sqliteTable("generation_journal", {
+  seq: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+  kind: text({ enum: ["group", "local", "reject"] }).notNull(),
+  operationId: text().notNull(),
+  commitSequence: text(),
+  payloadJson: text(),
 });
 
 export const stockOverlays = sqliteTable(
@@ -85,6 +112,7 @@ export const stockOverlays = sqliteTable(
       columns: [table.commandId, table.batchId],
     }),
     uniqueIndex("stock_overlays_command_id_batch_id_uidx").on(table.commandId, table.batchId),
+    index("stock_overlays_batch_id_idx").on(table.batchId),
   ],
 );
 

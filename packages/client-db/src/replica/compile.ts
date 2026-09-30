@@ -2,6 +2,7 @@ import * as schema from "@store/db/replica.schema";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   getTableColumns,
@@ -14,6 +15,7 @@ import {
   lt,
   lte,
   not,
+  notExists,
   or,
   sql,
   type SQL,
@@ -83,20 +85,22 @@ const overlaySum = (delta: SQLiteColumn) =>
     .where(
       and(
         eq(schema.stockOverlays.batchId, schema.batches.id),
-        sql`NOT EXISTS ${queryBuilder
-          .select({ one: sql`1` })
-          .from(schema.pendingRowMarks)
-          .innerJoin(
-            absoluteCommand,
-            eq(absoluteCommand.operationId, schema.pendingRowMarks.operationId),
-          )
-          .where(
-            and(
-              sql`${schema.pendingRowMarks.entity} = 'batch'`,
-              eq(schema.pendingRowMarks.entityId, schema.batches.id),
-              not(sequenceAfter(overlayCommand.clientSequence, absoluteCommand.clientSequence)),
+        notExists(
+          queryBuilder
+            .select({ one: sql`1` })
+            .from(schema.pendingRowMarks)
+            .innerJoin(
+              absoluteCommand,
+              eq(absoluteCommand.operationId, schema.pendingRowMarks.operationId),
+            )
+            .where(
+              and(
+                eq(schema.pendingRowMarks.entity, "batch"),
+                eq(schema.pendingRowMarks.entityId, schema.batches.id),
+                not(sequenceAfter(overlayCommand.clientSequence, absoluteCommand.clientSequence)),
+              ),
             ),
-          )}`,
+        ),
       ),
     )}, 0)`;
 
@@ -129,12 +133,58 @@ export const visibleBatches = queryBuilder.$with("visible_batches").as(
 
 const COMPARISONS = { eq, gt, gte, lt, lte } as const;
 
+type TextSearchIndex = {
+  readonly table: string;
+  readonly rowid: SQL;
+  readonly columns: ReadonlySet<string>;
+};
+
+const PRODUCT_SEARCH_INDEX = {
+  table: "products_search",
+  rowid: sql`${schema.products}.rowid`,
+  columns: new Set(["name", "composition", "strength"]),
+} satisfies TextSearchIndex;
+
+const textSearchIndex = (source: InventoryCollectionSource): TextSearchIndex | undefined =>
+  source === "products" ? PRODUCT_SEARCH_INDEX : undefined;
+
+const MIN_TRIGRAM_CHARACTERS = 3;
+
+const CONTAINED_TEXT = /^%([^%_]+)%$/u;
+
+const containedText = (pattern: string): string | undefined => {
+  const text = CONTAINED_TEXT.exec(pattern)?.[1];
+  return text !== undefined && Array.from(text).length >= MIN_TRIGRAM_CHARACTERS ? text : undefined;
+};
+
+const textSearchMatch = (predicate: SubsetPredicate, index: TextSearchIndex) => {
+  const leaves = predicate._tag === "or" ? predicate.predicates : [predicate];
+  const columns: Array<string> = [];
+  let text: string | undefined;
+  for (const leaf of leaves) {
+    if (leaf._tag !== "like" || !index.columns.has(leaf.column)) return undefined;
+    const contained = containedText(leaf.pattern);
+    if (contained === undefined || (text !== undefined && contained !== text)) return undefined;
+    text = contained;
+    columns.push(leaf.column);
+  }
+  if (text === undefined) return undefined;
+  return `{${[...new Set(columns)].join(" ")}} : "${text.replaceAll('"', '""')}"`;
+};
+
 const lowerPredicate = (
   predicate: SubsetPredicate,
   columns: ReadonlySet<string>,
   lookup: Record<string, SQLiteColumn>,
+  search?: TextSearchIndex,
 ): Effect.Effect<SQL, UnsupportedSubsetQuery> =>
   Effect.gen(function* () {
+    const match = search ? textSearchMatch(predicate, search) : undefined;
+    if (search && match !== undefined) {
+      const exact = yield* lowerPredicate(predicate, columns, lookup);
+      const table = sql.identifier(search.table);
+      return sql`(${search.rowid} in (select rowid from ${table} where ${table} match ${match}) and ${exact})`;
+    }
     const column = (name: string) =>
       allowlisted(name, columns).pipe(
         Effect.flatMap((allowed) => {
@@ -146,13 +196,13 @@ const lowerPredicate = (
       case "and":
       case "or": {
         const inner = yield* Effect.forEach(predicate.predicates, (nested) =>
-          lowerPredicate(nested, columns, lookup),
+          lowerPredicate(nested, columns, lookup, search),
         );
         if (predicate._tag === "and") return and(...inner) ?? sql`1`;
         return or(...inner) ?? sql`0`;
       }
       case "not":
-        return sql`NOT (${yield* lowerPredicate(predicate.predicate, columns, lookup)})`;
+        return not(yield* lowerPredicate(predicate.predicate, columns, lookup)) ?? sql`0`;
       case "isNull":
         return isNull(yield* column(predicate.column));
       case "in": {
@@ -180,7 +230,7 @@ const SqliteParameterSchema = Schema.Union([
 
 const decodeParameters = Schema.decodeUnknownSync(Schema.Array(SqliteParameterSchema));
 
-const toStatement = (query: { toSQL: () => { sql: string; params: Array<unknown> } }) => {
+export const toStatement = (query: { toSQL: () => { sql: string; params: Array<unknown> } }) => {
   const built = query.toSQL();
   return {
     sql: built.sql,
@@ -203,7 +253,12 @@ export const lowerSqliteSubset = (
           }
         : getTableColumns(SOURCE_TABLES[spec.source]);
     const where = spec.where
-      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source], lookup)
+      ? yield* lowerPredicate(
+          spec.where,
+          FILTER_COLUMNS[spec.source],
+          lookup,
+          textSearchIndex(spec.source),
+        )
       : undefined;
     const orderBy = yield* Effect.forEach(resolveSubsetOrder(spec), (clause) =>
       allowlisted(clause.column, ORDER_COLUMNS[spec.source]).pipe(
@@ -245,7 +300,12 @@ export const lowerSqliteSummary = (
     const table = SOURCE_TABLES[spec.source];
     const lookup: Record<string, SQLiteColumn> = getTableColumns(table);
     const where = spec.where
-      ? yield* lowerPredicate(spec.where, FILTER_COLUMNS[spec.source], lookup)
+      ? yield* lowerPredicate(
+          spec.where,
+          FILTER_COLUMNS[spec.source],
+          lookup,
+          textSearchIndex(spec.source),
+        )
       : undefined;
     const distinct = yield* Effect.forEach(spec.distinct, (column) =>
       allowlisted(column, DISTINCT_COLUMNS[spec.source]).pipe(
@@ -270,7 +330,7 @@ export const lowerSqliteSummary = (
     return {
       count: toStatement(
         queryBuilder
-          .select({ count: sql<number>`count(*)`.as("count") })
+          .select({ count: count().as("count") })
           .from(table)
           .where(where),
       ),

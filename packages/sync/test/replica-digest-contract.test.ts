@@ -38,6 +38,7 @@ import {
   type AuthorityPartition,
   type PostgresPartitionTables,
 } from "./lib/authority-digest";
+import { enqueueRequestOf } from "./lib/enqueue";
 import {
   catalogEnvelope,
   FIXTURE_NOW,
@@ -404,12 +405,14 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
         Effect.gen(function* () {
           yield* engine.downloadOnce(pullRequest);
           yield* harness.store.enqueueCommand(
-            catalogEnvelope({
-              operationId: "pending-rename",
-              clientSequence: "1",
-              writes: [renameProductWrite("Local only")],
-            }),
-            NOW,
+            enqueueRequestOf(
+              catalogEnvelope({
+                operationId: "pending-rename",
+                clientSequence: "1",
+                writes: [renameProductWrite("Local only")],
+              }),
+              NOW,
+            ),
           );
           yield* TestClock.adjust("7 hours");
           const exit = yield* Effect.exit(engine.downloadOnce(pullRequest));

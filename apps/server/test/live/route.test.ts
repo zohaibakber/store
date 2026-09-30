@@ -210,7 +210,7 @@ describe("live upgrade on Postgres", () => {
     return Effect.runPromise(
       Effect.gen(function* () {
         const db = yield* PgDrizzle.makeWithDefaults();
-        const live = makeInventoryLive(db);
+        const live = yield* makeInventoryLive(db);
         const counted = yield* countStatements(
           liveSocketHandler({
             hubs: fixture.hubs,

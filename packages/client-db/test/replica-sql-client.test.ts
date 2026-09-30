@@ -2,8 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SyncCommandEnvelope } from "@store/contracts";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
+import { EnqueueCommandRequest } from "@store/contracts";
 import { openReplicaStore } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -25,14 +24,10 @@ const sqlClientAt = (path: string): Layer.Layer<SqlClient> =>
 
 const sqlClientLayer = sqlClientAt(":memory:");
 
-const categoryEnvelope = (): SyncCommandEnvelope => {
-  const draft = Schema.decodeUnknownSync(SyncCommandEnvelope)({
-    organizationId: identity.organizationId,
-    epoch: "1",
-    replicaId: identity.replicaId,
-    clientSequence: "1",
+const categoryRequest = (): EnqueueCommandRequest =>
+  Schema.decodeUnknownSync(EnqueueCommandRequest)({
     operationId: "op-category",
-    payloadHash: canonicalPayloadHash("placeholder"),
+    occurredAt: 1,
     command: {
       _tag: "catalogWrite",
       payload: {
@@ -51,8 +46,6 @@ const categoryEnvelope = (): SyncCommandEnvelope => {
       },
     },
   });
-  return { ...draft, payloadHash: canonicalPayloadHash(draft.command) };
-};
 
 const unavailableFetch = () => {
   const requested: Array<string> = [];
@@ -80,7 +73,7 @@ describe("openSqlClientReplicaHandle", () => {
     const unsubscribe = handle.subscribe((notice) => notices.push(notice));
 
     expect(handle.engine).toBe("sqlite");
-    expect(await handle.readCommandAllocation()).toEqual({ epoch: "1", nextClientSequence: "1" });
+    expect(await handle.readCommandStatus("op-category")).toBeUndefined();
     const before = await handle.stamp();
     expect(before).toEqual({
       workspaceToken: "sql-client-handle",
@@ -88,8 +81,13 @@ describe("openSqlClientReplicaHandle", () => {
       localCommitVersion: 0,
     });
 
-    const queued = await handle.enqueueLocal(categoryEnvelope(), 1);
-    expect(queued).toEqual({ changed: true, status: "pending" });
+    const queued = await handle.enqueueCommand(categoryRequest());
+    expect(queued).toEqual({
+      operationId: "op-category",
+      status: "pending",
+      stamp: { workspaceToken: "sql-client-handle", generationId: "1", localCommitVersion: 1 },
+    });
+    expect(await handle.readCommandStatus("op-category")).toBe("pending");
     expect(await handle.readOutboxStatuses()).toEqual(["pending"]);
 
     const read = await handle.readSubset({
@@ -107,7 +105,7 @@ describe("openSqlClientReplicaHandle", () => {
     });
 
     unsubscribe();
-    await handle.dispose();
+    await handle.close();
   });
 
   it("keeps the replica identity stored in an existing database file", async () => {
@@ -127,13 +125,13 @@ describe("openSqlClientReplicaHandle", () => {
     try {
       const first = await open("replica-1");
       expect(first.replicaId).toBe("replica-1");
-      await first.enqueueLocal(categoryEnvelope(), 1);
-      await first.dispose();
+      await first.enqueueCommand(categoryRequest());
+      await first.close();
 
       const reopened = await open("replica-minted-later");
       expect(reopened.replicaId).toBe("replica-1");
       expect(await reopened.readOutboxStatuses()).toHaveLength(1);
-      await reopened.dispose();
+      await reopened.close();
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -150,13 +148,13 @@ describe("openSqlClientReplicaHandle", () => {
         accessToken: noAccessToken,
       },
     });
-    await handle.enqueueLocal(categoryEnvelope(), 1);
+    await handle.enqueueCommand(categoryRequest());
     const activity = await handle.readOutboxActivity?.();
     expect(activity?.statusCounts.map((entry) => entry.count)).toEqual([1]);
     expect(["pending", "sending"]).toContain(activity?.statusCounts[0]?.status);
     expect(activity?.rejected).toEqual([]);
     expect(await handle.readPendingRowIds?.("category")).toEqual(["category-1"]);
-    await handle.dispose();
+    await handle.close();
   });
 
   it("stops network work once disposed", async () => {
@@ -180,7 +178,7 @@ describe("openSqlClientReplicaHandle", () => {
         },
       });
       await vi.waitFor(() => expect(network.requested.length).toBeGreaterThan(1));
-      await handle.dispose();
+      await handle.close();
       const settled = network.requested.length;
       await vi.advanceTimersByTimeAsync(1_000);
       expect(network.requested.length).toBe(settled);

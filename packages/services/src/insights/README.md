@@ -2,8 +2,7 @@
 
 `analyzeInsights(facts, policy, now)` turns one replica's aggregated facts into a
 prioritized report: per-product stock plans, ranked alerts, sales periods, and
-inventory value. `InsightsService` wraps it for Effect callers with policy
-decoding and a traced span.
+inventory value.
 
 ## Inputs
 

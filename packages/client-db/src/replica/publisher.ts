@@ -1,43 +1,53 @@
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
+import { NOTICE_BUFFER_CAPACITY, offerCoalescing } from "./notice-coalescing";
 import type { ReplicaChangeFeed, ReplicaChangeUnsubscribe, ReplicaCommitNotice } from "./types";
 
 export type ReplicaCommitPublisher = ReplicaChangeFeed & {
   readonly publish: (notice: ReplicaCommitNotice) => void;
-  readonly dispose: () => void;
+  readonly dispose: () => Promise<void>;
 };
 
 export const createReplicaCommitPublisher = (): ReplicaCommitPublisher => {
-  const hub = Effect.runSync(PubSub.unbounded<ReplicaCommitNotice>());
+  const lifetime = Effect.runSync(Scope.make());
+  const closing = Effect.runSync(Effect.cached(Scope.close(lifetime, Exit.void)));
+  const buffers = new Set<Queue.Queue<ReplicaCommitNotice>>();
 
   return {
     subscribe: (listener: (notice: ReplicaCommitNotice) => void): ReplicaChangeUnsubscribe => {
-      if (PubSub.isShutdownUnsafe(hub)) return () => undefined;
-      const scope = Effect.runSync(Scope.make());
+      const scope = Effect.runSync(Scope.fork(lifetime));
+      const buffer = Effect.runSync(Queue.bounded<ReplicaCommitNotice>(NOTICE_BUFFER_CAPACITY));
+      buffers.add(buffer);
       Effect.runSync(
-        PubSub.subscribe(hub).pipe(
-          Effect.flatMap((subscription) =>
-            Stream.fromSubscription(subscription).pipe(
-              Stream.runForEach((notice) => Effect.sync(() => listener(notice))),
-              Effect.forkScoped,
+        Effect.gen(function* () {
+          yield* Scope.addFinalizer(
+            scope,
+            Effect.suspend(() => {
+              buffers.delete(buffer);
+              return Queue.shutdown(buffer);
+            }),
+          );
+          yield* Stream.fromQueue(buffer).pipe(
+            Stream.runForEach((notice) =>
+              Effect.try({ try: () => listener(notice), catch: (cause) => cause }).pipe(
+                Effect.catch((cause) => Effect.logError("ReplicaCommitPublisher.listener", cause)),
+              ),
             ),
-          ),
-          Scope.provide(scope),
-        ),
+            Effect.forkScoped,
+          );
+        }).pipe(Scope.provide(scope)),
       );
       return () => {
         void Effect.runPromise(Scope.close(scope, Exit.void));
       };
     },
     publish: (notice: ReplicaCommitNotice): void => {
-      PubSub.publishUnsafe(hub, notice);
+      for (const buffer of buffers) offerCoalescing(buffer, notice);
     },
-    dispose: (): void => {
-      Effect.runSync(PubSub.shutdown(hub));
-    },
+    dispose: () => Effect.runPromise(closing),
   };
 };

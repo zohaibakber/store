@@ -31,7 +31,7 @@ describe("layerCommitForwarding", () => {
       expect(notices.map((notice) => notice.workspaceToken)).toEqual(["workspace-1"]),
     );
     unsubscribe();
-    publisher.dispose();
+    await publisher.dispose();
     await runtime.dispose();
   });
 });

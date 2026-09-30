@@ -11,10 +11,12 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   inventorySyncStatusLabel,
   useCatalogIsReady,
+  useInventoryActions,
   useInventorySyncStatus,
   type InventorySyncStatus,
 } from "@store/inventory-react";
 
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { useOnline } from "@/hooks/use-online";
@@ -73,9 +75,11 @@ const statusShortLabel = (status: InventorySyncStatus) => {
 
 function InventorySyncStatusView({
   online = true,
+  onRetry,
   status,
 }: {
   readonly online?: boolean;
+  readonly onRetry?: () => void;
   readonly status: InventorySyncStatus;
 }) {
   const label = inventorySyncStatusLabel(status);
@@ -113,6 +117,11 @@ function InventorySyncStatusView({
                 This device is offline. Changes are saved locally and sync when it reconnects.
               </p>
             ) : null}
+            {status._tag === "recoveryRequired" && status.retryable === true && onRetry ? (
+              <Button className="self-start" onClick={onRetry} size="xs" variant="outline">
+                Retry
+              </Button>
+            ) : null}
           </div>
         </PopoverContent>
       </Popover>
@@ -126,5 +135,14 @@ export function SidebarSyncStatus() {
 }
 
 function ReadySyncStatus() {
-  return <InventorySyncStatusView online={useOnline()} status={useInventorySyncStatus()} />;
+  const { retrySync } = useInventoryActions();
+  return (
+    <InventorySyncStatusView
+      online={useOnline()}
+      onRetry={() => {
+        void retrySync().catch(() => undefined);
+      }}
+      status={useInventorySyncStatus()}
+    />
+  );
 }

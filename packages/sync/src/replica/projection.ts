@@ -30,8 +30,8 @@ export type ReplicaCatalogLookup = {
   readonly category: (categoryId: string) => ReplicaCategoryRow | undefined;
   readonly product: (productId: string) => ReplicaProductRow | undefined;
   readonly batch: (batchId: string) => ReplicaBatchRow | undefined;
-  readonly productsByCategory: (categoryId: string) => ReadonlyArray<ReplicaProductRow>;
-  readonly batchesByProduct: (productId: string) => ReadonlyArray<ReplicaBatchRow>;
+  readonly productInCategory: (categoryId: string) => { readonly categoryId: string } | undefined;
+  readonly stockedBatchOfProduct: (productId: string) => ReplicaBatchRow | undefined;
 };
 
 type ProjectedRemoval = {
@@ -474,21 +474,20 @@ const assertCatalogWriteAllowed = (
 ): void => {
   for (const write of envelope.payload.writes) {
     if (write.entity === "category" && write.action === "delete") {
-      guardCatalogRule(() =>
-        assertCanDeleteCategory(lookup.productsByCategory(write.id), write.id),
-      );
+      const blocking = lookup.productInCategory(write.id);
+      guardCatalogRule(() => assertCanDeleteCategory(blocking ? [blocking] : [], write.id));
       continue;
     }
     if (write.entity === "product") {
       if (write.action === "delete") {
-        guardCatalogRule(() => assertCanDeleteProduct(lookup.batchesByProduct(write.id), write.id));
+        const stocked = lookup.stockedBatchOfProduct(write.id);
+        guardCatalogRule(() => assertCanDeleteProduct(stocked ? [stocked] : [], write.id));
         continue;
       }
       const existing = lookup.product(write.id);
       if (existing && existing.unitsPerPack !== write.row.unitsPerPack) {
-        guardCatalogRule(() =>
-          assertCanChangeUnitsPerPack(lookup.batchesByProduct(write.id), write.id),
-        );
+        const stocked = lookup.stockedBatchOfProduct(write.id);
+        guardCatalogRule(() => assertCanChangeUnitsPerPack(stocked ? [stocked] : [], write.id));
       }
       continue;
     }

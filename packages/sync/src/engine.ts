@@ -7,6 +7,7 @@ import {
   SyncEpoch,
   SyncProtocolError,
   type CommandReceipt,
+  type EnqueueCommandRequest,
   type SyncCommandEnvelope,
   type SyncLiveServerFrame,
   type SyncLiveWakeHint,
@@ -37,6 +38,7 @@ import {
 import {
   ReplicaStore,
   type AppliedCursor,
+  type QueuedCommand,
   type ReplicaStoreContract,
   type ReplicaStoreError,
 } from "./replica/store";
@@ -86,9 +88,8 @@ interface SyncEngineContract {
   readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
   readonly saveCommand: (
-    envelope: SyncCommandEnvelope,
-    createdAt: number,
-  ) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
+    request: EnqueueCommandRequest,
+  ) => Effect.Effect<QueuedCommand, SyncProtocolError | ReplicaStoreError>;
   readonly uploadOnce: () => Effect.Effect<CommandReceipt | undefined, SyncEngineError>;
   readonly drainUploads: () => Effect.Effect<number, SyncEngineError>;
   readonly downloadOnce: (request: SyncPullRequest) => Effect.Effect<string, SyncEngineError>;
@@ -170,10 +171,9 @@ export const makeSyncEngineFromReplicaStore = (
     yield* withPermit(store.recoverStaleUploadClaims(startedAt - STALE_UPLOAD_CLAIM_MILLIS));
 
     const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
-      envelope: SyncCommandEnvelope,
-      createdAt: number,
+      request: EnqueueCommandRequest,
     ) {
-      yield* withPermit(store.enqueueCommand(envelope, createdAt));
+      return (yield* withPermit(store.enqueueCommand(request))).value;
     });
 
     const registered = yield* Ref.make(false);
@@ -336,7 +336,15 @@ export const makeSyncEngineFromReplicaStore = (
                 subscription: request.subscription,
                 replicaId: cursor.replicaId,
               });
-              return yield* transport.pull(pullRequest);
+              const recovered = yield* withPermit(pullRequestFromStore(store));
+              return yield* transport.pull(
+                withMaxBytes(
+                  includeDigest
+                    ? { ...recovered, digestVersion: PARTITION_DIGEST_VERSION }
+                    : recovered,
+                  yield* Ref.get(pullMaxBytes),
+                ),
+              );
             }),
           ),
         );

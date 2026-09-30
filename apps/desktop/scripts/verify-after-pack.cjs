@@ -150,6 +150,8 @@ const verifyDesktopAsar = (archivePath) => {
     "/dist-electron/main.js",
     "/dist-electron/preload.cjs",
     "/dist-electron/replica-worker.js",
+    "/dist-electron/replica-reader.js",
+    "/dist-electron/analytics-worker.js",
     "/node_modules/electron-updater/package.json",
   ];
   const missingEntries = requiredEntries.filter((entry) => !entrySet.has(entry));

@@ -74,8 +74,6 @@ export const isNetworkFailure = (facts: FailureFacts) =>
 export const endsSession = (facts: FailureFacts) =>
   facts.status === 401 && sessionEndedCodes.has(facts.code);
 
-export const rejectsRefresh = (facts: FailureFacts) => facts.status === 401 || facts.status === 403;
-
 export const describeFailure = (facts: FailureFacts, context: FailureContext): AuthProblem => {
   if (isNetworkFailure(facts)) {
     return context.online

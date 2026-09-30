@@ -3,7 +3,6 @@ import { OrgCommitSequence, type CommandReceipt, type SyncCommandEnvelope } from
 import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerAEnvelope,
-  lastUnitBuyerACommand,
   lastUnitBuyerBCommand,
   lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
@@ -18,6 +17,7 @@ import * as Semaphore from "effect/Semaphore";
 import { claimNextUpload, releaseUploadClaim, saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction, type SqliteReplicaHandle } from "../src/replica/storage";
 import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
 const acceptedReceipt = (envelope: SyncCommandEnvelope, commitSequence = "1"): CommandReceipt => ({
@@ -35,7 +35,9 @@ const acceptedReceipt = (envelope: SyncCommandEnvelope, commitSequence = "1"): C
 });
 
 const saveFirstCommand = (handle: SqliteReplicaHandle) =>
-  runReplicaTransaction(handle, (tx) => saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1));
+  runReplicaTransaction(handle, (tx) =>
+    saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1)),
+  );
 
 const firstOutboxRow = (handle: SqliteReplicaHandle) =>
   runReplicaTransaction(handle, (tx) =>
@@ -47,25 +49,6 @@ const firstOutboxRow = (handle: SqliteReplicaHandle) =>
   );
 
 describe("sync engine upload", () => {
-  it.effect("reports a replica sequence gap as a protocol error", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const engine = yield* sqliteEngine(handle, stubTransport());
-        const error = yield* engine
-          .saveCommand(
-            lastUnitEnvelope({
-              replicaId: LAST_UNIT_REPLICA_A,
-              clientSequence: "2",
-              command: lastUnitBuyerACommand,
-            }),
-            1,
-          )
-          .pipe(Effect.flip);
-        expect(error).toMatchObject({ _tag: "SyncProtocolError", code: "REPLICA_SEQUENCE_GAP" });
-      }),
-    ),
-  );
-
   it.effect("releases the replica permit before the HTTP submit", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
@@ -112,8 +95,8 @@ describe("sync engine upload", () => {
         });
         yield* runReplicaTransaction(handle, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
-            yield* saveLocalCommand(tx, secondEnvelope, 2);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
+            yield* saveLocalCommand(tx, enqueueRequestOf(secondEnvelope, 2));
           }),
         );
         const firstStarted = yield* Deferred.make<void>();
@@ -202,7 +185,7 @@ describe("sync engine upload", () => {
       Effect.gen(function* () {
         yield* runReplicaTransaction(handle, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
             const claimed = yield* claimNextUpload(tx, { claimId: "claim-1", claimedAt: 1 });
             if (!claimed) return yield* Effect.die("Expected an upload claim.");
             yield* releaseUploadClaim(tx, claimed.operationId, claimed.claimId);

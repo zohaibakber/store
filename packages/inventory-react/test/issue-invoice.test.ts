@@ -1,6 +1,6 @@
 import { decodeBatchSqliteRows, decodeInvoiceSqliteRows } from "@store/client-db";
 import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
-import type { SyncCommandEnvelope } from "@store/contracts";
+import type { EnqueueCommandRequest } from "@store/contracts";
 import { decodeProductId } from "@store/contracts/ids";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
@@ -15,15 +15,15 @@ const DAY = 86_400_000;
 describe("issueInvoice", () => {
   it("sells a product that no collection subscription has loaded", async () => {
     const replica = await openNodeReplicaSqlite({ ...scope, replicaId: "replica-1" });
-    const enqueued: Array<SyncCommandEnvelope> = [];
+    const enqueued: Array<EnqueueCommandRequest> = [];
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       deviceId: "replica-1",
       openReplica: async () => ({
         ...replica,
-        enqueueLocal: (envelope, createdAt) => {
-          enqueued.push(envelope);
-          return replica.enqueueLocal(envelope, createdAt);
+        enqueueCommand: (request) => {
+          enqueued.push(request);
+          return replica.enqueueCommand(request);
         },
       }),
     };
@@ -65,8 +65,8 @@ describe("issueInvoice", () => {
     const second = await sale(brufen.product.id, 1);
 
     expect([first.invoiceNumber, second.invoiceNumber]).toEqual([1, 2]);
-    const issued = enqueued.flatMap((envelope) =>
-      envelope.command._tag === "issueInvoice" ? [envelope.command.payload] : [],
+    const issued = enqueued.flatMap((request) =>
+      request.command._tag === "issueInvoice" ? [request.command.payload] : [],
     );
     expect(issued[0]?.allocations.map((take) => [take.batchId, take.quantity])).toEqual([
       [early.id, 2],
@@ -88,15 +88,15 @@ describe("issueInvoice", () => {
 
   it("allocates a second sale from stock left by a pending first sale", async () => {
     const replica = await openNodeReplicaSqlite({ ...scope, replicaId: "replica-2" });
-    const enqueued: Array<SyncCommandEnvelope> = [];
+    const enqueued: Array<EnqueueCommandRequest> = [];
     const host: InventoryHost = {
       apiBaseUrl: "http://localhost",
       deviceId: "replica-2",
       openReplica: async () => ({
         ...replica,
-        enqueueLocal: (envelope, createdAt) => {
-          enqueued.push(envelope);
-          return replica.enqueueLocal(envelope, createdAt);
+        enqueueCommand: (request) => {
+          enqueued.push(request);
+          return replica.enqueueCommand(request);
         },
       }),
     };
@@ -129,8 +129,8 @@ describe("issueInvoice", () => {
     await sale(3);
     await sale(2);
 
-    const issued = enqueued.flatMap((envelope) =>
-      envelope.command._tag === "issueInvoice" ? [envelope.command.payload] : [],
+    const issued = enqueued.flatMap((request) =>
+      request.command._tag === "issueInvoice" ? [request.command.payload] : [],
     );
     expect(
       issued.map((payload) => payload.allocations.map((take) => [take.batchId, take.quantity])),

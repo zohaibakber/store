@@ -74,6 +74,11 @@ const clampLimit = (limit: number) =>
     ? Math.min(MAX_PRODUCT_SEARCH_RESULTS, Math.max(1, Math.floor(limit)))
     : MAX_PRODUCT_SEARCH_RESULTS;
 
+export const canonicalSearchLimit = clampLimit;
+
+export const canonicalSearchQuery = (query: string) =>
+  searchTokens(query.slice(0, MAX_SEARCH_QUERY_LENGTH)).join(" ");
+
 const BY_NAME: InventorySubsetSpec["orderBy"] = [{ column: "name", direction: "asc" }];
 
 export const containsToken = (token: string): SubsetPredicate => ({

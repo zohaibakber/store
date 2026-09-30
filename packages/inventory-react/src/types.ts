@@ -54,6 +54,7 @@ type CreatedProductWithBatch = {
 };
 
 export interface InventoryActions {
+  readonly retrySync: () => Promise<void>;
   readonly createCategory: (input: CreateCategoryInput) => Promise<CategoryRow>;
   readonly updateCategory: (input: UpdateCategoryInput) => Promise<CategoryRow>;
   readonly deleteCategory: (id: UpdateCategoryInput["id"]) => Promise<void>;

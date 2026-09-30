@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { partitionDigestOf, type PartitionLeafSource } from "@store/contracts";
+import { partitionDigestOf, SyncPullResult, type PartitionLeafSource } from "@store/contracts";
 import {
   batches,
   categories,
@@ -7,12 +7,29 @@ import {
   invoices,
   pendingRowMarks,
   products,
+  replicaCoverage,
+  replicaState,
   stockMovements,
 } from "@store/db/replica.schema";
+import { sql } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
+import {
+  readDigestFence,
+  verifyPulledDigest,
+  type ReplicaTransactor,
+} from "../src/replica/coverage";
 import { sqlitePartitionDigest } from "../src/replica/digest";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
+import { mapReplicaStoreFailure } from "../src/replica/errors";
+import type { ReplicaDb } from "../src/replica/sql-client/drizzle";
+import {
+  openReplicaStore,
+  runReplicaTransaction,
+  type SqliteReplicaHandle,
+} from "../src/replica/storage";
+import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
 const ORGANIZATION_ID = "org-digest";
 
@@ -163,6 +180,109 @@ describe("replica partition digest", () => {
           }),
         );
         expect(local).toBeUndefined();
+      }),
+    ),
+  );
+});
+
+type Mutation = (tx: ReplicaDb) => Effect.Effect<void, EffectDrizzleQueryError>;
+
+type Interference = (turn: number, span: string) => Mutation | undefined;
+
+const interferingTransactor = (handle: SqliteReplicaHandle, interfere: Interference) => {
+  let turns = 0;
+  const transact: ReplicaTransactor = (span, run) =>
+    Effect.gen(function* () {
+      turns += 1;
+      const mutation = interfere(turns, span);
+      if (mutation) yield* runReplicaTransaction(handle, mutation).pipe(Effect.orDie);
+      return yield* runReplicaTransaction(handle, run).pipe(
+        Effect.mapError(mapReplicaStoreFailure),
+      );
+    });
+  return { transact, turns: () => turns };
+};
+
+const bumpLocalVersion: Mutation = (tx) =>
+  tx
+    .run(sql`update ${replicaState} set "localCommitVersion" = "localCommitVersion" + 1`)
+    .pipe(Effect.asVoid);
+
+const advanceAuthority: Mutation = (tx) =>
+  tx.run(sql`update ${replicaState} set "appliedCommitSequence" = '99'`).pipe(Effect.asVoid);
+
+const decodePullResult = Schema.decodeUnknownSync(SyncPullResult);
+
+const fencedSetup = Effect.gen(function* () {
+  const handle = yield* seedReplicaTenUnits();
+  const digest = yield* runReplicaTransaction(handle, (tx) => sqlitePartitionDigest(tx));
+  const fence = yield* runReplicaTransaction(handle, readDigestFence);
+  const page = decodePullResult({
+    epoch: "1",
+    incarnation: "incarnation-test",
+    subscription: "operational",
+    schemaVersion: 1,
+    transactions: [],
+    nextCommitSequence: "0",
+    horizon: "0",
+    retentionFloor: "0",
+    digest,
+  });
+  const coverage = runReplicaTransaction(handle, (tx) => tx.select().from(replicaCoverage).all());
+  return { handle, fence, page, coverage };
+});
+
+describe("fenced partition digest verification", () => {
+  it.effect("rescans after a local-only change and verifies the unchanged partition", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { handle, fence, page, coverage } = yield* fencedSetup;
+        const probe = interferingTransactor(handle, (turn) =>
+          turn === 3 ? bumpLocalVersion : undefined,
+        );
+        const verified = yield* verifyPulledDigest(probe.transact, page, fence);
+        expect(verified).toEqual({ repairRequired: false, digestVerified: true });
+        expect((yield* coverage)[0]?.digest).toBe(page.digest?.digest);
+      }),
+    ),
+  );
+
+  it.effect("discards a scan once the authority position moves", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { handle, fence, page, coverage } = yield* fencedSetup;
+        const probe = interferingTransactor(handle, (turn) =>
+          turn === 3 ? advanceAuthority : undefined,
+        );
+        const verified = yield* verifyPulledDigest(probe.transact, page, fence);
+        expect(verified).toEqual({ repairRequired: false, digestVerified: false });
+        expect(probe.turns()).toBe(3);
+        expect(yield* coverage).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("gives up after bounded rescans and rechecks the fence before recording", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { handle, fence, page, coverage } = yield* fencedSetup;
+        const restless = interferingTransactor(handle, (turn) =>
+          turn >= 2 ? bumpLocalVersion : undefined,
+        );
+        expect(yield* verifyPulledDigest(restless.transact, page, fence)).toEqual({
+          repairRequired: false,
+          digestVerified: false,
+        });
+        expect(restless.turns()).toBe(4);
+        const current = yield* runReplicaTransaction(handle, readDigestFence);
+        const late = interferingTransactor(handle, (_, span) =>
+          span.endsWith("settleDigestCoverage") ? bumpLocalVersion : undefined,
+        );
+        expect(yield* verifyPulledDigest(late.transact, page, current)).toEqual({
+          repairRequired: false,
+          digestVerified: false,
+        });
+        expect(yield* coverage).toEqual([]);
       }),
     ),
   );

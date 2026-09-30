@@ -1,24 +1,30 @@
 import { Download01Icon, InformationCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  RESTOCK_VIEWS,
+  type InsightsSummary,
+  type RestockCursor,
+  type RestockView,
+} from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type { InsightsReport, ProductInsight, StockStatus } from "@store/services/insights";
+import type { ProductInsight, StockStatus } from "@store/services/insights";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   columnFilteringFeature,
   columnVisibilityFeature,
   createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_includesString,
+  functionalUpdate,
   metaHelper,
   rowPaginationFeature,
   rowSortingFeature,
-  sortFn_basic,
-  sortFn_text,
   tableFeatures,
   useTable,
+  type ColumnFiltersState,
+  type PaginationState,
+  type Updater,
 } from "@tanstack/react-table";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as React from "react";
 
 import {
@@ -35,11 +41,15 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { useInventoryInsights } from "@/lib/inventory";
+import { useInventoryInsights, useRestockExport, useRestockPage } from "@/lib/inventory";
+import { isString } from "@/lib/predicates";
 
-import { buyListCsv, downloadText } from "./buy-list";
+import { InsightsBuilding } from "./building";
+import { buyListHeader, buyListLine, downloadText } from "./buy-list";
+import { InsightsFreshness } from "./freshness";
 import { PlanningSheet } from "./planning-sheet";
 import {
   describeDemand,
@@ -48,29 +58,10 @@ import {
   formatStockCover,
   HEALTH_ORDER,
 } from "./presentation";
-import { InsightsRefreshing } from "./refreshing";
 import { StatusBadge } from "./status-badge";
 
-export const RESTOCK_VIEWS = [
-  "action",
-  "out",
-  "critical",
-  "low",
-  "overstock",
-  "dead",
-  "all",
-] as const;
-export type RestockView = (typeof RESTOCK_VIEWS)[number];
-
-const VIEW_STATUSES = {
-  action: new Set<StockStatus>(["out", "critical", "low"]),
-  out: new Set<StockStatus>(["out"]),
-  critical: new Set<StockStatus>(["critical"]),
-  low: new Set<StockStatus>(["low"]),
-  overstock: new Set<StockStatus>(["overstock"]),
-  dead: new Set<StockStatus>(["dead"]),
-  all: null,
-} satisfies Record<RestockView, ReadonlySet<StockStatus> | null>;
+export { RESTOCK_VIEWS };
+export type { RestockView };
 
 const VIEW_LABEL = {
   action: "Needs action",
@@ -88,21 +79,11 @@ const STATUS_RANK = new Map<StockStatus, number>(
   [...HEALTH_ORDER, "inactive" as const].map((status, index) => [status, index]),
 );
 
-const inView = (view: RestockView) => (insight: ProductInsight) => {
-  const statuses = VIEW_STATUSES[view];
-  return statuses === null ? insight.status !== "inactive" : statuses.has(insight.status);
-};
-
 const features = tableFeatures({
   columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
   rowSortingFeature,
-  filteredRowModel: createFilteredRowModel(),
-  paginatedRowModel: createPaginatedRowModel(),
-  sortedRowModel: createSortedRowModel(),
-  filterFns: { includesString: filterFn_includesString },
-  sortFns: { basic: sortFn_basic, text: sortFn_text },
   columnMeta: metaHelper<DataTableColumnMeta>(),
 });
 
@@ -148,15 +129,12 @@ const columns = columnHelper.columns([
         />
       </div>
     ),
-    filterFn: "includesString",
-    sortFn: "text",
     meta: { label: "Product" },
   }),
   columnHelper.accessor((insight) => STATUS_RANK.get(insight.status) ?? 0, {
     id: "status",
     header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
     cell: ({ row }) => <StatusBadge status={row.original.status} />,
-    sortFn: "basic",
     meta: { label: "Status" },
   }),
   columnHelper.accessor("usableUnits", {
@@ -167,7 +145,6 @@ const columns = columnHelper.columns([
         secondary={formatStockCover(row.original)}
       />
     ),
-    sortFn: "basic",
     meta: { label: "On hand", align: "end" },
   }),
   columnHelper.accessor((insight) => insight.demand.dailyRate, {
@@ -180,13 +157,11 @@ const columns = columnHelper.columns([
         title={describeDemand(row.original.demand)}
       />
     ),
-    sortFn: "basic",
     meta: { label: "Demand", align: "end" },
   }),
   columnHelper.accessor("reorderPoint", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Reorder at" />,
     cell: ({ getValue }) => formatNumber(getValue()),
-    sortFn: "basic",
     meta: { label: "Reorder at", align: "end" },
   }),
   columnHelper.accessor((insight) => insight.order?.cost ?? -1, {
@@ -202,19 +177,41 @@ const columns = columnHelper.columns([
         />
       );
     },
-    sortFn: "basic",
     meta: { label: "Suggested order", align: "end" },
   }),
 ]);
 
 function ExportButton() {
-  const { report } = useInventoryInsights();
+  const { summary } = useInventoryInsights();
+  const exportRestock = useRestockExport();
+  const [exporting, setExporting] = React.useState(false);
+  const runExport = React.useCallback(() => {
+    setExporting(true);
+    const lines: Array<string> = [buyListHeader()];
+    void Effect.runPromise(
+      exportRestock({ view: "all" }).pipe(
+        Stream.runForEach((insight) =>
+          Effect.sync(() => {
+            const line = buyListLine(insight);
+            if (line !== null) lines.push(line);
+          }),
+        ),
+      ),
+    )
+      .then(() => downloadText("buy-list.csv", lines.join("\r\n"), "text/csv;charset=utf-8"))
+      .catch(() =>
+        toastManager.add({
+          title: "Couldn't export the buy list",
+          description: "The insights were recalculated. Try again in a moment.",
+          type: "error",
+        }),
+      )
+      .finally(() => setExporting(false));
+  }, [exportRestock]);
   return (
     <Button
-      disabled={report.inventory.reorderCount === 0}
-      onClick={() =>
-        downloadText("buy-list.csv", buyListCsv(report.products), "text/csv;charset=utf-8")
-      }
+      disabled={exporting || summary === null || summary.inventory.reorderCount === 0}
+      onClick={runExport}
       size="sm"
       variant="outline"
     >
@@ -224,8 +221,8 @@ function ExportButton() {
   );
 }
 
-function PolicyInfo({ report }: { readonly report: InsightsReport }) {
-  const { policy } = report;
+function PolicyInfo({ summary }: { readonly summary: InsightsSummary }) {
+  const { policy } = summary;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -245,6 +242,26 @@ function PolicyInfo({ report }: { readonly report: InsightsReport }) {
   );
 }
 
+const viewCount = (summary: InsightsSummary, view: RestockView) => {
+  const { counts } = summary;
+  switch (view) {
+    case "action":
+      return counts.out + counts.critical + counts.low;
+    case "all":
+      return (
+        counts.out + counts.critical + counts.low + counts.dead + counts.overstock + counts.healthy
+      );
+    default:
+      return counts[view];
+  }
+};
+
+type Paging = {
+  readonly scope: string;
+  readonly cursors: ReadonlyArray<RestockCursor | null>;
+  readonly total: number;
+};
+
 function RestockBody({
   view,
   onViewChange,
@@ -252,27 +269,63 @@ function RestockBody({
   readonly view: RestockView;
   readonly onViewChange: (view: RestockView) => void;
 }) {
-  const { report } = useInventoryInsights();
+  const { summary } = useInventoryInsights();
   const navigate = useNavigate();
   const router = useRouter();
-  const counts = React.useMemo(
-    () =>
-      Object.fromEntries(
-        RESTOCK_VIEWS.map((value) => [value, report.products.filter(inView(value)).length]),
-      ),
-    [report.products],
-  );
-  const rows = React.useMemo(() => report.products.filter(inView(view)), [report.products, view]);
+  const [search, setSearch] = React.useState("");
+  const [pageSize, setPageSize] = React.useState<number>(50);
+  const [isPending, startTransition] = React.useTransition();
+  const term = search.trim();
+  const scope = `${view}|${term}|${pageSize}`;
+  const [stored, setStored] = React.useState<Paging>({ scope, cursors: [null], total: 0 });
+  const paging: Paging = stored.scope === scope ? stored : { scope, cursors: [null], total: 0 };
+  const pageIndex = paging.cursors.length - 1;
+  const page = useRestockPage({
+    filters: { view, search: term === "" ? undefined : term },
+    cursor: paging.cursors[pageIndex] ?? null,
+    limit: pageSize,
+  });
+  const rowCount = pageIndex === 0 ? (page.total ?? 0) : paging.total;
+  const pagination: PaginationState = { pageIndex, pageSize };
+  const columnFilters: ColumnFiltersState = term === "" ? [] : [{ id: "name", value: term }];
+
+  if (page.cursorExpired && pageIndex > 0) setStored({ scope, cursors: [null], total: 0 });
+
   const table = useTable({
     features,
     columns,
-    data: rows,
+    data: page.rows,
     getRowId: (insight) => insight.productId,
-    initialState: { pagination: { pageIndex: 0, pageSize: 50 } },
+    manualPagination: true,
+    manualSorting: true,
+    manualFiltering: true,
+    enableSorting: false,
+    rowCount,
+    state: { pagination, columnFilters },
+    onPaginationChange: (updater: Updater<PaginationState>) => {
+      const next = functionalUpdate(updater, pagination);
+      if (next.pageSize !== pageSize) {
+        setPageSize(next.pageSize);
+        return;
+      }
+      startTransition(() => {
+        if (next.pageIndex === pageIndex + 1 && page.nextCursor !== null) {
+          setStored({
+            scope,
+            cursors: [...paging.cursors, page.nextCursor],
+            total: rowCount,
+          });
+        } else if (next.pageIndex === pageIndex - 1 && pageIndex > 0) {
+          setStored({ scope, cursors: paging.cursors.slice(0, -1), total: paging.total });
+        }
+      });
+    },
+    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) => {
+      const next = functionalUpdate(updater, columnFilters);
+      const value = next.find((filter) => filter.id === "name")?.value;
+      setSearch(isString(value) ? value : "");
+    },
   });
-  React.useEffect(() => {
-    table.setPageIndex(0);
-  }, [table, view]);
 
   return (
     <DataTable
@@ -289,7 +342,7 @@ function RestockBody({
       table={table}
     >
       <PageActions>
-        <InsightsRefreshing />
+        <InsightsFreshness />
         <DataTableFilter columnId="name" placeholder="Search products" />
         <ExportButton />
         <PlanningSheet />
@@ -302,22 +355,50 @@ function RestockBody({
                 <TabsTab key={value} value={value}>
                   {VIEW_LABEL[value]}
                   <Badge variant="outline">
-                    <span className="tabular-nums">{formatNumber(counts[value] ?? 0)}</span>
+                    <span className="tabular-nums">
+                      {formatNumber(summary === null ? 0 : viewCount(summary, value))}
+                    </span>
                   </Badge>
                 </TabsTab>
               ))}
             </TabsList>
           </Tabs>
         </div>
-        <PolicyInfo report={report} />
+        {summary === null ? null : <PolicyInfo summary={summary} />}
       </div>
-      <DataTableContent>
-        <DataTableFooter>
-          <DataTablePagination pageSizes={PAGE_SIZES} />
-        </DataTableFooter>
-      </DataTableContent>
+      <div
+        aria-busy={isPending}
+        className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}
+      >
+        <DataTableContent>
+          <DataTableFooter>
+            <DataTablePagination pageSizes={PAGE_SIZES} />
+          </DataTableFooter>
+        </DataTableContent>
+      </div>
     </DataTable>
   );
+}
+
+function RestockGate({
+  view,
+  onViewChange,
+}: {
+  readonly view: RestockView;
+  readonly onViewChange: (view: RestockView) => void;
+}) {
+  const { summary, status } = useInventoryInsights();
+  if (summary === null) {
+    return (
+      <>
+        <PageActions>
+          <InsightsFreshness />
+        </PageActions>
+        <InsightsBuilding status={status} />
+      </>
+    );
+  }
+  return <RestockBody onViewChange={onViewChange} view={view} />;
 }
 
 export function RestockPage({
@@ -329,7 +410,7 @@ export function RestockPage({
 }) {
   return (
     <PageLayout>
-      <RestockBody onViewChange={onViewChange} view={view} />
+      <RestockGate onViewChange={onViewChange} view={view} />
     </PageLayout>
   );
 }

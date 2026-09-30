@@ -2,16 +2,27 @@ export {
   MemoryTokenStore,
   RefreshedTokenSet,
   RequestError,
-  SessionHttpClient,
+  SessionHttp,
+  apiFetch,
   cookieSessionNeedsRefresh,
+  decodeResponse,
+  isInvalidResponse,
+  isSupersededSession,
+  layerSessionHttp,
+  makeSessionHttp,
   refreshedTokens,
   refreshTokenNeedsRefresh,
   requestErrorFromPayload,
-  type SessionFetch,
-  type SessionHttpClientOptions,
+  sessionFetch,
+  toRequestError,
+  type RefreshPolicy,
+  type SessionAccess,
+  type SessionCredential,
+  type SessionHttpApi,
+  type SessionHttpOptions,
+  type SessionRun,
   type TokenStore,
 } from "./session-http";
-export { fetchOrganizationRoster, organizeOrganization } from "./organization-client";
 export {
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
@@ -19,9 +30,4 @@ export {
   renewSessionSnapshot,
   type SessionSnapshotHooks,
 } from "./session-broker";
-export {
-  type JsonApiResponse,
-  type JsonRequestInit,
-  type JsonRequestPayload,
-  type WorkspaceAuthAdapter,
-} from "./workspace";
+export { type WorkspaceAuthAdapter } from "./workspace";

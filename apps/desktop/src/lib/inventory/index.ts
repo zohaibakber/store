@@ -16,6 +16,8 @@ export {
   useInventoryInsights,
   useProductInsight,
   useRefreshInventoryInsights,
+  useRestockExport,
+  useRestockPage,
   useStockPolicy,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,

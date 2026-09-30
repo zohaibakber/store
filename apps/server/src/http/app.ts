@@ -3,6 +3,7 @@ import { RuntimeContext } from "alchemy";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
@@ -84,6 +85,7 @@ export const buildOncePerIsolate = <A, E, R>(
     const isolateScope = yield* Scope.make();
     return yield* build.pipe(
       Scope.provide(isolateScope),
+      Effect.onError((cause) => Scope.close(isolateScope, Exit.failCause(cause))),
       Effect.updateContext<never, R>(() => isolateServices),
     );
   });

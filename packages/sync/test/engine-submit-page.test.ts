@@ -25,6 +25,7 @@ import { runReplicaTransaction } from "../src/replica/storage";
 import { makeSqliteReplicaStore } from "../src/sqlite";
 import type { SyncTransport } from "../src/transport";
 import { stubTransport } from "./lib/engine-fixture";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
 const receiptFor = (request: SyncSubmitCommandRequest, commitSequence: string): CommandReceipt => ({
@@ -92,7 +93,9 @@ const openEngine = (
   options: { readonly pullMaxBytes?: number; readonly verifiedDigestAt?: number } = {},
 ) =>
   Effect.gen(function* () {
-    yield* runReplicaTransaction(handle, (tx) => saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1));
+    yield* runReplicaTransaction(handle, (tx) =>
+      saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1)),
+    );
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
     if (options.verifiedDigestAt !== undefined) {
       yield* store.recordDigestVerification(OPERATIONAL_SUBSCRIPTION, options.verifiedDigestAt);

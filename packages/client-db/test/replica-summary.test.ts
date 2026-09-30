@@ -37,7 +37,7 @@ describe("SQLite subset summary", () => {
       distinct: [],
     });
     expect(filtered.summary.count).toBe(3);
-    replica.close();
+    await replica.close();
   });
 
   it("rejects columns outside the allowlists", async () => {
@@ -52,6 +52,6 @@ describe("SQLite subset summary", () => {
         distinct: [],
       }),
     ).rejects.toThrow();
-    replica.close();
+    await replica.close();
   });
 });

@@ -1,23 +1,33 @@
 import {
   CommandStatus,
-  DecimalSequence,
+  EnqueueCommandRequest,
+  InsightsContext,
+  InsightsSummaryRead,
+  ProductInsightsRead,
   ReplicaInsightsFacts,
-  SyncCommandEnvelope,
+  RestockPageRead,
+  RestockPageRequest,
   SyncEntity,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
+import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
-import { decodeSqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import {
   InventorySubsetSummary,
   type InventorySubsetSpec,
   type InventorySubsetSummarySpec,
 } from "./subset-spec";
-import type { ReplicaHandle, ReplicaQueryStamp } from "./types";
+import type {
+  ReplicaAnalytics,
+  ReplicaHandle,
+  ReplicaQueryStamp,
+  ReplicaReadOptions,
+} from "./types";
 
 export type ElectronReplicaOpenIdentity = {
   readonly organizationId: string;
@@ -38,11 +48,25 @@ export type ElectronReplicaBridge = {
   readonly stamp: (workspaceToken: string) => Promise<CommitStamp>;
   readonly readSubset: (input: {
     readonly workspaceToken: string;
+    readonly requestId: string;
     readonly spec: InventorySubsetSpec;
   }) => Promise<{
     readonly rows: ReadonlyArray<Record<string, string | number | null>>;
     readonly stamp: CommitStamp;
   }>;
+  readonly readBatch: (input: {
+    readonly workspaceToken: string;
+    readonly requestId: string;
+    readonly specs: ReadonlyArray<InventorySubsetSpec>;
+  }) => Promise<{
+    readonly reads: ReadonlyArray<ReadonlyArray<Record<string, string | number | null>>>;
+    readonly stamp: CommitStamp;
+  }>;
+  readonly cancelRead: (input: {
+    readonly workspaceToken: string;
+    readonly requestId: string;
+  }) => Promise<void>;
+  readonly retryRecovery: (workspaceToken: string) => Promise<void>;
   readonly summarizeSubset: (input: {
     readonly workspaceToken: string;
     readonly spec: InventorySubsetSummarySpec;
@@ -57,6 +81,28 @@ export type ElectronReplicaBridge = {
     readonly facts: typeof ReplicaInsightsFacts.Encoded;
     readonly stamp: CommitStamp;
   }>;
+  readonly readInsightsSummary: (input: {
+    readonly workspaceToken: string;
+    readonly context: typeof InsightsContext.Encoded;
+  }) => Promise<typeof InsightsSummaryRead.Encoded>;
+  readonly readProductInsights: (input: {
+    readonly workspaceToken: string;
+    readonly context: typeof InsightsContext.Encoded;
+    readonly ids: ReadonlyArray<string>;
+  }) => Promise<typeof ProductInsightsRead.Encoded>;
+  readonly readRestockPage: (input: {
+    readonly workspaceToken: string;
+    readonly context: typeof InsightsContext.Encoded;
+    readonly request: typeof RestockPageRequest.Encoded;
+  }) => Promise<typeof RestockPageRead.Encoded>;
+  readonly onAnalytics: (
+    callback: (event: {
+      readonly workspaceToken: string;
+      readonly revision: number;
+      readonly state: "idle" | "building" | "refreshing";
+      readonly progress: { readonly done: number; readonly total: number } | null;
+    }) => void,
+  ) => () => void;
   readonly onCommit: (
     callback: (event: {
       readonly workspaceToken: string;
@@ -64,6 +110,8 @@ export type ElectronReplicaBridge = {
       readonly localCommitVersion: number;
       readonly touchedEntities: ReadonlyArray<string>;
       readonly touchedKeys: ReadonlyArray<string>;
+      readonly fullInvalidation?: boolean;
+      readonly overflowedEntities?: ReadonlyArray<string>;
     }) => void,
   ) => () => void;
   readonly onSyncHealth: (
@@ -71,18 +119,18 @@ export type ElectronReplicaBridge = {
     callback: (health: ReplicaSyncHealth) => void,
   ) => () => void;
   readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
-  readonly readCommandAllocation: (workspaceToken: string) => Promise<{
-    readonly epoch: string;
-    readonly nextClientSequence: string;
-  }>;
-  readonly enqueueLocal: (input: {
+  readonly enqueueCommand: (input: {
     readonly workspaceToken: string;
-    readonly envelope: typeof SyncCommandEnvelope.Encoded;
-    readonly createdAt: number;
+    readonly request: typeof EnqueueCommandRequest.Encoded;
   }) => Promise<{
-    readonly changed: boolean;
+    readonly operationId: string;
     readonly status: string;
+    readonly stamp: CommitStamp;
   }>;
+  readonly readCommandStatus: (input: {
+    readonly workspaceToken: string;
+    readonly operationId: string;
+  }) => Promise<string | null>;
   readonly wakeSyncUpload: (workspaceToken: string) => Promise<{
     readonly drained: boolean;
     readonly drainCount: number;
@@ -91,12 +139,15 @@ export type ElectronReplicaBridge = {
 
 const decodeSummary = Schema.decodeUnknownSync(InventorySubsetSummary);
 const decodeInsightsFacts = Schema.decodeUnknownSync(ReplicaInsightsFacts);
+const decodeSummaryRead = Schema.decodeUnknownSync(InsightsSummaryRead);
+const decodeProductsRead = Schema.decodeUnknownSync(ProductInsightsRead);
+const decodeRestockRead = Schema.decodeUnknownSync(RestockPageRead);
+const encodeContext = Schema.encodeSync(InsightsContext);
+const encodeRestockRequest = Schema.encodeSync(RestockPageRequest);
 const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
 const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
-const encodeEnvelope = Schema.encodeSync(SyncCommandEnvelope);
-const decodeCommandAllocation = Schema.decodeUnknownSync(
-  Schema.Struct({ epoch: DecimalSequence, nextClientSequence: DecimalSequence }),
-);
+const encodeEnqueueRequest = Schema.encodeSync(EnqueueCommandRequest);
+const decodeQueuedCommandStatus = Schema.decodeUnknownSync(CommandStatus);
 
 const decodedSome = <A>(
   values: ReadonlyArray<string>,
@@ -115,17 +166,69 @@ export const openElectronIpcReplicaHandle = async (
   }
 
   const publisher = createReplicaCommitPublisher();
+  const lifetime = makeReplicaLifetime();
+  lifetime.onClose(Effect.promise(() => bridge.close(workspaceToken).catch(() => undefined)));
+  lifetime.onClose(Effect.promise(() => publisher.dispose()));
 
-  const unsubscribe = bridge.onCommit((event) => {
+  const unsubscribeCommits = bridge.onCommit((event) => {
     if (event.workspaceToken !== workspaceToken) return;
-    publisher.publish({
-      workspaceToken,
-      generationId: event.generationId,
-      localCommitVersion: event.localCommitVersion,
-      touchedEntities: decodedSome(event.touchedEntities, decodeSyncEntity),
-      touchedKeys: event.touchedKeys,
-    });
+    publisher.publish(
+      Object.assign(
+        {
+          workspaceToken,
+          generationId: event.generationId,
+          localCommitVersion: event.localCommitVersion,
+          touchedEntities: decodedSome(event.touchedEntities, decodeSyncEntity),
+          touchedKeys: event.touchedKeys,
+        },
+        event.fullInvalidation === undefined
+          ? undefined
+          : { fullInvalidation: event.fullInvalidation },
+        event.overflowedEntities === undefined
+          ? undefined
+          : { overflowedEntities: decodedSome(event.overflowedEntities, decodeSyncEntity) },
+      ),
+    );
   });
+  lifetime.onClose(Effect.sync(unsubscribeCommits));
+
+  const analyticsListeners = new Set<Parameters<ReplicaAnalytics["subscribe"]>[0]>();
+  const unsubscribeAnalytics = bridge.onAnalytics((event) => {
+    if (event.workspaceToken !== workspaceToken) return;
+    for (const listener of analyticsListeners) {
+      listener({ revision: event.revision, state: event.state, progress: event.progress });
+    }
+  });
+  lifetime.onClose(Effect.sync(unsubscribeAnalytics));
+
+  const analytics: ReplicaAnalytics = {
+    readSummary: async (context) =>
+      decodeSummaryRead(
+        await bridge.readInsightsSummary({ workspaceToken, context: encodeContext(context) }),
+      ),
+    readProducts: async (context, ids) =>
+      decodeProductsRead(
+        await bridge.readProductInsights({
+          workspaceToken,
+          context: encodeContext(context),
+          ids,
+        }),
+      ),
+    readRestockPage: async (context, request) =>
+      decodeRestockRead(
+        await bridge.readRestockPage({
+          workspaceToken,
+          context: encodeContext(context),
+          request: encodeRestockRequest(request),
+        }),
+      ),
+    subscribe: (listener) => {
+      analyticsListeners.add(listener);
+      return () => {
+        analyticsListeners.delete(listener);
+      };
+    },
+  };
 
   const workspaceStamp = (value: CommitStamp): ReplicaQueryStamp => ({
     workspaceToken,
@@ -133,15 +236,47 @@ export const openElectronIpcReplicaHandle = async (
     localCommitVersion: value.localCommitVersion,
   });
 
+  const cancellable = <A>(
+    start: (requestId: string) => Promise<A>,
+    options: ReplicaReadOptions | undefined,
+  ): Promise<A> =>
+    Effect.runPromise(
+      Effect.suspend(() => {
+        const requestId = crypto.randomUUID();
+        return Effect.tryPromise({ try: () => start(requestId), catch: (cause) => cause }).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              void bridge.cancelRead({ workspaceToken, requestId }).catch(() => undefined);
+            }),
+          ),
+        );
+      }),
+      options?.signal === undefined ? undefined : { signal: options.signal },
+    );
+
   return {
     workspaceToken,
     engine: "sqlite",
+    analytics,
     stamp: async () => workspaceStamp(await bridge.stamp(workspaceToken)),
-    readSubset: async (spec) => {
-      const result = await bridge.readSubset({ workspaceToken, spec });
+    readSubset: async (spec, options) => {
+      const result = await cancellable(
+        (requestId) => bridge.readSubset({ workspaceToken, requestId, spec }),
+        options,
+      );
       return {
         stamp: workspaceStamp(result.stamp),
-        rows: result.rows.map((row) => decodeSqliteResultRow(row)),
+        rows: result.rows,
+      };
+    },
+    readBatch: async (specs, options) => {
+      const result = await cancellable(
+        (requestId) => bridge.readBatch({ workspaceToken, requestId, specs }),
+        options,
+      );
+      return {
+        stamp: workspaceStamp(result.stamp),
+        reads: result.reads,
       };
     },
     summarizeSubset: async (spec) => {
@@ -154,20 +289,31 @@ export const openElectronIpcReplicaHandle = async (
     },
     readOutboxStatuses: async () =>
       decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
-    readCommandAllocation: async () =>
-      decodeCommandAllocation(await bridge.readCommandAllocation(workspaceToken)),
-    enqueueLocal: (envelope, createdAt) =>
-      bridge.enqueueLocal({ workspaceToken, envelope: encodeEnvelope(envelope), createdAt }),
+    enqueueCommand: async (request) => {
+      const queued = await bridge.enqueueCommand({
+        workspaceToken,
+        request: encodeEnqueueRequest(request),
+      });
+      return {
+        operationId: queued.operationId,
+        status: decodeQueuedCommandStatus(queued.status),
+        stamp: workspaceStamp(queued.stamp),
+      };
+    },
+    readCommandStatus: async (operationId) => {
+      const status = await bridge.readCommandStatus({ workspaceToken, operationId });
+      return status === null ? undefined : decodeQueuedCommandStatus(status);
+    },
     subscribe: publisher.subscribe,
-    publish: publisher.publish,
-    subscribeSyncHealth: (listener) => bridge.onSyncHealth(workspaceToken, listener),
+    subscribeSyncHealth: (listener) => {
+      const unsubscribe = bridge.onSyncHealth(workspaceToken, listener);
+      lifetime.onClose(Effect.sync(unsubscribe));
+      return unsubscribe;
+    },
+    retryRecovery: () => bridge.retryRecovery(workspaceToken),
     wakeSyncUpload: () => {
-      void bridge.wakeSyncUpload(workspaceToken);
+      void bridge.wakeSyncUpload(workspaceToken).catch(() => undefined);
     },
-    close: () => {
-      unsubscribe();
-      publisher.dispose();
-      void bridge.close(workspaceToken).catch(() => undefined);
-    },
+    close: lifetime.close,
   };
 };

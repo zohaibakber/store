@@ -6,7 +6,7 @@ import type {
   ReplicaHandle,
   SqliteResultRow,
 } from "@store/client-db";
-import { syncProtocolError, type SyncCommandEnvelope } from "@store/contracts";
+import { syncProtocolError, type EnqueueCommandRequest } from "@store/contracts";
 import { decodeCategoryId, decodeProductId } from "@store/contracts/ids";
 import { describe, expect, it } from "vitest";
 
@@ -61,7 +61,7 @@ const harness = (rows?: {
   readonly batches?: ReadonlyArray<BatchRow>;
   readonly rejectEnqueue?: Error;
 }) => {
-  const enqueued: Array<SyncCommandEnvelope> = [];
+  const enqueued: Array<EnqueueCommandRequest> = [];
   const tables = {
     batches: rows?.batches ?? [],
     categories: (rows?.categories ?? [category]).map(categoryRecord),
@@ -70,7 +70,6 @@ const harness = (rows?: {
     invoiceItems: [],
     stockMovements: [],
   } satisfies Record<InventorySubsetSpec["source"], ReadonlyArray<SqliteResultRow>>;
-  let nextClientSequence = 1n;
   const replica: ReplicaHandle = {
     workspaceToken: "workspace",
     engine: "sqlite" as const,
@@ -86,28 +85,27 @@ const harness = (rows?: {
       throw new Error("unused");
     },
     readOutboxStatuses: async () => [],
-    readCommandAllocation: async () => ({
-      epoch: "1",
-      nextClientSequence: String(nextClientSequence),
-    }),
-    enqueueLocal: async (envelope: SyncCommandEnvelope) => {
+    enqueueCommand: async (request: EnqueueCommandRequest) => {
       if (rows?.rejectEnqueue) throw rows.rejectEnqueue;
-      enqueued.push(envelope);
-      nextClientSequence += 1n;
-      return { changed: true, status: "pending" };
+      enqueued.push(request);
+      return {
+        operationId: request.operationId,
+        status: "pending" as const,
+        stamp: { workspaceToken: "workspace", generationId: "1", localCommitVersion: 1 },
+      };
     },
+    readCommandStatus: async () => undefined,
     subscribe: () => () => undefined,
-    publish: () => undefined,
-    close: () => undefined,
+    close: async () => undefined,
   };
   const atoms = createWorkspaceAtoms();
   const actions = makeInventoryActions(actor, replica, () => undefined, atoms);
   return { actions, atoms, enqueued };
 };
 
-const catalogWrites = (envelope: SyncCommandEnvelope) => {
-  if (envelope.command._tag !== "catalogWrite") throw new Error("expected a catalog command");
-  return envelope.command.payload.writes;
+const catalogWrites = (request: EnqueueCommandRequest) => {
+  if (request.command._tag !== "catalogWrite") throw new Error("expected a catalog command");
+  return request.command.payload.writes;
 };
 
 describe("inventory catalog actions", () => {
@@ -137,7 +135,7 @@ describe("inventory catalog actions", () => {
     });
   });
 
-  it("chunks a large import into commands with consecutive client sequences", async () => {
+  it("chunks a large import into commands with distinct operation ids", async () => {
     const { actions, enqueued } = harness();
     const lines = Array.from({ length: 501 }, (_, index) => ({
       productId: null,
@@ -151,7 +149,6 @@ describe("inventory catalog actions", () => {
     expect(enqueued).toHaveLength(2);
     expect(catalogWrites(enqueued[0]!)).toHaveLength(1000);
     expect(catalogWrites(enqueued[1]!)).toHaveLength(2);
-    expect(enqueued.map((envelope) => envelope.clientSequence)).toEqual(["1", "2"]);
-    expect(new Set(enqueued.map((envelope) => envelope.operationId)).size).toBe(2);
+    expect(new Set(enqueued.map((request) => request.operationId)).size).toBe(2);
   });
 });

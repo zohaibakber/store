@@ -8,28 +8,27 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { parseUnitsPerPack, salvageUnitsPerPack } from "../invoice-extraction/pack-size";
-import { parseModelJson } from "../model-json";
+import { decodeModelJson, ModelScalar, type ModelOutput } from "../model-json";
 
 class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
   message: Schema.String,
   cause: Schema.Defect(),
 }) {}
 
-type ModelScalar = string | number | boolean | null;
+const modelField = Schema.optional(ModelScalar);
 
-interface ProductScanModelObject {
-  readonly response?: string;
-  readonly name?: ModelScalar;
-  readonly productName?: ModelScalar;
-  readonly composition?: ModelScalar;
-  readonly strength?: ModelScalar;
-  readonly unitsPerPack?: ModelScalar;
-  readonly batchNumber?: ModelScalar;
-  readonly expiresAt?: ModelScalar;
-  readonly confidence?: ModelScalar;
-}
+const ProductScanModelOutput = Schema.Struct({
+  name: modelField,
+  productName: modelField,
+  composition: modelField,
+  strength: modelField,
+  unitsPerPack: modelField,
+  batchNumber: modelField,
+  expiresAt: modelField,
+  confidence: modelField,
+});
 
-type ProductScanModelOutput = string | ProductScanModelObject;
+const decodeProductScanModelOutput = decodeModelJson(ProductScanModelOutput);
 
 export interface ProductScanAiClient {
   readonly generate: (input: {
@@ -39,7 +38,7 @@ export interface ProductScanAiClient {
     }>;
     readonly jsonSchema: object;
     readonly signal: AbortSignal;
-  }) => Promise<ProductScanModelOutput>;
+  }) => Promise<ModelOutput<typeof ProductScanModelOutput.Encoded>>;
 }
 
 const instructions = [
@@ -143,7 +142,7 @@ const unitsPerPack = (value: ModelScalar | undefined, name: string | null): numb
   return salvageUnitsPerPack(name ?? "", parsed);
 };
 
-const normalizeResult = (value: ProductScanModelObject) => {
+const normalizeResult = (value: typeof ProductScanModelOutput.Type) => {
   const name = nullableText(value.name ?? value.productName, 120);
   return {
     name,
@@ -177,7 +176,7 @@ export const parseProductScan = Effect.fn("ProductScan.parse")(
         signal,
       }),
     ).pipe(Effect.timeout("15 seconds"));
-    const parsed = yield* Effect.try(() => parseModelJson<ProductScanModelObject>(raw));
+    const parsed = yield* decodeProductScanModelOutput(raw);
     return yield* Schema.decodeUnknownEffect(ProductScanResult)(normalizeResult(parsed));
   },
   (effect) =>

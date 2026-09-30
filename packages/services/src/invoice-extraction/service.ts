@@ -6,7 +6,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { parseModelJson } from "../model-json";
+import { decodeModelJson, ModelScalar, type ModelOutput } from "../model-json";
 import { parseCsvRecords } from "./csv";
 import { parseMajorCurrencyToMinor, parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
@@ -18,26 +18,26 @@ class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>(
   },
 ) {}
 
-type ModelScalar = string | number | boolean | null;
+const modelField = Schema.optional(ModelScalar);
 
-interface InvoiceLineModel {
-  readonly name?: ModelScalar;
-  readonly batchNumber?: ModelScalar;
-  readonly expiresAt?: ModelScalar;
-  readonly packQuantity?: ModelScalar;
-  readonly unitQuantity?: ModelScalar;
-  readonly unitsPerPack?: ModelScalar;
-  readonly packPrice?: ModelScalar;
-}
+const InvoiceModelLine = Schema.Struct({
+  name: modelField,
+  batchNumber: modelField,
+  expiresAt: modelField,
+  packQuantity: modelField,
+  unitQuantity: modelField,
+  unitsPerPack: modelField,
+  packPrice: modelField,
+});
+type InvoiceModelLine = typeof InvoiceModelLine.Type;
 
-interface InvoiceModelObject {
-  readonly response?: string;
-  readonly supplier?: ModelScalar;
-  readonly invoiceNumber?: ModelScalar;
-  readonly lines?: ReadonlyArray<InvoiceLineModel> | ModelScalar;
-}
+const InvoiceModelOutput = Schema.Struct({
+  supplier: modelField,
+  invoiceNumber: modelField,
+  lines: Schema.Array(InvoiceModelLine),
+});
 
-type InvoiceModelOutput = string | InvoiceModelObject;
+const decodeInvoiceModelOutput = decodeModelJson(InvoiceModelOutput);
 
 export type ConvertedDocument =
   | { readonly kind: "ok"; readonly name: string; readonly data: string }
@@ -54,7 +54,7 @@ export interface InvoiceAiClient {
     }>;
     readonly jsonSchema: object;
     readonly signal: AbortSignal;
-  }) => Promise<InvoiceModelOutput>;
+  }) => Promise<ModelOutput<typeof InvoiceModelOutput.Encoded>>;
 }
 
 const instructions = [
@@ -99,7 +99,7 @@ const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
   );
 };
 
-const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => {
+const normalizeLine = (value: InvoiceModelLine): InvoiceExtractionLine => {
   const name = nullableString(value.name) ?? unspecifiedItemName;
   return {
     name,
@@ -120,14 +120,11 @@ const normalizeLine = (value: InvoiceLineModel): InvoiceExtractionLine => {
   };
 };
 
-const normalizeExtraction = (value: InvoiceModelObject) => {
-  const lines = value.lines;
-  return {
-    supplier: nullableString(value.supplier),
-    invoiceNumber: nullableString(value.invoiceNumber),
-    lines: Array.isArray(lines) ? lines.map(normalizeLine) : lines,
-  };
-};
+const normalizeExtraction = (value: typeof InvoiceModelOutput.Type) => ({
+  supplier: nullableString(value.supplier),
+  invoiceNumber: nullableString(value.invoiceNumber),
+  lines: value.lines.map(normalizeLine),
+});
 
 const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
   const [headerRow = [], ...rows] = parseCsvRecords(contents);
@@ -213,7 +210,7 @@ export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
         signal,
       }),
     ).pipe(Effect.timeout("30 seconds"));
-    const output = yield* Effect.try(() => parseModelJson<InvoiceModelObject>(raw));
+    const output = yield* decodeInvoiceModelOutput(raw);
     return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
   },
   (effect) =>

@@ -11,11 +11,90 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { decodeEntity, decodeRowJson, decodeStoredEnvelope, encodeRowJson } from "../codecs";
-import { byClientSequence, byEntityDependency, decideOverlays } from "../decisions";
-import { reapplyIndexedDbPendingProjections, writeEntityRow } from "./pending";
-import { generationBounds } from "./query";
+import { byClientSequence, decideOverlays } from "../decisions";
+import {
+  reapplyIndexedDbPendingProjections,
+  readIndexedDbUnitsPerPack,
+  writeEntityRow,
+} from "./pending";
 import { outboxWithStatus, type ReplicaQueryBuilder } from "./schema";
-import { makeIndexedDbStockCache } from "./stock";
+
+const PROMOTE_CHUNK_ROWS = 500;
+
+const SWEEP_CHUNK_ROWS = 500;
+
+const MAX_GENERATION = Number.MAX_SAFE_INTEGER;
+
+type GenerationStore =
+  | "categories"
+  | "products"
+  | "batches"
+  | "invoices"
+  | "invoice_items"
+  | "stock_movements";
+
+const GENERATION_STORES: ReadonlyArray<GenerationStore> = [
+  "categories",
+  "products",
+  "batches",
+  "invoices",
+  "invoice_items",
+  "stock_movements",
+];
+
+type GenerationRange = readonly [[number], [number, []]];
+
+const hasRowsIn = (api: ReplicaQueryBuilder, store: GenerationStore, range: GenerationRange) => {
+  const [lower, upper] = range;
+  switch (store) {
+    case "categories":
+      return api.from("categories").select().between(lower, upper).limit(1);
+    case "products":
+      return api.from("products").select().between(lower, upper).limit(1);
+    case "batches":
+      return api.from("batches").select().between(lower, upper).limit(1);
+    case "invoices":
+      return api.from("invoices").select().between(lower, upper).limit(1);
+    case "invoice_items":
+      return api.from("invoice_items").select().between(lower, upper).limit(1);
+    case "stock_movements":
+      return api.from("stock_movements").select().between(lower, upper).limit(1);
+  }
+};
+
+const deleteChunkIn = (
+  api: ReplicaQueryBuilder,
+  store: GenerationStore,
+  range: GenerationRange,
+) => {
+  const [lower, upper] = range;
+  switch (store) {
+    case "categories":
+      return api.from("categories").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+    case "products":
+      return api.from("products").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+    case "batches":
+      return api.from("batches").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+    case "invoices":
+      return api.from("invoices").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+    case "invoice_items":
+      return api.from("invoice_items").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+    case "stock_movements":
+      return api.from("stock_movements").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
+  }
+};
+
+const unreferencedRanges = (keep: ReadonlyArray<number>): ReadonlyArray<GenerationRange> => {
+  const sorted = [...new Set(keep)].sort((left, right) => left - right);
+  const ranges: Array<GenerationRange> = [];
+  let next = 0;
+  for (const generation of sorted) {
+    if (generation > next) ranges.push([[next], [generation - 1, []]]);
+    next = generation + 1;
+  }
+  ranges.push([[next], [MAX_GENERATION, []]]);
+  return ranges;
+};
 
 const stageSnapshotRow = (
   api: ReplicaQueryBuilder,
@@ -40,32 +119,6 @@ const stageSnapshotRow = (
     });
   });
 
-const promoteStagedSnapshot = (api: ReplicaQueryBuilder, generation: number, snapshotId: string) =>
-  Effect.gen(function* () {
-    const staged = Array.sort(
-      (yield* api.from("snapshot_staged_rows").select("bySnapshot").equals(snapshotId)).map(
-        (row) => ({ entity: decodeEntity(row.entity), rowJson: row.rowJson }),
-      ),
-      byEntityDependency,
-    );
-    for (const row of staged) {
-      yield* writeEntityRow(api, generation, row.entity, decodeRowJson(row.rowJson));
-    }
-    yield* api.from("snapshot_staged_rows").delete("bySnapshot").equals(snapshotId);
-  });
-
-const retireGeneration = (api: ReplicaQueryBuilder, from: number, to: number) =>
-  Effect.gen(function* () {
-    if (from === to) return;
-    const [lower, upper] = generationBounds(from);
-    yield* api.from("categories").delete().between(lower, upper);
-    yield* api.from("products").delete().between(lower, upper);
-    yield* api.from("batches").delete().between(lower, upper);
-    yield* api.from("invoices").delete().between(lower, upper);
-    yield* api.from("invoice_items").delete().between(lower, upper);
-    yield* api.from("stock_movements").delete().between(lower, upper);
-  });
-
 const integrateCoveredCommands = (api: ReplicaQueryBuilder, horizon: string) =>
   Effect.gen(function* () {
     const awaiting = yield* outboxWithStatus(api, "accepted_awaiting_integration");
@@ -83,15 +136,50 @@ const recomputePendingOverlays = (api: ReplicaQueryBuilder, generation: number) 
     yield* api.from("stock_overlays").clear;
     const pending = yield* outboxWithStatus(api, "pending");
     const awaiting = yield* outboxWithStatus(api, "accepted_awaiting_integration");
-    const stock = makeIndexedDbStockCache(api, generation);
     for (const row of Array.sort([...pending, ...awaiting], byClientSequence)) {
       const envelope = yield* decodeStoredEnvelope(row);
-      yield* stock.load(envelope);
-      for (const overlay of decideOverlays(envelope, stock.unitsPerPackFor, stock.stockFor)) {
+      const unitsPerPackFor = yield* readIndexedDbUnitsPerPack(
+        api,
+        generation,
+        envelope.command._tag === "issueInvoice"
+          ? envelope.command.payload.allocations.map((take) => take.productId)
+          : [],
+      );
+      for (const overlay of decideOverlays(envelope, unitsPerPackFor)) {
         yield* api.from("stock_overlays").upsert(overlay);
-        stock.applyOverlay(overlay);
       }
     }
+  });
+
+export const abandonIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: string) =>
+  Effect.gen(function* () {
+    const importRows = yield* api.from("snapshot_imports").select().equals(snapshotId);
+    const importRow = importRows[0];
+    if (!importRow || importRow.stage === "activated" || importRow.stage === "failed") return;
+    yield* api.from("snapshot_imports").upsert({ ...importRow, stage: "failed" });
+  });
+
+const deleteStagedChunk = (api: ReplicaQueryBuilder, snapshotId: string) =>
+  Effect.gen(function* () {
+    const staged = yield* api
+      .from("snapshot_staged_rows")
+      .select("bySnapshot")
+      .equals(snapshotId)
+      .limit(1);
+    if (staged.length === 0) return false;
+    yield* api
+      .from("snapshot_staged_rows")
+      .delete("bySnapshot")
+      .equals(snapshotId)
+      .limit(SWEEP_CHUNK_ROWS);
+    return true;
+  });
+
+export const clearAbandonedIndexedDbImportStep = (api: ReplicaQueryBuilder, snapshotId: string) =>
+  Effect.gen(function* () {
+    const importRows = yield* api.from("snapshot_imports").select().equals(snapshotId);
+    if (importRows[0]?.stage !== "failed") return { remaining: false };
+    return { remaining: yield* deleteStagedChunk(api, snapshotId) };
   });
 
 export const beginIndexedDbSnapshotImport = (
@@ -100,15 +188,27 @@ export const beginIndexedDbSnapshotImport = (
   manifest: SnapshotManifest,
 ) =>
   Effect.gen(function* () {
-    const existingRows = yield* api.from("snapshot_imports").select().equals(manifest.snapshotId);
-    const existing = existingRows[0];
-    if (existing) return { partsImported: existing.partsImported };
+    const imports = yield* api.from("snapshot_imports").select();
+    const existing = imports.find((row) => row.snapshotId === manifest.snapshotId);
+    if (existing && existing.stage !== "failed") {
+      return { partsImported: existing.partsImported };
+    }
+    if (existing) {
+      yield* api.from("snapshot_staged_rows").delete("bySnapshot").equals(manifest.snapshotId);
+    }
+    for (const stale of imports) {
+      if (stale.stage === "importing" || stale.stage === "caught_up") {
+        yield* abandonIndexedDbSnapshot(api, stale.snapshotId);
+      }
+    }
+    const generation = Math.max(activeGeneration, ...imports.map((row) => row.generation)) + 1;
+    const stage = manifest.parts.length === 0 ? "caught_up" : "importing";
     yield* api.from("snapshot_imports").upsert({
       snapshotId: manifest.snapshotId,
-      generation: activeGeneration + 1,
+      generation,
       subscription: manifest.subscription,
       horizon: manifest.horizon,
-      stage: "importing",
+      stage,
       partsImported: 0,
       partsTotal: manifest.parts.length,
     });
@@ -123,7 +223,7 @@ export const importIndexedDbSnapshotPart = (
   Effect.gen(function* () {
     const importRows = yield* api.from("snapshot_imports").select().equals(manifest.snapshotId);
     const importRow = importRows[0];
-    if (!importRow || importRow.stage === "activated") {
+    if (!importRow || importRow.stage === "activated" || importRow.stage === "failed") {
       return yield* Effect.fail(
         syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot import is not active."),
       );
@@ -159,13 +259,52 @@ export const importIndexedDbSnapshotPart = (
     });
   });
 
-export const activateIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: SnapshotId) =>
+export const promoteIndexedDbSnapshotChunk = (api: ReplicaQueryBuilder, snapshotId: SnapshotId) =>
   Effect.gen(function* () {
     const importRows = yield* api.from("snapshot_imports").select().equals(snapshotId);
     const importRow = importRows[0];
     if (!importRow || importRow.stage !== "caught_up") {
       return yield* Effect.fail(
         syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot is not ready to activate."),
+      );
+    }
+    const staged = yield* api
+      .from("snapshot_staged_rows")
+      .select("bySnapshot")
+      .equals(snapshotId)
+      .limit(PROMOTE_CHUNK_ROWS);
+    for (const row of staged) {
+      yield* writeEntityRow(
+        api,
+        importRow.generation,
+        decodeEntity(row.entity),
+        decodeRowJson(row.rowJson),
+      );
+      yield* api
+        .from("snapshot_staged_rows")
+        .delete()
+        .equals([snapshotId, row.entity, row.entityId]);
+    }
+    return { remaining: staged.length === PROMOTE_CHUNK_ROWS };
+  });
+
+export const switchIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: SnapshotId) =>
+  Effect.gen(function* () {
+    const importRows = yield* api.from("snapshot_imports").select().equals(snapshotId);
+    const importRow = importRows[0];
+    if (!importRow || importRow.stage !== "caught_up") {
+      return yield* Effect.fail(
+        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot is not ready to activate."),
+      );
+    }
+    const unpromoted = yield* api
+      .from("snapshot_staged_rows")
+      .select("bySnapshot")
+      .equals(snapshotId)
+      .limit(1);
+    if (unpromoted.length > 0) {
+      return yield* Effect.fail(
+        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot rows are not fully promoted."),
       );
     }
     const stateRows = yield* api.from("replica_state").select().equals("singleton");
@@ -175,8 +314,6 @@ export const activateIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: 
         syncProtocolError("SNAPSHOT_UNAVAILABLE", "Replica state is missing."),
       );
     }
-    yield* promoteStagedSnapshot(api, importRow.generation, snapshotId);
-    yield* retireGeneration(api, state.activeGeneration, importRow.generation);
     yield* integrateCoveredCommands(api, importRow.horizon);
     yield* recomputePendingOverlays(api, importRow.generation);
     yield* reapplyIndexedDbPendingProjections(api, importRow.generation, {
@@ -206,4 +343,31 @@ export const activateIndexedDbSnapshot = (api: ReplicaQueryBuilder, snapshotId: 
       localCommitVersion,
       subscription: importRow.subscription,
     };
+  });
+
+export const sweepIndexedDbStorageStep = (api: ReplicaQueryBuilder) =>
+  Effect.gen(function* () {
+    const stateRows = yield* api.from("replica_state").select().equals("singleton");
+    const state = stateRows[0];
+    if (!state) return { remaining: false };
+    const imports = yield* api.from("snapshot_imports").select();
+    const keep = [
+      state.activeGeneration,
+      ...imports
+        .filter((row) => row.stage === "importing" || row.stage === "caught_up")
+        .map((row) => row.generation),
+    ];
+    for (const range of unreferencedRanges(keep)) {
+      for (const store of GENERATION_STORES) {
+        if ((yield* hasRowsIn(api, store, range)).length > 0) {
+          yield* deleteChunkIn(api, store, range);
+          return { remaining: true };
+        }
+      }
+    }
+    for (const row of imports) {
+      if (row.stage !== "failed" && row.stage !== "activated") continue;
+      if (yield* deleteStagedChunk(api, row.snapshotId)) return { remaining: true };
+    }
+    return { remaining: false };
   });

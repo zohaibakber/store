@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS `command_outbox_status_client_sequence_idx`;--> statement-breakpoint
+CREATE INDEX `command_outbox_status_sequence_idx` ON `command_outbox` (`status`,length("clientSequence"),`clientSequence`);

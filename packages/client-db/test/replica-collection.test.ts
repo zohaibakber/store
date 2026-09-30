@@ -173,7 +173,7 @@ describe("sqliteCollectionOptions", () => {
     second.unsubscribe();
     await vi.waitFor(() => expect(collection.get("shared")).toBeUndefined());
     expect(collection.get("only-b")).toBeUndefined();
-    replica.close();
+    await replica.close();
   });
 
   it("publishes nothing from a disposed workspace", async () => {
@@ -188,7 +188,7 @@ describe("sqliteCollectionOptions", () => {
     await collection.cleanup();
     await insertCategory(replica, "after", "After");
     expect(collection.get("after")).toBeUndefined();
-    replica.close();
+    await replica.close();
   });
 
   it("loads the same window SQLite orders, including case and nulls", async () => {
@@ -227,6 +227,6 @@ describe("sqliteCollectionOptions", () => {
     await Promise.all([byName.preload(), byAisle.preload()]);
     expect(byName.toArray.map((row) => row.id)).toEqual(["p-upper", "p-last"]);
     expect(byAisle.toArray.map((row) => row.id)).toEqual(["p-null", "p-last"]);
-    replica.close();
+    await replica.close();
   });
 });

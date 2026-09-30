@@ -34,6 +34,7 @@ import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage"
 import type { ReplicaStoreContract } from "../src/replica/store";
 import type { SyncSchedulerPolicy } from "../src/scheduler";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { startOwnedSync } from "./lib/owned-sync";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
@@ -266,7 +267,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         const after = yield* store.readSyncCursor();
         expect(after).toMatchObject({ epoch: "4", registered: true, appliedCommitSequence: "0" });
         yield* store.verifyAuthority({ incarnation: "authority-a", horizon: "0" });
-        yield* store.enqueueCommand(categoryEnvelope(1, "4", "1"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "4", "1"), FIXTURE_NOW));
       }),
     ),
   );
@@ -274,8 +275,8 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
-        yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
-        yield* store.enqueueCommand(categoryEnvelope(2, "1", "2"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(2, "1", "2"), FIXTURE_NOW));
         const authority = makeAuthority({
           epoch: "2",
           incarnation: "authority-b",
@@ -289,7 +290,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(authority.accepted).toEqual(["7", "8"]);
         expect(yield* store.readCommandStatus("op-1")).toBe("accepted_awaiting_integration");
         expect(yield* store.readCommandStatus("op-2")).toBe("accepted_awaiting_integration");
-        yield* store.enqueueCommand(categoryEnvelope(3, "2", "9"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(3, "2", "9"), FIXTURE_NOW));
         yield* engine.uploadOnce();
         expect(authority.accepted).toEqual(["7", "8", "9"]);
         yield* engine.ensureRegistered();
@@ -301,7 +302,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("keeps allocations that already match the authority", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
-        yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
         const claim = yield* store.claimNextUpload({ claimId: "claim-1", claimedAt: FIXTURE_NOW });
         expect(claim.value?.operationId).toBe("op-1");
         yield* store.releaseUploadClaim("op-1", "claim-1");
@@ -321,7 +322,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("refuses to re-stamp a conflicting command that was already sent", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
-        yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
         yield* store.claimNextUpload({ claimId: "claim-1", claimedAt: FIXTURE_NOW });
         yield* store.releaseUploadClaim("op-1", "claim-1");
         const authority = makeAuthority({
@@ -403,7 +404,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         yield* awaitCall(calls, "register");
         expect(authority.counts).toMatchObject({ registers: 2, pulls: 0 });
         expect(yield* statusOf(owned)).toEqual({ _tag: "running" });
-        yield* store.enqueueCommand(categoryEnvelope(1, "1", "1"), FIXTURE_NOW);
+        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
         yield* owned.scheduler.wake("reconnect");
         yield* awaitCall(calls, "pull");
         const status = yield* statusOf(owned);

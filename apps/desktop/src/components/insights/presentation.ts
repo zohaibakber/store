@@ -1,3 +1,4 @@
+import type { AnalyticsStatus } from "@store/contracts";
 import type { DemandForecast, OrderSuggestion, StockStatus } from "@store/services/insights";
 
 import { EMPTY, formatCount } from "@/lib/format";
@@ -80,3 +81,8 @@ export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] a
 
 export const formatHour = (hour: number) =>
   new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(2000, 0, 1, hour));
+
+export const progressPercent = (progress: AnalyticsStatus["progress"]) =>
+  progress === null || progress.total === 0
+    ? null
+    : Math.min(100, Math.round((progress.done / progress.total) * 100));

@@ -8,7 +8,8 @@ import {
   type RegisterReplicaRequest,
   type SyncPullRequest,
 } from "@store/contracts";
-import { sql } from "drizzle-orm";
+import { commandReceipts, inventoryState } from "@store/db/postgres/schema";
+import { and, eq, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -234,16 +235,21 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     submitRaw,
     receipt: Effect.fn("InventoryCommands.receipt")(function* (actor, operationId) {
       const rows = yield* runStatement(
-        db.execute(
-          sql`select
-            case when "r"."operation_id" is null then null else sync.receipt_frame("r") end as "receipt"
-          from "inventory_state" as "s"
-          left join "command_receipts" as "r"
-            on "r"."organization_id" = "s"."organization_id"
-            and "r"."operation_id" = ${operationId}::text
-          where "s"."organization_id" = ${actor.organizationId}::text`,
-          "objects",
-        ),
+        db
+          .select({
+            receipt: sql<
+              string | null
+            >`case when ${commandReceipts.operationId} is null then null else sync.receipt_frame(${commandReceipts}) end`,
+          })
+          .from(inventoryState)
+          .leftJoin(
+            commandReceipts,
+            and(
+              eq(commandReceipts.organizationId, inventoryState.organizationId),
+              eq(commandReceipts.operationId, operationId),
+            ),
+          )
+          .where(eq(inventoryState.organizationId, actor.organizationId)),
       ).pipe(Effect.flatMap(decodedWith(decodeReceiptRows)));
       const row = yield* requireState(rows[0]);
       return row.receipt ?? undefined;

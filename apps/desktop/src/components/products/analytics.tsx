@@ -95,8 +95,9 @@ const TILES: ReadonlyArray<TileSpec> = [
 ];
 
 function StockTiles() {
-  const { report } = useInventoryInsights();
-  const { counts } = report;
+  const { summary } = useInventoryInsights();
+  if (summary === null) return PENDING_TILES;
+  const { counts } = summary;
   return (
     <>
       {TILES.map((tile) => (
@@ -108,7 +109,7 @@ function StockTiles() {
           view={tile.view}
         />
       ))}
-      <PrivateStockValue value={formatPrice(report.inventory.valueAtCost)} />
+      <PrivateStockValue value={formatPrice(summary.inventory.valueAtCost)} />
     </>
   );
 }

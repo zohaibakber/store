@@ -42,15 +42,22 @@ describe("snapshot recovery", () => {
       const recovery = yield* Effect.forkChild(
         recoverRequiredSnapshot(transport, store, acquireRequest),
       );
-      const inFlight = yield* Effect.replicateEffect(
-        Queue.take(started),
-        SNAPSHOT_PART_FETCH_CONCURRENCY,
-      );
-      expect([...inFlight].sort((left, right) => left - right)).toEqual([1, 2, 3, 4]);
-      for (const partNumber of [4, 3, 2, 1]) {
-        const release = releases.get(partNumber);
-        if (release !== undefined) yield* Deferred.succeed(release, undefined);
-      }
+      const takeWave = Effect.replicateEffect(Queue.take(started), SNAPSHOT_PART_FETCH_CONCURRENCY);
+      const release = (partNumbers: ReadonlyArray<number>) =>
+        Effect.forEach(
+          partNumbers,
+          (partNumber) => {
+            const deferred = releases.get(partNumber);
+            return deferred === undefined ? Effect.void : Deferred.succeed(deferred, undefined);
+          },
+          { discard: true },
+        );
+      const firstWave = yield* takeWave;
+      expect([...firstWave].sort((left, right) => left - right)).toEqual([1, 2]);
+      yield* release([2, 1]);
+      const secondWave = yield* takeWave;
+      expect([...secondWave].sort((left, right) => left - right)).toEqual([3, 4]);
+      yield* release([4, 3]);
       yield* Fiber.join(recovery);
       expect(store.imported).toEqual([1, 2, 3, 4]);
       expect(store.activated).toEqual([manifest.snapshotId]);
@@ -108,10 +115,12 @@ const recordingImportStore = (partsImported: number) => {
       Effect.sync(() => {
         imported.push(part.partNumber);
       }),
+    applyCandidateAuthority: () => Effect.succeed("0"),
+    abandonSnapshot: () => Effect.void,
     activateSnapshot: (snapshotId) =>
       Effect.sync(() => {
         activated.push(snapshotId);
-        return { value: undefined, notice: undefined };
+        return { value: { _tag: "activated" as const }, notice: undefined };
       }),
   };
   return { ...store, imported, activated };

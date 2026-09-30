@@ -12,7 +12,7 @@ import { openInventoryWorkspace } from "../src/open";
 const scope = { organizationId: "org-1", userId: "user-1" };
 const identity = { ...scope, replicaId: "replica-1" };
 
-const reportOf = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
+const readOf = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
   AsyncResult.isSuccess(result) ? result.value : undefined;
 
 describe("inventory insights atoms", () => {
@@ -59,8 +59,9 @@ describe("inventory insights atoms", () => {
     const release = registry.mount(inventory.atoms.insights);
 
     await vi.waitFor(() => {
-      const report = reportOf(registry.get(inventory.atoms.insights));
-      expect(report?.products.map((insight) => insight.name)).toEqual(["Panadol"]);
+      const read = readOf(registry.get(inventory.atoms.insights));
+      expect(read?.summary?.productCount).toBe(1);
+      expect(read?.summary?.counts.inactive).toBe(1);
     });
     const reads = readInsights.mock.calls.length;
 

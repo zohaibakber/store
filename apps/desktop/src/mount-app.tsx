@@ -6,7 +6,6 @@ import {
   type InventoryHost,
 } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -16,23 +15,11 @@ import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { ThemeProvider } from "@/components/theme/provider";
 import type { HostAccessPolicy } from "@/host-access";
 import { authSession } from "@/lib/auth";
+import { preferenceStore } from "@/lib/preferences";
 import { makeReplayChannel } from "@/replay-channel";
 import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
 import { getRouter } from "./router";
-
-const browserStorage = (): Storage | null => {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const preferenceStore = () => {
-  const storage = browserStorage();
-  return storage === null ? KeyValueStore.layerMemory : KeyValueStore.layerStorage(() => storage);
-};
 
 export const mountApp = (input: {
   readonly snapshot: WorkspaceSnapshot;

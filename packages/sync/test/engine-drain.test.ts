@@ -22,6 +22,7 @@ import * as Effect from "effect/Effect";
 import { saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";
 import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
+import { enqueueRequestOf } from "./lib/enqueue";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
@@ -69,8 +70,8 @@ describe("sync engine drains in one cycle", () => {
       Effect.gen(function* () {
         yield* runReplicaTransaction(handle, (tx) =>
           Effect.gen(function* () {
-            yield* saveLocalCommand(tx, lastUnitBuyerAEnvelope, 1);
-            yield* saveLocalCommand(tx, secondEnvelope, 2);
+            yield* saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
+            yield* saveLocalCommand(tx, enqueueRequestOf(secondEnvelope, 2));
           }),
         );
         const submitted: Array<string> = [];

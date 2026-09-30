@@ -5,13 +5,11 @@ import { OrganizationCommand, TokenSet } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import { fetchOrganizationRoster, organizeOrganization } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
 
-import { analyseInvoiceUpload } from "../src/lib/invoice-upload";
 import { AuthBroker } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
@@ -208,15 +206,11 @@ function registerAuthIpc() {
   });
   ipcMain.handle("auth:organization", (event) => {
     assertRendererIpc(event.senderFrame);
-    return fetchOrganizationRoster((pathname, init) => authBroker.authRequest(pathname, init));
+    return authBroker.organizationRoster();
   });
   ipcMain.handle("auth:organize", async (event, input) => {
     assertRendererIpc(event.senderFrame);
-    const command = Schema.decodeUnknownSync(OrganizationCommand)(input);
-    return organizeOrganization(
-      (pathname, init) => authBroker.authRequest(pathname, init),
-      command,
-    );
+    return authBroker.organize(Schema.decodeUnknownSync(OrganizationCommand)(input));
   });
   ipcMain.handle("auth:open-external", async (event, input) => {
     assertRendererIpc(event.senderFrame);
@@ -233,10 +227,7 @@ function registerServerIpc() {
   ipcMain.handle("server:uploads", async (event, input) => {
     assertRendererIpc(event.senderFrame);
     const upload = Schema.decodeUnknownSync(InvoiceUpload)(input);
-    return analyseInvoiceUpload(
-      (pathname, init) => authBroker.apiRequest(pathname, init),
-      upload.files,
-    );
+    return authBroker.analyseInvoices(upload.files);
   });
 }
 
@@ -391,11 +382,8 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
-    syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, (url, init) =>
-      authBroker.apiFetch(url, init),
-    ),
-    liveAccessToken: async (force) =>
-      (await authBroker.ensureFreshAccess(force))?.accessToken ?? null,
+    syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
+    liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,
   });
   await authBroker.initialize();

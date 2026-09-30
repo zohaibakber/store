@@ -11,10 +11,11 @@ import { InventorySnapshots, makeInventorySnapshots } from "./snapshots";
 export const InventoryAuthorityLive = Layer.effectContext(
   Effect.gen(function* () {
     const db = yield* openInventoryDrizzle;
+    const live = yield* makeInventoryLive(db);
     return Context.empty().pipe(
       Context.add(InventoryCommands, makeInventoryCommands(db)),
       Context.add(InventorySnapshots, makeInventorySnapshots(db)),
-      Context.add(InventoryLive, makeInventoryLive(db)),
+      Context.add(InventoryLive, live),
       Context.add(InventoryMaintenance, makeInventoryMaintenance(db)),
     );
   }),

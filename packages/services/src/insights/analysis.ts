@@ -1,4 +1,21 @@
 import {
+  SALES_RANGE_DAYS,
+  type ExpiringBatch,
+  type InsightAlert,
+  type InsightKind,
+  type InsightSeverity,
+  type InsightsInventoryTotals,
+  type InsightsSalesSummary,
+  type OrderSuggestion,
+  type ProductInsight,
+  type SalesDay,
+  type SalesPeriod,
+  type SalesRange,
+  type StockStatus,
+  type StockStatusCounts,
+  type TopProduct,
+} from "@store/contracts/sync/replica-analytics";
+import {
   INSIGHTS_DAY_MILLIS,
   insightsDayOf,
   insightsDayStart,
@@ -8,132 +25,28 @@ import {
 } from "@store/contracts/sync/replica-insights";
 
 import { formatPrice } from "../format";
-import { forecastDemand, type DemandForecast, type DemandTrend } from "./demand";
+import { forecastDemand, type DemandTrend } from "./demand";
 import { serviceLevelFor, type AbcClass, type StockPolicy } from "./policy";
 import { inverseNormal } from "./statistics";
 
 export const DEMAND_HISTORY_DAYS = 90;
 export const INSIGHTS_HISTORY_DAYS = 2 * DEMAND_HISTORY_DAYS;
-export const SALES_RANGES = [7, 30, 90] as const;
-export type SalesRange = (typeof SALES_RANGES)[number];
-
-export type StockStatus =
-  | "out"
-  | "critical"
-  | "low"
-  | "dead"
-  | "overstock"
-  | "healthy"
-  | "inactive";
+export const SALES_RANGES = SALES_RANGE_DAYS;
+export type {
+  ExpiringBatch,
+  InsightAlert,
+  InsightKind,
+  InsightSeverity,
+  OrderSuggestion,
+  ProductInsight,
+  SalesDay,
+  SalesPeriod,
+  SalesRange,
+  StockStatus,
+  TopProduct,
+};
 
 export const ATTENTION_STATUSES: ReadonlySet<StockStatus> = new Set(["out", "critical", "low"]);
-
-export type OrderSuggestion = {
-  readonly quantity: number;
-  readonly unit: "packs" | "units";
-  readonly baseUnits: number;
-  readonly cost: number | null;
-};
-
-export type ProductInsight = {
-  readonly productId: string;
-  readonly name: string;
-  readonly categoryName: string | null;
-  readonly unitsPerPack: number;
-  readonly tracksPacks: boolean;
-  readonly abc: AbcClass;
-  readonly status: StockStatus;
-  readonly demand: DemandForecast;
-  readonly onHandUnits: number;
-  readonly availableUnits: number;
-  readonly expiredUnits: number;
-  readonly expiryRiskUnits: number;
-  readonly usableUnits: number;
-  readonly nearestExpiry: number | null;
-  readonly daysOfCover: number | null;
-  readonly stockoutAt: number | null;
-  readonly safetyStock: number;
-  readonly reorderPoint: number;
-  readonly orderUpTo: number;
-  readonly order: OrderSuggestion | null;
-  readonly unitCost: number | null;
-  readonly unitPrice: number | null;
-  readonly stockValueAtCost: number | null;
-  readonly stockValueAtRetail: number | null;
-  readonly units30d: number;
-  readonly units90d: number;
-  readonly revenue90d: number;
-  readonly daysSinceLastSale: number | null;
-  readonly lostRevenuePerDay: number;
-  readonly priority: number;
-};
-
-export type ExpiringBatch = {
-  readonly productId: string;
-  readonly name: string;
-  readonly batchNumber: string | null;
-  readonly expiresAt: number;
-  readonly units: number;
-  readonly atRiskUnits: number;
-  readonly valueAtCost: number | null;
-};
-
-export type SalesDay = {
-  readonly day: number;
-  readonly date: number;
-  readonly revenue: number;
-  readonly invoices: number;
-  readonly previousRevenue: number;
-};
-
-export type TopProduct = {
-  readonly productId: string;
-  readonly name: string;
-  readonly revenue: number;
-  readonly units: number;
-  readonly share: number;
-  readonly trend: DemandTrend;
-};
-
-export type SalesPeriod = {
-  readonly days: SalesRange;
-  readonly revenue: number;
-  readonly invoices: number;
-  readonly averageBasket: number | null;
-  readonly grossProfit: number | null;
-  readonly margin: number | null;
-  readonly costCoverage: number;
-  readonly previousRevenue: number;
-  readonly previousInvoices: number;
-  readonly revenueChange: number | null;
-  readonly invoicesChange: number | null;
-  readonly series: ReadonlyArray<SalesDay>;
-  readonly topProducts: ReadonlyArray<TopProduct>;
-};
-
-export type InsightSeverity = "critical" | "warning" | "info" | "positive";
-export type InsightKind =
-  | "stockout"
-  | "runningOut"
-  | "reorder"
-  | "expired"
-  | "expiryRisk"
-  | "deadStock"
-  | "overstock"
-  | "risingDemand"
-  | "fallingDemand"
-  | "missingCosts"
-  | "truncated";
-
-export type InsightAlert = {
-  readonly id: string;
-  readonly kind: InsightKind;
-  readonly severity: InsightSeverity;
-  readonly productId: string | null;
-  readonly title: string;
-  readonly detail: string;
-  readonly impact: number;
-};
 
 export type InsightsReport = {
   readonly generatedAt: number;
@@ -141,30 +54,15 @@ export type InsightsReport = {
   readonly utcOffsetMinutes: number;
   readonly policy: StockPolicy;
   readonly products: ReadonlyArray<ProductInsight>;
-  readonly counts: Readonly<Record<StockStatus, number>>;
+  readonly counts: StockStatusCounts;
   readonly alerts: ReadonlyArray<InsightAlert>;
   readonly expiring: ReadonlyArray<ExpiringBatch>;
-  readonly inventory: {
-    readonly valueAtCost: number;
-    readonly valueAtRetail: number;
-    readonly deadStockValue: number;
-    readonly expiryRiskValue: number;
-    readonly expiredValue: number;
-    readonly reorderCost: number;
-    readonly reorderCount: number;
-    readonly missingCostCount: number;
-  };
-  readonly sales: {
-    readonly today: { readonly revenue: number; readonly invoices: number };
-    readonly periods: Readonly<Record<SalesRange, SalesPeriod>>;
-    readonly weekdays: ReadonlyArray<{ readonly weekday: number; readonly revenue: number }>;
-    readonly hours: ReadonlyArray<{ readonly hour: number; readonly invoices: number }>;
-    readonly peakHour: number | null;
-  };
+  readonly inventory: InsightsInventoryTotals;
+  readonly sales: InsightsSalesSummary;
   readonly truncated: boolean;
 };
 
-type SalesLedger = {
+export type SalesLedger = {
   readonly series: Float64Array;
   units30d: number;
   units90d: number;
@@ -186,7 +84,7 @@ const STATUS_WEIGHT = {
   inactive: 0,
 } satisfies Record<StockStatus, number>;
 const ABC_WEIGHT = { A: 3, B: 2, C: 1 } satisfies Record<AbcClass, number>;
-const MAX_ALERTS = 60;
+export const MAX_ALERTS = 60;
 const ALERT_SEVERITY_RANK = {
   critical: 0,
   warning: 1,
@@ -194,7 +92,7 @@ const ALERT_SEVERITY_RANK = {
   info: 3,
 } satisfies Record<InsightSeverity, number>;
 
-const emptyLedger = (): SalesLedger => ({
+export const emptyLedger = (): SalesLedger => ({
   series: new Float64Array(DEMAND_HISTORY_DAYS),
   units30d: 0,
   units90d: 0,
@@ -206,39 +104,63 @@ const emptyLedger = (): SalesLedger => ({
   previousUnits: new Float64Array(SALES_RANGES.length),
 });
 
+export const addSaleToLedger = (
+  ledger: SalesLedger,
+  sale: { readonly day: number; readonly units: number; readonly revenue: number },
+  today: number,
+) => {
+  const age = today - sale.day;
+  if (age < 0) return;
+  if (age >= 1 && age <= DEMAND_HISTORY_DAYS) {
+    const index = DEMAND_HISTORY_DAYS - age;
+    ledger.series[index] = (ledger.series[index] ?? 0) + sale.units;
+  }
+  if (age < DEMAND_HISTORY_DAYS) {
+    ledger.units90d += sale.units;
+    ledger.revenue90d += sale.revenue;
+    if (age < 30) ledger.units30d += sale.units;
+  }
+  if (sale.units > 0 && (ledger.lastSoldDay === null || sale.day > ledger.lastSoldDay)) {
+    ledger.lastSoldDay = sale.day;
+  }
+  SALES_RANGES.forEach((range, slot) => {
+    if (age < range) {
+      ledger.periodRevenue[slot] = (ledger.periodRevenue[slot] ?? 0) + sale.revenue;
+      ledger.periodUnits[slot] = (ledger.periodUnits[slot] ?? 0) + sale.units;
+    } else if (age < 2 * range) {
+      ledger.previousRevenue[slot] = (ledger.previousRevenue[slot] ?? 0) + sale.revenue;
+      ledger.previousUnits[slot] = (ledger.previousUnits[slot] ?? 0) + sale.units;
+    }
+  });
+};
+
 const buildLedgers = (facts: ReplicaInsightsFacts, today: number) => {
   const ledgers = new Map<string, SalesLedger>();
   for (const sale of facts.sales) {
-    const age = today - sale.day;
-    if (age < 0) continue;
+    if (today - sale.day < 0) continue;
     let ledger = ledgers.get(sale.productId);
     if (ledger === undefined) {
       ledger = emptyLedger();
       ledgers.set(sale.productId, ledger);
     }
-    if (age >= 1 && age <= DEMAND_HISTORY_DAYS) {
-      const index = DEMAND_HISTORY_DAYS - age;
-      ledger.series[index] = (ledger.series[index] ?? 0) + sale.units;
-    }
-    if (age < DEMAND_HISTORY_DAYS) {
-      ledger.units90d += sale.units;
-      ledger.revenue90d += sale.revenue;
-      if (age < 30) ledger.units30d += sale.units;
-    }
-    if (sale.units > 0 && (ledger.lastSoldDay === null || sale.day > ledger.lastSoldDay)) {
-      ledger.lastSoldDay = sale.day;
-    }
-    SALES_RANGES.forEach((range, slot) => {
-      if (age < range) {
-        ledger.periodRevenue[slot] = (ledger.periodRevenue[slot] ?? 0) + sale.revenue;
-        ledger.periodUnits[slot] = (ledger.periodUnits[slot] ?? 0) + sale.units;
-      } else if (age < 2 * range) {
-        ledger.previousRevenue[slot] = (ledger.previousRevenue[slot] ?? 0) + sale.revenue;
-        ledger.previousUnits[slot] = (ledger.previousUnits[slot] ?? 0) + sale.units;
-      }
-    });
+    addSaleToLedger(ledger, sale, today);
   }
   return ledgers;
+};
+
+export const classifyRevenueRanking = (
+  ranked: Iterable<{ readonly id: string; readonly revenue: number }>,
+  emit: (id: string, abc: AbcClass) => void,
+) => {
+  let total = 0;
+  const entries = [...ranked];
+  for (const entry of entries) total += entry.revenue;
+  let cumulative = 0;
+  for (const entry of entries) {
+    const shareBefore = total === 0 ? 1 : cumulative / total;
+    emit(entry.id, shareBefore < 0.8 ? "A" : shareBefore < 0.95 ? "B" : "C");
+    cumulative += entry.revenue;
+  }
 };
 
 const classifyAbc = (
@@ -249,14 +171,8 @@ const classifyAbc = (
     .map((product) => ({ id: product.id, revenue: ledgers.get(product.id)?.revenue90d ?? 0 }))
     .filter((entry) => entry.revenue > 0)
     .sort((left, right) => right.revenue - left.revenue);
-  const total = ranked.reduce((sum, entry) => sum + entry.revenue, 0);
   const classes = new Map<string, AbcClass>();
-  let cumulative = 0;
-  for (const entry of ranked) {
-    const shareBefore = total === 0 ? 1 : cumulative / total;
-    classes.set(entry.id, shareBefore < 0.8 ? "A" : shareBefore < 0.95 ? "B" : "C");
-    cumulative += entry.revenue;
-  }
+  classifyRevenueRanking(ranked, (id, abc) => classes.set(id, abc));
   return classes;
 };
 
@@ -356,7 +272,7 @@ type AnalyzedProduct = {
   readonly expiring: ReadonlyArray<ExpiringBatch>;
 };
 
-const analyzeProduct = (input: {
+export const analyzeProduct = (input: {
   readonly product: InsightsProductFact;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
   readonly ledger: SalesLedger | undefined;
@@ -469,17 +385,17 @@ const analyzeProduct = (input: {
 const change = (current: number, previous: number) =>
   previous === 0 ? null : current / previous - 1;
 
-const salesPeriod = (input: {
-  readonly facts: ReplicaInsightsFacts;
+type DayFact = ReplicaInsightsFacts["days"][number];
+type HourFact = ReplicaInsightsFacts["hours"][number];
+
+export const salesPeriodSeries = (input: {
+  readonly days: ReadonlyArray<DayFact>;
   readonly range: SalesRange;
-  readonly slot: number;
   readonly today: number;
-  readonly products: ReadonlyArray<InsightsProductFact>;
-  readonly ledgers: Map<string, SalesLedger>;
-  readonly insights: Map<string, ProductInsight>;
-}): SalesPeriod => {
-  const { range, slot, today } = input;
-  const byDay = new Map(input.facts.days.map((day) => [day.day, day]));
+  readonly utcOffsetMinutes: number;
+}) => {
+  const { range, today } = input;
+  const byDay = new Map(input.days.map((day) => [day.day, day]));
   const series: Array<SalesDay> = [];
   let revenue = 0;
   let invoices = 0;
@@ -495,43 +411,69 @@ const salesPeriod = (input: {
     previousInvoices += previous?.invoices ?? 0;
     series.push({
       day,
-      date: insightsDayStart(day, input.facts.window.utcOffsetMinutes),
+      date: insightsDayStart(day, input.utcOffsetMinutes),
       revenue: current?.revenue ?? 0,
       invoices: current?.invoices ?? 0,
       previousRevenue: previous?.revenue ?? 0,
     });
   }
+  return { series, revenue, invoices, previousRevenue, previousInvoices };
+};
+
+const TOP_PRODUCT_LIMIT = 8;
+
+type PeriodProductEntry = {
+  readonly productId: string;
+  readonly name: string;
+  readonly revenue: number;
+  readonly units: number;
+  readonly unitCost: number | null;
+  readonly trend: DemandTrend;
+};
+
+export const summarizePeriodProducts = (entries: Iterable<PeriodProductEntry>) => {
   let productRevenue = 0;
   let costedRevenue = 0;
   let cost = 0;
-  const top: Array<TopProduct> = [];
-  for (const product of input.products) {
-    const ledger = input.ledgers.get(product.id);
-    const periodRevenue = ledger?.periodRevenue[slot] ?? 0;
-    const periodUnits = ledger?.periodUnits[slot] ?? 0;
-    if (periodRevenue <= 0 && periodUnits <= 0) continue;
-    productRevenue += periodRevenue;
-    const unitCost = unitCostOf(product);
-    if (unitCost !== null) {
-      costedRevenue += periodRevenue;
-      cost += periodUnits * unitCost;
+  const top: Array<PeriodProductEntry> = [];
+  for (const entry of entries) {
+    if (entry.revenue <= 0 && entry.units <= 0) continue;
+    productRevenue += entry.revenue;
+    if (entry.unitCost !== null) {
+      costedRevenue += entry.revenue;
+      cost += entry.units * entry.unitCost;
     }
-    top.push({
-      productId: product.id,
-      name: product.name,
-      revenue: periodRevenue,
-      units: periodUnits,
-      share: 0,
-      trend: input.insights.get(product.id)?.demand.trend ?? "unknown",
-    });
+    let position = top.length;
+    for (let index = 0; index < top.length; index += 1) {
+      if (entry.revenue > (top[index]?.revenue ?? 0)) {
+        position = index;
+        break;
+      }
+    }
+    if (position < TOP_PRODUCT_LIMIT) {
+      top.splice(position, 0, entry);
+      if (top.length > TOP_PRODUCT_LIMIT) top.pop();
+    }
   }
-  const topProducts = top
-    .sort((left, right) => right.revenue - left.revenue)
-    .slice(0, 8)
-    .map((entry) => ({
-      ...entry,
-      share: productRevenue === 0 ? 0 : entry.revenue / productRevenue,
-    }));
+  return { productRevenue, costedRevenue, cost, top };
+};
+
+export const assembleSalesPeriod = (input: {
+  readonly range: SalesRange;
+  readonly days: ReturnType<typeof salesPeriodSeries>;
+  readonly products: ReturnType<typeof summarizePeriodProducts>;
+}): SalesPeriod => {
+  const { range } = input;
+  const { series, revenue, invoices, previousRevenue, previousInvoices } = input.days;
+  const { productRevenue, costedRevenue, cost } = input.products;
+  const topProducts: ReadonlyArray<TopProduct> = input.products.top.map((entry) => ({
+    productId: entry.productId,
+    name: entry.name,
+    revenue: entry.revenue,
+    units: entry.units,
+    share: productRevenue === 0 ? 0 : entry.revenue / productRevenue,
+    trend: entry.trend,
+  }));
   const costCoverage = productRevenue === 0 ? 0 : costedRevenue / productRevenue;
   const grossProfit = costedRevenue === 0 ? null : Math.round(costedRevenue - cost);
   return {
@@ -551,13 +493,89 @@ const salesPeriod = (input: {
   };
 };
 
+const salesPeriod = (input: {
+  readonly facts: ReplicaInsightsFacts;
+  readonly range: SalesRange;
+  readonly slot: number;
+  readonly today: number;
+  readonly products: ReadonlyArray<InsightsProductFact>;
+  readonly ledgers: Map<string, SalesLedger>;
+  readonly insights: Map<string, ProductInsight>;
+}): SalesPeriod => {
+  const { range, slot } = input;
+  const entries = function* (): Generator<PeriodProductEntry> {
+    for (const product of input.products) {
+      const ledger = input.ledgers.get(product.id);
+      yield {
+        productId: product.id,
+        name: product.name,
+        revenue: ledger?.periodRevenue[slot] ?? 0,
+        units: ledger?.periodUnits[slot] ?? 0,
+        unitCost: unitCostOf(product),
+        trend: input.insights.get(product.id)?.demand.trend ?? "unknown",
+      };
+    }
+  };
+  return assembleSalesPeriod({
+    range,
+    days: salesPeriodSeries({
+      days: input.facts.days,
+      range,
+      today: input.today,
+      utcOffsetMinutes: input.facts.window.utcOffsetMinutes,
+    }),
+    products: summarizePeriodProducts(entries()),
+  });
+};
+
+export const salesRhythm = (input: {
+  readonly days: ReadonlyArray<DayFact>;
+  readonly hours: ReadonlyArray<HourFact>;
+  readonly today: number;
+}): Omit<InsightsSalesSummary, "periods"> => {
+  const { today } = input;
+  const weekdayTotals = new Float64Array(7);
+  const weekdayCounts = new Float64Array(7);
+  for (let age = 1; age <= 56; age += 1) {
+    const weekday = (((today - age + 4) % 7) + 7) % 7;
+    weekdayCounts[weekday] = (weekdayCounts[weekday] ?? 0) + 1;
+  }
+  for (const day of input.days) {
+    const age = today - day.day;
+    if (age < 1 || age > 56) continue;
+    const weekday = (((day.day + 4) % 7) + 7) % 7;
+    weekdayTotals[weekday] = (weekdayTotals[weekday] ?? 0) + day.revenue;
+  }
+  const hours = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    invoices: input.hours.find((fact) => fact.hour === hour)?.invoices ?? 0,
+  }));
+  const peak = hours.reduce<{ hour: number; invoices: number } | null>(
+    (best, entry) => (entry.invoices > (best?.invoices ?? 0) ? entry : best),
+    null,
+  );
+  const todayFact = input.days.find((day) => day.day === today);
+  return {
+    today: { revenue: todayFact?.revenue ?? 0, invoices: todayFact?.invoices ?? 0 },
+    weekdays: Array.from({ length: 7 }, (_, weekday) => ({
+      weekday,
+      revenue:
+        (weekdayCounts[weekday] ?? 0) === 0
+          ? 0
+          : (weekdayTotals[weekday] ?? 0) / (weekdayCounts[weekday] ?? 1),
+    })),
+    hours,
+    peakHour: peak?.hour ?? null,
+  };
+};
+
 const unitsLabel = (units: number) =>
   `${Math.round(units).toLocaleString()} ${units === 1 ? "unit" : "units"}`;
 
 const orderLabel = (order: OrderSuggestion) =>
   `${order.quantity.toLocaleString()} ${order.unit === "packs" ? (order.quantity === 1 ? "pack" : "packs") : order.quantity === 1 ? "unit" : "units"}`;
 
-const productAlerts = (
+export const productAlerts = (
   insight: ProductInsight,
   policy: StockPolicy,
 ): ReadonlyArray<InsightAlert> => {
@@ -673,6 +691,33 @@ const productAlerts = (
   return alerts;
 };
 
+export const inventoryContribution = (insight: ProductInsight) => ({
+  valueAtCost: insight.stockValueAtCost ?? 0,
+  valueAtRetail: insight.stockValueAtRetail ?? 0,
+  deadStockValue: insight.status === "dead" ? (insight.stockValueAtCost ?? 0) : 0,
+  expiryRiskValue:
+    insight.unitCost === null ? 0 : Math.round(insight.expiryRiskUnits * insight.unitCost),
+  expiredValue: insight.unitCost === null ? 0 : Math.round(insight.expiredUnits * insight.unitCost),
+  reorderCount: insight.order ? 1 : 0,
+  reorderCost: insight.order ? (insight.order.cost ?? 0) : 0,
+  missingCostCount: insight.unitCost === null && insight.units90d > 0 ? 1 : 0,
+});
+
+export const missingCostsAlert = (count: number): InsightAlert => ({
+  id: "missingCosts",
+  kind: "missingCosts",
+  severity: "info",
+  productId: null,
+  title: `Add purchase prices to ${count} selling ${count === 1 ? "product" : "products"}`,
+  detail: "Margins, stock value, and order costs leave those products out until then.",
+  impact: 0,
+});
+
+export const compareAlerts = (left: InsightAlert, right: InsightAlert) =>
+  ALERT_SEVERITY_RANK[left.severity] - ALERT_SEVERITY_RANK[right.severity] ||
+  right.impact - left.impact ||
+  left.title.localeCompare(right.title);
+
 export const analyzeInsights = (
   facts: ReplicaInsightsFacts,
   policy: StockPolicy,
@@ -733,31 +778,18 @@ export const analyzeInsights = (
   const alerts: Array<InsightAlert> = [];
   for (const insight of products) {
     counts[insight.status] += 1;
-    inventory.valueAtCost += insight.stockValueAtCost ?? 0;
-    inventory.valueAtRetail += insight.stockValueAtRetail ?? 0;
-    if (insight.status === "dead") inventory.deadStockValue += insight.stockValueAtCost ?? 0;
-    if (insight.unitCost !== null) {
-      inventory.expiryRiskValue += Math.round(insight.expiryRiskUnits * insight.unitCost);
-      inventory.expiredValue += Math.round(insight.expiredUnits * insight.unitCost);
-    }
-    if (insight.order) {
-      inventory.reorderCount += 1;
-      inventory.reorderCost += insight.order.cost ?? 0;
-    }
-    if (insight.unitCost === null && insight.units90d > 0) inventory.missingCostCount += 1;
+    const share = inventoryContribution(insight);
+    inventory.valueAtCost += share.valueAtCost;
+    inventory.valueAtRetail += share.valueAtRetail;
+    inventory.deadStockValue += share.deadStockValue;
+    inventory.expiryRiskValue += share.expiryRiskValue;
+    inventory.expiredValue += share.expiredValue;
+    inventory.reorderCount += share.reorderCount;
+    inventory.reorderCost += share.reorderCost;
+    inventory.missingCostCount += share.missingCostCount;
     alerts.push(...productAlerts(insight, policy));
   }
-  if (inventory.missingCostCount > 0) {
-    alerts.push({
-      id: "missingCosts",
-      kind: "missingCosts",
-      severity: "info",
-      productId: null,
-      title: `Add purchase prices to ${inventory.missingCostCount} selling ${inventory.missingCostCount === 1 ? "product" : "products"}`,
-      detail: "Margins, stock value, and order costs leave those products out until then.",
-      impact: 0,
-    });
-  }
+  if (inventory.missingCostCount > 0) alerts.push(missingCostsAlert(inventory.missingCostCount));
   if (facts.truncated) {
     alerts.push({
       id: "truncated",
@@ -769,12 +801,7 @@ export const analyzeInsights = (
       impact: 0,
     });
   }
-  alerts.sort(
-    (left, right) =>
-      ALERT_SEVERITY_RANK[left.severity] - ALERT_SEVERITY_RANK[right.severity] ||
-      right.impact - left.impact ||
-      left.title.localeCompare(right.title),
-  );
+  alerts.sort(compareAlerts);
 
   const period = (range: SalesRange, slot: number) =>
     salesPeriod({ facts, range, slot, today, products: visible, ledgers, insights: insightById });
@@ -784,27 +811,7 @@ export const analyzeInsights = (
     90: period(90, 2),
   } satisfies Record<SalesRange, SalesPeriod>;
 
-  const weekdayTotals = new Float64Array(7);
-  const weekdayCounts = new Float64Array(7);
-  for (let age = 1; age <= 56; age += 1) {
-    const weekday = (((today - age + 4) % 7) + 7) % 7;
-    weekdayCounts[weekday] = (weekdayCounts[weekday] ?? 0) + 1;
-  }
-  for (const day of facts.days) {
-    const age = today - day.day;
-    if (age < 1 || age > 56) continue;
-    const weekday = (((day.day + 4) % 7) + 7) % 7;
-    weekdayTotals[weekday] = (weekdayTotals[weekday] ?? 0) + day.revenue;
-  }
-  const hours = Array.from({ length: 24 }, (_, hour) => ({
-    hour,
-    invoices: facts.hours.find((fact) => fact.hour === hour)?.invoices ?? 0,
-  }));
-  const peak = hours.reduce<{ hour: number; invoices: number } | null>(
-    (best, entry) => (entry.invoices > (best?.invoices ?? 0) ? entry : best),
-    null,
-  );
-  const todayFact = facts.days.find((day) => day.day === today);
+  const rhythm = salesRhythm({ days: facts.days, hours: facts.hours, today });
 
   return {
     generatedAt: now,
@@ -816,19 +823,7 @@ export const analyzeInsights = (
     alerts: alerts.slice(0, MAX_ALERTS),
     expiring: expiring.sort((left, right) => left.expiresAt - right.expiresAt),
     inventory,
-    sales: {
-      today: { revenue: todayFact?.revenue ?? 0, invoices: todayFact?.invoices ?? 0 },
-      periods,
-      weekdays: Array.from({ length: 7 }, (_, weekday) => ({
-        weekday,
-        revenue:
-          (weekdayCounts[weekday] ?? 0) === 0
-            ? 0
-            : (weekdayTotals[weekday] ?? 0) / (weekdayCounts[weekday] ?? 1),
-      })),
-      hours,
-      peakHour: peak?.hour ?? null,
-    },
+    sales: { ...rhythm, periods },
     truncated: facts.truncated,
   };
 };

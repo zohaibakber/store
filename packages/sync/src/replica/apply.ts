@@ -9,7 +9,15 @@ import * as Effect from "effect/Effect";
 
 import { decodeCategoryRow, decodeInvoiceRow } from "./codecs";
 import { loadReplicaState } from "./commands";
-import { updateCoverageFromPull } from "./coverage";
+import {
+  EMPTY_TOUCHED,
+  mergeTouched,
+  touchedOfChange,
+  touchedOfKey,
+  withStockTouched,
+  type TouchedSet,
+} from "./commit-hub";
+import { readDigestFence, type DigestFence } from "./coverage";
 import { shouldApplyCommitSequence } from "./decisions";
 import {
   clearPendingProjection,
@@ -20,17 +28,15 @@ import {
 } from "./pending";
 import { removeEntityRow, writeEntityRow } from "./rows";
 import type { ReplicaDb } from "./sql-client/drizzle";
+import { encodeGroupJson, recordActiveMutation } from "./sqlite/generation";
 
-type PullApplyResult = {
+type PullApplyResult = TouchedSet & {
   readonly appliedThrough: string;
-  readonly repairRequired: boolean;
-  readonly digestVerified: boolean;
-  readonly touchedKeys: ReadonlyArray<string>;
+  readonly digestFence: DigestFence | undefined;
 };
 
-type GroupApplyResult = {
+type GroupApplyResult = TouchedSet & {
   readonly appliedThrough: string;
-  readonly touchedKeys: ReadonlyArray<string>;
 };
 
 export type ReplicaFeedMode =
@@ -54,21 +60,61 @@ export const feedAfterPull = (pulled: SyncPullResult, appliedThrough: string): R
 
 const applyChange = Effect.fn("ReplicaApply.applyChange")(function* (
   tx: ReplicaDb,
+  organizationId: string,
   change: SyncTransactionGroup["changes"][number],
   operationId: string,
 ) {
   if (change.action === "delete") {
-    yield* removeEntityRow(tx, change.entity, change.entityId);
+    yield* removeEntityRow(tx, organizationId, change.entity, change.entityId);
     return undefined;
   }
   const renamed =
     change.entity === "invoice"
-      ? yield* renumberCollidingShadowInvoice(tx, decodeInvoiceRow(change.row), operationId)
+      ? yield* renumberCollidingShadowInvoice(
+          tx,
+          organizationId,
+          decodeInvoiceRow(change.row),
+          operationId,
+        )
       : change.entity === "category"
-        ? yield* renameCollidingShadowCategory(tx, decodeCategoryRow(change.row), operationId)
+        ? yield* renameCollidingShadowCategory(
+            tx,
+            organizationId,
+            decodeCategoryRow(change.row),
+            operationId,
+          )
         : undefined;
   yield* writeEntityRow(tx, change.entity, change.row);
   return renamed;
+});
+
+export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  group: SyncTransactionGroup,
+) {
+  const touched: Array<TouchedSet> = [];
+  for (const change of group.changes) {
+    const renumbered = yield* applyChange(tx, organizationId, change, group.operationId);
+    touched.push(touchedOfChange(change.entity, change.entityId));
+    if (renumbered) touched.push(touchedOfKey(renumbered));
+    yield* resolveRemoteRow(tx, change.entity, change.entityId);
+  }
+  if (group.decision === "rejected") {
+    touched.push(yield* restorePendingProjection(tx, group.operationId));
+  } else {
+    yield* clearPendingProjection(tx, group.operationId);
+  }
+  const overlays = yield* tx
+    .select({ batchId: stockOverlays.batchId })
+    .from(stockOverlays)
+    .where(eq(stockOverlays.commandId, group.operationId))
+    .all();
+  yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, group.operationId));
+  return withStockTouched(
+    mergeTouched(...touched),
+    overlays.map((overlay) => overlay.batchId),
+  );
 });
 
 export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGroup")(function* (
@@ -79,21 +125,10 @@ export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGro
   if (!shouldApplyCommitSequence(state.appliedCommitSequence, group.commitSequence)) {
     return {
       appliedThrough: state.appliedCommitSequence,
-      touchedKeys: [],
+      ...EMPTY_TOUCHED,
     } satisfies GroupApplyResult;
   }
-  const touchedKeys: Array<string> = [];
-  for (const change of group.changes) {
-    const renumbered = yield* applyChange(tx, change, group.operationId);
-    if (renumbered) touchedKeys.push(renumbered);
-    yield* resolveRemoteRow(tx, change.entity, change.entityId);
-  }
-  if (group.decision === "rejected") {
-    yield* restorePendingProjection(tx, group.operationId);
-  } else {
-    yield* clearPendingProjection(tx, group.operationId);
-  }
-  yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, group.operationId));
+  const touched = yield* applyGroupRows(tx, state.organizationId, group);
   const outbox = yield* tx
     .select()
     .from(commandOutbox)
@@ -112,7 +147,16 @@ export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGro
       localCommitVersion: state.localCommitVersion + 1,
     })
     .where(eq(replicaState.id, state.id));
-  return { appliedThrough: group.commitSequence, touchedKeys } satisfies GroupApplyResult;
+  yield* recordActiveMutation(tx, () => ({
+    kind: "group",
+    operationId: group.operationId,
+    commitSequence: group.commitSequence,
+    payloadJson: encodeGroupJson(group),
+  }));
+  return {
+    appliedThrough: group.commitSequence,
+    ...touched,
+  } satisfies GroupApplyResult;
 });
 
 export const applyPullResult = Effect.fn("ReplicaApply.applyPullResult")(function* (
@@ -121,17 +165,15 @@ export const applyPullResult = Effect.fn("ReplicaApply.applyPullResult")(functio
 ) {
   const state = yield* loadReplicaState(tx);
   let appliedThrough = state.appliedCommitSequence;
-  const touchedKeys: Array<string> = [];
+  const touched: Array<TouchedSet> = [];
   for (const group of pulled.transactions) {
     const applied = yield* applyTransactionGroup(tx, group);
     appliedThrough = applied.appliedThrough;
-    touchedKeys.push(...applied.touchedKeys);
+    touched.push(applied);
   }
-  const coverage = yield* updateCoverageFromPull(tx, pulled, appliedThrough);
   return {
     appliedThrough,
-    repairRequired: coverage.repairRequired,
-    digestVerified: coverage.digestVerified,
-    touchedKeys,
+    digestFence: pulled.digest === undefined ? undefined : yield* readDigestFence(tx),
+    ...mergeTouched(...touched),
   } satisfies PullApplyResult;
 });

@@ -1,7 +1,7 @@
 import { BTreeIndex } from "@tanstack/db";
 
 import { invoiceCoherenceEntityForSource } from "./coherence";
-import { readCollectionKeys, readCollectionSource, readCollectionSubset } from "./collection-read";
+import { readCollectionSource, readCollectionSubset } from "./collection-read";
 import { startCollectionSync } from "./collection-sync";
 import { SOURCE_ENTITY } from "./sources";
 import type {
@@ -21,6 +21,10 @@ export const sqliteCollectionOptions = <Row extends InventoryCollectionRow>(
     descriptor.source === "stockMovements"
       ? invoiceCoherenceEntityForSource(descriptor.source)
       : undefined;
+  const readDependencies: SqliteCollectionDependencies =
+    coherenceEntity !== undefined && dependencies.coherence !== undefined
+      ? { ...dependencies, executor: dependencies.coherence.reader(dependencies.executor) }
+      : dependencies;
 
   return {
     id: descriptor.id,
@@ -35,14 +39,14 @@ export const sqliteCollectionOptions = <Row extends InventoryCollectionRow>(
       sync: (params) =>
         startCollectionSync(
           {
-            subset: (options) => readCollectionSubset(descriptor, dependencies, options),
-            source: () => readCollectionSource(descriptor, dependencies),
-            keys: (keys) => readCollectionKeys(descriptor, dependencies, keys),
+            subset: (options, signal) =>
+              readCollectionSubset(descriptor, readDependencies, options, signal),
+            source: (signal) => readCollectionSource(descriptor, readDependencies, signal),
           },
           { ...descriptor, coherenceEntity },
           dependencies,
           params,
-          (notice) => notice.touchedEntities.includes(SOURCE_ENTITY[descriptor.source]),
+          SOURCE_ENTITY[descriptor.source],
         ),
     },
   };

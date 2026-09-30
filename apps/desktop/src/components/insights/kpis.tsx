@@ -1,5 +1,6 @@
+import type { InsightsSummary } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type { InsightsReport, SalesPeriod } from "@store/services/insights";
+import type { SalesPeriod } from "@store/services/insights";
 
 import { Badge } from "@/components/ui/badge";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
@@ -84,10 +85,10 @@ function Kpi({
 
 export function KpiGrid({
   period,
-  report,
+  summary,
 }: {
   readonly period: SalesPeriod;
-  readonly report: InsightsReport;
+  readonly summary: InsightsSummary;
 }) {
   const span = `previous ${period.days} days`;
   const series = period.series.map((day) => day.revenue);
@@ -132,18 +133,18 @@ export function KpiGrid({
         value={formatNumber(period.invoices)}
       >
         <span className="text-xs text-muted-foreground tabular-nums">
-          {formatCount(report.sales.today.invoices, "sale")} today ·{" "}
-          {formatPrice(report.sales.today.revenue)}
+          {formatCount(summary.sales.today.invoices, "sale")} today ·{" "}
+          {formatPrice(summary.sales.today.revenue)}
         </span>
       </Kpi>
       <Kpi
-        detail={`${formatPrice(report.inventory.valueAtRetail)} at retail`}
+        detail={`${formatPrice(summary.inventory.valueAtRetail)} at retail`}
         label="Stock value"
-        value={formatPrice(report.inventory.valueAtCost)}
+        value={formatPrice(summary.inventory.valueAtCost)}
       >
-        {report.inventory.deadStockValue > 0 ? (
+        {summary.inventory.deadStockValue > 0 ? (
           <span className="text-xs text-muted-foreground tabular-nums">
-            {formatPrice(report.inventory.deadStockValue)} not selling
+            {formatPrice(summary.inventory.deadStockValue)} not selling
           </span>
         ) : null}
       </Kpi>

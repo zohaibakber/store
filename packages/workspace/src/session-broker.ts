@@ -3,91 +3,90 @@ import {
   unauthenticatedWorkspace,
   withWorkspaceError,
   withWorkspaceOnline,
-  WorkspaceSnapshot,
   type WorkspaceSnapshot as WorkspaceSnapshotType,
 } from "@store/contracts/workspace";
-import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 
-import { RequestError, type SessionHttpClient } from "./session-http";
+import { SessionHttp, isSupersededSession, type RequestError } from "./session-http";
 
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
 export interface SessionSnapshotHooks {
-  readonly http: SessionHttpClient;
   readonly getLocalSnapshot: () => WorkspaceSnapshotType;
   readonly publish: (snapshot: WorkspaceSnapshotType) => WorkspaceSnapshotType;
-  readonly clearAuthenticated?: () => Promise<void>;
-  readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Promise<void>;
+  readonly clearAuthenticated?: Effect.Effect<void>;
+  readonly persistAuthenticated?: (snapshot: WorkspaceSnapshotType) => Effect.Effect<void, Error>;
 }
 
-export const adoptAuthenticatedSnapshot = async (
+export const adoptAuthenticatedSnapshot = (
   hooks: SessionSnapshotHooks,
   snapshot: WorkspaceSnapshotType,
-): Promise<WorkspaceSnapshotType> => {
-  const online = withWorkspaceOnline(snapshot, true);
-  hooks.publish(online);
-  try {
-    await hooks.persistAuthenticated?.(online);
-    return online;
-  } catch (error) {
-    return hooks.publish(
-      withWorkspaceError(
-        online,
-        error instanceof Error ? error.message : "Could not persist the authenticated session.",
+): Effect.Effect<WorkspaceSnapshotType> =>
+  Effect.suspend(() => {
+    const online = withWorkspaceOnline(snapshot, true);
+    hooks.publish(online);
+    if (hooks.persistAuthenticated === undefined) return Effect.succeed(online);
+    return hooks.persistAuthenticated(online).pipe(
+      Effect.as(online),
+      Effect.catch((error) =>
+        Effect.sync(() => hooks.publish(withWorkspaceError(online, error.message))),
       ),
     );
-  }
-};
+  });
 
-export const loadSessionSnapshot = async (
+const clearSession = (hooks: SessionSnapshotHooks, workspaceError: string | null = null) =>
+  Effect.gen(function* () {
+    const session = yield* SessionHttp;
+    yield* session.setTokens(null);
+    if (hooks.clearAuthenticated !== undefined) yield* hooks.clearAuthenticated;
+    return hooks.publish(unauthenticated(true, workspaceError));
+  });
+
+const isRejected = (error: RequestError) => error.status === 401 || error.status === 403;
+
+export const loadSessionSnapshot = (
   hooks: SessionSnapshotHooks,
-): Promise<WorkspaceSnapshotType> => {
-  if (!hooks.http.tokens.get()) {
-    await hooks.clearAuthenticated?.();
-    return hooks.publish(unauthenticated(true));
-  }
-  try {
-    const snapshot = Schema.decodeUnknownSync(WorkspaceSnapshot)(
-      await hooks.http.apiRequest("/api/auth/session"),
-    );
-    if (snapshot.status !== "authenticated") {
-      await hooks.clearAuthenticated?.();
+): Effect.Effect<WorkspaceSnapshotType, never, SessionHttp> =>
+  Effect.gen(function* () {
+    const session = yield* SessionHttp;
+    if (!session.tokens.get()) return yield* clearSession(hooks);
+    const loaded = yield* Effect.result(session.workspace);
+    if (Result.isFailure(loaded)) {
+      if (isSupersededSession(loaded.failure)) return hooks.getLocalSnapshot();
+      if (isRejected(loaded.failure)) return yield* clearSession(hooks, loaded.failure.message);
       return hooks.publish(
-        unauthenticated(true, "You signed in, but the server rejected the session."),
+        withWorkspaceError(
+          withWorkspaceOnline(hooks.getLocalSnapshot(), false),
+          loaded.failure.message,
+        ),
       );
     }
-    return await adoptAuthenticatedSnapshot(hooks, snapshot);
-  } catch (error) {
-    if (error instanceof RequestError && (error.status === 401 || error.status === 403)) {
-      await hooks.clearAuthenticated?.();
-      return hooks.publish(unauthenticated(true, error.message));
+    if (loaded.success.status !== "authenticated") {
+      return yield* clearSession(hooks, "You signed in, but the server rejected the session.");
     }
-    return hooks.publish(
-      withWorkspaceError(
-        withWorkspaceOnline(hooks.getLocalSnapshot(), false),
-        error instanceof Error ? error.message : "Could not reach the session server.",
-      ),
-    );
-  }
-};
+    return yield* adoptAuthenticatedSnapshot(hooks, loaded.success);
+  });
 
-export const adoptSessionTokens = async (
+export const adoptSessionTokens = (
   hooks: SessionSnapshotHooks,
   tokens: TokenSetType | null,
-  options?: { readonly onCleared?: () => Promise<void> },
-): Promise<WorkspaceSnapshotType> => {
-  hooks.http.tokens.set(tokens);
-  if (!tokens) {
-    await options?.onCleared?.();
+  options?: { readonly onCleared?: Effect.Effect<void> },
+): Effect.Effect<WorkspaceSnapshotType, never, SessionHttp> =>
+  Effect.gen(function* () {
+    const session = yield* SessionHttp;
+    yield* session.setTokens(tokens);
+    if (tokens) return yield* loadSessionSnapshot(hooks);
+    if (options?.onCleared !== undefined) yield* options.onCleared;
     return hooks.publish(unauthenticated(true));
-  }
-  return loadSessionSnapshot(hooks);
-};
+  });
 
-export const renewSessionSnapshot = async (
+export const renewSessionSnapshot = (
   hooks: SessionSnapshotHooks,
-): Promise<WorkspaceSnapshotType> => {
-  const refreshed = await hooks.http.ensureFreshAccess(true);
-  return refreshed?.workspace === undefined ? loadSessionSnapshot(hooks) : hooks.getLocalSnapshot();
-};
+): Effect.Effect<WorkspaceSnapshotType, RequestError, SessionHttp> =>
+  Effect.gen(function* () {
+    const session = yield* SessionHttp;
+    const refreshed = yield* session.renewAccess;
+    return refreshed === null ? yield* loadSessionSnapshot(hooks) : hooks.getLocalSnapshot();
+  });

@@ -37,8 +37,8 @@ beforeEach(async () => {
   }
 });
 
-afterEach(() => {
-  replica.close();
+afterEach(async () => {
+  await replica.close();
 });
 
 const matching = async (column: string, pattern: string) =>

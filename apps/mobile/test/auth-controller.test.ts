@@ -1,6 +1,6 @@
-import { TokenSet, makeAuthClient, nativeClient } from "@store/auth";
+import { TokenSet, nativeClient } from "@store/auth";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createAuthController,
@@ -256,7 +256,6 @@ const makeController = (
     apiBaseUrl: API,
     authBaseUrl: AUTH,
     fetch: server.fetch,
-    authClient: makeAuthClient({ baseUrl: AUTH, fetch: server.fetch }),
     vault,
     isOnline: async () => options.online ?? true,
     google: options.google ?? null,
@@ -383,14 +382,15 @@ describe("auth controller", () => {
 
     server.revokeEverything();
     const response = await controller.authenticatedFetch(`${API}/api/sync/pull`);
-    await settle();
 
     expect(response.status).toBe(401);
-    expect(controller.getState()).toEqual({
-      _tag: "SignedOut",
-      notice: "Your session ended. Sign in again.",
-    });
-    expect(storage.session()).toBeNull();
+    await vi.waitFor(() =>
+      expect(controller.getState()).toEqual({
+        _tag: "SignedOut",
+        notice: "Your session ended. Sign in again.",
+      }),
+    );
+    await vi.waitFor(() => expect(storage.session()).toBeNull());
   });
 
   it("shares one refresh after a restart with an expired access token", async () => {

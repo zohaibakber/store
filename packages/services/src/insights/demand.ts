@@ -1,22 +1,12 @@
+import type { DemandForecast } from "@store/contracts/sync/replica-analytics";
+
 import { mean, sum } from "./statistics";
 
-export type DemandPattern = "smooth" | "erratic" | "intermittent" | "lumpy" | "sparse" | "none";
-export type DemandMethod = "ses" | "sba" | "average" | "none";
-export type DemandTrend = "rising" | "falling" | "steady" | "unknown";
-export type DemandConfidence = "high" | "medium" | "low";
-
-export type DemandForecast = {
-  readonly dailyRate: number;
-  readonly dailyDeviation: number;
-  readonly pattern: DemandPattern;
-  readonly method: DemandMethod;
-  readonly confidence: DemandConfidence;
-  readonly trend: DemandTrend;
-  readonly trendRatio: number | null;
-  readonly observedDays: number;
-  readonly sellingDays: number;
-  readonly meanAbsoluteError: number | null;
-};
+export type { DemandForecast };
+export type DemandPattern = DemandForecast["pattern"];
+export type DemandMethod = DemandForecast["method"];
+export type DemandTrend = DemandForecast["trend"];
+export type DemandConfidence = DemandForecast["confidence"];
 
 const ADI_CUTOFF = 1.32;
 const CV2_CUTOFF = 0.49;

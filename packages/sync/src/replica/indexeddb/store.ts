@@ -1,21 +1,21 @@
 import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import {
-  partitionDigestOf,
-  STOCK_MOVEMENT_ROW_VERSION,
+  incrementDecimalSequence,
+  SyncCommandEnvelope,
+  syncProtocolError,
   type CommandReceipt,
-  type PartitionEntity,
-  type PartitionLeafSource,
+  type EnqueueCommandRequest,
   type RegisterReplicaResult,
   type SnapshotId,
   type SnapshotManifest,
   type SnapshotPartPayload,
-  type SyncCommandEnvelope,
   type SyncEntity,
   type SyncPullResult,
   type SyncSubscription,
   type SyncTransactionGroup,
 } from "@store/contracts";
+import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import type {
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
@@ -30,7 +30,10 @@ import * as Array from "effect/Array";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 
 import { withDetachedScope } from "../../detached-scope";
 import {
@@ -49,24 +52,27 @@ import {
 import type { ClaimNextUploadInput, UploadClaim } from "../commands";
 import {
   makeReplicaCommitHub,
+  mergeTouched,
   noticeFromState,
   stampOf,
-  touchedEntitiesWithStock,
+  touchedOfChange,
+  touchedOfKey,
+  withStockTouched,
+  type TouchedSet,
 } from "../commit-hub";
 import {
   awaitingSnapshotCoverage,
-  byClientSequence,
   checkAuthorityHead,
   checkIncarnation,
   decideCoverageAfterPull,
-  decideEnqueue,
+  decideEnqueueReplay,
+  decideOverlays,
   decideReceipt,
   isStaleClaim,
   nextUploadClaim,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
   shouldApplyCommitSequence,
-  SYNC_ENTITIES,
 } from "../decisions";
 import { logPartitionDivergence } from "../digest";
 import {
@@ -77,6 +83,7 @@ import {
   mapReplicaStoreFailure,
   ReplicaStorageError,
 } from "../errors";
+import { generationResetNotice } from "../generation-reset";
 import { checkEnqueueAllowed, type PendingRestoreResult } from "../projection";
 import {
   decideRegistration,
@@ -89,12 +96,14 @@ import {
   type QueuedCommand,
   type ReplicaStoreContract,
   type ReplicaStoreError,
+  type SnapshotActivation,
   type VerifyAuthorityInput,
 } from "../store";
+import { indexedDbPartitionDigest } from "./digest";
 import { readIndexedDbInsights } from "./insights";
 import {
   clearIndexedDbPendingProjection,
-  indexedDbCatalogLookup,
+  readIndexedDbCommandContext,
   removeEntityRow,
   renameIndexedDbCollidingCategory,
   renumberIndexedDbCollidingInvoice,
@@ -107,7 +116,6 @@ import {
   executeIndexedDbSubset,
   summarizeIndexedDbSubset,
   type IndexedDbSubsetSummary,
-  generationBounds,
   type IndexedDbSubsetPlan,
   type IndexedDbSubsetRow,
 } from "./query";
@@ -120,11 +128,15 @@ import {
   type ReplicaStateRow,
 } from "./schema";
 import {
-  activateIndexedDbSnapshot,
+  abandonIndexedDbSnapshot,
   beginIndexedDbSnapshotImport,
+  clearAbandonedIndexedDbImportStep,
   importIndexedDbSnapshotPart,
+  promoteIndexedDbSnapshotChunk,
+  switchIndexedDbSnapshot,
+  sweepIndexedDbStorageStep,
 } from "./snapshot";
-import { makeIndexedDbStockCache, readVisibleStockContext, withVisibleStockCells } from "./stock";
+import { withVisibleStockRows } from "./stock";
 
 export type IndexedDbReplicaIdentity = {
   readonly organizationId: string;
@@ -159,6 +171,19 @@ const ENTITY_TABLES = [
 
 const SNAPSHOT_TABLES = [...ENTITY_TABLES, "snapshot_imports", "snapshot_staged_rows"] as const;
 
+const PROMOTE_TABLES = [
+  "categories",
+  "products",
+  "batches",
+  "invoices",
+  "invoice_items",
+  "stock_movements",
+  "snapshot_imports",
+  "snapshot_staged_rows",
+] as const;
+
+const SWEEP_TABLES = [...PROMOTE_TABLES, "replica_state"] as const;
+
 const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   if (cause instanceof IndexedDbDatabase.IndexedDbDatabaseError) {
     return ReplicaStorageError.make({ message: `IndexedDB ${cause.reason}` });
@@ -168,6 +193,8 @@ const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   }
   return mapReplicaStoreFailure(cause);
 };
+
+const decodeEnvelope = Schema.decodeUnknownEffect(SyncCommandEnvelope);
 
 const missingState = () => ReplicaStorageError.make({ message: "Replica state is missing." });
 
@@ -227,50 +254,49 @@ const firstRow = <A>(rows: ReadonlyArray<A>): A | undefined => rows[0];
 const outboxRow = (api: ReplicaQueryBuilder, operationId: string) =>
   api.from("command_outbox").select().equals(operationId).pipe(Effect.map(firstRow));
 
-const indexedDbLocalDigest = (api: ReplicaQueryBuilder) =>
-  Effect.gen(function* () {
-    const marks = yield* api.from("pending_row_marks").count();
-    if (marks > 0) return undefined;
-    const state = yield* requireState(api);
-    const [lower, upper] = generationBounds(state.activeGeneration);
-    const versioned =
-      (entity: PartitionEntity) =>
-      (row: { readonly id: string; readonly rowVersion: number }): PartitionLeafSource => ({
-        entity,
-        entityId: row.id,
-        rowVersion: row.rowVersion,
-      });
-    const movements = yield* api.from("stock_movements").select().between(lower, upper);
-    return yield* partitionDigestOf([
-      ...(yield* api.from("categories").select().between(lower, upper)).map(versioned("category")),
-      ...(yield* api.from("products").select().between(lower, upper)).map(versioned("product")),
-      ...(yield* api.from("batches").select().between(lower, upper)).map(versioned("batch")),
-      ...(yield* api.from("invoices").select().between(lower, upper)).map(versioned("invoice")),
-      ...(yield* api.from("invoice_items").select().between(lower, upper)).map(
-        versioned("invoiceItem"),
-      ),
-      ...movements.map((row) =>
-        versioned("stockMovement")({ id: row.id, rowVersion: STOCK_MOVEMENT_ROW_VERSION }),
-      ),
-    ]);
-  });
-
 const undoLocalEffects = (
   api: ReplicaQueryBuilder,
   generation: number,
   operationId: string,
 ): Effect.Effect<PendingRestoreResult, unknown> =>
-  api
-    .from("stock_overlays")
-    .delete("byCommand")
-    .equals(operationId)
-    .pipe(Effect.andThen(restoreIndexedDbPendingProjection(api, generation, operationId)));
+  Effect.gen(function* () {
+    const overlays = yield* api.from("stock_overlays").select("byCommand").equals(operationId);
+    yield* api.from("stock_overlays").delete("byCommand").equals(operationId);
+    const restored = yield* restoreIndexedDbPendingProjection(api, generation, operationId);
+    return withStockTouched(
+      restored,
+      overlays.map((overlay) => overlay.batchId),
+    );
+  });
+
+const subsetTables = (plan: IndexedDbSubsetPlan): ReadonlyArray<IndexedDbTableName> =>
+  plan.table === "batches"
+    ? ["batches", "stock_overlays", "pending_row_marks", "command_outbox"]
+    : [plan.table];
+
+const readSubsetRows = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  plan: IndexedDbSubsetPlan,
+): Effect.Effect<ReadonlyArray<IndexedDbSubsetRow>, unknown> =>
+  executeIndexedDbSubset(api, generation, plan).pipe(
+    Effect.flatMap((rows) =>
+      plan.table === "batches" ? withVisibleStockRows(api, rows) : Effect.succeed(rows),
+    ),
+  );
 
 interface IndexedDbSubsetReader {
   readonly querySubset: (
     plan: IndexedDbSubsetPlan,
   ) => Effect.Effect<
     { readonly stamp: ReplicaReadStamp; readonly rows: ReadonlyArray<IndexedDbSubsetRow> },
+    ReplicaStoreError
+  >;
+  readonly querySubsets: (plans: Array.NonEmptyReadonlyArray<IndexedDbSubsetPlan>) => Effect.Effect<
+    {
+      readonly stamp: ReplicaReadStamp;
+      readonly reads: ReadonlyArray<ReadonlyArray<IndexedDbSubsetRow>>;
+    },
     ReplicaStoreError
   >;
   readonly summarizeSubset: (
@@ -295,10 +321,6 @@ interface IndexedDbOutboxReader {
   readonly readPendingRowIds: (
     entity: SyncEntity,
   ) => Effect.Effect<ReadonlyArray<string>, ReplicaStoreError>;
-  readonly readCommandAllocation: () => Effect.Effect<
-    { readonly epoch: string; readonly nextClientSequence: string },
-    ReplicaStoreError
-  >;
 }
 
 type IndexedDbReplicaStoreContract = ReplicaStoreContract &
@@ -344,6 +366,18 @@ const makeScopedIndexedDbReplicaStore = (
         Effect.tap((committed) => publish(committed.notice)),
       );
 
+    const readSnapshot = <A>(
+      tables: ReadonlyArray<IndexedDbTableName>,
+      run: (api: ReplicaQueryBuilder, state: ReplicaStateRow) => Effect.Effect<A, unknown>,
+    ): Effect.Effect<A, ReplicaStoreError> =>
+      withQuery((api) =>
+        api.withTransaction({
+          tables: ["replica_state", ...new Set(tables)],
+          mode: "readonly",
+          durability: "strict",
+        })(requireState(api).pipe(Effect.flatMap((state) => run(api, state)))),
+      );
+
     const notice = (
       after: ReplicaReadStamp,
       touchedEntities: ReplicaCommitNotice["touchedEntities"] = [],
@@ -387,35 +421,62 @@ const makeScopedIndexedDbReplicaStore = (
       }),
     );
 
-    const enqueueCommand = (envelope: SyncCommandEnvelope, createdAt: number) =>
+    const enqueueCommand = (request: EnqueueCommandRequest) =>
       commit<QueuedCommand>(ENTITY_TABLES, (api) =>
         Effect.gen(function* () {
           const state = yield* requireState(api);
-          const existing = yield* outboxRow(api, envelope.operationId);
-          const existingEntry = existing
-            ? { status: existing.status, envelope: yield* decodeOutboxRow(existing) }
-            : undefined;
-          const stock = makeIndexedDbStockCache(api, state.activeGeneration);
-          if (!existing) yield* stock.load(envelope);
-          const decision = yield* Effect.fromResult(
-            decideEnqueue(state, existingEntry, envelope, stock.unitsPerPackFor, stock.stockFor),
+          const existing = yield* outboxRow(api, request.operationId);
+          const payloadHash = canonicalPayloadHash(request.command);
+          const replay = yield* Effect.fromResult(
+            decideEnqueueReplay(
+              existing
+                ? { status: existing.status, envelope: yield* decodeOutboxRow(existing) }
+                : undefined,
+              payloadHash,
+            ),
           );
-          if (decision._tag === "replay") {
+          if (replay !== undefined) {
             return {
-              value: { operationId: envelope.operationId, status: decision.status },
+              value: {
+                operationId: request.operationId,
+                status: replay,
+                stamp: stampOf(state),
+              },
               notice: undefined,
             };
           }
-          const lookup = yield* indexedDbCatalogLookup(api, state.activeGeneration);
-          yield* checkEnqueueAllowed(envelope, lookup, stock.unitsPerPackFor, stock.stockFor);
-          for (const overlay of decision.overlays) {
+          const envelope = yield* decodeEnvelope({
+            organizationId: state.organizationId,
+            epoch: state.epoch,
+            replicaId: state.replicaId,
+            clientSequence: state.nextClientSequence,
+            operationId: request.operationId,
+            payloadHash,
+            command: request.command,
+          }).pipe(
+            Effect.mapError((error) => syncProtocolError("INVALID_OPERATION", error.message)),
+          );
+          const context = yield* readIndexedDbCommandContext(
+            api,
+            state.activeGeneration,
+            envelope.command,
+            { checkRules: true, withStock: true },
+          );
+          yield* checkEnqueueAllowed(
+            envelope,
+            context.lookup,
+            context.unitsPerPackFor,
+            context.stockFor,
+          );
+          const overlays = decideOverlays(envelope, context.unitsPerPackFor);
+          for (const overlay of overlays) {
             yield* api.from("stock_overlays").insert(overlay);
           }
           const projection = yield* writeIndexedDbPendingProjection(
             api,
             state.activeGeneration,
             { organizationId: state.organizationId, userId: state.userId },
-            lookup,
+            context.lookup,
             envelope,
           );
           yield* api.from("command_outbox").insert({
@@ -426,7 +487,7 @@ const makeScopedIndexedDbReplicaStore = (
             clientSequence: envelope.clientSequence,
             clientSequenceLength: envelope.clientSequence.length,
             clientSequenceDigits: envelope.clientSequence,
-            createdAt,
+            createdAt: request.occurredAt,
             claimId: null,
             claimedAt: null,
             attempts: 0,
@@ -435,15 +496,15 @@ const makeScopedIndexedDbReplicaStore = (
           });
           const after = yield* bumpCommitVersion(api, {
             ...state,
-            nextClientSequence: decision.nextClientSequence,
+            nextClientSequence: incrementDecimalSequence(state.nextClientSequence),
           });
+          const touched = withStockTouched(
+            projection,
+            overlays.map((overlay) => overlay.batchId),
+          );
           return {
-            value: { operationId: envelope.operationId, status: decision.status },
-            notice: notice(
-              after,
-              touchedEntitiesWithStock(projection.touchedEntities),
-              projection.touchedKeys,
-            ),
+            value: { operationId: request.operationId, status: "pending", stamp: after },
+            notice: notice(after, touched.touchedEntities, touched.touchedKeys),
           };
         }),
       );
@@ -451,11 +512,10 @@ const makeScopedIndexedDbReplicaStore = (
     const claimNextUpload = (claimInput: ClaimNextUploadInput) =>
       commit<UploadClaim | undefined>(ENTITY_TABLES, (api) =>
         Effect.gen(function* () {
-          const sending = yield* outboxWithStatus(api, "sending");
+          const sending = yield* outboxWithStatus(api, "sending").limit(1);
           if (sending.length > 0) return { value: undefined, notice: undefined };
           const state = yield* requireState(api);
-          const pending = yield* outboxWithStatus(api, "pending");
-          const next = nextUploadClaim(Array.sort(pending, byClientSequence));
+          const next = nextUploadClaim(yield* outboxWithStatus(api, "pending").limit(1));
           if (!next) return { value: undefined, notice: undefined };
           const envelope = yield* decodeOutboxRow(next);
           const attempts = next.attempts + 1;
@@ -506,11 +566,7 @@ const makeScopedIndexedDbReplicaStore = (
           const after = yield* bumpCommitVersion(api, state);
           return {
             value: decision.status,
-            notice: notice(
-              after,
-              touchedEntitiesWithStock(restored?.touchedEntities),
-              restored?.touchedKeys ?? [],
-            ),
+            notice: notice(after, restored?.touchedEntities, restored?.touchedKeys),
           };
         }),
       );
@@ -552,8 +608,9 @@ const makeScopedIndexedDbReplicaStore = (
             return { value: state.appliedCommitSequence, notice: undefined };
           }
           const generation = state.activeGeneration;
-          const touchedKeys: Array<string> = [];
+          const touched: Array<TouchedSet> = [];
           for (const change of group.changes) {
+            touched.push(touchedOfChange(change.entity, change.entityId));
             if (change.action === "delete") {
               yield* removeEntityRow(api, generation, change.entity, change.entityId);
             } else {
@@ -564,7 +621,7 @@ const makeScopedIndexedDbReplicaStore = (
                   decodeInvoiceRow(change.row),
                   group.operationId,
                 );
-                if (renumbered) touchedKeys.push(renumbered);
+                if (renumbered) touched.push(touchedOfKey(renumbered));
               }
               if (change.entity === "category") {
                 const renamed = yield* renameIndexedDbCollidingCategory(
@@ -573,17 +630,23 @@ const makeScopedIndexedDbReplicaStore = (
                   decodeCategoryRow(change.row),
                   group.operationId,
                 );
-                if (renamed) touchedKeys.push(renamed);
+                if (renamed) touched.push(touchedOfKey(renamed));
               }
               yield* writeEntityRow(api, generation, change.entity, change.row);
             }
             yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
           }
           if (group.decision === "rejected") {
-            yield* restoreIndexedDbPendingProjection(api, generation, group.operationId);
+            touched.push(
+              yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
+            );
           } else {
             yield* clearIndexedDbPendingProjection(api, group.operationId);
           }
+          const overlays = yield* api
+            .from("stock_overlays")
+            .select("byCommand")
+            .equals(group.operationId);
           yield* api.from("stock_overlays").delete("byCommand").equals(group.operationId);
           const outbox = yield* outboxRow(api, group.operationId);
           if (outbox && outbox.status !== "rejected") {
@@ -593,7 +656,14 @@ const makeScopedIndexedDbReplicaStore = (
             ...state,
             appliedCommitSequence: group.commitSequence,
           });
-          return { value: group.commitSequence, notice: notice(after, SYNC_ENTITIES, touchedKeys) };
+          const applied = withStockTouched(
+            mergeTouched(...touched),
+            overlays.map((overlay) => overlay.batchId),
+          );
+          return {
+            value: group.commitSequence,
+            notice: notice(after, applied.touchedEntities, applied.touchedKeys),
+          };
         }),
       );
 
@@ -605,7 +675,7 @@ const makeScopedIndexedDbReplicaStore = (
           );
           const write = readwrite(api, ["replica_coverage"]);
           const localDigest =
-            page.digest === undefined ? undefined : yield* indexedDbLocalDigest(api);
+            page.digest === undefined ? undefined : yield* indexedDbPartitionDigest(api);
           const next = decideCoverageAfterPull(localDigest, page.digest);
           if (next._tag === "repair") {
             yield* logPartitionDivergence(page.subscription, next.diverged);
@@ -802,6 +872,42 @@ const makeScopedIndexedDbReplicaStore = (
         return api.from("pending_row_marks").select().between(lower, upper);
       }).pipe(Effect.map((rows) => rows.map((row) => row.entityId)));
 
+    const sweepRequests = yield* Queue.sliding<void>(1);
+    const requestSweep = Queue.offer(sweepRequests, undefined).pipe(Effect.asVoid);
+    const sweepStep = withQuery((api) =>
+      readwrite(api, SWEEP_TABLES)(sweepIndexedDbStorageStep(api)),
+    );
+    const sweep = Effect.repeat(sweepStep.pipe(Effect.tap(() => Effect.yieldNow)), {
+      until: (step) => !step.remaining,
+    }).pipe(
+      Effect.tapError((error) => Effect.logWarning("Replica generation sweep failed", error)),
+      Effect.ignore,
+    );
+    yield* Stream.fromQueue(sweepRequests).pipe(
+      Stream.mapEffect(() => sweep),
+      Stream.runDrain,
+      Effect.forkScoped,
+    );
+    yield* requestSweep;
+
+    const promoteSnapshot = (snapshotId: SnapshotId) =>
+      Effect.repeat(
+        withQuery((api) =>
+          readwrite(api, PROMOTE_TABLES)(promoteIndexedDbSnapshotChunk(api, snapshotId)),
+        ).pipe(Effect.tap(() => Effect.yieldNow)),
+        { until: (chunk) => !chunk.remaining },
+      );
+
+    const clearAbandonedImport = (snapshotId: SnapshotId) =>
+      Effect.repeat(
+        withQuery((api) =>
+          readwrite(api, ["snapshot_imports", "snapshot_staged_rows"])(
+            clearAbandonedIndexedDbImportStep(api, snapshotId),
+          ),
+        ).pipe(Effect.tap(() => Effect.yieldNow)),
+        { until: (step) => !step.remaining },
+      );
+
     return {
       readSyncCursor: () =>
         readStateWith((state) => ({
@@ -820,11 +926,15 @@ const makeScopedIndexedDbReplicaStore = (
       applyRemotePage,
       applyTransactionGroup,
       beginSnapshotImport: (manifest: SnapshotManifest) =>
-        withQuery((api) =>
-          readwrite(api, ["replica_state", "snapshot_imports"])(
-            requireState(api).pipe(
-              Effect.flatMap((state) =>
-                beginIndexedDbSnapshotImport(api, state.activeGeneration, manifest),
+        clearAbandonedImport(manifest.snapshotId).pipe(
+          Effect.andThen(
+            withQuery((api) =>
+              readwrite(api, ["replica_state", "snapshot_imports", "snapshot_staged_rows"])(
+                requireState(api).pipe(
+                  Effect.flatMap((state) =>
+                    beginIndexedDbSnapshotImport(api, state.activeGeneration, manifest),
+                  ),
+                ),
               ),
             ),
           ),
@@ -835,14 +945,30 @@ const makeScopedIndexedDbReplicaStore = (
             importIndexedDbSnapshotPart(api, manifest, part),
           ),
         ),
-      activateSnapshot: (snapshotId: SnapshotId) =>
-        commit<void>(SNAPSHOT_TABLES, (api) =>
-          activateIndexedDbSnapshot(api, snapshotId).pipe(
-            Effect.map((activated) => ({
-              value: undefined,
-              notice: notice(stampOf(activated), SYNC_ENTITIES),
-            })),
+      applyCandidateAuthority: () =>
+        Effect.fail(
+          syncProtocolError(
+            "SNAPSHOT_UNAVAILABLE",
+            "The web replica does not stage authority catch-up.",
           ),
+        ),
+      abandonSnapshot: (snapshotId: SnapshotId) =>
+        withQuery((api) =>
+          readwrite(api, ["snapshot_imports"])(abandonIndexedDbSnapshot(api, snapshotId)),
+        ).pipe(Effect.andThen(requestSweep)),
+      activateSnapshot: (snapshotId: SnapshotId) =>
+        promoteSnapshot(snapshotId).pipe(
+          Effect.andThen(
+            commit<SnapshotActivation>(SNAPSHOT_TABLES, (api) =>
+              switchIndexedDbSnapshot(api, snapshotId).pipe(
+                Effect.map((activated) => ({
+                  value: { _tag: "activated" as const },
+                  notice: generationResetNotice(input.databaseIdentity, stampOf(activated)),
+                })),
+              ),
+            ),
+          ),
+          Effect.tap(() => requestSweep),
         ),
       verifyAuthority: (authority: VerifyAuthorityInput) =>
         withQuery((api) =>
@@ -885,41 +1011,20 @@ const makeScopedIndexedDbReplicaStore = (
         withQuery((api) => api.from("command_outbox").select()).pipe(
           Effect.map((rows) => rows.map((row) => row.status)),
         ),
-      readCommandAllocation: () =>
-        readStateWith((state) => ({
-          epoch: state.epoch,
-          nextClientSequence: state.nextClientSequence,
-        })),
       readStamp: () => readStateWith(stampOf),
       recordCaughtUp,
       readOutboxActivity,
       readPendingRowIds,
       querySubset: (plan: IndexedDbSubsetPlan) =>
-        withQuery((api) =>
-          api.withTransaction({
-            tables:
-              plan.table === "batches"
-                ? [
-                    plan.table,
-                    "stock_overlays",
-                    "pending_row_marks",
-                    "command_outbox",
-                    "replica_state",
-                  ]
-                : [plan.table, "replica_state"],
-            mode: "readonly",
-            durability: "strict",
-          })(
-            Effect.gen(function* () {
-              const state = yield* requireState(api);
-              const rows = yield* executeIndexedDbSubset(api, state.activeGeneration, plan);
-              if (plan.table !== "batches") return { stamp: stampOf(state), rows };
-              const overlays = yield* readVisibleStockContext(api);
-              return {
-                stamp: stampOf(state),
-                rows: rows.map((row) => withVisibleStockCells(row, overlays)),
-              };
-            }),
+        readSnapshot(subsetTables(plan), (api, state) =>
+          readSubsetRows(api, state.activeGeneration, plan).pipe(
+            Effect.map((rows) => ({ stamp: stampOf(state), rows })),
+          ),
+        ),
+      querySubsets: (plans: Array.NonEmptyReadonlyArray<IndexedDbSubsetPlan>) =>
+        readSnapshot(Array.flatMap(plans, subsetTables), (api, state) =>
+          Effect.forEach(plans, (plan) => readSubsetRows(api, state.activeGeneration, plan)).pipe(
+            Effect.map((reads) => ({ stamp: stampOf(state), reads })),
           ),
         ),
       summarizeSubset: (

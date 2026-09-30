@@ -11,6 +11,10 @@ const SqliteCell = Schema.Union([
 export const SqliteResultRow = Schema.Record(Schema.String, SqliteCell);
 export type SqliteResultRow = typeof SqliteResultRow.Type;
 
+type ReplicaCell = string | number | bigint | boolean | null | ArrayBuffer | ArrayBufferView;
+
+export type ReplicaRow = { readonly [column: string]: ReplicaCell };
+
 const ReplicaStampRow = Schema.Struct({
   generation: Schema.Number,
   version: Schema.Number,

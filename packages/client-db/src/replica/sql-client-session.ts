@@ -1,4 +1,9 @@
-import type { ReplicaInsightsWindow, SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import type {
+  CommandStatus,
+  EnqueueCommandRequest,
+  ReplicaInsightsWindow,
+  SyncEntity,
+} from "@store/contracts";
 import { replicaState } from "@store/db/replica.schema";
 import {
   layerOwnedHttpSync,
@@ -15,6 +20,7 @@ import {
   layerSqliteReplicaStore,
   readOutboxActivitySqlite,
   readPendingRowIdsSqlite,
+  runReplicaTransaction,
   SqliteReplica,
   type SqliteReplicaHandle,
 } from "@store/sync/sql-client";
@@ -22,29 +28,39 @@ import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Schema from "effect/Schema";
 
 import { layerCommitForwarding } from "./commit-forwarding";
-import { lowerSqliteSubset, lowerSqliteSummary } from "./compile";
 import { readSqliteInsightsFacts } from "./insights-sqlite";
-import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
+import { makeReplicaLifetime } from "./lifetime";
+import { readOutboxStatusesSqlite } from "./node-outbox";
 import { createReplicaCommitPublisher } from "./publisher";
+import { replicaStampQuery } from "./replica-queries";
+import {
+  layerHandleSnapshotReader,
+  ReplicaSnapshotReader,
+  readSnapshotBatch,
+  readSnapshotSubset,
+  readSnapshotSummary,
+  snapshotRunnerFromHandle,
+  type ReplicaSnapshotRunner,
+} from "./snapshot-read";
 import {
   decodeReplicaStampRow,
   decodeSqliteResultRow,
   type OutboxCommandStatus,
+  type ReplicaRow,
 } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
+  EnqueuedCommand,
   ReplicaCommitNotice,
   ReplicaInsightsRead,
   ReplicaInsightsReader,
   ReplicaQueryStamp,
-  ReplicaSummaryRead,
+  ReplicaReadOptions,
   ReplicaSummaryReader,
-  ReplicaSubsetRead,
   ReplicaSubsetReader,
   SqliteParameter,
   SqliteResultRow,
@@ -61,14 +77,7 @@ export const readReplicaStamp = Effect.fn("ReplicaNodeSqlite.readStamp")(functio
   handle: SqliteReplicaHandle,
   workspaceToken: string,
 ) {
-  const rows = yield* handle.db
-    .select({
-      generation: replicaState.activeGeneration,
-      version: replicaState.localCommitVersion,
-    })
-    .from(replicaState)
-    .where(eq(replicaState.id, "singleton"))
-    .all();
+  const rows = yield* handle.db.all(replicaStampQuery);
   const decoded = decodeReplicaStampRow(rows[0]);
   return {
     workspaceToken,
@@ -86,48 +95,31 @@ export const runReplicaQuery = Effect.fn("ReplicaNodeSqlite.query")(function* (
   return rows.map((row) => decodeSqliteResultRow(row)) satisfies ReadonlyArray<SqliteResultRow>;
 });
 
-export const readReplicaSubset = Effect.fn("ReplicaNodeSqlite.readSubset")(function* (
+export const readReplicaSubset = (
   handle: SqliteReplicaHandle,
   workspaceToken: string,
   spec: InventorySubsetSpec,
-) {
-  const statement = yield* lowerSqliteSubset(spec);
-  const stamp = yield* readReplicaStamp(handle, workspaceToken);
-  const rows = yield* runReplicaQuery(handle, statement.sql, statement.parameters);
-  return { stamp, rows } satisfies ReplicaSubsetRead;
-});
+) => readSnapshotSubset(snapshotRunnerFromHandle(handle), workspaceToken, spec);
 
 export const readReplicaInsights = Effect.fn("ReplicaNodeSqlite.readInsights")(function* (
   handle: SqliteReplicaHandle,
   workspaceToken: string,
   window: ReplicaInsightsWindow,
 ) {
-  const stamp = yield* readReplicaStamp(handle, workspaceToken);
-  const facts = yield* readSqliteInsightsFacts(handle, window);
-  return { stamp, facts } satisfies ReplicaInsightsRead;
+  return yield* runReplicaTransaction(handle, () =>
+    Effect.gen(function* () {
+      const stamp = yield* readReplicaStamp(handle, workspaceToken);
+      const facts = yield* readSqliteInsightsFacts(handle, window);
+      return { stamp, facts } satisfies ReplicaInsightsRead;
+    }),
+  );
 });
 
-const SummaryCountRow = Schema.Struct({ count: Schema.Number });
-const SummaryValueRow = Schema.Struct({ value: Schema.String });
-
-export const readReplicaSummary = Effect.fn("ReplicaNodeSqlite.summarizeSubset")(function* (
+export const readReplicaSummary = (
   handle: SqliteReplicaHandle,
   workspaceToken: string,
   spec: InventorySubsetSummarySpec,
-) {
-  const statements = yield* lowerSqliteSummary(spec);
-  const stamp = yield* readReplicaStamp(handle, workspaceToken);
-  const [countRow] = yield* Schema.decodeUnknownEffect(Schema.Array(SummaryCountRow))(
-    yield* handle.sql.unsafe(statements.count.sql, statements.count.parameters),
-  );
-  const distinct = yield* Effect.forEach(statements.distinct, ({ column, statement }) =>
-    handle.sql.unsafe(statement.sql, statement.parameters).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(SummaryValueRow))),
-      Effect.map((rows) => ({ column, values: rows.map((row) => row.value) })),
-    ),
-  );
-  return { stamp, summary: { count: countRow?.count ?? 0, distinct } } satisfies ReplicaSummaryRead;
-});
+) => readSnapshotSummary(snapshotRunnerFromHandle(handle), workspaceToken, spec);
 
 export const seedReplicaIdentity = Effect.fn("ReplicaNodeSqlite.seedIdentity")(function* (
   handle: SqliteReplicaHandle,
@@ -161,7 +153,7 @@ export const layerSeededReplica = <E, R>(
     SqliteReplica.use((handle) => seedReplicaIdentity(handle, identity).pipe(Effect.orDie)),
   ).pipe(Layer.provideMerge(replica));
 
-export type SqliteReplicaSyncSession = ReplicaSubsetReader &
+export type SqliteReplicaSyncSession = Required<ReplicaSubsetReader> &
   ReplicaInsightsReader &
   ReplicaSummaryReader & {
     readonly engine: "sqlite";
@@ -170,14 +162,8 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader &
     readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
     readonly stamp: () => Promise<ReplicaQueryStamp>;
     readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
-    readonly readCommandAllocation: () => Promise<{
-      readonly epoch: string;
-      readonly nextClientSequence: string;
-    }>;
-    readonly enqueueLocal: (
-      envelope: SyncCommandEnvelope,
-      createdAt: number,
-    ) => Promise<{ readonly changed: boolean; readonly status: string }>;
+    readonly enqueueCommand: (request: EnqueueCommandRequest) => Promise<EnqueuedCommand>;
+    readonly readCommandStatus: (operationId: string) => Promise<CommandStatus | undefined>;
     readonly wakeSyncUpload: () => Promise<{
       readonly drained: boolean;
       readonly drainCount: number;
@@ -187,9 +173,7 @@ export type SqliteReplicaSyncSession = ReplicaSubsetReader &
     readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
     readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => () => void;
     readonly subscribeSyncHealth: (listener: (health: ReplicaSyncHealth) => void) => () => void;
-    readonly publish: (notice: ReplicaCommitNotice) => void;
-    readonly close: () => void;
-    readonly dispose: () => Promise<void>;
+    readonly close: () => Promise<void>;
   };
 
 type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
@@ -199,6 +183,7 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> = {
   readonly transport: Layer.Layer<SyncTransportService, TransportError>;
   readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
+  readonly snapshotReader?: Layer.Layer<ReplicaSnapshotReader, never, SqliteReplica>;
 };
 
 export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>(
@@ -216,6 +201,7 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
       layerCommitForwarding(workspaceToken, publisher),
     ).pipe(
       Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity)),
+      Layer.provideMerge(input.snapshotReader ?? layerHandleSnapshotReader),
       Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
       Layer.provide(input.transport),
     ),
@@ -233,13 +219,25 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     }),
   );
 
-  const withHandle = <A, E>(use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E>) =>
-    runtime.runPromise(SqliteReplica.use(use).pipe(Effect.orDie));
+  const lifetime = makeReplicaLifetime();
+  lifetime.onClose(Effect.promise(() => runtime.dispose()));
+  lifetime.onClose(Effect.promise(() => publisher.dispose()));
 
-  const dispose = () => {
-    publisher.dispose();
-    return runtime.dispose();
-  };
+  type RuntimeServices = ManagedRuntime.ManagedRuntime.Services<typeof runtime>;
+
+  const run = <A, E>(effect: Effect.Effect<A, E, RuntimeServices>, options?: ReplicaReadOptions) =>
+    runtime.runPromise(
+      lifetime.supervise(effect),
+      options?.signal === undefined ? undefined : { signal: options.signal },
+    );
+
+  const withHandle = <A, E>(use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E>) =>
+    run(SqliteReplica.use(use).pipe(Effect.orDie));
+
+  const withSnapshot = <A, E>(
+    use: (snapshot: ReplicaSnapshotRunner<ReplicaRow>) => Effect.Effect<A, E>,
+    options?: ReplicaReadOptions,
+  ) => run(ReplicaSnapshotReader.use(use).pipe(Effect.orDie), options);
 
   let drainCount = 0;
 
@@ -250,31 +248,34 @@ export const openSqliteReplicaSyncSession = async <ReplicaError, TransportError>
     readPendingRowIds: (entity) =>
       withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
     stamp: () => withHandle((handle) => readReplicaStamp(handle, workspaceToken)),
-    readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
+    readSubset: (spec, options) =>
+      withSnapshot((snapshot) => readSnapshotSubset(snapshot, workspaceToken, spec), options),
+    readBatch: (specs, options) =>
+      withSnapshot((snapshot) => readSnapshotBatch(snapshot, workspaceToken, specs), options),
     readInsights: (window) =>
       withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
     summarizeSubset: (spec) =>
-      withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
+      withSnapshot((snapshot) => readSnapshotSummary(snapshot, workspaceToken, spec)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
-    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.db)),
-    enqueueLocal: async (envelope, createdAt) => {
-      const queued = await runtime.runPromise(store.enqueueCommand(envelope, createdAt));
-      return { changed: queued.notice !== undefined, status: queued.value.status };
+    enqueueCommand: async (request) => {
+      const queued = await run(store.enqueueCommand(request));
+      return {
+        operationId: queued.value.operationId,
+        status: queued.value.status,
+        stamp: { workspaceToken, ...queued.value.stamp },
+      };
     },
+    readCommandStatus: (operationId) => run(store.readCommandStatus(operationId)),
     wakeSyncUpload: async () => {
       drainCount += 1;
-      await runtime.runPromise(scheduler.wake("localWrite"));
+      await run(scheduler.wake("localWrite"));
       return { drained: true, drainCount };
     },
-    wake: (reason) => runtime.runPromise(scheduler.wake(reason)),
-    setVisible: (visible) => runtime.runPromise(scheduler.setVisible(visible)),
-    setPullMaxBytes: (maxBytes) => runtime.runPromise(engine.setPullMaxBytes(maxBytes)),
+    wake: (reason) => run(scheduler.wake(reason)),
+    setVisible: (visible) => run(scheduler.setVisible(visible)),
+    setPullMaxBytes: (maxBytes) => run(engine.setPullMaxBytes(maxBytes)),
     subscribe: publisher.subscribe,
-    subscribeSyncHealth: subscribeSchedulerHealth(scheduler),
-    publish: publisher.publish,
-    close: () => {
-      void dispose();
-    },
-    dispose,
+    subscribeSyncHealth: subscribeSchedulerHealth(scheduler, lifetime.scope),
+    close: lifetime.close,
   };
 };

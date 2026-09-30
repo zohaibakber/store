@@ -2,17 +2,17 @@ import type { LoadSubsetOptions } from "@tanstack/db";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 
-import { MAX_IN_VALUES, type InventoryCollectionSource } from "./sources";
+import type { InventoryCollectionSource } from "./sources";
 import { planInventoryRead } from "./subset-ir";
 import type { InventorySubsetSpec, SubsetPredicate } from "./subset-spec";
 import type {
   InventoryCollectionDescriptor,
   InventoryCollectionRow,
   ReplicaQueryStamp,
+  ReplicaRow,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
   SqliteCollectionDependencies,
-  SqliteResultRow,
 } from "./types";
 
 export type PlannedRead<Row extends InventoryCollectionRow> = {
@@ -31,8 +31,9 @@ export const drainSubset = async (
   source: InventoryCollectionSource,
   where: SubsetPredicate | undefined,
   pageRows: number,
+  signal?: AbortSignal,
 ): Promise<ReplicaSubsetRead> => {
-  const rows: Array<SqliteResultRow> = [];
+  const rows: Array<ReplicaRow> = [];
   let stamp: ReplicaQueryStamp | undefined;
   let after: string | undefined;
   for (;;) {
@@ -43,7 +44,10 @@ export const drainSubset = async (
       limit: pageRows,
       offset: 0,
     };
-    const page = await reader.readSubset(pageWhere ? { ...spec, where: pageWhere } : spec);
+    const page = await reader.readSubset(
+      pageWhere ? { ...spec, where: pageWhere } : spec,
+      signal === undefined ? undefined : { signal },
+    );
     if (
       stamp !== undefined &&
       (page.stamp.generationId !== stamp.generationId ||
@@ -74,16 +78,21 @@ export const readCollectionSubset = async <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   dependencies: SqliteCollectionDependencies,
   options: LoadSubsetOptions,
+  signal?: AbortSignal,
 ): Promise<PlannedRead<Row>> => {
   const plan = Effect.runSync(planInventoryRead(descriptor, options));
   const read =
     plan._tag === "window"
-      ? await dependencies.executor.readSubset(plan.spec)
+      ? await dependencies.executor.readSubset(
+          plan.spec,
+          signal === undefined ? undefined : { signal },
+        )
       : await drainSubset(
           dependencies.executor,
           descriptor.source,
           plan.where,
           descriptor.maximumRows,
+          signal,
         );
   return decoded(descriptor, read);
 };
@@ -91,28 +100,15 @@ export const readCollectionSubset = async <Row extends InventoryCollectionRow>(
 export const readCollectionSource = async <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   dependencies: SqliteCollectionDependencies,
+  signal?: AbortSignal,
 ): Promise<PlannedRead<Row>> =>
   decoded(
     descriptor,
-    await drainSubset(dependencies.executor, descriptor.source, undefined, descriptor.maximumRows),
+    await drainSubset(
+      dependencies.executor,
+      descriptor.source,
+      undefined,
+      descriptor.maximumRows,
+      signal,
+    ),
   );
-
-export const readCollectionKeys = async <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  dependencies: SqliteCollectionDependencies,
-  keys: ReadonlyArray<string>,
-): Promise<ReadonlyArray<PlannedRead<Row>>> => {
-  const reads: Array<Promise<ReplicaSubsetRead>> = [];
-  for (let start = 0; start < keys.length; start += MAX_IN_VALUES) {
-    const values = keys.slice(start, start + MAX_IN_VALUES);
-    reads.push(
-      drainSubset(
-        dependencies.executor,
-        descriptor.source,
-        { _tag: "in", column: "id", values },
-        descriptor.maximumRows,
-      ),
-    );
-  }
-  return (await Promise.all(reads)).map((read) => decoded(descriptor, read));
-};

@@ -1,4 +1,4 @@
-import type { SyncCommandEnvelope, SyncEntity } from "@store/contracts";
+import type { EnqueueCommandRequest, SyncEntity } from "@store/contracts";
 import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore } from "@store/sync/browser";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "@store/sync/sql-client";
@@ -13,34 +13,50 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
-import { touchedEntitiesForCommand, touchedKeysForCommand } from "./enqueue";
-import { readCommandAllocationSqlite, readOutboxStatusesSqlite } from "./node-outbox";
+import { layerCommitForwarding } from "./commit-forwarding";
+import { makeReplicaLifetime } from "./lifetime";
+import { readOutboxStatusesSqlite } from "./node-outbox";
+import { layerReadonlySnapshotReader } from "./node-readonly";
 import { createReplicaCommitPublisher } from "./publisher";
+import {
+  ReplicaSnapshotReader,
+  readSnapshotBatch,
+  readSnapshotSubset,
+  readSnapshotSummary,
+  type ReplicaSnapshotRunner,
+} from "./snapshot-read";
 import {
   layerSeededReplica,
   readReplicaInsights,
   readReplicaStamp,
-  readReplicaSummary,
-  readReplicaSubset,
   runReplicaQuery,
   type SqliteReplicaIdentity,
 } from "./sql-client-session";
-import type { ReplicaCommitNotice, ReplicaHandle, SqliteParameter, SqliteResultRow } from "./types";
+import type {
+  ReplicaCommitNotice,
+  ReplicaHandle,
+  ReplicaReadOptions,
+  ReplicaRow,
+  ReplicaSubsetReader,
+  SqliteParameter,
+  SqliteResultRow,
+} from "./types";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
 
 type NodeReplicaIdentity = SqliteReplicaIdentity;
 
-export type NodeReplicaSqlite = ReplicaHandle & {
-  readonly query: (
-    sql: string,
-    parameters: ReadonlyArray<SqliteParameter>,
-  ) => Promise<ReadonlyArray<SqliteResultRow>>;
-  readonly withWrite: (
-    write: (handle: SqliteReplicaHandle) => Effect.Effect<void, unknown>,
-    touchedEntities: ReadonlyArray<SyncEntity>,
-    touchedKeys: ReadonlyArray<string>,
-  ) => Promise<ReplicaCommitNotice>;
-};
+export type NodeReplicaSqlite = ReplicaHandle &
+  Required<ReplicaSubsetReader> & {
+    readonly query: (
+      sql: string,
+      parameters: ReadonlyArray<SqliteParameter>,
+    ) => Promise<ReadonlyArray<SqliteResultRow>>;
+    readonly withWrite: (
+      write: (handle: SqliteReplicaHandle) => Effect.Effect<void, unknown>,
+      touchedEntities: ReadonlyArray<SyncEntity>,
+      touchedKeys: ReadonlyArray<string>,
+    ) => Promise<ReplicaCommitNotice>;
+  };
 
 export const layerSeededSqliteReplica = (
   path: string,
@@ -52,17 +68,36 @@ export const openNodeReplicaSqlite = async (
   path = ":memory:",
 ): Promise<NodeReplicaSqlite> => {
   const workspaceToken = crypto.randomUUID();
+  const publisher = createReplicaCommitPublisher();
   const runtime = ManagedRuntime.make(
-    layerSqliteReplicaStore(workspaceToken).pipe(
+    layerCommitForwarding(workspaceToken, publisher).pipe(
+      Layer.provideMerge(layerSqliteReplicaStore(workspaceToken)),
+      Layer.provideMerge(layerReadonlySnapshotReader(path)),
       Layer.provideMerge(layerSeededSqliteReplica(path, identity)),
     ),
   );
   const replicaStore = await bootWorkspaceRuntime(runtime, ReplicaStore.use(Effect.succeed));
   const { replicaId } = await runtime.runPromise(replicaStore.readSyncCursor());
-  const publisher = createReplicaCommitPublisher();
+
+  const lifetime = makeReplicaLifetime();
+  lifetime.onClose(Effect.promise(() => runtime.dispose()));
+  lifetime.onClose(Effect.promise(() => publisher.dispose()));
+
+  type RuntimeServices = ManagedRuntime.ManagedRuntime.Services<typeof runtime>;
+
+  const run = <A, E>(effect: Effect.Effect<A, E, RuntimeServices>, options?: ReplicaReadOptions) =>
+    runtime.runPromise(
+      lifetime.supervise(effect),
+      options?.signal === undefined ? undefined : { signal: options.signal },
+    );
 
   const withHandle = <A, E>(use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E>) =>
-    runtime.runPromise(SqliteReplica.use(use).pipe(Effect.orDie));
+    run(SqliteReplica.use(use).pipe(Effect.orDie));
+
+  const withSnapshot = <A, E>(
+    use: (snapshot: ReplicaSnapshotRunner<ReplicaRow>) => Effect.Effect<A, E>,
+    options?: ReplicaReadOptions,
+  ) => run(ReplicaSnapshotReader.use(use).pipe(Effect.orDie), options);
 
   const stamp = () => withHandle((handle) => readReplicaStamp(handle, workspaceToken));
 
@@ -93,18 +128,13 @@ export const openNodeReplicaSqlite = async (
     return notice;
   };
 
-  const enqueueLocal = async (envelope: SyncCommandEnvelope, createdAt: number) => {
-    const queued = await runtime.runPromise(replicaStore.enqueueCommand(envelope, createdAt));
-    if (queued.notice) {
-      publisher.publish({
-        workspaceToken,
-        generationId: queued.notice.generationId,
-        localCommitVersion: queued.notice.localCommitVersion,
-        touchedEntities: touchedEntitiesForCommand(envelope),
-        touchedKeys: touchedKeysForCommand(envelope),
-      });
-    }
-    return { changed: queued.notice !== undefined, status: queued.value.status };
+  const enqueueCommand = async (request: EnqueueCommandRequest) => {
+    const queued = await run(replicaStore.enqueueCommand(request));
+    return {
+      operationId: queued.value.operationId,
+      status: queued.value.status,
+      stamp: { workspaceToken, ...queued.value.stamp },
+    };
   };
 
   return {
@@ -116,20 +146,19 @@ export const openNodeReplicaSqlite = async (
     readPendingRowIds: (entity) =>
       withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
-    readCommandAllocation: () => withHandle((handle) => readCommandAllocationSqlite(handle.db)),
-    enqueueLocal,
-    readSubset: (spec) => withHandle((handle) => readReplicaSubset(handle, workspaceToken, spec)),
+    enqueueCommand,
+    readCommandStatus: (operationId) => run(replicaStore.readCommandStatus(operationId)),
+    readSubset: (spec, options) =>
+      withSnapshot((snapshot) => readSnapshotSubset(snapshot, workspaceToken, spec), options),
+    readBatch: (specs, options) =>
+      withSnapshot((snapshot) => readSnapshotBatch(snapshot, workspaceToken, specs), options),
     readInsights: (window) =>
       withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
     summarizeSubset: (spec) =>
-      withHandle((handle) => readReplicaSummary(handle, workspaceToken, spec)),
+      withSnapshot((snapshot) => readSnapshotSummary(snapshot, workspaceToken, spec)),
     subscribe: publisher.subscribe,
-    publish: publisher.publish,
     withWrite,
-    close: () => {
-      publisher.dispose();
-      void runtime.dispose();
-    },
+    close: lifetime.close,
   };
 };
 
@@ -142,6 +171,9 @@ export {
   seedReplicaIdentity,
 } from "./sql-client-session";
 export { openNodeReplicaSyncSession } from "./node-sync";
+export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly";
+export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
+export type { ReplicaSnapshotRunner } from "./snapshot-read";
 export type { NodeReplicaSyncIdentity, NodeReplicaSyncSession } from "./node-sync";
 export { makeProxySyncTransport } from "./proxy-transport";
 export type { SyncProxyFetch, SyncProxyRequest, SyncProxyResponse } from "./proxy-transport";

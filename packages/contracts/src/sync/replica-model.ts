@@ -60,6 +60,8 @@ export const ReplicaCommitNotice = Schema.Struct({
   localCommitVersion: Schema.Natural,
   touchedEntities: Schema.Array(SyncEntity),
   touchedKeys: Schema.Array(Schema.String),
+  fullInvalidation: Schema.optionalKey(Schema.Boolean),
+  overflowedEntities: Schema.optionalKey(Schema.Array(SyncEntity)),
 });
 export type ReplicaCommitNotice = typeof ReplicaCommitNotice.Type;
 

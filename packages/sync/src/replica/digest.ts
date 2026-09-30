@@ -1,9 +1,11 @@
 import {
+  finishPartitionDigestReport,
+  makePartitionEntityHasher,
+  makePartitionLeafOrderer,
   PARTITION_ENTITIES,
-  partitionDigestReport,
+  partitionLeafOf,
   STOCK_MOVEMENT_ROW_VERSION,
   type PartitionEntity,
-  type PartitionLeafList,
   type SyncSubscription,
 } from "@store/contracts";
 import {
@@ -15,30 +17,16 @@ import {
   products,
   stockMovements,
 } from "@store/db/replica.schema";
-import { inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, max, min, sql, type SQL } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 
 import { ReplicaStorageError } from "./errors";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
-const LeafListsRow = Schema.Struct({
-  pendingCount: Schema.Number,
-  categoryCount: Schema.Number,
-  categoryLeaves: Schema.NullOr(Schema.String),
-  productCount: Schema.Number,
-  productLeaves: Schema.NullOr(Schema.String),
-  batchCount: Schema.Number,
-  batchLeaves: Schema.NullOr(Schema.String),
-  invoiceCount: Schema.Number,
-  invoiceLeaves: Schema.NullOr(Schema.String),
-  invoiceItemCount: Schema.Number,
-  invoiceItemLeaves: Schema.NullOr(Schema.String),
-  stockMovementCount: Schema.Number,
-  stockMovementLeaves: Schema.NullOr(Schema.String),
-});
-
-const decodeLeafListsRow = Schema.decodeUnknownEffect(LeafListsRow);
+const PAGE_ROWS = 4_000;
 
 type LeafTable =
   | typeof categories
@@ -63,39 +51,105 @@ const leafTables = {
   { readonly table: LeafTable; readonly rowVersion: SQL }
 >;
 
-const leafSelections = (entity: PartitionEntity) => {
-  const { table, rowVersion } = leafTables[entity];
-  return sql`(select count(*) from ${table}) as ${sql.identifier(`${entity}Count`)},
-    (select group_concat("leaf", char(10) order by "leaf") from (select ${`${entity}:`} || ${table.id} || ':' || ${rowVersion} as "leaf" from ${table})) as ${sql.identifier(`${entity}Leaves`)}`;
+const foreignOrganization = () =>
+  ReplicaStorageError.make({ message: "Replica partition holds more than one organization." });
+
+const pendingQuery = (tx: ReplicaDb) =>
+  tx
+    .select({ pendingCount: count() })
+    .from(pendingRowMarks)
+    .where(inArray(pendingRowMarks.entity, [...PARTITION_ENTITIES]))
+    .get();
+
+const boundsQuery = (tx: ReplicaDb, entity: PartitionEntity) => {
+  const { table } = leafTables[entity];
+  return tx
+    .select({
+      entityCount: count(),
+      organizationId: min(table.organizationId),
+      highestOrganizationId: max(table.organizationId),
+    })
+    .from(table)
+    .get();
 };
 
-const leafListsStatement = sql`select
-    (select count(*) from ${pendingRowMarks} where ${inArray(pendingRowMarks.entity, [...PARTITION_ENTITIES])}) as "pendingCount",
-    ${sql.join(PARTITION_ENTITIES.map(leafSelections), sql`, `)}`;
-
-const listOf = (count: number, leaves: string | null): PartitionLeafList => ({
-  count,
-  leaves: leaves ?? "",
-});
-
-const malformed = () =>
-  ReplicaStorageError.make({ message: "Replica partition digest rows are malformed." });
-
-export const sqlitePartitionDigest = Effect.fn("ReplicaDigest.sqlitePartitionDigest")(function* (
+const pageQuery = (
   tx: ReplicaDb,
-) {
-  const raw = yield* tx.get<unknown>(leafListsStatement);
-  const row = yield* decodeLeafListsRow(raw).pipe(Effect.mapError(malformed));
-  if (row.pendingCount > 0) return undefined;
-  return yield* partitionDigestReport({
-    category: listOf(row.categoryCount, row.categoryLeaves),
-    product: listOf(row.productCount, row.productLeaves),
-    batch: listOf(row.batchCount, row.batchLeaves),
-    invoice: listOf(row.invoiceCount, row.invoiceLeaves),
-    invoiceItem: listOf(row.invoiceItemCount, row.invoiceItemLeaves),
-    stockMovement: listOf(row.stockMovementCount, row.stockMovementLeaves),
-  });
-});
+  entity: PartitionEntity,
+  organizationId: string,
+  after: string | undefined,
+) => {
+  const { table, rowVersion } = leafTables[entity];
+  return tx
+    .select({ entityId: table.id, version: sql<string>`(${rowVersion}) || ''` })
+    .from(table)
+    .where(
+      and(
+        eq(table.organizationId, organizationId),
+        after === undefined ? undefined : gt(table.id, after),
+      ),
+    )
+    .orderBy(asc(table.id))
+    .limit(PAGE_ROWS)
+    .all();
+};
+
+export type DigestReader<Failure> = <A>(
+  read: (tx: ReplicaDb) => Effect.Effect<A, EffectDrizzleQueryError>,
+) => Effect.Effect<A, Failure>;
+
+const entityDigest = <Failure>(read: DigestReader<Failure>, entity: PartitionEntity) =>
+  Effect.gen(function* () {
+    const bounds = yield* read((tx) => boundsQuery(tx, entity));
+    const entityCount = bounds?.entityCount ?? 0;
+    const hasher = makePartitionEntityHasher(entity, entityCount);
+    if (!bounds || bounds.organizationId === null) {
+      return { count: entityCount, digest: hasher.finish() };
+    }
+    if (bounds.highestOrganizationId !== bounds.organizationId) return yield* foreignOrganization();
+    const organizationId = bounds.organizationId;
+    const orderer = makePartitionLeafOrderer(hasher.push);
+    yield* Stream.paginate(Option.none<string>(), (after) =>
+      read((tx) => pageQuery(tx, entity, organizationId, Option.getOrUndefined(after))).pipe(
+        Effect.map((rows) => {
+          const last = rows.at(-1);
+          return [
+            rows,
+            rows.length < PAGE_ROWS || last === undefined
+              ? Option.none()
+              : Option.some(Option.some(last.entityId)),
+          ] as const;
+        }),
+      ),
+    ).pipe(
+      Stream.runForEach((row) =>
+        Effect.sync(() =>
+          orderer.push(row.entityId, partitionLeafOf(entity, row.entityId, row.version)),
+        ),
+      ),
+    );
+    orderer.finish();
+    return { count: entityCount, digest: hasher.finish() };
+  }).pipe(Effect.withSpan("ReplicaDigest.sqliteEntityDigest"));
+
+export const readPartitionDigest = <Failure>(read: DigestReader<Failure>) =>
+  Effect.gen(function* () {
+    const pending = yield* read(pendingQuery);
+    if ((pending?.pendingCount ?? 0) > 0) return undefined;
+    return yield* finishPartitionDigestReport({
+      category: yield* entityDigest(read, "category"),
+      product: yield* entityDigest(read, "product"),
+      batch: yield* entityDigest(read, "batch"),
+      invoice: yield* entityDigest(read, "invoice"),
+      invoiceItem: yield* entityDigest(read, "invoiceItem"),
+      stockMovement: yield* entityDigest(read, "stockMovement"),
+    });
+  }).pipe(Effect.withSpan("ReplicaDigest.readPartitionDigest"));
+
+export const sqlitePartitionDigest = (tx: ReplicaDb) =>
+  readPartitionDigest<EffectDrizzleQueryError>((read) => read(tx)).pipe(
+    Effect.withSpan("ReplicaDigest.sqlitePartitionDigest"),
+  );
 
 export const logPartitionDivergence = (
   subscription: SyncSubscription,

@@ -4,27 +4,45 @@ import {
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
+  NOTICE_BUFFER_CAPACITY,
+  noticeAffects,
+  offerCoalescing,
   type ReplicaChangeFeed,
   type ReplicaCommitNotice,
 } from "@store/client-db";
-import type { ReplicaInsightsFacts, ReplicaInsightsWindow, SyncEntity } from "@store/contracts";
 import {
-  DEFAULT_STOCK_POLICY,
-  InsightsService,
-  insightsLayer,
-  insightsWindowFor,
-  StockPolicy,
-  type InsightsError,
-  type InsightsReport,
+  MAX_PRODUCT_INSIGHT_IDS,
+  MAX_RESTOCK_PAGE_ROWS,
+  RestockPageRequest,
+  stockPolicyVersion,
+  type InsightsContext,
+  type InsightsSummaryRead,
   type ProductInsight,
-} from "@store/services/insights";
-import { Duration, Effect, Layer, Queue, Stream } from "effect";
+  type RestockCursor,
+  type RestockFilters,
+  type RestockPageRead,
+  type SyncEntity,
+} from "@store/contracts";
+import { DEFAULT_STOCK_POLICY, StockPolicy } from "@store/services/insights";
+import {
+  Clock,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Request,
+  RequestResolver,
+  Schema,
+  Stream,
+} from "effect";
 import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { WorkspaceReadFailure } from "./errors";
+import { emptyInsightsSource, type InsightsSource } from "./insights-source";
 import {
   facetsFrom,
   PRODUCT_FACET_COLUMNS,
@@ -33,6 +51,7 @@ import {
   type ProductListFilters,
   type ProductListRequest,
 } from "./product-list";
+import { canonicalSearchLimit, canonicalSearchQuery } from "./search";
 
 let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
 
@@ -68,9 +87,7 @@ export type WorkspaceAtomSources = {
     query: string,
     limit: number,
   ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
-  readonly readInsights: (
-    window: ReplicaInsightsWindow,
-  ) => Effect.Effect<ReplicaInsightsFacts, WorkspaceReadError>;
+  readonly insights: InsightsSource;
   readonly readProductPage: (
     request: ProductListRequest,
   ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
@@ -93,16 +110,7 @@ const emptySources: WorkspaceAtomSources = {
   readProductPage: () => Effect.succeed([]),
   summarizeProducts: () => Effect.succeed({ count: 0, distinct: [] }),
   findProductsByNames: () => Effect.succeed([]),
-  readInsights: (window) =>
-    Effect.succeed({
-      window,
-      products: [],
-      batches: [],
-      sales: [],
-      days: [],
-      hours: [],
-      truncated: false,
-    }),
+  insights: emptyInsightsSource,
 };
 
 const sameRowIds = (
@@ -114,60 +122,86 @@ const sameRowIds = (
   left.value.size === right.value.size &&
   [...left.value].every((id) => right.value.has(id));
 
-const insightsRuntime = Atom.runtime(insightsLayer);
-
-const INSIGHT_ENTITIES: ReadonlySet<SyncEntity> = new Set([
-  "category",
-  "product",
-  "batch",
-  "invoice",
-  "invoiceItem",
-]);
 const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
 export const CANDIDATE_QUERY_SEPARATOR = "\n";
-const INSIGHTS_SETTLE = Duration.millis(750);
 const INSIGHTS_ROLLOVER = Duration.minutes(15);
 
 const localUtcOffsetMinutes = (at: number) => -new Date(at).getTimezoneOffset();
 
 const commitNotices = (feed: ReplicaChangeFeed) =>
-  Stream.callback<ReplicaCommitNotice>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => feed.subscribe((notice) => Queue.offerUnsafe(queue, notice))),
-      (unsubscribe) => Effect.sync(unsubscribe),
-    ),
+  Stream.callback<ReplicaCommitNotice>(
+    (queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() => feed.subscribe((notice) => offerCoalescing(queue, notice))),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      ),
+    { bufferSize: NOTICE_BUFFER_CAPACITY, strategy: "suspend" },
   );
 
 const touching = (entities: ReadonlySet<SyncEntity>) => (notice: ReplicaCommitNotice) =>
-  notice.touchedEntities.some((entity) => entities.has(entity));
+  [...entities].some((entity) => noticeAffects(notice, entity));
 
 const refreshOnCommits =
   (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>, settle?: Duration.Duration) =>
   <A extends Atom.Atom<unknown>>(self: A) => {
     const relevant = commitNotices(sources.changes).pipe(Stream.filter(touching(entities)));
     return Atom.makeRefreshOnSignal(
-      Atom.make(settle === undefined ? relevant : relevant.pipe(Stream.debounce(settle))),
+      Atom.make(settle === undefined ? relevant : relevant.pipe(Stream.debounce(settle))).pipe(
+        Atom.setIdleTTL(0),
+      ),
     )(self);
   };
 
-const insightsReportAtom = (sources: WorkspaceAtomSources) => {
-  const facts = Atom.make(() => {
-    const now = Date.now();
-    return sources.readInsights(insightsWindowFor(now, localUtcOffsetMinutes(now)));
+const insightsContextOf = (policy: StockPolicy): Effect.Effect<InsightsContext> =>
+  Effect.map(Clock.currentTimeMillis, (now) => ({
+    policy,
+    utcOffsetMinutes: localUtcOffsetMinutes(now),
+  }));
+
+const refreshOnInsightChanges =
+  (source: InsightsSource) =>
+  <A extends Atom.Atom<unknown>>(self: A) =>
+    Atom.makeRefreshOnSignal(Atom.make(source.changes).pipe(Atom.setIdleTTL(0)))(self);
+
+class ProductInsightRequest extends Request.Class<
+  { readonly productId: string; readonly context: InsightsContext },
+  ProductInsight | null,
+  WorkspaceReadFailure
+> {}
+
+const PRODUCT_INSIGHT_BATCH_DELAY = Duration.millis(15);
+
+const productInsightResolver = (source: InsightsSource) =>
+  RequestResolver.makeGrouped<ProductInsightRequest, string>({
+    key: (entry) =>
+      `${stockPolicyVersion(entry.request.context.policy)}|${entry.request.context.utcOffsetMinutes}`,
+    resolver: (entries) =>
+      source
+        .readProducts(entries[0].request.context, [
+          ...new Set(entries.map((entry) => entry.request.productId)),
+        ])
+        .pipe(
+          Effect.matchEffect({
+            onFailure: (failure) =>
+              Effect.sync(() => {
+                for (const entry of entries) entry.completeUnsafe(Exit.fail(failure));
+              }),
+            onSuccess: (read) =>
+              Effect.sync(() => {
+                const found = new Map(read.insights.map((insight) => [insight.productId, insight]));
+                for (const entry of entries) {
+                  entry.completeUnsafe(Exit.succeed(found.get(entry.request.productId) ?? null));
+                }
+              }),
+          }),
+        ),
   }).pipe(
-    Atom.withRefresh(INSIGHTS_ROLLOVER),
-    refreshOnCommits(sources, INSIGHT_ENTITIES, INSIGHTS_SETTLE),
+    RequestResolver.setDelay(PRODUCT_INSIGHT_BATCH_DELAY),
+    RequestResolver.batchN(MAX_PRODUCT_INSIGHT_IDS),
   );
-  return insightsRuntime
-    .atom((get) =>
-      Effect.gen(function* () {
-        const current = yield* get.result(facts);
-        const policy = get(stockPolicyAtom);
-        return yield* InsightsService.use((service) => service.analyze({ facts: current, policy }));
-      }),
-    )
-    .pipe(Atom.keepAlive);
-};
+
+const decodeRestockKey = Schema.decodeUnknownSync(Schema.fromJsonString(RestockPageRequest));
+const encodeRestockKey = Schema.encodeSync(Schema.fromJsonString(RestockPageRequest));
 
 export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
@@ -187,9 +221,13 @@ export type WorkspaceAtoms = {
     queries: string,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
   readonly commandExecution: Atom.Writable<CommandExecutionState>;
-  readonly insights: Atom.Atom<
-    AsyncResult.AsyncResult<InsightsReport, WorkspaceReadError | InsightsError>
-  >;
+  readonly insights: Atom.Atom<AsyncResult.AsyncResult<InsightsSummaryRead, WorkspaceReadError>>;
+  readonly restockPage: (
+    request: RestockPageRequest,
+  ) => Atom.Atom<AsyncResult.AsyncResult<RestockPageRead, WorkspaceReadError>>;
+  readonly exportRestock: (
+    filters: RestockFilters,
+  ) => Stream.Stream<ProductInsight, WorkspaceReadError>;
   readonly productPage: (
     request: ProductListRequest,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<ProductRow>, WorkspaceReadError>>;
@@ -204,30 +242,56 @@ export type WorkspaceAtoms = {
   >;
   readonly productInsight: (
     productId: string,
-  ) => Atom.Atom<
-    AsyncResult.AsyncResult<ProductInsight | null, WorkspaceReadError | InsightsError>
-  >;
-};
-
-const productInsightFamily = (
-  insights: WorkspaceAtoms["insights"],
-): WorkspaceAtoms["productInsight"] => {
-  const index = Atom.mapResult(
-    insights,
-    (report) => new Map(report.products.map((insight) => [insight.productId, insight])),
-  );
-  return Atom.family((productId: string) =>
-    Atom.mapResult(index, (byId) => byId.get(productId) ?? null),
-  );
+  ) => Atom.Atom<AsyncResult.AsyncResult<ProductInsight | null, WorkspaceReadError>>;
 };
 
 export const createWorkspaceAtoms = (
   initialSync: InventorySyncStatus = { _tag: "caughtUp" },
   sources: WorkspaceAtomSources = emptySources,
 ): WorkspaceAtoms => {
-  const insights = insightsReportAtom(sources);
+  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
+  const insights = Atom.make((get) =>
+    insightsContextOf(get(stockPolicyAtom)).pipe(Effect.flatMap(sources.insights.readSummary)),
+  ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER), refreshOnInsightChanges(sources.insights));
+  const productResolver = productInsightResolver(sources.insights);
+  const restockPageAtom = Atom.family((key: string) =>
+    Atom.make((get) =>
+      insightsContextOf(get(stockPolicyAtom)).pipe(
+        Effect.flatMap((context) =>
+          sources.insights.readRestockPage(context, decodeRestockKey(key)),
+        ),
+      ),
+    ).pipe(refreshOnInsightChanges(sources.insights)),
+  );
+  const productInsightAtom = Atom.family((productId: string) =>
+    Atom.make((get) =>
+      insightsContextOf(get(stockPolicyAtom)).pipe(
+        Effect.flatMap((context) =>
+          Effect.request(new ProductInsightRequest({ productId, context }), productResolver),
+        ),
+      ),
+    ).pipe(refreshOnInsightChanges(sources.insights)),
+  );
+  const productSearchAtom = Atom.family((limit: number) =>
+    Atom.family((query: string) =>
+      Atom.make(sources.searchProducts(query, limit)).pipe(
+        refreshOnCommits(sources, PRODUCT_ENTITIES),
+      ),
+    ),
+  );
+  const productCandidatesAtom = Atom.family((limit: number) =>
+    Atom.family((queries: string) =>
+      Atom.make(
+        Effect.forEach(queries === "" ? [] : queries.split(CANDIDATE_QUERY_SEPARATOR), (query) =>
+          sources.searchProducts(query, limit),
+        ).pipe(
+          Effect.map((groups) => [...new Map(groups.flat().map((row) => [row.id, row])).values()]),
+        ),
+      ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+  );
   return {
-    registry: AtomRegistry.make({ defaultIdleTTL: 30_000 }),
+    registry,
     syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
     syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
     pendingRowIds: Atom.family((entity: SyncEntity) =>
@@ -236,26 +300,14 @@ export const createWorkspaceAtoms = (
         Atom.withEquality(sameRowIds),
       ),
     ),
-    productSearch: Atom.family((limit: number) =>
-      Atom.family((query: string) =>
-        Atom.make(sources.searchProducts(query, limit)).pipe(
-          refreshOnCommits(sources, PRODUCT_ENTITIES),
-        ),
-      ),
-    ),
-    productCandidates: Atom.family((limit: number) =>
-      Atom.family((queries: string) =>
-        Atom.make(
-          Effect.forEach(queries === "" ? [] : queries.split(CANDIDATE_QUERY_SEPARATOR), (query) =>
-            sources.searchProducts(query, limit),
-          ).pipe(
-            Effect.map((groups) => [
-              ...new Map(groups.flat().map((row) => [row.id, row])).values(),
-            ]),
-          ),
-        ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
-      ),
-    ),
+    productSearch: (limit: number) => {
+      const bounded = canonicalSearchLimit(limit);
+      return (query: string) => productSearchAtom(bounded)(canonicalSearchQuery(query));
+    },
+    productCandidates: (limit: number) => {
+      const bounded = canonicalSearchLimit(limit);
+      return (queries: string) => productCandidatesAtom(bounded)(queries);
+    },
     productPage: Atom.family((request: ProductListRequest) =>
       Atom.make(sources.readProductPage(request)).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
     ),
@@ -272,6 +324,31 @@ export const createWorkspaceAtoms = (
     }),
     commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
     insights,
-    productInsight: productInsightFamily(insights),
+    restockPage: (request) => restockPageAtom(encodeRestockKey(request)),
+    exportRestock: (filters) =>
+      Stream.paginate<RestockCursor | null, ProductInsight, WorkspaceReadError>(null, (cursor) =>
+        insightsContextOf(registry.get(stockPolicyAtom)).pipe(
+          Effect.flatMap((context) =>
+            sources.insights.readRestockPage(context, {
+              filters: { ...filters, ordersOnly: true },
+              cursor,
+              limit: MAX_RESTOCK_PAGE_ROWS,
+            }),
+          ),
+          Effect.flatMap((page) =>
+            page.cursorExpired
+              ? Effect.fail(
+                  new WorkspaceReadFailure({
+                    message: "The insights were recalculated during the export. Try again.",
+                  }),
+                )
+              : Effect.succeed([
+                  page.rows,
+                  page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
+                ] as const),
+          ),
+        ),
+      ),
+    productInsight: productInsightAtom,
   };
 };

@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -149,7 +150,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
       message: "The JWT signing key is not configured.",
     });
   }
-  const now = Math.floor((input.now ?? Date.now()) / 1_000);
+  const now = Math.floor((input.now ?? (yield* Clock.currentTimeMillis)) / 1_000);
   const expiresAt = now + (configuration.accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS);
   const payload = {
     iss: configuration.issuer,
@@ -221,7 +222,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
 export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   token: string,
   configuration: JwtConfiguration,
-  now = Date.now(),
+  now?: number,
   importedKey?: CryptoKey,
 ) {
   const segments = token.split(".");
@@ -269,7 +270,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
       message: "The access token issuer or audience is invalid.",
     });
   }
-  if (payload.exp * 1_000 <= now) {
+  if (payload.exp * 1_000 <= (now ?? (yield* Clock.currentTimeMillis))) {
     return yield* new JwtError({
       reason: "Expired",
       message: "The access token has expired.",

@@ -10,6 +10,7 @@ export * from "./sync/canonical-json";
 export * from "./sync/digest";
 export * from "./sync/live";
 export * from "./sync/protocol";
+export * from "./sync/replica-analytics";
 export * from "./sync/replica-insights";
 export * from "./sync/replica-model";
 export * from "./sync/schema";
