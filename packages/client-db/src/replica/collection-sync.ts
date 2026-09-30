@@ -394,7 +394,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     if (disposed || released.has(options) || options.signal?.aborted === true) return true;
     const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
     const published = acquisitions.get(key);
-    if (published?.published) {
+    if (published?.published && options.refetch !== true) {
       published.refs += 1;
       owners.set(options, published);
       return true;
@@ -407,7 +407,18 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         if (existing) {
           existing.refs += 1;
           owners.set(options, existing);
-          return Effect.void;
+          if (options.refetch !== true) return Effect.void;
+          return refill(existing, []).pipe(
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit)
+                ? Effect.void
+                : Effect.sync(() => {
+                    if (owners.get(options) !== existing) return;
+                    owners.delete(options);
+                    existing.refs -= 1;
+                  }),
+            ),
+          );
         }
         return acquire(
           key,

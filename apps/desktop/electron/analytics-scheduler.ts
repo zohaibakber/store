@@ -108,7 +108,7 @@ export const makeAnalyticsScheduler = (deps: {
     const runOnce = Effect.gen(function* () {
       const context = yield* Ref.get(desired);
       if (context === undefined) return;
-      const { consumed, outcome } = yield* journal.track((changes) =>
+      const { consumed, verifyStamp, outcome } = yield* journal.track((changes) =>
         Effect.gen(function* () {
           const consumed = yield* Ref.getAndSet(pending, undefined);
           yield* Ref.set(activity, "running");
@@ -127,12 +127,13 @@ export const makeAnalyticsScheduler = (deps: {
             }),
             Effect.exit,
           );
-          return { consumed, outcome };
+          return { consumed, verifyStamp, outcome };
         }),
       );
       yield* Ref.set(progress, null);
       if (outcome._tag === "Failure") {
         yield* Ref.set(failure, "The insights could not be recalculated.");
+        if (verifyStamp) yield* Ref.set(verify, true);
         yield* Ref.update(pending, (later) =>
           consumed === undefined ? later : mergeAccumulators(consumed, later),
         );
@@ -244,7 +245,8 @@ export const makeAnalyticsScheduler = (deps: {
             run.policyVersion !== stockPolicyVersion(context.policy) ||
             run.utcOffsetMinutes !== context.utcOffsetMinutes ||
             run.today !== insightsDayOf(now, context.utcOffsetMinutes) ||
-            (yield* Ref.get(pending)) !== undefined;
+            (yield* Ref.get(pending)) !== undefined ||
+            (yield* Ref.get(verify));
           if (stale) yield* schedule;
           return yield* statusFor(context);
         }),
