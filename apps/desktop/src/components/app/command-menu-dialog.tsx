@@ -57,8 +57,8 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import {
-  rememberRecentProduct,
   useRecentProducts,
+  useRememberRecentProduct,
   type RecentProduct,
 } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
@@ -338,6 +338,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
 
 function useProductActions(close: () => void) {
   const navigate = useNavigate();
+  const rememberRecentProduct = useRememberRecentProduct();
   return useMemo(() => {
     const open = (target: ProductTarget) => {
       rememberRecentProduct(target);
@@ -364,7 +365,7 @@ function useProductActions(close: () => void) {
       void navigate({ to: "/products/$productId/edit", params: { productId: target.id } });
     };
     return { open, addToSale, addStock, edit };
-  }, [close, navigate]);
+  }, [close, navigate, rememberRecentProduct]);
 }
 
 function PaletteResults({

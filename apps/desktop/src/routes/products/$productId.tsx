@@ -50,7 +50,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { rememberRecentProduct } from "@/hooks/use-recent-products";
+import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
 import { EMPTY, formatDate, formatNumber } from "@/lib/format";
@@ -231,9 +231,10 @@ function ProductDetailContent({
 
   const { id, name, strength } = product;
   const categoryName = product.category.name;
+  const rememberRecentProduct = useRememberRecentProduct();
   React.useEffect(() => {
     rememberRecentProduct({ id, name, strength, category: { name: categoryName } });
-  }, [id, name, strength, categoryName]);
+  }, [rememberRecentProduct, id, name, strength, categoryName]);
 
   useWindowKeydown((event) => {
     if (event.defaultPrevented || event.repeat) return;

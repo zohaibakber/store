@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { createContext, use, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { rememberRecentProduct } from "@/hooks/use-recent-products";
+import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { storeErrorMessage } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory";
@@ -115,6 +115,7 @@ const lineUnits = (line: SaleLine) =>
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
+  const rememberRecentProduct = useRememberRecentProduct();
   const [customerName, setCustomerName] = useState("");
   const [lines, setLines] = useState<SaleLine[]>([]);
   const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);

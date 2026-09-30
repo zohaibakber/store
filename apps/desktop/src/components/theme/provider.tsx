@@ -1,12 +1,11 @@
-import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
+import { useAtom, useAtomValue } from "@effect/atom-react";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
 import { appHost } from "@/host";
+import { themePreferenceAtom, type ThemePreference } from "@/lib/preferences";
 
-export type ThemePreference = "dark" | "light" | "system";
+export type { ThemePreference };
 type ResolvedTheme = "dark" | "light";
 
 type ThemeContextValue = {
@@ -23,13 +22,6 @@ export function useTheme(): ThemeContextValue {
   return context;
 }
 
-const ThemePreferenceSchema = Schema.Literals(["dark", "light", "system"]);
-
-const readStoredPreference = (storageKey: string, fallback: ThemePreference): ThemePreference =>
-  Schema.decodeUnknownOption(ThemePreferenceSchema)(localStorage.getItem(storageKey)).pipe(
-    Option.getOrElse(() => fallback),
-  );
-
 const systemTheme = (): ResolvedTheme =>
   window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 
@@ -41,18 +33,8 @@ const systemThemeAtom = Atom.make((get) => {
   return systemTheme();
 });
 
-export function ThemeProvider({
-  children,
-  defaultTheme = "dark",
-  storageKey = "store-electron-theme",
-}: {
-  children: React.ReactNode;
-  defaultTheme?: ThemePreference;
-  storageKey?: string;
-}) {
-  const [preference, setPreference] = React.useState<ThemePreference>(() =>
-    readStoredPreference(storageKey, defaultTheme),
-  );
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [preference, setTheme] = useAtom(themePreferenceAtom);
   const resolvedSystem = useAtomValue(systemThemeAtom);
   const theme: ResolvedTheme = preference === "system" ? resolvedSystem : preference;
 
@@ -66,14 +48,6 @@ export function ThemeProvider({
   React.useEffect(() => {
     appHost().theme?.setSource(preference);
   }, [preference]);
-
-  const setTheme = React.useCallback(
-    (next: ThemePreference) => {
-      localStorage.setItem(storageKey, Schema.encodeSync(ThemePreferenceSchema)(next));
-      setPreference(next);
-    },
-    [storageKey],
-  );
 
   const value = React.useMemo(
     () => ({ preference, setTheme, theme }),
