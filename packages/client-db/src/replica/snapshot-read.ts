@@ -6,9 +6,8 @@ import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
 import { lowerSqliteSubset, lowerSqliteSummary, toStatement } from "./compile";
-import { UnsupportedSubsetQuery, type ReplicaSnapshotFailure } from "./errors";
+import type { ReplicaSnapshotFailure } from "./errors";
 import { replicaStampQuery } from "./replica-queries";
-import { MAX_BATCH_ROWS, MAX_BATCH_SPECS } from "./sources";
 import { decodeReplicaStampRow, decodeSqliteResultRow } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import type {
@@ -19,6 +18,7 @@ import type {
   SqliteParameter,
   SqliteResultRow,
 } from "./types";
+import { validateBatchSpecs } from "./validate";
 
 type SnapshotFailure = SqlError | ReplicaSnapshotFailure;
 
@@ -88,18 +88,6 @@ export const readSnapshotSubset = Effect.fn("ReplicaSnapshot.readSubset")(functi
     }),
   );
 });
-
-export const validateBatchSpecs = (specs: ReadonlyArray<InventorySubsetSpec>) =>
-  specs.length === 0 ||
-  specs.length > MAX_BATCH_SPECS ||
-  specs.some((spec) => spec.limit > MAX_BATCH_ROWS)
-    ? Effect.fail(
-        new UnsupportedSubsetQuery({
-          message: `Unsupported batch read: at most ${MAX_BATCH_SPECS} specifications of ${MAX_BATCH_ROWS} rows`,
-          reason: `batch of ${specs.length} specifications exceeds the bound`,
-        }),
-      )
-    : Effect.void;
 
 export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function* (
   snapshot: ReplicaSnapshotRunner,

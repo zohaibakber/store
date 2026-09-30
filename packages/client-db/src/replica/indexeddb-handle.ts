@@ -23,7 +23,6 @@ import { layerCommitForwarding } from "./commit-forwarding";
 import { planIndexedDbSubset } from "./indexeddb-plan";
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
-import { validateBatchSpecs } from "./snapshot-read";
 import { MAX_DISTINCT_VALUES } from "./sources";
 import { decodeSqliteResultRow, type OutboxCommandStatus } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
@@ -38,7 +37,7 @@ import type {
   ReplicaSummaryRead,
   SqliteResultRow,
 } from "./types";
-import { validateSummarySpec } from "./validate";
+import { validateBatchSpecs, validateSummarySpec } from "./validate";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
 
 export type OpenIndexedDbReplicaInput = {
