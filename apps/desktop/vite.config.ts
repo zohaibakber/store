@@ -61,12 +61,13 @@ const webContentSecurityPolicy = (): Plugin => {
           "http-equiv": "Content-Security-Policy",
           content: [
             "default-src 'self'",
-            "script-src 'self'",
+            "script-src 'self' https://static.cloudflareinsights.com",
             [
               "connect-src 'self'",
               ...connectOrigins,
               "https://*.ingest.sentry.io",
               "https://*.ingest.us.sentry.io",
+              "https://cloudflareinsights.com",
             ].join(" "),
             "img-src 'self' data: blob: https:",
             "style-src 'self' 'unsafe-inline'",
