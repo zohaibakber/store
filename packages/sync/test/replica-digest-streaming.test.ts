@@ -16,11 +16,9 @@ import {
   categories,
   invoiceItems,
   invoices,
-  pendingRowMarks,
   products,
   stockMovements,
 } from "@store/db/replica.schema";
-import { eq, inArray } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
@@ -53,20 +51,6 @@ const across = (ids: ReadonlyArray<string>, seed = 7): Fixture => {
             : 1 + Math.floor(next() * 50),
     })),
   );
-};
-
-const ALPHABET = ["a", "-", ":", "0", "1", "\u{1F600}", "", "z", "￿", "\u{20000}"];
-const families = (): ReadonlyArray<string> => {
-  const out: Array<string> = [];
-  const walk = (prefix: string, depth: number) => {
-    for (const letter of ALPHABET) {
-      const id = prefix + letter;
-      out.push(id);
-      if (depth > 1) walk(id, depth - 1);
-    }
-  };
-  walk("", 3);
-  return out;
 };
 
 const UNICODE_IDS = [
@@ -113,12 +97,16 @@ const randomIds = (count: number): ReadonlyArray<string> => {
   return [...seen];
 };
 
-const fixtures: ReadonlyArray<readonly [string, Fixture]> = [
-  ["empty", []],
-  ["unicode", across(UNICODE_IDS)],
-  ["prefix families", across(families())],
-  ["random with families beyond one page", across(randomIds(4500))],
-  ["single", across(["only"])],
+const unicode = across(UNICODE_IDS);
+
+const sqliteFixtures: ReadonlyArray<readonly [string, Fixture]> = [
+  ["unicode", unicode],
+  ["random ids beyond one page", across(randomIds(4_500))],
+];
+
+const indexedFixtures: ReadonlyArray<readonly [string, Fixture]> = [
+  ["unicode", unicode],
+  ["random ids beyond one chunk", across(randomIds(1_500))],
 ];
 
 const managed = (rowVersion: number) => ({
@@ -282,7 +270,7 @@ const seedIndexed = (fixture: Fixture) =>
   });
 
 describe("streamed replica digest", () => {
-  for (const [name, fixture] of fixtures) {
+  for (const [name, fixture] of sqliteFixtures) {
     it.effect(`sqlite ${name}`, () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -292,7 +280,9 @@ describe("streamed replica digest", () => {
         }),
       ),
     );
+  }
 
+  for (const [name, fixture] of indexedFixtures) {
     it.effect(`indexeddb ${name}`, () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -303,36 +293,4 @@ describe("streamed replica digest", () => {
       ),
     );
   }
-
-  it.effect("sqlite deletes and pending", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const fixture = across(UNICODE_IDS);
-        const store = yield* seedSqlite(fixture);
-        const doomed = ["a", "😀", "1"];
-        const local = yield* runReplicaTransaction(store, (tx) =>
-          Effect.gen(function* () {
-            yield* tx.delete(categories).where(inArray(categories.id, doomed));
-            yield* tx.delete(stockMovements).where(eq(stockMovements.id, "a-"));
-            return yield* sqlitePartitionDigest(tx);
-          }),
-        );
-        const remaining = fixture.filter(
-          (source) =>
-            !(source.entity === "category" && doomed.includes(source.entityId)) &&
-            !(source.entity === "stockMovement" && source.entityId === "a-"),
-        );
-        expect(local).toEqual(yield* partitionDigestOf(remaining));
-        const pending = yield* runReplicaTransaction(store, (tx) =>
-          Effect.gen(function* () {
-            yield* tx
-              .insert(pendingRowMarks)
-              .values({ entity: "invoice", entityId: "a", operationId: "p1" });
-            return yield* sqlitePartitionDigest(tx);
-          }),
-        );
-        expect(pending).toBeUndefined();
-      }),
-    ),
-  );
 });

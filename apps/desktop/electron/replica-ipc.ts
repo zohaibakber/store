@@ -86,6 +86,7 @@ export type ReplicaSyncApiRequest = (
     readonly method?: "GET" | "POST";
     readonly body?: string | null;
     readonly timeoutMillis?: number;
+    readonly signal?: AbortSignal;
   },
 ) => Promise<ProxyFetchResult>;
 
@@ -326,11 +327,12 @@ export const registerReplicaWorkerIpc = (options: {
     request: typeof ProxyFetchRequest.Type,
   ) =>
     Effect.tryPromise({
-      try: () =>
+      try: (signal) =>
         options.syncApiRequest(request.pathname, {
           method: request.method,
           body: request.bodyText,
           timeoutMillis: request.timeoutMillis,
+          signal,
         }),
       catch: (cause) => (cause instanceof Error ? cause.message : "Sync proxy failed."),
     }).pipe(

@@ -86,11 +86,14 @@ export const makeReplicaSyncApiRequest =
     const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
     const url = validatedInventoryUrl(apiBaseUrl, { method, url: new URL(pathname, base).href });
     assertInventoryRequestBodySize(body);
+    const deadline = AbortSignal.timeout(
+      init?.timeoutMillis ?? DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS,
+    );
     const response = await apiFetch(url, {
       method,
       headers: body ? { "content-type": "application/json" } : undefined,
       body: body ?? undefined,
-      signal: AbortSignal.timeout(init?.timeoutMillis ?? DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS),
+      signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
     });
     const retryAfter = response.headers.get("retry-after");
     const bodyText = await response.text();

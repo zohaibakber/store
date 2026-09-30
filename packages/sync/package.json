@@ -11,9 +11,6 @@
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts"
   },
-  "scripts": {
-    "bench": "tsx bench/run.ts"
-  },
   "dependencies": {
     "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
@@ -26,7 +23,6 @@
     "@effect/vitest": "catalog:",
     "@types/node": "^26.6.3",
     "fake-indexeddb": "^6.2.5",
-    "tsx": "^4.23.15",
     "typescript": "catalog:",
     "vitest": "5.0.2"
   }

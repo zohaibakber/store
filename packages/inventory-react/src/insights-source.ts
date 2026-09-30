@@ -27,6 +27,7 @@ import {
 } from "@store/services/insights";
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -115,7 +116,27 @@ const reportKeyOf = (
   until: window.until,
 });
 
-const REPORT_CAPACITY = 1;
+const sameSeries = (left: ReportKey, right: ReportKey) =>
+  left.generationId === right.generationId &&
+  left.utcOffsetMinutes === right.utcOffsetMinutes &&
+  left.until === right.until &&
+  Equal.equals(left.policy, right.policy);
+
+const supersedes = (published: ReportKey, key: ReportKey) =>
+  sameSeries(published, key) && published.localCommitVersion >= key.localCommitVersion;
+
+type PublishedReport = {
+  readonly key: ReportKey;
+  readonly current: FallbackReport;
+};
+
+type ReportState = {
+  readonly open: boolean;
+  readonly revision: number;
+  readonly published: ReadonlyArray<PublishedReport>;
+};
+
+const REPORT_CAPACITY = 2;
 
 const closedFailure = () => new WorkspaceReadFailure({ message: "The workspace is closed." });
 
@@ -172,36 +193,62 @@ const cursorFor = (revision: number, insight: ProductInsight): RestockCursor => 
 });
 
 const fallbackSource = Effect.fnUntraced(function* (replica: ReplicaHandle) {
-  const open = yield* Ref.make(true);
-  const revisions = yield* Ref.make(0);
-  const reports: Cache.Cache<ReportKey, FallbackReport, WorkspaceReadFailure> =
-    yield* Cache.makeWith(
-      (requested: ReportKey) =>
-        Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
-          const window = insightsWindowFor(now, requested.utcOffsetMinutes);
-          const read = yield* Effect.tryPromise({
-            try: () => replica.readInsights(window),
-            catch: readFailure,
-          });
-          const report = analyzeInsights(read.facts, requested.policy, now);
-          const revision = yield* Ref.updateAndGet(revisions, (current) => current + 1);
-          const produced: FallbackReport = { run: runOf(report, revision, read.stamp), report };
-          const key = reportKeyOf(read.stamp, requested.policy, window);
-          if (!Equal.equals(key, requested)) yield* Cache.set(reports, key, produced);
-          return produced;
-        }).pipe(Effect.withSpan("InventoryInsights.fallbackReport")),
-      {
-        capacity: REPORT_CAPACITY,
-        timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
-      },
-    );
+  const state = yield* Ref.make<ReportState>({ open: true, revision: 0, published: [] });
+  const closing = yield* Deferred.make<never, WorkspaceReadFailure>();
+  const publish = (key: ReportKey, report: InsightsReport, stamp: ReportStamp) =>
+    Ref.modify(state, (current): [Exit.Exit<FallbackReport, WorkspaceReadFailure>, ReportState] => {
+      if (!current.open) return [Exit.fail(closedFailure()), current];
+      const existing = current.published.find((entry) => supersedes(entry.key, key));
+      if (existing !== undefined) return [Exit.succeed(existing.current), current];
+      const revision = current.revision + 1;
+      const produced: FallbackReport = { run: runOf(report, revision, stamp), report };
+      return [
+        Exit.succeed(produced),
+        {
+          open: true,
+          revision,
+          published: [
+            { key, current: produced },
+            ...current.published.filter((entry) => !sameSeries(entry.key, key)),
+          ].slice(0, REPORT_CAPACITY),
+        },
+      ];
+    }).pipe(Effect.flatten);
+  const reports: Cache.Cache<ReportKey, FallbackReport, WorkspaceReadFailure> = yield* Cache.make({
+    lookup: (requested: ReportKey) =>
+      Effect.gen(function* () {
+        const current = yield* Ref.get(state);
+        if (!current.open) return yield* Effect.fail(closedFailure());
+        const existing = current.published.find((entry) => supersedes(entry.key, requested));
+        if (existing !== undefined) return existing.current;
+        const now = yield* Clock.currentTimeMillis;
+        const window = insightsWindowFor(now, requested.utcOffsetMinutes);
+        const read = yield* Effect.tryPromise({
+          try: () => replica.readInsights(window),
+          catch: readFailure,
+        });
+        const report = analyzeInsights(read.facts, requested.policy, now);
+        return yield* publish(
+          reportKeyOf(read.stamp, requested.policy, window),
+          report,
+          read.stamp,
+        );
+      }).pipe(
+        Effect.raceFirst(Deferred.await(closing)),
+        Effect.withSpan("InventoryInsights.fallbackReport"),
+      ),
+    capacity: REPORT_CAPACITY,
+    timeToLive: Duration.zero,
+  });
   yield* Effect.addFinalizer(() =>
-    Ref.set(open, false).pipe(Effect.andThen(Cache.invalidateAll(reports))),
+    Ref.set(state, { open: false, revision: 0, published: [] }).pipe(
+      Effect.andThen(Deferred.fail(closing, closedFailure())),
+      Effect.andThen(Cache.invalidateAll(reports)),
+    ),
   );
   const load = (context: InsightsContext) =>
     Effect.gen(function* () {
-      if (!(yield* Ref.get(open))) return yield* Effect.fail(closedFailure());
+      if (!(yield* Ref.get(state)).open) return yield* Effect.fail(closedFailure());
       const stamp = yield* Effect.tryPromise({ try: () => replica.stamp(), catch: readFailure });
       const now = yield* Clock.currentTimeMillis;
       return yield* Cache.get(

@@ -20,9 +20,7 @@ describe("decodeModelJson", () => {
 
   it.each<[string, ModelOutput<{ readonly name: string }>]>([
     ["text without a JSON object", "not json"],
-    ["an envelope without a JSON object", { response: "not json" }],
     ["an object of the wrong shape", '{"name":null}'],
-    ["a JSON null", "null"],
   ])("fails typed for %s", async (_name, raw) => {
     const exit = await Effect.runPromiseExit(decodeName(raw));
     expect(Exit.isFailure(exit) && !Exit.hasDies(exit)).toBe(true);

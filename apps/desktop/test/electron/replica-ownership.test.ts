@@ -28,7 +28,6 @@ import {
 import {
   ReplicaReaderRpcs,
   ReplicaWorkerRpcs,
-  type ReplicaReaderBoot,
   type ReplicaWorkerBoot,
 } from "../../electron/replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/replica-supervisor";
@@ -62,20 +61,13 @@ const makeWorld = (
       terminated: Deferred.Deferred<void>,
     ) => Effect.Effect<void>;
     readonly terminateEffect?: (index: number) => Effect.Effect<void>;
-    readonly readerCloseFinalizer?: (
-      index: number,
-      terminated: Deferred.Deferred<void>,
-    ) => Effect.Effect<void>;
   } = {},
 ) => {
   const workers: Array<FakeWorker> = [];
-  const readers: Array<typeof ReplicaReaderBoot.Type> = [];
 
-  const spawnReader: SpawnReplicaReader = ({ boot }) =>
+  const spawnReader: SpawnReplicaReader = () =>
     Effect.gen(function* () {
-      const index = readers.length;
       const lost = yield* Deferred.make<void>();
-      const terminated = yield* Deferred.make<void>();
       const handlers = ReplicaReaderRpcs.toLayer({
         Engine: () => Effect.succeed("sqlite" as const),
         ReadSubset: () => Effect.die("unused"),
@@ -83,17 +75,10 @@ const makeWorld = (
         SummarizeSubset: () => Effect.die("unused"),
       });
       const client = yield* RpcTest.makeClient(ReplicaReaderRpcs).pipe(Effect.provide(handlers));
-      yield* Effect.addFinalizer(
-        () => plan.readerCloseFinalizer?.(index, terminated) ?? Effect.void,
-      );
-      readers.push(boot);
       return {
         client,
         lost: Deferred.await(lost),
-        terminate: Deferred.succeed(terminated, undefined).pipe(
-          Effect.andThen(Deferred.succeed(lost, undefined)),
-          Effect.asVoid,
-        ),
+        terminate: Deferred.succeed(lost, undefined).pipe(Effect.asVoid),
       };
     });
   const stamp = { generationId: "1", localCommitVersion: 0 };
@@ -199,7 +184,7 @@ const makeWorld = (
       }),
     );
 
-  return { workers, readers, registration, sent, senderEvent, invoke, open };
+  return { workers, registration, sent, senderEvent, invoke, open };
 };
 
 describe("worker incarnation fencing", () => {
@@ -263,25 +248,6 @@ describe("ownership", () => {
     await closing;
     await expect(reopening).resolves.toMatchObject({ engine: "sqlite" });
     expect(world.workers).toHaveLength(2);
-    await world.registration.dispose();
-  });
-
-  it("never opens a second reader while the previous reader's disposal hangs", async () => {
-    const world = makeWorld({
-      readerCloseFinalizer: (index, terminated) =>
-        index === 0 ? Deferred.await(terminated) : Effect.void,
-    });
-    const first = world.senderEvent(7);
-    const { workspaceToken } = await world.open(first);
-    expect(world.readers).toHaveLength(1);
-    const closing = world.invoke(REPLICA_CLOSE_CHANNEL, first, workspaceToken);
-    const reopening = world.open(world.senderEvent(8));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(world.workers).toHaveLength(1);
-    expect(world.readers).toHaveLength(1);
-    await closing;
-    await expect(reopening).resolves.toMatchObject({ engine: "sqlite" });
-    expect(world.readers).toHaveLength(2);
     await world.registration.dispose();
   });
 

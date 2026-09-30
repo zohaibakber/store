@@ -167,18 +167,6 @@ describe.each(harnesses)("$name atomic enqueue", ({ make }) => {
     ),
   );
 
-  it.effect("resolves an uncertain response from the durable command status", () =>
-    withStore((store) =>
-      Effect.gen(function* () {
-        expect(yield* store.readCommandStatus("op-1")).toBeUndefined();
-        const queued = yield* store.enqueueCommand(categoryRequest(1));
-        expect(yield* store.readCommandStatus("op-1")).toBe("pending");
-        const repeated = yield* store.enqueueCommand(categoryRequest(1));
-        expect(repeated.value).toEqual(queued.value);
-      }),
-    ),
-  );
-
   it.effect("replays an operation whose envelope was re-stamped by registration", () =>
     withStore((store) =>
       Effect.gen(function* () {

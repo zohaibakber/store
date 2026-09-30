@@ -5,6 +5,7 @@ import {
 } from "@store/client-db";
 import { SyncEntity } from "@store/contracts";
 import * as Clock from "effect/Clock";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -30,6 +31,10 @@ type AnalyticsWorkerClient = RpcClient.FromGroup<typeof AnalyticsWorkerRpcs, Rpc
 type AnalyticsWorkerProcess = {
   readonly client: AnalyticsWorkerClient;
   readonly lost: Effect.Effect<void>;
+};
+
+type LiveAnalyticsWorker = AnalyticsWorkerProcess & {
+  readonly retired: Effect.Effect<void>;
 };
 
 type AnalyticsWorkerLaunch = {
@@ -87,7 +92,7 @@ export const makeAnalyticsController = (options: {
         }));
       });
 
-    const boot: Effect.Effect<AnalyticsWorkerProcess, AnalyticsWorkerFailure, Scope.Scope> =
+    const boot: Effect.Effect<LiveAnalyticsWorker, AnalyticsWorkerFailure, Scope.Scope> =
       Effect.gen(function* () {
         const recent = yield* Ref.get(failures);
         const now = yield* Clock.currentTimeMillis;
@@ -121,24 +126,26 @@ export const makeAnalyticsController = (options: {
           Effect.forkScoped,
         );
         yield* Ref.set(warm, Option.some(process));
+        const retired = yield* Deferred.make<void>();
+        yield* Effect.addFinalizer(() => Deferred.succeed(retired, undefined));
         yield* process.lost.pipe(
           Effect.andThen(noteFailure(startedAt)),
           Effect.andThen(Ref.set(warm, Option.none())),
           Effect.andThen(RcRef.invalidate(worker)),
+          Effect.andThen(Deferred.succeed(retired, undefined)),
           Effect.forkIn(parent),
         );
-        return process;
+        return { ...process, retired: Deferred.await(retired) };
       });
 
     const worker = yield* RcRef.make({ acquire: boot, idleTimeToLive: Duration.infinity });
 
     const attempt = <A, E, R>(work: (client: AnalyticsWorkerClient) => Effect.Effect<A, E, R>) =>
-      RcRef.get(worker).pipe(
-        Effect.scoped,
-        Effect.flatMap((live) =>
+      Effect.scoped(
+        Effect.flatMap(RcRef.get(worker), (live) =>
           Effect.raceFirst(
             work(live.client),
-            live.lost.pipe(
+            live.retired.pipe(
               Effect.andThen(
                 Effect.fail(new AnalyticsWorkerLost({ message: "The insights worker stopped." })),
               ),

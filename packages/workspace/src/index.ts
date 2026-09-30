@@ -7,6 +7,7 @@ export {
   cookieSessionNeedsRefresh,
   decodeResponse,
   isInvalidResponse,
+  isSupersededSession,
   layerSessionHttp,
   makeSessionHttp,
   refreshedTokens,

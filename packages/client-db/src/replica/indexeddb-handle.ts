@@ -9,13 +9,11 @@ import {
   layerIndexedDbReplicaStore,
   IndexedDbReplicaStore,
   type IndexedDbReplicaIdentity,
-  type IndexedDbSubsetRow,
 } from "@store/sync/replica/indexeddb";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as EffectRecord from "effect/Record";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import { layerCommitForwarding } from "./commit-forwarding";
@@ -34,7 +32,6 @@ import type {
   ReplicaReadOptions,
   ReplicaSubsetRead,
   ReplicaSummaryRead,
-  SqliteResultRow,
 } from "./types";
 import { validateBatchSpecs, validateSummarySpec } from "./validate";
 import { bootWorkspaceRuntime } from "./workspace-runtime";
@@ -48,9 +45,6 @@ export type OpenIndexedDbReplicaInput = {
     readonly accessToken: OwnedLiveHost["accessToken"];
   };
 };
-
-const toSqliteResultRow = (row: IndexedDbSubsetRow): SqliteResultRow =>
-  EffectRecord.map(row, (value) => (value === true ? 1 : value === false ? 0 : value));
 
 const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
   input.sync === undefined
@@ -127,7 +121,7 @@ export const openIndexedDbReplicaHandle = async (
       planIndexedDbSubset(spec).pipe(Effect.flatMap((plan) => store.querySubset(plan))),
       options,
     );
-    return { stamp: stamped(result.stamp), rows: result.rows.map(toSqliteResultRow) };
+    return { stamp: stamped(result.stamp), rows: result.rows };
   };
 
   const readBatch = async (
@@ -143,10 +137,7 @@ export const openIndexedDbReplicaHandle = async (
       return yield* store.querySubsets(plans);
     });
     const result = await run(read, options);
-    return {
-      stamp: stamped(result.stamp),
-      reads: result.reads.map((rows) => rows.map(toSqliteResultRow)),
-    };
+    return { stamp: stamped(result.stamp), reads: result.reads };
   };
 
   const summarizeSubset = async (spec: InventorySubsetSummarySpec): Promise<ReplicaSummaryRead> => {

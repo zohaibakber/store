@@ -414,6 +414,23 @@ describe("replica snapshot generations", () => {
         "pending",
       ]);
       expect(clean.products).toHaveLength(1);
+      expect(clean.categories.map((row) => row.name)).toEqual(
+        expect.arrayContaining(["General", "Category 1", "Category 2"]),
+      );
+      expect(clean.products[0]?.name).toBe("Local rename");
+      expect(clean.searchable.map((row) => row.id)).toEqual(clean.products.map((row) => row.id));
+      expect(clean.searchEntries.count).toBe(clean.products.length);
+      expectSearchTriggersFollowTheirTable(clean.triggers);
+      expect(clean.batches[0]?.unitQuantity).toBe(8);
+      expect(clean.overlays).toHaveLength(1);
+      expect(clean.outbox.map((row) => row.operationId).sort()).toEqual(
+        [
+          lastUnitBuyerAEnvelope.operationId,
+          "local-category-1",
+          "local-category-2",
+          "local-rename",
+        ].sort(),
+      );
     }),
   );
 
@@ -531,35 +548,6 @@ describe("replica snapshot generations", () => {
       expect(dump.products.map((row) => row.name)).toEqual(["Fresh name"]);
       expect(dump.batches[0]?.unitQuantity).toBe(8);
       yield* session.close;
-    }),
-  );
-
-  it.effect("keeps sales and remote changes made during preparation", () =>
-    Effect.gen(function* () {
-      const path = join(workDirectory, "race.sqlite");
-      const dump = yield* scenario(
-        path,
-        { reopenEveryOperation: false, abortEachStep: false },
-        events,
-      );
-      const names = dump.categories.map((row) => row.name);
-      expect(names).toEqual(expect.arrayContaining(["General", "Category 1", "Category 2"]));
-      const product = dump.products[0];
-      expect(product.name).toBe("Local rename");
-      expect(dump.searchable.map((row) => row.id)).toEqual(dump.products.map((row) => row.id));
-      expect(dump.searchEntries.count).toBe(dump.products.length);
-      expectSearchTriggersFollowTheirTable(dump.triggers);
-      const batch = dump.batches[0];
-      expect(batch.unitQuantity).toBe(8);
-      expect(dump.overlays).toHaveLength(1);
-      expect(dump.outbox.map((row) => row.operationId).sort()).toEqual(
-        [
-          lastUnitBuyerAEnvelope.operationId,
-          "local-category-1",
-          "local-category-2",
-          "local-rename",
-        ].sort(),
-      );
     }),
   );
 });

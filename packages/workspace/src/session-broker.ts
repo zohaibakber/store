@@ -8,7 +8,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 
-import { SessionHttp, type RequestError } from "./session-http";
+import { SessionHttp, isSupersededSession, type RequestError } from "./session-http";
 
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
@@ -54,6 +54,7 @@ export const loadSessionSnapshot = (
     if (!session.tokens.get()) return yield* clearSession(hooks);
     const loaded = yield* Effect.result(session.workspace);
     if (Result.isFailure(loaded)) {
+      if (isSupersededSession(loaded.failure)) return hooks.getLocalSnapshot();
       if (isRejected(loaded.failure)) return yield* clearSession(hooks, loaded.failure.message);
       return hooks.publish(
         withWorkspaceError(
