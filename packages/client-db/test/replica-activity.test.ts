@@ -114,6 +114,7 @@ describe("sync activity", () => {
       ],
       rejected: [],
       caughtUpAt: 55,
+      lowestActiveSchemaVersion: null,
     } satisfies Parameters<typeof syncActivityFromOutbox>[0];
     expect(syncActivityFromOutbox(outbox)).toEqual({
       pendingCount: 3,

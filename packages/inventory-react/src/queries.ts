@@ -217,6 +217,7 @@ export const stockMovementsQuery =
         productId: movement.productId,
         batchId: movement.batchId,
         invoiceId: movement.invoiceId,
+        purchaseOrderId: movement.purchaseOrderId,
         type: movement.type,
         packDelta: movement.packDelta,
         unitDelta: movement.unitDelta,

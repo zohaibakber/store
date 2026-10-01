@@ -38,6 +38,7 @@ import {
   ReplicaStorageError,
   SyncRecoveryRequired,
 } from "./replica/errors";
+import { shouldAnnounce } from "./replica/registration";
 import {
   ReplicaStore,
   type AppliedCursor,
@@ -187,7 +188,7 @@ export const makeSyncEngineFromReplicaStore = (
     const ensureRegistered = Effect.fn("SyncEngine.ensureRegistered")(function* () {
       if (yield* Deferred.isDone(registered)) return;
       const cursor = yield* withPermit(store.readSyncCursor());
-      if (!cursor.registered) {
+      if (shouldAnnounce(cursor)) {
         const authority = yield* transport.registerReplica({
           replicaId: cursor.replicaId,
           schemaVersion: SYNC_SCHEMA_VERSION,

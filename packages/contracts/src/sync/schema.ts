@@ -10,6 +10,9 @@ export const SyncEntity = Schema.Literals([
   "invoice",
   "invoiceItem",
   "stockMovement",
+  "supplier",
+  "purchaseOrder",
+  "purchaseOrderItem",
 ]);
 export type SyncEntity = typeof SyncEntity.Type;
 

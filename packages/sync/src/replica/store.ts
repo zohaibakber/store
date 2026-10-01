@@ -23,7 +23,7 @@ import type * as Stream from "effect/Stream";
 
 import type { ClaimNextUploadInput, UploadClaim } from "./commands";
 import type { ReplicaStoreError } from "./errors";
-import type { ReplicaRegistrationOutcome } from "./registration";
+import type { ReplicaAnnouncement, ReplicaRegistrationOutcome } from "./registration";
 
 export type { ReplicaRegistrationOutcome, ReplicaStoreError };
 
@@ -45,11 +45,10 @@ export type QueuedCommand = {
   readonly stamp: ReplicaReadStamp;
 };
 
-type ReplicaSyncCursor = {
+type ReplicaSyncCursor = ReplicaAnnouncement & {
   readonly epoch: string;
   readonly appliedCommitSequence: string;
   readonly replicaId: string;
-  readonly registered: boolean;
   readonly bootstrapped: boolean;
 };
 

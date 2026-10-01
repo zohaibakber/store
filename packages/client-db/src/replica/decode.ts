@@ -1,3 +1,4 @@
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -40,3 +41,18 @@ export const decodeInvoiceSqliteRows = sqliteRowsDecoder("invoices", InvoiceRow)
 export const decodeInvoiceItemSqliteRows = sqliteRowsDecoder("invoiceItems", InvoiceItemRow);
 
 export const decodeStockMovementSqliteRows = sqliteRowsDecoder("stockMovements", StockMovementRow);
+
+export const decodeSupplierSqliteRows = sqliteRowsDecoder(
+  "suppliers",
+  syncEntityRows.supplier.schema,
+);
+
+export const decodePurchaseOrderSqliteRows = sqliteRowsDecoder(
+  "purchaseOrders",
+  syncEntityRows.purchaseOrder.schema,
+);
+
+export const decodePurchaseOrderItemSqliteRows = sqliteRowsDecoder(
+  "purchaseOrderItems",
+  syncEntityRows.purchaseOrderItem.schema,
+);

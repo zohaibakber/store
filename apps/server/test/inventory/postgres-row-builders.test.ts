@@ -1,6 +1,10 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
+  PARTITION_DIGEST_VERSION,
+  PARTITION_DIGEST_VERSION_V3,
+  PARTITION_ENTITIES_V3,
   partitionDigestOf,
+  PURCHASE_ORDER_STATUSES,
   PartitionDigestReport,
   STOCK_MOVEMENT_ROW_VERSION,
   type PartitionLeafSource,
@@ -11,7 +15,10 @@ import {
   invoiceItems,
   invoices,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   stockMovements,
+  suppliers,
 } from "@store/db/postgres/schema";
 import { eq, sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
@@ -66,6 +73,16 @@ const RowText = Schema.Struct({ id: Schema.String, json: Schema.String });
 const decodeRowTexts = Schema.decodeUnknownSync(Schema.Array(RowText));
 const DigestRow = Schema.Struct({ digest: Schema.fromJsonString(PartitionDigestReport) });
 const decodeDigestRows = Schema.decodeUnknownSync(Schema.Array(DigestRow));
+const LegacyDigest = Schema.Struct({
+  version: Schema.Literal(PARTITION_DIGEST_VERSION_V3),
+  entities: Schema.Record(Schema.String, Schema.String),
+});
+const LegacyDigestRow = Schema.Struct({
+  current: Schema.String,
+  requested: Schema.String,
+  digest: Schema.fromJsonString(LegacyDigest),
+});
+const decodeLegacyDigestRows = Schema.decodeUnknownSync(Schema.Array(LegacyDigestRow));
 
 const seed = (organizationId: string) =>
   Effect.gen(function* () {
@@ -73,6 +90,10 @@ const seed = (organizationId: string) =>
     const insertedCategories = [];
     const insertedProducts = [];
     const insertedBatches = [];
+    const insertedSuppliers = [];
+    const insertedOrders = [];
+    const insertedLines = [];
+    const insertedMovements = [];
     for (const [index, text] of ADVERSARIAL_TEXT.entries()) {
       const categoryId = `category ${index} ${text}`;
       const [category] = yield* db
@@ -148,27 +169,86 @@ const seed = (organizationId: string) =>
         updatedAt: 1_700_000_000_000,
         ...metadata(organizationId, index, MAX_SAFE - 2 * index),
       });
-      yield* db.insert(stockMovements).values({
-        id: `movement ${index} ${text}`,
-        productId: `product ${index} ${text}`,
-        batchId: `batch ${index} ${text}`,
-        invoiceId: `invoice ${index} ${text}`,
-        type: "sale",
-        packDelta: 0,
-        unitDelta: -1,
-        note: text,
-        organizationId,
-        actorUserId: "user-1",
-        deviceId: `device-${text}`,
-        operationId: `operation-${index}`,
-        createdAt: 1_700_000_000_000,
-      });
+      const [supplier] = yield* db
+        .insert(suppliers)
+        .values({
+          id: `supplier ${index} ${text}`,
+          name: `Supplier ${index} ${text}`,
+          phone: index % 2 === 0 ? null : `92300${index}`,
+          note: index % 3 === 0 ? null : text,
+          createdAt: 1,
+          updatedAt: MAX_SAFE - index,
+          ...metadata(organizationId, index, index + 11),
+        })
+        .returning();
+      insertedSuppliers.push(supplier);
+      const [order] = yield* db
+        .insert(purchaseOrders)
+        .values({
+          id: `order ${index} ${text}`,
+          orderNumber: 2_147_483_647 - index,
+          supplierId: `supplier ${index} ${text}`,
+          status: PURCHASE_ORDER_STATUSES[index % PURCHASE_ORDER_STATUSES.length] ?? "draft",
+          note: index % 2 === 0 ? text : null,
+          sentAt: index % 2 === 0 ? null : MAX_SAFE - index,
+          expectedAt: index % 3 === 0 ? 1 : null,
+          total: index === 0 ? 0 : 2_147_483_647,
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000 + index,
+          ...metadata(organizationId, index, MAX_SAFE - 3 * index),
+        })
+        .returning();
+      insertedOrders.push(order);
+      const [line] = yield* db
+        .insert(purchaseOrderItems)
+        .values({
+          id: `line ${index} ${text}`,
+          purchaseOrderId: `order ${index} ${text}`,
+          productId: `product ${index} ${text}`,
+          productName: `Product ${text}`,
+          quantity: index + 1,
+          quantityType: index % 2 === 0 ? "pack" : "unit",
+          baseUnitQuantity: 2_147_483_647,
+          packCost: index % 2 === 0 ? null : index,
+          receivedBaseUnits: index,
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000,
+          ...metadata(organizationId, index, index + 5),
+        })
+        .returning();
+      insertedLines.push(line);
+      const [movement] = yield* db
+        .insert(stockMovements)
+        .values({
+          id: `movement ${index} ${text}`,
+          productId: `product ${index} ${text}`,
+          batchId: `batch ${index} ${text}`,
+          invoiceId: index % 2 === 0 ? `invoice ${index} ${text}` : null,
+          purchaseOrderId: index % 2 === 0 ? null : `order ${index} ${text}`,
+          type: index % 2 === 0 ? "sale" : "stock_in",
+          packDelta: 0,
+          unitDelta: index % 2 === 0 ? -1 : 1,
+          note: text,
+          organizationId,
+          actorUserId: "user-1",
+          deviceId: `device-${text}`,
+          operationId: `operation-${index}`,
+          createdAt: 1_700_000_000_000,
+        })
+        .returning();
+      insertedMovements.push(movement);
     }
+    const present = <Row>(rows: ReadonlyArray<Row | undefined>) =>
+      rows.flatMap((row) => (row ? [row] : []));
     return {
       db,
-      categories: insertedCategories.flatMap((row) => (row ? [row] : [])),
-      products: insertedProducts.flatMap((row) => (row ? [row] : [])),
-      batches: insertedBatches.flatMap((row) => (row ? [row] : [])),
+      categories: present(insertedCategories),
+      products: present(insertedProducts),
+      batches: present(insertedBatches),
+      suppliers: present(insertedSuppliers),
+      orders: present(insertedOrders),
+      lines: present(insertedLines),
+      movements: present(insertedMovements),
     };
   });
 
@@ -201,6 +281,22 @@ describe("sync row builders and partition digests", () => {
           sql`select "b"."id", "sync"."batch_json"("b")::text as "json" from ${batches} as "b" where "b"."organization_id" = ${organizationId}`,
           "objects",
         );
+        const supplierTexts = yield* seeded.db.execute(
+          sql`select "s"."id", "sync"."supplier_json"("s")::text as "json" from ${suppliers} as "s" where "s"."organization_id" = ${organizationId}`,
+          "objects",
+        );
+        const orderTexts = yield* seeded.db.execute(
+          sql`select "o"."id", "sync"."purchase_order_json"("o")::text as "json" from ${purchaseOrders} as "o" where "o"."organization_id" = ${organizationId}`,
+          "objects",
+        );
+        const lineTexts = yield* seeded.db.execute(
+          sql`select "i"."id", "sync"."purchase_order_item_json"("i")::text as "json" from ${purchaseOrderItems} as "i" where "i"."organization_id" = ${organizationId}`,
+          "objects",
+        );
+        const movementTexts = yield* seeded.db.execute(
+          sql`select "m"."id", "sync"."stock_movement_json"("m")::text as "json" from ${stockMovements} as "m" where "m"."organization_id" = ${organizationId}`,
+          "objects",
+        );
         const selectedProducts = yield* seeded.db
           .select()
           .from(products)
@@ -211,6 +307,10 @@ describe("sync row builders and partition digests", () => {
           categoryTexts: decodeRowTexts(categoryTexts),
           productTexts: decodeRowTexts(productTexts),
           batchTexts: decodeRowTexts(batchTexts),
+          supplierTexts: decodeRowTexts(supplierTexts),
+          orderTexts: decodeRowTexts(orderTexts),
+          lineTexts: decodeRowTexts(lineTexts),
+          movementTexts: decodeRowTexts(movementTexts),
         };
       }),
     );
@@ -219,6 +319,10 @@ describe("sync row builders and partition digests", () => {
       [outcome.productTexts, byId(outcome.seeded.products)],
       [outcome.batchTexts, byId(outcome.seeded.batches)],
       [outcome.productTexts, byId(outcome.selectedProducts)],
+      [outcome.supplierTexts, byId(outcome.seeded.suppliers)],
+      [outcome.orderTexts, byId(outcome.seeded.orders)],
+      [outcome.lineTexts, byId(outcome.seeded.lines)],
+      [outcome.movementTexts, byId(outcome.seeded.movements)],
     ] as const;
     for (const [texts, rows] of cases) {
       expect(texts).toHaveLength(ADVERSARIAL_TEXT.length);
@@ -231,7 +335,7 @@ describe("sync row builders and partition digests", () => {
   });
 
   it("computes the same partition digests in Postgres as the shared client contract", async () => {
-    const organizationId = "org-digest-v3";
+    const organizationId = "org-digest-v4";
     const outcome = await run(
       Effect.gen(function* () {
         const seeded = yield* seed(organizationId);
@@ -240,8 +344,16 @@ describe("sync row builders and partition digests", () => {
             .execute(statement, "objects")
             .pipe(Effect.map((rows) => decodeDigestRows(rows)[0]?.digest));
         const history = yield* digestOf(
-          sql`select "sync"."partition_digest"(${organizationId})::text as "digest"`,
+          sql`select "sync"."partition_digest"(${organizationId}, ${PARTITION_DIGEST_VERSION}::integer)::text as "digest"`,
         );
+        const legacy = yield* seeded.db
+          .execute(
+            sql`select "sync"."partition_digest"(${organizationId})::text as "current",
+              "sync"."partition_digest"(${organizationId}, ${PARTITION_DIGEST_VERSION_V3}::integer)::text as "requested",
+              "sync"."partition_digest"(${organizationId})::text as "digest"`,
+            "objects",
+          )
+          .pipe(Effect.map((rows) => decodeLegacyDigestRows(rows)[0]));
         const itemIds = yield* seeded.db
           .select({ id: invoiceItems.id, rowVersion: invoiceItems.rowVersion })
           .from(invoiceItems)
@@ -289,11 +401,27 @@ describe("sync row builders and partition digests", () => {
             entityId: row.id,
             rowVersion: STOCK_MOVEMENT_ROW_VERSION,
           })),
+          ...seeded.suppliers.map((row) => ({
+            entity: "supplier" as const,
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+          })),
+          ...seeded.orders.map((row) => ({
+            entity: "purchaseOrder" as const,
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+          })),
+          ...seeded.lines.map((row) => ({
+            entity: "purchaseOrderItem" as const,
+            entityId: row.id,
+            rowVersion: row.rowVersion,
+          })),
         ];
         const empty = yield* digestOf(
-          sql`select "sync"."partition_digest"(${"org-without-rows"})::text as "digest"`,
+          sql`select "sync"."partition_digest"(${"org-without-rows"}, ${PARTITION_DIGEST_VERSION}::integer)::text as "digest"`,
         );
         return {
+          legacy,
           history,
           clientHistory: yield* partitionDigestOf(sources),
           empty,
@@ -302,7 +430,11 @@ describe("sync row builders and partition digests", () => {
       }),
     );
     expect(outcome.history).toEqual(outcome.clientHistory);
-    expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 6 - 2);
+    expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 9 - 2);
     expect(outcome.empty).toEqual(outcome.emptyClient);
+    expect(outcome.legacy?.requested).toBe(outcome.legacy?.current);
+    expect(new Set(Object.keys(outcome.legacy?.digest.entities ?? {}))).toEqual(
+      new Set(PARTITION_ENTITIES_V3),
+    );
   });
 });

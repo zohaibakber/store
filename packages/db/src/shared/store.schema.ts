@@ -158,6 +158,97 @@ export const invoiceItems = sqliteTable(
   ],
 );
 
+export const suppliers = sqliteTable(
+  "suppliers",
+  {
+    id: entityId(),
+    name: text().notNull(),
+    phone: text(),
+    note: text(),
+    ...timestamps,
+    ...mutableSyncMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "suppliers_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    uniqueIndex("suppliers_organization_id_name_uidx").on(table.organizationId, table.name),
+    index("suppliers_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
+  ],
+);
+
+export const purchaseOrders = sqliteTable(
+  "purchase_orders",
+  {
+    id: entityId(),
+    orderNumber: integer().notNull(),
+    supplierId: text().notNull(),
+    status: text().$type<"draft" | "sent" | "closed" | "cancelled">().notNull().default("draft"),
+    note: text(),
+    sentAt: epochMilliseconds(),
+    expectedAt: epochMilliseconds(),
+    total: integer().notNull().default(0),
+    ...timestamps,
+    ...mutableSyncMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "purchase_orders_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    uniqueIndex("purchase_orders_organization_id_order_number_uidx").on(
+      table.organizationId,
+      table.orderNumber,
+    ),
+    index("purchase_orders_organization_id_supplier_id_idx").on(
+      table.organizationId,
+      table.supplierId,
+    ),
+    index("purchase_orders_organization_id_status_created_at_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+    ),
+    check("purchase_orders_order_number_positive", sql`${table.orderNumber} > 0`),
+    check(
+      "purchase_orders_status",
+      sql`${table.status} in ('draft', 'sent', 'closed', 'cancelled')`,
+    ),
+  ],
+);
+
+export const purchaseOrderItems = sqliteTable(
+  "purchase_order_items",
+  {
+    id: entityId(),
+    purchaseOrderId: text().notNull(),
+    productId: text().notNull(),
+    productName: text().notNull(),
+    quantity: integer().notNull(),
+    quantityType: text().$type<"unit" | "pack">().notNull().default("pack"),
+    baseUnitQuantity: integer().notNull(),
+    packCost: integer(),
+    receivedBaseUnits: integer().notNull().default(0),
+    ...timestamps,
+    ...mutableSyncMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "purchase_order_items_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    index("purchase_order_items_organization_id_purchase_order_id_idx").on(
+      table.organizationId,
+      table.purchaseOrderId,
+    ),
+    index("purchase_order_items_organization_id_product_id_idx").on(
+      table.organizationId,
+      table.productId,
+    ),
+  ],
+);
+
 export const stockMovements = sqliteTable(
   "stock_movements",
   {
@@ -165,6 +256,7 @@ export const stockMovements = sqliteTable(
     productId: text().notNull(),
     batchId: text().notNull(),
     invoiceId: text(),
+    purchaseOrderId: text(),
     type: text().$type<"stock_in" | "sale" | "open_pack" | "adjustment">().notNull(),
     packDelta: integer().notNull().default(0),
     unitDelta: integer().notNull().default(0),
@@ -193,5 +285,8 @@ export const stockMovements = sqliteTable(
       table.organizationId,
       table.operationId,
     ),
+    index("stock_movements_organization_id_purchase_order_id_idx")
+      .on(table.organizationId, table.purchaseOrderId)
+      .where(sql`${table.purchaseOrderId} is not null`),
   ],
 );

@@ -1,18 +1,27 @@
 import { type SyncCommandEnvelope, type SyncEntity, type SyncEntityChange } from "@store/contracts";
 import type { SyncCommand } from "@store/contracts";
-import { replicaEntitySchemas } from "@store/contracts/sync/replica-model";
+import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { decodeEntity, decodeRowJson, decodeStoredEnvelope, encodeRowJson } from "../codecs";
-import { nextFreeCategoryName } from "../collisions";
+import {
+  decodeEntity,
+  decodeRowJson,
+  decodeStoredEnvelope,
+  encodeRowJson,
+  type NamedEntity,
+  type NamedImage,
+  type NumberedEntity,
+  type NumberedImage,
+} from "../codecs";
+import { nextFreeName } from "../collisions";
 import {
   byClientSequence,
   byEntityDependency,
   decideJournalRestore,
   EMPTY_STOCK,
-  freeInvoiceNumber,
+  freeDocumentNumber,
   OUTSTANDING_COMMAND_STATUSES,
   type JournalHolder,
   type VisibleStock,
@@ -20,217 +29,186 @@ import {
 import { loadCatalog, type CatalogReads } from "../footprint";
 import {
   projectCommand,
+  type CatalogEntity,
   type CommandProjection,
   type PendingRestoreResult,
   type ProjectedRow,
+  type ProjectedUpsert,
   type ProjectionActor,
   type ReplicaCatalogLookup,
   type ReplicaEntityRowImage,
 } from "../projection";
 import { generationBounds } from "./query";
-import { outboxWithStatus, productImage, storedProduct, type ReplicaQueryBuilder } from "./schema";
+import { entityStore, outboxWithStatus, storedEntityRow, type ReplicaQueryBuilder } from "./schema";
 import { readVisibleStock } from "./stock";
-
-const firstImage = <A extends { readonly generation: number }>(
-  rows: ReadonlyArray<A>,
-): Omit<A, "generation"> | undefined => {
-  const [row] = rows;
-  if (!row) return undefined;
-  const { generation: _generation, ...rest } = row;
-  return rest;
-};
 
 const selectEntityRow = (
   api: ReplicaQueryBuilder,
   generation: number,
   entity: SyncEntity,
   entityId: string,
-): Effect.Effect<ReplicaEntityRowImage | undefined, unknown> => {
-  const key: [number, string] = [generation, entityId];
-  switch (entity) {
-    case "category":
-      return api.from("categories").select().equals(key).pipe(Effect.map(firstImage));
-    case "product":
-      return api
-        .from("products")
-        .select()
-        .equals(key)
-        .pipe(Effect.map((rows) => (rows[0] ? productImage(rows[0]) : undefined)));
-    case "batch":
-      return api.from("batches").select().equals(key).pipe(Effect.map(firstImage));
-    case "invoice":
-      return api.from("invoices").select().equals(key).pipe(Effect.map(firstImage));
-    case "invoiceItem":
-      return api.from("invoice_items").select().equals(key).pipe(Effect.map(firstImage));
-    case "stockMovement":
-      return api.from("stock_movements").select().equals(key).pipe(Effect.map(firstImage));
-    default: {
-      const _exhaustive: never = entity;
-      return Effect.die(_exhaustive);
-    }
-  }
-};
+): Effect.Effect<ReplicaEntityRowImage | undefined, unknown> =>
+  api
+    .from(entityStore(entity))
+    .select()
+    .equals([generation, entityId])
+    .pipe(
+      Effect.map(([row]) => {
+        if (row === undefined) return undefined;
+        const { generation: _generation, ...image } = row;
+        return image;
+      }),
+    );
 
 export const writeEntityRow = (
   api: ReplicaQueryBuilder,
   generation: number,
   entity: SyncEntity,
   row: SyncEntityChange["row"],
-): Effect.Effect<unknown, unknown> => {
-  switch (entity) {
-    case "category":
-      return api.from("categories").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.category)(row),
-      });
-    case "product":
-      return api
-        .from("products")
-        .upsert(
-          storedProduct(generation, Schema.decodeUnknownSync(replicaEntitySchemas.product)(row)),
-        );
-    case "batch":
-      return api.from("batches").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.batch)(row),
-      });
-    case "invoice":
-      return api.from("invoices").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.invoice)(row),
-      });
-    case "invoiceItem":
-      return api.from("invoice_items").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.invoiceItem)(row),
-      });
-    case "stockMovement":
-      return api.from("stock_movements").upsert({
-        generation,
-        ...Schema.decodeUnknownSync(replicaEntitySchemas.stockMovement)(row),
-      });
-    default: {
-      const _exhaustive: never = entity;
-      return Effect.die(_exhaustive);
-    }
-  }
-};
+): Effect.Effect<unknown, unknown> =>
+  api.from(entityStore(entity)).upsert(storedEntityRow(generation, entity, row));
 
 export const writeEntityRows = (
   api: ReplicaQueryBuilder,
   generation: number,
   entity: SyncEntity,
   rows: ReadonlyArray<SyncEntityChange["row"]>,
-): Effect.Effect<unknown, unknown> => {
-  if (rows.length === 0) return Effect.void;
-  switch (entity) {
-    case "category":
-      return api.from("categories").upsertAll(
-        rows.map((row) => ({
-          generation,
-          ...Schema.decodeUnknownSync(replicaEntitySchemas.category)(row),
-        })),
-      );
-    case "product":
-      return api
-        .from("products")
-        .upsertAll(
-          rows.map((row) =>
-            storedProduct(generation, Schema.decodeUnknownSync(replicaEntitySchemas.product)(row)),
-          ),
-        );
-    case "batch":
-      return api.from("batches").upsertAll(
-        rows.map((row) => ({
-          generation,
-          ...Schema.decodeUnknownSync(replicaEntitySchemas.batch)(row),
-        })),
-      );
-    case "invoice":
-      return api.from("invoices").upsertAll(
-        rows.map((row) => ({
-          generation,
-          ...Schema.decodeUnknownSync(replicaEntitySchemas.invoice)(row),
-        })),
-      );
-    case "invoiceItem":
-      return api.from("invoice_items").upsertAll(
-        rows.map((row) => ({
-          generation,
-          ...Schema.decodeUnknownSync(replicaEntitySchemas.invoiceItem)(row),
-        })),
-      );
-    case "stockMovement":
-      return api.from("stock_movements").upsertAll(
-        rows.map((row) => ({
-          generation,
-          ...Schema.decodeUnknownSync(replicaEntitySchemas.stockMovement)(row),
-        })),
-      );
-    default: {
-      const _exhaustive: never = entity;
-      return Effect.die(_exhaustive);
-    }
-  }
-};
+): Effect.Effect<unknown, unknown> =>
+  rows.length === 0
+    ? Effect.void
+    : api
+        .from(entityStore(entity))
+        .upsertAll(rows.map((row) => storedEntityRow(generation, entity, row)));
 
 export const removeEntityRow = (
   api: ReplicaQueryBuilder,
   generation: number,
   entity: SyncEntity,
   entityId: string,
-): Effect.Effect<unknown, unknown> => {
-  const key: [number, string] = [generation, entityId];
+): Effect.Effect<unknown, unknown> =>
+  api.from(entityStore(entity)).delete().equals([generation, entityId]);
+
+const numberHolder = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: NumberedEntity,
+  number: number,
+  excludedId: string,
+): Effect.Effect<{ readonly id: string } | undefined, unknown> => {
   switch (entity) {
-    case "category":
-      return api.from("categories").delete().equals(key);
-    case "product":
-      return api.from("products").delete().equals(key);
-    case "batch":
-      return api.from("batches").delete().equals(key);
     case "invoice":
-      return api.from("invoices").delete().equals(key);
-    case "invoiceItem":
-      return api.from("invoice_items").delete().equals(key);
-    case "stockMovement":
-      return api.from("stock_movements").delete().equals(key);
-    default: {
-      const _exhaustive: never = entity;
-      return Effect.die(_exhaustive);
-    }
+      return api
+        .from("invoices")
+        .select("byInvoiceNumber")
+        .equals([generation, number])
+        .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
+    case "purchaseOrder":
+      return api
+        .from("purchase_orders")
+        .select("byOrderNumber")
+        .equals([generation, number])
+        .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
   }
 };
+
+const highestNumber = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: NumberedEntity,
+  excludedId?: string,
+): Effect.Effect<number, unknown> => {
+  const [lower, upper] = generationBounds(generation);
+  const limit = excludedId === undefined ? 1 : 2;
+  switch (entity) {
+    case "invoice":
+      return api
+        .from("invoices")
+        .select("byInvoiceNumber")
+        .between(lower, upper)
+        .reverse()
+        .limit(limit)
+        .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)?.invoiceNumber ?? 0));
+    case "purchaseOrder":
+      return api
+        .from("purchase_orders")
+        .select("byOrderNumber")
+        .between(lower, upper)
+        .reverse()
+        .limit(limit)
+        .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)?.orderNumber ?? 0));
+  }
+};
+
+const renumberRow = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: NumberedEntity,
+  entityId: string,
+  number: number,
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const key: [number, string] = [generation, entityId];
+    switch (entity) {
+      case "invoice": {
+        const [row] = yield* api.from("invoices").select().equals(key);
+        if (row) yield* api.from("invoices").upsert({ ...row, invoiceNumber: number });
+        return;
+      }
+      case "purchaseOrder": {
+        const [row] = yield* api.from("purchase_orders").select().equals(key);
+        if (row) yield* api.from("purchase_orders").upsert({ ...row, orderNumber: number });
+        return;
+      }
+    }
+  });
+
+const nameHolder = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: NamedEntity,
+  name: string,
+  excludedId: string,
+) =>
+  api
+    .from(entityStore(entity))
+    .select("byName")
+    .equals([generation, name])
+    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
 
 const isStocked = (batch: { readonly packQuantity: number; readonly unitQuantity: number }) =>
   batch.packQuantity > 0 || batch.unitQuantity > 0;
 
-const definedImages = <A>(images: ReadonlyArray<A | undefined>): ReadonlyArray<A> =>
-  images.flatMap((image) => (image === undefined ? [] : [image]));
+const readRowsById = <Entity extends CatalogEntity>(
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: Entity,
+  ids: ReadonlyArray<string>,
+) => {
+  const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);
+  return Effect.forEach(ids, (id) => selectEntityRow(api, generation, entity, id)).pipe(
+    Effect.map((images): ReadonlyArray<SyncEntityRow<Entity>> =>
+      images.flatMap((image) => (image === undefined ? [] : [decode(image)])),
+    ),
+  );
+};
 
 const indexedDbCatalogReads = (
   api: ReplicaQueryBuilder,
   generation: number,
 ): CatalogReads<unknown, never> => ({
   rowsOf: (footprint) =>
-    Effect.gen(function* () {
-      const categoryRows = yield* Effect.forEach(footprint.categoryIds, (id) =>
-        api.from("categories").select().equals([generation, id]).pipe(Effect.map(firstImage)),
-      );
-      const productRows = yield* Effect.forEach(footprint.productIds, (id) =>
-        api
-          .from("products")
-          .select()
-          .equals([generation, id])
-          .pipe(Effect.map((rows) => (rows[0] ? productImage(rows[0]) : undefined))),
-      );
-      const batchRows = yield* Effect.forEach(footprint.batchIds, (id) =>
-        api.from("batches").select().equals([generation, id]).pipe(Effect.map(firstImage)),
-      );
-      return {
-        categories: definedImages(categoryRows),
-        products: definedImages(productRows),
-        batches: definedImages(batchRows),
-      };
+    Effect.all({
+      category: readRowsById(api, generation, "category", footprint.category),
+      product: readRowsById(api, generation, "product", footprint.product),
+      batch: readRowsById(api, generation, "batch", footprint.batch),
+      supplier: readRowsById(api, generation, "supplier", footprint.supplier),
+      purchaseOrder: readRowsById(api, generation, "purchaseOrder", footprint.purchaseOrder),
+      purchaseOrderItem: readRowsById(
+        api,
+        generation,
+        "purchaseOrderItem",
+        footprint.purchaseOrderItem,
+      ),
     }),
   productInCategory: (categoryId) =>
     api
@@ -244,7 +222,45 @@ const indexedDbCatalogReads = (
       .from("batches")
       .select("byProduct")
       .equals([generation, productId])
-      .pipe(Effect.map((rows) => firstImage(rows.filter(isStocked)))),
+      .pipe(
+        Effect.map((rows) => {
+          const stocked = rows.find(isStocked);
+          if (!stocked) return undefined;
+          const { generation: _generation, ...batch } = stocked;
+          return batch;
+        }),
+      ),
+  supplierNamed: (name) =>
+    api
+      .from("suppliers")
+      .select("byName")
+      .equals([generation, name])
+      .limit(1)
+      .pipe(Effect.map((rows) => rows[0])),
+  purchaseOrdersOfSupplier: (supplierId, limit) =>
+    api.from("purchase_orders").select("bySupplier").equals([generation, supplierId]).limit(limit),
+  itemsOfPurchaseOrder: (purchaseOrderId, limit) =>
+    api
+      .from("purchase_order_items")
+      .select("byPurchaseOrder")
+      .equals([generation, purchaseOrderId])
+      .limit(limit),
+  purchaseOrderNumbered: (orderNumber) =>
+    api
+      .from("purchase_orders")
+      .select("byOrderNumber")
+      .equals([generation, orderNumber])
+      .limit(1)
+      .pipe(Effect.map((rows) => rows[0])),
+  highestPurchaseOrders: (limit) => {
+    const [lower, upper] = generationBounds(generation);
+    return api
+      .from("purchase_orders")
+      .select("byOrderNumber")
+      .between(lower, upper)
+      .reverse()
+      .limit(limit);
+  },
 });
 
 export const readIndexedDbCommandContext = (
@@ -258,7 +274,7 @@ export const readIndexedDbCommandContext = (
       checkRules: options.checkRules,
     });
     const stock = options.withStock
-      ? yield* readVisibleStock(api, rows.batches)
+      ? yield* readVisibleStock(api, rows.batch)
       : new Map<string, VisibleStock>();
     return {
       lookup,
@@ -281,45 +297,6 @@ export const readIndexedDbUnitsPerPack = (
     );
     return (productId: string) => unitsPerPack.get(productId) ?? 1;
   });
-
-const invoiceNumberHolder = (
-  api: ReplicaQueryBuilder,
-  generation: number,
-  invoiceNumber: number,
-  excludedId: string,
-) =>
-  api
-    .from("invoices")
-    .select("byInvoiceNumber")
-    .equals([generation, invoiceNumber])
-    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
-
-const highestInvoiceNumber = (
-  api: ReplicaQueryBuilder,
-  generation: number,
-  excludedId?: string,
-) => {
-  const [lower, upper] = generationBounds(generation);
-  return api
-    .from("invoices")
-    .select("byInvoiceNumber")
-    .between(lower, upper)
-    .reverse()
-    .limit(excludedId === undefined ? 1 : 2)
-    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)?.invoiceNumber ?? 0));
-};
-
-const categoryNameHolder = (
-  api: ReplicaQueryBuilder,
-  generation: number,
-  name: string,
-  excludedId: string,
-) =>
-  api
-    .from("categories")
-    .select("byName")
-    .equals([generation, name])
-    .pipe(Effect.map((rows) => rows.find((row) => row.id !== excludedId)));
 
 const pendingMark = (api: ReplicaQueryBuilder, entity: SyncEntity, entityId: string) =>
   api
@@ -349,6 +326,64 @@ const journalEntry = (
     });
   });
 
+const freeName = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: NamedEntity,
+  row: NamedImage,
+): Effect.Effect<string, unknown> =>
+  Effect.gen(function* () {
+    const holder = yield* nameHolder(api, generation, entity, row.name, row.id);
+    if (!holder) return row.name;
+    return yield* nextFreeName(row.name, (candidate) =>
+      nameHolder(api, generation, entity, candidate, row.id).pipe(
+        Effect.map((other) => other !== undefined),
+      ),
+    );
+  });
+
+const freeInvoiceNumber = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  row: NumberedImage,
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    const holder = yield* numberHolder(api, generation, "invoice", row.number, row.id);
+    if (!holder) return row.number;
+    return freeDocumentNumber(row.number, yield* highestNumber(api, generation, "invoice", row.id));
+  });
+
+const withoutCollisions = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  projected: ProjectedUpsert,
+): Effect.Effect<ReplicaEntityRowImage, unknown> =>
+  Effect.gen(function* () {
+    switch (projected.entity) {
+      case "category":
+      case "supplier":
+        return {
+          ...projected.row,
+          name: yield* freeName(api, generation, projected.entity, projected.row),
+        };
+      case "invoice":
+        return {
+          ...projected.row,
+          invoiceNumber: yield* freeInvoiceNumber(api, generation, {
+            id: projected.row.id,
+            number: projected.row.invoiceNumber,
+          }),
+        };
+      case "product":
+      case "batch":
+      case "invoiceItem":
+      case "stockMovement":
+      case "purchaseOrder":
+      case "purchaseOrderItem":
+        return projected.row;
+    }
+  });
+
 export const writeIndexedDbPendingProjection = (
   api: ReplicaQueryBuilder,
   generation: number,
@@ -363,33 +398,13 @@ export const writeIndexedDbPendingProjection = (
       yield* journalEntry(api, envelope.operationId, projected, generation);
       if (projected.row === null) {
         yield* removeEntityRow(api, generation, projected.entity, projected.entityId);
-      } else if (projected.entity === "invoice" && resolveCollisions) {
-        const holder = yield* invoiceNumberHolder(
+      } else if (resolveCollisions) {
+        yield* writeEntityRow(
           api,
           generation,
-          projected.row.invoiceNumber,
-          projected.row.id,
+          projected.entity,
+          yield* withoutCollisions(api, generation, projected),
         );
-        yield* writeEntityRow(api, generation, projected.entity, {
-          ...projected.row,
-          invoiceNumber: holder
-            ? freeInvoiceNumber(
-                projected.row.invoiceNumber,
-                yield* highestInvoiceNumber(api, generation, projected.row.id),
-              )
-            : projected.row.invoiceNumber,
-        });
-      } else if (projected.entity === "category" && resolveCollisions) {
-        const category = projected.row;
-        const holder = yield* categoryNameHolder(api, generation, category.name, category.id);
-        const name = holder
-          ? yield* nextFreeCategoryName(category.name, (candidate) =>
-              categoryNameHolder(api, generation, candidate, category.id).pipe(
-                Effect.map((other) => other !== undefined),
-              ),
-            )
-          : category.name;
-        yield* writeEntityRow(api, generation, projected.entity, { ...category, name });
       } else {
         yield* writeEntityRow(api, generation, projected.entity, projected.row);
       }
@@ -402,49 +417,50 @@ export const writeIndexedDbPendingProjection = (
     return projection;
   });
 
-export const renumberIndexedDbCollidingInvoice = (
+export const renumberIndexedDbCollidingShadow = (
   api: ReplicaQueryBuilder,
   generation: number,
-  incoming: { readonly id: string; readonly invoiceNumber: number },
+  entity: NumberedEntity,
+  incoming: NumberedImage,
   operationId: string,
 ): Effect.Effect<string | undefined, unknown> =>
   Effect.gen(function* () {
-    const collision = yield* invoiceNumberHolder(
+    const collision = yield* numberHolder(api, generation, entity, incoming.number, incoming.id);
+    if (!collision) return undefined;
+    const mark = yield* pendingMark(api, entity, collision.id);
+    if (mark === undefined || mark === operationId) return undefined;
+    const highest = yield* highestNumber(api, generation, entity);
+    yield* renumberRow(
       api,
       generation,
-      incoming.invoiceNumber,
-      incoming.id,
+      entity,
+      collision.id,
+      freeDocumentNumber(incoming.number, highest),
     );
-    if (!collision) return undefined;
-    const mark = yield* pendingMark(api, "invoice", collision.id);
-    if (mark === undefined || mark === operationId) return undefined;
-    const highest = yield* highestInvoiceNumber(api, generation);
-    yield* api
-      .from("invoices")
-      .upsert({ ...collision, invoiceNumber: freeInvoiceNumber(incoming.invoiceNumber, highest) });
-    return `invoice:${collision.id}`;
+    return `${entity}:${collision.id}`;
   });
 
-export const renameIndexedDbCollidingCategory = (
+export const renameIndexedDbCollidingShadow = (
   api: ReplicaQueryBuilder,
   generation: number,
-  incoming: { readonly id: string; readonly name: string },
+  entity: NamedEntity,
+  incoming: NamedImage,
   operationId: string,
 ): Effect.Effect<string | undefined, unknown> =>
   Effect.gen(function* () {
-    const collision = yield* categoryNameHolder(api, generation, incoming.name, incoming.id);
+    const collision = yield* nameHolder(api, generation, entity, incoming.name, incoming.id);
     if (!collision) return undefined;
-    const mark = yield* pendingMark(api, "category", collision.id);
+    const mark = yield* pendingMark(api, entity, collision.id);
     if (mark === undefined || mark === operationId) return undefined;
-    const name = yield* nextFreeCategoryName(collision.name, (candidate) =>
+    const name = yield* nextFreeName(collision.name, (candidate) =>
       candidate === incoming.name
         ? Effect.succeed(true)
-        : categoryNameHolder(api, generation, candidate, "").pipe(
+        : nameHolder(api, generation, entity, candidate, "").pipe(
             Effect.map((other) => other !== undefined),
           ),
     );
-    yield* api.from("categories").upsert({ ...collision, name });
-    return `category:${collision.id}`;
+    yield* api.from(entityStore(entity)).upsert({ ...collision, name });
+    return `${entity}:${collision.id}`;
   });
 
 export const clearIndexedDbPendingProjection = (api: ReplicaQueryBuilder, operationId: string) =>

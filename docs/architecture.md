@@ -35,8 +35,10 @@ authoritative Postgres database through a stateless Cloudflare Worker.
   `delete` change and hold no `deletedAt`.
 - Coverage tracks which history the replica holds. A replica with no usable
   cursor bootstraps from a snapshot, then pulls from the snapshot's sequence.
-- The partition digest (v3) hashes `(entity, id, row_version)` for every
-  entity, history included. The replica requests it only on the cadence
+- The partition digest (v4) hashes `(entity, id, row_version)` for every
+  entity, history, suppliers and purchase orders included. The replica names
+  the version it wants; the authority still answers v3 over the original six
+  entities for older builds. The replica requests it only on the cadence
   policy: when it believes it is caught up and the verification interval has
   elapsed. A mismatch triggers recovery.
 

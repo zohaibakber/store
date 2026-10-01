@@ -1,6 +1,16 @@
 import * as Schema from "effect/Schema";
 
-import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
+import { PurchaseOrderQuantityType, PurchaseOrderStatus } from "../catalog/write";
+import {
+  BatchId,
+  CategoryId,
+  InvoiceId,
+  InvoiceItemId,
+  ProductId,
+  PurchaseOrderId,
+  PurchaseOrderItemId,
+  SupplierId,
+} from "../ids";
 import { PositiveInt, SyncIdentifier } from "../schema-primitives";
 
 const mutableEntityFields = {
@@ -212,6 +222,7 @@ export const StockMovement = Schema.Struct({
   productId: ProductId,
   batchId: BatchId,
   invoiceId: Schema.NullOr(InvoiceId),
+  purchaseOrderId: Schema.NullOr(PurchaseOrderId),
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
   packDelta: Schema.Number,
   unitDelta: Schema.Number,
@@ -223,3 +234,40 @@ export const StockMovement = Schema.Struct({
   createdAt: Schema.Number,
 });
 export type StockMovement = typeof StockMovement.Type;
+
+export const Supplier = Schema.Struct({
+  id: SupplierId,
+  name: Schema.String,
+  phone: Schema.NullOr(Schema.String),
+  note: Schema.NullOr(Schema.String),
+  ...mutableEntityFields,
+});
+export type Supplier = typeof Supplier.Type;
+
+export const PurchaseOrderItem = Schema.Struct({
+  id: PurchaseOrderItemId,
+  purchaseOrderId: PurchaseOrderId,
+  productId: ProductId,
+  productName: Schema.String,
+  quantity: Schema.Number,
+  quantityType: PurchaseOrderQuantityType,
+  baseUnitQuantity: Schema.Number,
+  packCost: Schema.NullOr(Schema.Number),
+  receivedBaseUnits: Schema.Number,
+  ...mutableEntityFields,
+});
+export type PurchaseOrderItem = typeof PurchaseOrderItem.Type;
+
+export const PurchaseOrder = Schema.Struct({
+  id: PurchaseOrderId,
+  orderNumber: Schema.Number,
+  supplierId: SupplierId,
+  status: PurchaseOrderStatus,
+  note: Schema.NullOr(Schema.String),
+  sentAt: Schema.NullOr(Schema.Number),
+  expectedAt: Schema.NullOr(Schema.Number),
+  total: Schema.Number,
+  ...mutableEntityFields,
+  items: Schema.Array(PurchaseOrderItem),
+});
+export type PurchaseOrder = typeof PurchaseOrder.Type;

@@ -7,8 +7,8 @@ import {
   type PartitionDigestReport,
   type PartitionEntity,
   type SyncCommand,
+  SyncEntity,
   type SyncCommandEnvelope,
-  type SyncEntity,
   type SyncProtocolError,
 } from "@store/contracts";
 import type { CommandStatus } from "@store/contracts/sync/replica-model";
@@ -41,20 +41,16 @@ export const OUTSTANDING_COMMAND_STATUSES: ReadonlyArray<CommandStatus> = [
   "accepted_awaiting_integration",
 ];
 
-export const SYNC_ENTITIES: ReadonlyArray<SyncEntity> = [
-  "category",
-  "product",
-  "batch",
-  "invoice",
-  "invoiceItem",
-  "stockMovement",
-];
+export const SYNC_ENTITIES: ReadonlyArray<SyncEntity> = SyncEntity.literals;
 
 const syncEntityDependencyOrder = {
   category: 0,
+  supplier: 0,
   product: 1,
+  purchaseOrder: 1,
   batch: 2,
   invoice: 2,
+  purchaseOrderItem: 2,
   invoiceItem: 3,
   stockMovement: 4,
 } as const satisfies Record<SyncEntity, number>;
@@ -319,5 +315,5 @@ export const decideJournalRestore = (
   return successor ? { _tag: "handDown", successor: successor.operationId } : { _tag: "leave" };
 };
 
-export const freeInvoiceNumber = (invoiceNumber: number, highestOtherNumber: number): number =>
-  Math.max(highestOtherNumber, invoiceNumber) + 1;
+export const freeDocumentNumber = (proposed: number, highestOtherNumber: number): number =>
+  Math.max(highestOtherNumber, proposed) + 1;

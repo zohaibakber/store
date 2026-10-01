@@ -69,6 +69,9 @@ const harness = (rows?: {
     invoices: [],
     invoiceItems: [],
     stockMovements: [],
+    suppliers: [],
+    purchaseOrders: [],
+    purchaseOrderItems: [],
   } satisfies Record<InventorySubsetSpec["source"], ReadonlyArray<SqliteResultRow>>;
   const replica: ReplicaHandle = {
     workspaceToken: "workspace",

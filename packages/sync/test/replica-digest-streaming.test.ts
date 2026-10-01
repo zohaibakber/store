@@ -8,6 +8,9 @@ import {
   PARTITION_ENTITIES,
   partitionDigestOf,
   ProductId,
+  PurchaseOrderId,
+  PurchaseOrderItemId,
+  SupplierId,
   type PartitionEntity,
   type PartitionLeafSource,
 } from "@store/contracts";
@@ -17,7 +20,10 @@ import {
   invoiceItems,
   invoices,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   stockMovements,
+  suppliers,
 } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -194,6 +200,7 @@ const stockMovementRows = (fixture: Fixture) =>
     productId: ProductId.make("p"),
     batchId: BatchId.make("b"),
     invoiceId: "i",
+    purchaseOrderId: null,
     type: "sale" as const,
     packDelta: 0,
     unitDelta: -1,
@@ -203,6 +210,42 @@ const stockMovementRows = (fixture: Fixture) =>
     deviceId: "device-1",
     operationId: "op",
     createdAt: 1_700_000_000_000,
+  }));
+
+const supplierRows = (fixture: Fixture) =>
+  of(fixture, "supplier").map(({ entityId: id, rowVersion }) => ({
+    id: SupplierId.make(id),
+    name: `n-${id}`,
+    phone: null,
+    note: null,
+    ...managed(rowVersion),
+  }));
+
+const purchaseOrderRows = (fixture: Fixture) =>
+  of(fixture, "purchaseOrder").map(({ entityId: id, rowVersion }, index) => ({
+    id: PurchaseOrderId.make(id),
+    orderNumber: index + 1,
+    supplierId: SupplierId.make("s"),
+    status: "draft" as const,
+    note: null,
+    sentAt: null,
+    expectedAt: null,
+    total: 0,
+    ...managed(rowVersion),
+  }));
+
+const purchaseOrderItemRows = (fixture: Fixture) =>
+  of(fixture, "purchaseOrderItem").map(({ entityId: id, rowVersion }) => ({
+    id: PurchaseOrderItemId.make(id),
+    purchaseOrderId: PurchaseOrderId.make("o"),
+    productId: ProductId.make("p"),
+    productName: "x",
+    quantity: 1,
+    quantityType: "pack" as const,
+    baseUnitQuantity: 1,
+    packCost: null,
+    receivedBaseUnits: 0,
+    ...managed(rowVersion),
   }));
 
 const seedSqlite = (fixture: Fixture) =>
@@ -221,6 +264,12 @@ const seedSqlite = (fixture: Fixture) =>
           yield* tx.insert(invoiceItems).values(part);
         for (const part of chunks(stockMovementRows(fixture), 200))
           yield* tx.insert(stockMovements).values(part);
+        for (const part of chunks(supplierRows(fixture), 200))
+          yield* tx.insert(suppliers).values(part);
+        for (const part of chunks(purchaseOrderRows(fixture), 200))
+          yield* tx.insert(purchaseOrders).values(part);
+        for (const part of chunks(purchaseOrderItemRows(fixture), 200))
+          yield* tx.insert(purchaseOrderItems).values(part);
       }),
     ).pipe(Effect.orDie);
     return store;
@@ -266,6 +315,14 @@ const seedIndexed = (fixture: Fixture) =>
       yield* api.from("invoice_items").insertAll(part.map((row) => ({ ...generation, ...row })));
     for (const part of chunks(stockMovementRows(fixture), 500))
       yield* api.from("stock_movements").insertAll(part.map((row) => ({ ...generation, ...row })));
+    for (const part of chunks(supplierRows(fixture), 500))
+      yield* api.from("suppliers").insertAll(part.map((row) => ({ ...generation, ...row })));
+    for (const part of chunks(purchaseOrderRows(fixture), 500))
+      yield* api.from("purchase_orders").insertAll(part.map((row) => ({ ...generation, ...row })));
+    for (const part of chunks(purchaseOrderItemRows(fixture), 500))
+      yield* api
+        .from("purchase_order_items")
+        .insertAll(part.map((row) => ({ ...generation, ...row })));
     return api;
   });
 

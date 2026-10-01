@@ -11,6 +11,7 @@ import {
   type SnapshotManifest,
   type SnapshotPartPayload,
   type SnapshotRow,
+  type SyncEntity,
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
@@ -155,14 +156,24 @@ const headOf = (log: ReadonlyArray<SyncTransactionGroup>) =>
 
 const dependencyRank = {
   category: 0,
-  product: 1,
-  batch: 2,
-  invoice: 3,
-  invoiceItem: 4,
-  stockMovement: 5,
-} as const;
+  supplier: 1,
+  product: 2,
+  batch: 3,
+  purchaseOrder: 4,
+  purchaseOrderItem: 5,
+  invoice: 6,
+  invoiceItem: 7,
+  stockMovement: 8,
+} as const satisfies Record<SyncEntity, number>;
 
-const CATALOG_ENTITIES = new Set(["category", "product", "batch"]);
+const CATALOG_ENTITIES: ReadonlySet<SyncEntity> = new Set([
+  "category",
+  "supplier",
+  "product",
+  "batch",
+  "purchaseOrder",
+  "purchaseOrderItem",
+]);
 
 const snapshotManifest = (authority: HistoryAuthority, horizon: OrgCommitSequence) =>
   Effect.gen(function* () {

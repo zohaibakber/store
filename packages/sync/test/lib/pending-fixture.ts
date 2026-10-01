@@ -6,7 +6,14 @@ import {
   type SyncCommandEnvelope,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
+import {
+  decodeBatchId,
+  decodeCategoryId,
+  decodeProductId,
+  decodePurchaseOrderId,
+  decodePurchaseOrderItemId,
+  decodeSupplierId,
+} from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
   LAST_UNIT_BATCH_ID,
@@ -183,6 +190,120 @@ export const restockBatchWrite = (input: {
     unitQuantity: input.unitQuantity,
   },
 });
+
+export const SUPPLIER_ID = decodeSupplierId("supplier-acme");
+export const SUPPLIER_NAME = "Acme Wholesale";
+export const ORDER_ID = decodePurchaseOrderId("order-1");
+export const ORDER_LINE_ID = decodePurchaseOrderItemId("order-1-line-1");
+export const CASE_PRODUCT_ID = decodeProductId("product-case");
+export const DELIVERY_BATCH_ID = decodeBatchId("batch-delivery");
+export const DELIVERY_MOVEMENT_ID = "movement-delivery";
+
+export const supplierWrite = (
+  input: { readonly id?: string; readonly name?: string } = {},
+): CatalogRowWrite => ({
+  entity: "supplier",
+  action: "upsert",
+  id: decodeSupplierId(input.id ?? SUPPLIER_ID),
+  expectedRowVersion: null,
+  row: { name: input.name ?? SUPPLIER_NAME, phone: "923001234567", note: null },
+});
+
+export const caseProductWrite: CatalogRowWrite = {
+  entity: "product",
+  action: "upsert",
+  id: CASE_PRODUCT_ID,
+  expectedRowVersion: null,
+  row: {
+    name: "Case of twelve",
+    categoryId: decodeCategoryId("general"),
+    aisle: null,
+    composition: null,
+    strength: null,
+    unitsPerPack: 12,
+    purchasePrice: 1_200,
+    retailPrice: 1_500,
+    unitPrice: 130,
+    visible: true,
+  },
+};
+
+export const orderWrite = (
+  input: {
+    readonly id?: string;
+    readonly orderNumber?: number;
+    readonly supplierId?: string;
+    readonly status?: "draft" | "sent" | "closed" | "cancelled";
+    readonly expectedRowVersion?: number | null;
+  } = {},
+): CatalogRowWrite => ({
+  entity: "purchaseOrder",
+  action: "upsert",
+  id: decodePurchaseOrderId(input.id ?? ORDER_ID),
+  expectedRowVersion: input.expectedRowVersion ?? null,
+  row: {
+    orderNumber: input.orderNumber ?? 1,
+    supplierId: decodeSupplierId(input.supplierId ?? SUPPLIER_ID),
+    status: input.status ?? "draft",
+    note: null,
+    sentAt: null,
+    expectedAt: null,
+    total: 2_400,
+  },
+});
+
+export const orderLineWrite = (
+  input: {
+    readonly id?: string;
+    readonly baseUnitQuantity?: number;
+    readonly expectedRowVersion?: number | null;
+  } = {},
+): CatalogRowWrite => ({
+  entity: "purchaseOrderItem",
+  action: "upsert",
+  id: decodePurchaseOrderItemId(input.id ?? ORDER_LINE_ID),
+  expectedRowVersion: input.expectedRowVersion ?? null,
+  row: {
+    purchaseOrderId: ORDER_ID,
+    productId: CASE_PRODUCT_ID,
+    productName: "Case of twelve",
+    quantity: 2,
+    quantityType: "pack",
+    baseUnitQuantity: input.baseUnitQuantity ?? 24,
+    packCost: 1_200,
+  },
+});
+
+export const deliveryWrite = (
+  input: {
+    readonly batchId?: string;
+    readonly productId?: string;
+    readonly lineId?: string;
+    readonly expectedRowVersion?: number | null;
+  } = {},
+): CatalogRowWrite => ({
+  entity: "batch",
+  action: "upsert",
+  id: decodeBatchId(input.batchId ?? DELIVERY_BATCH_ID),
+  expectedRowVersion: input.expectedRowVersion ?? null,
+  movementId: DELIVERY_MOVEMENT_ID,
+  note: null,
+  row: {
+    productId: decodeProductId(input.productId ?? CASE_PRODUCT_ID),
+    batchNumber: "D-1",
+    expiresAt: null,
+    packQuantity: 1,
+    unitQuantity: 3,
+  },
+  receipt: { purchaseOrderItemId: decodePurchaseOrderItemId(input.lineId ?? ORDER_LINE_ID) },
+});
+
+export const placeOrderWrites: ReadonlyArray<CatalogRowWrite> = [
+  supplierWrite(),
+  caseProductWrite,
+  orderWrite(),
+  orderLineWrite(),
+];
 
 export const rejectedReceipt = (
   envelope: SyncCommandEnvelope,

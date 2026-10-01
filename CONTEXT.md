@@ -16,8 +16,9 @@ SQLite catalog projection. Persistence only; not a business aggregate.
 _Avoid_: Store schema, replica tables
 
 **Catalog.**
-The organization's products, categories, batches, invoices, and stock
-movements as one business record, not a bag of replica internals.
+The organization's products, categories, batches, invoices, stock movements,
+suppliers, and purchase orders as one business record, not a bag of replica
+internals.
 _Avoid_: Inventory bag, collections
 
 **Catalog replica.**
@@ -29,9 +30,10 @@ _Avoid_: Local database, client DB, live inventory
 
 **Catalog write.**
 The `catalogWrite` sync command: an ordered row list that changes categories,
-products, or batches. It commits locally as pending rows, then the PlanetScale
-Postgres authority decides it in the same organization-locked transaction as
-`issueInvoice` and publishes it through the change log.
+products, batches, suppliers, purchase orders, or their lines. It commits
+locally as pending rows, then the PlanetScale Postgres authority decides it in
+the same organization-locked transaction as `issueInvoice` and publishes it
+through the change log.
 _Avoid_: SyncOperation, live sync, mutation envelope
 
 **Pending projection.**
@@ -55,6 +57,31 @@ _Avoid_: Dashboard analytics, stock recommendations
 **Invoice.**
 A recorded sale against catalog stock.
 _Avoid_: Bill, order, receipt
+
+**Local workspace.**
+A workspace with no account. Its catalog is decided on the device by the local
+authority and never leaves it.
+_Avoid_: Guest mode, offline mode, demo
+
+**Local authority.**
+The on-device decider that accepts or rejects commands for a local workspace
+using the same rules as the Postgres authority.
+
+**Publish.**
+The one-time move of a local workspace's catalog into a new, empty
+organization.
+
+**Supplier.**
+A wholesaler or distributor the organization buys from.
+
+**Purchase order.**
+A list of products and quantities requested from one supplier. It is stored as
+draft, sent, closed, or cancelled; partly received and received are derived
+from its lines.
+_Avoid_: Invoice (an invoice is a sale)
+
+**Delivery.**
+Stock received against a purchase order; it creates batches.
 
 **Update workflow.**
 Main-process lifecycle that checks for releases, runs a user-requested download,

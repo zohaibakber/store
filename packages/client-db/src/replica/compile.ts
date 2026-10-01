@@ -69,6 +69,9 @@ const SOURCE_TABLES = {
   invoices: schema.invoices,
   invoiceItems: schema.invoiceItems,
   stockMovements: schema.stockMovements,
+  suppliers: schema.suppliers,
+  purchaseOrders: schema.purchaseOrders,
+  purchaseOrderItems: schema.purchaseOrderItems,
 } satisfies Record<InventoryCollectionSource, SQLiteTable>;
 
 const sequenceAfter = (later: SQLiteColumn, earlier: SQLiteColumn) =>

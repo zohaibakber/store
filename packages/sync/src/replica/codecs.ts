@@ -3,6 +3,7 @@ import {
   SyncCommandEnvelope,
   SyncEntity,
   SyncSubscription,
+  type SyncEntityChange,
   type SyncProtocolError,
 } from "@store/contracts";
 import { replicaEntitySchemas } from "@store/contracts/sync/replica-model";
@@ -46,8 +47,40 @@ export const decodeRowJson = Schema.decodeUnknownSync(Schema.fromJsonString(Sche
 
 export const decodeEntity = Schema.decodeUnknownSync(SyncEntity);
 
-export const decodeInvoiceRow = Schema.decodeUnknownSync(replicaEntitySchemas.invoice);
+const decodeInvoiceRow = Schema.decodeUnknownSync(replicaEntitySchemas.invoice);
 
-export const decodeCategoryRow = Schema.decodeUnknownSync(replicaEntitySchemas.category);
+const decodePurchaseOrderRow = Schema.decodeUnknownSync(replicaEntitySchemas.purchaseOrder);
+
+export type NumberedEntity = "invoice" | "purchaseOrder";
+
+export type NumberedImage = { readonly id: string; readonly number: number };
+
+export const decodeNumberedRow = (
+  entity: NumberedEntity,
+  row: SyncEntityChange["row"],
+): NumberedImage => {
+  switch (entity) {
+    case "invoice": {
+      const invoice = decodeInvoiceRow(row);
+      return { id: invoice.id, number: invoice.invoiceNumber };
+    }
+    case "purchaseOrder": {
+      const order = decodePurchaseOrderRow(row);
+      return { id: order.id, number: order.orderNumber };
+    }
+  }
+};
+
+const namedRowDecoders = {
+  category: Schema.decodeUnknownSync(replicaEntitySchemas.category),
+  supplier: Schema.decodeUnknownSync(replicaEntitySchemas.supplier),
+} as const;
+
+export type NamedEntity = keyof typeof namedRowDecoders;
+
+export type NamedImage = { readonly id: string; readonly name: string };
+
+export const decodeNamedRow = (entity: NamedEntity, row: SyncEntityChange["row"]): NamedImage =>
+  namedRowDecoders[entity](row);
 
 export const decodeSubscription = Schema.decodeUnknownOption(SyncSubscription);

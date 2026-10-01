@@ -34,6 +34,7 @@ import {
   type PendingRestoreResult,
 } from "./projection";
 import {
+  announcementFields,
   decideRegistration,
   UNRECEIPTED_COMMAND_STATUSES,
   type ReplicaRegistrationOutcome,
@@ -346,9 +347,15 @@ export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaR
           incarnation: decision.incarnation,
           nextClientSequence: decision.nextClientSequence,
           registeredAt,
+          ...announcementFields(authority),
         })
         .where(eq(replicaState.id, state.id));
+      return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
     }
+    yield* tx
+      .update(replicaState)
+      .set(announcementFields(authority))
+      .where(eq(replicaState.id, state.id));
     return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
   },
 );

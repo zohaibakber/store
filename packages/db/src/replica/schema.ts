@@ -4,7 +4,10 @@ export {
   invoiceItems,
   invoices,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   stockMovements,
+  suppliers,
 } from "../shared/store.schema";
 
 import { sql } from "drizzle-orm";
@@ -30,6 +33,8 @@ export const replicaState = sqliteTable("replica_state", {
   activeGeneration: integer({ mode: "number" }).notNull().default(1),
   caughtUpAt: integer({ mode: "number" }),
   registeredAt: integer({ mode: "number" }),
+  announcedSchemaVersion: integer({ mode: "number" }),
+  lowestActiveSchemaVersion: integer({ mode: "number" }),
 });
 
 export const commandOutbox = sqliteTable(

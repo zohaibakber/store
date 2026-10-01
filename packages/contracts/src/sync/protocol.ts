@@ -9,7 +9,7 @@ import { knownEntityRecords, SyncEntityChange } from "./schema";
 
 export const MAX_SYNC_PULL_TRANSACTIONS = 1_000;
 
-export const SYNC_SCHEMA_VERSION = 1;
+export const SYNC_SCHEMA_VERSION = 2;
 
 export const SyncSchemaVersion = PositiveInt;
 export type SyncSchemaVersion = typeof SyncSchemaVersion.Type;
@@ -50,10 +50,18 @@ const PayloadHash = Sha256Hex;
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
 
-export const PARTITION_DIGEST_VERSION = 3 as const;
+export const PARTITION_DIGEST_VERSION = 4 as const;
+
+export const PARTITION_DIGEST_VERSION_V3 = 3 as const;
 
 export const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
 export type PartitionDigestVersion = typeof PartitionDigestVersion.Type;
+
+export const RequestedPartitionDigestVersion = Schema.Literals([
+  PARTITION_DIGEST_VERSION_V3,
+  PARTITION_DIGEST_VERSION,
+]);
+export type RequestedPartitionDigestVersion = typeof RequestedPartitionDigestVersion.Type;
 
 export const PartitionDigestReport = Schema.Struct({
   version: PartitionDigestVersion,
@@ -66,6 +74,9 @@ export const PartitionDigestReport = Schema.Struct({
     invoice: PartitionDigest,
     invoiceItem: PartitionDigest,
     stockMovement: PartitionDigest,
+    supplier: PartitionDigest,
+    purchaseOrder: PartitionDigest,
+    purchaseOrderItem: PartitionDigest,
   }),
 });
 export type PartitionDigestReport = typeof PartitionDigestReport.Type;
@@ -99,6 +110,15 @@ export const SyncProtocolCode = Schema.Literals([
   "SNAPSHOT_UNAVAILABLE",
   "SCHEMA_VERSION_UNSUPPORTED",
   "INCARNATION_MISMATCH",
+  "SUPPLIER_HAS_ORDERS",
+  "PURCHASE_ORDER_TRANSITION_INVALID",
+  "PURCHASE_ORDER_NOT_OPEN",
+  "PURCHASE_ORDER_NOT_DRAFT",
+  "PURCHASE_ORDER_HAS_ITEMS",
+  "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
+  "PURCHASE_ORDER_ITEM_RECEIVED",
+  "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
+  "REPLICA_SCHEMA_OUTDATED",
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
@@ -200,6 +220,7 @@ export const RegisterReplicaResult = Schema.Struct({
   retentionFloor: OrgCommitSequence,
   horizon: OrgCommitSequence,
   schemaVersion: SyncSchemaVersion,
+  lowestActiveSchemaVersion: Schema.optionalKey(SyncSchemaVersion),
 });
 export type RegisterReplicaResult = typeof RegisterReplicaResult.Type;
 
@@ -207,7 +228,7 @@ export const SyncPullRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   afterCommitSequence: OrgCommitSequence,
-  digestVersion: Schema.optionalKey(PartitionDigestVersion),
+  digestVersion: Schema.optionalKey(RequestedPartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;

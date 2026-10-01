@@ -7,6 +7,7 @@ import {
   OrgCommitSequence,
   SnapshotId,
   SnapshotPartPayload,
+  SYNC_SCHEMA_VERSION,
   SyncPullRequest,
   SyncPullResult,
   SyncTransactionGroup,
@@ -40,9 +41,9 @@ import { FIXTURE_USER_ID } from "./lib/replica-fixture";
 
 const NOW = Date.UTC(2026, 9, 1, 9, 0, 0);
 
-const NEWER_SCHEMA_VERSION = 2;
+const NEWER_SCHEMA_VERSION = SYNC_SCHEMA_VERSION + 1;
 
-const FOREIGN_ENTITY = "supplier";
+const FOREIGN_ENTITY = "entityFromANewerBuild";
 
 const databaseName = "engine-unknown-entity";
 
@@ -50,7 +51,7 @@ const foreignRow = (entityId: string) => ({
   entity: FOREIGN_ENTITY,
   entityId,
   rowVersion: 1,
-  row: { id: entityId, name: "Wholesaler", organizationId: LAST_UNIT_ORGANIZATION_ID },
+  row: { id: entityId, name: "Unreadable", organizationId: LAST_UNIT_ORGANIZATION_ID },
 });
 
 const foreignChange = (entityId: string) => ({
@@ -60,7 +61,7 @@ const foreignChange = (entityId: string) => ({
 
 const foreignOnlyGroup = (commitSequence: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `supplier-write-${commitSequence}`,
+  operationId: `foreign-write-${commitSequence}`,
   decision: "accepted",
   changes: [],
 });
@@ -74,7 +75,7 @@ const wireGroup = (group: SyncTransactionGroup) => {
   const encoded = encodeGroup(group);
   return {
     ...encoded,
-    changes: [...encoded.changes, foreignChange(`supplier-${group.commitSequence}`)],
+    changes: [...encoded.changes, foreignChange(`foreign-${group.commitSequence}`)],
   };
 };
 
@@ -100,7 +101,7 @@ const wirePart = (part: SnapshotPartPayload) => {
   const encoded = encodePart(part);
   return {
     ...encoded,
-    rows: [foreignRow(`supplier-part-${part.partNumber}`), ...encoded.rows],
+    rows: [foreignRow(`foreign-part-${part.partNumber}`), ...encoded.rows],
   };
 };
 

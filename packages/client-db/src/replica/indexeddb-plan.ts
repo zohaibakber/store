@@ -43,6 +43,12 @@ const tableFor = (spec: InventorySubsetSpec): IndexedDbEntityTable => {
       return "invoice_items";
     case "stockMovements":
       return "stock_movements";
+    case "suppliers":
+      return "suppliers";
+    case "purchaseOrders":
+      return "purchase_orders";
+    case "purchaseOrderItems":
+      return "purchase_order_items";
   }
 };
 

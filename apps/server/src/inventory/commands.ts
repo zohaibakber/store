@@ -144,7 +144,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
           ${request.afterCommitSequence}::text,
           ${MAX_SYNC_PULL_TRANSACTIONS}::integer,
           ${pullByteBudget(request.maxBytes)}::integer,
-          ${request.digestVersion !== undefined}::boolean
+          ${request.digestVersion ?? null}::integer
         )`,
         "objects",
       ),

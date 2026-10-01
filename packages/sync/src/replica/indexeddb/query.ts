@@ -1,17 +1,12 @@
+import type { SyncEntity } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { foldAsciiCase, type ReplicaQueryBuilder } from "./schema";
+import { foldAsciiCase, type EntityStore, type ReplicaQueryBuilder } from "./schema";
 
-export type IndexedDbEntityTable =
-  | "categories"
-  | "products"
-  | "batches"
-  | "invoices"
-  | "invoice_items"
-  | "stock_movements";
+export type IndexedDbEntityTable = EntityStore<SyncEntity>;
 
 type IndexedDbIndexName = Extract<IndexedDbScan, { readonly _tag: "indexPrefix" }>["index"];
 
@@ -25,7 +20,9 @@ export type IndexedDbScan =
         | "byProduct"
         | "byCreatedAt"
         | "byOperation"
-        | "byInvoice";
+        | "byInvoice"
+        | "bySupplier"
+        | "byPurchaseOrder";
       readonly value: string | number;
     }
   | {
@@ -37,7 +34,9 @@ export type IndexedDbScan =
         | "byCategory"
         | "byProduct"
         | "byOperation"
-        | "byInvoice";
+        | "byInvoice"
+        | "bySupplier"
+        | "byPurchaseOrder";
       readonly reverse: boolean;
     }
   | {
@@ -259,22 +258,7 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
   const table = plan.table;
   const scan = plan.scan;
 
-  const fromPrimary = () => {
-    switch (table) {
-      case "categories":
-        return api.from("categories").select();
-      case "products":
-        return api.from("products").select();
-      case "batches":
-        return api.from("batches").select();
-      case "invoices":
-        return api.from("invoices").select();
-      case "invoice_items":
-        return api.from("invoice_items").select();
-      case "stock_movements":
-        return api.from("stock_movements").select();
-    }
-  };
+  const fromPrimary = () => api.from(table).select();
 
   if (scan._tag === "primaryEquals") {
     return fromPrimary().equals([generation, scan.id]);
@@ -336,6 +320,36 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
             .equals([generation, String(scan.value)]);
         }
         break;
+      case "suppliers":
+        if (scan.index === "byName") {
+          return api
+            .from("suppliers")
+            .select("byName")
+            .equals([generation, String(scan.value)]);
+        }
+        break;
+      case "purchase_orders":
+        if (scan.index === "bySupplier") {
+          return api
+            .from("purchase_orders")
+            .select("bySupplier")
+            .equals([generation, String(scan.value)]);
+        }
+        break;
+      case "purchase_order_items":
+        if (scan.index === "byPurchaseOrder") {
+          return api
+            .from("purchase_order_items")
+            .select("byPurchaseOrder")
+            .equals([generation, String(scan.value)]);
+        }
+        if (scan.index === "byProduct") {
+          return api
+            .from("purchase_order_items")
+            .select("byProduct")
+            .equals([generation, String(scan.value)]);
+        }
+        break;
     }
   }
 
@@ -371,6 +385,21 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
         const query = api.from("stock_movements").select("byProduct").between(lower, upper);
         return scan.reverse ? query.reverse() : query;
       }
+      case "suppliers": {
+        const query = api.from("suppliers").select("byName").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
+      case "purchase_orders": {
+        const query = api.from("purchase_orders").select("bySupplier").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
+      case "purchase_order_items": {
+        const query =
+          scan.index === "byProduct"
+            ? api.from("purchase_order_items").select("byProduct").between(lower, upper)
+            : api.from("purchase_order_items").select("byPurchaseOrder").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
     }
   }
 
@@ -400,6 +429,8 @@ const indexOrder = (
     case "byProduct":
     case "byOperation":
     case "byInvoice":
+    case "bySupplier":
+    case "byPurchaseOrder":
       return undefined;
   }
 };
@@ -454,25 +485,11 @@ const primaryChunk = (
     onSome: (id) => [generation, id],
   });
   const upper: [number, []] = [generation, []];
-  const range = { excludeLowerBound: Option.isSome(after) };
-  switch (table) {
-    case "categories":
-      return api.from("categories").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "products":
-      return api.from("products").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "batches":
-      return api.from("batches").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "invoices":
-      return api.from("invoices").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "invoice_items":
-      return api.from("invoice_items").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "stock_movements":
-      return api
-        .from("stock_movements")
-        .select()
-        .between(lower, upper, range)
-        .limit(SCAN_CHUNK_ROWS);
-  }
+  return api
+    .from(table)
+    .select()
+    .between(lower, upper, { excludeLowerBound: Option.isSome(after) })
+    .limit(SCAN_CHUNK_ROWS);
 };
 
 const primaryKeysetRows = (
@@ -626,6 +643,9 @@ const keysetScan = (
     case "indexPrefix":
       switch (scan.index) {
         case "byName":
+          return table === "categories"
+            ? { _tag: "indexPrefix", index: scan.index, reverse: scan.reverse }
+            : undefined;
         case "byNameKey":
         case "byCreatedAt":
           return { _tag: "indexPrefix", index: scan.index, reverse: scan.reverse };
@@ -633,6 +653,8 @@ const keysetScan = (
         case "byProduct":
         case "byOperation":
         case "byInvoice":
+        case "bySupplier":
+        case "byPurchaseOrder":
           return undefined;
       }
     case "primaryEquals":
@@ -795,20 +817,7 @@ const countGeneration = (
   generation: number,
 ) => {
   const [lower, upper] = generationBounds(generation);
-  switch (table) {
-    case "categories":
-      return api.from("categories").count().between(lower, upper);
-    case "products":
-      return api.from("products").count().between(lower, upper);
-    case "batches":
-      return api.from("batches").count().between(lower, upper);
-    case "invoices":
-      return api.from("invoices").count().between(lower, upper);
-    case "invoice_items":
-      return api.from("invoice_items").count().between(lower, upper);
-    case "stock_movements":
-      return api.from("stock_movements").count().between(lower, upper);
-  }
+  return api.from(table).count().between(lower, upper);
 };
 
 export const summarizeIndexedDbSubset = (

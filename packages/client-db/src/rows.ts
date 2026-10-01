@@ -1,4 +1,12 @@
-import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "@store/contracts/ids";
+import {
+  BatchId,
+  CategoryId,
+  InvoiceId,
+  InvoiceItemId,
+  ProductId,
+  PurchaseOrderId,
+} from "@store/contracts/ids";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
@@ -82,6 +90,9 @@ export const StockMovementRow = Schema.Struct({
   productId: ProductId,
   batchId: BatchId,
   invoiceId: Schema.NullOr(InvoiceId),
+  purchaseOrderId: Schema.NullOr(PurchaseOrderId).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
   packDelta: SignedInteger,
   unitDelta: SignedInteger,

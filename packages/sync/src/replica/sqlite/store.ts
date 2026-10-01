@@ -67,6 +67,7 @@ import {
   type SnapshotStep,
 } from "../import";
 import { listPendingMarks } from "../pending";
+import { announcementOf } from "../registration";
 import type { ReplicaDb } from "../sql-client/drizzle";
 import {
   runReplicaTransaction,
@@ -529,8 +530,8 @@ const makeSqliteReplicaStoreInternals = (
               epoch: state.epoch,
               appliedCommitSequence: state.appliedCommitSequence,
               replicaId: state.replicaId,
-              registered: state.registeredAt !== null,
               bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
+              ...announcementOf(state),
             })),
           ),
         ),

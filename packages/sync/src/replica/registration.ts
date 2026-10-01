@@ -1,5 +1,7 @@
 import {
+  purchasingBlockedByStaleReplica,
   ReplicaClientSequence,
+  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
@@ -126,3 +128,29 @@ export const decideRegistration = (
 export type ReplicaRegistrationOutcome =
   | { readonly _tag: "registered" }
   | { readonly _tag: "refused"; readonly code: SyncProtocolCode; readonly message: string };
+
+export type ReplicaAnnouncement = {
+  readonly registered: boolean;
+  readonly announcedSchemaVersion: number | undefined;
+  readonly lowestActiveSchemaVersion: number | undefined;
+};
+
+export const shouldAnnounce = (announcement: ReplicaAnnouncement): boolean =>
+  !announcement.registered ||
+  announcement.announcedSchemaVersion !== SYNC_SCHEMA_VERSION ||
+  purchasingBlockedByStaleReplica(announcement.lowestActiveSchemaVersion);
+
+export const announcementFields = (authority: RegisterReplicaResult) => ({
+  announcedSchemaVersion: SYNC_SCHEMA_VERSION,
+  lowestActiveSchemaVersion: authority.lowestActiveSchemaVersion ?? null,
+});
+
+export const announcementOf = (state: {
+  readonly registeredAt: number | null;
+  readonly announcedSchemaVersion?: number | null | undefined;
+  readonly lowestActiveSchemaVersion?: number | null | undefined;
+}): ReplicaAnnouncement => ({
+  registered: state.registeredAt !== null,
+  announcedSchemaVersion: state.announcedSchemaVersion ?? undefined,
+  lowestActiveSchemaVersion: state.lowestActiveSchemaVersion ?? undefined,
+});

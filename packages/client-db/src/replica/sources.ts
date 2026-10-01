@@ -7,6 +7,9 @@ export const INVENTORY_COLLECTION_SOURCES = [
   "invoices",
   "invoiceItems",
   "stockMovements",
+  "suppliers",
+  "purchaseOrders",
+  "purchaseOrderItems",
 ] as const;
 
 export type InventoryCollectionSource = (typeof INVENTORY_COLLECTION_SOURCES)[number];
@@ -20,6 +23,9 @@ export const SOURCE_ENTITY = {
   invoices: "invoice",
   invoiceItems: "invoiceItem",
   stockMovements: "stockMovement",
+  suppliers: "supplier",
+  purchaseOrders: "purchaseOrder",
+  purchaseOrderItems: "purchaseOrderItem",
 } satisfies Record<InventoryCollectionSource, SyncEntity>;
 
 export const FILTER_COLUMNS = {
@@ -44,9 +50,21 @@ export const FILTER_COLUMNS = {
     "productId",
     "batchId",
     "invoiceId",
+    "purchaseOrderId",
     "operationId",
     "createdAt",
   ]),
+  suppliers: new Set(["id", "organizationId", "name", "updatedAt"]),
+  purchaseOrders: new Set([
+    "id",
+    "organizationId",
+    "orderNumber",
+    "supplierId",
+    "status",
+    "createdAt",
+    "updatedAt",
+  ]),
+  purchaseOrderItems: new Set(["id", "organizationId", "purchaseOrderId", "productId"]),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const ORDER_COLUMNS = {
@@ -66,6 +84,9 @@ export const ORDER_COLUMNS = {
   invoices: new Set(["id", "invoiceNumber", "operationId", "createdAt"]),
   invoiceItems: new Set(["id", "invoiceId"]),
   stockMovements: new Set(["id", "productId", "batchId", "invoiceId", "operationId", "createdAt"]),
+  suppliers: new Set(["id", "name", "updatedAt"]),
+  purchaseOrders: new Set(["id", "orderNumber", "supplierId", "status", "createdAt", "updatedAt"]),
+  purchaseOrderItems: new Set(["id", "purchaseOrderId", "productId"]),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const CASE_INSENSITIVE_ORDER_COLUMNS = {
@@ -75,6 +96,9 @@ export const CASE_INSENSITIVE_ORDER_COLUMNS = {
   invoices: new Set<string>(),
   invoiceItems: new Set<string>(),
   stockMovements: new Set<string>(),
+  suppliers: new Set<string>(),
+  purchaseOrders: new Set<string>(),
+  purchaseOrderItems: new Set<string>(),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const MAX_IN_VALUES = 200;
@@ -94,6 +118,9 @@ export const DISTINCT_COLUMNS = {
   invoices: new Set<string>(),
   invoiceItems: new Set<string>(),
   stockMovements: new Set<string>(),
+  suppliers: new Set<string>(),
+  purchaseOrders: new Set<string>(),
+  purchaseOrderItems: new Set<string>(),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const MAX_DISTINCT_COLUMNS = 5;

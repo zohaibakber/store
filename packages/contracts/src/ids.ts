@@ -20,6 +20,18 @@ export const InvoiceItemId = Schema.NonEmptyString.pipe(Schema.brand("InvoiceIte
 export type InvoiceItemId = typeof InvoiceItemId.Type;
 export const decodeInvoiceItemId = Schema.decodeUnknownSync(InvoiceItemId);
 
+export const SupplierId = Schema.NonEmptyString.pipe(Schema.brand("SupplierId"));
+export type SupplierId = typeof SupplierId.Type;
+export const decodeSupplierId = Schema.decodeUnknownSync(SupplierId);
+
+export const PurchaseOrderId = Schema.NonEmptyString.pipe(Schema.brand("PurchaseOrderId"));
+export type PurchaseOrderId = typeof PurchaseOrderId.Type;
+export const decodePurchaseOrderId = Schema.decodeUnknownSync(PurchaseOrderId);
+
+export const PurchaseOrderItemId = Schema.NonEmptyString.pipe(Schema.brand("PurchaseOrderItemId"));
+export type PurchaseOrderItemId = typeof PurchaseOrderItemId.Type;
+export const decodePurchaseOrderItemId = Schema.decodeUnknownSync(PurchaseOrderItemId);
+
 export const OrganizationId = Schema.NonEmptyString.pipe(Schema.brand("OrganizationId"));
 export type OrganizationId = typeof OrganizationId.Type;
 export const decodeOrganizationId = Schema.decodeUnknownSync(OrganizationId);
