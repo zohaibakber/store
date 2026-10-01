@@ -76,10 +76,6 @@ _Avoid_: Dashboard analytics, stock recommendations
 A recorded sale against catalog stock.
 _Avoid_: Bill, order, receipt
 
-**Publish.**
-The one-time move of a local workspace's catalog into a new, empty
-organization.
-
 **Supplier.**
 A wholesaler or distributor the organization buys from.
 

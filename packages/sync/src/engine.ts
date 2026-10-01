@@ -8,6 +8,7 @@ import {
   SyncEpoch,
   SyncProtocolError,
   type CommandReceipt,
+  type DeviceLabel,
   type EnqueueCommandRequest,
   type SyncCommandEnvelope,
   type SyncLiveServerFrame,
@@ -151,6 +152,7 @@ export type SyncEngineMutex = {
 type SyncEngineOptions = {
   readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
+  readonly deviceLabel?: DeviceLabel | undefined;
 };
 
 const withMaxBytes = <R extends object>(request: R, maxBytes: number | undefined) =>
@@ -191,6 +193,7 @@ export const makeSyncEngineFromReplicaStore = (
         const authority = yield* transport.registerReplica({
           replicaId: cursor.replicaId,
           schemaVersion: SYNC_SCHEMA_VERSION,
+          ...(options.deviceLabel === undefined ? undefined : { deviceLabel: options.deviceLabel }),
         });
         const registeredAt = yield* Clock.currentTimeMillis;
         const outcome = yield* withPermit(store.adoptRegistration(authority, registeredAt));

@@ -39,6 +39,8 @@ export {
   rejectedCommandLabel,
   rejectedCommandSubject,
   rejectionReason,
+  replicaSyncActivityOf,
+  ReplicaSyncActivity,
   syncActivityFromOutbox,
   syncActivityFromStatuses,
   syncStatusFromActivity,

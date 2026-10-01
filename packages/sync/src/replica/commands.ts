@@ -9,7 +9,7 @@ import {
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import type { CommandStatus, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
 import { commandOutbox, replicaState, stockOverlays } from "@store/db/replica.schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -54,6 +54,10 @@ export type UploadClaim = {
   readonly outcomeUncertain: boolean;
   readonly envelope: SyncCommandEnvelope;
 };
+
+const INTEGRATED_COMMAND_RETENTION = 256;
+
+const clientSequenceLength = sql`length(${commandOutbox.clientSequence})`;
 
 export const loadReplicaState = Effect.fn("ReplicaCommands.loadReplicaState")(function* (
   tx: ReplicaDb,
@@ -198,6 +202,22 @@ export const queueAdmittedCommand = Effect.fn("ReplicaCommands.queueAdmittedComm
   return stampOf({ activeGeneration: state.activeGeneration, localCommitVersion });
 });
 
+export const pruneIntegratedCommands = Effect.fn("ReplicaCommands.pruneIntegratedCommands")(
+  function* (tx: ReplicaDb, latestClientSequence: string) {
+    const newestPruned = BigInt(latestClientSequence) - BigInt(INTEGRATED_COMMAND_RETENTION);
+    if (newestPruned <= 0n) return;
+    const threshold = String(newestPruned);
+    yield* tx
+      .delete(commandOutbox)
+      .where(
+        and(
+          eq(commandOutbox.status, "integrated"),
+          sql`(${clientSequenceLength}, ${commandOutbox.clientSequence}) <= (${threshold.length}, ${threshold})`,
+        ),
+      );
+  },
+);
+
 type SavedLocalCommand = {
   readonly status: CommandStatus;
   readonly stamp: ReplicaReadStamp;
@@ -258,7 +278,7 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
     .select()
     .from(commandOutbox)
     .where(eq(commandOutbox.status, "pending"))
-    .orderBy(sql`length(${commandOutbox.clientSequence})`, commandOutbox.clientSequence)
+    .orderBy(clientSequenceLength, commandOutbox.clientSequence)
     .limit(1)
     .get();
   if (!row) return undefined;

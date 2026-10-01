@@ -8,9 +8,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  inventorySyncStatusLabel,
+  inventorySyncIssueLabel,
   useCatalogIsReady,
   useInventoryActions,
+  useInventorySyncActivity,
   useInventorySyncing,
   useInventorySyncStatus,
   type InventorySyncStatus,
@@ -43,11 +44,13 @@ const attention = (status: InventorySyncStatus) => {
 function SyncButtonView({
   online,
   status,
+  issueLabel,
   syncing,
   onSync,
 }: {
   readonly online: boolean;
   readonly status: InventorySyncStatus;
+  readonly issueLabel: string;
   readonly syncing: boolean;
   readonly onSync: () => void;
 }) {
@@ -55,7 +58,7 @@ function SyncButtonView({
   if (syncing && !spinning) setSpinning(true);
   const issue = attention(status);
   const label = issue
-    ? inventorySyncStatusLabel(status)
+    ? issueLabel
     : !online
       ? "Offline. Changes sync when this device reconnects."
       : syncing
@@ -141,10 +144,16 @@ function ReadyOnDeviceRetry() {
 
 function ReadyOnDeviceStatus() {
   const status = useInventorySyncStatus();
+  const activity = useInventorySyncActivity();
   const issue = attention(status);
+  const label = issue ? inventorySyncIssueLabel(status, activity) : "Saved on this device";
   return (
-    <span className={cn("truncate text-xs", issue?.tone ?? "text-muted-foreground")} role="status">
-      {issue ? inventorySyncStatusLabel(status) : "Saved on this device"}
+    <span
+      className={cn("truncate text-xs", issue?.tone ?? "text-muted-foreground")}
+      role="status"
+      title={issue ? label : undefined}
+    >
+      {label}
     </span>
   );
 }
@@ -153,6 +162,7 @@ function ReadySyncButton() {
   const { retrySync, syncNow } = useInventoryActions();
   const checkForAppUpdate = useCheckForAppUpdate();
   const status = useInventorySyncStatus();
+  const activity = useInventorySyncActivity();
   const applyUpdate = () => {
     if (canCheckForAppUpdate()) checkForAppUpdate();
     else window.location.reload();
@@ -174,6 +184,7 @@ function ReadySyncButton() {
   };
   return (
     <SyncButtonView
+      issueLabel={inventorySyncIssueLabel(status, activity)}
       onSync={action()}
       online={useOnline()}
       status={status}

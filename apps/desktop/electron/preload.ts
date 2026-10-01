@@ -35,6 +35,7 @@ import {
   REPLICA_CLOSE_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
+  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_INSIGHTS_SUMMARY_CHANNEL,
   REPLICA_OUTBOX_CHANNEL,
@@ -109,6 +110,8 @@ const replica: ReplicaIpcBridge = {
   },
   readOutboxStatuses: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
+  readSyncActivity: (workspaceToken) =>
+    ipcRenderer.invoke(REPLICA_ACTIVITY_CHANNEL, workspaceToken),
   enqueueCommand: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),
   readCommandStatus: (input) => ipcRenderer.invoke(REPLICA_COMMAND_STATUS_CHANNEL, input),
   wakeSyncUpload: (workspaceToken) => ipcRenderer.invoke(REPLICA_WAKE_CHANNEL, workspaceToken),

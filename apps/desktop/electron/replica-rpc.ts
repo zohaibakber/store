@@ -1,3 +1,4 @@
+import { ReplicaSyncActivity } from "@store/client-db";
 import {
   InventorySubsetBatch,
   InventorySubsetSpec,
@@ -6,6 +7,7 @@ import {
 } from "@store/client-db/subset-spec";
 import {
   CommandStatus,
+  DeviceLabel,
   EnqueueCommandRequest,
   ImportId,
   ImportPartNumber,
@@ -118,6 +120,7 @@ export const ReplicaWorkerBoot = Schema.Union([
     ...RemoteReplicaIdentity.fields,
     databasePath: Schema.String,
     apiBaseUrl: Schema.String,
+    deviceLabel: Schema.optionalKey(DeviceLabel),
   }),
 ]);
 
@@ -229,6 +232,7 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     success: Schema.Array(CommandStatus),
     error: ReplicaWorkerFailure,
   }),
+  Rpc.make("ReadSyncActivity", { success: ReplicaSyncActivity, error: ReplicaWorkerFailure }),
   Rpc.make("EnqueueCommand", {
     payload: { request: EnqueueCommandRequest },
     success: Schema.Struct({

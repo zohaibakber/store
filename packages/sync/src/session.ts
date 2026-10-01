@@ -1,6 +1,7 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
   syncProtocolError,
+  type DeviceLabel,
   type SyncProtocolCode,
   type SyncProtocolError,
 } from "@store/contracts";
@@ -31,6 +32,7 @@ export type OwnedHttpSyncOptions = {
   readonly databaseIdentity: string;
   readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
+  readonly deviceLabel?: DeviceLabel | undefined;
 };
 
 export const recoverFrom = (
@@ -144,9 +146,10 @@ const ownHttpSync = (
     return scheduler;
   });
 
-const engineOptions = (policy: SyncSchedulerPolicy | undefined) => ({
+const engineOptions = (policy: SyncSchedulerPolicy | undefined, deviceLabel?: DeviceLabel) => ({
   digestVerificationIntervalMillis: policy?.digestVerificationIntervalMillis,
   pullMaxBytes: policy?.pullMaxBytes,
+  deviceLabel,
 });
 
 export const layerOwnedHttpSync = (
@@ -157,7 +160,7 @@ export const layerOwnedHttpSync = (
   ReplicaStore | SyncTransportService
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
-    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy))),
+    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy, options.deviceLabel))),
   );
 
 const LOCAL_SYNC_POLICY: SyncSchedulerPolicy = {

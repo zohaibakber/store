@@ -1597,3 +1597,314 @@ AS $$
   FROM "job" AS "j"
   CROSS JOIN "covering" AS "v"
 $$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync.import_refusal(p_organization_id text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT 'This organization already has inventory. A device''s data can only be moved into an empty organization.'
+  WHERE EXISTS (SELECT 1 FROM public.catalog_imports AS i WHERE i.organization_id = p_organization_id)
+    OR EXISTS (
+      SELECT 1 FROM public.inventory_state AS s
+      WHERE s.organization_id = p_organization_id AND s.commit_sequence > 0
+    )
+    OR EXISTS (SELECT 1 FROM public.categories AS c WHERE c.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.products AS p WHERE p.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.batches AS b WHERE b.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.invoices AS i WHERE i.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.invoice_items AS t WHERE t.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.stock_movements AS m WHERE m.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.suppliers AS u WHERE u.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.purchase_orders AS o WHERE o.organization_id = p_organization_id)
+    OR EXISTS (SELECT 1 FROM public.purchase_order_items AS l WHERE l.organization_id = p_organization_id)
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync.import_stock_movement_problem(p_image jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN NOT sync.is_js_string(p_image->'productId', 1, NULL) THEN 'row.productId'
+    WHEN NOT sync.is_js_string(p_image->'batchId', 1, NULL) THEN 'row.batchId'
+    WHEN NOT sync.is_js_nullable_string(p_image->'invoiceId', 1, NULL) THEN 'row.invoiceId'
+    WHEN p_image ? 'purchaseOrderId' AND NOT sync.is_js_nullable_string(p_image->'purchaseOrderId', 1, NULL) THEN 'row.purchaseOrderId'
+    WHEN NOT sync.is_one_of(p_image->'type', ARRAY['stock_in', 'sale', 'open_pack', 'adjustment']) THEN 'row.type'
+    WHEN NOT sync.is_js_int(p_image->'packDelta', -9007199254740991) THEN 'row.packDelta'
+    WHEN NOT sync.is_js_int(p_image->'unitDelta', -9007199254740991) THEN 'row.unitDelta'
+    WHEN jsonb_typeof(p_image->'purchaseOrderId') = 'string' AND (
+      p_image->>'type' <> 'stock_in'
+      OR jsonb_typeof(p_image->'invoiceId') = 'string'
+      OR NOT sync.is_js_int(p_image->'packDelta', 0)
+      OR NOT sync.is_js_int(p_image->'unitDelta', 0)
+      OR (p_image->>'packDelta')::numeric + (p_image->>'unitDelta')::numeric = 0
+    ) THEN 'row.purchaseOrderId'
+    WHEN NOT sync.is_js_nullable_string(p_image->'note', 0, NULL) THEN 'row.note'
+    WHEN NOT sync.is_js_string(p_image->'deviceId', 1, 200) THEN 'row.deviceId'
+    WHEN NOT sync.is_js_string(p_image->'operationId', 1, 200) THEN 'row.operationId'
+    WHEN NOT sync.is_js_int(p_image->'createdAt', 0) THEN 'row.createdAt'
+  END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_supplier_problem(p_image jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN NOT sync.is_js_string(p_image->'name', 1, 200) THEN 'row.name'
+    WHEN coalesce(
+      jsonb_typeof(p_image->'phone') <> 'null'
+        AND (jsonb_typeof(p_image->'phone') <> 'string' OR NOT (p_image->>'phone') ~ '^[0-9]{1,20}$'),
+      true
+    ) THEN 'row.phone'
+    WHEN NOT sync.is_js_nullable_string(p_image->'note', 0, 500) THEN 'row.note'
+    ELSE sync.import_metadata_problem(p_image)
+  END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_purchase_order_problem(p_image jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN NOT sync.is_js_int(p_image->'orderNumber', 1) THEN 'row.orderNumber'
+    WHEN NOT sync.is_js_string(p_image->'supplierId', 1, NULL) THEN 'row.supplierId'
+    WHEN NOT sync.is_one_of(p_image->'status', ARRAY['draft', 'sent', 'closed', 'cancelled']) THEN 'row.status'
+    WHEN NOT sync.is_js_nullable_string(p_image->'note', 0, 500) THEN 'row.note'
+    WHEN NOT sync.is_js_nullable_int(p_image->'sentAt', 1) THEN 'row.sentAt'
+    WHEN NOT sync.is_js_nullable_int(p_image->'expectedAt', 1) THEN 'row.expectedAt'
+    WHEN NOT sync.is_js_int(p_image->'total', 0) THEN 'row.total'
+    ELSE sync.import_metadata_problem(p_image)
+  END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_purchase_order_item_problem(p_image jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN NOT sync.is_js_string(p_image->'purchaseOrderId', 1, NULL) THEN 'row.purchaseOrderId'
+    WHEN NOT sync.is_js_string(p_image->'productId', 1, NULL) THEN 'row.productId'
+    WHEN NOT sync.is_js_string(p_image->'productName', 1, 200) THEN 'row.productName'
+    WHEN NOT sync.is_js_int(p_image->'quantity', 1) THEN 'row.quantity'
+    WHEN NOT sync.is_one_of(p_image->'quantityType', ARRAY['unit', 'pack']) THEN 'row.quantityType'
+    WHEN NOT sync.is_js_int(p_image->'baseUnitQuantity', 1) THEN 'row.baseUnitQuantity'
+    WHEN p_image->>'quantityType' = 'unit'
+      AND (p_image->>'baseUnitQuantity')::numeric <> (p_image->>'quantity')::numeric THEN 'row.baseUnitQuantity'
+    WHEN p_image->>'quantityType' = 'pack'
+      AND (p_image->>'baseUnitQuantity')::numeric % (p_image->>'quantity')::numeric <> 0 THEN 'row.baseUnitQuantity'
+    WHEN NOT sync.is_js_nullable_int(p_image->'packCost', 0) THEN 'row.packCost'
+    WHEN NOT sync.is_js_int(p_image->'receivedBaseUnits', 0) THEN 'row.receivedBaseUnits'
+    ELSE sync.import_metadata_problem(p_image)
+  END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_suppliers(
+  p_organization_id text, p_user_id text, p_import_id text, p_now bigint
+) RETURNS bigint
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_count bigint;
+  v_label text;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
+    WHERE s.entity IN ('supplier', 'purchaseOrder', 'purchaseOrderItem')
+      OR (s.entity = 'stockMovement' AND jsonb_typeof(s.image->'purchaseOrderId') = 'string')
+  ) THEN
+    SELECT r.device_label INTO v_label
+    FROM sync.active_replicas(p_organization_id, p_now) AS r
+    WHERE r.schema_version < 2
+    ORDER BY r.last_seen_at DESC, r.replica_id
+    LIMIT 1;
+    IF FOUND THEN
+      PERFORM sync.reject(
+        'REPLICA_SCHEMA_OUTDATED',
+        'Update Tabaaq on ' || coalesce(nullif(v_label, ''), 'another device')
+          || ' before moving suppliers and purchase orders into this organization.'
+      );
+    END IF;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
+    WHERE s.entity = 'supplier'
+    GROUP BY s.image->>'name'
+    HAVING count(*) > 1
+  ) THEN
+    PERFORM sync.reject('ENTITY_CONFLICT', 'The import holds two suppliers with the same name.');
+  END IF;
+  INSERT INTO public.suppliers (
+    id, name, phone, note, created_at, updated_at, organization_id, created_by_user_id,
+    updated_by_user_id, device_id, operation_id, row_version
+  )
+  SELECT s.image->>'id', s.image->>'name', s.image->>'phone', s.image->>'note',
+    (s.image->>'createdAt')::numeric::bigint, (s.image->>'updatedAt')::numeric::bigint,
+    p_organization_id, p_user_id, p_user_id, s.image->>'deviceId', s.image->>'operationId',
+    (s.image->>'rowVersion')::numeric::bigint
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'supplier';
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_purchase_orders(
+  p_organization_id text, p_user_id text, p_import_id text, p_now bigint
+) RETURNS bigint
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_count bigint;
+  v_orphan text;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
+    WHERE s.entity = 'purchaseOrder'
+    GROUP BY (s.image->>'orderNumber')::numeric
+    HAVING count(*) > 1
+  ) THEN
+    PERFORM sync.reject('ENTITY_CONFLICT', 'The import holds two purchase orders with the same number.');
+  END IF;
+  SELECT s.image->>'supplierId' INTO v_orphan
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'purchaseOrder'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.suppliers AS u
+      WHERE u.organization_id = p_organization_id AND u.id = s.image->>'supplierId'
+    )
+  LIMIT 1;
+  IF FOUND THEN
+    PERFORM sync.reject('ENTITY_RELATION_INVALID', 'Supplier ' || v_orphan || ' is not in the import.');
+  END IF;
+  INSERT INTO public.purchase_orders (
+    id, order_number, supplier_id, status, note, sent_at, expected_at, total, created_at,
+    updated_at, organization_id, created_by_user_id, updated_by_user_id, device_id, operation_id,
+    row_version
+  )
+  SELECT s.image->>'id', (s.image->>'orderNumber')::numeric::integer, s.image->>'supplierId',
+    s.image->>'status', s.image->>'note', (s.image->>'sentAt')::numeric::bigint,
+    (s.image->>'expectedAt')::numeric::bigint, (s.image->>'total')::numeric::integer,
+    (s.image->>'createdAt')::numeric::bigint, (s.image->>'updatedAt')::numeric::bigint,
+    p_organization_id, p_user_id, p_user_id, s.image->>'deviceId', s.image->>'operationId',
+    (s.image->>'rowVersion')::numeric::bigint
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'purchaseOrder';
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END
+$$;
+--> statement-breakpoint
+CREATE FUNCTION sync.import_purchase_order_items(
+  p_organization_id text, p_user_id text, p_import_id text, p_now bigint
+) RETURNS bigint
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_count bigint;
+  v_orphan text;
+BEGIN
+  SELECT s.image->>'purchaseOrderId' INTO v_orphan
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'purchaseOrderItem'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.purchase_orders AS o
+      WHERE o.organization_id = p_organization_id AND o.id = s.image->>'purchaseOrderId'
+    )
+  LIMIT 1;
+  IF FOUND THEN
+    PERFORM sync.reject('ENTITY_RELATION_INVALID', 'Purchase order ' || v_orphan || ' is not in the import.');
+  END IF;
+  INSERT INTO public.purchase_order_items (
+    id, purchase_order_id, product_id, product_name, quantity, quantity_type, base_unit_quantity,
+    pack_cost, received_base_units, created_at, updated_at, organization_id, created_by_user_id,
+    updated_by_user_id, device_id, operation_id, row_version
+  )
+  SELECT s.image->>'id', s.image->>'purchaseOrderId', s.image->>'productId', s.image->>'productName',
+    (s.image->>'quantity')::numeric::integer, s.image->>'quantityType',
+    (s.image->>'baseUnitQuantity')::numeric::integer, (s.image->>'packCost')::numeric::integer,
+    (s.image->>'receivedBaseUnits')::numeric::integer, (s.image->>'createdAt')::numeric::bigint,
+    (s.image->>'updatedAt')::numeric::bigint, p_organization_id, p_user_id, p_user_id,
+    s.image->>'deviceId', s.image->>'operationId', (s.image->>'rowVersion')::numeric::bigint
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'purchaseOrderItem';
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync.import_stock_movements(
+  p_organization_id text, p_user_id text, p_import_id text, p_now bigint
+) RETURNS bigint
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_count bigint;
+  v_orphan text;
+  v_unsettled text;
+BEGIN
+  SELECT s.image->>'purchaseOrderId' INTO v_orphan
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'stockMovement'
+    AND jsonb_typeof(s.image->'purchaseOrderId') = 'string'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.purchase_orders AS o
+      WHERE o.organization_id = p_organization_id AND o.id = s.image->>'purchaseOrderId'
+    )
+  LIMIT 1;
+  IF FOUND THEN
+    PERFORM sync.reject('ENTITY_RELATION_INVALID', 'Purchase order ' || v_orphan || ' is not in the import.');
+  END IF;
+  INSERT INTO public.stock_movements (
+    id, product_id, batch_id, invoice_id, purchase_order_id, type, pack_delta, unit_delta, note,
+    organization_id, actor_user_id, device_id, operation_id, created_at
+  )
+  SELECT s.image->>'id', s.image->>'productId', s.image->>'batchId', s.image->>'invoiceId',
+    s.image->>'purchaseOrderId', s.image->>'type', (s.image->>'packDelta')::numeric::integer,
+    (s.image->>'unitDelta')::numeric::integer, s.image->>'note', p_organization_id, p_user_id,
+    s.image->>'deviceId', s.image->>'operationId', (s.image->>'createdAt')::numeric::bigint
+  FROM sync.import_staged(p_organization_id, p_import_id) AS s
+  WHERE s.entity = 'stockMovement';
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  WITH delivered AS (
+    SELECT m.purchase_order_id, m.product_id,
+      sum(m.pack_delta::numeric + m.unit_delta::numeric) AS least_units
+    FROM public.stock_movements AS m
+    WHERE m.organization_id = p_organization_id AND m.purchase_order_id IS NOT NULL
+    GROUP BY m.purchase_order_id, m.product_id
+  ),
+  received AS (
+    SELECT l.purchase_order_id, l.product_id, sum(l.received_base_units::numeric) AS units
+    FROM public.purchase_order_items AS l
+    WHERE l.organization_id = p_organization_id
+    GROUP BY l.purchase_order_id, l.product_id
+  )
+  SELECT coalesce(d.purchase_order_id, r.purchase_order_id) INTO v_unsettled
+  FROM delivered AS d
+  FULL JOIN received AS r
+    ON r.purchase_order_id = d.purchase_order_id AND r.product_id = d.product_id
+  WHERE coalesce(r.units, 0) < coalesce(d.least_units, 0)
+    OR (coalesce(r.units, 0) > 0 AND d.purchase_order_id IS NULL)
+  LIMIT 1;
+  IF FOUND THEN
+    PERFORM sync.reject(
+      'ENTITY_RELATION_INVALID',
+      'Purchase order ' || v_unsettled || ' holds received stock that does not match its deliveries.'
+    );
+  END IF;
+  RETURN v_count;
+END
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync.import_entities() RETURNS TABLE (
+  entity text, ordinal integer, problem regproc, importer regproc
+)
+LANGUAGE sql STABLE AS $$
+  VALUES
+    ('category', 1, 'sync.import_category_problem'::regproc, 'sync.import_categories'::regproc),
+    ('product', 2, 'sync.import_product_problem'::regproc, 'sync.import_products'::regproc),
+    ('batch', 3, 'sync.import_batch_problem'::regproc, 'sync.import_batches'::regproc),
+    ('invoice', 4, 'sync.import_invoice_problem'::regproc, 'sync.import_invoices'::regproc),
+    ('invoiceItem', 5, 'sync.import_invoice_item_problem'::regproc, 'sync.import_invoice_items'::regproc),
+    ('supplier', 6, 'sync.import_supplier_problem'::regproc, 'sync.import_suppliers'::regproc),
+    ('purchaseOrder', 7, 'sync.import_purchase_order_problem'::regproc, 'sync.import_purchase_orders'::regproc),
+    ('purchaseOrderItem', 8, 'sync.import_purchase_order_item_problem'::regproc, 'sync.import_purchase_order_items'::regproc),
+    ('stockMovement', 9, 'sync.import_stock_movement_problem'::regproc, 'sync.import_stock_movements'::regproc)
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync.import_digest(p_organization_id text, p_version integer) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+  SELECT CASE
+    WHEN p_version = 4 THEN sync.partition_digest(p_organization_id, 4)
+    WHEN p_version = 3
+      AND NOT EXISTS (SELECT 1 FROM public.suppliers AS u WHERE u.organization_id = p_organization_id)
+      AND NOT EXISTS (SELECT 1 FROM public.purchase_orders AS o WHERE o.organization_id = p_organization_id)
+      AND NOT EXISTS (SELECT 1 FROM public.purchase_order_items AS l WHERE l.organization_id = p_organization_id)
+    THEN sync.partition_digest(p_organization_id, 3)
+  END
+$$;

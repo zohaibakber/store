@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { ReplicaSyncActivity } from "./activity";
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
 import type { ReplicaSyncHealth } from "./status";
@@ -122,6 +123,9 @@ export type ElectronReplicaBridge = {
     callback: (health: ReplicaSyncHealth) => void,
   ) => () => void;
   readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
+  readonly readSyncActivity: (
+    workspaceToken: string,
+  ) => Promise<typeof ReplicaSyncActivity.Encoded>;
   readonly enqueueCommand: (input: {
     readonly workspaceToken: string;
     readonly request: typeof EnqueueCommandRequest.Encoded;
@@ -151,6 +155,7 @@ const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
 const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
 const encodeEnqueueRequest = Schema.encodeSync(EnqueueCommandRequest);
 const decodeQueuedCommandStatus = Schema.decodeUnknownSync(CommandStatus);
+const decodeSyncActivity = Schema.decodeUnknownSync(ReplicaSyncActivity);
 
 const decodedSome = <A>(
   values: ReadonlyArray<string>,
@@ -311,6 +316,7 @@ export const openElectronIpcReplicaHandle = async (
     },
     readOutboxStatuses: async () =>
       decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
+    readSyncActivity: async () => decodeSyncActivity(await bridge.readSyncActivity(workspaceToken)),
     enqueueCommand: async (request) => {
       const queued = await bridge.enqueueCommand({
         workspaceToken,

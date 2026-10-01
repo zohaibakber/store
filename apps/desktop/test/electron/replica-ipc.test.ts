@@ -106,6 +106,7 @@ const setupIpc = () => {
         },
       }),
     ReadOutboxStatuses: () => Effect.succeed(["pending" as const]),
+    ReadSyncActivity: () => Effect.die("unused"),
     EnqueueCommand: ({ request }) =>
       Effect.succeed({
         operationId: request.operationId,

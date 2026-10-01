@@ -1,5 +1,6 @@
 import type {
   CommandStatus,
+  DeviceLabel,
   EnqueueCommandRequest,
   ReplicaInsightsWindow,
   SyncEntity,
@@ -191,6 +192,7 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
     readonly transport: Layer.Layer<SyncTransportService, TransportError>;
     readonly live: OwnedLiveHost;
     readonly policy?: SyncSchedulerPolicy;
+    readonly deviceLabel?: DeviceLabel | undefined;
   };
 
 type SqliteReplicaAuthority<SyncError> = {
@@ -300,6 +302,7 @@ export const openSqliteReplicaSyncSession = <ReplicaError, TransportError>(
       databaseIdentity: input.databaseIdentity,
       live: input.live,
       policy: input.policy,
+      deviceLabel: input.deviceLabel,
     }).pipe(Layer.provide(input.transport)),
     store: {},
     wakesOnEnqueue: false,

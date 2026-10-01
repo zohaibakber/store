@@ -122,7 +122,7 @@ export {
   useStockPolicy,
 } from "./insights";
 export type { InventoryInsights } from "./insights";
-export { inventorySyncStatusLabel } from "./sync-status";
+export { inventorySyncIssueLabel, inventorySyncStatusLabel } from "./sync-status";
 export type { ImportInventoryRequest, Inventory, InventoryActions } from "./types";
 export {
   preloadAll,

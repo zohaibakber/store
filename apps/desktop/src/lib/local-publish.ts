@@ -9,9 +9,9 @@ import { useContext } from "react";
 import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
+import { catalogContents } from "@/lib/catalog-counts";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
-import { formatCount } from "@/lib/format";
-import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
+import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { publishOfferDismissedAtom } from "@/lib/preferences";
 import type { CatalogCounts } from "@/lib/workspace-backup";
 import type { PublishOffer, PublishProgress } from "@/lib/workspace-publish";
@@ -51,9 +51,6 @@ const phaseAtom = Atom.family((_organizationId: string) =>
 const movingAtom = Atom.make(false).pipe(Atom.keepAlive);
 
 const ANOTHER_ORGANIZATION = "another organization";
-
-export const catalogContents = (counts: CatalogCounts) =>
-  `${formatCount(counts.products, "product")} and ${formatCount(counts.sales, "sale")}`;
 
 export const moveLocalWorkspace = (
   registry: AtomRegistry.AtomRegistry,
@@ -122,7 +119,7 @@ export const useLocalPublish = (organization: PublishTarget) => {
     () => NO_OFFER,
   );
   const phase = useAtomValue(phaseAtom(organization.id));
-  const organizationIsEmpty = useCatalogIsEmpty();
+  const organizationIsEmpty = useCatalogHoldsNothing();
   const organizations = useAuth().snapshot?.organizations ?? [];
   const move = () => moveLocalWorkspace(registry, organization);
   const cancelElsewhere = () => cancelMoveElsewhere(registry, organization);

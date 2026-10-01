@@ -8,6 +8,7 @@ import {
   PARTITION_DIGEST_VERSION,
   PartitionDigest,
   SnapshotPartPayload,
+  SYNC_SCHEMA_VERSION,
   type CatalogRowWrite,
   type EnqueueCommandRequest,
   type ImportCatalogRequest,
@@ -22,6 +23,9 @@ import {
   decodeInvoiceItemId,
   decodeOrganizationId,
   decodeProductId,
+  decodePurchaseOrderId,
+  decodePurchaseOrderItemId,
+  decodeSupplierId,
 } from "@store/contracts/ids";
 import { replicaState } from "@store/db/replica.schema";
 import {
@@ -174,6 +178,79 @@ const batch = (
   },
 });
 
+const supplier = (id: string, name: string): CatalogRowWrite => ({
+  entity: "supplier",
+  action: "upsert",
+  id: decodeSupplierId(id),
+  expectedRowVersion: null,
+  row: { name, phone: "923001234567", note: null },
+});
+
+const order = (
+  id: string,
+  input: { readonly status: "draft" | "sent"; readonly sentAt: number | null },
+  expectedRowVersion: number | null = null,
+): CatalogRowWrite => ({
+  entity: "purchaseOrder",
+  action: "upsert",
+  id: decodePurchaseOrderId(id),
+  expectedRowVersion,
+  row: {
+    orderNumber: 1,
+    supplierId: decodeSupplierId("sup-acme"),
+    status: input.status,
+    note: "Monthly restock",
+    sentAt: input.sentAt,
+    expectedAt: OCCURRED_AT + 172_800_000,
+    total: 290,
+  },
+});
+
+const line = (
+  id: string,
+  input: {
+    readonly productId: string;
+    readonly productName: string;
+    readonly quantity: number;
+    readonly quantityType: "unit" | "pack";
+    readonly baseUnitQuantity: number;
+  },
+): CatalogRowWrite => ({
+  entity: "purchaseOrderItem",
+  action: "upsert",
+  id: decodePurchaseOrderItemId(id),
+  expectedRowVersion: null,
+  row: {
+    purchaseOrderId: decodePurchaseOrderId("po-1"),
+    productId: decodeProductId(input.productId),
+    productName: input.productName,
+    quantity: input.quantity,
+    quantityType: input.quantityType,
+    baseUnitQuantity: input.baseUnitQuantity,
+    packCost: 50,
+  },
+});
+
+const delivery = (
+  id: string,
+  stock: { readonly packs: number; readonly units: number },
+): CatalogRowWrite => ({
+  entity: "batch",
+  action: "upsert",
+  id: decodeBatchId(id),
+  expectedRowVersion: null,
+  movementId: `move-${id}`,
+  note: null,
+  row: {
+    productId: decodeProductId("prod-panadol"),
+    batchNumber: `B-${id}`,
+    expiresAt: OCCURRED_AT + 86_400_000,
+    packQuantity: stock.packs,
+    unitQuantity: stock.units,
+  },
+  receipt: { purchaseOrderItemId: decodePurchaseOrderItemId("pol-panadol") },
+});
+
 const sale = (
   commandId: string,
   invoiceNumber: number,
@@ -230,6 +307,37 @@ const localHistory: ReadonlyArray<SyncCommand> = [
   catalog("retire-batch", [
     { entity: "batch", action: "delete", id: decodeBatchId("batch-gone"), expectedRowVersion: 2 },
   ]),
+  catalog("suppliers", [
+    supplier("sup-acme", "Acme Pharma"),
+    supplier("sup-dropped", "Dropped Distributor"),
+  ]),
+  catalog("order-draft", [
+    order("po-1", { status: "draft", sentAt: null }),
+    line("pol-panadol", {
+      productId: "prod-panadol",
+      productName: "Panadol",
+      quantity: 5,
+      quantityType: "pack",
+      baseUnitQuantity: 50,
+    }),
+    line("pol-gone", {
+      productId: "prod-gone",
+      productName: "Discontinued syrup",
+      quantity: 4,
+      quantityType: "unit",
+      baseUnitQuantity: 4,
+    }),
+  ]),
+  catalog("order-send", [order("po-1", { status: "sent", sentAt: OCCURRED_AT + 5 }, 1)]),
+  catalog("order-receive", [delivery("batch-delivered", { packs: 2, units: 3 })]),
+  catalog("supplier-drop", [
+    {
+      entity: "supplier",
+      action: "delete",
+      id: decodeSupplierId("sup-dropped"),
+      expectedRowVersion: 1,
+    },
+  ]),
   catalog("retire-product", [
     {
       entity: "product",
@@ -239,6 +347,18 @@ const localHistory: ReadonlyArray<SyncCommand> = [
     },
   ]),
 ];
+
+const LOCAL_ROW_COUNTS = {
+  category: 2,
+  product: 1,
+  batch: 2,
+  invoice: 2,
+  invoiceItem: 2,
+  stockMovement: 7,
+  supplier: 1,
+  purchaseOrder: 1,
+  purchaseOrderItem: 2,
+} as const satisfies Record<SyncEntity, number>;
 
 const SERVER_OWNED = new Set([
   "organizationId",
@@ -285,7 +405,9 @@ const localWorkspace = (importId: string) =>
     Effect.provide(
       SyncEngine.layer().pipe(
         Layer.provideMerge(LocalAuthority.layer),
-        Layer.provideMerge(layerSqliteReplicaStore("import-local")),
+        Layer.provideMerge(
+          layerSqliteReplicaStore("import-local", { authority: LocalAuthority.submitWithin }),
+        ),
         Layer.provideMerge(
           seededReplica({
             organizationId: LOCAL_ORGANIZATION_ID,
@@ -336,7 +458,7 @@ const organizationReplica = (db: InventoryDrizzle, actor: InventoryActor, replic
 const serverDigest = (db: InventoryDrizzle, organizationId: string) =>
   db
     .execute(
-      sql`select "sync"."partition_digest"(${organizationId}) ->> 'digest' as "value"`,
+      sql`select "sync"."partition_digest"(${organizationId}, ${PARTITION_DIGEST_VERSION}::integer) ->> 'digest' as "value"`,
       "objects",
     )
     .pipe(
@@ -349,13 +471,15 @@ const serverDigest = (db: InventoryDrizzle, organizationId: string) =>
 
 const requestFor = (
   actor: InventoryActor,
-  local: { readonly digest: { readonly digest: string } | undefined },
+  local: {
+    readonly digest: { readonly digest: string; readonly version: number } | undefined;
+  },
   partCount: number,
 ): ImportCatalogRequest => ({
   organizationId: decodeOrganizationId(actor.organizationId),
   partCount,
   digest: decodeDigest(local.digest?.digest),
-  digestVersion: PARTITION_DIGEST_VERSION,
+  digestVersion: local.digest?.version ?? 0,
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient | Scope.Scope>) =>
@@ -434,20 +558,37 @@ describe("publishing a local workspace into an empty organization", () => {
               union select distinct "organization_id" from "invoices" where "organization_id" = ${owner.organizationId}`,
           "objects",
         );
-        const beforeSale = { owner: yield* held(waiting), clerk: yield* held(fresh) };
-        yield* freshEngine.saveCommand(
-          queued(
-            sale(
-              "sale-after",
-              3,
-              { productId: "prod-panadol", batchId: "batch-panadol", quantity: 2 },
-              1,
-            ),
-          ),
+        const purchasing = yield* db.execute(
+          sql`select "l"."id" as "line", "l"."received_base_units" as "received", "p"."deleted_at" is not null as "productDeleted",
+                (select count(*)::int from "stock_movements" as "m"
+                  where "m"."organization_id" = "l"."organization_id"
+                    and "m"."purchase_order_id" = "l"."purchase_order_id"
+                    and "m"."product_id" = "l"."product_id") as "deliveries"
+              from "purchase_order_items" as "l"
+              join "products" as "p" on "p"."organization_id" = "l"."organization_id" and "p"."id" = "l"."product_id"
+              where "l"."organization_id" = ${owner.organizationId}
+              order by "l"."id"`,
+          "objects",
+        );
+        const schemaVersions = yield* db.execute(
+          sql`select min("schema_version")::int as "lowest", count(*)::int as "replicas" from "replicas" where "organization_id" = ${owner.organizationId}`,
+          "objects",
+        );
+        const beforeDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
+        const delivered = yield* freshEngine.saveCommand(
+          queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
         );
         yield* freshEngine.drainUploads();
         yield* waitingEngine.catchUp();
-        const afterSale = { owner: yield* held(waiting), clerk: yield* held(fresh) };
+        const afterDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
+        const deliveredStatus = yield* Effect.provide(
+          ReplicaStore.use((store) => store.readCommandStatus(delivered.operationId)),
+          fresh,
+        );
+        const receivedAfter = yield* db.execute(
+          sql`select "received_base_units" as "received", "row_version"::int as "version" from "purchase_order_items" where "organization_id" = ${owner.organizationId} and "id" = 'pol-panadol'`,
+          "objects",
+        );
 
         return {
           local,
@@ -457,8 +598,12 @@ describe("publishing a local workspace into an empty organization", () => {
           committed,
           repeated,
           restaged,
-          beforeSale,
-          afterSale,
+          beforeDelivery,
+          afterDelivery,
+          deliveredStatus,
+          receivedAfter,
+          purchasing,
+          schemaVersions,
           leftovers,
           tombstones,
           owners,
@@ -469,7 +614,10 @@ describe("publishing a local workspace into an empty organization", () => {
 
     const localDigest = outcome.local.digest?.digest;
     expect(localDigest).toBeDefined();
-    expect(outcome.local.catalog.map((rows) => rows.length)).toEqual([2, 1, 1, 2, 2, 6]);
+    expect(outcome.local.digest?.version).toBe(PARTITION_DIGEST_VERSION);
+    expect(outcome.local.catalog.map((rows) => rows.length)).toEqual(
+      ENTITIES.map((entity) => LOCAL_ROW_COUNTS[entity]),
+    );
     expect(outcome.receipts.map((receipt) => receipt.partNumber)).toEqual(
       outcome.local.parts.map((part) => part.partNumber),
     );
@@ -480,9 +628,11 @@ describe("publishing a local workspace into an empty organization", () => {
       digest: localDigest,
       digestVersion: PARTITION_DIGEST_VERSION,
     });
-    expect(outcome.committed.entityCounts.map((entry) => entry.rowCount)).toEqual([
-      2, 1, 1, 2, 2, 6,
-    ]);
+    expect(
+      Object.fromEntries(
+        outcome.committed.entityCounts.map((entry) => [entry.entity, entry.rowCount]),
+      ),
+    ).toEqual(LOCAL_ROW_COUNTS);
     expect(outcome.fanout).toMatchObject({ epoch: "1", horizon: "1", group: "" });
     expect(outcome.repeated).toStrictEqual(outcome.committed);
     expect(outcome.restaged.partNumber).toBe(1);
@@ -492,15 +642,23 @@ describe("publishing a local workspace into an empty organization", () => {
       new Set(["org-published", OWNER]),
     );
 
-    for (const replica of [outcome.beforeSale.owner, outcome.beforeSale.clerk]) {
+    expect(outcome.purchasing).toEqual([
+      { line: "pol-gone", received: 0, productDeleted: true, deliveries: 0 },
+      { line: "pol-panadol", received: 23, productDeleted: false, deliveries: 1 },
+    ]);
+    expect(outcome.schemaVersions).toEqual([{ lowest: SYNC_SCHEMA_VERSION, replicas: 2 }]);
+
+    for (const replica of [outcome.beforeDelivery.owner, outcome.beforeDelivery.clerk]) {
       expect(replica.digest).toBe(localDigest);
       expect(replica.catalog).toStrictEqual(outcome.local.catalog);
       expect(replica.cursor).toBe("1");
     }
-    expect(outcome.afterSale.clerk.cursor).toBe("2");
-    expect(outcome.afterSale.owner.cursor).toBe("2");
-    expect(outcome.afterSale.owner.digest).toBe(outcome.afterSale.clerk.digest);
-    expect(outcome.afterSale.owner.digest).toBe(outcome.authority);
-    expect(outcome.afterSale.owner.digest).not.toBe(localDigest);
+    expect(outcome.deliveredStatus).toBe("integrated");
+    expect(outcome.receivedAfter).toEqual([{ received: 33, version: 3 }]);
+    expect(outcome.afterDelivery.clerk.cursor).toBe("2");
+    expect(outcome.afterDelivery.owner.cursor).toBe("2");
+    expect(outcome.afterDelivery.owner.digest).toBe(outcome.afterDelivery.clerk.digest);
+    expect(outcome.afterDelivery.owner.digest).toBe(outcome.authority);
+    expect(outcome.afterDelivery.owner.digest).not.toBe(localDigest);
   });
 });

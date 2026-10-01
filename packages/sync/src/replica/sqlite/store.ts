@@ -42,6 +42,7 @@ import {
   recoverStaleUploadClaims,
   releaseUploadClaim,
   projectAdmittedCommand,
+  pruneIntegratedCommands,
   queueAdmittedCommand,
   admitLocalCommand,
   settleUploadClaim,
@@ -314,6 +315,7 @@ const makeSqliteReplicaStoreInternals = (
               return { status: "pending", stamp, touched: projected } satisfies EnqueuedCommand;
             }
             const settled = yield* settleWithPage(tx, decided.receipt, decided.page, undefined);
+            yield* pruneIntegratedCommands(tx, admission.envelope.clientSequence);
             return {
               status: (yield* commandStatus(tx, request.operationId)) ?? "pending",
               stamp,

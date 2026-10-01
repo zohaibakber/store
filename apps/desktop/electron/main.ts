@@ -1,9 +1,10 @@
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { IssuedSession, OrganizationCommand } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
-import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import { deviceLabelOf, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -444,6 +445,7 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
+    deviceLabel: deviceLabelOf(hostname()),
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
     liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,

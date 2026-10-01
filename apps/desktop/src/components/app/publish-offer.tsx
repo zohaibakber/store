@@ -6,8 +6,8 @@ import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { PublishProgressBar } from "@/components/app/publish-progress";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { catalogContents } from "@/lib/catalog-counts";
 import {
-  catalogContents,
   useLocalPublish,
   usePublishOfferDismissal,
   usePublishTarget,

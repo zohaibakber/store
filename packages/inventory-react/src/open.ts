@@ -12,9 +12,7 @@ import {
   decodeSupplierSqliteRows,
   inventoryReplicaScope,
   sqliteCollectionOptions,
-  syncActivityFromOutbox,
   syncActivityFromStatuses,
-  syncStatusFromActivity,
   syncStatusFromOutbox,
   syncStatusWithHealth,
   createInvoiceCoherenceGate,
@@ -84,12 +82,12 @@ type OutboxSnapshot = {
 const STORAGE_FAILED = "Local replica storage failed.";
 
 const readOutboxSnapshot = (replica: ReplicaHandle) => {
-  const readActivity = replica.readOutboxActivity;
+  const readActivity = replica.readSyncActivity;
   if (readActivity !== undefined) {
     return Effect.tryPromise(() => readActivity()).pipe(
-      Effect.map((outbox): OutboxSnapshot => ({
-        status: syncStatusFromActivity(outbox),
-        activity: syncActivityFromOutbox(outbox),
+      Effect.map((read): OutboxSnapshot => ({
+        status: syncStatusFromOutbox(read.statuses),
+        activity: read.activity,
       })),
     );
   }

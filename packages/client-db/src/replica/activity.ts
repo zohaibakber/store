@@ -1,42 +1,54 @@
 import {
   CommandReceipt,
+  CommandStatus,
   SyncCommandEnvelope,
-  type CommandStatus,
+  SyncEntity,
   type SyncCommand,
-  type SyncEntity,
   type SyncProtocolCode,
 } from "@store/contracts";
 import type { CatalogRowWrite } from "@store/contracts/catalog-write";
-import type { OutboxActivityRow, ReplicaOutboxActivity } from "@store/sync/browser";
+import {
+  MAX_REJECTED_ACTIVITY_ROWS,
+  type OutboxActivityRow,
+  type ReplicaOutboxActivity,
+} from "@store/sync/browser";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { syncStatusFromOutbox, type InventorySyncStatus } from "./status";
 
-export type RejectedCommandTarget = {
-  readonly entity: SyncEntity;
-  readonly id: string;
-};
+const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
-export type RejectedCommand = {
-  readonly operationId: string;
-  readonly clientSequence: string;
-  readonly createdAt: number;
-  readonly command: SyncCommand["_tag"];
-  readonly code: string;
-  readonly message: string;
-  readonly targets: ReadonlyArray<RejectedCommandTarget>;
-  readonly productId: string | null;
-};
+export const RejectedCommandTarget = Schema.Struct({ entity: SyncEntity, id: Schema.String });
+export type RejectedCommandTarget = typeof RejectedCommandTarget.Type;
 
-export type InventorySyncActivity = {
-  readonly pendingCount: number;
-  readonly rejectedCount: number;
-  readonly rejected: ReadonlyArray<RejectedCommand>;
-  readonly lastCaughtUpAt: number | null;
-  readonly firstSyncPending: boolean;
-  readonly lowestActiveSchemaVersion: number | null;
-};
+export const RejectedCommand = Schema.Struct({
+  operationId: Schema.String,
+  clientSequence: Schema.String,
+  createdAt: Schema.Number,
+  command: Schema.Literals(["issueInvoice", "catalogWrite"]),
+  code: Schema.String,
+  message: Schema.String,
+  targets: Schema.Array(RejectedCommandTarget),
+  productId: Schema.NullOr(Schema.String),
+});
+export type RejectedCommand = typeof RejectedCommand.Type;
+
+export const InventorySyncActivity = Schema.Struct({
+  pendingCount: Count,
+  rejectedCount: Count,
+  rejected: Schema.Array(RejectedCommand).check(Schema.isMaxLength(MAX_REJECTED_ACTIVITY_ROWS)),
+  lastCaughtUpAt: Schema.NullOr(Schema.Number),
+  firstSyncPending: Schema.Boolean,
+  lowestActiveSchemaVersion: Schema.NullOr(Schema.Number),
+});
+export type InventorySyncActivity = typeof InventorySyncActivity.Type;
+
+export const ReplicaSyncActivity = Schema.Struct({
+  statuses: Schema.Array(CommandStatus),
+  activity: InventorySyncActivity,
+});
+export type ReplicaSyncActivity = typeof ReplicaSyncActivity.Type;
 
 export const EMPTY_SYNC_ACTIVITY: InventorySyncActivity = {
   pendingCount: 0,
@@ -216,10 +228,16 @@ export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): Invento
   };
 };
 
+const presentStatuses = (activity: ReplicaOutboxActivity): ReadonlyArray<CommandStatus> =>
+  activity.statusCounts.filter((entry) => entry.count > 0).map((entry) => entry.status);
+
 export const syncStatusFromActivity = (activity: ReplicaOutboxActivity): InventorySyncStatus =>
-  syncStatusFromOutbox(
-    activity.statusCounts.filter((entry) => entry.count > 0).map((entry) => entry.status),
-  );
+  syncStatusFromOutbox(presentStatuses(activity));
+
+export const replicaSyncActivityOf = (outbox: ReplicaOutboxActivity): ReplicaSyncActivity => ({
+  statuses: presentStatuses(outbox),
+  activity: syncActivityFromOutbox(outbox),
+});
 
 export const syncActivityFromStatuses = (
   statuses: ReadonlyArray<CommandStatus>,

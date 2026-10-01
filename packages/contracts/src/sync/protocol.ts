@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
@@ -204,6 +205,28 @@ export const CommandReceipt = Schema.Struct({
   result: Schema.Union([AcceptedInvoiceResult, AcceptedCatalogWriteResult, RejectedCommandResult]),
 });
 export type CommandReceipt = typeof CommandReceipt.Type;
+
+export const MAX_DEVICE_LABEL_LENGTH = 64;
+
+export const DeviceLabel = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_DEVICE_LABEL_LENGTH),
+);
+export type DeviceLabel = typeof DeviceLabel.Type;
+
+const decodeDeviceLabel = Schema.decodeUnknownOption(DeviceLabel);
+
+export const deviceLabelOf = (name: string): DeviceLabel | undefined =>
+  Option.getOrUndefined(
+    decodeDeviceLabel(
+      name
+        .replace(/[\p{Cc}\p{Cf}\s]+/gu, " ")
+        .trim()
+        .slice(0, MAX_DEVICE_LABEL_LENGTH)
+        .replace(/[\uD800-\uDBFF]$/u, "")
+        .trim(),
+    ),
+  );
 
 export const RegisterReplicaRequest = Schema.Struct({
   replicaId: SyncIdentifier,

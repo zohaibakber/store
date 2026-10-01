@@ -3,6 +3,8 @@ import type { InventoryHost } from "@store/inventory-react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { browserDeviceLabel } from "@/lib/device-label";
+
 const DeviceId = Schema.String.check(Schema.isMinLength(1));
 const DEVICE_ID_KEY = "tabaaq.deviceId";
 
@@ -34,6 +36,7 @@ export const createWebInventoryHost = (input: {
   readonly liveAccessToken: (options: { readonly force: boolean }) => Promise<string | null>;
 }): InventoryHost => {
   const deviceId = deviceIdFromStorage();
+  const deviceLabel = browserDeviceLabel(globalThis.navigator?.userAgent ?? "");
   return {
     apiBaseUrl: input.apiBaseUrl,
     deviceId,
@@ -49,6 +52,7 @@ export const createWebInventoryHost = (input: {
           apiBaseUrl: input.apiBaseUrl,
           authenticatedFetch: input.authenticatedFetch,
           accessToken: input.liveAccessToken,
+          deviceLabel,
         },
       });
       requestPersistentStorage();

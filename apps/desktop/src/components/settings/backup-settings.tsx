@@ -17,9 +17,9 @@ import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
 import { useAuth } from "@/lib/auth";
+import { catalogContents } from "@/lib/catalog-counts";
 import { storeErrorMessage } from "@/lib/errors";
-import { formatCount } from "@/lib/format";
-import type { CatalogCounts, RestoreChoice, WorkspaceBackupBridge } from "@/lib/workspace-backup";
+import type { RestoreChoice, WorkspaceBackupBridge } from "@/lib/workspace-backup";
 
 type StagedRestore = Extract<RestoreChoice, { readonly _tag: "staged" }>;
 
@@ -31,14 +31,6 @@ const fileSize = (bytes: number) =>
   bytes < KILOBYTE * KILOBYTE
     ? `${Math.max(1, Math.round(bytes / KILOBYTE))} KB`
     : `${(bytes / (KILOBYTE * KILOBYTE)).toFixed(1)} MB`;
-
-const contents = (counts: CatalogCounts) => {
-  const products = formatCount(counts.products, "product");
-  const sales = formatCount(counts.sales, "sale");
-  return counts.purchaseOrders === 0
-    ? `${products} and ${sales}`
-    : `${products}, ${sales} and ${formatCount(counts.purchaseOrders, "purchase order")}`;
-};
 
 type BackupOffer = {
   readonly backUp: string;
@@ -218,7 +210,7 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
             <AlertDialogTitle>Replace everything on this device?</AlertDialogTitle>
             <AlertDialogDescription>
               {staged
-                ? `This device has ${contents(staged.current)}. They will be replaced by the ${contents(staged.backup)} in ${staged.fileName}. Anything added since that backup is lost.`
+                ? `This device has ${catalogContents(staged.current)}. They will be replaced by the ${catalogContents(staged.backup)} in ${staged.fileName}. Anything added since that backup is lost.`
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

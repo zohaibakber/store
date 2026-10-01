@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import type { DeviceLabel } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -50,6 +51,7 @@ import {
   type ReplicaAdmissionLimits,
 } from "./replica-admission";
 import {
+  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_ANALYTICS_CHANNEL,
   REPLICA_CANCEL_READ_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
@@ -191,6 +193,7 @@ const CHANNEL_METHODS = {
   [REPLICA_PRODUCT_INSIGHTS_CHANNEL]: "readProductInsights",
   [REPLICA_RESTOCK_PAGE_CHANNEL]: "readRestockPage",
   [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
+  [REPLICA_ACTIVITY_CHANNEL]: "readSyncActivity",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueCommand",
   [REPLICA_COMMAND_STATUS_CHANNEL]: "readCommandStatus",
   [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
@@ -305,6 +308,7 @@ export const registerReplicaWorkerIpc = (options: {
   readonly userDataPath: string;
   readonly workerPath: string;
   readonly apiBaseUrl: string;
+  readonly deviceLabel?: DeviceLabel | undefined;
   readonly syncApiRequest: ReplicaSyncApiRequest;
   readonly liveAccessToken: (force: boolean) => Promise<string | null>;
   readonly allowedOrigins: () => ReadonlyArray<string>;
@@ -557,7 +561,12 @@ export const registerReplicaWorkerIpc = (options: {
       case "local":
         return { ...identity, databasePath };
       case "remote":
-        return { ...identity, databasePath, apiBaseUrl: options.apiBaseUrl };
+        return {
+          ...identity,
+          databasePath,
+          apiBaseUrl: options.apiBaseUrl,
+          ...(options.deviceLabel === undefined ? undefined : { deviceLabel: options.deviceLabel }),
+        };
     }
   };
 
@@ -1101,6 +1110,12 @@ export const registerReplicaWorkerIpc = (options: {
       withSession(event, input, "outbox read", (session) =>
         session.admission.read(
           session.supervisor.useIdempotent((worker) => worker.client.ReadOutboxStatuses()),
+        ),
+      ),
+    [REPLICA_ACTIVITY_CHANNEL]: (event, input) =>
+      withSession(event, input, "activity read", (session) =>
+        session.admission.read(
+          session.supervisor.useIdempotent((worker) => worker.client.ReadSyncActivity()),
         ),
       ),
     [REPLICA_ENQUEUE_CHANNEL]: async (event, input) => {

@@ -1,6 +1,7 @@
 import {
   NOTICE_BUFFER_CAPACITY,
   offerCoalescing,
+  replicaSyncActivityOf,
   type ReplicaCommitNotice,
   type ReplicaSyncHealth,
 } from "@store/client-db";
@@ -165,6 +166,7 @@ const linkRemoteAuthority = (
             accessToken: ({ force }) =>
               Effect.runPromise(sharedToken(force, null, TOKEN_REPLY_LIMIT)),
           },
+          deviceLabel: config.deviceLabel,
         }),
       proxyRequests: Stream.fromQueue(proxyRequests),
       respondProxy: proxyReplies.respond,
@@ -340,6 +342,10 @@ export const makeReplicaWorkerHandlers = <R>(
             Effect.map((read) => ({ stamp: stampOf(read.stamp), facts: read.facts })),
           ),
         ReadOutboxStatuses: () => withSession((current) => current.readOutboxStatuses()),
+        ReadSyncActivity: () =>
+          withSession((current) => current.readOutboxActivity()).pipe(
+            Effect.map(replicaSyncActivityOf),
+          ),
         EnqueueCommand: ({ request }) =>
           withSession((current) => current.enqueueCommand(request)).pipe(
             Effect.map((queued) => ({

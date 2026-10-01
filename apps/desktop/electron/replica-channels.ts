@@ -11,6 +11,7 @@ export const REPLICA_READ_INSIGHTS_CHANNEL = "replica:read-insights";
 export const REPLICA_SUMMARIZE_SUBSET_CHANNEL = "replica:summarize-subset";
 export const REPLICA_WAKE_CHANNEL = "replica:wake";
 export const REPLICA_OUTBOX_CHANNEL = "replica:outbox";
+export const REPLICA_ACTIVITY_CHANNEL = "replica:activity";
 export const REPLICA_COMMAND_STATUS_CHANNEL = "replica:command-status";
 export const REPLICA_ENQUEUE_CHANNEL = "replica:enqueue";
 export const REPLICA_INSIGHTS_SUMMARY_CHANNEL = "replica:insights-summary";

@@ -1,4 +1,4 @@
-import type { EnqueueCommandRequest, ReplicaInsightsWindow } from "@store/contracts";
+import type { DeviceLabel, EnqueueCommandRequest, ReplicaInsightsWindow } from "@store/contracts";
 import {
   layerOwnedHttpSync,
   SyncScheduler,
@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
+import { replicaSyncActivityOf } from "./activity";
 import { layerCommitForwarding } from "./commit-forwarding";
 import { planIndexedDbSubset } from "./indexeddb-plan";
 import { makeReplicaLifetime } from "./lifetime";
@@ -43,6 +44,7 @@ export type OpenIndexedDbReplicaInput = {
     readonly apiBaseUrl: string;
     readonly authenticatedFetch: typeof fetch;
     readonly accessToken: OwnedLiveHost["accessToken"];
+    readonly deviceLabel?: DeviceLabel | undefined;
   };
 };
 
@@ -55,6 +57,7 @@ const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
           apiBaseUrl: input.sync.apiBaseUrl,
           accessToken: input.sync.accessToken,
         },
+        deviceLabel: input.sync.deviceLabel,
       }).pipe(
         Layer.provide(
           SyncTransportService.layer(input.sync.apiBaseUrl).pipe(
@@ -166,7 +169,7 @@ export const openIndexedDbReplicaHandle = async (
     readBatch,
     readInsights,
     summarizeSubset,
-    readOutboxActivity: () => run(store.readOutboxActivity()),
+    readSyncActivity: () => run(store.readOutboxActivity().pipe(Effect.map(replicaSyncActivityOf))),
     readPendingRowIds: (entity) => run(store.readPendingRowIds(entity)),
     readOutboxStatuses: async (): Promise<ReadonlyArray<OutboxCommandStatus>> =>
       run(store.listOutboxStatuses()),

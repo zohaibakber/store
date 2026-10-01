@@ -1,12 +1,18 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "997b6792-23e4-4498-8643-98211fcf86b3",
-  "prevIds": ["960876f1-bfe4-469b-b2c7-182a53eff9a3"],
+  "id": "5bdd058d-785b-4141-9e45-91adc5cb08f7",
+  "prevIds": ["f5b6c0d8-91f3-49b4-897e-9d6dfce48a66"],
   "ddl": [
     {
       "isRlsEnabled": false,
       "name": "batches",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "catalog_imports",
       "entityType": "tables",
       "schema": "public"
     },
@@ -25,6 +31,12 @@
     {
       "isRlsEnabled": false,
       "name": "download_leases",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "import_parts",
       "entityType": "tables",
       "schema": "public"
     },
@@ -300,6 +312,71 @@
       "entityType": "columns",
       "schema": "public",
       "table": "batches"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "catalog_imports"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "catalog_imports"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "committed_by_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "catalog_imports"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "committed_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "catalog_imports"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "result_json",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "catalog_imports"
     },
     {
       "type": "text",
@@ -638,6 +715,97 @@
       "entityType": "columns",
       "schema": "public",
       "table": "download_leases"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "organization_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "import_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "part_number",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "byte_length",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "sha256",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "frames",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "received_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "import_parts"
     },
     {
       "type": "text",
@@ -2747,6 +2915,27 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "received_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "import_parts_received_at_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "maintained_at",
           "isExpression": false,
           "asc": true,
@@ -3577,6 +3766,14 @@
       "table": "batches"
     },
     {
+      "columns": ["organization_id"],
+      "nameExplicit": true,
+      "name": "catalog_imports_organization_id_pk",
+      "entityType": "pks",
+      "schema": "public",
+      "table": "catalog_imports"
+    },
+    {
       "columns": ["organization_id", "id"],
       "nameExplicit": true,
       "name": "categories_organization_id_id_pk",
@@ -3599,6 +3796,14 @@
       "entityType": "pks",
       "schema": "public",
       "table": "download_leases"
+    },
+    {
+      "columns": ["organization_id", "import_id", "part_number"],
+      "nameExplicit": true,
+      "name": "import_parts_pk",
+      "entityType": "pks",
+      "schema": "public",
+      "table": "import_parts"
     },
     {
       "columns": ["organization_id", "commit_sequence", "ordinal"],
@@ -3724,6 +3929,20 @@
       "entityType": "checks",
       "schema": "public",
       "table": "command_receipts"
+    },
+    {
+      "value": "\"part_number\" > 0",
+      "name": "import_parts_part_number_positive",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "import_parts"
+    },
+    {
+      "value": "\"byte_length\" > 0",
+      "name": "import_parts_byte_length_positive",
+      "entityType": "checks",
+      "schema": "public",
+      "table": "import_parts"
     },
     {
       "value": "\"action\" in ('upsert', 'delete')",

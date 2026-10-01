@@ -53,6 +53,7 @@ const failed = (message: string): PublishOutcome => ({ _tag: "failed", message }
 const countsOf = (summary: Summary): CatalogCounts => ({
   products: summary.products,
   sales: summary.sales,
+  purchaseOrders: summary.purchaseOrders,
 });
 
 const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: PublishPorts) {

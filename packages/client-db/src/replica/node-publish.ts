@@ -9,7 +9,13 @@ import {
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { sha256Hex } from "@store/contracts/operation-hash";
-import { commandOutbox, invoices, products, replicaState } from "@store/db/replica.schema";
+import {
+  commandOutbox,
+  invoices,
+  products,
+  purchaseOrders,
+  replicaState,
+} from "@store/db/replica.schema";
 import {
   SqliteReplica,
   sqliteCatalogParts,
@@ -50,6 +56,7 @@ export type ReplicaPublishSummary = {
   readonly importId: ImportId;
   readonly products: number;
   readonly sales: number;
+  readonly purchaseOrders: number;
   readonly rows: number;
   readonly outstanding: number;
 };
@@ -165,6 +172,7 @@ const summarize = Effect.fn("ReplicaPublish.summarize")(function* (handle: Sqlit
     ),
     products: yield* countRows(handle, products),
     sales: yield* countRows(handle, invoices),
+    purchaseOrders: yield* countRows(handle, purchaseOrders),
     rows: Number.sumAll(rows),
     outstanding: outbox?.rows ?? 0,
   };
