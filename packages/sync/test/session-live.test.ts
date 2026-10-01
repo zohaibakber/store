@@ -7,7 +7,9 @@ import {
   LIVE_SOCKET_PROTOCOL,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   ReplicaClientSequence,
+  SnapshotId,
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
@@ -120,7 +122,20 @@ const makeTransport = (pulls: Ref.Ref<number>): SyncTransport => ({
         retentionFloor: OrgCommitSequence.make("0"),
       }),
     ),
-  acquireSnapshot: () => Effect.die("unused"),
+  acquireSnapshot: (request) =>
+    Effect.succeed({
+      _tag: "ready" as const,
+      manifest: {
+        snapshotId: SnapshotId.make("snapshot-live"),
+        epoch: request.epoch,
+        subscription: request.subscription,
+        schemaVersion: 1,
+        horizon: OrgCommitSequence.make("0"),
+        parts: [],
+        entityCounts: [],
+        digestVersion: PARTITION_DIGEST_VERSION,
+      },
+    }),
   readSnapshotPart: () => Effect.die("unused"),
 });
 

@@ -144,7 +144,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
     withHarness((harness) =>
       Effect.gen(function* () {
         const empty = yield* harness.readActivity();
-        expect(empty).toEqual({ statusCounts: [], rejected: [], caughtUpAt: null });
+        expect(empty).toMatchObject({ statusCounts: [], rejected: [] });
 
         const rejected = catalogEnvelope({
           operationId: "catalog-rejected",

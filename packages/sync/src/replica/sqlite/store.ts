@@ -530,6 +530,7 @@ const makeSqliteReplicaStoreInternals = (
               appliedCommitSequence: state.appliedCommitSequence,
               replicaId: state.replicaId,
               registered: state.registeredAt !== null,
+              bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
             })),
           ),
         ),

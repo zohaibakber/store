@@ -118,7 +118,10 @@ const ownHttpSync = (
       scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
     );
     yield* scheduler.wake("startup");
-    const liveLoop = live.run.pipe(Effect.ensuring(inner.setLiveConnected(false)));
+    const liveLoop = engine.awaitRegistered.pipe(
+      Effect.andThen(live.run),
+      Effect.ensuring(inner.setLiveConnected(false)),
+    );
     yield* SubscriptionRef.changes(owner).pipe(
       Stream.changes,
       Stream.switchMap((owned) => (owned ? Stream.fromEffect(liveLoop) : Stream.empty)),

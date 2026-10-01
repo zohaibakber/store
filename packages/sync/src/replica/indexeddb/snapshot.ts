@@ -5,17 +5,16 @@ import {
   type SnapshotManifest,
   type SnapshotPartPayload,
 } from "@store/contracts";
-import { replicaEntitySchemas } from "@store/contracts/sync/replica-model";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
-import { decodeEntity, decodeRowJson, decodeStoredEnvelope, encodeRowJson } from "../codecs";
+import { decodeEntity, decodeRowJson, decodeStoredEnvelope } from "../codecs";
 import { byClientSequence, decideOverlays } from "../decisions";
 import {
   reapplyIndexedDbPendingProjections,
   readIndexedDbUnitsPerPack,
   writeEntityRow,
+  writeEntityRows,
 } from "./pending";
 import { outboxWithStatus, type ReplicaQueryBuilder } from "./schema";
 
@@ -95,29 +94,6 @@ const unreferencedRanges = (keep: ReadonlyArray<number>): ReadonlyArray<Generati
   ranges.push([[next], [MAX_GENERATION, []]]);
   return ranges;
 };
-
-const stageSnapshotRow = (
-  api: ReplicaQueryBuilder,
-  snapshotId: string,
-  row: SnapshotPartPayload["rows"][number],
-) =>
-  Effect.gen(function* () {
-    const entity = decodeEntity(row.entity);
-    Schema.decodeUnknownSync(replicaEntitySchemas[entity])(row.row);
-    const existingRows = yield* api
-      .from("snapshot_staged_rows")
-      .select()
-      .equals([snapshotId, entity, row.entityId]);
-    const existing = existingRows[0];
-    if (existing && existing.rowVersion > row.rowVersion) return;
-    yield* api.from("snapshot_staged_rows").upsert({
-      snapshotId,
-      entity,
-      entityId: row.entityId,
-      rowVersion: row.rowVersion,
-      rowJson: encodeRowJson(row.row),
-    });
-  });
 
 const integrateCoveredCommands = (api: ReplicaQueryBuilder, horizon: string) =>
   Effect.gen(function* () {
@@ -247,8 +223,14 @@ export const importIndexedDbSnapshotPart = (
         syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order."),
       );
     }
-    for (const row of part.rows) {
-      yield* stageSnapshotRow(api, manifest.snapshotId, row);
+    const byEntity = Array.groupBy(part.rows, (row) => decodeEntity(row.entity));
+    for (const [entity, rows] of Object.entries(byEntity)) {
+      yield* writeEntityRows(
+        api,
+        importRow.generation,
+        decodeEntity(entity),
+        rows.map((row) => row.row),
+      );
     }
     const partsImported = importRow.partsImported + 1;
     const stage = partsImported === importRow.partsTotal ? "caught_up" : "importing";

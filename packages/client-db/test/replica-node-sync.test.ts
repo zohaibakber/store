@@ -26,7 +26,8 @@ const failingTransport = (): SyncTransport => ({
   submitCommand: () => Effect.die("unused"),
   getReceipt: () => Effect.die("unused"),
   pull: () => Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed.")),
-  acquireSnapshot: () => Effect.die("unused"),
+  acquireSnapshot: () =>
+    Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed.")),
   readSnapshotPart: () => Effect.die("unused"),
 });
 

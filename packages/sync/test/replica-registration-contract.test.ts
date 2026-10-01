@@ -3,7 +3,9 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
   ReplicaClientSequence,
+  SnapshotId,
   SyncEpoch,
   syncProtocolError,
   type CatalogRowWrite,
@@ -197,7 +199,20 @@ const makeAuthority = (
           });
         }),
       ),
-    acquireSnapshot: () => Effect.die("unused"),
+    acquireSnapshot: (request) =>
+      Effect.succeed({
+        _tag: "ready" as const,
+        manifest: {
+          snapshotId: SnapshotId.make(`snapshot-${identity.incarnation}`),
+          epoch: request.epoch,
+          subscription: request.subscription,
+          schemaVersion: 1,
+          horizon: OrgCommitSequence.make("0"),
+          parts: [],
+          entityCounts: [],
+          digestVersion: PARTITION_DIGEST_VERSION,
+        },
+      }),
     readSnapshotPart: () => Effect.die("unused"),
   };
   return { counts, accepted, transport };
@@ -367,6 +382,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
       Effect.gen(function* () {
         const identity = { epoch: "1", incarnation: "authority-f", nextClientSequence: "1" };
         yield* store.adoptRegistration(registration(identity), FIXTURE_NOW);
+        yield* store.recordCaughtUp(FIXTURE_NOW);
         const authority = makeAuthority(
           { ...identity, epoch: "2" },
           { pullFailure: syncProtocolError("EPOCH_MISMATCH", "The authority was restored.") },

@@ -1,12 +1,15 @@
 import {
   InventoryProvider as SharedInventoryProvider,
   useInventoryState,
+  useInventorySyncActivity,
+  useInventorySyncStatus,
   type CatalogLease,
   type CatalogLifetime,
   type InventoryHost,
 } from "@store/inventory-react";
 import type * as React from "react";
 
+import { FirstSync } from "@/components/app/first-sync";
 import { PageLoading } from "@/components/app/loading-spinner";
 
 export function InventoryProvider({
@@ -43,5 +46,18 @@ function InventoryOpenFailure({ children }: { readonly children: React.ReactNode
 export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
   const state = useInventoryState();
   if (state._tag !== "Ready") return <PageLoading />;
+  return <FirstSyncGate>{children}</FirstSyncGate>;
+}
+
+const HALTED_SYNC: ReadonlySet<string> = new Set(["storageError", "recoveryRequired"]);
+
+export const useFirstSyncPending = () => {
+  const { firstSyncPending } = useInventorySyncActivity();
+  const status = useInventorySyncStatus();
+  return firstSyncPending && !HALTED_SYNC.has(status._tag);
+};
+
+function FirstSyncGate({ children }: { readonly children: React.ReactNode }) {
+  if (useFirstSyncPending()) return <FirstSync />;
   return children;
 }

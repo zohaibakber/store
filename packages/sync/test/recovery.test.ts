@@ -25,7 +25,10 @@ const acquireRequest = {
 describe("snapshot recovery", () => {
   it.effect("fetches parts concurrently and still imports them in manifest order", () =>
     Effect.gen(function* () {
-      const manifest = manifestWithParts(4);
+      const wave = SNAPSHOT_PART_FETCH_CONCURRENCY;
+      const manifest = manifestWithParts(wave * 2);
+      const firstParts = Array.from({ length: wave }, (_, index) => index + 1);
+      const secondParts = firstParts.map((partNumber) => partNumber + wave);
       const started = yield* Queue.unbounded<number>();
       const releases = new Map<number, Deferred.Deferred<void>>();
       for (const part of manifest.parts)
@@ -53,13 +56,13 @@ describe("snapshot recovery", () => {
           { discard: true },
         );
       const firstWave = yield* takeWave;
-      expect([...firstWave].sort((left, right) => left - right)).toEqual([1, 2]);
-      yield* release([2, 1]);
+      expect([...firstWave].sort((left, right) => left - right)).toEqual(firstParts);
+      yield* release([...firstParts].reverse());
       const secondWave = yield* takeWave;
-      expect([...secondWave].sort((left, right) => left - right)).toEqual([3, 4]);
-      yield* release([4, 3]);
+      expect([...secondWave].sort((left, right) => left - right)).toEqual(secondParts);
+      yield* release([...secondParts].reverse());
       yield* Fiber.join(recovery);
-      expect(store.imported).toEqual([1, 2, 3, 4]);
+      expect(store.imported).toEqual([...firstParts, ...secondParts]);
       expect(store.activated).toEqual([manifest.snapshotId]);
     }),
   );

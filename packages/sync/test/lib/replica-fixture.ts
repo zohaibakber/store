@@ -37,6 +37,7 @@ export const seedReplicaTenUnits = (path?: string) =>
           appliedCommitSequence: "0",
           nextClientSequence: "1",
           localCommitVersion: 0,
+          caughtUpAt: FIXTURE_OCCURRED_AT,
         });
         yield* tx.insert(categories).values({
           id: FIXTURE_CATEGORY_ID,

@@ -19,7 +19,9 @@ import {
 } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -62,6 +64,8 @@ type LiveFrameOutcome =
   | { readonly _tag: "current" }
   | { readonly _tag: "pull"; readonly hint?: SyncLiveWakeHint };
 
+type PulledPage = { readonly pulled: SyncPullResult; readonly pulledAt: number };
+
 const LIVE_APPLIED: LiveFrameOutcome = { _tag: "applied" };
 const LIVE_CURRENT: LiveFrameOutcome = { _tag: "current" };
 
@@ -87,6 +91,7 @@ const contiguousFrom = (frame: TransactionsFrame, appliedCommitSequence: string)
 interface SyncEngineContract {
   readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
+  readonly awaitRegistered: Effect.Effect<void>;
   readonly saveCommand: (
     request: EnqueueCommandRequest,
   ) => Effect.Effect<QueuedCommand, SyncProtocolError | ReplicaStoreError>;
@@ -176,10 +181,10 @@ export const makeSyncEngineFromReplicaStore = (
       return (yield* withPermit(store.enqueueCommand(request))).value;
     });
 
-    const registered = yield* Ref.make(false);
+    const registered = yield* Deferred.make<void>();
 
     const ensureRegistered = Effect.fn("SyncEngine.ensureRegistered")(function* () {
-      if (yield* Ref.get(registered)) return;
+      if (yield* Deferred.isDone(registered)) return;
       const cursor = yield* withPermit(store.readSyncCursor());
       if (!cursor.registered) {
         const authority = yield* transport.registerReplica({ replicaId: cursor.replicaId });
@@ -191,7 +196,7 @@ export const makeSyncEngineFromReplicaStore = (
           );
         }
       }
-      yield* Ref.set(registered, true);
+      yield* Deferred.succeed(registered, undefined);
     });
 
     const verifyAuthority = Effect.fn("SyncEngine.verifyAuthority")(function* (input: {
@@ -318,44 +323,72 @@ export const makeSyncEngineFromReplicaStore = (
       return receipt;
     });
 
-    const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
-      yield* SubscriptionRef.update(progress, (current) => ({ ...current, downloading: true }));
-      return yield* Effect.gen(function* () {
-        const pulledAt = yield* Clock.currentTimeMillis;
-        const includeDigest = yield* digestDue(request.subscription, pulledAt);
-        const digestRequest: SyncPullRequest = includeDigest
-          ? { ...request, digestVersion: PARTITION_DIGEST_VERSION }
-          : request;
-        const pullRequest = withMaxBytes(digestRequest, yield* Ref.get(pullMaxBytes));
-        const pulled = yield* transport.pull(pullRequest).pipe(
-          Effect.catchIf(isSnapshotRequired, () =>
-            Effect.gen(function* () {
-              const cursor = yield* withPermit(store.readSyncCursor());
-              yield* recoverRequiredSnapshot(transport, store, {
-                epoch: request.epoch,
-                subscription: request.subscription,
-                replicaId: cursor.replicaId,
-              });
-              const recovered = yield* withPermit(pullRequestFromStore(store));
-              return yield* transport.pull(
-                withMaxBytes(
-                  includeDigest
-                    ? { ...recovered, digestVersion: PARTITION_DIGEST_VERSION }
-                    : recovered,
-                  yield* Ref.get(pullMaxBytes),
-                ),
-              );
-            }),
-          ),
-        );
-        const applied = yield* withPermit(store.applyRemotePage(pulled));
-        yield* recordAppliedPage(pulled, applied.value, pulledAt);
-        return applied.value.appliedThrough;
-      }).pipe(
+    const pullPage = Effect.fn("SyncEngine.pullPage")(function* (request: SyncPullRequest) {
+      const pulledAt = yield* Clock.currentTimeMillis;
+      const includeDigest = yield* digestDue(request.subscription, pulledAt);
+      const digestRequest: SyncPullRequest = includeDigest
+        ? { ...request, digestVersion: PARTITION_DIGEST_VERSION }
+        : request;
+      const pullRequest = withMaxBytes(digestRequest, yield* Ref.get(pullMaxBytes));
+      const pulled = yield* transport.pull(pullRequest).pipe(
+        Effect.catchIf(isSnapshotRequired, () =>
+          Effect.gen(function* () {
+            const cursor = yield* withPermit(store.readSyncCursor());
+            yield* recoverRequiredSnapshot(transport, store, {
+              epoch: request.epoch,
+              subscription: request.subscription,
+              replicaId: cursor.replicaId,
+            });
+            const recovered = yield* withPermit(pullRequestFromStore(store));
+            return yield* transport.pull(
+              withMaxBytes(
+                includeDigest
+                  ? { ...recovered, digestVersion: PARTITION_DIGEST_VERSION }
+                  : recovered,
+                yield* Ref.get(pullMaxBytes),
+              ),
+            );
+          }),
+        ),
+      );
+      return { pulled, pulledAt };
+    });
+
+    const applyPage = Effect.fn("SyncEngine.applyPage")(function* (
+      pulled: SyncPullResult,
+      pulledAt: number,
+    ) {
+      const applied = yield* withPermit(store.applyRemotePage(pulled));
+      yield* recordAppliedPage(pulled, applied.value, pulledAt);
+      return applied.value.appliedThrough;
+    });
+
+    const downloading = <A, E>(effect: Effect.Effect<A, E>) =>
+      SubscriptionRef.update(progress, (current) => ({ ...current, downloading: true })).pipe(
+        Effect.andThen(effect),
         Effect.ensuring(
           SubscriptionRef.update(progress, (current) => ({ ...current, downloading: false })),
         ),
       );
+
+    const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
+      return yield* downloading(
+        pullPage(request).pipe(
+          Effect.flatMap(({ pulled, pulledAt }) => applyPage(pulled, pulledAt)),
+        ),
+      );
+    });
+
+    const followingPage = (request: SyncPullRequest, pulled: SyncPullResult) =>
+      pulled.transactions.length > 0 &&
+      compareDecimalSequence(pulled.nextCommitSequence, pulled.horizon) < 0
+        ? { ...request, afterCommitSequence: OrgCommitSequence.make(pulled.nextCommitSequence) }
+        : undefined;
+
+    const prefetch = Effect.fn("SyncEngine.prefetch")(function* (request: SyncPullRequest) {
+      const pulledAt = yield* Clock.currentTimeMillis;
+      const pulled = yield* transport.pull(withMaxBytes(request, yield* Ref.get(pullMaxBytes)));
+      return { pulled, pulledAt };
     });
 
     const drainUploads = Effect.fn("SyncEngine.drainUploads")(function* () {
@@ -379,17 +412,49 @@ export const makeSyncEngineFromReplicaStore = (
       },
     );
 
+    const bootstrapFromSnapshot = Effect.fn("SyncEngine.bootstrapFromSnapshot")(function* () {
+      const cursor = yield* withPermit(cursorFromStore(store));
+      if (cursor.bootstrapped || cursor.appliedCommitSequence !== "0") return;
+      yield* recoverRequiredSnapshot(transport, store, {
+        epoch: cursor.epoch,
+        subscription: OPERATIONAL_SUBSCRIPTION,
+        replicaId: cursor.replicaId,
+      });
+    });
+
     const catchUp = Effect.fn("SyncEngine.catchUp")(function* () {
       if (yield* uploadLeftReplicaCaughtUp()) return "advanced";
-      let outcome: SyncCatchUpOutcome = "unchanged";
-      while (true) {
-        const request = yield* withPermit(pullRequestFromStore(store));
-        const appliedThrough = yield* downloadOnce(request);
-        const moved = compareDecimalSequence(appliedThrough, request.afterCommitSequence) > 0;
-        if (moved) outcome = "advanced";
-        const { feed } = yield* SubscriptionRef.get(progress);
-        if (!moved || feed._tag === "following") return outcome;
-      }
+      return yield* downloading(
+        Effect.gen(function* () {
+          yield* bootstrapFromSnapshot();
+          let outcome: SyncCatchUpOutcome = "unchanged";
+          let ahead:
+            | { readonly from: string; readonly fiber: Fiber.Fiber<PulledPage, SyncEngineError> }
+            | undefined;
+          while (true) {
+            const request = yield* withPermit(pullRequestFromStore(store));
+            const page =
+              ahead !== undefined && ahead.from === request.afterCommitSequence
+                ? yield* Fiber.join(ahead.fiber).pipe(Effect.catch(() => pullPage(request)))
+                : yield* (ahead === undefined ? Effect.void : Fiber.interrupt(ahead.fiber)).pipe(
+                    Effect.andThen(pullPage(request)),
+                  );
+            const next = followingPage(request, page.pulled);
+            ahead =
+              next === undefined
+                ? undefined
+                : {
+                    from: next.afterCommitSequence,
+                    fiber: yield* Effect.forkScoped(prefetch(next)),
+                  };
+            const appliedThrough = yield* applyPage(page.pulled, page.pulledAt);
+            const moved = compareDecimalSequence(appliedThrough, request.afterCommitSequence) > 0;
+            if (moved) outcome = "advanced";
+            const { feed } = yield* SubscriptionRef.get(progress);
+            if (!moved || feed._tag === "following") return outcome;
+          }
+        }).pipe(Effect.scoped),
+      );
     });
 
     const hintApplied = Effect.fn("SyncEngine.hintApplied")(function* (hint: SyncLiveWakeHint) {
@@ -444,6 +509,7 @@ export const makeSyncEngineFromReplicaStore = (
     return {
       progress,
       ensureRegistered,
+      awaitRegistered: Deferred.await(registered),
       saveCommand,
       uploadOnce,
       drainUploads,

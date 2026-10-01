@@ -116,6 +116,64 @@ export const writeEntityRow = (
   }
 };
 
+export const writeEntityRows = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  entity: SyncEntity,
+  rows: ReadonlyArray<SyncEntityChange["row"]>,
+): Effect.Effect<unknown, unknown> => {
+  if (rows.length === 0) return Effect.void;
+  switch (entity) {
+    case "category":
+      return api.from("categories").upsertAll(
+        rows.map((row) => ({
+          generation,
+          ...Schema.decodeUnknownSync(replicaEntitySchemas.category)(row),
+        })),
+      );
+    case "product":
+      return api
+        .from("products")
+        .upsertAll(
+          rows.map((row) =>
+            storedProduct(generation, Schema.decodeUnknownSync(replicaEntitySchemas.product)(row)),
+          ),
+        );
+    case "batch":
+      return api.from("batches").upsertAll(
+        rows.map((row) => ({
+          generation,
+          ...Schema.decodeUnknownSync(replicaEntitySchemas.batch)(row),
+        })),
+      );
+    case "invoice":
+      return api.from("invoices").upsertAll(
+        rows.map((row) => ({
+          generation,
+          ...Schema.decodeUnknownSync(replicaEntitySchemas.invoice)(row),
+        })),
+      );
+    case "invoiceItem":
+      return api.from("invoice_items").upsertAll(
+        rows.map((row) => ({
+          generation,
+          ...Schema.decodeUnknownSync(replicaEntitySchemas.invoiceItem)(row),
+        })),
+      );
+    case "stockMovement":
+      return api.from("stock_movements").upsertAll(
+        rows.map((row) => ({
+          generation,
+          ...Schema.decodeUnknownSync(replicaEntitySchemas.stockMovement)(row),
+        })),
+      );
+    default: {
+      const _exhaustive: never = entity;
+      return Effect.die(_exhaustive);
+    }
+  }
+};
+
 export const removeEntityRow = (
   api: ReplicaQueryBuilder,
   generation: number,

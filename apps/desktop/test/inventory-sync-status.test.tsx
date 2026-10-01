@@ -61,12 +61,13 @@ describe("SidebarSyncButton", () => {
       </InventoryProvider>,
     );
     expect(await findStatusButton("Sync now")).toBeTruthy();
-    expect(screen.getByText("Ready shell")).toBeTruthy();
+    expect(screen.getByText("Downloading your inventory")).toBeTruthy();
 
     act(() => {
       emit({ _tag: "storageError", message: "Local replica storage failed." });
     });
     expect(await findStatusButton("Local replica storage failed.")).toBeTruthy();
+    expect(screen.getByText("Ready shell")).toBeTruthy();
 
     act(() => {
       emit({ _tag: "recoveryRequired", message: "Sync needs recovery." });

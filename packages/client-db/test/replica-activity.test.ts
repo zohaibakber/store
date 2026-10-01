@@ -120,6 +120,7 @@ describe("sync activity", () => {
       rejectedCount: 0,
       rejected: [],
       lastCaughtUpAt: 55,
+      firstSyncPending: false,
     });
     expect(syncStatusFromActivity(outbox)).toEqual({ _tag: "pendingConfirmation" });
     expect(syncStatusFromActivity({ ...outbox, statusCounts: [] })).toEqual({ _tag: "caughtUp" });

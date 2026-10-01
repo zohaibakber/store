@@ -32,6 +32,7 @@ export type InventorySyncActivity = {
   readonly rejectedCount: number;
   readonly rejected: ReadonlyArray<RejectedCommand>;
   readonly lastCaughtUpAt: number | null;
+  readonly firstSyncPending: boolean;
 };
 
 export const EMPTY_SYNC_ACTIVITY: InventorySyncActivity = {
@@ -39,6 +40,7 @@ export const EMPTY_SYNC_ACTIVITY: InventorySyncActivity = {
   rejectedCount: 0,
   rejected: [],
   lastCaughtUpAt: null,
+  firstSyncPending: false,
 };
 
 const PENDING_STATUSES: ReadonlySet<CommandStatus> = new Set([
@@ -135,6 +137,7 @@ export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): Invento
     rejectedCount,
     rejected: activity.rejected.flatMap((row) => Option.toArray(rejectedCommandFromOutbox(row))),
     lastCaughtUpAt: activity.caughtUpAt,
+    firstSyncPending: activity.caughtUpAt === null,
   };
 };
 

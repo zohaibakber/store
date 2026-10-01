@@ -22,7 +22,7 @@ import { SyncTransportUnavailable, type SyncTransport, type SyncTransportError }
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
 
-export const SNAPSHOT_PART_FETCH_CONCURRENCY = 2;
+export const SNAPSHOT_PART_FETCH_CONCURRENCY = 12;
 
 const SNAPSHOT_STORAGE_RETRY_MILLIS = 10 * 60_000;
 

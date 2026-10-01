@@ -1,4 +1,3 @@
-import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import { afterEach, describe, expect, it } from "@effect/vitest";
 import {
   OrgCommitSequence,
@@ -14,11 +13,8 @@ import {
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import { ReplicaIndexedDb } from "../src/replica/indexeddb/schema";
-import { promoteIndexedDbSnapshotChunk } from "../src/replica/indexeddb/snapshot";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { seedCatalogGroup } from "./lib/pending-fixture";
@@ -112,7 +108,7 @@ const batchRows = (part: number, length: number) =>
 
 describe("IndexedDB snapshot activation", () => {
   it.live(
-    "resumes a partly promoted snapshot and retires the old generation in the background",
+    "keeps imported rows out of the active generation until activation, then retires the old one",
     () =>
       Effect.gen(function* () {
         const store = yield* makeIndexedDbReplicaStore({
@@ -128,6 +124,7 @@ describe("IndexedDB snapshot activation", () => {
         });
         yield* store.applyTransactionGroup(seedCatalogGroup);
         yield* store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
+        const activeBatches = yield* Effect.promise(() => count("batches", 1));
         yield* store.beginSnapshotImport(manifest);
         yield* store.importSnapshotPart(manifest, {
           snapshotId,
@@ -139,37 +136,9 @@ describe("IndexedDB snapshot activation", () => {
           partNumber: 2,
           rows: batchRows(2, 100),
         });
-        expect(yield* Effect.promise(stagedCount)).toBe(600);
-
-        const database = yield* Layer.build(
-          ReplicaIndexedDb.layer(databaseName).pipe(
-            Layer.provide(
-              Layer.succeed(IndexedDb.IndexedDb, IndexedDb.make({ indexedDB, IDBKeyRange })),
-            ),
-          ),
-        );
-        const firstChunk = yield* ReplicaIndexedDb.getQueryBuilder.pipe(
-          Effect.flatMap((api) =>
-            api.withTransaction({
-              tables: [
-                "categories",
-                "products",
-                "batches",
-                "invoices",
-                "invoice_items",
-                "stock_movements",
-                "snapshot_imports",
-                "snapshot_staged_rows",
-              ],
-              mode: "readwrite",
-              durability: "strict",
-            })(promoteIndexedDbSnapshotChunk(api, snapshotId)),
-          ),
-          Effect.provideContext(database),
-        );
-        expect(firstChunk.remaining).toBe(true);
-        expect(yield* Effect.promise(stagedCount)).toBe(100);
-        expect(yield* Effect.promise(() => count("batches", 2))).toBe(500);
+        expect(yield* Effect.promise(stagedCount)).toBe(0);
+        expect(yield* Effect.promise(() => count("batches", 2))).toBe(600);
+        expect(yield* Effect.promise(() => count("batches", 1))).toBe(activeBatches);
         expect((yield* store.readStamp()).generationId).toBe("1");
 
         const activated = yield* store.activateSnapshot(snapshotId);
@@ -226,6 +195,8 @@ describe("IndexedDB snapshot activation", () => {
       expect(activated.value._tag).toBe("activated");
       expect((yield* store.readStamp()).generationId).toBe("3");
       expect(yield* Effect.promise(() => count("batches", 3))).toBe(30);
+      yield* Effect.sleep("200 millis");
+      expect(yield* Effect.promise(() => count("batches", 2))).toBe(0);
       yield* store.dispose();
     }),
   );

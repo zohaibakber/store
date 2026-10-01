@@ -50,6 +50,7 @@ type ReplicaSyncCursor = {
   readonly appliedCommitSequence: string;
   readonly replicaId: string;
   readonly registered: boolean;
+  readonly bootstrapped: boolean;
 };
 
 export type VerifyAuthorityInput = {

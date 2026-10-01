@@ -28,6 +28,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
+import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;
@@ -42,6 +43,11 @@ function RestockCountReady() {
 
 function RestockCount() {
   if (!useCatalogIsReady()) return null;
+  return <RestockCountSynced />;
+}
+
+function RestockCountSynced() {
+  if (useFirstSyncPending()) return null;
   return (
     <AppErrorBoundary fallback={null}>
       <Suspense fallback={null}>

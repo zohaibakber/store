@@ -11,6 +11,7 @@ import {
   type SnapshotManifest,
   type SnapshotPartPayload,
   type SyncEntity,
+  type SyncEntityChange,
   type SyncPullResult,
   type SyncSubscription,
   type SyncTransactionGroup,
@@ -70,6 +71,7 @@ import {
   decideReceipt,
   isStaleClaim,
   nextUploadClaim,
+  OUTSTANDING_COMMAND_STATUSES,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
   shouldApplyCommitSequence,
@@ -110,6 +112,7 @@ import {
   resolveIndexedDbRemoteRow,
   restoreIndexedDbPendingProjection,
   writeEntityRow,
+  writeEntityRows,
   writeIndexedDbPendingProjection,
 } from "./pending";
 import {
@@ -169,6 +172,15 @@ const ENTITY_TABLES = [
   "pending_row_journal",
 ] as const;
 
+const GENERATION_TABLES = [
+  "categories",
+  "products",
+  "batches",
+  "invoices",
+  "invoice_items",
+  "stock_movements",
+] as const;
+
 const SNAPSHOT_TABLES = [...ENTITY_TABLES, "snapshot_imports", "snapshot_staged_rows"] as const;
 
 const PROMOTE_TABLES = [
@@ -225,9 +237,13 @@ const requirePrimitives = (
 type IndexedDbTables = Array.NonEmptyReadonlyArray<IndexedDbTableName>;
 
 const readwrite =
-  (api: ReplicaQueryBuilder, tables: IndexedDbTables) =>
+  (
+    api: ReplicaQueryBuilder,
+    tables: IndexedDbTables,
+    durability: IDBTransactionDurability = "strict",
+  ) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    api.withTransaction({ tables, mode: "readwrite", durability: "strict" })(effect);
+    api.withTransaction({ tables, mode: "readwrite", durability })(effect);
 
 const readState = (api: ReplicaQueryBuilder) =>
   api
@@ -361,8 +377,9 @@ const makeScopedIndexedDbReplicaStore = (
     const commit = <A>(
       tables: IndexedDbTables,
       run: (api: ReplicaQueryBuilder) => Effect.Effect<Committed<A>, unknown>,
+      durability?: IDBTransactionDurability,
     ): Effect.Effect<Committed<A>, ReplicaStoreError> =>
-      withQuery((api) => readwrite(api, tables)(run(api))).pipe(
+      withQuery((api) => readwrite(api, tables, durability)(run(api))).pipe(
         Effect.tap((committed) => publish(committed.notice)),
       );
 
@@ -600,72 +617,158 @@ const makeScopedIndexedDbReplicaStore = (
         }),
       );
 
-    const applyTransactionGroup = (group: SyncTransactionGroup) =>
-      commit<string>(ENTITY_TABLES, (api) =>
-        Effect.gen(function* () {
-          const state = yield* requireState(api);
-          if (!shouldApplyCommitSequence(state.appliedCommitSequence, group.commitSequence)) {
-            return { value: state.appliedCommitSequence, notice: undefined };
+    const applyGroupWithin = (
+      api: ReplicaQueryBuilder,
+      generation: number,
+      group: SyncTransactionGroup,
+    ) =>
+      Effect.gen(function* () {
+        const touched: Array<TouchedSet> = [];
+        for (const change of group.changes) {
+          touched.push(touchedOfChange(change.entity, change.entityId));
+          if (change.action === "delete") {
+            yield* removeEntityRow(api, generation, change.entity, change.entityId);
+          } else {
+            if (change.entity === "invoice") {
+              const renumbered = yield* renumberIndexedDbCollidingInvoice(
+                api,
+                generation,
+                decodeInvoiceRow(change.row),
+                group.operationId,
+              );
+              if (renumbered) touched.push(touchedOfKey(renumbered));
+            }
+            if (change.entity === "category") {
+              const renamed = yield* renameIndexedDbCollidingCategory(
+                api,
+                generation,
+                decodeCategoryRow(change.row),
+                group.operationId,
+              );
+              if (renamed) touched.push(touchedOfKey(renamed));
+            }
+            yield* writeEntityRow(api, generation, change.entity, change.row);
           }
-          const generation = state.activeGeneration;
-          const touched: Array<TouchedSet> = [];
+          yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
+        }
+        if (group.decision === "rejected") {
+          touched.push(
+            yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
+          );
+        } else {
+          yield* clearIndexedDbPendingProjection(api, group.operationId);
+        }
+        const overlays = yield* api
+          .from("stock_overlays")
+          .select("byCommand")
+          .equals(group.operationId);
+        if (overlays.length > 0) {
+          yield* api.from("stock_overlays").delete("byCommand").equals(group.operationId);
+        }
+        const outbox = yield* outboxRow(api, group.operationId);
+        if (outbox && outbox.status !== "rejected") {
+          yield* api.from("command_outbox").upsert({ ...outbox, status: "integrated" });
+        }
+        return withStockTouched(
+          mergeTouched(...touched),
+          overlays.map((overlay) => overlay.batchId),
+        );
+      });
+
+    const hasPendingProjection = (api: ReplicaQueryBuilder) =>
+      Effect.gen(function* () {
+        const marks = yield* api.from("pending_row_marks").count();
+        const overlays = yield* api.from("stock_overlays").count();
+        return marks + overlays > 0;
+      });
+
+    const applySettledGroups = (
+      api: ReplicaQueryBuilder,
+      generation: number,
+      groups: ReadonlyArray<SyncTransactionGroup>,
+    ) =>
+      Effect.gen(function* () {
+        const latest = new Map<SyncEntity, Map<string, SyncEntityChange>>();
+        const touched: Array<TouchedSet> = [];
+        for (const group of groups) {
           for (const change of group.changes) {
             touched.push(touchedOfChange(change.entity, change.entityId));
-            if (change.action === "delete") {
-              yield* removeEntityRow(api, generation, change.entity, change.entityId);
-            } else {
-              if (change.entity === "invoice") {
-                const renumbered = yield* renumberIndexedDbCollidingInvoice(
-                  api,
-                  generation,
-                  decodeInvoiceRow(change.row),
-                  group.operationId,
-                );
-                if (renumbered) touched.push(touchedOfKey(renumbered));
-              }
-              if (change.entity === "category") {
-                const renamed = yield* renameIndexedDbCollidingCategory(
-                  api,
-                  generation,
-                  decodeCategoryRow(change.row),
-                  group.operationId,
-                );
-                if (renamed) touched.push(touchedOfKey(renamed));
-              }
-              yield* writeEntityRow(api, generation, change.entity, change.row);
-            }
-            yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
+            const byId = latest.get(change.entity) ?? new Map<string, SyncEntityChange>();
+            byId.set(change.entityId, change);
+            latest.set(change.entity, byId);
           }
+        }
+        for (const [entity, byId] of latest) {
+          const changes = [...byId.values()];
+          yield* writeEntityRows(
+            api,
+            generation,
+            entity,
+            changes.flatMap((change) => (change.action === "delete" ? [] : [change.row])),
+          );
+          for (const change of changes) {
+            if (change.action === "delete") {
+              yield* removeEntityRow(api, generation, entity, change.entityId);
+            }
+          }
+        }
+        const outstanding = (yield* Effect.forEach(OUTSTANDING_COMMAND_STATUSES, (status) =>
+          outboxWithStatus(api, status),
+        )).flat();
+        const integrated = new Set(groups.map((group) => group.operationId));
+        for (const row of outstanding) {
+          if (integrated.has(row.operationId)) {
+            yield* api.from("command_outbox").upsert({ ...row, status: "integrated" });
+          }
+        }
+        for (const group of groups) {
           if (group.decision === "rejected") {
             touched.push(
               yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
             );
-          } else {
-            yield* clearIndexedDbPendingProjection(api, group.operationId);
           }
-          const overlays = yield* api
-            .from("stock_overlays")
-            .select("byCommand")
-            .equals(group.operationId);
-          yield* api.from("stock_overlays").delete("byCommand").equals(group.operationId);
-          const outbox = yield* outboxRow(api, group.operationId);
-          if (outbox && outbox.status !== "rejected") {
-            yield* api.from("command_outbox").upsert({ ...outbox, status: "integrated" });
-          }
-          const after = yield* bumpCommitVersion(api, {
-            ...state,
-            appliedCommitSequence: group.commitSequence,
-          });
-          const applied = withStockTouched(
-            mergeTouched(...touched),
-            overlays.map((overlay) => overlay.batchId),
-          );
-          return {
-            value: group.commitSequence,
-            notice: notice(after, applied.touchedEntities, applied.touchedKeys),
-          };
-        }),
+        }
+        return mergeTouched(...touched);
+      });
+
+    const applyGroups = (groups: ReadonlyArray<SyncTransactionGroup>, incarnation?: string) =>
+      commit<string>(
+        ENTITY_TABLES,
+        (api) =>
+          Effect.gen(function* () {
+            const state = yield* requireState(api);
+            if (incarnation !== undefined) {
+              yield* Effect.fromResult(checkIncarnation(state.incarnation, incarnation));
+            }
+            const due: Array<SyncTransactionGroup> = [];
+            let appliedThrough = state.appliedCommitSequence;
+            for (const group of groups) {
+              if (!shouldApplyCommitSequence(appliedThrough, group.commitSequence)) continue;
+              due.push(group);
+              appliedThrough = group.commitSequence;
+            }
+            if (due.length === 0) return { value: appliedThrough, notice: undefined };
+            const generation = state.activeGeneration;
+            const applied = (yield* hasPendingProjection(api))
+              ? mergeTouched(
+                  ...(yield* Effect.forEach(due, (group) =>
+                    applyGroupWithin(api, generation, group),
+                  )),
+                )
+              : yield* applySettledGroups(api, generation, due);
+            const after = yield* bumpCommitVersion(api, {
+              ...state,
+              appliedCommitSequence: appliedThrough,
+            });
+            return {
+              value: appliedThrough,
+              notice: notice(after, applied.touchedEntities, applied.touchedKeys),
+            };
+          }),
+        "relaxed",
       );
+
+    const applyTransactionGroup = (group: SyncTransactionGroup) => applyGroups([group]);
 
     const recordPulledCoverage = (page: SyncPullResult, appliedThrough: string) =>
       withQuery((api) =>
@@ -714,28 +817,15 @@ const makeScopedIndexedDbReplicaStore = (
     const applyRemotePage = Effect.fn("IndexedDbReplicaStore.applyRemotePage")(function* (
       page: SyncPullResult,
     ) {
-      const baseline = yield* withQuery((api) =>
-        Effect.gen(function* () {
-          const state = yield* requireState(api);
-          yield* Effect.fromResult(checkIncarnation(state.incarnation, page.incarnation));
-          return state.appliedCommitSequence;
-        }),
-      );
-      let appliedThrough = baseline;
-      let lastNotice: ReplicaCommitNotice | undefined;
-      for (const group of page.transactions) {
-        const applied = yield* applyTransactionGroup(group);
-        appliedThrough = applied.value;
-        lastNotice = applied.notice ?? lastNotice;
-      }
-      const coverage = yield* recordPulledCoverage(page, appliedThrough);
+      const applied = yield* applyGroups(page.transactions, page.incarnation);
+      const coverage = yield* recordPulledCoverage(page, applied.value);
       return {
         value: {
-          appliedThrough,
+          appliedThrough: applied.value,
           repairRequired: coverage.repairRequired,
           digestVerified: coverage.digestVerified,
         },
-        notice: lastNotice,
+        notice: applied.notice,
       } satisfies Committed<AppliedCursor>;
     });
 
@@ -915,6 +1005,7 @@ const makeScopedIndexedDbReplicaStore = (
           appliedCommitSequence: state.appliedCommitSequence,
           replicaId: state.replicaId,
           registered: state.registeredAt !== null,
+          bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
         })),
       adoptRegistration,
       enqueueCommand,
@@ -941,9 +1032,11 @@ const makeScopedIndexedDbReplicaStore = (
         ),
       importSnapshotPart: (manifest: SnapshotManifest, part: SnapshotPartPayload) =>
         withQuery((api) =>
-          readwrite(api, ["snapshot_imports", "snapshot_staged_rows"])(
-            importIndexedDbSnapshotPart(api, manifest, part),
-          ),
+          readwrite(
+            api,
+            ["snapshot_imports", ...GENERATION_TABLES],
+            "relaxed",
+          )(importIndexedDbSnapshotPart(api, manifest, part)),
         ),
       applyCandidateAuthority: () =>
         Effect.fail(
