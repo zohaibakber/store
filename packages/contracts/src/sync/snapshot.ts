@@ -12,9 +12,9 @@ import {
 } from "./protocol";
 import { SyncEntity } from "./schema";
 
-export const MAX_SNAPSHOT_PART_ROWS = 500;
+export const MAX_SNAPSHOT_PART_ROWS = 2_000;
 
-export const MAX_SNAPSHOT_PART_BYTES = 524_288;
+export const MAX_SNAPSHOT_PART_BYTES = 786_432;
 
 export const SnapshotId = SyncIdentifier.pipe(Schema.brand("SnapshotId"));
 export type SnapshotId = typeof SnapshotId.Type;

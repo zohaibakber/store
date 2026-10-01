@@ -37,7 +37,7 @@ export const SNAPSHOT_POLICY: SnapshotPolicy = {
   partRows: MAX_SNAPSHOT_PART_ROWS,
   partBytes: MAX_SNAPSHOT_PART_BYTES,
   leaseMillis: SNAPSHOT_LEASE_LIFETIME_MILLIS,
-  lagTransactions: 2_000,
+  lagTransactions: 100,
   minimumRebuildMillis: 15 * 60_000,
 };
 
