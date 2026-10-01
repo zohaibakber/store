@@ -12,6 +12,8 @@ export const inventorySyncStatusLabel = (status: InventorySyncStatus): string =>
       return status.message;
     case "storageError":
       return status.message;
+    case "updateRequired":
+      return `Update required. ${status.message}`;
     case "recoveryRequired":
       return status.message;
   }

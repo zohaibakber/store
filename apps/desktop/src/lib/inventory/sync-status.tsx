@@ -2,6 +2,7 @@ import {
   Alert02Icon,
   AlertCircleIcon,
   DatabaseRestoreIcon,
+  DownloadCircle01Icon,
   RefreshCwIcon,
   WifiOff01Icon,
 } from "@hugeicons/core-free-icons";
@@ -18,6 +19,7 @@ import { useState } from "react";
 
 import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { canCheckForAppUpdate, useCheckForAppUpdate } from "@/hooks/use-app-updater";
 import { useOnline } from "@/hooks/use-online";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +29,8 @@ const attention = (status: InventorySyncStatus) => {
       return { icon: Alert02Icon, tone: "text-destructive-foreground" };
     case "storageError":
       return { icon: AlertCircleIcon, tone: "text-destructive-foreground" };
+    case "updateRequired":
+      return { icon: DownloadCircle01Icon, tone: "text-warning-foreground" };
     case "recoveryRequired":
       return { icon: DatabaseRestoreIcon, tone: "text-warning-foreground" };
     case "savedLocally":
@@ -93,14 +97,30 @@ export function SidebarSyncButton() {
 
 function ReadySyncButton() {
   const { retrySync, syncNow } = useInventoryActions();
+  const checkForAppUpdate = useCheckForAppUpdate();
   const status = useInventorySyncStatus();
+  const applyUpdate = () => {
+    if (canCheckForAppUpdate()) checkForAppUpdate();
+    else window.location.reload();
+  };
+  const retry = () => void retrySync().catch(() => undefined);
+  const action = (): (() => void) => {
+    switch (status._tag) {
+      case "updateRequired":
+        return applyUpdate;
+      case "recoveryRequired":
+        return status.retryable === true ? retry : syncNow;
+      case "rejected":
+      case "storageError":
+      case "savedLocally":
+      case "pendingConfirmation":
+      case "caughtUp":
+        return syncNow;
+    }
+  };
   return (
     <SyncButtonView
-      onSync={
-        status._tag === "recoveryRequired" && status.retryable === true
-          ? () => void retrySync().catch(() => undefined)
-          : syncNow
-      }
+      onSync={action()}
       online={useOnline()}
       status={status}
       syncing={useInventorySyncing()}

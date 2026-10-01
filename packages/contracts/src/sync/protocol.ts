@@ -5,7 +5,7 @@ import { CatalogWriteCommand } from "../catalog/write";
 import { InvoiceId, OrganizationId } from "../ids";
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import { IssueInvoiceCommand } from "../store/schema";
-import { SyncEntityChange } from "./schema";
+import { knownEntityRecords, SyncEntityChange } from "./schema";
 
 export const MAX_SYNC_PULL_TRANSACTIONS = 1_000;
 
@@ -188,6 +188,7 @@ export type CommandReceipt = typeof CommandReceipt.Type;
 export const RegisterReplicaRequest = Schema.Struct({
   replicaId: SyncIdentifier,
   deviceLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  schemaVersion: Schema.optionalKey(SyncSchemaVersion),
 });
 export type RegisterReplicaRequest = typeof RegisterReplicaRequest.Type;
 
@@ -218,7 +219,7 @@ export const SyncTransactionGroup = Schema.Struct({
   commitSequence: OrgCommitSequence,
   operationId: SyncIdentifier,
   decision: CommandDecision,
-  changes: Schema.Array(SyncLogChange),
+  changes: knownEntityRecords(SyncLogChange),
 });
 export type SyncTransactionGroup = typeof SyncTransactionGroup.Type;
 

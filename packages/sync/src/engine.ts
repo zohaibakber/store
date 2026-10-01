@@ -4,6 +4,7 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
+  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncProtocolError,
   type CommandReceipt,
@@ -187,7 +188,10 @@ export const makeSyncEngineFromReplicaStore = (
       if (yield* Deferred.isDone(registered)) return;
       const cursor = yield* withPermit(store.readSyncCursor());
       if (!cursor.registered) {
-        const authority = yield* transport.registerReplica({ replicaId: cursor.replicaId });
+        const authority = yield* transport.registerReplica({
+          replicaId: cursor.replicaId,
+          schemaVersion: SYNC_SCHEMA_VERSION,
+        });
         const registeredAt = yield* Clock.currentTimeMillis;
         const outcome = yield* withPermit(store.adoptRegistration(authority, registeredAt));
         if (outcome._tag === "refused") {

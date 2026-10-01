@@ -280,6 +280,7 @@ export const replicas = pgTable(
     processedThroughClientSequence: numericDecimalString("processed_through_client_sequence"),
     registeredAt: epochMilliseconds("registered_at").notNull(),
     lastSeenAt: epochMilliseconds("last_seen_at").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
   },
   (table) => [
     primaryKey({

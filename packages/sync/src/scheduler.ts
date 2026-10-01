@@ -69,6 +69,7 @@ export type SyncSchedulerStatus =
       readonly status: number | undefined;
       readonly message: string;
     }
+  | { readonly _tag: "updateRequired"; readonly message: string }
   | { readonly _tag: "storageError"; readonly message: string }
   | {
       readonly _tag: "recoveryRequired";
@@ -134,6 +135,8 @@ const terminalStatus = (disposition: SyncFailureDisposition): SyncSchedulerStatu
       return { _tag: "pausedForAuth", status: disposition.status };
     case "stop":
       return { _tag: "stopped", status: disposition.status, message: disposition.message };
+    case "updateRequired":
+      return { _tag: "updateRequired", message: disposition.message };
     case "storageError":
       return { _tag: "storageError", message: disposition.message };
     case "recoveryRequired":
