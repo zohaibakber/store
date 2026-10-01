@@ -10,7 +10,7 @@ export type {
   SyncSchedulerStatus,
   SyncWakeReason,
 } from "./scheduler";
-export { layerOwnedHttpSync } from "./session";
+export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
 export type { OwnedLiveHost } from "./session";
 export {
   dispositionFor,

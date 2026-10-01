@@ -1,3 +1,4 @@
+export { LocalAuthority, LOCAL_AUTHORITY_EPOCH } from "./local-authority";
 export { runReplicaTransaction, SqliteReplica } from "./replica/sql-client/handle";
 export type { SqliteReplicaHandle } from "./replica/sql-client/handle";
 export type { ReplicaDb } from "./replica/sql-client/drizzle";

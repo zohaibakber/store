@@ -4,6 +4,7 @@ import {
   type SyncProtocolCode,
   type SyncProtocolError,
 } from "@store/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -146,3 +147,48 @@ export const layerOwnedHttpSync = (
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
     Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy))),
   );
+
+const LOCAL_SYNC_POLICY: SyncSchedulerPolicy = {
+  activePollMillis: Number.POSITIVE_INFINITY,
+  backoffMillis: [],
+  hiddenPollMillis: Number.POSITIVE_INFINITY,
+  liveIdlePollMillis: Number.POSITIVE_INFINITY,
+  digestVerificationIntervalMillis: Number.POSITIVE_INFINITY,
+};
+
+const CLAIMED_AT_ANY_TIME = Number.POSITIVE_INFINITY;
+
+const ownLocalSync: Effect.Effect<
+  SyncSchedulerContract,
+  ReplicaStoreError,
+  ReplicaStore | SyncEngine | Scope.Scope
+> = Effect.gen(function* () {
+  const store = yield* ReplicaStore;
+  const engine = yield* SyncEngine;
+  const openedAt = yield* Clock.currentTimeMillis;
+  yield* store.recoverStaleUploadClaims(CLAIMED_AT_ANY_TIME);
+  const cursor = yield* store.readSyncCursor();
+  if (!cursor.bootstrapped) yield* store.recordCaughtUp(openedAt);
+  const verifiedAt = yield* store.readDigestVerification(OPERATIONAL_SUBSCRIPTION);
+  if (verifiedAt === undefined) {
+    yield* store.recordDigestVerification(OPERATIONAL_SUBSCRIPTION, openedAt);
+  }
+  const scheduler = yield* SyncScheduler.make(
+    {
+      register: () => engine.ensureRegistered(),
+      drainUpload: () => engine.drainUploads().pipe(Effect.asVoid),
+      catchUp: () => engine.catchUp(),
+    },
+    LOCAL_SYNC_POLICY,
+  );
+  yield* scheduler.setNetworkOwner(true);
+  return scheduler;
+});
+
+export const layerOwnedLocalSync: Layer.Layer<
+  SyncEngine | SyncScheduler,
+  SyncProtocolError | ReplicaStoreError,
+  ReplicaStore | SyncTransportService
+> = Layer.effect(SyncScheduler, ownLocalSync).pipe(
+  Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),
+);
