@@ -2,11 +2,11 @@ import { Suspense, useEffect } from "react";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import type { Workspace } from "@/host-access";
-import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
+import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { witnessBoundLocalCatalog } from "@/session/workspace-session";
 
 function LocalCatalogState() {
-  const empty = useCatalogIsEmpty();
+  const empty = useCatalogHoldsNothing();
   useEffect(() => {
     void witnessBoundLocalCatalog(empty ? "empty" : "stocked").catch(() => undefined);
   }, [empty]);

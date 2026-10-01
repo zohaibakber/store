@@ -4,6 +4,11 @@ import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import {
+  DEFAULT_IMPORT_CATEGORY_NAME,
+  importCategoryOf,
+  type ImportCategory,
+} from "@/components/uploads/import-category";
+import {
   ambiguousImportProductMessage,
   importProductMatch,
 } from "@/components/uploads/same-product";
@@ -27,6 +32,8 @@ interface UploadState {
   phase: UploadPhase;
   changes: ProposedChange[];
   invoice: InvoiceReference | null;
+  categories: readonly Category[];
+  category: ImportCategory;
 }
 
 interface UploadActions {
@@ -35,6 +42,8 @@ interface UploadActions {
   analyse: () => Promise<void>;
   applyChanges: () => Promise<void>;
   dropChanges: (received: ReadonlyArray<ProposedChange>) => void;
+  chooseCategory: (id: string) => void;
+  nameCategory: (name: string) => void;
 }
 
 interface UploadMeta {
@@ -72,6 +81,9 @@ function UploadProvider({
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
   const [invoice, setInvoice] = useState<InvoiceReference | null>(null);
+  const [chosenCategoryId, setChosenCategoryId] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState(DEFAULT_IMPORT_CATEGORY_NAME);
+  const category = importCategoryOf(categories, chosenCategoryId, categoryName);
 
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
@@ -165,32 +177,28 @@ function UploadProvider({
       });
       return;
     }
-    const generalCategory =
-      categories.find((category) => category.name.trim().toLocaleLowerCase() === "general") ??
-      categories[0];
-    if (!generalCategory) {
-      toastManager.add({
-        title: "Create a category before importing inventory.",
-        type: "error",
-      });
+    if (category._tag === "New" && category.name.trim() === "") {
+      toastManager.add({ title: "Name the category for the new products.", type: "error" });
       return;
     }
     busyRef.current = true;
     setPhase("syncing");
     try {
-      const result = await inventory.importInventory({
-        categoryId: generalCategory.id,
-        lines: changes.map((change) => ({
-          name: change.name,
-          batchNumber: change.batchNumber,
-          expiresAt: parseExpiryDate(change.expiresAt),
-          unitsPerPack: change.unitsPerPack,
-          packQuantity: change.packQuantity,
-          unitQuantity: change.unitQuantity,
-          purchasePrice: change.packPrice,
-          productId: change.productId ?? null,
-        })),
-      });
+      const lines = changes.map((change) => ({
+        name: change.name,
+        batchNumber: change.batchNumber,
+        expiresAt: parseExpiryDate(change.expiresAt),
+        unitsPerPack: change.unitsPerPack,
+        packQuantity: change.packQuantity,
+        unitQuantity: change.unitQuantity,
+        purchasePrice: change.packPrice,
+        productId: change.productId ?? null,
+      }));
+      const result = await inventory.importInventory(
+        category._tag === "Existing"
+          ? { categoryId: category.id, lines }
+          : { newCategory: { name: category.name }, lines },
+      );
       setChanges([]);
       setFiles([]);
       setInvoice(null);
@@ -224,8 +232,16 @@ function UploadProvider({
   return (
     <UploadContext
       value={{
-        state: { files, phase, changes, invoice },
-        actions: { addFiles, removeFile, analyse, applyChanges, dropChanges },
+        state: { files, phase, changes, invoice, categories, category },
+        actions: {
+          addFiles,
+          removeFile,
+          analyse,
+          applyChanges,
+          dropChanges,
+          chooseCategory: setChosenCategoryId,
+          nameCategory: setCategoryName,
+        },
         meta: { processing, isOnline },
       }}
     >

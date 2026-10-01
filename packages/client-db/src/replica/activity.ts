@@ -153,7 +153,7 @@ const REJECTION_REASONS: ReadonlyMap<string, string> = new Map(
     PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "Pack size changed; enter the quantity again",
     PURCHASE_ORDER_ITEM_RECEIVED: "Line already has received stock",
     PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "Delivery is for a different product",
-    REPLICA_SCHEMA_OUTDATED: "Update Store on your other devices first",
+    REPLICA_SCHEMA_OUTDATED: "Update Tabaaq on your other devices first",
   } satisfies Partial<Record<SyncProtocolCode, string>>),
 );
 

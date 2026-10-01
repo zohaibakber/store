@@ -9,6 +9,7 @@ import { Frame, FrameHeader } from "@/components/ui/frame";
 import { formatCount, formatNumber } from "@/lib/format";
 
 import { useUpload } from "./context";
+import { UploadImportCategoryField } from "./import-category-field";
 import { UploadOrderMatch } from "./order-match";
 
 function UploadProposedChanges() {
@@ -39,6 +40,10 @@ function UploadProposedChanges() {
           Apply {formatCount(changes.length, "change")}
         </Button>
       </div>
+
+      {changes.some((change) => change.type === "create_product") ? (
+        <UploadImportCategoryField />
+      ) : null}
 
       <AppErrorBoundary fallback={null}>
         <React.Suspense fallback={null}>

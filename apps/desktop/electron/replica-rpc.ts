@@ -81,6 +81,7 @@ const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4
 export const ReplicaCatalogCounts = Schema.Struct({
   products: NonNegativeInteger,
   sales: NonNegativeInteger,
+  purchaseOrders: NonNegativeInteger,
 });
 
 export const ReplicaWorkerBoot = Schema.Union([

@@ -25,6 +25,17 @@ export const workspaceKey = (workspace: OpenWorkspace): DeviceWorkspace["active"
   }
 };
 
+export const workspaceStorageKey = (workspace: Workspace): string => {
+  switch (workspace._tag) {
+    case "None":
+      return "none";
+    case "Local":
+      return "local";
+    case "Organization":
+      return `organization.${workspace.organization.id}`;
+  }
+};
+
 export const useOpenWorkspace = () => {
   const navigate = useNavigate();
   return (active: DeviceWorkspace["active"]) => {

@@ -1,15 +1,16 @@
 import { closeSync, copyFileSync, openSync, readSync, renameSync, rmSync, statSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
-import { invoices, products, replicaState } from "@store/db/replica.schema";
+import { invoices, products, purchaseOrders, replicaState } from "@store/db/replica.schema";
 import { replicaMigrations } from "@store/db/replica/migrations";
 import {
   judgeMigrationLedger,
   REPLICA_LEDGER_TABLE,
   REPLICA_LEGACY_LEDGER_TABLE,
 } from "@store/sync/sql-client";
-import { count, eq, sql } from "drizzle-orm";
+import { count, eq, getTableName, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-sqlite";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -35,6 +36,7 @@ export type ReplicaFileSummary = {
   readonly localCommitVersion: number;
   readonly products: number;
   readonly sales: number;
+  readonly purchaseOrders: number;
 };
 
 const BUSY_TIMEOUT_MILLIS = 5_000;
@@ -153,10 +155,20 @@ const summarize = (db: DatabaseSync): ReplicaFileSummary | undefined => {
     .where(singleton)
     .get();
   if (state === undefined) return undefined;
+  const present = new Set(
+    decodeTables(db.prepare("select name from sqlite_master where type = 'table'").all()).map(
+      (table) => table.name,
+    ),
+  );
+  const rowsOf = (table: SQLiteTable): number =>
+    present.has(getTableName(table))
+      ? (orm.select({ rows: count() }).from(table).get()?.rows ?? 0)
+      : 0;
   return {
     ...state,
-    products: orm.select({ rows: count() }).from(products).get()?.rows ?? 0,
-    sales: orm.select({ rows: count() }).from(invoices).get()?.rows ?? 0,
+    products: rowsOf(products),
+    sales: rowsOf(invoices),
+    purchaseOrders: rowsOf(purchaseOrders),
   };
 };
 

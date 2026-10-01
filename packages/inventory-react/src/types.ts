@@ -29,6 +29,7 @@ import type {
 import type { Collection, DbClient } from "@tanstack/react-db";
 
 import type { WorkspaceAtoms } from "./atoms";
+import type { ReplicaAuthority } from "./host";
 
 type InventoryCollection<Row extends { readonly id: string }> = Collection<Row, string>;
 
@@ -45,6 +46,7 @@ export type Inventory = {
   readonly suppliers: InventoryCollection<SupplierRow>;
   readonly actions: InventoryActions;
   readonly atoms: WorkspaceAtoms;
+  readonly authority: ReplicaAuthority;
   readonly dispose: () => Promise<void>;
 };
 
@@ -64,6 +66,13 @@ type CreatedProductWithBatch = {
   readonly batch: BatchRow;
 };
 
+export type ImportIntoNewCategoryInput = {
+  readonly newCategory: CreateCategoryInput;
+  readonly lines: ImportInventoryInput["lines"];
+};
+
+export type ImportInventoryRequest = ImportInventoryInput | ImportIntoNewCategoryInput;
+
 export interface InventoryActions {
   readonly retrySync: () => Promise<void>;
   readonly createCategory: (input: CreateCategoryInput) => Promise<CategoryRow>;
@@ -78,7 +87,9 @@ export interface InventoryActions {
   readonly createBatch: (input: CreateBatchInput) => Promise<BatchRow>;
   readonly receiveBatch: (input: CreateBatchInput) => Promise<BatchRow>;
   readonly updateBatch: (input: UpdateBatchInput) => Promise<BatchRow>;
-  readonly importInventory: (input: ImportInventoryInput) => Promise<ImportInventoryCommandResult>;
+  readonly importInventory: (
+    input: ImportInventoryRequest,
+  ) => Promise<ImportInventoryCommandResult>;
   readonly issueInvoice: (input: CreateInvoiceInput) => Promise<IssueInvoiceResult>;
   readonly saveSupplier: (input: SaveSupplierInput) => Promise<SupplierRow>;
   readonly deleteSupplier: (id: string) => Promise<void>;

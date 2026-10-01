@@ -32,8 +32,13 @@ const fileSize = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / KILOBYTE))} KB`
     : `${(bytes / (KILOBYTE * KILOBYTE)).toFixed(1)} MB`;
 
-const contents = (counts: CatalogCounts) =>
-  `${formatCount(counts.products, "product")} and ${formatCount(counts.sales, "sale")}`;
+const contents = (counts: CatalogCounts) => {
+  const products = formatCount(counts.products, "product");
+  const sales = formatCount(counts.sales, "sale");
+  return counts.purchaseOrders === 0
+    ? `${products} and ${sales}`
+    : `${products}, ${sales} and ${formatCount(counts.purchaseOrders, "purchase order")}`;
+};
 
 type BackupOffer = {
   readonly backUp: string;
@@ -47,14 +52,14 @@ const backupOffer = (workspace: Workspace): BackupOffer => {
     case "Local":
       return {
         backUp:
-          "Saves this device’s products, stock and sales to a file you choose. This is the only copy outside this device.",
+          "Saves this device’s products, stock, sales and purchase orders to a file you choose. This is the only copy outside this device.",
         restore: "Replaces everything on this device with the contents of a backup file.",
         canBackUp: true,
         canRestore: true,
       };
     case "Organization":
       return {
-        backUp: `Saves this device’s copy of ${workspace.organization.name}’s products, stock and sales to a file you choose.`,
+        backUp: `Saves this device’s copy of ${workspace.organization.name}’s products, stock, sales and purchase orders to a file you choose.`,
         restore:
           "Only the workspace kept on this device can be restored from a file. An organization’s data comes back when you sign in.",
         canBackUp: true,

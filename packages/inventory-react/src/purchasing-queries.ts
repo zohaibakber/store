@@ -23,6 +23,7 @@ import {
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 
+import type { ReplicaAuthority } from "./host";
 import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
   NOTHING_ON_ORDER,
@@ -193,6 +194,9 @@ export const useSuspensePurchaseOrderDeliveries = (orderId: string): ReadonlyArr
 export const useSuspensePurchaseOrderCount = (tab: PurchaseOrderTab): number =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderCount(tab)).value;
 
+export const useSuspenseSupplierCount = (): number =>
+  useAtomSuspense(useCatalogReplica().atoms.supplierCount).value;
+
 const NO_PRODUCTS_ON_ORDER: ReadonlyMap<string, ProductOnOrder> = new Map();
 
 const NO_LEARNED_SUPPLIERS: ReadonlyMap<string, SupplierId> = new Map();
@@ -238,7 +242,22 @@ const PURCHASING_BLOCKED: PurchasingGate = {
   message: staleReplicaRejection(null).message,
 };
 
+export const purchasingGateOf = (
+  authority: ReplicaAuthority,
+  lowestActiveSchemaVersion: number | null,
+): PurchasingGate => {
+  switch (authority) {
+    case "local":
+      return PURCHASING_OPEN;
+    case "remote":
+      return purchasingBlockedByStaleReplica(lowestActiveSchemaVersion ?? undefined)
+        ? PURCHASING_BLOCKED
+        : PURCHASING_OPEN;
+  }
+};
+
 export const usePurchasingGate = (): PurchasingGate =>
-  purchasingBlockedByStaleReplica(useInventorySyncActivity().lowestActiveSchemaVersion ?? undefined)
-    ? PURCHASING_BLOCKED
-    : PURCHASING_OPEN;
+  purchasingGateOf(
+    useCatalogReplica().authority,
+    useInventorySyncActivity().lowestActiveSchemaVersion,
+  );

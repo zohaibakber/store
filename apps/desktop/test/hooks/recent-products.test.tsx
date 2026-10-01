@@ -5,7 +5,10 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { useRecentProducts, useRememberRecentProduct } from "../../src/hooks/use-recent-products";
+import {
+  useRecentProductsIn,
+  useRememberRecentProductIn,
+} from "../../src/hooks/use-recent-products";
 
 const product = (id: string, name: string) => ({
   id,
@@ -14,10 +17,14 @@ const product = (id: string, name: string) => ({
   category: { name: "Tablet" },
 });
 
-const useRecents = () => ({ recents: useRecentProducts(), remember: useRememberRecentProduct() });
+const WORKSPACE = "local";
 
 const renderRecents = () => {
   const registry = AtomRegistry.make();
+  const useRecents = () => ({
+    recents: useRecentProductsIn(WORKSPACE),
+    remember: useRememberRecentProductIn(WORKSPACE),
+  });
   return renderHook(useRecents, {
     wrapper: ({ children }: { children: ReactNode }) => (
       <RegistryContext.Provider value={registry}>{children}</RegistryContext.Provider>
@@ -52,7 +59,7 @@ describe("recent products", () => {
   });
 
   it("ignores corrupt storage", () => {
-    localStorage.setItem("store.recent-products", "{not json");
+    localStorage.setItem("store.recent-products.local", "{not json");
     const { result } = renderRecents();
     expect(result.current.recents).toEqual([]);
   });

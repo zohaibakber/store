@@ -37,10 +37,15 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
-import type { InventoryHost, InventoryScope } from "./host";
+import { replicaAuthorityOf, type InventoryHost, type InventoryScope } from "./host";
 import { makeInsightsSource, type InsightsSource } from "./insights-source";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
-import { countPurchaseOrders, readLearnedSupplierIds, readProductsOnOrder } from "./purchasing";
+import {
+  countPurchaseOrders,
+  countSuppliers,
+  readLearnedSupplierIds,
+  readProductsOnOrder,
+} from "./purchasing";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
 
@@ -128,6 +133,7 @@ const workspaceSources = (
   readProductsOnOrder: (productIds) => readProductsOnOrder(replica, productIds),
   readLearnedSuppliers: (productIds) => readLearnedSupplierIds(replica, productIds),
   countPurchaseOrders: (tab) => countPurchaseOrders(replica, tab),
+  countSuppliers: countSuppliers(replica),
   insights,
 });
 
@@ -334,7 +340,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       },
       atoms,
     );
-    return { ...tables, atoms, actions };
+    return { ...tables, atoms, actions, authority: replicaAuthorityOf(scope) };
   });
 
 export const openInventoryWorkspace = (

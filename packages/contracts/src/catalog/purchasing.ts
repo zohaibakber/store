@@ -167,7 +167,7 @@ export const purchasingRejection = {
 export const staleReplicaRejection = (deviceLabel: string | null) =>
   ({
     code: "REPLICA_SCHEMA_OUTDATED",
-    message: `Update Store on ${deviceLabel ?? "another device"} before using suppliers and purchase orders.`,
+    message: `Update Tabaaq on ${deviceLabel ?? "another device"} before using suppliers and purchase orders.`,
   }) as const satisfies { readonly code: SyncProtocolCode; readonly message: string };
 
 export const purchasingBlockedByStaleReplica = (

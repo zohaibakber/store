@@ -100,6 +100,45 @@ export function OnDeviceStatus() {
   return <ReadyOnDeviceStatus />;
 }
 
+export function OnDeviceRetry() {
+  if (!useCatalogIsReady()) return null;
+  return <ReadyOnDeviceRetry />;
+}
+
+function ReadyOnDeviceRetry() {
+  const { retrySync } = useInventoryActions();
+  const status = useInventorySyncStatus();
+  const [retrying, setRetrying] = useState(false);
+  if (status._tag !== "recoveryRequired" || status.retryable !== true) return null;
+  const retry = () => {
+    setRetrying(true);
+    void retrySync()
+      .catch(() => undefined)
+      .finally(() => setRetrying(false));
+  };
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <SidebarMenuAction
+            aria-label="Try again"
+            className="peer-data-[size=lg]/menu-button:top-3.5"
+            disabled={retrying}
+            onClick={retry}
+          />
+        }
+      >
+        <HugeiconsIcon
+          aria-hidden="true"
+          className={cn("text-warning-foreground", retrying && "animate-spin")}
+          icon={RefreshCwIcon}
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="right">Try again</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function ReadyOnDeviceStatus() {
   const status = useInventorySyncStatus();
   const issue = attention(status);

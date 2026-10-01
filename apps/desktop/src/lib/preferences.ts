@@ -54,9 +54,11 @@ export const RecentProductSchema = Schema.Struct({
 
 export type RecentProduct = typeof RecentProductSchema.Type;
 
-export const recentProductsAtom = Atom.kvs({
-  runtime: preferencesRuntime,
-  key: "store.recent-products",
-  schema: Schema.Array(RecentProductSchema),
-  defaultValue: (): ReadonlyArray<RecentProduct> => [],
-}).pipe(Atom.keepAlive);
+export const recentProductsAtom = Atom.family((workspace: string) =>
+  Atom.kvs({
+    runtime: preferencesRuntime,
+    key: `store.recent-products.${workspace}`,
+    schema: Schema.Array(RecentProductSchema),
+    defaultValue: (): ReadonlyArray<RecentProduct> => [],
+  }).pipe(Atom.keepAlive),
+);

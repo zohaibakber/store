@@ -87,6 +87,7 @@ const fileFailure = (failure: { readonly message: string }) =>
 const countsOf = (summary: ReplicaFileSummary) => ({
   products: summary.products,
   sales: summary.sales,
+  purchaseOrders: summary.purchaseOrders,
 });
 
 type AuthorityLink = {

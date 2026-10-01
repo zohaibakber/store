@@ -126,17 +126,27 @@ const statusIn = (statuses: ReadonlyArray<PurchaseOrderStatus>): SubsetPredicate
   values: statuses,
 });
 
+const countRows = (
+  reader: ReplicaSummaryReader,
+  spec: InventorySubsetSummarySpec,
+  span: string,
+): Effect.Effect<number, WorkspaceReadFailure> =>
+  Effect.tryPromise({ try: () => reader.summarizeSubset(spec), catch: readFailure }).pipe(
+    Effect.map((read) => read.summary.count),
+    Effect.withSpan(span),
+  );
+
 export const countPurchaseOrders = (
   reader: ReplicaSummaryReader,
   tab: PurchaseOrderTab,
-): Effect.Effect<number, WorkspaceReadFailure> => {
-  const spec: InventorySubsetSummarySpec = {
-    source: "purchaseOrders",
-    where: statusIn(purchaseOrderTabStatuses(tab)),
-    distinct: [],
-  };
-  return Effect.tryPromise({ try: () => reader.summarizeSubset(spec), catch: readFailure }).pipe(
-    Effect.map((read) => read.summary.count),
-    Effect.withSpan("Purchasing.countOrders"),
+): Effect.Effect<number, WorkspaceReadFailure> =>
+  countRows(
+    reader,
+    { source: "purchaseOrders", where: statusIn(purchaseOrderTabStatuses(tab)), distinct: [] },
+    "Purchasing.countOrders",
   );
-};
+
+export const countSuppliers = (
+  reader: ReplicaSummaryReader,
+): Effect.Effect<number, WorkspaceReadFailure> =>
+  countRows(reader, { source: "suppliers", distinct: [] }, "Purchasing.countSuppliers");

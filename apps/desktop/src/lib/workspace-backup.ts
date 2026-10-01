@@ -2,7 +2,11 @@ import * as Schema from "effect/Schema";
 
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
-export const CatalogCounts = Schema.Struct({ products: Count, sales: Count });
+export const CatalogCounts = Schema.Struct({
+  products: Count,
+  sales: Count,
+  purchaseOrders: Count,
+});
 export type CatalogCounts = typeof CatalogCounts.Type;
 
 const Cancelled = Schema.TaggedStruct("cancelled", {});

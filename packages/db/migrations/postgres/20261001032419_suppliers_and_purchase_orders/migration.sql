@@ -190,7 +190,7 @@ BEGIN
   IF FOUND THEN
     PERFORM sync.reject(
       'REPLICA_SCHEMA_OUTDATED',
-      'Update Store on ' || coalesce(nullif(v_label, ''), 'another device')
+      'Update Tabaaq on ' || coalesce(nullif(v_label, ''), 'another device')
         || ' before using suppliers and purchase orders.'
     );
   END IF;

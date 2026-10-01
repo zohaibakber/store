@@ -69,15 +69,6 @@ _Avoid_: Dashboard analytics, stock recommendations
 A recorded sale against catalog stock.
 _Avoid_: Bill, order, receipt
 
-**Local workspace.**
-A workspace with no account. Its catalog is decided on the device by the local
-authority and never leaves it.
-_Avoid_: Guest mode, offline mode, demo
-
-**Local authority.**
-The on-device decider that accepts or rejects commands for a local workspace
-using the same rules as the Postgres authority.
-
 **Publish.**
 The one-time move of a local workspace's catalog into a new, empty
 organization.

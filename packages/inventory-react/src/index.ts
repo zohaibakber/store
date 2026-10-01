@@ -21,7 +21,12 @@ export {
   type CommandExecutionState,
 } from "./atoms";
 export { CatalogBusy, CatalogOpenFailure, StaleCatalogLease } from "./errors";
-export type { InventoryHost, ReplicaOpenIdentity } from "./host";
+export {
+  replicaAuthorityOf,
+  type InventoryHost,
+  type ReplicaAuthority,
+  type ReplicaOpenIdentity,
+} from "./host";
 export {
   createAppCatalogLifetime,
   createCatalogLifetime,
@@ -92,6 +97,7 @@ export {
   useSuspensePurchaseOrderDeliveries,
   useSuspensePurchaseOrderHistory,
   useSuspensePurchaseOrders,
+  useSuspenseSupplierCount,
   useSuspenseSuppliers,
   type PurchasingGate,
 } from "./purchasing-queries";
@@ -117,7 +123,7 @@ export {
 } from "./insights";
 export type { InventoryInsights } from "./insights";
 export { inventorySyncStatusLabel } from "./sync-status";
-export type { Inventory, InventoryActions } from "./types";
+export type { ImportInventoryRequest, Inventory, InventoryActions } from "./types";
 export {
   preloadAll,
   preloadCatalogCategories,

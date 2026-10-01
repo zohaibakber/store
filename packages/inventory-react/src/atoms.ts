@@ -109,6 +109,7 @@ export type WorkspaceAtomSources = {
   readonly countPurchaseOrders: (
     tab: PurchaseOrderTab,
   ) => Effect.Effect<number, WorkspaceReadError>;
+  readonly countSuppliers: Effect.Effect<number, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -124,6 +125,7 @@ const emptySources: WorkspaceAtomSources = {
   readProductsOnOrder: () => Effect.succeed(new Map()),
   readLearnedSuppliers: () => Effect.succeed(new Map()),
   countPurchaseOrders: () => Effect.succeed(0),
+  countSuppliers: Effect.succeed(0),
   insights: emptyInsightsSource,
 };
 
@@ -137,6 +139,7 @@ const sameRowIds = (
   [...left.value].every((id) => right.value.has(id));
 
 const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
+const SUPPLIER_ENTITIES: ReadonlySet<SyncEntity> = new Set(["supplier"]);
 const PURCHASE_ORDER_ENTITIES: ReadonlySet<SyncEntity> = new Set(["purchaseOrder"]);
 const ORDER_LINE_ENTITIES: ReadonlySet<SyncEntity> = new Set([
   "purchaseOrder",
@@ -277,6 +280,7 @@ export type WorkspaceAtoms = {
   readonly purchaseOrderCount: (
     tab: PurchaseOrderTab,
   ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
+  readonly supplierCount: Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
 };
 
 export const createWorkspaceAtoms = (
@@ -401,6 +405,9 @@ export const createWorkspaceAtoms = (
       Atom.make(sources.countPurchaseOrders(tab)).pipe(
         refreshOnCommits(sources, PURCHASE_ORDER_ENTITIES),
       ),
+    ),
+    supplierCount: Atom.make(sources.countSuppliers).pipe(
+      refreshOnCommits(sources, SUPPLIER_ENTITIES),
     ),
   };
 };

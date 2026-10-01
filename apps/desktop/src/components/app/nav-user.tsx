@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/sidebar";
 import type { Workspace } from "@/host-access";
 import { signOut, useAuth } from "@/lib/auth";
-import { OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
+import { OnDeviceRetry, OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
 
 type Identity = {
   readonly name: string;
@@ -84,7 +84,7 @@ type SyncSlots = {
 const syncOf = (workspace: Workspace): SyncSlots => {
   switch (workspace._tag) {
     case "Local":
-      return { status: <OnDeviceStatus />, action: null };
+      return { status: <OnDeviceStatus />, action: <OnDeviceRetry /> };
     case "Organization":
       return { status: null, action: <SidebarSyncButton /> };
     case "None":

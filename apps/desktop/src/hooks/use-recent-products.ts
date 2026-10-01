@@ -1,7 +1,9 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useCallback } from "react";
 
+import { useAuth } from "@/lib/auth";
 import { recentProductsAtom, type RecentProduct } from "@/lib/preferences";
+import { workspaceStorageKey } from "@/lib/workspace";
 
 export type { RecentProduct };
 
@@ -14,11 +16,11 @@ export type RecentProductSource = {
   readonly category: { readonly name: string };
 };
 
-export const useRecentProducts = (): ReadonlyArray<RecentProduct> =>
-  useAtomValue(recentProductsAtom);
+export const useRecentProductsIn = (workspace: string): ReadonlyArray<RecentProduct> =>
+  useAtomValue(recentProductsAtom(workspace));
 
-export const useRememberRecentProduct = () => {
-  const setRecents = useAtomSet(recentProductsAtom);
+export const useRememberRecentProductIn = (workspace: string) => {
+  const setRecents = useAtomSet(recentProductsAtom(workspace));
   return useCallback(
     (product: RecentProductSource) => {
       const entry: RecentProduct = {
@@ -34,3 +36,10 @@ export const useRememberRecentProduct = () => {
     [setRecents],
   );
 };
+
+const useWorkspaceStorageKey = () => workspaceStorageKey(useAuth().workspace);
+
+export const useRecentProducts = (): ReadonlyArray<RecentProduct> =>
+  useRecentProductsIn(useWorkspaceStorageKey());
+
+export const useRememberRecentProduct = () => useRememberRecentProductIn(useWorkspaceStorageKey());
