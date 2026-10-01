@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { SettingsPage } from "@/components/settings/settings-page";
 import { formValidator } from "@/lib/form-schema";
+import { preloadCatalog } from "@/lib/inventory";
 
 const settingsSearch = formValidator(
   Schema.Struct({
@@ -12,5 +13,6 @@ const settingsSearch = formValidator(
 
 export const Route = createFileRoute("/settings/")({
   validateSearch: settingsSearch,
+  loader: ({ context }) => preloadCatalog(context),
   component: SettingsPage,
 });

@@ -1,5 +1,6 @@
 import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
+import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";
@@ -13,6 +14,7 @@ export const getRouter = (input: {
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly inventory?: InventoryHost;
+  readonly registry: AtomRegistry.AtomRegistry;
 }) =>
   createRouter({
     routeTree,
@@ -21,10 +23,12 @@ export const getRouter = (input: {
       catalog: input.catalog,
       access: input.access,
       inventory: input.inventory ?? null,
+      registry: input.registry,
     },
     history: input.history,
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
+    defaultStaleReloadMode: "blocking",
     defaultGcTime: 60_000,
     defaultPreloadGcTime: 15_000,
     scrollRestoration: true,

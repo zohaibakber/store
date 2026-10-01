@@ -39,12 +39,14 @@ export const mountApp = (input: {
   const workspace = { session, catalog, access: input.access, device: input.device };
   startWorkspaceSession(workspace, input.snapshot);
 
+  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
   const router = getRouter({
     history: input.history,
     session,
     catalog,
     access: input.access,
     inventory: input.inventory,
+    registry,
   });
   bindWorkspaceSession({
     ...workspace,
@@ -52,7 +54,6 @@ export const mountApp = (input: {
     invalidate: () => router.invalidate().then(() => undefined),
     flush: flushSync,
   });
-  const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

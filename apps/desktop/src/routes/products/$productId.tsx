@@ -57,6 +57,7 @@ import {
   preloadAll,
   preloadCatalogProduct,
   preloadInventory,
+  preloadProductStockPlan,
   preloadStockMovementHistory,
   useInventoryActions,
   useSuspenseCatalogProduct,
@@ -74,6 +75,7 @@ export const Route = createFileRoute("/products/$productId")({
       preloadAll([
         preloadCatalogProduct(inventory, params.productId),
         preloadStockMovementHistory(inventory, params.productId),
+        preloadProductStockPlan(inventory, params.productId),
       ]),
     ),
   validateSearch: productSearch,

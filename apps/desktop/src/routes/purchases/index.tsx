@@ -14,8 +14,10 @@ import { formValidator } from "@/lib/form-schema";
 import {
   PURCHASE_ORDER_SORT_COLUMNS,
   PURCHASE_ORDER_TABS,
+  preloadAll,
   preloadInventory,
   preloadPurchaseOrderList,
+  preloadPurchaseOrderTabs,
   preloadSuppliers,
   useSuspenseSuppliers,
   type PurchaseOrderListRequest,
@@ -72,7 +74,7 @@ export const Route = createFileRoute("/purchases/")({
     preloadInventory(context, (inventory) => {
       const view = viewFor(location.search);
       return view.q?.trim()
-        ? preloadSuppliers(inventory)
+        ? preloadAll([preloadSuppliers(inventory), preloadPurchaseOrderTabs(inventory)])
         : preloadPurchaseOrderList(inventory, requestFor(view, undefined));
     }),
   component: PurchasesRoute,
