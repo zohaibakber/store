@@ -50,7 +50,7 @@ const isWithin = (pathname: string, url: string) =>
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
-  const { open: openCommandMenu } = useCommandMenu();
+  const { open: openCommandMenu, preload: preloadCommandMenu } = useCommandMenu();
   const newSaleShortcut = appHost().newSaleShortcut;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isActive = (item: NavMainItem) =>
@@ -85,6 +85,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               aria-keyshortcuts="Control+K"
               aria-haspopup="dialog"
               onClick={openCommandMenu}
+              onFocus={preloadCommandMenu}
+              onPointerEnter={preloadCommandMenu}
             >
               <HugeiconsIcon icon={SearchIcon} />
               <span>Search</span>

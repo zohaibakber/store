@@ -282,10 +282,14 @@ export const useStockMovementHistory = (productId: string, pageSize = HISTORY_PA
   return { ...live, data };
 };
 
-export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) => {
+const NO_INVOICES: ReadonlyArray<Invoice> = [];
+
+export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE, enabled = true) => {
   const inventory = useCatalogReplica();
-  const live = useLiveQuery({ query: (query) => invoicesQuery(inventory)(query).limit(limit) });
-  const data: ReadonlyArray<Invoice> = live.data;
+  const live = useLiveQuery({
+    query: (query) => (enabled ? invoicesQuery(inventory)(query).limit(limit) : undefined),
+  });
+  const data: ReadonlyArray<Invoice> = live.data ?? NO_INVOICES;
   return { ...live, data };
 };
 
@@ -477,4 +481,31 @@ export const useCatalogProductSearch = (query: string, limit = 50) => {
     isLoading: Option.isNone(latest) || batches.isLoading,
     isError: AsyncResult.isFailure(searched) || batches.isError,
   };
+};
+
+const NO_CATEGORIES: ReadonlyArray<Category> = [];
+
+const NO_BATCHES: ReadonlyArray<Product["batches"][number]> = [];
+
+export const useProductSearch = (query: string, limit = 20): ReadonlyArray<Product> => {
+  const inventory = useCatalogReplica();
+  const searched = useAtomValue(inventory.atoms.productSearch(limit)(query));
+  const rows = Option.getOrElse(useLatestSuccess(searched), () => NO_PRODUCTS);
+  const idKey = rows.map((row) => row.id).join(" ");
+  const categories: ReadonlyArray<Category> =
+    useLiveQuery({ query: categoriesQuery(inventory) }).data ?? NO_CATEGORIES;
+  const batches =
+    useLiveQuery({
+      query: (builder) => batchesForProducts(builder, inventory, idKey ? idKey.split(" ") : []),
+    }).data ?? NO_BATCHES;
+  return React.useMemo(() => {
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
+    return rows.flatMap((row) => {
+      const category = categoryById.get(row.categoryId);
+      return category === undefined
+        ? []
+        : [{ ...row, category, batches: batchesByProduct[row.id] ?? [] }];
+    });
+  }, [rows, categories, batches]);
 };

@@ -40,6 +40,7 @@ export {
   useSuspenseProductFacets,
   useSuspenseProductOnOrder,
   useSuspenseProductPage,
+  useProductSearch,
   useSuspenseProductSearch,
   useSuspensePurchaseOrder,
   useSuspensePurchaseOrderCount,

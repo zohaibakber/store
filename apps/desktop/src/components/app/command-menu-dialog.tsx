@@ -70,7 +70,7 @@ import {
   useCatalogIsReady,
   useProductInsight,
   useSuspenseCatalogProduct,
-  useSuspenseProductSearch,
+  useProductSearch,
 } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 import { Route as RootRoute } from "@/routes/__root";
@@ -164,6 +164,8 @@ const matchInvoices = (invoices: ReadonlyArray<Invoice>, query: string, limit: n
   );
   return matches.slice(0, limit);
 };
+
+const NO_GROUPS: ReadonlyArray<EntryGroup> = [];
 
 const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || event.altKey;
 
@@ -433,8 +435,10 @@ function PaletteResults({
   const productActions = useProductActions(close);
   const recents = useRecentProducts();
   const trimmed = searchQuery.trim();
-  const products = useSuspenseProductSearch(trimmed, PRODUCT_LIMIT);
-  const invoices = useInventoryInvoices(INVOICE_WINDOW).data;
+  const products = useProductSearch(trimmed, PRODUCT_LIMIT);
+  const searchesInvoices =
+    page.kind === "root" && (scope === "invoices" || (scope === "all" && trimmed !== ""));
+  const invoices = useInventoryInvoices(INVOICE_WINDOW, searchesInvoices).data;
 
   const highlight = (entry: Entry | undefined) => {
     setHighlighted(entry);
@@ -556,6 +560,8 @@ function PaletteResults({
     return all.filter((group) => group.items.length > 0);
   }, [actions, invoices, page, productActions, products, query, recents, scope, trimmed]);
 
+  const shownGroups = useDeferredValue(groups, NO_GROUPS);
+
   const runEntry = (entry: Entry) => {
     switch (entry.kind) {
       case "product":
@@ -641,7 +647,7 @@ function PaletteResults({
       autoHighlight="always"
       filter={null}
       inline
-      items={groups}
+      items={shownGroups}
       itemToStringValue={(item: Entry) => item.id}
       keepHighlight
       onItemHighlighted={highlight}
@@ -702,7 +708,7 @@ function PaletteResults({
         </Tabs>
       )}
       <CommandPanel>
-        <CommandEmpty>{emptyMessage}</CommandEmpty>
+        {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
         <CommandList>
           {(group: EntryGroup) => (
             <Fragment key={group.value}>

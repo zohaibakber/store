@@ -66,6 +66,7 @@ export {
   useSuspenseInventoryInvoice,
   useSuspenseInventoryInvoices,
   useSuspenseInvoiceHistory,
+  useProductSearch,
   useSuspenseProductSearch,
 } from "./queries";
 export {
