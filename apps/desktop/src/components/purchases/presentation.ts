@@ -10,6 +10,7 @@ import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 
 import type { Tone } from "@/components/insights/presentation";
 import { formatCount } from "@/lib/format";
+import type { PurchaseOrderSortColumn, PurchaseOrderTab } from "@/lib/inventory";
 
 export const PROGRESS_META = {
   draft: { label: "Draft", tone: "secondary", hint: "Not sent to the supplier yet" },
@@ -22,15 +23,6 @@ export const PROGRESS_META = {
   PurchaseOrderProgress,
   { readonly label: string; readonly tone: Tone; readonly hint: string }
 >;
-
-export const PROGRESS_RANK = {
-  draft: 0,
-  sent: 1,
-  partlyReceived: 2,
-  received: 3,
-  closed: 4,
-  cancelled: 5,
-} satisfies Record<PurchaseOrderProgress, number>;
 
 export const formatOrderNumber = (orderNumber: number) => `#${formatInvoiceNumber(orderNumber)}`;
 
@@ -71,6 +63,38 @@ export const supplierNamesOf = (suppliers: ReadonlyArray<Supplier>): ReadonlyMap
   new Map(suppliers.map((supplier) => [supplier.id, supplier.name]));
 
 export const UNKNOWN_SUPPLIER = "Unknown supplier";
+
+export const supplierIdsMatching = (
+  suppliers: ReadonlyArray<Pick<Supplier, "id" | "name">>,
+  term: string | undefined,
+): ReadonlyArray<string> | undefined => {
+  const wanted = (term ?? "").trim().toLowerCase();
+  if (wanted === "") return undefined;
+  return suppliers
+    .filter((supplier) => supplier.name.toLowerCase().includes(wanted))
+    .map((supplier) => supplier.id)
+    .sort();
+};
+
+export const PURCHASE_ORDER_PAGE_SIZES = [25, 50, 100] as const;
+export type PurchaseOrderPageSize = (typeof PURCHASE_ORDER_PAGE_SIZES)[number];
+
+export type PurchaseOrderListView = {
+  readonly tab: PurchaseOrderTab;
+  readonly q?: string;
+  readonly sort: PurchaseOrderSortColumn;
+  readonly desc: boolean;
+  readonly page: number;
+  readonly size: PurchaseOrderPageSize;
+};
+
+export const DEFAULT_PURCHASE_ORDER_LIST_VIEW: PurchaseOrderListView = {
+  tab: "open",
+  sort: "createdAt",
+  desc: true,
+  page: 0,
+  size: 50,
+};
 
 export type DraftLine = {
   readonly productId: string;

@@ -69,7 +69,12 @@ export type IndexedDbResidualPredicate =
       readonly values: ReadonlyArray<string | number | boolean | null>;
     }
   | { readonly _tag: "isNull"; readonly column: string }
-  | { readonly _tag: "like"; readonly column: string; readonly pattern: string }
+  | {
+      readonly _tag: "like";
+      readonly column: string;
+      readonly pattern: string;
+      readonly escape?: string;
+    }
   | {
       readonly _tag: "and";
       readonly predicates: ReadonlyArray<IndexedDbResidualPredicate>;
@@ -192,30 +197,43 @@ const matchesCompare = (
 
 const REGEXP_SPECIALS = /[.*+?^${}()|[\]\\/]/u;
 
-const likeExpression = (pattern: string): RegExp => {
+const NEVER_MATCHES = /(?!)/u;
+
+const likeExpression = (pattern: string, escape: string | undefined): RegExp => {
   let source = "";
+  let literal = false;
   for (const character of foldAsciiCase(pattern)) {
-    if (character === "%") source += "[\\s\\S]*";
-    else if (character === "_") source += "[\\s\\S]";
+    if (!literal && character === escape) {
+      literal = true;
+      continue;
+    }
+    if (!literal && character === "%") source += "[\\s\\S]*";
+    else if (!literal && character === "_") source += "[\\s\\S]";
     else source += REGEXP_SPECIALS.test(character) ? `\\${character}` : character;
+    literal = false;
   }
-  return new RegExp(`^${source}$`, "u");
+  return literal ? NEVER_MATCHES : new RegExp(`^${source}$`, "u");
 };
 
 const likeExpressions = new Map<string, RegExp>();
 
-const likeExpressionFor = (pattern: string): RegExp => {
-  const cached = likeExpressions.get(pattern);
+const likeExpressionFor = (pattern: string, escape: string | undefined): RegExp => {
+  const key = escape === undefined ? `-${pattern}` : `+${escape}${pattern}`;
+  const cached = likeExpressions.get(key);
   if (cached) return cached;
-  const compiled = likeExpression(pattern);
+  const compiled = likeExpression(pattern, escape);
   if (likeExpressions.size >= 64) likeExpressions.clear();
-  likeExpressions.set(pattern, compiled);
+  likeExpressions.set(key, compiled);
   return compiled;
 };
 
-const matchesLike = (value: IndexedDbCellValue | undefined, pattern: string): boolean => {
+const matchesLike = (
+  value: IndexedDbCellValue | undefined,
+  pattern: string,
+  escape: string | undefined,
+): boolean => {
   if (value === null || value === undefined) return false;
-  return likeExpressionFor(pattern).test(foldAsciiCase(stringifyCell(value)));
+  return likeExpressionFor(pattern, escape).test(foldAsciiCase(stringifyCell(value)));
 };
 
 const matchesResidual = (
@@ -233,7 +251,7 @@ const matchesResidual = (
     case "isNull":
       return cell(row, predicate.column) === null || cell(row, predicate.column) === undefined;
     case "like":
-      return matchesLike(cell(row, predicate.column), predicate.pattern);
+      return matchesLike(cell(row, predicate.column), predicate.pattern, predicate.escape);
     case "and":
       return predicate.predicates.every((part) => matchesResidual(row, part));
     case "or":

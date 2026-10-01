@@ -17,9 +17,12 @@ const products: ReadonlyArray<readonly [string, string, string | null]> = [
   ["p-5", "Adol 50% (syrup)", null],
 ];
 
-const likeSpec = (column: string, pattern: string): InventorySubsetSpec => ({
+const likeSpec = (column: string, pattern: string, escape?: "\\"): InventorySubsetSpec => ({
   source: "products",
-  where: { _tag: "like", column, pattern },
+  where:
+    escape === undefined
+      ? { _tag: "like", column, pattern }
+      : { _tag: "like", column, pattern, escape },
   orderBy: [{ column: "id", direction: "asc" }],
   limit: 20,
   offset: 0,
@@ -41,8 +44,8 @@ afterEach(async () => {
   await replica.close();
 });
 
-const matching = async (column: string, pattern: string) =>
-  (await replica.readSubset(likeSpec(column, pattern))).rows.map((row) => row["id"]);
+const matching = async (column: string, pattern: string, escape?: "\\") =>
+  (await replica.readSubset(likeSpec(column, pattern, escape))).rows.map((row) => row["id"]);
 
 describe("like subset predicates", () => {
   it("match with ASCII case folding and SQL wildcards like the IndexedDB residual", async () => {
@@ -52,6 +55,8 @@ describe("like subset predicates", () => {
     expect(await matching("composition", "%PARA%")).toEqual(["p-1", "p-3"]);
     expect(await matching("name", "%(syrup)")).toEqual(["p-5"]);
     expect(await matching("composition", "%")).toEqual(["p-1", "p-3", "p-4"]);
+    expect(await matching("name", "%0\\% (S%", "\\")).toEqual(["p-5"]);
+    expect(await matching("name", "\\_alpol", "\\")).toEqual([]);
   });
 
   it("serves a name prefix search from the case-insensitive name index", async () => {

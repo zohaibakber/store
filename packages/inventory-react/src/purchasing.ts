@@ -1,7 +1,8 @@
 import {
+  decodePurchaseOrderSqliteRows,
+  MAX_IN_VALUES,
   readLearnedSuppliers,
   readOpenOrderLines,
-  type InventorySubsetSummarySpec,
   type OpenOrderLines,
   type PurchaseOrderItemRow,
   type PurchaseOrderRow,
@@ -18,6 +19,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
+import { allOf, countRows, readPageIds, type ListPage } from "./list-page";
 
 export const PURCHASE_ORDER_TABS = ["open", "drafts", "closed"] as const;
 export type PurchaseOrderTab = (typeof PURCHASE_ORDER_TABS)[number];
@@ -120,33 +122,64 @@ export const readLearnedSupplierIds = (
     catch: readFailure,
   }).pipe(Effect.withSpan("Purchasing.readLearnedSuppliers"));
 
-const statusIn = (statuses: ReadonlyArray<PurchaseOrderStatus>): SubsetPredicate => ({
-  _tag: "in",
-  column: "status",
-  values: statuses,
-});
+export const PURCHASE_ORDER_SORT_COLUMNS = ["createdAt", "orderNumber"] as const;
+export type PurchaseOrderSortColumn = (typeof PURCHASE_ORDER_SORT_COLUMNS)[number];
 
-const countRows = (
-  reader: ReplicaSummaryReader,
-  spec: InventorySubsetSummarySpec,
-  span: string,
-): Effect.Effect<number, WorkspaceReadFailure> =>
-  Effect.tryPromise({ try: () => reader.summarizeSubset(spec), catch: readFailure }).pipe(
-    Effect.map((read) => read.summary.count),
-    Effect.withSpan(span),
-  );
+export type PurchaseOrderListFilters = {
+  readonly tab: PurchaseOrderTab;
+  readonly supplierIds?: ReadonlyArray<string>;
+};
+
+export type PurchaseOrderListRequest = ListPage<PurchaseOrderSortColumn> & {
+  readonly filters: PurchaseOrderListFilters;
+};
+
+const statusIs = (statuses: ReadonlyArray<PurchaseOrderStatus>): SubsetPredicate => {
+  const [only, ...others] = statuses;
+  return only !== undefined && others.length === 0
+    ? { _tag: "compare", column: "status", op: "eq", value: only }
+    : { _tag: "in", column: "status", values: statuses };
+};
+
+const supplierIn = (supplierIds: ReadonlyArray<string>): SubsetPredicate => {
+  const chunks = Array.from({ length: Math.ceil(supplierIds.length / MAX_IN_VALUES) }, (_, index) =>
+    supplierIds.slice(index * MAX_IN_VALUES, (index + 1) * MAX_IN_VALUES),
+  ).map((values): SubsetPredicate => ({ _tag: "in", column: "supplierId", values }));
+  const [only, ...others] = chunks;
+  if (only === undefined) return { _tag: "in", column: "supplierId", values: [] };
+  return others.length === 0 ? only : { _tag: "or", predicates: chunks };
+};
+
+const purchaseOrderListWhere = (filters: PurchaseOrderListFilters): SubsetPredicate | undefined =>
+  allOf([
+    statusIs(purchaseOrderTabStatuses(filters.tab)),
+    ...(filters.supplierIds === undefined ? [] : [supplierIn(filters.supplierIds)]),
+  ]);
+
+export const readPurchaseOrderPageIds = (
+  reader: ReplicaSubsetReader,
+  request: PurchaseOrderListRequest,
+): Effect.Effect<ReadonlyArray<string>, WorkspaceReadFailure> =>
+  readPageIds(
+    reader,
+    "purchaseOrders",
+    purchaseOrderListWhere(request.filters),
+    request,
+    decodePurchaseOrderSqliteRows,
+    readFailure,
+  ).pipe(Effect.withSpan("Purchasing.readOrderPage"));
 
 export const countPurchaseOrders = (
   reader: ReplicaSummaryReader,
-  tab: PurchaseOrderTab,
+  filters: PurchaseOrderListFilters,
 ): Effect.Effect<number, WorkspaceReadFailure> =>
-  countRows(
-    reader,
-    { source: "purchaseOrders", where: statusIn(purchaseOrderTabStatuses(tab)), distinct: [] },
-    "Purchasing.countOrders",
+  countRows(reader, "purchaseOrders", purchaseOrderListWhere(filters), readFailure).pipe(
+    Effect.withSpan("Purchasing.countOrders"),
   );
 
 export const countSuppliers = (
   reader: ReplicaSummaryReader,
 ): Effect.Effect<number, WorkspaceReadFailure> =>
-  countRows(reader, { source: "suppliers", distinct: [] }, "Purchasing.countSuppliers");
+  countRows(reader, "suppliers", undefined, readFailure).pipe(
+    Effect.withSpan("Purchasing.countSuppliers"),
+  );

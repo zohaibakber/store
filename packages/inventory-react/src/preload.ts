@@ -9,18 +9,20 @@ import type * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import type * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
+import type { InvoiceListRequest } from "./invoice-list";
 import type { ProductListRequest } from "./product-list";
-import { purchaseOrderTabStatuses, type PurchaseOrderTab } from "./purchasing";
+import type { PurchaseOrderListRequest } from "./purchasing";
 import {
   purchaseOrderDeliveriesQuery,
   purchaseOrderQuery,
-  purchaseOrdersQuery,
+  purchaseOrdersByIdQuery,
   suppliersQuery,
 } from "./purchasing-queries";
 import {
   categoriesQuery,
   HISTORY_PAGE_SIZE,
   invoiceQuery,
+  invoicesByIdQuery,
   invoicesQuery,
   productQuery,
   stockMovementsQuery,
@@ -36,8 +38,11 @@ const warmQuery = <QueryContext extends Context>(
 ): Preload =>
   Effect.tryPromise(() => createLiveQueryCollection({ query, gcTime: WARM_GC_TIME_MS }).preload());
 
+const readAtom = <A, E>(inventory: Inventory, atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
+  AtomRegistry.getResult(inventory.atoms.registry, atom);
+
 const warmAtom = <A, E>(inventory: Inventory, atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
-  Effect.asVoid(AtomRegistry.getResult(inventory.atoms.registry, atom));
+  Effect.asVoid(readAtom(inventory, atom));
 
 export const preloadAll = (preloads: ReadonlyArray<Preload>): Preload =>
   Effect.all(preloads, { concurrency: "unbounded", discard: true });
@@ -67,8 +72,13 @@ export const preloadStockMovementHistory = (inventory: Inventory, productId: str
 export const preloadInventoryInvoices = (inventory: Inventory, limit: number): Preload =>
   warmQuery((builder) => invoicesQuery(inventory)(builder).limit(limit));
 
-export const preloadInvoiceHistory = (inventory: Inventory): Preload =>
-  preloadInventoryInvoices(inventory, HISTORY_PAGE_SIZE + 1);
+export const preloadInvoiceList = (inventory: Inventory, request: InvoiceListRequest): Preload =>
+  preloadAll([
+    warmAtom(inventory, inventory.atoms.invoiceCount(request.filters)),
+    readAtom(inventory, inventory.atoms.invoicePage(request)).pipe(
+      Effect.flatMap((ids) => warmQuery(invoicesByIdQuery(inventory, ids))),
+    ),
+  ]);
 
 export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: string): Preload =>
   warmQuery(invoiceQuery(inventory, invoiceId));
@@ -79,15 +89,15 @@ export const preloadInventoryInsights = (inventory: Inventory): Preload =>
 export const preloadSuppliers = (inventory: Inventory): Preload =>
   warmQuery(suppliersQuery(inventory));
 
-export const preloadPurchaseOrders = (inventory: Inventory, tab: PurchaseOrderTab): Preload =>
+export const preloadPurchaseOrderList = (
+  inventory: Inventory,
+  request: PurchaseOrderListRequest,
+): Preload =>
   preloadAll([
     preloadSuppliers(inventory),
-    warmAtom(inventory, inventory.atoms.purchaseOrderCount(tab)),
-    warmQuery((builder) =>
-      purchaseOrdersQuery(
-        inventory,
-        purchaseOrderTabStatuses(tab),
-      )(builder).limit(HISTORY_PAGE_SIZE + 1),
+    warmAtom(inventory, inventory.atoms.purchaseOrderListCount(request.filters)),
+    readAtom(inventory, inventory.atoms.purchaseOrderPage(request)).pipe(
+      Effect.flatMap((ids) => warmQuery(purchaseOrdersByIdQuery(inventory, ids))),
     ),
   ]);
 
