@@ -48,15 +48,14 @@ import {
   CommandDialog,
   CommandDialogPopup,
   CommandEmpty,
-  CommandFooter,
   CommandGroup,
   CommandGroupLabel,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandPanel,
   CommandShortcut,
 } from "@/components/ui/command";
+import { FrameFooter, FramePanel } from "@/components/ui/frame";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import {
@@ -680,84 +679,90 @@ function PaletteResults({
         placeholder={page.kind === "product" ? "Search actions…" : PLACEHOLDERS[scope]}
         ref={inputRef}
       />
-      <CommandPanel className="flex flex-col">
-        {page.kind === "product" ? (
-          <div className="flex h-9 shrink-0 items-center gap-2 px-4 pt-1 text-sm">
-            <Button
-              aria-label="Back to results"
-              onClick={() => {
-                closePage();
-                inputRef.current?.focus();
-              }}
-              onMouseDown={(event) => event.preventDefault()}
-              size="icon-xs"
-              variant="ghost"
-            >
-              <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
-            </Button>
-            <Badge variant="outline">
-              <span className="max-w-80 truncate capitalize">{productLabel(page.target)}</span>
-            </Badge>
-            <span className="truncate text-xs text-muted-foreground">
-              {page.target.category.name}
-            </span>
-          </div>
-        ) : (
-          <div
-            aria-label="Search scope"
-            className="flex shrink-0 items-center gap-1.5 px-3 pt-3"
-            role="group"
-          >
-            {SCOPES.map((entry) => (
-              <Button
-                aria-pressed={entry.value === scope}
-                key={entry.value}
-                onClick={() => {
-                  onScopeChange(entry.value);
-                  inputRef.current?.focus();
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-                size="xs"
-                tabIndex={-1}
-                variant={entry.value === scope ? "default" : "secondary"}
+      <div className="flex min-h-0 flex-col px-1">
+        <FramePanel className="flex min-h-0 flex-col overflow-hidden">
+          <div className="-m-5 flex min-h-0 flex-col">
+            {page.kind === "product" ? (
+              <div className="flex h-9 shrink-0 items-center gap-2 px-4 pt-1 text-sm">
+                <Button
+                  aria-label="Back to results"
+                  onClick={() => {
+                    closePage();
+                    inputRef.current?.focus();
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  size="icon-xs"
+                  variant="ghost"
+                >
+                  <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
+                </Button>
+                <Badge variant="outline">
+                  <span className="max-w-80 truncate capitalize">{productLabel(page.target)}</span>
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  {page.target.category.name}
+                </span>
+              </div>
+            ) : (
+              <div
+                aria-label="Search scope"
+                className="flex shrink-0 items-center gap-1.5 px-3 pt-3"
+                role="group"
               >
-                {entry.label}
-              </Button>
-            ))}
+                {SCOPES.map((entry) => (
+                  <Button
+                    aria-pressed={entry.value === scope}
+                    key={entry.value}
+                    onClick={() => {
+                      onScopeChange(entry.value);
+                      inputRef.current?.focus();
+                    }}
+                    onMouseDown={(event) => event.preventDefault()}
+                    size="xs"
+                    tabIndex={-1}
+                    variant={entry.value === scope ? "default" : "secondary"}
+                  >
+                    {entry.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
+            <CommandList>
+              {(group: EntryGroup) => (
+                <Fragment key={group.value}>
+                  <CommandGroup items={[...group.items]}>
+                    <CommandGroupLabel>{group.value}</CommandGroupLabel>
+                    <CommandCollection>
+                      {(entry: Entry) => (
+                        <CommandItem key={entry.id} onClick={() => runEntry(entry)} value={entry}>
+                          <EntryRow entry={entry} />
+                        </CommandItem>
+                      )}
+                    </CommandCollection>
+                  </CommandGroup>
+                </Fragment>
+              )}
+            </CommandList>
           </div>
-        )}
-        {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
-        <CommandList>
-          {(group: EntryGroup) => (
-            <Fragment key={group.value}>
-              <CommandGroup items={[...group.items]}>
-                <CommandGroupLabel>{group.value}</CommandGroupLabel>
-                <CommandCollection>
-                  {(entry: Entry) => (
-                    <CommandItem key={entry.id} onClick={() => runEntry(entry)} value={entry}>
-                      <EntryRow entry={entry} />
-                    </CommandItem>
-                  )}
-                </CommandCollection>
-              </CommandGroup>
-            </Fragment>
-          )}
-        </CommandList>
-      </CommandPanel>
-      <CommandFooter>
-        <FooterHints
-          entry={highlighted}
-          onOpenActions={() => {
-            if (highlightedTarget) openPage(highlightedTarget);
-            inputRef.current?.focus();
-          }}
-          page={page}
-        />
-        <div className="flex items-center gap-4">
-          {page.kind === "root" ? <Hint keys={<Kbd>Tab</Kbd>} label="Scope" /> : null}
-          <Hint keys={<Kbd>Esc</Kbd>} label={page.kind === "product" ? "Back" : "Close"} />
+        </FramePanel>
+      </div>
+      <FrameFooter>
+        <div className="-my-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <FooterHints
+            entry={highlighted}
+            onOpenActions={() => {
+              if (highlightedTarget) openPage(highlightedTarget);
+              inputRef.current?.focus();
+            }}
+            page={page}
+          />
+          <div className="flex items-center gap-4">
+            {page.kind === "root" ? <Hint keys={<Kbd>Tab</Kbd>} label="Scope" /> : null}
+            <Hint keys={<Kbd>Esc</Kbd>} label={page.kind === "product" ? "Back" : "Close"} />
+          </div>
         </div>
-      </CommandFooter>
+      </FrameFooter>
     </Command>
   );
 }
