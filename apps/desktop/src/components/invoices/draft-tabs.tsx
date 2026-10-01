@@ -1,14 +1,25 @@
 import { Cancel01Icon, PauseIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { formatPrice } from "@store/services/format";
 import { useEffect, useRef } from "react";
 
 import { useInvoiceCreate, type SaleDraftTab } from "@/components/invoices/create-context";
 import { PageActions } from "@/components/shared/page-actions";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { saleDraftLimitMessage } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
+import { formatCount } from "@/lib/format";
 import { MAX_SALE_DRAFTS } from "@/lib/sale-drafts";
 import { cn } from "@/lib/utils";
 
@@ -137,4 +148,39 @@ function SaleDraftTabs() {
   );
 }
 
-export { SaleDraftTabs };
+function SaleDiscardDialog() {
+  const {
+    actions: { cancelDiscard, confirmDiscard },
+    meta: { discarding },
+  } = useInvoiceCreate();
+
+  return (
+    <AlertDialog
+      onOpenChange={(open) => {
+        if (!open) cancelDiscard();
+      }}
+      open={discarding !== null}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Discard this sale?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {discarding === null
+              ? null
+              : discarding.lineCount > 0
+                ? `${discarding.label} has ${formatCount(discarding.lineCount, "line")} worth ${formatPrice(discarding.total)}. It will not be saved.`
+                : `${discarding.label} has no items yet. It will not be saved.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="ghost" />}>Cancel</AlertDialogClose>
+          <Button onClick={confirmDiscard} variant="destructive">
+            Discard
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export { SaleDiscardDialog, SaleDraftTabs };

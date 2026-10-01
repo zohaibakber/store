@@ -46,6 +46,7 @@ import {
   AUTO_BATCH,
   canOpenSaleDraft,
   cycleSaleDraft,
+  isBlankDraft,
   quantitiesInOtherDrafts,
   removeSaleLine,
   saleDraftLabel,
@@ -87,6 +88,8 @@ interface InvoiceCreateActions {
   activateDraftAt: (index: number) => void;
   cycleDraft: (step: 1 | -1) => void;
   discardDraft: (id: number) => void;
+  confirmDiscard: () => void;
+  cancelDiscard: () => void;
 }
 
 interface InvoiceCreateMeta {
@@ -101,6 +104,7 @@ interface InvoiceCreateMeta {
   searchRef: RefObject<HTMLInputElement | null>;
   tabs: ReadonlyArray<SaleDraftTab>;
   canOpenDraft: boolean;
+  discarding: SaleDraftTab | null;
 }
 
 interface InvoiceCreateContextValue {
@@ -202,6 +206,25 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const setBulkDiscount = (value: number | null) =>
     store.update((state) => setSaleDiscount(state, draft.id, value));
 
+  const [discardingId, setDiscardingId] = useState<number | null>(null);
+
+  const discardDraft = (id: number) => {
+    const target = drafts.drafts.find((open) => open.id === id);
+    if (target === undefined) return;
+    if (isBlankDraft(target)) store.discard(id);
+    else setDiscardingId(id);
+  };
+
+  const confirmDiscard = () => {
+    if (discardingId !== null) store.discard(discardingId);
+    setDiscardingId(null);
+  };
+
+  const cancelDiscard = () => {
+    setDiscardingId(null);
+    store.focusSearch();
+  };
+
   const activate = (change: (state: SaleDrafts) => SaleDrafts) => {
     store.update(change);
     store.focusSearch();
@@ -297,7 +320,9 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           activateDraft: (id) => activate((state) => activateSaleDraft(state, id)),
           activateDraftAt: (index) => activate((state) => activateSaleDraftAt(state, index)),
           cycleDraft: (step) => activate((state) => cycleSaleDraft(state, step)),
-          discardDraft: store.discard,
+          discardDraft,
+          confirmDiscard,
+          cancelDiscard,
         },
         meta: {
           errors,
@@ -311,6 +336,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           searchRef,
           tabs,
           canOpenDraft: canOpenSaleDraft(drafts),
+          discarding: tabs.find((tab) => tab.id === discardingId) ?? null,
         },
       }}
     >

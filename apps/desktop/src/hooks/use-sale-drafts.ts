@@ -9,29 +9,18 @@ import { saleDraftsAtom } from "@/lib/preferences";
 import {
   canOpenSaleDraft,
   closeSaleDraft,
-  discardSaleDraft,
-  draftHasLines,
   isBlankDraft,
   MAX_SALE_DRAFTS,
   openSaleDraft,
   parkedSaleCount,
-  restoreSaleDraft,
-  type SaleDraft,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
-
-const UNDO_TIMEOUT = 8_000;
 
 const searchFocusAtom = Atom.make(0).pipe(Atom.keepAlive);
 
 const completingAtom = Atom.make<ReadonlySet<string>>(new Set<string>()).pipe(Atom.keepAlive);
 
 const completionToken = (workspace: string, id: number) => `${workspace}:${id}`;
-
-const discardedTitle = (draft: SaleDraft) => {
-  const customer = draft.customerName.trim();
-  return customer ? `Sale for ${customer} discarded` : `Sale ${draft.ordinal} discarded`;
-};
 
 export const saleDraftLimitMessage = `${MAX_SALE_DRAFTS} sales are open. Complete or discard one first.`;
 
@@ -53,21 +42,8 @@ const saleDraftStore = (registry: AtomRegistry.AtomRegistry, workspace: string) 
     },
     discard: (id: number) => {
       if (registry.get(completingAtom).has(completionToken(workspace, id))) return;
-      const discarded = registry.modify(atom, (state) => discardSaleDraft(state, id));
+      update((state) => closeSaleDraft(state, id));
       focusSearch();
-      if (!discarded || !draftHasLines(discarded.draft)) return;
-      const toastId = toastManager.add({
-        actionProps: {
-          children: "Undo",
-          onClick: () => {
-            toastManager.close(toastId);
-            update((state) => restoreSaleDraft(state, discarded));
-            focusSearch();
-          },
-        },
-        timeout: UNDO_TIMEOUT,
-        title: discardedTitle(discarded.draft),
-      });
     },
     complete: (id: number) =>
       registry.modify(atom, (state) => {

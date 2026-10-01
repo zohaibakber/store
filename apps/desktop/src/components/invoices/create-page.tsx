@@ -3,14 +3,15 @@ import { useEffect, useEffectEvent } from "react";
 import { InvoiceCheckout } from "@/components/invoices/create-checkout";
 import { InvoiceCreateProvider, useInvoiceCreate } from "@/components/invoices/create-context";
 import { InvoiceItems } from "@/components/invoices/create-items";
-import { SaleDraftTabs } from "@/components/invoices/draft-tabs";
+import { SaleDiscardDialog, SaleDraftTabs } from "@/components/invoices/draft-tabs";
 import { ProductResolver } from "@/components/invoices/resolve-product";
 import { PageLayout } from "@/components/shared/page-layout";
 import { toastManager } from "@/components/ui/toast";
 import { saleDraftShortcut } from "@/lib/sale-draft-shortcut";
 
 const isInDialog = (event: KeyboardEvent) =>
-  event.target instanceof Element && event.target.closest("[role=dialog]") !== null;
+  event.target instanceof Element &&
+  event.target.closest("[role=dialog], [role=alertdialog]") !== null;
 
 function CompleteSaleShortcut() {
   const {
@@ -102,6 +103,7 @@ function InvoiceCreatePage({
         <AddProductFromSearch key={addProductId} onDone={onProductAdded} productId={addProductId} />
       )}
       <SaleDraftTabs />
+      <SaleDiscardDialog />
       <PageLayout>
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <InvoiceItems />
