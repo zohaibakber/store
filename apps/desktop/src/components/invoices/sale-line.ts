@@ -1,4 +1,4 @@
-import type { Product } from "@store/contracts";
+import type { CreateInvoiceLineInput, Product } from "@store/contracts";
 
 import { formatNumber } from "@/lib/format";
 import {
@@ -41,15 +41,28 @@ export const enteredPrice = (
 ): SaleDraftLine["price"] =>
   salePrice === paisaToRupees(suggestedPrice(product, quantityUnit)) ? CATALOG_PRICE : salePrice;
 
+const elsewhereOf = (product: Product, elsewhere: QuantityElsewhere | undefined) =>
+  elsewhere
+    ? { units: elsewhere.unit + elsewhere.pack * product.unitsPerPack, sales: elsewhere.sales }
+    : null;
+
+const sameElsewhere = (left: SaleLine["elsewhere"], right: SaleLine["elsewhere"]) =>
+  left?.units === right?.units && left?.sales === right?.sales;
+
+const resolvedLines = new WeakMap<SaleDraftLine, SaleLine>();
+
 export const resolveSaleLine = (
   line: SaleDraftLine,
   lookup: ProductLookup,
-  elsewhere?: QuantityElsewhere,
+  quantityElsewhere?: QuantityElsewhere,
 ): SaleLineView => {
   const product = lookup(line.productId);
   if (product === undefined) return { kind: "unavailable", key: line.key };
   if (product === "loading") return { kind: "loading", key: line.key };
-  return {
+  const elsewhere = elsewhereOf(product, quantityElsewhere);
+  const known = resolvedLines.get(line);
+  if (known?.product === product && sameElsewhere(known.elsewhere, elsewhere)) return known;
+  const resolved: SaleLine = {
     kind: "ready",
     key: line.key,
     product,
@@ -60,13 +73,10 @@ export const resolveSaleLine = (
       line.price === CATALOG_PRICE
         ? paisaToRupees(suggestedPrice(product, line.quantityUnit))
         : line.price,
-    elsewhere: elsewhere
-      ? {
-          units: elsewhere.unit + elsewhere.pack * product.unitsPerPack,
-          sales: elsewhere.sales,
-        }
-      : null,
+    elsewhere,
   };
+  resolvedLines.set(line, resolved);
+  return resolved;
 };
 
 const chosenBatches = (line: SaleLine) =>
@@ -135,6 +145,27 @@ export const isValidDiscount = (bulkDiscount: number | null): bulkDiscount is nu
 export const saleTotal = (lines: ReadonlyArray<SaleLineView>, bulkDiscount: number | null) => {
   const discount = isValidDiscount(bulkDiscount) ? bulkDiscount : 0;
   return lines.reduce((sum, line) => sum + (lineTotal(line, discount) ?? 0), 0);
+};
+
+export const saleItems = (
+  lines: ReadonlyArray<SaleLineView>,
+  bulkDiscount: number,
+): ReadonlyArray<CreateInvoiceLineInput> | null => {
+  const items = lines.flatMap((line): ReadonlyArray<CreateInvoiceLineInput> => {
+    if (line.kind !== "ready" || lineError(line) !== null) return [];
+    const salePrice = discountedSalePrice(line, bulkDiscount);
+    if (line.quantity == null || salePrice == null) return [];
+    return [
+      {
+        productId: line.product.id,
+        batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
+        quantity: line.quantity,
+        quantityType: line.quantityUnit,
+        salePrice,
+      },
+    ];
+  });
+  return items.length > 0 && items.length === lines.length ? items : null;
 };
 
 export const draftTotal = (draft: SaleDraft, lookup: ProductLookup) =>

@@ -20,6 +20,7 @@ export {
   useCatalogProductLookup,
   useInventoryActions,
   useInventoryInsights,
+  useIssuedInvoices,
   useLearnedSuppliers,
   useProductInsight,
   useProductsOnOrder,

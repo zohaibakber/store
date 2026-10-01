@@ -7,12 +7,14 @@ import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { useContext } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import { saleDraftStore } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { publishOfferDismissedAtom } from "@/lib/preferences";
+import { workspaceStorageKey } from "@/lib/workspace";
 import type { CatalogCounts } from "@/lib/workspace-backup";
 import type { PublishOffer, PublishProgress } from "@/lib/workspace-publish";
 import { witnessBoundLocalCatalog } from "@/session/workspace-session";
@@ -70,6 +72,7 @@ export const moveLocalWorkspace = (
           case "published":
             registry.set(phase, IDLE);
             registry.refresh(offerAtom(organization.id));
+            saleDraftStore(registry, workspaceStorageKey({ _tag: "Local" })).clear();
             toastManager.add({
               title: `Moved to ${organization.name}`,
               description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,

@@ -267,6 +267,13 @@ export const invoicesByIdQuery =
       .where(({ invoice }) => inAnyOf(invoice.id, invoiceIds))
       .select(({ invoice }) => invoiceFields(query, inventory, invoice));
 
+const issuedInvoicesQuery =
+  (inventory: Inventory, invoiceIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) =>
+    query
+      .from({ invoice: inventory.invoices })
+      .where(({ invoice }) => inAnyOf(invoice.id, invoiceIds))
+      .select(({ invoice }) => ({ id: invoice.id, invoiceNumber: invoice.invoiceNumber }));
+
 export const useCatalogCategories = () => {
   const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
   const data: ReadonlyArray<Category> = live.data;
@@ -309,6 +316,13 @@ export const useInventoryInvoice = (invoiceId: string) => {
   const data: Invoice | undefined = live.data;
   return { ...live, data };
 };
+
+const NONE_ISSUED: ReadonlyArray<Pick<Invoice, "id" | "invoiceNumber">> = [];
+
+export const useIssuedInvoices = (
+  invoiceIds: ReadonlyArray<string>,
+): ReadonlyArray<Pick<Invoice, "id" | "invoiceNumber">> =>
+  useLiveQuery({ query: issuedInvoicesQuery(useCatalogReplica(), invoiceIds) }).data ?? NONE_ISSUED;
 
 export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
   useLiveSuspenseQuery({ query: categoriesQuery(useCatalogReplica()) }).data;

@@ -8,6 +8,13 @@ export const isEditableTarget = (target: EventTarget | null) =>
 
 export const hasOpenPopup = () => document.querySelector(POPUP_SELECTOR) !== null;
 
+const MODAL_SELECTOR = "[role=dialog], [role=alertdialog], [role=menu]";
+
+export const hasOpenModal = () => document.querySelector(MODAL_SELECTOR) !== null;
+
+export const isInListbox = (target: EventTarget | null) =>
+  target instanceof Element && target.closest("[role=listbox]") !== null;
+
 export const isPlainKey = (event: KeyboardEvent, key: string) =>
   event.key.toLowerCase() === key &&
   !event.ctrlKey &&

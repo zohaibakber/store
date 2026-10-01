@@ -21,6 +21,7 @@ import type {
   CreateProductInput,
   ImportInventoryCommandResult,
   ImportInventoryInput,
+  InvoiceId,
   IssueInvoiceResult,
   UpdateBatchInput,
   UpdateCategoryInput,
@@ -90,7 +91,10 @@ export interface InventoryActions {
   readonly importInventory: (
     input: ImportInventoryRequest,
   ) => Promise<ImportInventoryCommandResult>;
-  readonly issueInvoice: (input: CreateInvoiceInput) => Promise<IssueInvoiceResult>;
+  readonly issueInvoice: (
+    input: CreateInvoiceInput,
+    invoiceId?: InvoiceId,
+  ) => Promise<IssueInvoiceResult>;
   readonly saveSupplier: (input: SaveSupplierInput) => Promise<SupplierRow>;
   readonly deleteSupplier: (id: string) => Promise<void>;
   readonly saveOrderDraft: (input: SaveOrderDraftInput) => Promise<SavedPurchaseOrder>;

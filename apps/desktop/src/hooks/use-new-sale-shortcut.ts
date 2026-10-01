@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent } from "react";
 
+import { hasOpenModal } from "@/components/products/shortcuts";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useSaleDraftStore } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
@@ -22,6 +23,7 @@ export function useNewSaleShortcut(): void {
 
   const go = useEffectEvent(() => {
     if (isMobile) setOpenMobile(false);
+    else if (hasOpenModal()) return;
     startSale();
   });
 

@@ -12,16 +12,25 @@ type ShortcutKey = Pick<
 
 const DIGIT = /^Digit([1-9])$/;
 
-export const saleDraftShortcut = (event: ShortcutKey): SaleDraftShortcut | null => {
+export type ShortcutFocus = "page" | "emptyField" | "field";
+
+export const saleDraftShortcut = (
+  event: ShortcutKey,
+  focus: ShortcutFocus,
+): SaleDraftShortcut | null => {
   const command = event.ctrlKey || event.metaKey;
   if (event.altKey && !command && !event.shiftKey) {
-    const digit = Number(DIGIT.exec(event.code)?.[1]);
-    return digit >= 1 && digit <= MAX_SALE_DRAFTS ? { _tag: "Jump", index: digit - 1 } : null;
+    const digit = DIGIT.exec(event.code)?.[1];
+    if (digit === undefined || Number(digit) > MAX_SALE_DRAFTS) return null;
+    if (focus !== "page" && event.key !== digit) return null;
+    return { _tag: "Jump", index: Number(digit) - 1 };
   }
   if (event.altKey) return null;
   if (event.key === "Tab" && event.ctrlKey && !event.metaKey) {
     return { _tag: "Cycle", step: event.shiftKey ? -1 : 1 };
   }
-  if (event.code === "KeyW" && command && !event.shiftKey) return { _tag: "Discard" };
+  if (event.code === "KeyW" && command && !event.shiftKey && focus !== "field") {
+    return { _tag: "Discard" };
+  }
   return null;
 };

@@ -5,13 +5,20 @@ import { InvoiceCreateProvider, useInvoiceCreate } from "@/components/invoices/c
 import { InvoiceItems } from "@/components/invoices/create-items";
 import { SaleDiscardDialog, SaleDraftTabs } from "@/components/invoices/draft-tabs";
 import { ProductResolver } from "@/components/invoices/resolve-product";
+import { hasOpenModal, isEditableTarget, isInListbox } from "@/components/products/shortcuts";
 import { PageLayout } from "@/components/shared/page-layout";
 import { toastManager } from "@/components/ui/toast";
-import { saleDraftShortcut } from "@/lib/sale-draft-shortcut";
+import { saleDraftShortcut, type ShortcutFocus } from "@/lib/sale-draft-shortcut";
 
-const isInDialog = (event: KeyboardEvent) =>
-  event.target instanceof Element &&
-  event.target.closest("[role=dialog], [role=alertdialog]") !== null;
+const isBehindPopup = (event: KeyboardEvent) => hasOpenModal() || isInListbox(event.target);
+
+const shortcutFocus = (target: EventTarget | null): ShortcutFocus => {
+  if (!isEditableTarget(target)) return "page";
+  const empty =
+    (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+    target.value === "";
+  return empty ? "emptyField" : "field";
+};
 
 function CompleteSaleShortcut() {
   const {
@@ -23,7 +30,7 @@ function CompleteSaleShortcut() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
-      if (isInDialog(event)) return;
+      if (isBehindPopup(event)) return;
       event.preventDefault();
       event.stopPropagation();
       complete();
@@ -39,11 +46,18 @@ function SaleDraftShortcuts() {
   const {
     state: { draftId },
     actions: { activateDraftAt, cycleDraft, discardDraft },
+    meta: { tabs },
   } = useInvoiceCreate();
 
+  const focusedDraft = (event: KeyboardEvent) => {
+    if (!(event.target instanceof Element)) return undefined;
+    const focused = event.target.closest<HTMLElement>("[data-sale-draft]")?.dataset.saleDraft;
+    return tabs.find((tab) => tab.id === focused)?.id;
+  };
+
   const run = useEffectEvent((event: KeyboardEvent) => {
-    const shortcut = saleDraftShortcut(event);
-    if (shortcut === null || isInDialog(event)) return;
+    const shortcut = saleDraftShortcut(event, shortcutFocus(event.target));
+    if (shortcut === null || isBehindPopup(event)) return;
     event.preventDefault();
     event.stopPropagation();
     switch (shortcut._tag) {
@@ -52,7 +66,7 @@ function SaleDraftShortcuts() {
       case "Cycle":
         return cycleDraft(shortcut.step);
       case "Discard":
-        return discardDraft(draftId);
+        return discardDraft(focusedDraft(event) ?? draftId);
     }
   });
 
