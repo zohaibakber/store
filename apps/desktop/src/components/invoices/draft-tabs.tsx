@@ -1,9 +1,10 @@
 import { Cancel01Icon, PauseIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { InvoiceId } from "@store/contracts/ids";
 import { formatPrice } from "@store/services/format";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
-import { useInvoiceCreate, type SaleDraftTab } from "@/components/invoices/create-context";
+import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { PageActions } from "@/components/shared/page-actions";
 import {
   AlertDialog,
@@ -25,42 +26,50 @@ import { cn } from "@/lib/utils";
 
 function DraftButton({
   active,
+  hintId,
+  id,
   index,
-  tab,
+  label,
 }: {
   readonly active: boolean;
+  readonly hintId: string;
+  readonly id: InvoiceId;
   readonly index: number;
-  readonly tab: SaleDraftTab;
+  readonly label: string;
 }) {
   const {
     actions: { activateDraft, discardDraft },
   } = useInvoiceCreate();
-  const shortcut = index < MAX_SALE_DRAFTS ? `Alt+${index + 1} ` : "";
 
   return (
-    <span className="relative inline-flex shrink-0" data-active={active ? "" : undefined}>
+    <span
+      className="relative inline-flex shrink-0"
+      data-active={active ? "" : undefined}
+      data-sale-draft={id}
+    >
       <Button
-        aria-keyshortcuts={`${shortcut}Delete`}
+        aria-describedby={hintId}
+        aria-keyshortcuts={index < MAX_SALE_DRAFTS ? `Alt+${index + 1}` : undefined}
         aria-pressed={active}
-        onClick={() => activateDraft(tab.id)}
+        onClick={() => activateDraft(id)}
         onKeyDown={(event) => {
           if (event.key !== "Delete") return;
           event.preventDefault();
-          discardDraft(tab.id);
+          discardDraft(id);
         }}
         size="sm"
         variant={active ? "default" : "secondary"}
       >
-        <span className="max-w-32 truncate">{tab.label}</span>
+        <span className="max-w-32 truncate">{label}</span>
         <span aria-hidden="true" className="w-3.5 shrink-0" />
       </Button>
       <button
-        aria-label={`Discard ${tab.label}`}
+        aria-label={`Discard ${label}`}
         className={cn(
           "absolute end-1.25 top-1/2 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md opacity-64 outline-none hover:opacity-100 focus-visible:opacity-100",
           active ? "text-primary-foreground" : "text-secondary-foreground",
         )}
-        onClick={() => discardDraft(tab.id)}
+        onClick={() => discardDraft(id)}
         tabIndex={-1}
         type="button"
       >
@@ -114,6 +123,7 @@ function SaleDraftTabs() {
     meta: { tabs },
   } = useInvoiceCreate();
   const stripRef = useRef<HTMLDivElement>(null);
+  const hintId = useId();
   const several = tabs.length > 1;
   const started = lines.length > 0 || customerName.trim() !== "";
 
@@ -140,8 +150,18 @@ function SaleDraftTabs() {
         role="group"
       >
         {tabs.map((tab, index) => (
-          <DraftButton active={tab.id === draftId} index={index} key={tab.id} tab={tab} />
+          <DraftButton
+            active={tab.id === draftId}
+            hintId={hintId}
+            id={tab.id}
+            index={index}
+            key={tab.id}
+            label={tab.label}
+          />
         ))}
+        <span className="sr-only" id={hintId}>
+          Press Delete to discard this sale.
+        </span>
       </div>
       <HoldSaleButton started={started} />
     </PageActions>

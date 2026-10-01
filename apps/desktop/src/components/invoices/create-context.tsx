@@ -1,5 +1,5 @@
-import type { Product } from "@store/contracts";
-import type { ProductId } from "@store/contracts/ids";
+import type { IssueInvoiceResult, Product } from "@store/contracts";
+import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -14,7 +14,6 @@ import {
 } from "react";
 
 import {
-  discountedSalePrice,
   draftTotal,
   enteredPrice,
   isValidDiscount,
@@ -22,6 +21,7 @@ import {
   lineTotal,
   lineUnits,
   resolveSaleLine,
+  saleItems,
   saleTotal,
   type ProductLookup,
   type SaleLine,
@@ -30,20 +30,23 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import {
-  useCompletingSaleIn,
+  useCompletingSale,
   useSaleDraftsIn,
   useSaleDraftStoreIn,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
 import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { storeErrorMessage } from "@/lib/errors";
-import { useInventoryActions, useSuspenseCatalogProductsById } from "@/lib/inventory";
+import {
+  useInventoryActions,
+  useIssuedInvoices,
+  useSuspenseCatalogProductsById,
+} from "@/lib/inventory";
 import {
   activateSaleDraft,
   activateSaleDraftAt,
   activeSaleDraft,
   addSaleProduct,
-  AUTO_BATCH,
   canOpenSaleDraft,
   cycleSaleDraft,
   isBlankDraft,
@@ -61,14 +64,14 @@ import {
 type SaleLineEdits = Partial<Pick<SaleLine, "batchId" | "quantity" | "salePrice">>;
 
 interface SaleDraftTab {
-  readonly id: number;
+  readonly id: InvoiceId;
   readonly label: string;
   readonly lineCount: number;
   readonly total: number;
 }
 
 interface InvoiceCreateState {
-  draftId: number;
+  draftId: InvoiceId;
   customerName: string;
   lines: ReadonlyArray<SaleLineView>;
   bulkDiscount: number | null;
@@ -76,7 +79,7 @@ interface InvoiceCreateState {
 
 interface InvoiceCreateActions {
   addProduct: (product: Product, quantity?: number) => void;
-  updateLine: (key: number, changes: SaleLineEdits) => void;
+  updateLine: (line: SaleLine, changes: SaleLineEdits) => void;
   setLineQuantityUnit: (key: number, quantityUnit: SaleLine["quantityUnit"]) => void;
   removeLine: (key: number) => void;
   setCustomerName: (value: string) => void;
@@ -84,10 +87,10 @@ interface InvoiceCreateActions {
   completeSale: () => Promise<void>;
   focusSearch: () => void;
   openDraft: () => void;
-  activateDraft: (id: number) => void;
+  activateDraft: (id: InvoiceId) => void;
   activateDraftAt: (index: number) => void;
   cycleDraft: (step: 1 | -1) => void;
-  discardDraft: (id: number) => void;
+  discardDraft: (id: InvoiceId) => void;
   confirmDiscard: () => void;
   cancelDiscard: () => void;
 }
@@ -116,29 +119,25 @@ interface InvoiceCreateContextValue {
 const InvoiceCreateContext = createContext<InvoiceCreateContextValue | null>(null);
 
 type ProductSeeds = {
-  readonly since: ReadonlyArray<ProductId>;
+  readonly since: string;
   readonly products: ReadonlyMap<string, Product>;
 };
 
-const NO_SEEDS: ProductSeeds = { since: [], products: new Map() };
+const NO_SEEDS: ProductSeeds = { since: "", products: new Map() };
 
-const sameIds = (left: ReadonlyArray<ProductId>, right: ReadonlyArray<ProductId>) =>
-  left.length === right.length && left.every((id, index) => id === right[index]);
+const ID_SEPARATOR = "\n";
 
 function useDraftProducts(drafts: SaleDrafts) {
-  const ids = saleProductIds(drafts);
-  const [requested, setRequested] = useState(ids);
-  const changed = !sameIds(requested, ids);
-  if (changed) setRequested(ids);
-  const current = changed ? ids : requested;
-  const settled = useDeferredValue(current);
-  const products = useSuspenseCatalogProductsById(settled);
+  const requested = saleProductIds(drafts).join(ID_SEPARATOR);
+  const settled = useDeferredValue(requested);
+  const products = useSuspenseCatalogProductsById(settled ? settled.split(ID_SEPARATOR) : []);
   const [seeds, setSeeds] = useState(NO_SEEDS);
   const live = new Map<string, Product>(products.map((product) => [product.id, product]));
   const seeded = seeds.since === settled ? seeds.products : NO_SEEDS.products;
 
   const lookup: ProductLookup = (productId) =>
-    live.get(productId) ?? (settled === current ? undefined : (seeded.get(productId) ?? "loading"));
+    live.get(productId) ??
+    (settled === requested ? undefined : (seeded.get(productId) ?? "loading"));
 
   const seed = (product: Product) => {
     if (live.has(product.id)) return;
@@ -151,6 +150,40 @@ function useDraftProducts(drafts: SaleDrafts) {
   return { lookup, seed };
 }
 
+const recordSale = async (sale: {
+  readonly issue: () => Promise<IssueInvoiceResult>;
+  readonly close: () => boolean;
+  readonly focusSearch: () => void;
+  readonly view: (invoiceId: InvoiceId) => Promise<void>;
+}) => {
+  try {
+    const invoice = await sale.issue();
+    const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
+    if (sale.close()) {
+      const toastId = toastManager.add({
+        actionProps: {
+          children: "View",
+          onClick: () => {
+            toastManager.close(toastId);
+            void sale.view(invoice.invoiceId);
+          },
+        },
+        title,
+        type: "success",
+      });
+      sale.focusSearch();
+    } else {
+      toastManager.add({ title, type: "success" });
+      await sale.view(invoice.invoiceId);
+    }
+  } catch (error) {
+    toastManager.add({
+      title: storeErrorMessage(error, "Could not create the invoice."),
+      type: "error",
+    });
+  }
+};
+
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
@@ -160,7 +193,8 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const store = useSaleDraftStoreIn(workspace);
   const { lookup, seed } = useDraftProducts(drafts);
   const draft = activeSaleDraft(drafts);
-  const isSubmitting = useCompletingSaleIn(workspace, draft.id);
+  const isSubmitting = useCompletingSale(draft.id);
+  const issued = useIssuedInvoices(drafts.drafts.map((open) => open.id));
   const focusRequest = useSaleSearchFocusRequest();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -175,25 +209,26 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     searchRef.current?.select();
   }, [focusRequest]);
 
+  useEffect(() => {
+    store.dropIssued(issued);
+  }, [issued, store]);
+
   const addProduct = (product: Product, quantity = 1) => {
     rememberRecentProduct(product);
     seed(product);
     store.update((state) => addSaleProduct(state, draft.id, product.id, quantity));
   };
 
-  const updateLine = (key: number, { salePrice, ...changes }: SaleLineEdits) => {
-    const line = lines.find((candidate) => candidate.key === key);
-    if (line?.kind !== "ready") return;
+  const updateLine = (line: SaleLine, { salePrice, ...changes }: SaleLineEdits) =>
     store.update((state) =>
       updateSaleLine(
         state,
-        key,
+        line.key,
         salePrice === undefined
           ? changes
           : { ...changes, price: enteredPrice(line.product, line.quantityUnit, salePrice) },
       ),
     );
-  };
 
   const setLineQuantityUnit = (key: number, quantityUnit: SaleLine["quantityUnit"]) =>
     store.update((state) => setSaleLineUnit(state, key, quantityUnit));
@@ -206,9 +241,9 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const setBulkDiscount = (value: number | null) =>
     store.update((state) => setSaleDiscount(state, draft.id, value));
 
-  const [discardingId, setDiscardingId] = useState<number | null>(null);
+  const [discardingId, setDiscardingId] = useState<InvoiceId | null>(null);
 
-  const discardDraft = (id: number) => {
+  const discardDraft = (id: InvoiceId) => {
     const target = drafts.drafts.find((open) => open.id === id);
     if (target === undefined) return;
     if (isBlankDraft(target)) store.discard(id);
@@ -230,11 +265,6 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     store.focusSearch();
   };
 
-  const focusSearch = () => {
-    searchRef.current?.focus();
-    searchRef.current?.select();
-  };
-
   const errors = lines.map(lineError);
   const subtotal = lines.reduce((sum, line) => sum + (lineTotal(line) ?? 0), 0);
   const unitCount = lines.reduce((sum, line) => sum + lineUnits(line), 0);
@@ -245,62 +275,23 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
   const completeSale = async () => {
-    if (!canSubmit || !isValidDiscount(bulkDiscount)) return;
-    const items = [];
-    for (const line of lines) {
-      if (line.kind !== "ready") return;
-      const quantity = line.quantity;
-      const salePrice = discountedSalePrice(line, bulkDiscount);
-      if (quantity == null || salePrice == null) return;
-      items.push({
-        productId: line.product.id,
-        batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
-        quantity,
-        quantityType: line.quantityUnit,
-        salePrice,
-      });
-    }
-    if (!store.beginCompleting(draft.id)) return;
-    try {
-      const invoice = await issueInvoice({
-        customerName: customerName.trim() || null,
-        items,
-      });
-      const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
-      const view = () =>
-        navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.invoiceId } });
-      if (store.complete(draft.id)) {
-        const toastId = toastManager.add({
-          actionProps: {
-            children: "View",
-            onClick: () => {
-              toastManager.close(toastId);
-              void view();
-            },
-          },
-          title,
-          type: "success",
-        });
-        store.focusSearch();
-      } else {
-        toastManager.add({ title, type: "success" });
-        await view();
-      }
-    } catch (error) {
-      toastManager.add({
-        title: storeErrorMessage(error, "Could not create the invoice."),
-        type: "error",
-      });
-    } finally {
-      store.endCompleting(draft.id);
-    }
+    const items = isValidDiscount(bulkDiscount) ? saleItems(lines, bulkDiscount) : null;
+    if (items === null) return;
+    await store.whileCompleting(draft.id, () =>
+      recordSale({
+        issue: () => issueInvoice({ customerName: customerName.trim() || null, items }, draft.id),
+        close: () => store.complete(draft.id),
+        focusSearch: store.focusSearch,
+        view: (invoiceId) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId } }),
+      }),
+    );
   };
 
   const tabs = drafts.drafts.map((open) => ({
     id: open.id,
     label: saleDraftLabel(open),
     lineCount: open.lines.length,
-    total: draftTotal(open, lookup),
+    total: open.id === draft.id ? total : draftTotal(open, lookup),
   }));
 
   return (
@@ -315,7 +306,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           setCustomerName,
           setBulkDiscount,
           completeSale,
-          focusSearch,
+          focusSearch: store.focusSearch,
           openDraft: store.open,
           activateDraft: (id) => activate((state) => activateSaleDraft(state, id)),
           activateDraftAt: (index) => activate((state) => activateSaleDraftAt(state, index)),
@@ -351,4 +342,4 @@ function useInvoiceCreate() {
   return context;
 }
 
-export { InvoiceCreateProvider, useInvoiceCreate, type SaleDraftTab };
+export { InvoiceCreateProvider, useInvoiceCreate };

@@ -1,4 +1,4 @@
-import { BatchId, ProductId } from "@store/contracts/ids";
+import { BatchId, InvoiceId, ProductId } from "@store/contracts/ids";
 import * as Schema from "effect/Schema";
 
 export const MAX_SALE_DRAFTS = 9;
@@ -18,7 +18,7 @@ export const SaleDraftLine = Schema.Struct({
 export type SaleDraftLine = typeof SaleDraftLine.Type;
 
 export const SaleDraft = Schema.Struct({
-  id: Sequence,
+  id: InvoiceId,
   ordinal: Sequence,
   customerName: Schema.String,
   bulkDiscount: Schema.NullOr(Schema.Finite),
@@ -28,11 +28,12 @@ export type SaleDraft = typeof SaleDraft.Type;
 
 const SaleDraftsFields = Schema.Struct({
   sequence: Sequence,
-  activeId: Sequence,
+  activeId: InvoiceId,
   drafts: Schema.Array(SaleDraft),
 });
 
-const isDistinct = (values: ReadonlyArray<number>) => new Set(values).size === values.length;
+const isDistinct = (values: ReadonlyArray<number | string>) =>
+  new Set(values).size === values.length;
 
 const isCoherent = (state: typeof SaleDraftsFields.Type) => {
   const ids = state.drafts.map((draft) => draft.id);
@@ -40,9 +41,10 @@ const isCoherent = (state: typeof SaleDraftsFields.Type) => {
   return (
     ids.length > 0 &&
     ids.includes(state.activeId) &&
-    isDistinct([...ids, ...keys]) &&
+    isDistinct(ids) &&
+    isDistinct(keys) &&
     isDistinct(state.drafts.map((draft) => draft.ordinal)) &&
-    [...ids, ...keys].every((value) => value < state.sequence)
+    keys.every((key) => key < state.sequence)
   );
 };
 
@@ -51,16 +53,9 @@ export const SaleDrafts = SaleDraftsFields.check(
 );
 export type SaleDrafts = typeof SaleDrafts.Type;
 
-export type DiscardedSaleDraft = {
-  readonly draft: SaleDraft;
-  readonly index: number;
-  readonly wasActive: boolean;
-  readonly placeholderId: number | null;
-};
-
 export type SaleLineChanges = Partial<Pick<SaleDraftLine, "batchId" | "quantity" | "price">>;
 
-const emptyDraft = (id: number, ordinal: number): SaleDraft => ({
+const emptyDraft = (id: InvoiceId, ordinal: number): SaleDraft => ({
   id,
   ordinal,
   customerName: "",
@@ -71,10 +66,10 @@ const emptyDraft = (id: number, ordinal: number): SaleDraft => ({
 const nextOrdinal = (drafts: ReadonlyArray<SaleDraft>) =>
   drafts.reduce((highest, draft) => Math.max(highest, draft.ordinal), 0) + 1;
 
-export const initialSaleDrafts = (): SaleDrafts => ({
-  sequence: 2,
-  activeId: 1,
-  drafts: [emptyDraft(1, 1)],
+export const initialSaleDrafts = (id: InvoiceId): SaleDrafts => ({
+  sequence: 1,
+  activeId: id,
+  drafts: [emptyDraft(id, 1)],
 });
 
 export const draftHasLines = (draft: SaleDraft) => draft.lines.length > 0;
@@ -87,25 +82,29 @@ export const activeSaleDraft = (state: SaleDrafts): SaleDraft =>
   state.drafts[0] ??
   emptyDraft(state.activeId, 1);
 
+export const hasHeldSale = (state: SaleDrafts) =>
+  state.drafts.some((draft) => !isBlankDraft(draft));
+
 export const saleDraftLabel = (draft: SaleDraft) =>
   draft.customerName.trim() || `Sale ${draft.ordinal}`;
 
 export const canOpenSaleDraft = (state: SaleDrafts) =>
   state.drafts.length < MAX_SALE_DRAFTS || state.drafts.some(isBlankDraft);
 
-export const openSaleDraft = (state: SaleDrafts): SaleDrafts => {
+export const openSaleDraft = (state: SaleDrafts, id: InvoiceId): SaleDrafts => {
   if (isBlankDraft(activeSaleDraft(state))) return state;
   const blank = state.drafts.find(isBlankDraft);
   if (blank) return { ...state, activeId: blank.id };
   if (state.drafts.length >= MAX_SALE_DRAFTS) return state;
+  if (state.drafts.some((draft) => draft.id === id)) return state;
   return {
-    sequence: state.sequence + 1,
-    activeId: state.sequence,
-    drafts: [...state.drafts, emptyDraft(state.sequence, nextOrdinal(state.drafts))],
+    ...state,
+    activeId: id,
+    drafts: [...state.drafts, emptyDraft(id, nextOrdinal(state.drafts))],
   };
 };
 
-export const activateSaleDraft = (state: SaleDrafts, id: number): SaleDrafts =>
+export const activateSaleDraft = (state: SaleDrafts, id: InvoiceId): SaleDrafts =>
   id !== state.activeId && state.drafts.some((draft) => draft.id === id)
     ? { ...state, activeId: id }
     : state;
@@ -121,87 +120,53 @@ export const cycleSaleDraft = (state: SaleDrafts, step: 1 | -1): SaleDrafts => {
   return activateSaleDraftAt(state, (index + step + count) % count);
 };
 
-export const closeSaleDraft = (state: SaleDrafts, id: number): SaleDrafts => {
+export const closeSaleDraft = (
+  state: SaleDrafts,
+  id: InvoiceId,
+  placeholderId: InvoiceId,
+): SaleDrafts => {
   const index = state.drafts.findIndex((draft) => draft.id === id);
   if (index === -1) return state;
   const drafts = state.drafts.filter((draft) => draft.id !== id);
   if (drafts.length === 0) {
-    return {
-      sequence: state.sequence + 1,
-      activeId: state.sequence,
-      drafts: [emptyDraft(state.sequence, 1)],
-    };
+    return { ...state, activeId: placeholderId, drafts: [emptyDraft(placeholderId, 1)] };
   }
   if (state.activeId !== id) return { ...state, drafts };
   const neighbour = drafts[index] ?? drafts[index - 1] ?? drafts[0];
   return { ...state, activeId: neighbour?.id ?? state.activeId, drafts };
 };
 
-export const discardSaleDraft = (
-  state: SaleDrafts,
-  id: number,
-): [discarded: DiscardedSaleDraft | null, next: SaleDrafts] => {
-  const index = state.drafts.findIndex((draft) => draft.id === id);
-  const draft = state.drafts[index];
-  if (!draft) return [null, state];
-  const discarded = {
-    draft,
-    index,
-    wasActive: state.activeId === id,
-    placeholderId: state.drafts.length === 1 ? state.sequence : null,
-  };
-  return [discarded, closeSaleDraft(state, id)];
-};
-
-export const restoreSaleDraft = (state: SaleDrafts, discarded: DiscardedSaleDraft): SaleDrafts => {
-  const { draft } = discarded;
-  const keys = draft.lines.map((line) => line.key);
-  const taken = new Set(
-    state.drafts.flatMap((open) => [open.id, ...open.lines.map((line) => line.key)]),
-  );
-  if ([draft.id, ...keys].some((value) => taken.has(value))) return state;
-  const placeholder = state.drafts.find(
-    (open) => open.id === discarded.placeholderId && isBlankDraft(open),
-  );
-  const open = state.drafts.filter((candidate) => candidate !== placeholder);
-  const restored = open.some((candidate) => candidate.ordinal === draft.ordinal)
-    ? { ...draft, ordinal: nextOrdinal(open) }
-    : draft;
-  const index = Math.min(discarded.index, open.length);
-  const activate =
-    discarded.wasActive || open.every((candidate) => candidate.id !== state.activeId);
-  return {
-    sequence: Math.max(state.sequence, draft.id + 1, ...keys.map((key) => key + 1)),
-    activeId: activate ? draft.id : state.activeId,
-    drafts: [...open.slice(0, index), restored, ...open.slice(index)],
-  };
-};
-
 const mapDraft = (
   state: SaleDrafts,
-  id: number,
+  id: InvoiceId,
   change: (draft: SaleDraft) => SaleDraft,
-): SaleDrafts => ({
-  ...state,
-  drafts: state.drafts.map((draft) => (draft.id === id ? change(draft) : draft)),
-});
+): SaleDrafts =>
+  state.drafts.some((draft) => draft.id === id)
+    ? { ...state, drafts: state.drafts.map((draft) => (draft.id === id ? change(draft) : draft)) }
+    : state;
 
-const mapLine = (
+const hasLine = (draft: SaleDraft, key: number) => draft.lines.some((line) => line.key === key);
+
+const mapLines = (
   state: SaleDrafts,
   key: number,
-  change: (line: SaleDraftLine) => SaleDraftLine,
-): SaleDrafts => ({
-  ...state,
-  drafts: state.drafts.map((draft) =>
-    draft.lines.some((line) => line.key === key)
-      ? { ...draft, lines: draft.lines.map((line) => (line.key === key ? change(line) : line)) }
-      : draft,
-  ),
-});
+  change: (lines: ReadonlyArray<SaleDraftLine>) => ReadonlyArray<SaleDraftLine>,
+): SaleDrafts =>
+  state.drafts.some((draft) => hasLine(draft, key))
+    ? {
+        ...state,
+        drafts: state.drafts.map((draft) =>
+          hasLine(draft, key) ? { ...draft, lines: change(draft.lines) } : draft,
+        ),
+      }
+    : state;
+
+const mapLine = (state: SaleDrafts, key: number, change: (line: SaleDraftLine) => SaleDraftLine) =>
+  mapLines(state, key, (lines) => lines.map((line) => (line.key === key ? change(line) : line)));
 
 export const addSaleProduct = (
   state: SaleDrafts,
-  id: number,
+  id: InvoiceId,
   productId: ProductId,
   quantity: number,
 ): SaleDrafts => {
@@ -239,19 +204,13 @@ export const setSaleLineUnit = (
   quantityUnit: SaleDraftLine["quantityUnit"],
 ) => mapLine(state, key, (line) => ({ ...line, quantityUnit, price: CATALOG_PRICE }));
 
-export const removeSaleLine = (state: SaleDrafts, key: number): SaleDrafts => ({
-  ...state,
-  drafts: state.drafts.map((draft) =>
-    draft.lines.some((line) => line.key === key)
-      ? { ...draft, lines: draft.lines.filter((line) => line.key !== key) }
-      : draft,
-  ),
-});
+export const removeSaleLine = (state: SaleDrafts, key: number) =>
+  mapLines(state, key, (lines) => lines.filter((line) => line.key !== key));
 
-export const setSaleCustomer = (state: SaleDrafts, id: number, customerName: string) =>
+export const setSaleCustomer = (state: SaleDrafts, id: InvoiceId, customerName: string) =>
   mapDraft(state, id, (draft) => ({ ...draft, customerName }));
 
-export const setSaleDiscount = (state: SaleDrafts, id: number, bulkDiscount: number | null) =>
+export const setSaleDiscount = (state: SaleDrafts, id: InvoiceId, bulkDiscount: number | null) =>
   mapDraft(state, id, (draft) => ({ ...draft, bulkDiscount }));
 
 export const saleProductIds = (state: SaleDrafts): ReadonlyArray<ProductId> =>
@@ -265,7 +224,7 @@ export type QuantityElsewhere = {
 
 export const quantitiesInOtherDrafts = (
   state: SaleDrafts,
-  id: number,
+  id: InvoiceId,
 ): ReadonlyMap<ProductId, QuantityElsewhere> => {
   const totals = new Map<ProductId, QuantityElsewhere>();
   for (const draft of state.drafts) {

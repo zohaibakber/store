@@ -1,7 +1,7 @@
 import { decodeBatchSqliteRows, decodeInvoiceSqliteRows } from "@store/client-db";
 import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
 import type { EnqueueCommandRequest } from "@store/contracts";
-import { decodeProductId } from "@store/contracts/ids";
+import { decodeInvoiceId, decodeProductId } from "@store/contracts/ids";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
@@ -207,6 +207,61 @@ describe("issueInvoice", () => {
     expect(await visiblePacks()).toBe(10);
     await sale(10);
     expect(await visiblePacks()).toBe(0);
+
+    await inventory.dispose();
+  });
+
+  it("records a sale under the invoice id it is given, and only once", async () => {
+    const replica = await openNodeReplicaSqlite({ ...scope, replicaId: "replica-3" });
+    const host: InventoryHost = {
+      apiBaseUrl: "http://localhost",
+      deviceId: "replica-3",
+      openReplica: async () => replica,
+    };
+    const inventory = await openInventoryWorkspace(host, scope);
+    const tablets = await inventory.actions.createCategory({ name: "Tablets" });
+    const panadol = await inventory.actions.createProductWithBatch({
+      product: { name: "Panadol", categoryId: tablets.id, unitsPerPack: 1 },
+      batch: { packQuantity: 5 },
+    });
+    const draftId = decodeInvoiceId("44444444-4444-4444-8444-444444444444");
+    const sale = (quantity: number) =>
+      inventory.actions.issueInvoice(
+        {
+          customerName: null,
+          items: [
+            {
+              productId: decodeProductId(panadol.product.id),
+              batchId: null,
+              quantity,
+              quantityType: "pack",
+              salePrice: 100,
+            },
+          ],
+        },
+        draftId,
+      );
+
+    expect((await sale(2)).invoiceId).toBe(draftId);
+    await expect(sale(2)).rejects.toThrow();
+    await expect(sale(1)).rejects.toThrow();
+
+    const invoices = await replica.readSubset({
+      source: "invoices",
+      orderBy: [{ column: "invoiceNumber", direction: "asc" }],
+      limit: 10,
+      offset: 0,
+    });
+    const recorded = await Effect.runPromise(decodeInvoiceSqliteRows(invoices.rows));
+    expect(recorded.map((invoice) => [invoice.id, invoice.total])).toEqual([[draftId, 200]]);
+    const batches = await replica.readSubset({
+      source: "batches",
+      orderBy: [{ column: "id", direction: "asc" }],
+      limit: 10,
+      offset: 0,
+    });
+    const stock = await Effect.runPromise(decodeBatchSqliteRows(batches.rows));
+    expect(stock.map((batch) => batch.packQuantity)).toEqual([3]);
 
     await inventory.dispose();
   });

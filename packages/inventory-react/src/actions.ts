@@ -104,12 +104,15 @@ export const makeInventoryActions = (
     operationId: string,
     command: SyncCommandEnvelope["command"],
     occurredAt: number,
+    callerChoseId = false,
   ): Promise<void> => {
     const request = { operationId, command, occurredAt };
     try {
       await replica.enqueueCommand(request);
     } catch (cause) {
-      const durable = await replica.readCommandStatus(operationId).catch(() => undefined);
+      const durable = callerChoseId
+        ? undefined
+        : await replica.readCommandStatus(operationId).catch(() => undefined);
       if (durable !== undefined) return;
       await replica.enqueueCommand(request).catch(() => {
         throw cause;
@@ -121,8 +124,8 @@ export const makeInventoryActions = (
     fallbackMessage: string,
     read: () => Promise<Tables>,
     run: (context: ProjectionContext<Tables>) => Promise<Result>,
+    commandId: string = crypto.randomUUID(),
   ): Promise<Result> => {
-    const commandId = crypto.randomUUID();
     setCommandExecution({ _tag: "accepting", operationId: commandId });
     try {
       const tables = await read();
@@ -155,7 +158,9 @@ export const makeInventoryActions = (
     fallbackMessage: string,
     reads: CatalogRowsRequest,
     run: (context: CatalogProjectionContext) => Promise<Result>,
-  ): Promise<Result> => runProjected(fallbackMessage, () => readCatalogRows(replica, reads), run);
+    commandId?: string,
+  ): Promise<Result> =>
+    runProjected(fallbackMessage, () => readCatalogRows(replica, reads), run, commandId);
 
   const runPurchasing = <Result>(
     fallbackMessage: string,
@@ -312,7 +317,7 @@ export const makeInventoryActions = (
         },
       );
     },
-    issueInvoice: (input) =>
+    issueInvoice: (input, invoiceId) =>
       runCommand(
         "Invoice could not be accepted locally.",
         {
@@ -334,12 +339,14 @@ export const makeInventoryActions = (
             context.commandId,
             { _tag: "issueInvoice", payload: projection.command },
             context.occurredAt,
+            invoiceId !== undefined,
           );
           return {
             invoiceId: projection.invoice.id,
             invoiceNumber: projection.invoice.invoiceNumber,
           };
         },
+        invoiceId,
       ),
     saveSupplier: (input) =>
       runPurchasing(

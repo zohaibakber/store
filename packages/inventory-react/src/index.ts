@@ -56,6 +56,7 @@ export {
   useInventoryInvoice,
   useInventoryInvoices,
   useInvoiceHistory,
+  useIssuedInvoices,
   usePendingRowIds,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,

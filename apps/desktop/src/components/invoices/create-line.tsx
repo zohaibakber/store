@@ -178,7 +178,7 @@ function LineBatch({ line }: { line: SaleLine }) {
     <Select<SaleLine["batchId"]>
       items={items}
       onValueChange={(value) => {
-        if (value) updateLine(line.key, { batchId: value });
+        if (value) updateLine(line, { batchId: value });
       }}
       value={line.batchId}
     >
@@ -259,7 +259,7 @@ function InvoiceCreateLine({
             className="w-16"
             format={{ useGrouping: false }}
             min={1}
-            onValueChange={(quantity) => updateLine(line.key, { quantity })}
+            onValueChange={(quantity) => updateLine(line, { quantity })}
             size="sm"
             step={1}
             value={line.quantity}
@@ -309,7 +309,7 @@ function InvoiceCreateLine({
             className="w-20"
             format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
             min={0}
-            onValueChange={(salePrice) => updateLine(line.key, { salePrice })}
+            onValueChange={(salePrice) => updateLine(line, { salePrice })}
             size="sm"
             step={1}
             value={line.salePrice}
