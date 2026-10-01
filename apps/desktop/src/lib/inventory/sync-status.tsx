@@ -1,12 +1,14 @@
+import { useAtom } from "@effect/atom-react";
 import {
   Alert02Icon,
   AlertCircleIcon,
+  Cancel01Icon,
   DatabaseRestoreIcon,
   DownloadCircle01Icon,
   RefreshCwIcon,
   WifiOff01Icon,
 } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   inventorySyncIssueLabel,
   useCatalogIsReady,
@@ -14,6 +16,7 @@ import {
   useInventorySyncActivity,
   useInventorySyncing,
   useInventorySyncStatus,
+  type InventorySyncActivity,
   type InventorySyncStatus,
 } from "@store/inventory-react";
 import { useState } from "react";
@@ -22,6 +25,7 @@ import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { canCheckForAppUpdate, useCheckForAppUpdate } from "@/hooks/use-app-updater";
 import { useOnline } from "@/hooks/use-online";
+import { acknowledgedRejectionsAtom } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 
 const attention = (status: InventorySyncStatus) => {
@@ -41,22 +45,46 @@ const attention = (status: InventorySyncStatus) => {
   }
 };
 
+const MAX_ACKNOWLEDGED_REJECTIONS = 16;
+
+const rejectionKey = (activity: InventorySyncActivity) =>
+  activity.rejected[0]?.operationId ?? `unnamed:${activity.rejectedCount}`;
+
+const useSyncIssue = () => {
+  const status = useInventorySyncStatus();
+  const activity = useInventorySyncActivity();
+  const [acknowledged, setAcknowledged] = useAtom(acknowledgedRejectionsAtom);
+  const key = rejectionKey(activity);
+  const dismissed = status._tag === "rejected" && acknowledged.includes(key);
+  return {
+    status,
+    issue: dismissed ? null : attention(status),
+    label: inventorySyncIssueLabel(status, activity),
+    dismissible: status._tag === "rejected" && !dismissed,
+    dismiss: () =>
+      setAcknowledged((current) =>
+        current.includes(key) ? current : [...current, key].slice(-MAX_ACKNOWLEDGED_REJECTIONS),
+      ),
+  };
+};
+
+type SyncIssue = NonNullable<ReturnType<typeof attention>>;
+
 function SyncButtonView({
   online,
-  status,
+  issue,
   issueLabel,
   syncing,
   onSync,
 }: {
   readonly online: boolean;
-  readonly status: InventorySyncStatus;
+  readonly issue: SyncIssue | null;
   readonly issueLabel: string;
   readonly syncing: boolean;
   readonly onSync: () => void;
 }) {
   const [spinning, setSpinning] = useState(false);
   if (syncing && !spinning) setSpinning(true);
-  const issue = attention(status);
   const label = issue
     ? issueLabel
     : !online
@@ -103,15 +131,61 @@ export function OnDeviceStatus() {
   return <ReadyOnDeviceStatus />;
 }
 
-export function OnDeviceRetry() {
+export function OnDeviceAction() {
   if (!useCatalogIsReady()) return null;
-  return <ReadyOnDeviceRetry />;
+  return <ReadyOnDeviceAction />;
 }
 
-function ReadyOnDeviceRetry() {
+function OnDeviceActionButton({
+  label,
+  icon,
+  tone,
+  busy = false,
+  onClick,
+}: {
+  readonly label: string;
+  readonly icon: IconSvgElement;
+  readonly tone: string;
+  readonly busy?: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <SidebarMenuAction
+            aria-label={label}
+            className="peer-data-[size=lg]/menu-button:top-3.5"
+            disabled={busy}
+            onClick={onClick}
+          />
+        }
+      >
+        <HugeiconsIcon
+          aria-hidden="true"
+          className={cn(tone, busy && "animate-spin")}
+          icon={icon}
+        />
+      </TooltipTrigger>
+      <TooltipPopup side="right">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function ReadyOnDeviceAction() {
   const { retrySync } = useInventoryActions();
-  const status = useInventorySyncStatus();
+  const { status, dismissible, dismiss } = useSyncIssue();
   const [retrying, setRetrying] = useState(false);
+  if (dismissible) {
+    return (
+      <OnDeviceActionButton
+        icon={Cancel01Icon}
+        label="Dismiss"
+        onClick={dismiss}
+        tone="text-muted-foreground"
+      />
+    );
+  }
   if (status._tag !== "recoveryRequired" || status.retryable !== true) return null;
   const retry = () => {
     setRetrying(true);
@@ -120,40 +194,25 @@ function ReadyOnDeviceRetry() {
       .finally(() => setRetrying(false));
   };
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <SidebarMenuAction
-            aria-label="Try again"
-            className="peer-data-[size=lg]/menu-button:top-3.5"
-            disabled={retrying}
-            onClick={retry}
-          />
-        }
-      >
-        <HugeiconsIcon
-          aria-hidden="true"
-          className={cn("text-warning-foreground", retrying && "animate-spin")}
-          icon={RefreshCwIcon}
-        />
-      </TooltipTrigger>
-      <TooltipPopup side="right">Try again</TooltipPopup>
-    </Tooltip>
+    <OnDeviceActionButton
+      busy={retrying}
+      icon={RefreshCwIcon}
+      label="Try again"
+      onClick={retry}
+      tone="text-warning-foreground"
+    />
   );
 }
 
 function ReadyOnDeviceStatus() {
-  const status = useInventorySyncStatus();
-  const activity = useInventorySyncActivity();
-  const issue = attention(status);
-  const label = issue ? inventorySyncIssueLabel(status, activity) : "Saved on this device";
+  const { issue, label } = useSyncIssue();
   return (
     <span
       className={cn("truncate text-xs", issue?.tone ?? "text-muted-foreground")}
       role="status"
       title={issue ? label : undefined}
     >
-      {label}
+      {issue ? label : "Saved on this device"}
     </span>
   );
 }
@@ -161,8 +220,7 @@ function ReadyOnDeviceStatus() {
 function ReadySyncButton() {
   const { retrySync, syncNow } = useInventoryActions();
   const checkForAppUpdate = useCheckForAppUpdate();
-  const status = useInventorySyncStatus();
-  const activity = useInventorySyncActivity();
+  const { status, issue, label, dismissible, dismiss } = useSyncIssue();
   const applyUpdate = () => {
     if (canCheckForAppUpdate()) checkForAppUpdate();
     else window.location.reload();
@@ -175,6 +233,10 @@ function ReadySyncButton() {
       case "recoveryRequired":
         return status.retryable === true ? retry : syncNow;
       case "rejected":
+        return () => {
+          dismiss();
+          syncNow();
+        };
       case "storageError":
       case "savedLocally":
       case "pendingConfirmation":
@@ -184,10 +246,10 @@ function ReadySyncButton() {
   };
   return (
     <SyncButtonView
-      issueLabel={inventorySyncIssueLabel(status, activity)}
+      issue={issue}
+      issueLabel={dismissible ? `${label} Click to dismiss.` : label}
       onSync={action()}
       online={useOnline()}
-      status={status}
       syncing={useInventorySyncing()}
     />
   );

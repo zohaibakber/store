@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { IssuedSession, OrganizationCommand } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
-import { deviceLabelOf, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -24,6 +24,7 @@ import {
 import { AuthBroker } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
+import { hostDeviceLabel } from "./device-label";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
@@ -445,7 +446,7 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
-    deviceLabel: deviceLabelOf(hostname()),
+    deviceLabel: hostDeviceLabel(hostname()),
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
     liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,

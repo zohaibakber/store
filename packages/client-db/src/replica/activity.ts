@@ -12,10 +12,11 @@ import {
   type OutboxActivityRow,
   type ReplicaOutboxActivity,
 } from "@store/sync/browser";
+import * as Array from "effect/Array";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { syncStatusFromOutbox, type InventorySyncStatus } from "./status";
+const MAX_REJECTED_COMMAND_TARGETS = 32;
 
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
@@ -29,7 +30,9 @@ export const RejectedCommand = Schema.Struct({
   command: Schema.Literals(["issueInvoice", "catalogWrite"]),
   code: Schema.String,
   message: Schema.String,
-  targets: Schema.Array(RejectedCommandTarget),
+  targets: Schema.Array(RejectedCommandTarget).check(
+    Schema.isMaxLength(MAX_REJECTED_COMMAND_TARGETS),
+  ),
   productId: Schema.NullOr(Schema.String),
 });
 export type RejectedCommand = typeof RejectedCommand.Type;
@@ -85,6 +88,21 @@ const uniqueTargets = (
   });
 };
 
+const sameEntity = (left: RejectedCommandTarget, right: RejectedCommandTarget) =>
+  left.entity === right.entity;
+
+const boundedTargets = (
+  targets: ReadonlyArray<RejectedCommandTarget>,
+): ReadonlyArray<RejectedCommandTarget> => {
+  const unique = uniqueTargets(targets);
+  if (unique.length <= MAX_REJECTED_COMMAND_TARGETS) return unique;
+  const firstOfEachEntity = Array.dedupeWith(unique, sameEntity);
+  return Array.take(
+    [...firstOfEachEntity, ...unique.filter((target) => !firstOfEachEntity.includes(target))],
+    MAX_REJECTED_COMMAND_TARGETS,
+  );
+};
+
 const writeTargets = (write: CatalogRowWrite): ReadonlyArray<RejectedCommandTarget> => {
   const target = { entity: write.entity, id: write.id };
   return write.entity === "batch" && write.action === "upsert" && write.receipt !== undefined
@@ -106,14 +124,14 @@ export const commandTargets = (command: SyncCommand): CommandTargets => {
         return [];
       });
       return {
-        targets: uniqueTargets(command.payload.writes.flatMap(writeTargets)),
+        targets: boundedTargets(command.payload.writes.flatMap(writeTargets)),
         productId: productIds[0] ?? null,
       };
     }
     case "issueInvoice": {
       const productIds = command.payload.input.items.map((item) => item.productId);
       return {
-        targets: uniqueTargets([
+        targets: boundedTargets([
           { entity: "invoice", id: command.payload.invoiceId },
           ...productIds.map((id) => ({ entity: "product" as const, id })),
         ]),
@@ -211,7 +229,7 @@ export const rejectedCommandFromOutbox = (row: OutboxActivityRow): Option.Option
     }),
   );
 
-export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): InventorySyncActivity => {
+const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): InventorySyncActivity => {
   let pendingCount = 0;
   let rejectedCount = 0;
   for (const entry of activity.statusCounts) {
@@ -230,9 +248,6 @@ export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): Invento
 
 const presentStatuses = (activity: ReplicaOutboxActivity): ReadonlyArray<CommandStatus> =>
   activity.statusCounts.filter((entry) => entry.count > 0).map((entry) => entry.status);
-
-export const syncStatusFromActivity = (activity: ReplicaOutboxActivity): InventorySyncStatus =>
-  syncStatusFromOutbox(presentStatuses(activity));
 
 export const replicaSyncActivityOf = (outbox: ReplicaOutboxActivity): ReplicaSyncActivity => ({
   statuses: presentStatuses(outbox),

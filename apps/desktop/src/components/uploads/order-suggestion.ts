@@ -1,4 +1,5 @@
 import {
+  formatInvoiceNumber,
   purchaseOrderLineRemaining,
   type PurchaseOrder,
   type PurchaseOrderItem,
@@ -97,5 +98,7 @@ export const deliveryNoteOf = (
   invoiceNumber: string | null,
 ): string | null => {
   const reference = invoiceNumber?.trim().slice(0, MAX_INVOICE_REFERENCE_LENGTH);
-  return reference ? `Purchase order #${orderNumber} · Invoice ${reference}` : null;
+  return reference
+    ? `Purchase order #${formatInvoiceNumber(orderNumber)} · Invoice ${reference}`
+    : null;
 };

@@ -69,3 +69,10 @@ export const publishOfferDismissedAtom = Atom.kvs({
   schema: Schema.Array(Schema.String),
   defaultValue: (): ReadonlyArray<string> => [],
 }).pipe(Atom.keepAlive);
+
+export const acknowledgedRejectionsAtom = Atom.kvs({
+  runtime: preferencesRuntime,
+  key: "store.acknowledged-rejections",
+  schema: Schema.Array(Schema.String),
+  defaultValue: (): ReadonlyArray<string> => [],
+}).pipe(Atom.keepAlive);

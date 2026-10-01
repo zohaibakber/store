@@ -4,11 +4,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  rejectedCommandFromOutbox,
-  syncActivityFromOutbox,
-  syncStatusFromActivity,
-} from "../src/replica/activity";
+import { rejectedCommandFromOutbox, replicaSyncActivityOf } from "../src/replica/activity";
+import { syncStatusFromOutbox } from "../src/replica/status";
 
 const batchWriteCommand = {
   _tag: "catalogWrite",
@@ -115,8 +112,9 @@ describe("sync activity", () => {
       rejected: [],
       caughtUpAt: 55,
       lowestActiveSchemaVersion: 1,
-    } satisfies Parameters<typeof syncActivityFromOutbox>[0];
-    expect(syncActivityFromOutbox(outbox)).toEqual({
+    } satisfies Parameters<typeof replicaSyncActivityOf>[0];
+    const read = replicaSyncActivityOf(outbox);
+    expect(read.activity).toEqual({
       pendingCount: 3,
       rejectedCount: 0,
       rejected: [],
@@ -124,7 +122,9 @@ describe("sync activity", () => {
       firstSyncPending: false,
       lowestActiveSchemaVersion: 1,
     });
-    expect(syncStatusFromActivity(outbox)).toEqual({ _tag: "pendingConfirmation" });
-    expect(syncStatusFromActivity({ ...outbox, statusCounts: [] })).toEqual({ _tag: "caughtUp" });
+    expect(syncStatusFromOutbox(read.statuses)).toEqual({ _tag: "pendingConfirmation" });
+    expect(
+      syncStatusFromOutbox(replicaSyncActivityOf({ ...outbox, statusCounts: [] }).statuses),
+    ).toEqual({ _tag: "caughtUp" });
   });
 });

@@ -1,5 +1,6 @@
 import {
   canMovePurchaseOrder,
+  formatInvoiceNumber,
   isPurchaseOrderOpen,
   purchaseOrderLineBaseUnits,
   purchaseOrderLineTotal,
@@ -510,7 +511,7 @@ export const projectReceiveDelivery = (
   if (!isPurchaseOrderOpen(current.status)) {
     throw new Error(purchasingRejection.orderNotOpen.message);
   }
-  const note = noteOf(input.note) ?? `Purchase order #${current.orderNumber}`;
+  const note = noteOf(input.note) ?? `Purchase order #${formatInvoiceNumber(current.orderNumber)}`;
   const priced = new Map<string, ProductRow>();
   const batches: Array<BatchRow> = [];
   const receipts: Array<CatalogRowWrite> = [];

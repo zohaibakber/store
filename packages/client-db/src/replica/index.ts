@@ -41,9 +41,7 @@ export {
   rejectionReason,
   replicaSyncActivityOf,
   ReplicaSyncActivity,
-  syncActivityFromOutbox,
   syncActivityFromStatuses,
-  syncStatusFromActivity,
 } from "./activity";
 export type {
   InventorySyncActivity,

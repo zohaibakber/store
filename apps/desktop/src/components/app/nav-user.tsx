@@ -20,7 +20,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import type { Workspace } from "@/host-access";
 import { signOut, useAuth } from "@/lib/auth";
-import { OnDeviceRetry, OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
+import { OnDeviceAction, OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
 import { usePublishInProgress } from "@/lib/local-publish";
 
 type Identity = {
@@ -89,7 +89,7 @@ type SyncSlots = {
 const syncOf = (workspace: Workspace): SyncSlots => {
   switch (workspace._tag) {
     case "Local":
-      return { status: <OnDeviceStatus />, action: <OnDeviceRetry /> };
+      return { status: <OnDeviceStatus />, action: <OnDeviceAction /> };
     case "Organization":
       return { status: null, action: <SidebarSyncButton /> };
     case "None":

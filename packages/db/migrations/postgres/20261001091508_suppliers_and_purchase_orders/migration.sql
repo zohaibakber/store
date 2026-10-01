@@ -1688,32 +1688,43 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   END
 $$;
 --> statement-breakpoint
+CREATE FUNCTION sync.import_purchasing_gate(
+  p_organization_id text, p_import_id text, p_now bigint
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_label text;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
+    WHERE s.entity IN ('supplier', 'purchaseOrder', 'purchaseOrderItem')
+      OR (s.entity = 'stockMovement' AND jsonb_typeof(s.image->'purchaseOrderId') = 'string')
+  ) THEN
+    RETURN;
+  END IF;
+  SELECT r.device_label INTO v_label
+  FROM sync.active_replicas(p_organization_id, p_now) AS r
+  WHERE r.schema_version < 2
+  ORDER BY r.last_seen_at DESC, r.replica_id
+  LIMIT 1;
+  IF FOUND THEN
+    PERFORM sync.reject(
+      'REPLICA_SCHEMA_OUTDATED',
+      'Update Tabaaq on ' || coalesce(nullif(v_label, ''), 'another device')
+        || ' before moving suppliers and purchase orders into this organization.'
+    );
+  END IF;
+END
+$$;
+--> statement-breakpoint
 CREATE FUNCTION sync.import_suppliers(
   p_organization_id text, p_user_id text, p_import_id text, p_now bigint
 ) RETURNS bigint
 LANGUAGE plpgsql AS $$
 DECLARE
   v_count bigint;
-  v_label text;
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
-    WHERE s.entity IN ('supplier', 'purchaseOrder', 'purchaseOrderItem')
-      OR (s.entity = 'stockMovement' AND jsonb_typeof(s.image->'purchaseOrderId') = 'string')
-  ) THEN
-    SELECT r.device_label INTO v_label
-    FROM sync.active_replicas(p_organization_id, p_now) AS r
-    WHERE r.schema_version < 2
-    ORDER BY r.last_seen_at DESC, r.replica_id
-    LIMIT 1;
-    IF FOUND THEN
-      PERFORM sync.reject(
-        'REPLICA_SCHEMA_OUTDATED',
-        'Update Tabaaq on ' || coalesce(nullif(v_label, ''), 'another device')
-          || ' before moving suppliers and purchase orders into this organization.'
-      );
-    END IF;
-  END IF;
+  PERFORM sync.import_purchasing_gate(p_organization_id, p_import_id, p_now);
   IF EXISTS (
     SELECT 1 FROM sync.import_staged(p_organization_id, p_import_id) AS s
     WHERE s.entity = 'supplier'
