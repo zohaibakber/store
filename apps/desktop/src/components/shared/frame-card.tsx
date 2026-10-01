@@ -1,14 +1,12 @@
 import type * as React from "react";
 
 import {
-  Card,
-  CardFrame,
-  CardFrameAction,
-  CardFrameDescription,
-  CardFrameHeader,
-  CardFrameTitle,
-  CardPanel,
-} from "@/components/ui/card";
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@/components/ui/frame";
 
 export function FrameCard({
   action,
@@ -18,7 +16,7 @@ export function FrameCard({
   table = false,
   title,
   ...props
-}: Omit<React.ComponentProps<typeof CardFrame>, "title"> & {
+}: Omit<React.ComponentProps<typeof Frame>, "title"> & {
   action?: React.ReactNode;
   description?: React.ReactNode;
   flush?: boolean;
@@ -28,29 +26,29 @@ export function FrameCard({
   const hasHeader = title != null || description != null || action != null;
 
   return (
-    <CardFrame {...props}>
+    <Frame {...props}>
       {hasHeader && (
-        <CardFrameHeader className="flex h-11 min-w-0 flex-row items-center">
-          {title != null && <CardFrameTitle className="shrink-0">{title}</CardFrameTitle>}
+        <FrameHeader className="min-w-0 flex-row items-center">
+          {title != null && <FrameTitle className="shrink-0">{title}</FrameTitle>}
           {description != null && (
-            <CardFrameDescription className="min-w-0">
+            <FrameDescription className="ms-3 min-w-0">
               <span className="block truncate tabular-nums">{description}</span>
-            </CardFrameDescription>
+            </FrameDescription>
           )}
           {action != null && (
-            <CardFrameAction className="ms-auto shrink-0 items-center">{action}</CardFrameAction>
+            <div className="-my-2 ms-auto flex shrink-0 items-center ps-3">{action}</div>
           )}
-        </CardFrameHeader>
+        </FrameHeader>
       )}
       {table ? (
         children
       ) : flush ? (
-        <Card className="flex-1 overflow-hidden">{children}</Card>
+        <FramePanel className="flex-1 overflow-hidden">
+          <div className="-m-5">{children}</div>
+        </FramePanel>
       ) : (
-        <Card className="flex-1">
-          <CardPanel>{children}</CardPanel>
-        </Card>
+        <FramePanel className="flex-1">{children}</FramePanel>
       )}
-    </CardFrame>
+    </Frame>
   );
 }
