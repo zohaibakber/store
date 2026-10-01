@@ -296,14 +296,6 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       },
       {
         kind: "action",
-        id: "go-restock",
-        label: "Go to Restock",
-        keywords: "reorder order low stock",
-        icon: PackageIcon,
-        run: go("/restock"),
-      },
-      {
-        kind: "action",
         id: "go-products",
         label: "Go to Products",
         keywords: "catalog inventory",
@@ -342,6 +334,14 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
           close();
           void navigate({ to: "/purchases/suppliers" });
         },
+      },
+      {
+        kind: "action",
+        id: "go-restock",
+        label: "Go to Restock",
+        keywords: "reorder order low stock",
+        icon: PackageIcon,
+        run: go("/restock"),
       },
       {
         kind: "action",

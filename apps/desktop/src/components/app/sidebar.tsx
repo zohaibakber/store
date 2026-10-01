@@ -66,12 +66,6 @@ const navMain = [
     icon: <HugeiconsIcon icon={HomeIcon} />,
   },
   {
-    title: "Restock",
-    url: "/restock",
-    icon: <HugeiconsIcon icon={PackageIcon} />,
-    badge: <RestockCount />,
-  },
-  {
     title: "Products",
     url: "/products",
     icon: <HugeiconsIcon icon={TagIcon} />,
@@ -94,6 +88,12 @@ const navMain = [
         icon: <HugeiconsIcon icon={UserMultipleIcon} />,
       },
     ],
+  },
+  {
+    title: "Restock",
+    url: "/restock",
+    icon: <HugeiconsIcon icon={PackageIcon} />,
+    badge: <RestockCount />,
   },
   {
     title: "Invoices",
