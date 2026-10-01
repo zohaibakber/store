@@ -13,10 +13,11 @@ import {
   type AuthClientApi,
   type AuthClientError,
   type AuthClientKind,
+  type IssuedSession,
   type LoginRoute,
   type OrganizationCommand,
-  type TokenSet,
 } from "@store/auth";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
   MemoryTokenStore,
   RequestError,
@@ -247,20 +248,29 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       ),
     );
 
+  const accountOf = (snapshot: WorkspaceSnapshot) =>
+    snapshot.status === "authenticated"
+      ? Effect.succeed(accountFromWorkspace(snapshot))
+      : Effect.fail(
+          new RequestError({
+            status: 401,
+            code: "UNAUTHENTICATED",
+            message: "Sign in to continue.",
+          }),
+        );
+
   const fetchAccount = Effect.gen(function* () {
     const session = yield* SessionHttp;
     const refreshed = yield* session.ensureFreshAccess();
     if (refreshed?.workspace !== undefined) return accountFromWorkspace(refreshed.workspace);
-    const snapshot = yield* session.workspace;
-    if (snapshot.status !== "authenticated") {
-      return yield* new RequestError({
-        status: 401,
-        code: "UNAUTHENTICATED",
-        message: "Sign in to continue.",
-      });
-    }
-    return accountFromWorkspace(snapshot);
+    return yield* Effect.flatMap(session.workspace, accountOf);
   }).pipe(Effect.mapError(failureFacts));
+
+  const issuedAccount = (issued: IssuedSession) =>
+    SessionHttp.use((session) => session.adopt(issued)).pipe(
+      Effect.flatMap(accountOf),
+      Effect.mapError(failureFacts),
+    );
 
   const refreshAccount = Effect.fn("MobileAuth.refreshAccount")(function* () {
     const loaded = yield* Effect.result(fetchAccount);
@@ -286,8 +296,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
         ),
     );
 
-  const signInWith = Effect.fn("MobileAuth.signInWith")(function* (issued: TokenSet) {
-    const loaded = yield* Effect.result(fetchAccount);
+  const signInWith = Effect.fn("MobileAuth.signInWith")(function* (issued: IssuedSession) {
+    const loaded = yield* Effect.result(issuedAccount(issued));
     if (Result.isFailure(loaded)) {
       const session = yield* SessionHttp;
       yield* session.setTokens(null);
@@ -301,10 +311,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     return done;
   });
 
-  const adopt = async (issued: TokenSet): Promise<ActionResult> => {
-    await withSession((session) =>
-      FiberSet.clear(sessionWork).pipe(Effect.andThen(session.setTokens(issued))),
-    );
+  const adopt = async (issued: IssuedSession): Promise<ActionResult> => {
+    await runtime.runPromise(FiberSet.clear(sessionWork));
     return inSession(signInWith(issued), done);
   };
 

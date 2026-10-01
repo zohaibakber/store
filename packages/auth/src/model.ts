@@ -264,6 +264,11 @@ export const sessionWorkspaceFromClaims = (
 export const RefreshedSession = TokenSet.pipe(Schema.fieldsAssign({ workspace: SessionWorkspace }));
 export interface RefreshedSession extends Schema.Schema.Type<typeof RefreshedSession> {}
 
+export const IssuedSession = TokenSet.pipe(
+  Schema.fieldsAssign({ workspace: Schema.optionalKey(SessionWorkspace) }),
+);
+export interface IssuedSession extends Schema.Schema.Type<typeof IssuedSession> {}
+
 export const OrganizationMember = Schema.Struct({
   userId: UserId,
   name: Schema.String,

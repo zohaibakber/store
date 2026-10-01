@@ -31,12 +31,12 @@ import {
   type ExchangeGoogleInput as ExchangeGoogleInputType,
   type GoogleAuthorization as GoogleAuthorizationType,
   type IdentifyInput as IdentifyInputType,
+  type IssuedSession as IssuedSessionType,
   type LoginCommand as LoginCommandType,
   type LoginRoute as LoginRouteType,
   type RefreshedSession as RefreshedSessionType,
   type RefreshInput as RefreshInputType,
   type SignOutInput as SignOutInputType,
-  type TokenSet as TokenSetType,
 } from "./model";
 
 export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth.AuthClientError", {
@@ -55,16 +55,16 @@ export interface AuthClientApi {
   readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
   readonly authenticate: (
     command: LoginCommandType,
-  ) => Effect.Effect<TokenSetType, AuthClientError>;
+  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
   readonly beginGoogle: (
     input: BeginGoogleInputType,
   ) => Effect.Effect<GoogleAuthorizationType, AuthClientError>;
   readonly exchangeGoogle: (
     input: ExchangeGoogleInputType,
-  ) => Effect.Effect<TokenSetType, AuthClientError>;
+  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInputType,
-  ) => Effect.Effect<TokenSetType, AuthClientError>;
+  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
   readonly refresh: (
     input?: RefreshInputType,
   ) => Effect.Effect<RefreshedSessionType, AuthClientError>;

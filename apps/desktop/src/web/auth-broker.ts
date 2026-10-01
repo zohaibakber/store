@@ -1,8 +1,8 @@
 import type {
+  IssuedSession,
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
-  TokenSet,
 } from "@store/auth";
 import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
@@ -138,11 +138,11 @@ export class WebAuthBroker implements WorkspaceAuthAdapter {
     }
   }
 
-  adoptSession(tokens: TokenSet | null) {
-    if (tokens) this.#hint.mark();
+  adoptSession(issued: IssuedSession | null) {
+    if (issued) this.#hint.mark();
     else this.#hint.clear();
     return this.#runtime.runPromise(
-      adoptSessionTokens(this.#hooks, tokens, { onCleared: this.#hooks.clearAuthenticated }),
+      adoptSessionTokens(this.#hooks, issued, { onCleared: this.#hooks.clearAuthenticated }),
     );
   }
 

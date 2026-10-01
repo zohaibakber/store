@@ -47,7 +47,7 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
   const host: AppHost = {
     auth: {
       getSession: async () => publish(broker.snapshot),
-      adoptSession: (tokens) => serialize(() => broker.adoptSession(tokens)),
+      adoptSession: (issued) => serialize(() => broker.adoptSession(issued)),
       renewSession: () => serialize(() => broker.renewSession()),
       signOut: () => serialize(() => broker.signOut()),
       organizationRoster: () => broker.organizationRoster(),

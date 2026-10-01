@@ -1,13 +1,15 @@
-import { AccessToken, RefreshToken, TokenSet } from "@store/auth";
+import { AccessToken, IssuedSession, RefreshToken, TokenSet } from "@store/auth";
 import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   adoptAuthenticatedSnapshot,
+  adoptSessionTokens,
   loadSessionSnapshot,
   renewSessionSnapshot,
   type SessionSnapshotHooks,
@@ -154,5 +156,46 @@ describe("session snapshot persistence", () => {
     expect(renewed.user?.name).toBe("Renewed");
     expect(persisted).toHaveLength(1);
     expect(store.get()?.accessToken).toBe("access-new");
+  });
+
+  it("adopts the workspace a sign-in carries and reads the session only without one", async () => {
+    let local: WorkspaceSnapshot = { ...authenticated, isOnline: false };
+    const reads: Array<string> = [];
+    const store = new MemoryTokenStore();
+    const hooks: SessionSnapshotHooks = {
+      getLocalSnapshot: () => local,
+      publish: (snapshot) => {
+        local = snapshot;
+        return snapshot;
+      },
+    };
+    const runtime = sessionRuntime({
+      store,
+      fetch: async (input, init) => {
+        reads.push(new Request(input, init).url);
+        return Response.json(authenticated);
+      },
+    });
+
+    const tokens = issue("signed-in");
+    const signedIn = await runtime.runPromise(
+      adoptSessionTokens(
+        hooks,
+        Schema.decodeUnknownSync(IssuedSession)({
+          ...tokens,
+          workspace: { ...authenticated, user: { ...authenticated.user, name: "Issued" } },
+        }),
+      ),
+    );
+
+    expect(reads).toEqual([]);
+    expect(signedIn).toMatchObject({ status: "authenticated", isOnline: true });
+    expect(signedIn.user?.name).toBe("Issued");
+    expect(store.get()).toEqual(tokens);
+
+    const fallback = await runtime.runPromise(adoptSessionTokens(hooks, issue("legacy")));
+
+    expect(reads).toEqual(["https://api.example.com/api/auth/session"]);
+    expect(fallback.user?.name).toBe("Owner");
   });
 });

@@ -2,7 +2,6 @@ import {
   RefreshToken,
   SessionId,
   sessionWorkspaceFromClaims,
-  TokenSet,
   type AccessTokenServiceApi,
   type AuthClientKind,
   type OrganizationId,
@@ -73,12 +72,24 @@ export const makeSessionOps = (
     now,
   });
 
-  const issueAccess = (
-    user: UserRecord,
-    sessionId: SessionId,
-    membership: MembershipRecord,
-    now: number,
-  ) => accessTokens.issue(accessClaims(user, sessionId, membership, now));
+  const issueTokens = Effect.fn("Auth.Session.issueTokens")(function* (input: {
+    readonly user: UserRecord;
+    readonly sessionId: SessionId;
+    readonly membership: MembershipRecord;
+    readonly refreshSecret: string;
+    readonly refreshExpiresAt: number;
+    readonly now: number;
+  }) {
+    const claims = accessClaims(input.user, input.sessionId, input.membership, input.now);
+    const access = yield* accessTokens.issue(claims);
+    return {
+      accessToken: access.token,
+      accessExpiresAt: access.expiresAt,
+      refreshToken: RefreshToken.make(`${input.sessionId}.${input.refreshSecret}`),
+      refreshExpiresAt: input.refreshExpiresAt,
+      workspace: sessionWorkspaceFromClaims(claims),
+    } satisfies RefreshedSession;
+  });
 
   const issueSession = Effect.fn("Auth.Session.issueSession")(function* (
     user: UserRecord,
@@ -101,12 +112,13 @@ export const makeSessionOps = (
       client,
       expiresAt: refreshExpiresAt,
     });
-    const access = yield* issueAccess(user, sessionId, membership, now);
-    return TokenSet.make({
-      accessToken: access.token,
-      accessExpiresAt: access.expiresAt,
-      refreshToken: RefreshToken.make(`${sessionId}.${refreshSecret}`),
+    return yield* issueTokens({
+      user,
+      sessionId,
+      membership,
+      refreshSecret,
       refreshExpiresAt,
+      now,
     });
   });
 
@@ -178,15 +190,14 @@ export const makeSessionOps = (
     if (!rotated) {
       return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
     }
-    const claims = accessClaims(input.user, nextId, input.membership, now);
-    const access = yield* accessTokens.issue(claims);
-    return {
-      accessToken: access.token,
-      accessExpiresAt: access.expiresAt,
-      refreshToken: RefreshToken.make(`${nextId}.${nextSecret}`),
+    return yield* issueTokens({
+      user: input.user,
+      sessionId: nextId,
+      membership: input.membership,
+      refreshSecret: nextSecret,
       refreshExpiresAt,
-      workspace: sessionWorkspaceFromClaims(claims),
-    } satisfies RefreshedSession;
+      now,
+    });
   });
 
   const refresh = Effect.fn("Auth.Session.refresh")(function* (input: RefreshInput) {

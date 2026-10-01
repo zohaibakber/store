@@ -1,8 +1,8 @@
 import type {
+  IssuedSession,
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
-  TokenSet,
 } from "@store/auth";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
@@ -31,7 +31,7 @@ declare global {
     };
     auth?: {
       getSession: () => Promise<WorkspaceSnapshot>;
-      adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
+      adoptSession: (issued: IssuedSession | null) => Promise<WorkspaceSnapshot>;
       renewSession: () => Promise<WorkspaceSnapshot>;
       signOut: () => Promise<void>;
       organizationRoster: () => Promise<OrganizationRoster>;

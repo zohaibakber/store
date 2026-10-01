@@ -65,8 +65,8 @@ const fromAuth = <A, R>(effect: Effect.Effect<A, AuthError, R>) =>
 const browserTokenPayload = <T extends TokenSet>(tokens: T, client: AuthClientKind) =>
   client._tag === "Browser" ? Struct.omit(tokens, ["refreshToken"]) : tokens;
 
-const issueBrowserTokens = <R>(
-  effect: Effect.Effect<TokenSet, AuthError, R>,
+const issueBrowserTokens = <T extends TokenSet, R>(
+  effect: Effect.Effect<T, AuthError, R>,
   client: AuthClientKind,
   secureCookies: boolean,
 ) =>

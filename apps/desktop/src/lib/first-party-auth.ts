@@ -3,9 +3,9 @@ import {
   makeAuthClient,
   type AuthClientKind,
   type IdentifyInput,
+  type IssuedSession,
   type LoginCommand,
   type LoginRoute,
-  type TokenSet,
 } from "@store/auth";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -27,10 +27,10 @@ const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 export const identify = (input: IdentifyInput): Promise<LoginRoute> => run(client.identify(input));
 
-export const authenticate = async (command: LoginCommand): Promise<TokenSet> => {
-  const tokens = await run(client.authenticate(command));
-  await authSession().adoptSession(tokens);
-  return tokens;
+export const authenticate = async (command: LoginCommand): Promise<IssuedSession> => {
+  const issued = await run(client.authenticate(command));
+  await authSession().adoptSession(issued);
+  return issued;
 };
 
 const pkce = async () => {
@@ -63,14 +63,14 @@ export const completeGoogle = async (callbackUrl: string) => {
   if (!code || !verifier) return false;
   sessionStorage.removeItem(PKCE_KEY);
   const authorizationCode = await run(Schema.decodeUnknownEffect(AuthorizationCode)(code));
-  const tokens = await run(
+  const issued = await run(
     client.exchangeGoogle({
       code: authorizationCode,
       codeVerifier: verifier,
       client: currentClient(),
     }),
   );
-  await authSession().adoptSession(tokens);
+  await authSession().adoptSession(issued);
   return true;
 };
 

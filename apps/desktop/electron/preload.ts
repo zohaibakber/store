@@ -1,9 +1,9 @@
 import "@sentry/electron/preload";
 import type {
+  IssuedSession,
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
-  TokenSet,
 } from "@store/auth";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
@@ -127,10 +127,10 @@ contextBridge.exposeInMainWorld("auth", {
     sessionReplay.publish(snapshot);
     return snapshot;
   },
-  adoptSession: async (tokens: TokenSet | null) => {
-    const snapshot = await invoke<WorkspaceSnapshot, [TokenSet | null]>(
+  adoptSession: async (issued: IssuedSession | null) => {
+    const snapshot = await invoke<WorkspaceSnapshot, [IssuedSession | null]>(
       "auth:adopt-session",
-      tokens,
+      issued,
     );
     sessionReplay.publish(snapshot);
     return snapshot;

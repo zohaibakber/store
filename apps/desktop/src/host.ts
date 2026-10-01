@@ -1,9 +1,9 @@
 import type {
   AuthClientKind,
+  IssuedSession,
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
-  TokenSet,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
@@ -14,7 +14,7 @@ import type { NewSaleShortcut } from "@/lib/new-sale-shortcut";
 
 export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly adoptSession: (tokens: TokenSet | null) => Promise<WorkspaceSnapshot>;
+  readonly adoptSession: (issued: IssuedSession | null) => Promise<WorkspaceSnapshot>;
   readonly renewSession: () => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;

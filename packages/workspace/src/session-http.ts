@@ -3,6 +3,7 @@ import {
   TokenSet,
   authHttpErrorStatus,
   type AuthHttpError,
+  type IssuedSession,
   type OrganizationCommand,
   type OrganizationCommandResult,
   type OrganizationRoster,
@@ -227,6 +228,7 @@ export interface SessionHttpApi {
   readonly authBaseUrl: string;
   readonly tokens: Pick<TokenStore, "get">;
   readonly setTokens: (tokens: TokenSet | null) => Effect.Effect<void>;
+  readonly adopt: (issued: IssuedSession) => Effect.Effect<WorkspaceSnapshot, RequestError>;
   readonly ensureFreshAccess: (force?: boolean) => Effect.Effect<SessionAccess, RequestError>;
   readonly renewAccess: Effect.Effect<RefreshedTokenSet | null, RequestError>;
   readonly settled: Effect.Effect<void>;
@@ -276,6 +278,8 @@ const skipped: Rotation = { _tag: "Skipped" };
 const rejected: Rotation = { _tag: "Rejected" };
 
 const decodeWorkspace = Schema.decodeUnknownEffect(AuthenticatedWorkspaceSnapshot);
+
+const issuedWorkspace = Schema.decodeUnknownOption(AuthenticatedWorkspaceSnapshot);
 
 const refreshedSession = (session: RefreshedSession) =>
   decodeWorkspace(session.workspace).pipe(
@@ -443,13 +447,13 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     ),
   );
 
-  const setTokens = (tokens: TokenSet | null) =>
+  const replaceTokens = (tokens: TokenSet | null, principal: Principal | undefined) =>
     SynchronizedRef.modifyEffect(state, (current) =>
       Effect.sync(() => {
         store.set(tokens);
         return [
           current.flight,
-          { owner: current.owner + 1, principal: undefined, seq: current.seq, flight: undefined },
+          { owner: current.owner + 1, principal, seq: current.seq, flight: undefined },
         ] as const;
       }),
     ).pipe(
@@ -457,6 +461,8 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
         flight === undefined ? Effect.void : Fiber.interrupt(flight.fiber),
       ),
     );
+
+  const setTokens = (tokens: TokenSet | null) => replaceTokens(tokens, undefined);
 
   const currentGrant = Effect.map(SynchronizedRef.get(state), (current): Grant => ({
     owner: current.owner,
@@ -548,6 +554,14 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     return yield* yield* admit(start.owner, start.tokens !== null, exit);
   });
 
+  const adopt = (issued: IssuedSession): Effect.Effect<WorkspaceSnapshot, RequestError> => {
+    const tokens = refreshedTokens(issued);
+    return Option.match(issuedWorkspace(issued.workspace), {
+      onNone: () => Effect.andThen(setTokens(tokens), workspace),
+      onSome: (snapshot) => Effect.as(replaceTokens(tokens, principalOf(snapshot)), snapshot),
+    });
+  };
+
   const organizationApi = yield* HttpApiClient.group(AuthHttpApi, {
     group: "organization",
     httpClient: http,
@@ -576,6 +590,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     authBaseUrl,
     tokens: store,
     setTokens,
+    adopt,
     ensureFreshAccess,
     renewAccess,
     settled,

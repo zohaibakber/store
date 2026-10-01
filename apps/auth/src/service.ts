@@ -14,7 +14,6 @@ import {
   type RefreshedSession,
   type RefreshInput,
   type SignOutInput,
-  type TokenSet as TokenSetType,
 } from "@store/auth";
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
@@ -38,7 +37,7 @@ interface AuthServiceApi {
   ) => Effect.Effect<LoginRouteType, AuthError, RuntimeContext>;
   readonly authenticate: (
     command: LoginCommand,
-  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  ) => Effect.Effect<RefreshedSession, AuthError, RuntimeContext>;
   readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<URL, AuthError, RuntimeContext>;
   readonly completeGoogle: (input: {
     readonly code: string;
@@ -46,10 +45,10 @@ interface AuthServiceApi {
   }) => Effect.Effect<GoogleCallback, AuthError, RuntimeContext>;
   readonly exchangeGoogle: (
     input: ExchangeGoogleInput,
-  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  ) => Effect.Effect<RefreshedSession, AuthError, RuntimeContext>;
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInput,
-  ) => Effect.Effect<TokenSetType, AuthError, RuntimeContext>;
+  ) => Effect.Effect<RefreshedSession, AuthError, RuntimeContext>;
   readonly refresh: (
     input: RefreshInput,
   ) => Effect.Effect<RefreshedSession, AuthError, RuntimeContext>;

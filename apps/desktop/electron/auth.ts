@@ -3,10 +3,10 @@ import path from "node:path";
 
 import {
   TokenSet,
+  type IssuedSession,
   type OrganizationCommand,
   type OrganizationCommandResult,
   type OrganizationRoster,
-  type TokenSet as TokenSetType,
 } from "@store/auth";
 import {
   unauthenticatedWorkspace,
@@ -131,9 +131,9 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     );
   }
 
-  adoptSession(tokens: TokenSetType | null) {
+  adoptSession(issued: IssuedSession | null) {
     return this.#runtime.runPromise(
-      adoptSessionTokens(this.#hooks, tokens, { onCleared: this.#hooks.clearAuthenticated }),
+      adoptSessionTokens(this.#hooks, issued, { onCleared: this.#hooks.clearAuthenticated }),
     );
   }
 

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { OrganizationCommand, TokenSet } from "@store/auth";
+import { IssuedSession, OrganizationCommand } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
@@ -170,7 +170,7 @@ const authTransitions = Semaphore.makeUnsafe(1);
 const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> =>
   Effect.runPromise(authTransitions.withPermit(Effect.promise(transition)));
 
-const AuthTokens = Schema.NullOr(TokenSet);
+const AdoptedSession = Schema.NullOr(IssuedSession);
 const InvoiceUpload = Schema.Struct({
   files: Schema.Array(
     Schema.Struct({
@@ -193,8 +193,8 @@ function registerAuthIpc() {
   });
   ipcMain.handle("auth:adopt-session", async (event, input) => {
     assertRendererIpc(event.senderFrame);
-    const tokens = input === undefined ? null : Schema.decodeUnknownSync(AuthTokens)(input);
-    return serializeAuthTransition(() => authBroker.adoptSession(tokens));
+    const issued = input === undefined ? null : Schema.decodeUnknownSync(AdoptedSession)(input);
+    return serializeAuthTransition(() => authBroker.adoptSession(issued));
   });
   ipcMain.handle("auth:renew-session", (event) => {
     assertRendererIpc(event.senderFrame);

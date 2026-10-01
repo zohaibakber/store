@@ -14,6 +14,7 @@ import {
   ExchangeGoogleInput,
   GoogleAuthorization,
   IdentifyInput,
+  IssuedSession,
   LoginRoute,
   OrganizationCommand,
   OrganizationCommandResult,
@@ -24,7 +25,6 @@ import {
   RefreshedSession,
   RefreshInput,
   SignOutInput,
-  TokenSet,
 } from "./model";
 
 const Health = Schema.Struct({ ok: Schema.Literal(true) });
@@ -67,21 +67,21 @@ const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("signInPassword", "/v1/sign-in/password", {
       payload: PasswordSignIn,
-      success: TokenSet,
+      success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
   .add(
     HttpApiEndpoint.post("signInOtp", "/v1/sign-in/otp", {
       payload: OtpSignIn,
-      success: TokenSet,
+      success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
   .add(
     HttpApiEndpoint.post("signUpPassword", "/v1/sign-up/password", {
       payload: RegisterPassword,
-      success: TokenSet,
+      success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
@@ -95,14 +95,14 @@ const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("googleExchange", "/v1/oauth/google/exchange", {
       payload: ExchangeGoogleInput,
-      success: TokenSet,
+      success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
   .add(
     HttpApiEndpoint.post("googleNative", "/v1/oauth/google/native", {
       payload: ExchangeGoogleIdTokenInput,
-      success: TokenSet,
+      success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )

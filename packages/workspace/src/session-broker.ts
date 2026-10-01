@@ -1,4 +1,4 @@
-import type { TokenSet as TokenSetType } from "@store/auth";
+import type { IssuedSession } from "@store/auth";
 import {
   unauthenticatedWorkspace,
   withWorkspaceError,
@@ -6,7 +6,6 @@ import {
   type WorkspaceSnapshot as WorkspaceSnapshotType,
 } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
-import * as Result from "effect/Result";
 
 import { SessionHttp, isSupersededSession, type RequestError } from "./session-http";
 
@@ -46,38 +45,46 @@ const clearSession = (hooks: SessionSnapshotHooks, workspaceError: string | null
 
 const isRejected = (error: RequestError) => error.status === 401 || error.status === 403;
 
+const settleSnapshot = <R>(
+  hooks: SessionSnapshotHooks,
+  load: Effect.Effect<WorkspaceSnapshotType, RequestError, R>,
+): Effect.Effect<WorkspaceSnapshotType, never, SessionHttp | R> =>
+  load.pipe(
+    Effect.matchEffect({
+      onFailure: (error) => {
+        if (isSupersededSession(error)) return Effect.sync(() => hooks.getLocalSnapshot());
+        if (isRejected(error)) return clearSession(hooks, error.message);
+        return Effect.sync(() =>
+          hooks.publish(
+            withWorkspaceError(withWorkspaceOnline(hooks.getLocalSnapshot(), false), error.message),
+          ),
+        );
+      },
+      onSuccess: (snapshot) =>
+        snapshot.status === "authenticated"
+          ? adoptAuthenticatedSnapshot(hooks, snapshot)
+          : clearSession(hooks, "You signed in, but the server rejected the session."),
+    }),
+  );
+
 export const loadSessionSnapshot = (
   hooks: SessionSnapshotHooks,
 ): Effect.Effect<WorkspaceSnapshotType, never, SessionHttp> =>
   Effect.gen(function* () {
     const session = yield* SessionHttp;
     if (!session.tokens.get()) return yield* clearSession(hooks);
-    const loaded = yield* Effect.result(session.workspace);
-    if (Result.isFailure(loaded)) {
-      if (isSupersededSession(loaded.failure)) return hooks.getLocalSnapshot();
-      if (isRejected(loaded.failure)) return yield* clearSession(hooks, loaded.failure.message);
-      return hooks.publish(
-        withWorkspaceError(
-          withWorkspaceOnline(hooks.getLocalSnapshot(), false),
-          loaded.failure.message,
-        ),
-      );
-    }
-    if (loaded.success.status !== "authenticated") {
-      return yield* clearSession(hooks, "You signed in, but the server rejected the session.");
-    }
-    return yield* adoptAuthenticatedSnapshot(hooks, loaded.success);
+    return yield* settleSnapshot(hooks, session.workspace);
   });
 
 export const adoptSessionTokens = (
   hooks: SessionSnapshotHooks,
-  tokens: TokenSetType | null,
+  issued: IssuedSession | null,
   options?: { readonly onCleared?: Effect.Effect<void> },
 ): Effect.Effect<WorkspaceSnapshotType, never, SessionHttp> =>
   Effect.gen(function* () {
     const session = yield* SessionHttp;
-    yield* session.setTokens(tokens);
-    if (tokens) return yield* loadSessionSnapshot(hooks);
+    if (issued) return yield* settleSnapshot(hooks, session.adopt(issued));
+    yield* session.setTokens(null);
     if (options?.onCleared !== undefined) yield* options.onCleared;
     return hooks.publish(unauthenticated(true));
   });
