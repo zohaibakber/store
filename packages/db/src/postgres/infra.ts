@@ -8,6 +8,13 @@ import * as Effect from "effect/Effect";
 
 export const stageUsesNeonInventory = (stage: string) => stage === "dev";
 
+const INVENTORY_REGION = { planetscale: "ap-south", cloud: "aws:ap-south-1" } as const;
+
+export const inventoryPlacement = (stage: string) =>
+  stageUsesNeonInventory(stage)
+    ? { mode: "smart" as const }
+    : { region: INVENTORY_REGION.cloud };
+
 const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
   schema: "packages/db/src/postgres/schema.ts",
   out: "packages/db/migrations/postgres",
@@ -17,7 +24,7 @@ const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
 export const InventoryPostgres = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Planetscale.PostgresDatabase("InventoryPostgres", {
-    region: { slug: "ap-south" },
+    region: { slug: INVENTORY_REGION.planetscale },
     clusterSize: "PS_5",
     replicas: 0,
     migrations: schema,

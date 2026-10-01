@@ -7,7 +7,7 @@ import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import { IssueInvoiceCommand } from "../store/schema";
 import { SyncEntityChange } from "./schema";
 
-export const MAX_SYNC_PULL_TRANSACTIONS = 100;
+export const MAX_SYNC_PULL_TRANSACTIONS = 1_000;
 
 export const SYNC_SCHEMA_VERSION = 1;
 
