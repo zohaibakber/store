@@ -350,14 +350,19 @@ function RestockBody({
   const [pageSize, setPageSize] = React.useState<number>(50);
   const [isPending, startTransition] = React.useTransition();
   const term = search.trim();
-  const scope = `${view}|${term}|${pageSize}`;
+  const shownView = React.useDeferredValue(view);
+  const shownTerm = React.useDeferredValue(term);
+  const shownPageSize = React.useDeferredValue(pageSize);
+  const loading =
+    isPending || shownView !== view || shownTerm !== term || shownPageSize !== pageSize;
+  const scope = `${shownView}|${shownTerm}|${shownPageSize}`;
   const [stored, setStored] = React.useState<Paging>({ scope, cursors: [null], total: 0 });
   const paging: Paging = stored.scope === scope ? stored : { scope, cursors: [null], total: 0 };
   const pageIndex = paging.cursors.length - 1;
   const page = useRestockPage({
-    filters: { view, search: term === "" ? undefined : term },
+    filters: { view: shownView, search: shownTerm === "" ? undefined : shownTerm },
     cursor: paging.cursors[pageIndex] ?? null,
-    limit: pageSize,
+    limit: shownPageSize,
   });
   const rowCount = pageIndex === 0 ? (page.total ?? 0) : paging.total;
   const pagination: PaginationState = { pageIndex, pageSize };
@@ -483,8 +488,8 @@ function RestockBody({
           {summary === null ? null : <PolicyInfo summary={summary} />}
         </div>
         <div
-          aria-busy={isPending}
-          className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}
+          aria-busy={loading}
+          className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}
         >
           <DataTableContent>
             <DataTableFooter>
