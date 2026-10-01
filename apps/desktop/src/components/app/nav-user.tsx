@@ -142,7 +142,7 @@ export function NavUser() {
             <IdentityRow detail={sync.status} mark={identity.mark} name={identity.name} />
           </MenuTrigger>
           {sync.action}
-          <MenuPopup align="start" className="w-62" side="top">
+          <MenuPopup align="start" className="w-(--anchor-width) min-w-56!" side="top">
             <MenuGroup>
               <MenuGroupLabel>
                 <span className="flex w-full items-center gap-2">
