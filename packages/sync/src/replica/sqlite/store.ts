@@ -55,7 +55,6 @@ import {
   verifyPulledDigest,
   type DigestFence,
 } from "../coverage";
-import type { StaleClaimCutoff } from "../decisions";
 import { isStorageFullFailure, mapReplicaStoreFailure } from "../errors";
 import { generationResetNotice } from "../generation-reset";
 import {
@@ -287,7 +286,7 @@ const makeSqliteReplicaStoreInternals = (
         (status, after) => status && noticeFromState(databaseIdentity, after),
       );
 
-    const recoverStale = (staleBefore: StaleClaimCutoff) =>
+    const recoverStale = (staleBefore: number) =>
       commit(
         "SqliteReplicaStore.recoverStaleUploadClaims",
         (tx) => recoverStaleUploadClaims(tx, staleBefore),

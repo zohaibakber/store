@@ -394,9 +394,12 @@ describe("publishing a local workspace into an empty organization", () => {
         const mismatched = yield* imports
           .commit(owner, importId, { ...request, digest: decodeDigest("0".repeat(64)) })
           .pipe(Effect.flip);
+        const miscounted = { ...request, partCount: request.partCount + 1 };
+        const unlanded = yield* imports.commit(owner, importId, miscounted).pipe(Effect.flip);
         const landed = yield* imports.commit(owner, importId, request);
         const committed = decodeResult(landed.json);
         const repeated = decodeResult((yield* imports.commit(owner, importId, request)).json);
+        const asked = decodeResult((yield* imports.commit(owner, importId, miscounted)).json);
         const restaged = yield* imports
           .stagePart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
           .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
@@ -453,9 +456,11 @@ describe("publishing a local workspace into an empty organization", () => {
           local,
           receipts,
           mismatched,
+          unlanded,
           fanout: landed.fanout,
           committed,
           repeated,
+          asked,
           restaged,
           beforeSale,
           afterSale,
@@ -484,7 +489,9 @@ describe("publishing a local workspace into an empty organization", () => {
       2, 1, 1, 2, 2, 6,
     ]);
     expect(outcome.fanout).toMatchObject({ epoch: "1", horizon: "1", group: "" });
+    expect(outcome.unlanded).toMatchObject({ code: "INVALID_OPERATION" });
     expect(outcome.repeated).toStrictEqual(outcome.committed);
+    expect(outcome.asked).toStrictEqual(outcome.committed);
     expect(outcome.restaged.partNumber).toBe(1);
     expect(outcome.leftovers).toEqual([{ parts: 0 }]);
     expect(outcome.tombstones).toHaveLength(2);

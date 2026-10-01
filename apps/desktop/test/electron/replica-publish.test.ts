@@ -1,220 +1,175 @@
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { openNodeReplicaSqlite } from "@store/client-db/node-sqlite";
 import { ImportId } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vitest";
+import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   publishLocalWorkspace,
-  readLocalCatalogStanding,
-  readPublishOffer,
+  readLocalCatalog,
   type PublishPorts,
 } from "../../electron/replica-publish";
 import { readPublishMarker, writePublishMarker } from "../../electron/replica-publish-files";
-import { ReplicaWorkerFailure } from "../../electron/replica-rpc";
+import { ReplicaWorkerFailure, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
+import { makeReplicaWorkerHandlers } from "../../electron/replica-worker-handlers";
 
 const ORGANIZATION = "org-1";
 
-const DIGEST = "ab".repeat(32);
+const SEALED = ImportId.make("import-sealed");
 
-const seal = { partCount: 1, digest: DIGEST, digestVersion: 3 };
+const CHANGED = {
+  _tag: "refused" as const,
+  code: "changed",
+  message: "This device's data changed while it was being read. Try again.",
+};
 
-const summary = (importId: string) => ({
-  importId: ImportId.make(importId),
-  products: 0,
-  sales: 2,
-  rows: 4,
-  outstanding: 0,
+const directories: Array<string> = [];
+
+afterEach(() => {
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
-const directory = () => mkdtempSync(path.join(tmpdir(), "replica-publish-"));
+const directory = () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "replica-publish-"));
+  directories.push(folder);
+  return folder;
+};
 
-const databaseAt = (folder: string) => {
+const fileIn = (folder: string, contents: string) => {
   const databasePath = path.join(folder, "replica.sqlite");
-  writeFileSync(databasePath, "");
+  writeFileSync(databasePath, contents);
   return databasePath;
 };
 
-type CommitResult =
-  | { readonly _tag: "committed" }
-  | { readonly _tag: "refused"; readonly code: string; readonly message: string };
+type Script = {
+  readonly current: ImportId;
+  readonly staged: { count: number };
+};
 
-const portsFor = (
-  databasePath: string,
-  commit: (acceptChangedFile: boolean) => CommitResult,
-  staged: { current: boolean },
-): PublishPorts => {
-  const client = {
-    PublishSummary: () => Effect.succeed(summary("import-later")),
-    PublishCommit: (request: { readonly acceptChangedFile: boolean }) =>
-      Effect.succeed(commit(request.acceptChangedFile)),
-    PublishStage: () => {
-      staged.current = true;
-      return Stream.empty;
-    },
-  };
-  return {
-    organizationId: ORGANIZATION,
-    databasePath,
-    progress: () => Effect.void,
-    worker: (use) =>
-      use(client).pipe(
-        Effect.mapError((cause) => new ReplicaWorkerFailure({ message: cause.message })),
+const scriptedWorker = (script: Script) =>
+  ReplicaWorkerRpcs.toLayer({
+    Engine: () => Effect.die("unused"),
+    Stamp: () => Effect.die("unused"),
+    ReadInsights: () => Effect.die("unused"),
+    ReadOutboxStatuses: () => Effect.die("unused"),
+    EnqueueCommand: () => Effect.die("unused"),
+    ReadCommandStatus: () => Effect.die("unused"),
+    SetForeground: () => Effect.die("unused"),
+    WakeSyncUpload: () => Effect.die("unused"),
+    BackUp: () => Effect.die("unused"),
+    StageRestore: () => Effect.die("unused"),
+    ReleaseForRestore: () => Effect.die("unused"),
+    PublishSummary: () =>
+      Effect.succeed({ importId: script.current, products: 3, sales: 2, rows: 9, outstanding: 0 }),
+    PublishStage: () =>
+      Stream.sync(() => {
+        script.staged.count += 1;
+      }).pipe(Stream.drain),
+    PublishCommit: ({ acceptChangedFile }) =>
+      Effect.succeed(
+        script.current === SEALED || acceptChangedFile ? { _tag: "committed" as const } : CHANGED,
       ),
+    Commits: () => Stream.die("unused"),
+    SyncHealth: () => Stream.die("unused"),
+    ProxyRequests: () => Stream.die("unused"),
+    ProxyRespond: () => Effect.die("unused"),
+    AccessTokenRequests: () => Stream.die("unused"),
+    AccessTokenRespond: () => Effect.die("unused"),
+  });
+
+const withWorker = <A>(
+  handlers: Layer.Layer<Layer.Success<ReturnType<typeof scriptedWorker>>, unknown>,
+  databasePath: string,
+  use: (ports: PublishPorts) => Effect.Effect<A>,
+) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const client = yield* RpcTest.makeClient(ReplicaWorkerRpcs).pipe(
+          Effect.provideContext(yield* Layer.build(handlers)),
+        );
+        return yield* use({
+          organizationId: ORGANIZATION,
+          databasePath,
+          progress: () => Effect.void,
+          worker: (work) =>
+            work(client).pipe(
+              Effect.mapError((cause) => new ReplicaWorkerFailure({ message: cause.message })),
+            ),
+        });
+      }),
+    ),
+  );
+
+const resumeWith = async (current: ImportId) => {
+  const folder = directory();
+  const databasePath = fileIn(folder, "");
+  const staged = { count: 0 };
+  await Effect.runPromise(
+    writePublishMarker(databasePath, {
+      organizationId: ORGANIZATION,
+      importId: SEALED,
+      seal: { partCount: 1, digest: "ab".repeat(32), digestVersion: 3 },
+      startedAt: 1,
+    }),
+  );
+  const outcome = await withWorker(
+    scriptedWorker({ current, staged }),
+    databasePath,
+    publishLocalWorkspace,
+  );
+  return {
+    outcome,
+    staged: staged.count,
+    kept: existsSync(databasePath),
+    archived: readdirSync(folder).some((name) => name.includes(".published-")),
+    marker: await Effect.runPromise(readPublishMarker(databasePath)),
   };
 };
 
-const sealMarker = (databasePath: string) =>
-  writePublishMarker(databasePath, {
-    organizationId: ORGANIZATION,
-    importId: ImportId.make("import-landed"),
-    seal,
-    startedAt: 1,
+describe("resuming a move the organization already accepted", () => {
+  it("sets the file aside when it is unchanged since its seal", async () => {
+    const resumed = await resumeWith(SEALED);
+    expect(resumed.outcome).toEqual({ _tag: "published", counts: { products: 3, sales: 2 } });
+    expect(resumed).toMatchObject({ staged: 0, kept: false, archived: true });
+    expect(Option.isNone(resumed.marker)).toBe(true);
   });
 
-describe("publish resume after the local file changes", () => {
-  it("archives a sealed import the organization already accepted", async () => {
-    const folder = directory();
-    const databasePath = databaseAt(folder);
-    const staged = { current: false };
-    await Effect.runPromise(sealMarker(databasePath));
-
-    const outcome = await Effect.runPromise(
-      publishLocalWorkspace(
-        portsFor(
-          databasePath,
-          (acceptChangedFile) =>
-            acceptChangedFile
-              ? { _tag: "committed" }
-              : {
-                  _tag: "refused",
-                  code: "changed",
-                  message: "This device's data changed while it was being read. Try again.",
-                },
-          staged,
-        ),
-      ),
-    );
-
-    expect(outcome).toEqual({ _tag: "published", counts: { products: 0, sales: 2 } });
-    expect(staged.current).toBe(false);
-    expect(existsSync(databasePath)).toBe(false);
-    expect(readdirSync(folder).some((name) => name.includes(".published-"))).toBe(true);
-    expect(Option.isNone(await Effect.runPromise(readPublishMarker(databasePath)))).toBe(true);
-  });
-
-  it("keeps the marker when the organization refuses the stored import", async () => {
-    const folder = directory();
-    const databasePath = databaseAt(folder);
-    const staged = { current: false };
-    await Effect.runPromise(sealMarker(databasePath));
-    const conflict =
-      "This organization already has inventory. A device's data can only be moved into an empty organization.";
-
-    const outcome = await Effect.runPromise(
-      publishLocalWorkspace(
-        portsFor(
-          databasePath,
-          (acceptChangedFile) =>
-            acceptChangedFile
-              ? { _tag: "refused", code: "ENTITY_CONFLICT", message: conflict }
-              : {
-                  _tag: "refused",
-                  code: "changed",
-                  message: "This device's data changed while it was being read. Try again.",
-                },
-          staged,
-        ),
-      ),
-    );
-
-    expect(outcome).toEqual({ _tag: "failed", message: conflict });
-    expect(staged.current).toBe(false);
-    expect(existsSync(databasePath)).toBe(true);
-    const marker = await Effect.runPromise(readPublishMarker(databasePath));
-    expect(Option.isSome(marker) && marker.value.importId).toBe(ImportId.make("import-landed"));
-  });
-
-  it("stages again when the refusal is not a conflict with data already there", async () => {
-    const folder = directory();
-    const databasePath = databaseAt(folder);
-    const staged = { current: false };
-    await Effect.runPromise(sealMarker(databasePath));
-
-    const outcome = await Effect.runPromise(
-      publishLocalWorkspace(
-        portsFor(
-          databasePath,
-          () => ({
-            _tag: "refused",
-            code: "INVALID_OPERATION",
-            message: "The import is incomplete: 0 of 1 parts arrived.",
-          }),
-          staged,
-        ),
-      ),
-    );
-
-    expect(staged.current).toBe(true);
-    expect(outcome).toEqual({
-      _tag: "failed",
-      message: "This device's data could not be read to the end. Try again.",
-    });
-  });
-
-  it("offers a resume when later commits changed the import id and products are gone", async () => {
-    const databasePath = databaseAt(directory());
-    await Effect.runPromise(sealMarker(databasePath));
-    const offer = await Effect.runPromise(
-      readPublishOffer(portsFor(databasePath, () => ({ _tag: "committed" }), { current: false })),
-    );
-    expect(offer).toEqual({
-      _tag: "available",
-      counts: { products: 0, sales: 2 },
-      resuming: true,
-    });
-    expect(Option.isSome(await Effect.runPromise(readPublishMarker(databasePath)))).toBe(true);
+  it("neither sets aside nor stages again a file that changed after its seal", async () => {
+    const resumed = await resumeWith(ImportId.make("import-later"));
+    expect(resumed.outcome._tag).toBe("failed");
+    expect(resumed).toMatchObject({ staged: 0, kept: true, archived: false });
+    expect(Option.isNone(resumed.marker)).toBe(true);
   });
 });
 
 describe("local catalog standing", () => {
-  it("is empty when the replica file is missing", async () => {
-    const standing = await Effect.runPromise(
-      readLocalCatalogStanding(path.join(directory(), "missing.sqlite")),
-    );
-    expect(standing).toEqual({ _tag: "empty" });
-  });
-
-  it("stays unknown when the file cannot be read", async () => {
-    const databasePath = databaseAt(directory());
-    writeFileSync(databasePath, "not a replica");
-    expect(await Effect.runPromise(readLocalCatalogStanding(databasePath))).toEqual({
-      _tag: "unknown",
-    });
-  });
-
-  it("is stocked from categories alone when no product rows remain", async () => {
-    const databasePath = path.join(directory(), "replica.sqlite");
-    const replica = await openNodeReplicaSqlite(
-      { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
+  const standingOf = (databasePath: string) =>
+    withWorker(
+      makeReplicaWorkerHandlers(
+        Effect.succeed({
+          authority: "remote" as const,
+          organizationId: ORGANIZATION,
+          userId: "user-1",
+          replicaId: "replica-1",
+          databasePath: path.join(directory(), "organization.sqlite"),
+          apiBaseUrl: "https://api.tabaaq.local",
+        }),
+        () => Promise.reject(new Error("unused")),
+      ),
       databasePath,
+      readLocalCatalog,
     );
-    await replica.query(
-      `insert into categories (
-        id, name, tracksPacks, createdAt, updatedAt, organizationId,
-        createdByUserId, updatedByUserId, deviceId, operationId, rowVersion
-      ) values ('cat-1', 'General', 1, 1, 1, 'org-1', 'user-1', 'user-1', 'device-1', 'seed', 1)`,
-      [],
-    );
-    await replica.close();
 
-    expect(await Effect.runPromise(readLocalCatalogStanding(databasePath))).toEqual({
-      _tag: "stocked",
-    });
+  it("reads a missing file as empty and an unreadable one as unknown", async () => {
+    expect(await standingOf(path.join(directory(), "replica.sqlite"))).toEqual({ _tag: "empty" });
+    expect(await standingOf(fileIn(directory(), "not a replica"))).toEqual({ _tag: "unknown" });
   });
 });

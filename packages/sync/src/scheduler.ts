@@ -41,9 +41,8 @@ export type SyncSchedulerPolicy = {
   readonly liveIdlePollMillis: number;
   readonly minPollMillis?: number;
   readonly maxRetryAfterMillis?: number;
-  readonly digestVerificationIntervalMillis?: number | "never";
+  readonly digestVerificationIntervalMillis?: number;
   readonly pullMaxBytes?: number;
-  readonly poll?: boolean;
 };
 
 const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;
@@ -263,7 +262,6 @@ const makeScheduler = <R>(
         yield* Effect.sleep(Duration.millis(override));
         return [timerWake, ...(yield* Queue.clear(wakes))];
       }
-      if (policy.poll === false) return yield* Queue.takeAll(wakes);
       const delay = sleepJittered(
         delayFor(policy, yield* Ref.get(visibility), yield* Ref.get(emptyPolls)),
         policy.minPollMillis ?? 0,

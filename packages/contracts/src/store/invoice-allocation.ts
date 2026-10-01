@@ -37,37 +37,6 @@ const compareBatchesFefo = (left: AllocatableBatch, right: AllocatableBatch) => 
   return left.createdAt - right.createdAt;
 };
 
-export type StockOnHand = {
-  readonly packQuantity: number;
-  readonly unitQuantity: number;
-};
-
-export type StockAfterTake = {
-  readonly packsOpened: number;
-  readonly nextPackQuantity: number;
-  readonly nextUnitQuantity: number;
-};
-
-export const stockAfterTake = (
-  stock: StockOnHand,
-  take: { readonly quantity: number; readonly quantityType: "pack" | "unit" },
-  unitsPerPack: number,
-): StockAfterTake => {
-  const packsOpened =
-    take.quantityType === "unit"
-      ? Math.max(0, Math.ceil((take.quantity - stock.unitQuantity) / unitsPerPack))
-      : 0;
-  const nextPackQuantity =
-    take.quantityType === "pack"
-      ? stock.packQuantity - take.quantity
-      : stock.packQuantity - packsOpened;
-  const nextUnitQuantity =
-    take.quantityType === "pack"
-      ? stock.unitQuantity
-      : stock.unitQuantity + packsOpened * unitsPerPack - take.quantity;
-  return { packsOpened, nextPackQuantity, nextUnitQuantity };
-};
-
 const availableForLine = (
   batch: AllocatableBatch,
   product: { readonly unitsPerPack: number },
@@ -125,22 +94,27 @@ export const allocateInvoiceLine = (
         : stock.packQuantity * product.unitsPerPack + stock.unitQuantity;
     const taken = Math.min(batchAvailable, remaining);
     remaining -= taken;
-    const next = stockAfterTake(
-      stock,
-      { quantity: taken, quantityType: line.quantityType },
-      product.unitsPerPack,
-    );
+    const packsOpened =
+      line.quantityType === "unit"
+        ? Math.max(0, Math.ceil((taken - stock.unitQuantity) / product.unitsPerPack))
+        : 0;
+    const nextPackQuantity =
+      line.quantityType === "pack" ? stock.packQuantity - taken : stock.packQuantity - packsOpened;
+    const nextUnitQuantity =
+      line.quantityType === "pack"
+        ? stock.unitQuantity
+        : stock.unitQuantity + packsOpened * product.unitsPerPack - taken;
     remainingById.set(batch.id, {
-      packQuantity: next.nextPackQuantity,
-      unitQuantity: next.nextUnitQuantity,
+      packQuantity: nextPackQuantity,
+      unitQuantity: nextUnitQuantity,
     });
     takes.push({
       batchId: batch.id,
       batchNumber: batch.batchNumber,
       quantity: taken,
-      packsOpened: next.packsOpened,
-      nextPackQuantity: next.nextPackQuantity,
-      nextUnitQuantity: next.nextUnitQuantity,
+      packsOpened,
+      nextPackQuantity,
+      nextUnitQuantity,
     });
   }
   return takes;

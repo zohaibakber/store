@@ -23,7 +23,6 @@ import {
   decideReceipt,
   isStaleClaim,
   RELEASED_CLAIM_FIELDS,
-  type StaleClaimCutoff,
   settledOutboxFields,
 } from "./decisions";
 import { ReplicaStorageError } from "./errors";
@@ -355,7 +354,7 @@ export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaR
 );
 
 export const recoverStaleUploadClaims = Effect.fn("ReplicaCommands.recoverStaleUploadClaims")(
-  function* (tx: ReplicaDb, staleBefore: StaleClaimCutoff) {
+  function* (tx: ReplicaDb, staleBefore: number) {
     const sending = yield* tx
       .select()
       .from(commandOutbox)

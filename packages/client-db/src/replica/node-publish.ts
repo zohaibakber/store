@@ -322,11 +322,6 @@ const refused = (failure: {
   message: failure.message,
 });
 
-const DIGEST_MISMATCH = refused({
-  code: "ENTITY_CONFLICT",
-  message: "The rows that arrived do not match this device's data. Nothing was moved.",
-});
-
 export const commitPublish = (input: {
   readonly path: string;
   readonly organizationId: string;
@@ -341,9 +336,7 @@ export const commitPublish = (input: {
   return sealed.pipe(
     Effect.andThen(decodeImportRequest({ organizationId: input.organizationId, ...input.seal })),
     Effect.flatMap((request) => input.client.commit(input.importId, request)),
-    Effect.map((result): ReplicaPublishCommit =>
-      result.digest === input.seal.digest ? { _tag: "committed" } : DIGEST_MISMATCH,
-    ),
+    Effect.as<ReplicaPublishCommit>({ _tag: "committed" }),
     Effect.catchTags({
       ReplicaPublishFailure: (failure) =>
         Effect.succeed(refused({ code: failure.reason, message: failure.message })),

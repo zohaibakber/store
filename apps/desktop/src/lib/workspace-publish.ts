@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { type LocalCatalogReport } from "./local-catalog-standing";
+import { LocalCatalogReport } from "./local-catalog-standing";
 import { CatalogCounts } from "./workspace-backup";
 
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
@@ -32,19 +32,13 @@ export type WorkspacePublishBridge = {
 const decodeOffer = Schema.decodeUnknownSync(PublishOffer);
 const decodeOutcome = Schema.decodeUnknownSync(PublishOutcome);
 const decodeProgress = Schema.decodeUnknownOption(PublishProgress);
-const decodeStanding = Schema.decodeUnknownSync(
-  Schema.Union([
-    Schema.TaggedStruct("empty", {}),
-    Schema.TaggedStruct("stocked", {}),
-    Schema.TaggedStruct("unknown", {}),
-  ]),
-);
+const decodeLocalCatalog = Schema.decodeUnknownSync(LocalCatalogReport);
 
 export const decodedPublishBridge = (bridge: WorkspacePublishBridge): WorkspacePublishBridge => ({
   offer: async (organizationId) => decodeOffer(await bridge.offer(organizationId)),
   publish: async (organizationId) => decodeOutcome(await bridge.publish(organizationId)),
   discard: async (organizationId) => decodeOffer(await bridge.discard(organizationId)),
-  localCatalog: async () => decodeStanding(await bridge.localCatalog()),
+  localCatalog: async () => decodeLocalCatalog(await bridge.localCatalog()),
   onProgress: (listener) =>
     bridge.onProgress((progress) => {
       const decoded = decodeProgress(progress);

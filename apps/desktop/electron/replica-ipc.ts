@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import { InventorySubsetSummarySpec } from "@store/client-db/subset-spec";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -17,6 +18,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import type { LocalCatalogReport } from "../src/lib/local-catalog-standing";
 import type { RestoreChoice, RestoreOutcome } from "../src/lib/workspace-backup";
 import type { PublishOffer, PublishProgress } from "../src/lib/workspace-publish";
 import {
@@ -78,7 +80,7 @@ import {
 import {
   discardPublish,
   publishLocalWorkspace,
-  readLocalCatalogStanding,
+  readLocalCatalog,
   readPublishOffer,
   type PublishPorts,
 } from "./replica-publish";
@@ -293,6 +295,10 @@ const PUBLISH_LOCAL_OPEN = "Close the workspace on this device before moving its
 const PUBLISH_UNDERWAY = "This device's data is already being moved.";
 
 const NO_PUBLISH_OFFER: PublishOffer = { _tag: "none" };
+
+const UNKNOWN_LOCAL_CATALOG: LocalCatalogReport = { _tag: "unknown" };
+
+const CATALOG_SOURCES = InventorySubsetSummarySpec.fields.source.literals;
 
 const decodeOrganizationId = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 
@@ -898,19 +904,31 @@ export const registerReplicaWorkerIpc = (options: {
     databasePath: localDatabasePath,
     worker: (use) =>
       onceOpenSession(session, (current) =>
-        current.supervisor.use((worker) =>
-          use({
-            PublishSummary: ({ sourcePath }) => worker.client.PublishSummary({ sourcePath }),
-            PublishCommit: (input) => worker.client.PublishCommit(input),
-            PublishStage: (input) => worker.client.PublishStage(input),
-          }),
-        ),
+        current.supervisor.use((worker) => use(worker.client)),
       ).pipe(Effect.mapError((cause) => new ReplicaWorkerFailure({ message: messageOf(cause) }))),
     progress: (progress) =>
       Effect.try(() => {
         if (!session.sender.isDestroyed()) session.sender.send(PUBLISH_PROGRESS_CHANNEL, progress);
       }).pipe(Effect.ignore),
   });
+
+  const readOpenCatalog = (session: Session): Effect.Effect<LocalCatalogReport> =>
+    onceOpenSession(session, (current) =>
+      Effect.findFirst(CATALOG_SOURCES, (source) =>
+        current.admission
+          .read(
+            current.reader.useIdempotent((reader) =>
+              reader.client.SummarizeSubset({ spec: { source, distinct: [] } }),
+            ),
+          )
+          .pipe(Effect.map((read) => read.summary.count > 0)),
+      ),
+    ).pipe(
+      Effect.map((stocked): LocalCatalogReport => ({
+        _tag: Option.isSome(stocked) ? "stocked" : "empty",
+      })),
+      Effect.catch(() => Effect.succeed(UNKNOWN_LOCAL_CATALOG)),
+    );
 
   const withLocalReplicaClosed = <A>(
     session: Session | undefined,
@@ -972,8 +990,23 @@ export const registerReplicaWorkerIpc = (options: {
           )
           .pipe(Effect.map(Option.getOrElse(() => NO_PUBLISH_OFFER))),
       ),
-    [PUBLISH_LOCAL_CATALOG_CHANNEL]: async () =>
-      Effect.runPromise(readLocalCatalogStanding(localDatabasePath)),
+    [PUBLISH_LOCAL_CATALOG_CHANNEL]: async (event) => {
+      const session = currentSession(event);
+      if (session === undefined) return UNKNOWN_LOCAL_CATALOG;
+      switch (session.identity.authority) {
+        case "local":
+          return Effect.runPromise(readOpenCatalog(session));
+        case "remote":
+          return Effect.runPromise(
+            withLocalReplicaClosed(
+              session,
+              session.identity.organizationId,
+              readLocalCatalog,
+              () => UNKNOWN_LOCAL_CATALOG,
+            ),
+          );
+      }
+    },
   };
 
   const handlers: ReplicaIpcHandlers = {

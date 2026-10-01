@@ -71,7 +71,6 @@ import {
   decideReceipt,
   isStaleClaim,
   nextUploadClaim,
-  type StaleClaimCutoff,
   OUTSTANDING_COMMAND_STATUSES,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
@@ -604,7 +603,7 @@ const makeScopedIndexedDbReplicaStore = (
         }),
       );
 
-    const recoverStaleUploadClaims = (staleBefore: StaleClaimCutoff) =>
+    const recoverStaleUploadClaims = (staleBefore: number) =>
       commit<number>(["replica_state", "command_outbox"], (api) =>
         Effect.gen(function* () {
           const sending = yield* outboxWithStatus(api, "sending");

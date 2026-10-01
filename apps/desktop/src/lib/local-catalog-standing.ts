@@ -1,14 +1,8 @@
-export type LocalCatalogStanding = "empty" | "stocked";
+import * as Schema from "effect/Schema";
 
-export type LocalCatalogReport =
-  | { readonly _tag: LocalCatalogStanding }
-  | { readonly _tag: "unknown" };
-
-export const standingFromRowCount = (rows: number): LocalCatalogStanding =>
-  rows > 0 ? "stocked" : "empty";
-
-export const localCatalogReport = (standing: LocalCatalogStanding): LocalCatalogReport => ({
-  _tag: standing,
-});
-
-export const UNKNOWN_CATALOG: LocalCatalogReport = { _tag: "unknown" };
+export const LocalCatalogReport = Schema.Union([
+  Schema.TaggedStruct("empty", {}),
+  Schema.TaggedStruct("stocked", {}),
+  Schema.TaggedStruct("unknown", {}),
+]);
+export type LocalCatalogReport = typeof LocalCatalogReport.Type;

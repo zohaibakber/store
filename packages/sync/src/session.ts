@@ -149,10 +149,14 @@ export const layerOwnedHttpSync = (
   );
 
 const LOCAL_SYNC_POLICY: SyncSchedulerPolicy = {
-  ...defaultHttpPollPolicy,
-  poll: false,
-  digestVerificationIntervalMillis: "never",
+  activePollMillis: Number.POSITIVE_INFINITY,
+  backoffMillis: [],
+  hiddenPollMillis: Number.POSITIVE_INFINITY,
+  liveIdlePollMillis: Number.POSITIVE_INFINITY,
+  digestVerificationIntervalMillis: Number.POSITIVE_INFINITY,
 };
+
+const CLAIMED_AT_ANY_TIME = Number.POSITIVE_INFINITY;
 
 const ownLocalSync: Effect.Effect<
   SyncSchedulerContract,
@@ -162,7 +166,7 @@ const ownLocalSync: Effect.Effect<
   const store = yield* ReplicaStore;
   const engine = yield* SyncEngine;
   const openedAt = yield* Clock.currentTimeMillis;
-  yield* store.recoverStaleUploadClaims("any");
+  yield* store.recoverStaleUploadClaims(CLAIMED_AT_ANY_TIME);
   const cursor = yield* store.readSyncCursor();
   if (!cursor.bootstrapped) yield* store.recordCaughtUp(openedAt);
   const verifiedAt = yield* store.readDigestVerification(OPERATIONAL_SUBSCRIPTION);

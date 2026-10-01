@@ -9,9 +9,7 @@ import {
   OrgCommitSequence,
   ReplicaClientSequence,
   STOCK_MOVEMENT_ROW_VERSION,
-  stockAfterTake,
   SYNC_SCHEMA_VERSION,
-  updatedMutationMetadata,
   SyncEpoch,
   SyncProtocolError,
   syncProtocolError,
@@ -211,11 +209,13 @@ const stampOf = (
   payload: { readonly commandId: string; readonly deviceId: string; readonly occurredAt: number },
   actor: ProjectionActor,
   existing: { readonly rowVersion: number },
-) =>
-  updatedMutationMetadata(
-    { userId: actor.userId, deviceId: payload.deviceId, rowVersion: existing.rowVersion },
-    { now: () => payload.occurredAt, operationId: () => payload.commandId },
-  );
+) => ({
+  updatedByUserId: actor.userId,
+  deviceId: payload.deviceId,
+  operationId: payload.commandId,
+  rowVersion: existing.rowVersion + 1,
+  updatedAt: payload.occurredAt,
+});
 
 const NO_RULE_LOOKUPS = {
   productInCategory: () => undefined,
@@ -526,16 +526,22 @@ const decideIssueInvoice = (
           `Not enough stock for ${product.name}: ${available} available, ${take.quantity} requested.`,
         );
       }
-      const next = stockAfterTake(held, take, product.unitsPerPack);
-      if (next.nextPackQuantity < 0 || next.nextUnitQuantity < 0) {
+      const opened =
+        take.quantityType === "unit"
+          ? Math.max(0, Math.ceil((take.quantity - held.unitQuantity) / product.unitsPerPack))
+          : 0;
+      const packQuantity =
+        take.quantityType === "pack"
+          ? held.packQuantity - take.quantity
+          : held.packQuantity - opened;
+      const unitQuantity =
+        take.quantityType === "pack"
+          ? held.unitQuantity
+          : held.unitQuantity + opened * product.unitsPerPack - take.quantity;
+      if (packQuantity < 0 || unitQuantity < 0) {
         return yield* rejected("INSUFFICIENT_STOCK", `Not enough stock for ${product.name}.`);
       }
-      const opened = next.packsOpened;
-      const remaining = {
-        ...held,
-        packQuantity: next.nextPackQuantity,
-        unitQuantity: next.nextUnitQuantity,
-      };
+      const remaining = { ...held, packQuantity, unitQuantity };
       working.set(take.batchId, remaining);
       plans.push({
         take,
