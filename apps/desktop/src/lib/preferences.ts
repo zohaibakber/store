@@ -2,6 +2,8 @@ import * as Schema from "effect/Schema";
 import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as Atom from "effect/unstable/reactivity/Atom";
 
+import { initialSaleDrafts, SaleDrafts } from "@/lib/sale-drafts";
+
 export const browserStorage = (): Storage | null => {
   try {
     return globalThis.localStorage ?? null;
@@ -60,6 +62,15 @@ export const recentProductsAtom = Atom.family((workspace: string) =>
     key: `store.recent-products.${workspace}`,
     schema: Schema.Array(RecentProductSchema),
     defaultValue: (): ReadonlyArray<RecentProduct> => [],
+  }).pipe(Atom.keepAlive),
+);
+
+export const saleDraftsAtom = Atom.family((workspace: string) =>
+  Atom.kvs({
+    runtime: preferencesRuntime,
+    key: `store.sale-drafts.${workspace}`,
+    schema: SaleDrafts,
+    defaultValue: initialSaleDrafts,
   }).pipe(Atom.keepAlive),
 );
 

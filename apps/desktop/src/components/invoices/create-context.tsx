@@ -1,40 +1,93 @@
-import type { BatchId, Product } from "@store/contracts";
+import type { Product } from "@store/contracts";
+import type { ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useNavigate } from "@tanstack/react-router";
-import { createContext, use, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  createContext,
+  use,
+  useDeferredValue,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
+import {
+  discountedSalePrice,
+  draftTotal,
+  enteredPrice,
+  isValidDiscount,
+  lineError,
+  lineTotal,
+  lineUnits,
+  resolveSaleLine,
+  saleTotal,
+  type ProductLookup,
+  type SaleLine,
+  type SaleLineView,
+} from "@/components/invoices/sale-line";
 import { toastManager } from "@/components/ui/toast";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
+import {
+  useCompletingSaleIn,
+  useSaleDraftsIn,
+  useSaleDraftStoreIn,
+  useSaleSearchFocusRequest,
+} from "@/hooks/use-sale-drafts";
+import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { storeErrorMessage } from "@/lib/errors";
-import { formatNumber } from "@/lib/format";
-import { useInventoryActions } from "@/lib/inventory";
+import { useInventoryActions, useSuspenseCatalogProductsById } from "@/lib/inventory";
+import {
+  activateSaleDraft,
+  activateSaleDraftAt,
+  activeSaleDraft,
+  addSaleProduct,
+  AUTO_BATCH,
+  canOpenSaleDraft,
+  closeSaleDraft,
+  cycleSaleDraft,
+  quantitiesInOtherDrafts,
+  removeSaleLine,
+  saleDraftLabel,
+  saleProductIds,
+  setSaleCustomer,
+  setSaleDiscount,
+  setSaleLineUnit,
+  updateSaleLine,
+  type SaleDrafts,
+} from "@/lib/sale-drafts";
 
-const AUTO_BATCH = "auto";
+type SaleLineEdits = Partial<Pick<SaleLine, "batchId" | "quantity" | "salePrice">>;
 
-interface SaleLine {
-  key: number;
-  product: Product;
-  batchId: BatchId | typeof AUTO_BATCH;
-  quantity: number | null;
-  quantityUnit: "unit" | "pack";
-  salePrice: number | null;
+interface SaleDraftTab {
+  readonly id: number;
+  readonly label: string;
+  readonly lineCount: number;
+  readonly total: number;
 }
 
 interface InvoiceCreateState {
+  draftId: number;
   customerName: string;
-  lines: SaleLine[];
+  lines: ReadonlyArray<SaleLineView>;
   bulkDiscount: number | null;
 }
 
 interface InvoiceCreateActions {
   addProduct: (product: Product, quantity?: number) => void;
-  updateLine: (key: number, changes: Partial<SaleLine>) => void;
+  updateLine: (key: number, changes: SaleLineEdits) => void;
   setLineQuantityUnit: (key: number, quantityUnit: SaleLine["quantityUnit"]) => void;
   removeLine: (key: number) => void;
   setCustomerName: (value: string) => void;
   setBulkDiscount: (value: number | null) => void;
   completeSale: () => Promise<void>;
   focusSearch: () => void;
+  openDraft: () => void;
+  activateDraft: (id: number) => void;
+  activateDraftAt: (index: number) => void;
+  cycleDraft: (step: 1 | -1) => void;
+  discardDraft: (id: number) => void;
 }
 
 interface InvoiceCreateMeta {
@@ -47,6 +100,8 @@ interface InvoiceCreateMeta {
   canSubmit: boolean;
   isSubmitting: boolean;
   searchRef: RefObject<HTMLInputElement | null>;
+  tabs: ReadonlyArray<SaleDraftTab>;
+  canOpenDraft: boolean;
 }
 
 interface InvoiceCreateContextValue {
@@ -57,121 +112,100 @@ interface InvoiceCreateContextValue {
 
 const InvoiceCreateContext = createContext<InvoiceCreateContextValue | null>(null);
 
-const suggestedPrice = (product: Product, quantityUnit: SaleLine["quantityUnit"]) =>
-  quantityUnit === "pack" ? product.retailPrice : product.unitPrice;
-
-const paisaToRupees = (paisa: number | null) => (paisa == null ? null : paisa / 100);
-
-const availableStock = (line: SaleLine) => {
-  const batches =
-    line.batchId === AUTO_BATCH
-      ? line.product.batches
-      : line.product.batches.filter((batch) => batch.id === line.batchId);
-  return line.quantityUnit === "pack"
-    ? batches.reduce((sum, batch) => sum + batch.packQuantity, 0)
-    : batches.reduce(
-        (sum, batch) => sum + batch.packQuantity * line.product.unitsPerPack + batch.unitQuantity,
-        0,
-      );
+type ProductSeeds = {
+  readonly since: ReadonlyArray<ProductId>;
+  readonly products: ReadonlyMap<string, Product>;
 };
 
-const lineError = (line: SaleLine) => {
-  const quantity = line.quantity;
-  if (quantity == null || !Number.isInteger(quantity) || quantity < 1) return "Enter a quantity";
-  const available = availableStock(line);
-  if (quantity > available) {
-    return available === 0 ? "Out of stock" : `Only ${formatNumber(available)} in stock`;
-  }
-  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0)
-    return "Enter a price";
-  return null;
-};
+const NO_SEEDS: ProductSeeds = { since: [], products: new Map() };
 
-const lineSalePrice = (line: SaleLine) => {
-  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0) return null;
-  return Math.round(line.salePrice * 100);
-};
+const sameIds = (left: ReadonlyArray<ProductId>, right: ReadonlyArray<ProductId>) =>
+  left.length === right.length && left.every((id, index) => id === right[index]);
 
-const discountedSalePrice = (line: SaleLine, bulkDiscount: number) => {
-  const price = lineSalePrice(line);
-  return price == null ? null : Math.round(price * (1 - bulkDiscount / 100));
-};
+function useDraftProducts(drafts: SaleDrafts) {
+  const ids = saleProductIds(drafts);
+  const [requested, setRequested] = useState(ids);
+  const changed = !sameIds(requested, ids);
+  if (changed) setRequested(ids);
+  const current = changed ? ids : requested;
+  const settled = useDeferredValue(current);
+  const products = useSuspenseCatalogProductsById(settled);
+  const [seeds, setSeeds] = useState(NO_SEEDS);
+  const live = new Map<string, Product>(products.map((product) => [product.id, product]));
+  const seeded = seeds.since === settled ? seeds.products : NO_SEEDS.products;
 
-const lineTotal = (line: SaleLine, bulkDiscount = 0) => {
-  const price = discountedSalePrice(line, bulkDiscount);
-  if (
-    line.quantity == null ||
-    !Number.isInteger(line.quantity) ||
-    line.quantity < 1 ||
-    price == null
-  )
-    return null;
-  return line.quantity * price;
-};
+  const lookup: ProductLookup = (productId) =>
+    live.get(productId) ?? (settled === current ? undefined : (seeded.get(productId) ?? "loading"));
 
-const lineUnits = (line: SaleLine) =>
-  (line.quantity ?? 0) * (line.quantityUnit === "pack" ? line.product.unitsPerPack : 1);
+  const seed = (product: Product) => {
+    if (live.has(product.id)) return;
+    setSeeds((known) => ({
+      since: settled,
+      products: new Map(known.since === settled ? known.products : []).set(product.id, product),
+    }));
+  };
+
+  return { lookup, seed };
+}
 
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
   const rememberRecentProduct = useRememberRecentProduct();
-  const [customerName, setCustomerName] = useState("");
-  const [lines, setLines] = useState<SaleLine[]>([]);
-  const [bulkDiscount, setBulkDiscount] = useState<number | null>(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const submittingRef = useRef(false);
-  const nextKeyRef = useRef(1);
+  const workspace = useWorkspaceStorageKey();
+  const drafts = useSaleDraftsIn(workspace);
+  const store = useSaleDraftStoreIn(workspace);
+  const { lookup, seed } = useDraftProducts(drafts);
+  const draft = activeSaleDraft(drafts);
+  const isSubmitting = useCompletingSaleIn(workspace, draft.id);
+  const focusRequest = useSaleSearchFocusRequest();
   const searchRef = useRef<HTMLInputElement>(null);
 
+  const { bulkDiscount, customerName } = draft;
+  const elsewhere = quantitiesInOtherDrafts(drafts, draft.id);
+  const lines = draft.lines.map((line) =>
+    resolveSaleLine(line, lookup, elsewhere.get(line.productId)),
+  );
+
+  useEffect(() => {
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [focusRequest]);
+
   const addProduct = (product: Product, quantity = 1) => {
-    const key = nextKeyRef.current++;
     rememberRecentProduct(product);
-    setLines((current) => {
-      const existing = current.find(
-        (line) => line.product.id === product.id && line.batchId === AUTO_BATCH,
-      );
-      if (existing) {
-        return current.map((line) =>
-          line === existing ? { ...line, quantity: (line.quantity ?? 0) + quantity } : line,
-        );
-      }
-      return [
-        ...current,
-        {
-          key,
-          product,
-          batchId: AUTO_BATCH,
-          quantity,
-          quantityUnit: "unit",
-          salePrice: paisaToRupees(suggestedPrice(product, "unit")),
-        },
-      ];
-    });
+    seed(product);
+    store.update((state) => addSaleProduct(state, draft.id, product.id, quantity));
   };
 
-  const updateLine = (key: number, changes: Partial<SaleLine>) => {
-    setLines((current) =>
-      current.map((line) => (line.key === key ? { ...line, ...changes } : line)),
-    );
-  };
-
-  const setLineQuantityUnit = (key: number, quantityUnit: SaleLine["quantityUnit"]) => {
-    setLines((current) =>
-      current.map((line) =>
-        line.key === key
-          ? {
-              ...line,
-              quantityUnit,
-              salePrice: paisaToRupees(suggestedPrice(line.product, quantityUnit)),
-            }
-          : line,
+  const updateLine = (key: number, { salePrice, ...changes }: SaleLineEdits) => {
+    const line = lines.find((candidate) => candidate.key === key);
+    if (line?.kind !== "ready") return;
+    store.update((state) =>
+      updateSaleLine(
+        state,
+        key,
+        salePrice === undefined
+          ? changes
+          : { ...changes, price: enteredPrice(line.product, line.quantityUnit, salePrice) },
       ),
     );
   };
 
-  const removeLine = (key: number) => {
-    setLines((current) => current.filter((line) => line.key !== key));
+  const setLineQuantityUnit = (key: number, quantityUnit: SaleLine["quantityUnit"]) =>
+    store.update((state) => setSaleLineUnit(state, key, quantityUnit));
+
+  const removeLine = (key: number) => store.update((state) => removeSaleLine(state, key));
+
+  const setCustomerName = (value: string) =>
+    store.update((state) => setSaleCustomer(state, draft.id, value));
+
+  const setBulkDiscount = (value: number | null) =>
+    store.update((state) => setSaleDiscount(state, draft.id, value));
+
+  const activate = (change: (state: SaleDrafts) => SaleDrafts) => {
+    store.update(change);
+    store.focusSearch();
   };
 
   const focusSearch = () => {
@@ -182,28 +216,20 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const errors = lines.map(lineError);
   const subtotal = lines.reduce((sum, line) => sum + (lineTotal(line) ?? 0), 0);
   const unitCount = lines.reduce((sum, line) => sum + lineUnits(line), 0);
-  const validBulkDiscount = bulkDiscount != null && bulkDiscount >= 0 && bulkDiscount <= 100;
-  const total = validBulkDiscount
-    ? lines.reduce((sum, line) => sum + (lineTotal(line, bulkDiscount) ?? 0), 0)
-    : subtotal;
+  const validBulkDiscount = isValidDiscount(bulkDiscount);
+  const total = saleTotal(lines, bulkDiscount);
   const discountTotal = subtotal - total;
   const canSubmit =
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
   const completeSale = async () => {
-    if (submittingRef.current || !canSubmit || bulkDiscount == null) return;
-    submittingRef.current = true;
-    setIsSubmitting(true);
-    const discount = bulkDiscount;
+    if (!canSubmit || !isValidDiscount(bulkDiscount)) return;
     const items = [];
     for (const line of lines) {
+      if (line.kind !== "ready") return;
       const quantity = line.quantity;
-      const salePrice = discountedSalePrice(line, discount);
-      if (quantity == null || salePrice == null) {
-        submittingRef.current = false;
-        setIsSubmitting(false);
-        return;
-      }
+      const salePrice = discountedSalePrice(line, bulkDiscount);
+      if (quantity == null || salePrice == null) return;
       items.push({
         productId: line.product.id,
         batchId: line.batchId === AUTO_BATCH ? null : line.batchId,
@@ -212,6 +238,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         salePrice,
       });
     }
+    if (!store.beginCompleting(draft.id)) return;
     try {
       const invoice = await issueInvoice({
         customerName: customerName.trim() || null,
@@ -221,9 +248,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,
         type: "success",
       });
-      setLines([]);
-      setCustomerName("");
-      setBulkDiscount(0);
+      store.update((state) => closeSaleDraft(state, draft.id));
       await navigate({
         to: "/invoices/$invoiceId",
         params: { invoiceId: invoice.invoiceId },
@@ -234,15 +259,21 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         type: "error",
       });
     } finally {
-      submittingRef.current = false;
-      setIsSubmitting(false);
+      store.endCompleting(draft.id);
     }
   };
+
+  const tabs = drafts.drafts.map((open) => ({
+    id: open.id,
+    label: saleDraftLabel(open),
+    lineCount: open.lines.length,
+    total: draftTotal(open, lookup),
+  }));
 
   return (
     <InvoiceCreateContext
       value={{
-        state: { customerName, lines, bulkDiscount },
+        state: { draftId: draft.id, customerName, lines, bulkDiscount },
         actions: {
           addProduct,
           updateLine,
@@ -252,6 +283,11 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           setBulkDiscount,
           completeSale,
           focusSearch,
+          openDraft: store.open,
+          activateDraft: (id) => activate((state) => activateSaleDraft(state, id)),
+          activateDraftAt: (index) => activate((state) => activateSaleDraftAt(state, index)),
+          cycleDraft: (step) => activate((state) => cycleSaleDraft(state, step)),
+          discardDraft: store.discard,
         },
         meta: {
           errors,
@@ -263,6 +299,8 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
           canSubmit,
           isSubmitting,
           searchRef,
+          tabs,
+          canOpenDraft: canOpenSaleDraft(drafts),
         },
       }}
     >
@@ -277,12 +315,4 @@ function useInvoiceCreate() {
   return context;
 }
 
-export {
-  AUTO_BATCH,
-  InvoiceCreateProvider,
-  lineTotal,
-  paisaToRupees,
-  suggestedPrice,
-  useInvoiceCreate,
-  type SaleLine,
-};
+export { InvoiceCreateProvider, useInvoiceCreate, type SaleDraftTab };

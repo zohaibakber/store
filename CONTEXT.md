@@ -76,6 +76,14 @@ _Avoid_: Dashboard analytics, stock recommendations
 A recorded sale against catalog stock.
 _Avoid_: Bill, order, receipt
 
+**Sale draft.**
+An unfinished sale kept on the device, one set per workspace. It stores what the
+cashier typed (product, batch choice, quantity, unit, entered price, customer,
+discount) and reads each product live from the catalog replica. A price the
+cashier never edited follows the catalog; an edited price is kept. Drafts do not
+reserve stock; the authority decides each sale when it is completed.
+_Avoid_: Cart, hold, parked invoice
+
 **Supplier.**
 A wholesaler or distributor the organization buys from.
 

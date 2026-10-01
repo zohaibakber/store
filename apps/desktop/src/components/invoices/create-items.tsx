@@ -1,5 +1,5 @@
 import { useInvoiceCreate } from "@/components/invoices/create-context";
-import { InvoiceCreateLine } from "@/components/invoices/create-line";
+import { InvoiceCreateLine, InvoiceMissingLine } from "@/components/invoices/create-line";
 import { InvoiceProductPicker } from "@/components/invoices/product-picker";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
@@ -60,14 +60,18 @@ function InvoiceItems() {
                 </TableCell>
               </TableRow>
             ) : (
-              lines.map((line, index) => (
-                <InvoiceCreateLine
-                  error={errors[index] ?? null}
-                  index={index}
-                  key={line.key}
-                  line={line}
-                />
-              ))
+              lines.map((line, index) =>
+                line.kind === "ready" ? (
+                  <InvoiceCreateLine
+                    error={errors[index] ?? null}
+                    index={index}
+                    key={line.key}
+                    line={line}
+                  />
+                ) : (
+                  <InvoiceMissingLine index={index} key={line.key} line={line} />
+                ),
+              )
             )}
           </TableBody>
         </Table>
