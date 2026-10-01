@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -22,6 +23,7 @@ import { makeAnalyticsController, type AnalyticsController } from "./analytics-s
 import { spawnNodeAnalyticsWorker } from "./analytics-worker-process";
 import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
+  admitReplicaKey,
   makeReplicaAdmission,
   PROXY_CONCURRENCY,
   type ReplicaAdmission,
@@ -65,6 +67,8 @@ import {
   ReplicaWorkspaceToken,
   type ProxyFetchRequest,
   type ProxyFetchResult,
+  type ReplicaAuthority,
+  type ReplicaWorkerBoot,
 } from "./replica-rpc";
 import {
   DEFAULT_SUPERVISOR_POLICY,
@@ -374,8 +378,55 @@ export const registerReplicaWorkerIpc = (options: {
       Effect.forkScoped,
     );
 
+  const attachNetwork = (client: ReplicaWorkerClient) =>
+    Effect.gen(function* () {
+      yield* client.ProxyRequests().pipe(
+        Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
+          concurrency: PROXY_CONCURRENCY,
+          unordered: true,
+        }),
+        Stream.runDrain,
+        Effect.catchCause(() => Effect.void),
+        Effect.forkScoped,
+      );
+      yield* client.AccessTokenRequests().pipe(
+        Stream.mapEffect((request) => fulfilAccessTokenRequest(client, request), {
+          concurrency: 1,
+        }),
+        Stream.runDrain,
+        Effect.catchCause(() => Effect.void),
+        Effect.forkScoped,
+      );
+    });
+
+  const attachAuthority = (client: ReplicaWorkerClient, authority: ReplicaAuthority) => {
+    switch (authority) {
+      case "local":
+        return Effect.void;
+      case "remote":
+        return attachNetwork(client);
+    }
+  };
+
+  const bootFor = (
+    identity: typeof ReplicaOpenInput.Type,
+    databasePath: string,
+  ): typeof ReplicaWorkerBoot.Type => {
+    switch (identity.authority) {
+      case "local":
+        return { ...identity, databasePath };
+      case "remote":
+        return { ...identity, databasePath, apiBaseUrl: options.apiBaseUrl };
+    }
+  };
+
   const attachStreams =
-    (sender: ReplicaSender, workspaceToken: string, analytics: AnalyticsController) =>
+    (
+      sender: ReplicaSender,
+      workspaceToken: string,
+      analytics: AnalyticsController,
+      authority: ReplicaAuthority,
+    ) =>
     (worker: LiveReplicaWorker, recovered: boolean) =>
       Effect.gen(function* () {
         const { client } = worker;
@@ -393,23 +444,7 @@ export const registerReplicaWorkerIpc = (options: {
             }
           }),
         );
-        yield* client.ProxyRequests().pipe(
-          Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
-            concurrency: PROXY_CONCURRENCY,
-            unordered: true,
-          }),
-          Stream.runDrain,
-          Effect.catchCause(() => Effect.void),
-          Effect.forkScoped,
-        );
-        yield* client.AccessTokenRequests().pipe(
-          Stream.mapEffect((request) => fulfilAccessTokenRequest(client, request), {
-            concurrency: 1,
-          }),
-          Stream.runDrain,
-          Effect.catchCause(() => Effect.void),
-          Effect.forkScoped,
-        );
+        yield* attachAuthority(client, authority);
         if (!foreground) yield* applyForeground(worker, false);
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
@@ -465,10 +500,10 @@ export const registerReplicaWorkerIpc = (options: {
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,
-          boot: { ...identity, databasePath, apiBaseUrl: options.apiBaseUrl },
+          boot: bootFor(identity, databasePath),
         },
         policy,
-        attach: attachStreams(sender, workspaceToken, analytics),
+        attach: attachStreams(sender, workspaceToken, analytics, identity.authority),
         onExhausted,
       });
       const reader = yield* startReplicaSupervisor({
@@ -517,7 +552,7 @@ export const registerReplicaWorkerIpc = (options: {
       const databasePath = path.join(
         options.userDataPath,
         "replicas",
-        sqliteReplicaFileName(`${identity.organizationId}-${identity.userId}`),
+        sqliteReplicaFileName(Result.getOrThrow(admitReplicaKey(identity))),
       );
       const scope = Effect.runSync(Scope.make());
       const gone = Effect.runSync(Deferred.make<void>());

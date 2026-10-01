@@ -67,7 +67,12 @@ const enqueueRequest = {
   },
 };
 
-const openInput = { organizationId: "org-1", userId: "user-1", replicaId: "device-1" };
+const openInput = {
+  authority: "remote",
+  organizationId: "org-1",
+  userId: "user-1",
+  replicaId: "device-1",
+};
 
 const decodeOpened = Schema.decodeUnknownSync(
   Schema.Struct({

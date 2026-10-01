@@ -178,6 +178,7 @@ const makeWorld = (
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(
       await invoke(REPLICA_OPEN_CHANNEL, event, {
+        authority: "remote",
         organizationId: "org-1",
         userId: "user-1",
         replicaId: "device-1",

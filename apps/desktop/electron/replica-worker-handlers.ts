@@ -6,13 +6,16 @@ import {
 } from "@store/client-db";
 import {
   makeProxySyncTransport,
+  openNodeLocalReplicaSession,
   openNodeReplicaSyncSession,
   type NodeReplicaSyncSession,
   type SyncProxyRequest,
 } from "@store/client-db/node-sqlite";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { identity } from "effect/Function";
 import * as Queue from "effect/Queue";
+import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -59,61 +62,134 @@ const timedOutProxy = (): ProxyFetchResult => ({
   bodyText: "The sync proxy did not answer in time.",
 });
 
+type WorkerBoot = typeof ReplicaWorkerBoot.Type;
+
+type AuthorityLink = {
+  readonly open: () => Promise<NodeReplicaSyncSession>;
+  readonly proxyRequests: Stream.Stream<typeof ProxyFetchRequest.Type>;
+  readonly respondProxy: (requestId: string, result: ProxyFetchResult) => Effect.Effect<void>;
+  readonly tokenRequests: Stream.Stream<typeof AccessTokenRequest.Type>;
+  readonly respondToken: (requestId: string, token: AccessTokenResult) => Effect.Effect<void>;
+  readonly setForeground: (session: NodeReplicaSyncSession, visible: boolean) => Promise<void>;
+  readonly healthOf: (health: ReplicaSyncHealth) => ReplicaSyncHealth;
+};
+
+const sessionInput = (config: WorkerBoot) => ({
+  path: config.databasePath,
+  identity: {
+    organizationId: config.organizationId,
+    userId: config.userId,
+    replicaId: config.replicaId,
+  },
+  databaseIdentity: config.databasePath,
+});
+
+const linkRemoteAuthority = (
+  config: Extract<WorkerBoot, { readonly authority: "remote" }>,
+  openSession: typeof openNodeReplicaSyncSession,
+): Effect.Effect<AuthorityLink, never, Scope.Scope> =>
+  Effect.gen(function* () {
+    const proxyRequests = yield* Queue.bounded<typeof ProxyFetchRequest.Type>(PROXY_QUEUE_CAPACITY);
+    const proxyReplies = makePendingReplies<ProxyFetchResult>();
+    const tokenRequests =
+      yield* Queue.bounded<typeof AccessTokenRequest.Type>(TOKEN_QUEUE_CAPACITY);
+    const tokenReplies = makePendingReplies<AccessTokenResult>();
+    const proxyTurns = yield* Semaphore.make(PROXY_CONCURRENCY);
+    const snapshotTurns = yield* Semaphore.make(SNAPSHOT_DOWNLOAD_CONCURRENCY);
+
+    const proxyFetch = (request: SyncProxyRequest): Effect.Effect<ProxyFetchResult> => {
+      const requestId = crypto.randomUUID();
+      const exchange = proxyTurns.withPermits(1)(
+        proxyReplies.ask(requestId, Queue.offer(proxyRequests, { requestId, ...request })),
+      );
+      const admitted = isSnapshotDownload(request)
+        ? snapshotTurns.withPermits(1)(exchange)
+        : exchange;
+      return admitted.pipe(
+        Effect.timeoutOption(
+          Duration.sum(Duration.millis(request.timeoutMillis), PROXY_REPLY_GRACE),
+        ),
+        Effect.map((reply) => (reply._tag === "Some" ? reply.value : timedOutProxy())),
+      );
+    };
+
+    const sharedToken = yield* makeSharedFlight(tokenReplies, (force: boolean, requestId) =>
+      Queue.offer(tokenRequests, { requestId, force }),
+    );
+
+    return {
+      open: () =>
+        openSession({
+          ...sessionInput(config),
+          transport: makeProxySyncTransport((request) => Effect.runPromise(proxyFetch(request))),
+          live: {
+            apiBaseUrl: config.apiBaseUrl,
+            accessToken: ({ force }) =>
+              Effect.runPromise(sharedToken(force, null, TOKEN_REPLY_LIMIT)),
+          },
+        }),
+      proxyRequests: Stream.fromQueue(proxyRequests),
+      respondProxy: proxyReplies.respond,
+      tokenRequests: Stream.fromQueue(tokenRequests),
+      respondToken: tokenReplies.respond,
+      setForeground: async (session, visible) => {
+        await session.setVisible(visible);
+        if (visible) await session.wake("focus");
+      },
+      healthOf: identity,
+    };
+  });
+
+const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
+  switch (health._tag) {
+    case "running":
+      return { _tag: "running" };
+    case "storageError":
+    case "updateRequired":
+    case "recoveryRequired":
+      return health;
+  }
+};
+
+const linkLocalAuthority = (
+  config: Extract<WorkerBoot, { readonly authority: "local" }>,
+  openSession: typeof openNodeLocalReplicaSession,
+): AuthorityLink => ({
+  open: () => openSession(sessionInput(config)),
+  proxyRequests: Stream.never,
+  respondProxy: () => Effect.void,
+  tokenRequests: Stream.never,
+  respondToken: () => Effect.void,
+  setForeground: () => Promise.resolve(),
+  healthOf: onDeviceHealth,
+});
+
+const linkAuthority = (
+  config: WorkerBoot,
+  openSession: typeof openNodeReplicaSyncSession,
+  openLocalSession: typeof openNodeLocalReplicaSession,
+): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
+  switch (config.authority) {
+    case "local":
+      return Effect.succeed(linkLocalAuthority(config, openLocalSession));
+    case "remote":
+      return linkRemoteAuthority(config, openSession);
+  }
+};
+
 export const makeReplicaWorkerHandlers = <R>(
-  boot: Effect.Effect<typeof ReplicaWorkerBoot.Type, unknown, R>,
+  boot: Effect.Effect<WorkerBoot, unknown, R>,
   openSession = openNodeReplicaSyncSession,
+  openLocalSession = openNodeLocalReplicaSession,
 ) =>
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
       const syncHealth = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
-      const proxyRequests =
-        yield* Queue.bounded<typeof ProxyFetchRequest.Type>(PROXY_QUEUE_CAPACITY);
-      const proxyReplies = makePendingReplies<ProxyFetchResult>();
-      const tokenRequests =
-        yield* Queue.bounded<typeof AccessTokenRequest.Type>(TOKEN_QUEUE_CAPACITY);
-      const tokenReplies = makePendingReplies<AccessTokenResult>();
-      const proxyTurns = yield* Semaphore.make(PROXY_CONCURRENCY);
-      const snapshotTurns = yield* Semaphore.make(SNAPSHOT_DOWNLOAD_CONCURRENCY);
-
-      const proxyFetch = (request: SyncProxyRequest): Effect.Effect<ProxyFetchResult> => {
-        const requestId = crypto.randomUUID();
-        const exchange = proxyTurns.withPermits(1)(
-          proxyReplies.ask(requestId, Queue.offer(proxyRequests, { requestId, ...request })),
-        );
-        const admitted = isSnapshotDownload(request)
-          ? snapshotTurns.withPermits(1)(exchange)
-          : exchange;
-        return admitted.pipe(
-          Effect.timeoutOption(
-            Duration.sum(Duration.millis(request.timeoutMillis), PROXY_REPLY_GRACE),
-          ),
-          Effect.map((reply) => (reply._tag === "Some" ? reply.value : timedOutProxy())),
-        );
-      };
-
-      const sharedToken = yield* makeSharedFlight(tokenReplies, (force: boolean, requestId) =>
-        Queue.offer(tokenRequests, { requestId, force }),
-      );
+      const link = yield* linkAuthority(config, openSession, openLocalSession);
 
       const opened = yield* Effect.acquireRelease(
-        Effect.tryPromise(() =>
-          openSession({
-            path: config.databasePath,
-            identity: {
-              organizationId: config.organizationId,
-              userId: config.userId,
-              replicaId: config.replicaId,
-            },
-            databaseIdentity: config.databasePath,
-            transport: makeProxySyncTransport((request) => Effect.runPromise(proxyFetch(request))),
-            live: {
-              apiBaseUrl: config.apiBaseUrl,
-              accessToken: ({ force }) =>
-                Effect.runPromise(sharedToken(force, null, TOKEN_REPLY_LIMIT)),
-            },
-          }),
-        ).pipe(
+        Effect.tryPromise(link.open).pipe(
           Effect.map((session): NodeReplicaSyncSession | undefined => session),
           Effect.orElseSucceed((): NodeReplicaSyncSession | undefined => undefined),
         ),
@@ -125,7 +201,7 @@ export const makeReplicaWorkerHandlers = <R>(
 
       if (opened !== undefined) {
         const unsubscribe = opened.subscribeSyncHealth((health) => {
-          Effect.runSync(SubscriptionRef.set(syncHealth, health));
+          Effect.runSync(SubscriptionRef.set(syncHealth, link.healthOf(health)));
         });
         yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
       }
@@ -158,10 +234,7 @@ export const makeReplicaWorkerHandlers = <R>(
         SetForeground: ({ visible }) =>
           opened === undefined
             ? Effect.void
-            : withSession(async (current) => {
-                await current.setVisible(visible);
-                if (visible) await current.wake("focus");
-              }),
+            : withSession((current) => link.setForeground(current, visible)),
         WakeSyncUpload: () =>
           opened === undefined
             ? Effect.succeed({ drained: false, drainCount: 0 })
@@ -193,11 +266,11 @@ export const makeReplicaWorkerHandlers = <R>(
                   ),
                 ),
               ),
-        SyncHealth: () => SubscriptionRef.changes(syncHealth),
-        ProxyRequests: () => Stream.fromQueue(proxyRequests),
-        ProxyRespond: ({ requestId, result }) => proxyReplies.respond(requestId, result),
-        AccessTokenRequests: () => Stream.fromQueue(tokenRequests),
-        AccessTokenRespond: ({ requestId, token }) => tokenReplies.respond(requestId, token),
+        SyncHealth: () => SubscriptionRef.changes(syncHealth).pipe(Stream.changes),
+        ProxyRequests: () => link.proxyRequests,
+        ProxyRespond: ({ requestId, result }) => link.respondProxy(requestId, result),
+        AccessTokenRequests: () => link.tokenRequests,
+        AccessTokenRespond: ({ requestId, token }) => link.respondToken(requestId, token),
       });
     }),
   );

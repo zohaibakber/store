@@ -29,10 +29,13 @@ import type {
   ReplicaReadOptions,
 } from "./types";
 
+type ElectronReplicaAuthority = "local" | "remote";
+
 export type ElectronReplicaOpenIdentity = {
   readonly organizationId: string;
   readonly userId: string;
   readonly replicaId: string;
+  readonly authority?: ElectronReplicaAuthority;
 };
 
 type CommitStamp = {
@@ -42,7 +45,7 @@ type CommitStamp = {
 
 export type ElectronReplicaBridge = {
   readonly open: (
-    identity: ElectronReplicaOpenIdentity,
+    identity: Required<ElectronReplicaOpenIdentity>,
   ) => Promise<{ readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" }>;
   readonly close: (workspaceToken: string) => Promise<void>;
   readonly stamp: (workspaceToken: string) => Promise<CommitStamp>;
@@ -158,7 +161,13 @@ export const openElectronIpcReplicaHandle = async (
   bridge: ElectronReplicaBridge,
   identity: ElectronReplicaOpenIdentity,
 ): Promise<ReplicaHandle> => {
-  const opened = await bridge.open(identity);
+  const authority = identity.authority ?? "remote";
+  const opened = await bridge.open({
+    authority,
+    organizationId: identity.organizationId,
+    userId: identity.userId,
+    replicaId: identity.replicaId,
+  });
   const { workspaceToken } = opened;
   if (opened.engine !== "sqlite") {
     await bridge.close(workspaceToken).catch(() => undefined);
@@ -254,6 +263,19 @@ export const openElectronIpcReplicaHandle = async (
       options?.signal === undefined ? undefined : { signal: options.signal },
     );
 
+  const wakeSurface = (): Pick<ReplicaHandle, "wakeSyncUpload"> => {
+    switch (authority) {
+      case "local":
+        return {};
+      case "remote":
+        return {
+          wakeSyncUpload: () => {
+            void bridge.wakeSyncUpload(workspaceToken).catch(() => undefined);
+          },
+        };
+    }
+  };
+
   return {
     workspaceToken,
     engine: "sqlite",
@@ -311,9 +333,7 @@ export const openElectronIpcReplicaHandle = async (
       return unsubscribe;
     },
     retryRecovery: () => bridge.retryRecovery(workspaceToken),
-    wakeSyncUpload: () => {
-      void bridge.wakeSyncUpload(workspaceToken).catch(() => undefined);
-    },
+    ...wakeSurface(),
     close: lifetime.close,
   };
 };

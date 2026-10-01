@@ -170,7 +170,7 @@ export {
   runReplicaQuery,
   seedReplicaIdentity,
 } from "./sql-client-session";
-export { openNodeReplicaSyncSession } from "./node-sync";
+export { openNodeLocalReplicaSession, openNodeReplicaSyncSession } from "./node-sync";
 export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly";
 export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
 export type { ReplicaSnapshotRunner } from "./snapshot-read";

@@ -7,6 +7,8 @@ import {
 import {
   CommandStatus,
   EnqueueCommandRequest,
+  LOCAL_ORGANIZATION_ID,
+  LOCAL_USER_ID,
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
 } from "@store/contracts";
@@ -19,11 +21,23 @@ const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterT
 
 export const ReplicaWorkspaceToken = NonEmptyString;
 
-export const ReplicaOpenInput = Schema.Struct({
+const LocalReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("local"),
+  organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
+  userId: Schema.Literal(LOCAL_USER_ID),
+  replicaId: NonEmptyString,
+});
+
+const RemoteReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("remote"),
   organizationId: NonEmptyString,
   userId: NonEmptyString,
   replicaId: NonEmptyString,
 });
+
+export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
+
+export type ReplicaAuthority = (typeof ReplicaOpenInput.Type)["authority"];
 
 export const ReplicaReadSubsetInput = Schema.Struct({
   workspaceToken: NonEmptyString,
@@ -62,11 +76,14 @@ export const ReplicaCommandStatusInput = Schema.Struct({
   operationId: NonEmptyString,
 });
 
-export const ReplicaWorkerBoot = Schema.Struct({
-  ...ReplicaOpenInput.fields,
-  databasePath: Schema.String,
-  apiBaseUrl: Schema.String,
-});
+export const ReplicaWorkerBoot = Schema.Union([
+  Schema.Struct({ ...LocalReplicaIdentity.fields, databasePath: Schema.String }),
+  Schema.Struct({
+    ...RemoteReplicaIdentity.fields,
+    databasePath: Schema.String,
+    apiBaseUrl: Schema.String,
+  }),
+]);
 
 export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
