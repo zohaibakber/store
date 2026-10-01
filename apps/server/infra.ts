@@ -46,6 +46,7 @@ import {
   productionDomainConfig,
   productionSiteOrigin,
   requireProductionApiHostname,
+  requireProductionHostname,
   resolveProductionApiHostname,
   resolveProductionHostname,
 } from "./src/runtime/production-domain";
@@ -56,10 +57,8 @@ export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod";
-    const apiHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && published
-        ? requireProductionApiHostname(yield* productionDomainConfig)
-        : undefined;
+    const domains =
+      !globalThis.__ALCHEMY_RUNTIME__ && published ? yield* productionDomainConfig : undefined;
     const worker = {
       main: import.meta.url,
       compatibility: {
@@ -70,7 +69,14 @@ export const ApiLive = Api.make(
       observability: { enabled: true },
       dev: { port: 8787 },
     };
-    return apiHostname ? { ...worker, domain: apiHostname, workersDev: false } : worker;
+    if (domains === undefined) return worker;
+    const siteHostname = requireProductionHostname(domains);
+    return {
+      ...worker,
+      domain: requireProductionApiHostname(domains),
+      routes: [{ pattern: `${siteHostname}/api/*`, zoneName: siteHostname }],
+      workersDev: false,
+    };
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
