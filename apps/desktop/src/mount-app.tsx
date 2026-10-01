@@ -17,7 +17,12 @@ import type { HostAccessPolicy } from "@/host-access";
 import { authSession } from "@/lib/auth";
 import { preferenceStore } from "@/lib/preferences";
 import { makeReplayChannel } from "@/replay-channel";
-import { bindWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
+import type { DeviceWorkspaceStore } from "@/session/device-workspace";
+import {
+  bindWorkspaceSession,
+  startWorkspaceSession,
+  type WorkspaceSession,
+} from "@/session/workspace-session";
 
 import { getRouter } from "./router";
 
@@ -26,13 +31,13 @@ export const mountApp = (input: {
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
   readonly inventory?: InventoryHost;
+  readonly device?: DeviceWorkspaceStore;
 }) => {
   configureInventoryPreferences(preferenceStore());
   const session = makeReplayChannel<WorkspaceSession>();
-  session.publish({ _tag: "Steady", snapshot: input.snapshot });
   const catalog = createAppCatalogLifetime();
-  const scope = input.access.inventoryScope(input.snapshot);
-  if (scope) catalog.claim(scope);
+  const workspace = { session, catalog, access: input.access, device: input.device };
+  startWorkspaceSession(workspace, input.snapshot);
 
   const router = getRouter({
     history: input.history,
@@ -42,9 +47,7 @@ export const mountApp = (input: {
     inventory: input.inventory,
   });
   bindWorkspaceSession({
-    session,
-    catalog,
-    access: input.access,
+    ...workspace,
     bridge: authSession(),
     invalidate: () => router.invalidate().then(() => undefined),
     flush: flushSync,

@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as Atom from "effect/unstable/reactivity/Atom";
 
-const browserStorage = (): Storage | null => {
+export const browserStorage = (): Storage | null => {
   try {
     return globalThis.localStorage ?? null;
   } catch {

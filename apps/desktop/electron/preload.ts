@@ -11,6 +11,13 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
 import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
+import {
+  BACKUP_SAVE_CHANNEL,
+  RESTORE_APPLY_CHANNEL,
+  RESTORE_CHOOSE_CHANNEL,
+  RESTORE_DISCARD_CHANNEL,
+  type WorkspaceBackupIpcBridge,
+} from "./backup-channels";
 import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
@@ -102,6 +109,15 @@ const replica: ReplicaIpcBridge = {
 };
 
 contextBridge.exposeInMainWorld("replica", replica);
+
+const workspaceBackup: WorkspaceBackupIpcBridge = {
+  backUp: () => ipcRenderer.invoke(BACKUP_SAVE_CHANNEL),
+  chooseRestore: () => ipcRenderer.invoke(RESTORE_CHOOSE_CHANNEL),
+  applyRestore: () => ipcRenderer.invoke(RESTORE_APPLY_CHANNEL),
+  discardRestore: () => ipcRenderer.invoke(RESTORE_DISCARD_CHANNEL),
+};
+
+contextBridge.exposeInMainWorld("workspaceBackup", workspaceBackup);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

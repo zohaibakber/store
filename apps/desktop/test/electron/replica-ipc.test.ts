@@ -67,7 +67,12 @@ const enqueueRequest = {
   },
 };
 
-const openInput = { organizationId: "org-1", userId: "user-1", replicaId: "device-1" };
+const openInput = {
+  authority: "remote",
+  organizationId: "org-1",
+  userId: "user-1",
+  replicaId: "device-1",
+};
 
 const decodeOpened = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -116,6 +121,9 @@ const setupIpc = () => {
         foregrounds.push(visible);
       }),
     WakeSyncUpload: () => Effect.sync(() => ({ drained: true, drainCount: ++drainCount })),
+    BackUp: () => Effect.die("unused"),
+    StageRestore: () => Effect.die("unused"),
+    ReleaseForRestore: () => Effect.die("unused"),
     Commits: () =>
       Stream.make({
         generationId: "1",

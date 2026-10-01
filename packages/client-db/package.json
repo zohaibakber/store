@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./node-analytics": "./src/analytics/node.ts",
+    "./node-backup": "./src/replica/node-backup.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
     "./sql-client": "./src/replica/sql-client.ts",
     "./subset-spec": "./src/replica/subset-spec.ts"

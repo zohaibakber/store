@@ -102,6 +102,9 @@ const makeWorld = (
         ReadCommandStatus: () => Effect.die("unused"),
         SetForeground: () => Effect.void,
         WakeSyncUpload: () => Effect.die("unused"),
+        BackUp: () => Effect.die("unused"),
+        StageRestore: () => Effect.die("unused"),
+        ReleaseForRestore: () => Effect.die("unused"),
         Commits: () => Stream.fromQueue(commits),
         SyncHealth: () => Stream.make({ _tag: "running" as const }),
         ProxyRequests: () => Stream.never,
@@ -178,6 +181,7 @@ const makeWorld = (
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(
       await invoke(REPLICA_OPEN_CHANNEL, event, {
+        authority: "remote",
         organizationId: "org-1",
         userId: "user-1",
         replicaId: "device-1",

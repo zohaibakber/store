@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./insights": "./src/insights/index.ts",
-    "./format": "./src/format.ts"
+    "./format": "./src/format.ts",
+    "./invoice-csv": "./src/invoice-extraction/csv.ts"
   },
   "dependencies": {
     "@store/contracts": "workspace:*",

@@ -12,6 +12,7 @@ import {
   preloadInventoryInsights,
   preloadInventoryInvoices,
 } from "@/lib/inventory";
+import { preloadCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const DEFAULT_RANGE: SalesRange = 30;
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/")({
   loader: ({ context }) =>
     preloadInventory(context, (inventory) =>
       preloadAll([
+        preloadCatalogIsEmpty(inventory),
         preloadInventoryInsights(inventory),
         preloadInventoryInvoices(inventory, RECENT_INVOICE_LIMIT),
       ]),

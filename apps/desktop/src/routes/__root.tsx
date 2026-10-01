@@ -10,6 +10,7 @@ import { Suspense } from "react";
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { AppLoading } from "@/components/app/loading";
 import { PageLoading } from "@/components/app/loading-spinner";
+import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NotFound } from "@/components/app/not-found";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
@@ -72,6 +73,7 @@ function AuthenticatedLayout() {
 
 function AppShell() {
   const { access, inventory, catalog } = Route.useRouteContext();
+  const { workspace } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [sidebarOpen, setSidebarOpen] = useSidebarPreference();
   const chrome = access.chrome({ pathname });
@@ -101,6 +103,7 @@ function AppShell() {
               <SiteHeader />
               {inventory && lease ? (
                 <InventoryReady>
+                  <LocalCatalogWitness workspace={workspace} />
                   <Suspense fallback={<PageLoading />}>
                     <Outlet />
                   </Suspense>

@@ -1,8 +1,8 @@
-import { Login01Icon, LogoutIcon } from "@hugeicons/core-free-icons";
+import { LogoutIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { initials } from "@store/services/format";
-import { Link } from "@tanstack/react-router";
 
+import { SignInToSync } from "@/components/settings/sign-in-to-sync";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,24 +12,7 @@ export function AccountSettings() {
   const auth = useAuth();
   const user = auth.snapshot?.status === "authenticated" ? auth.snapshot.user : undefined;
 
-  if (!user) {
-    return (
-      <FrameCard title="Account">
-        <div className="flex items-center gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Not signed in</p>
-            <p className="text-xs text-muted-foreground">
-              Local data stays on this device. Sign in to back it up and sync across devices.
-            </p>
-          </div>
-          <Button className="shrink-0" render={<Link to="/sign-in" />} size="sm">
-            <HugeiconsIcon aria-hidden="true" icon={Login01Icon} />
-            Sign in
-          </Button>
-        </div>
-      </FrameCard>
-    );
-  }
+  if (!user) return <SignInToSync title="Account" />;
 
   return (
     <FrameCard title="Account">

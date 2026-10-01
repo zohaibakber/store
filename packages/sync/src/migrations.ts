@@ -6,9 +6,9 @@ import { SqlClient } from "effect/unstable/sql/SqlClient";
 
 const STATEMENT_SEPARATOR = "--> statement-breakpoint";
 
-const MIGRATIONS_TABLE = "__store_replica_migrations";
+export const MIGRATIONS_TABLE = "__store_replica_migrations";
 
-const LEGACY_LEDGER_TABLE = "__store_sync_migrations";
+export const LEGACY_LEDGER_TABLE = "__store_sync_migrations";
 
 const decodeKeyRows = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ key: Schema.String })),
@@ -32,6 +32,22 @@ const legacyAppliedKeys = Effect.fn("ReplicaMigrations.legacyAppliedKeys")(funct
   );
   return new Set(rows.map((row) => row.key));
 });
+
+const MIGRATION_KEY = /^(\d+)_/u;
+
+const migrationId = (key: string): number => Number(MIGRATION_KEY.exec(key)?.[1] ?? Number.NaN);
+
+export type MigrationLedgerVerdict = "openable" | "newer" | "unknown";
+
+export const judgeMigrationLedger = (
+  applied: ReadonlyArray<string>,
+  migrations: Record<string, string>,
+): MigrationLedgerVerdict => {
+  const strangers = applied.filter((key) => !Object.hasOwn(migrations, key));
+  if (strangers.length === 0) return "openable";
+  const latest = Math.max(0, ...Object.keys(migrations).map(migrationId));
+  return strangers.some((key) => migrationId(key) > latest) ? "newer" : "unknown";
+};
 
 const runMigrator = Migrator.make({});
 

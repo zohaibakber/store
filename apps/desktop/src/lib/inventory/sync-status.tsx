@@ -95,6 +95,21 @@ export function SidebarSyncButton() {
   return <ReadySyncButton />;
 }
 
+export function OnDeviceStatus() {
+  if (!useCatalogIsReady()) return null;
+  return <ReadyOnDeviceStatus />;
+}
+
+function ReadyOnDeviceStatus() {
+  const status = useInventorySyncStatus();
+  const issue = attention(status);
+  return (
+    <span className={cn("truncate text-xs", issue?.tone ?? "text-muted-foreground")} role="status">
+      {issue ? inventorySyncStatusLabel(status) : "Saved on this device"}
+    </span>
+  );
+}
+
 function ReadySyncButton() {
   const { retrySync, syncNow } = useInventoryActions();
   const checkForAppUpdate = useCheckForAppUpdate();

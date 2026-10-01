@@ -57,6 +57,7 @@ export class AuthBroker implements WorkspaceAuthAdapter {
   readonly #runtime: ManagedRuntime.ManagedRuntime<SessionHttp, never>;
   readonly apiFetch: typeof fetch;
   #snapshot: WorkspaceSnapshot = unauthenticated(false);
+  #restored: Promise<PersistedAuth | null> | undefined;
 
   constructor(
     baseUrl: string,
@@ -115,10 +116,17 @@ export class AuthBroker implements WorkspaceAuthAdapter {
     return access?.accessToken ?? null;
   }
 
+  restore() {
+    this.#restored ??= this.#readPersisted().then((persisted) => {
+      if (persisted) this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
+      return persisted;
+    });
+    return this.#restored;
+  }
+
   async initialize() {
-    const persisted = await this.#readPersisted();
+    const persisted = await this.restore();
     if (!persisted) return this.#snapshot;
-    this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
     const hooks = this.#hooks;
     return this.#use((session) =>
       Effect.gen(function* () {

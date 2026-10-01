@@ -6,7 +6,7 @@ import { AcceptInvitationCard } from "@/components/settings/organization/accept-
 import { OrganizationInvitationsCard } from "@/components/settings/organization/invitations-card";
 import { OrganizationMembersCard } from "@/components/settings/organization/members-card";
 import { OrganizationProfileCard } from "@/components/settings/organization/profile-card";
-import { FrameCard } from "@/components/shared/frame-card";
+import { SignInToSync } from "@/components/settings/sign-in-to-sync";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -64,16 +64,7 @@ export function OrganizationSettings() {
   const auth = useAuth();
   const snapshot = auth.snapshot?.status === "authenticated" ? auth.snapshot : null;
 
-  if (!snapshot) {
-    return (
-      <FrameCard title="Organization">
-        <p className="truncate text-sm font-medium">Local workspace</p>
-        <p className="text-sm text-muted-foreground">
-          Sign in on the Account tab to sync this device with a store.
-        </p>
-      </FrameCard>
-    );
-  }
+  if (!snapshot) return <SignInToSync title="Organization" />;
 
   return (
     <OrganizationProvider>

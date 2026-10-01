@@ -1,11 +1,15 @@
 import { openElectronIpcReplicaHandle } from "@store/client-db";
-import type { InventoryHost } from "@store/inventory-react";
+import { LOCAL_ORGANIZATION_ID } from "@store/contracts";
+import type { InventoryHost, ReplicaOpenIdentity } from "@store/inventory-react";
 import * as Schema from "effect/Schema";
 
 const InventoryHttpConfig = Schema.Struct({
   apiBaseUrl: Schema.String,
   deviceId: Schema.String,
 });
+
+const authorityOf = (identity: ReplicaOpenIdentity) =>
+  identity.organizationId === LOCAL_ORGANIZATION_ID ? "local" : "remote";
 
 export const createElectronInventoryHost = async (): Promise<InventoryHost | undefined> => {
   const http = window.inventoryHttp;
@@ -15,6 +19,7 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost | und
   return {
     apiBaseUrl: config.apiBaseUrl,
     deviceId: config.deviceId,
-    openReplica: (identity) => openElectronIpcReplicaHandle(replica, identity),
+    openReplica: (identity) =>
+      openElectronIpcReplicaHandle(replica, { ...identity, authority: authorityOf(identity) }),
   };
 };

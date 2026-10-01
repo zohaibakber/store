@@ -31,6 +31,7 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsAboutRouteImport } from './routes/settings/about'
 import { Route as SettingsAccountRouteImport } from './routes/settings/account'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
+import { Route as SettingsBackupRouteImport } from './routes/settings/backup'
 import { Route as SettingsOrganizationRouteImport } from './routes/settings/organization'
 import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId_.edit'
 
@@ -144,6 +145,11 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsBackupRoute = SettingsBackupRouteImport.update({
+  id: '/backup',
+  path: '/backup',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
   id: '/organization',
   path: '/organization',
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/backup': typeof SettingsBackupRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/backup': typeof SettingsBackupRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices': typeof InvoicesIndexRoute
   '/products': typeof ProductsIndexRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/backup': typeof SettingsBackupRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
+    | '/settings/backup'
     | '/settings/organization'
     | '/invoices/'
     | '/products/'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
+    | '/settings/backup'
     | '/settings/organization'
     | '/invoices'
     | '/products'
@@ -299,6 +310,7 @@ export interface FileRouteTypes {
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
+    | '/settings/backup'
     | '/settings/organization'
     | '/invoices/'
     | '/products/'
@@ -473,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/backup': {
+      id: '/settings/backup'
+      path: '/backup'
+      fullPath: '/settings/backup'
+      preLoaderRoute: typeof SettingsBackupRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/organization': {
       id: '/settings/organization'
       path: '/organization'
@@ -548,6 +567,7 @@ interface SettingsRouteChildren {
   SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsBackupRoute: typeof SettingsBackupRoute
   SettingsOrganizationRoute: typeof SettingsOrganizationRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -556,6 +576,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAboutRoute: SettingsAboutRoute,
   SettingsAccountRoute: SettingsAccountRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsBackupRoute: SettingsBackupRoute,
   SettingsOrganizationRoute: SettingsOrganizationRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }

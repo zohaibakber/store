@@ -2,10 +2,11 @@ import { nativeClient } from "@store/auth";
 
 import type { AppHost } from "@/host";
 import { controlNewSaleShortcut } from "@/lib/new-sale-shortcut";
+import { decodedBackupBridge } from "@/lib/workspace-backup";
 
 type PreloadBridges = Pick<
   Window,
-  "auth" | "serverApi" | "desktopShell" | "updater" | "electronTheme"
+  "auth" | "serverApi" | "desktopShell" | "updater" | "electronTheme" | "workspaceBackup"
 >;
 
 export const electronAppHost = (bridges: PreloadBridges): AppHost => {
@@ -24,5 +25,6 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
     shell: bridges.desktopShell,
     updater: bridges.updater,
     theme: bridges.electronTheme,
+    backup: bridges.workspaceBackup && decodedBackupBridge(bridges.workspaceBackup),
   };
 };

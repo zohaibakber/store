@@ -5,6 +5,7 @@ import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useInventoryInsights } from "@/lib/inventory";
+import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 
 import { InsightsBuilding } from "./building";
 import { InsightsFreshness } from "./freshness";
@@ -19,6 +20,7 @@ import {
   StockHealth,
   TopSellers,
 } from "./sections";
+import { Welcome } from "./welcome";
 
 const RANGE_OPTIONS = [
   { value: "7", label: "7D" },
@@ -62,6 +64,13 @@ export function OverviewPage({
   readonly range: SalesRange;
   readonly onRangeChange: (range: SalesRange) => void;
 }) {
+  if (useCatalogIsEmpty()) {
+    return (
+      <PageLayout>
+        <Welcome />
+      </PageLayout>
+    );
+  }
   return (
     <PageLayout>
       <PageActions>

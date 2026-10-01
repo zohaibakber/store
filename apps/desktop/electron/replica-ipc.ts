@@ -3,16 +3,20 @@ import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
+import type { RestoreChoice, RestoreOutcome } from "../src/lib/workspace-backup";
 import {
   ReplicaInsightsSummaryInput,
   ReplicaProductInsightsInput,
@@ -20,8 +24,16 @@ import {
 } from "./analytics-rpc";
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
 import { spawnNodeAnalyticsWorker } from "./analytics-worker-process";
+import {
+  BACKUP_SAVE_CHANNEL,
+  RESTORE_APPLY_CHANNEL,
+  RESTORE_CHOOSE_CHANNEL,
+  RESTORE_DISCARD_CHANNEL,
+  type WorkspaceBackupIpcBridge,
+} from "./backup-channels";
 import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
+  admitReplicaKey,
   makeReplicaAdmission,
   PROXY_CONCURRENCY,
   type ReplicaAdmission,
@@ -53,6 +65,12 @@ import {
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
 import {
+  backupFileName,
+  removeReplicaFile,
+  restorePreviousReplicaFile,
+  swapReplicaFile,
+} from "./replica-restore-files";
+import {
   ReplicaCancelReadInput,
   ReplicaCommandStatusInput,
   ReplicaEnqueueInput,
@@ -65,6 +83,8 @@ import {
   ReplicaWorkspaceToken,
   type ProxyFetchRequest,
   type ProxyFetchResult,
+  type ReplicaAuthority,
+  type ReplicaWorkerBoot,
 } from "./replica-rpc";
 import {
   DEFAULT_SUPERVISOR_POLICY,
@@ -112,8 +132,17 @@ export type ReplicaInvokeEvent = {
   readonly sender: ReplicaSender;
 };
 
+export type ReplicaBackupDialogs = {
+  readonly chooseDestination: (suggestedName: string) => Promise<string | null>;
+  readonly chooseSource: () => Promise<string | null>;
+};
+
 type Session = {
   readonly senderId: number;
+  readonly sender: ReplicaSender;
+  readonly identity: typeof ReplicaOpenInput.Type;
+  readonly release: () => void;
+  readonly gate: Latch.Latch;
   readonly workspaceToken: string;
   readonly databasePath: string;
   readonly supervisor: ReplicaSupervisor;
@@ -159,7 +188,26 @@ type ReplicaIpcHandlers = {
   ) => Promise<BridgeResult<ChannelMethod<Channel>>>;
 };
 
-type ReplicaIpcResult = BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>;
+const BACKUP_CHANNEL_METHODS = {
+  [BACKUP_SAVE_CHANNEL]: "backUp",
+  [RESTORE_CHOOSE_CHANNEL]: "chooseRestore",
+  [RESTORE_APPLY_CHANNEL]: "applyRestore",
+  [RESTORE_DISCARD_CHANNEL]: "discardRestore",
+} satisfies Record<string, keyof WorkspaceBackupIpcBridge>;
+
+type BackupResult<Channel extends keyof typeof BACKUP_CHANNEL_METHODS> = BridgeResult<
+  WorkspaceBackupIpcBridge[(typeof BACKUP_CHANNEL_METHODS)[Channel]]
+>;
+
+type BackupIpcHandlers = {
+  readonly [Channel in keyof typeof BACKUP_CHANNEL_METHODS]: (
+    event: ReplicaInvokeEvent,
+  ) => Promise<BackupResult<Channel>>;
+};
+
+type ReplicaIpcResult =
+  | BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>
+  | BackupResult<keyof typeof BACKUP_CHANNEL_METHODS>;
 
 export type ReplicaIpcListener = (
   event: ReplicaInvokeEvent,
@@ -192,6 +240,14 @@ const decodeCommandStatusInput = Schema.decodeUnknownSync(ReplicaCommandStatusIn
 const EXHAUSTED_MESSAGE =
   "The local database worker keeps stopping. Pending changes are saved on this device.";
 
+const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
+
+const NO_WORKSPACE = "Open a workspace before using backups.";
+
+const failed = (message: string) => ({ _tag: "failed" as const, message });
+
+const messageOf = (cause: { readonly message: string }) => cause.message;
+
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {
     readonly handle: (channel: string, listener: ReplicaIpcListener) => void;
@@ -210,6 +266,7 @@ export const registerReplicaWorkerIpc = (options: {
   readonly admissionLimits?: ReplicaAdmissionLimits;
   readonly closeGrace?: Duration.Input;
   readonly ownershipWait?: Duration.Input;
+  readonly backupDialogs?: ReplicaBackupDialogs;
 }) => {
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const spawnReader = options.spawnReader ?? spawnNodeReplicaReader;
@@ -223,6 +280,7 @@ export const registerReplicaWorkerIpc = (options: {
   const closeGrace = options.closeGrace ?? Duration.seconds(8);
   const ownershipWait = options.ownershipWait ?? Duration.seconds(15);
   const sessions = new Map<string, Session>();
+  const stagedRestores = new Map<string, string>();
   const releasing = new Map<string, Set<Deferred.Deferred<void>>>();
   let foreground = true;
 
@@ -267,20 +325,34 @@ export const registerReplicaWorkerIpc = (options: {
         }).pipe(Effect.andThen(Deferred.succeed(owner, undefined))),
     );
 
+  const closeWorkers = (workers: Pick<Session, "scope" | "supervisor" | "reader">) =>
+    Effect.gen(function* () {
+      const closing = yield* Effect.forkDetach(Scope.close(workers.scope, Exit.void));
+      const graceful = yield* Effect.timeoutOption(Fiber.await(closing), closeGrace);
+      if (Option.isNone(graceful)) {
+        yield* Effect.all([workers.supervisor.terminate, workers.reader.terminate], {
+          discard: true,
+          concurrency: "unbounded",
+        });
+        yield* Fiber.await(closing);
+      }
+    });
+
+  const discardStagedRestore = (workspaceToken: string) =>
+    Effect.suspend(() => {
+      const stagedPath = stagedRestores.get(workspaceToken);
+      stagedRestores.delete(workspaceToken);
+      return stagedPath === undefined ? Effect.void : removeReplicaFile(stagedPath);
+    });
+
   const disposeSession = (session: Session) =>
     Effect.scoped(
       Effect.gen(function* () {
         sessions.delete(session.workspaceToken);
+        yield* discardStagedRestore(session.workspaceToken);
         yield* holdOwnership(session.databasePath);
-        const closing = yield* Effect.forkDetach(Scope.close(session.scope, Exit.void));
-        const graceful = yield* Effect.timeoutOption(Fiber.await(closing), closeGrace);
-        if (Option.isNone(graceful)) {
-          yield* Effect.all([session.supervisor.terminate, session.reader.terminate], {
-            discard: true,
-            concurrency: "unbounded",
-          });
-          yield* Fiber.await(closing);
-        }
+        yield* closeWorkers(session);
+        yield* session.gate.open;
       }),
     );
 
@@ -293,6 +365,24 @@ export const registerReplicaWorkerIpc = (options: {
     return session;
   };
 
+  const onceOpen = <A, E>(
+    event: ReplicaInvokeEvent,
+    workspaceToken: string,
+    action: string,
+    use: (session: Session) => Effect.Effect<A, E>,
+  ) =>
+    sessionFor(event, workspaceToken, action).gate.whenOpen(
+      Effect.suspend(() => use(sessionFor(event, workspaceToken, action))),
+    );
+
+  const onceOpenSession = <A, E>(
+    session: Session,
+    use: (session: Session) => Effect.Effect<A, E>,
+  ) =>
+    session.gate.whenOpen(
+      Effect.suspend(() => use(sessions.get(session.workspaceToken) ?? session)),
+    );
+
   const withSession = async <A, E>(
     event: ReplicaInvokeEvent,
     input: ReplicaIpcInput,
@@ -300,7 +390,7 @@ export const registerReplicaWorkerIpc = (options: {
     use: (session: Session) => Effect.Effect<A, E>,
   ): Promise<A> => {
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
-    return Effect.runPromise(use(sessionFor(event, decodeWorkspaceToken(input), action)));
+    return Effect.runPromise(onceOpen(event, decodeWorkspaceToken(input), action, use));
   };
 
   const cancellableRead = async <A, E>(
@@ -311,11 +401,13 @@ export const registerReplicaWorkerIpc = (options: {
     use: (session: Session) => Effect.Effect<A, E>,
   ): Promise<A> => {
     assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
-    const session = sessionFor(event, workspaceToken, action);
+    const { reads } = sessionFor(event, workspaceToken, action);
     const controller = new AbortController();
-    session.reads.set(requestId, controller);
-    return Effect.runPromise(use(session), { signal: controller.signal }).finally(() => {
-      session.reads.delete(requestId);
+    reads.set(requestId, controller);
+    return Effect.runPromise(onceOpen(event, workspaceToken, action, use), {
+      signal: controller.signal,
+    }).finally(() => {
+      reads.delete(requestId);
     });
   };
 
@@ -374,8 +466,74 @@ export const registerReplicaWorkerIpc = (options: {
       Effect.forkScoped,
     );
 
+  const attachNetwork = (client: ReplicaWorkerClient) =>
+    Effect.gen(function* () {
+      yield* client.ProxyRequests().pipe(
+        Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
+          concurrency: PROXY_CONCURRENCY,
+          unordered: true,
+        }),
+        Stream.runDrain,
+        Effect.catchCause(() => Effect.void),
+        Effect.forkScoped,
+      );
+      yield* client.AccessTokenRequests().pipe(
+        Stream.mapEffect((request) => fulfilAccessTokenRequest(client, request), {
+          concurrency: 1,
+        }),
+        Stream.runDrain,
+        Effect.catchCause(() => Effect.void),
+        Effect.forkScoped,
+      );
+    });
+
+  const attachAuthority = (client: ReplicaWorkerClient, authority: ReplicaAuthority) => {
+    switch (authority) {
+      case "local":
+        return Effect.void;
+      case "remote":
+        return attachNetwork(client);
+    }
+  };
+
+  const bootFor = (
+    identity: typeof ReplicaOpenInput.Type,
+    databasePath: string,
+  ): typeof ReplicaWorkerBoot.Type => {
+    switch (identity.authority) {
+      case "local":
+        return { ...identity, databasePath };
+      case "remote":
+        return { ...identity, databasePath, apiBaseUrl: options.apiBaseUrl };
+    }
+  };
+
+  const publishInvalidation = (
+    sender: ReplicaSender,
+    workspaceToken: string,
+    analytics: AnalyticsController,
+    stamp: { readonly generationId: string; readonly localCommitVersion: number },
+  ) =>
+    Effect.suspend(() => {
+      const invalidation = {
+        ...stamp,
+        touchedEntities: [],
+        touchedKeys: [],
+        fullInvalidation: true,
+      };
+      if (!sender.isDestroyed()) {
+        sender.send(REPLICA_COMMIT_CHANNEL, { workspaceToken, ...invalidation });
+      }
+      return analytics.notify(invalidation);
+    });
+
   const attachStreams =
-    (sender: ReplicaSender, workspaceToken: string, analytics: AnalyticsController) =>
+    (
+      sender: ReplicaSender,
+      workspaceToken: string,
+      analytics: AnalyticsController,
+      authority: ReplicaAuthority,
+    ) =>
     (worker: LiveReplicaWorker, recovered: boolean) =>
       Effect.gen(function* () {
         const { client } = worker;
@@ -393,35 +551,12 @@ export const registerReplicaWorkerIpc = (options: {
             }
           }),
         );
-        yield* client.ProxyRequests().pipe(
-          Stream.mapEffect((request) => fulfilProxyRequest(client, request), {
-            concurrency: PROXY_CONCURRENCY,
-            unordered: true,
-          }),
-          Stream.runDrain,
-          Effect.catchCause(() => Effect.void),
-          Effect.forkScoped,
-        );
-        yield* client.AccessTokenRequests().pipe(
-          Stream.mapEffect((request) => fulfilAccessTokenRequest(client, request), {
-            concurrency: 1,
-          }),
-          Stream.runDrain,
-          Effect.catchCause(() => Effect.void),
-          Effect.forkScoped,
-        );
+        yield* attachAuthority(client, authority);
         if (!foreground) yield* applyForeground(worker, false);
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
           if (Option.isSome(stamp) && !sender.isDestroyed()) {
-            const invalidation = {
-              ...stamp.value,
-              touchedEntities: [],
-              touchedKeys: [],
-              fullInvalidation: true,
-            };
-            sender.send(REPLICA_COMMIT_CHANNEL, { workspaceToken, ...invalidation });
-            yield* analytics.notify(invalidation);
+            yield* publishInvalidation(sender, workspaceToken, analytics, stamp.value);
           }
         }
       });
@@ -465,10 +600,10 @@ export const registerReplicaWorkerIpc = (options: {
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,
-          boot: { ...identity, databasePath, apiBaseUrl: options.apiBaseUrl },
+          boot: bootFor(identity, databasePath),
         },
         policy,
-        attach: attachStreams(sender, workspaceToken, analytics),
+        attach: attachStreams(sender, workspaceToken, analytics, identity.authority),
         onExhausted,
       });
       const reader = yield* startReplicaSupervisor({
@@ -509,6 +644,199 @@ export const registerReplicaWorkerIpc = (options: {
         ),
     );
 
+  const currentSession = (event: ReplicaInvokeEvent) => {
+    assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
+    return [...sessions.values()].filter((session) => session.senderId === event.sender.id).at(-1);
+  };
+
+  const reopenWorkers = (session: Session) =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const started = yield* openSession(
+        session.sender,
+        session.identity,
+        session.workspaceToken,
+        session.databasePath,
+        scope,
+        session.release,
+      );
+      const workers = { scope, supervisor: started.supervisor, reader: started.reader };
+      const stamp =
+        started.supervisor.engine === "sqlite" && started.reader.engine === "sqlite"
+          ? yield* started.supervisor.use((worker) => worker.client.Stamp()).pipe(Effect.option)
+          : Option.none();
+      if (Option.isNone(stamp)) {
+        yield* closeWorkers(workers);
+        return yield* new ReplicaWorkerFailure({
+          message: "The workspace could not be opened.",
+        });
+      }
+      if (!sessions.has(session.workspaceToken) || session.sender.isDestroyed()) {
+        yield* closeWorkers(workers);
+        return yield* new ReplicaWorkerFailure({
+          message: "The window closed before the workspace reopened.",
+        });
+      }
+      const reopened: Session = { ...session, ...started, scope, reads: new Map() };
+      sessions.set(session.workspaceToken, reopened);
+      return { session: reopened, stamp: stamp.value };
+    });
+
+  const resumeUnchanged = (session: Session, reason: string) =>
+    reopenWorkers(session).pipe(
+      Effect.as(failed(`${reason} Your workspace is unchanged.`)),
+      Effect.catch(() =>
+        Effect.sync(() => {
+          sessions.delete(session.workspaceToken);
+          return failed(`${reason} Your workspace is unchanged. Restart Tabaaq to open it.`);
+        }),
+      ),
+    );
+
+  const backUp = (session: Session, dialogs: ReplicaBackupDialogs) =>
+    Effect.gen(function* () {
+      const now = new Date(yield* Clock.currentTimeMillis);
+      const destination = yield* Effect.tryPromise(() =>
+        dialogs.chooseDestination(backupFileName(now)),
+      );
+      if (destination === null) return { _tag: "cancelled" as const };
+      const written = yield* onceOpenSession(session, (current) =>
+        current.supervisor.use((worker) => worker.client.BackUp({ destinationPath: destination })),
+      );
+      return {
+        _tag: "saved" as const,
+        fileName: path.basename(destination),
+        bytes: written.bytes,
+      };
+    }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
+
+  const stageRestore = (session: Session, dialogs: ReplicaBackupDialogs) =>
+    Effect.gen(function* () {
+      const source = yield* Effect.tryPromise(() => dialogs.chooseSource());
+      if (source === null) return { _tag: "cancelled" as const };
+      yield* discardStagedRestore(session.workspaceToken);
+      const stagedPath = path.join(
+        path.dirname(session.databasePath),
+        `restore-${crypto.randomUUID()}.sqlite`,
+      );
+      const staged = yield* onceOpenSession(session, (current) =>
+        current.supervisor.use((worker) =>
+          worker.client.StageRestore({ sourcePath: source, stagedPath }),
+        ),
+      );
+      stagedRestores.set(session.workspaceToken, stagedPath);
+      return {
+        _tag: "staged" as const,
+        fileName: path.basename(source),
+        current: staged.current,
+        backup: staged.backup,
+      };
+    }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
+
+  const applyRestore = (session: Session, stagedPath: string) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const previousPath = `${session.databasePath}.before-restore-${yield* Clock.currentTimeMillis}`;
+        yield* Effect.acquireRelease(session.gate.close, () => session.gate.open);
+        yield* holdOwnership(session.databasePath);
+        const released = yield* session.admission
+          .read(
+            session.admission.write(
+              session.supervisor
+                .use((worker) => worker.client.ReleaseForRestore({ stagedPath }))
+                .pipe(Effect.ensuring(closeWorkers(session))),
+            ),
+          )
+          .pipe(Effect.result);
+        if (Result.isFailure(released)) {
+          yield* closeWorkers(session);
+          yield* removeReplicaFile(stagedPath);
+          return yield* resumeUnchanged(session, messageOf(released.failure));
+        }
+        const swapped = yield* swapReplicaFile({
+          databasePath: session.databasePath,
+          stagedPath,
+          previousPath,
+        }).pipe(Effect.result);
+        if (Result.isFailure(swapped)) {
+          yield* removeReplicaFile(stagedPath);
+          return yield* resumeUnchanged(session, messageOf(swapped.failure));
+        }
+        const reopened = yield* reopenWorkers(session).pipe(Effect.result);
+        if (Result.isFailure(reopened)) {
+          const putBack = yield* restorePreviousReplicaFile({
+            databasePath: session.databasePath,
+            previousPath,
+          }).pipe(Effect.result);
+          if (Result.isSuccess(putBack)) {
+            return yield* resumeUnchanged(session, "The backup could not be opened.");
+          }
+          sessions.delete(session.workspaceToken);
+          return failed(
+            `The backup could not be opened. Your previous workspace is saved as ${path.basename(previousPath)}.`,
+          );
+        }
+        yield* removeReplicaFile(previousPath);
+        yield* publishInvalidation(
+          reopened.success.session.sender,
+          session.workspaceToken,
+          reopened.success.session.analytics,
+          reopened.success.stamp,
+        );
+        return { _tag: "restored" as const };
+      }),
+    );
+
+  const chooseRestore = (
+    session: Session,
+    dialogs: ReplicaBackupDialogs,
+  ): Promise<RestoreChoice> => {
+    switch (session.identity.authority) {
+      case "local":
+        return Effect.runPromise(stageRestore(session, dialogs));
+      case "remote":
+        return Promise.resolve(failed(RESTORE_LOCAL_ONLY));
+    }
+  };
+
+  const replaceWorkspace = (session: Session, stagedPath: string): Promise<RestoreOutcome> => {
+    switch (session.identity.authority) {
+      case "local":
+        return Effect.runPromise(applyRestore(session, stagedPath));
+      case "remote":
+        return Promise.resolve(failed(RESTORE_LOCAL_ONLY));
+    }
+  };
+
+  const backupHandlers: BackupIpcHandlers = {
+    [BACKUP_SAVE_CHANNEL]: async (event) => {
+      const session = currentSession(event);
+      const dialogs = options.backupDialogs;
+      if (session === undefined || dialogs === undefined) return failed(NO_WORKSPACE);
+      return Effect.runPromise(backUp(session, dialogs));
+    },
+    [RESTORE_CHOOSE_CHANNEL]: async (event) => {
+      const session = currentSession(event);
+      const dialogs = options.backupDialogs;
+      if (session === undefined || dialogs === undefined) return failed(NO_WORKSPACE);
+      return chooseRestore(session, dialogs);
+    },
+    [RESTORE_APPLY_CHANNEL]: async (event) => {
+      const session = currentSession(event);
+      if (session === undefined) return failed(NO_WORKSPACE);
+      const stagedPath = stagedRestores.get(session.workspaceToken);
+      if (stagedPath === undefined) return failed("Choose a backup file first.");
+      stagedRestores.delete(session.workspaceToken);
+      return replaceWorkspace(session, stagedPath);
+    },
+    [RESTORE_DISCARD_CHANNEL]: async (event) => {
+      const session = currentSession(event);
+      if (session !== undefined) {
+        await Effect.runPromise(discardStagedRestore(session.workspaceToken));
+      }
+    },
+  };
+
   const handlers: ReplicaIpcHandlers = {
     [REPLICA_OPEN_CHANNEL]: async (event, input) => {
       assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
@@ -517,7 +845,7 @@ export const registerReplicaWorkerIpc = (options: {
       const databasePath = path.join(
         options.userDataPath,
         "replicas",
-        sqliteReplicaFileName(`${identity.organizationId}-${identity.userId}`),
+        sqliteReplicaFileName(Result.getOrThrow(admitReplicaKey(identity))),
       );
       const scope = Effect.runSync(Scope.make());
       const gone = Effect.runSync(Deferred.make<void>());
@@ -546,6 +874,10 @@ export const registerReplicaWorkerIpc = (options: {
             }
             sessions.set(workspaceToken, {
               senderId: event.sender.id,
+              sender: event.sender,
+              identity,
+              release,
+              gate: yield* Latch.make(true),
               workspaceToken,
               databasePath,
               supervisor: started.supervisor,
@@ -669,7 +1001,12 @@ export const registerReplicaWorkerIpc = (options: {
       ),
   };
 
-  for (const [channel, handler] of Object.entries(handlers)) {
+  const registered = { ...handlers, ...backupHandlers } satisfies Record<
+    string,
+    ReplicaIpcListener
+  >;
+
+  for (const [channel, handler] of Object.entries(registered)) {
     options.ipcMain.handle(channel, handler);
   }
 
@@ -689,7 +1026,7 @@ export const registerReplicaWorkerIpc = (options: {
       );
     },
     dispose: async () => {
-      for (const channel of Object.keys(handlers)) options.ipcMain.removeHandler(channel);
+      for (const channel of Object.keys(registered)) options.ipcMain.removeHandler(channel);
       await Effect.runPromise(
         Effect.forEach([...sessions.values()], disposeSession, {
           discard: true,
