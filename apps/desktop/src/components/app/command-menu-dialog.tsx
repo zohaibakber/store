@@ -718,7 +718,7 @@ function PaletteResults({
                       inputRef.current?.focus();
                     }}
                     onMouseDown={(event) => event.preventDefault()}
-                    size="xs"
+                    size="sm"
                     tabIndex={-1}
                     variant={entry.value === scope ? "default" : "secondary"}
                   >
