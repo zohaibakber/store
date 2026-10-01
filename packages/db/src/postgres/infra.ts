@@ -11,9 +11,7 @@ export const stageUsesNeonInventory = (stage: string) => stage === "dev";
 const INVENTORY_REGION = { planetscale: "ap-south", cloud: "aws:ap-south-1" } as const;
 
 export const inventoryPlacement = (stage: string) =>
-  stageUsesNeonInventory(stage)
-    ? { mode: "smart" as const }
-    : { region: INVENTORY_REGION.cloud };
+  stageUsesNeonInventory(stage) ? { mode: "smart" as const } : { region: INVENTORY_REGION.cloud };
 
 const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
   schema: "packages/db/src/postgres/schema.ts",
