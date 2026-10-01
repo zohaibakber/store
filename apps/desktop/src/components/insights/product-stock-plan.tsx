@@ -1,12 +1,24 @@
 import { formatPrice } from "@store/services/format";
 import { serviceLevelFor } from "@store/services/insights";
+import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { LoadingSpinner } from "@/components/app/loading-spinner";
+import {
+  formatOrderNumber,
+  PROGRESS_META,
+  supplierNamesOf,
+  UNKNOWN_SUPPLIER,
+} from "@/components/purchases/presentation";
 import { FrameCard } from "@/components/shared/frame-card";
 import { EMPTY, formatCount, formatDate } from "@/lib/format";
-import { useProductInsight, useStockPolicy } from "@/lib/inventory";
+import {
+  useProductInsight,
+  useStockPolicy,
+  useSuppliers,
+  useSuspenseProductOnOrder,
+} from "@/lib/inventory";
 
 import {
   describeDemand,
@@ -16,6 +28,39 @@ import {
   formatStockCover,
 } from "./presentation";
 import { StatusBadge } from "./status-badge";
+
+function OnOrder({ productId }: { readonly productId: string }) {
+  const onOrder = useSuspenseProductOnOrder(productId);
+  const suppliers = useSuppliers().data;
+  if (onOrder.lines.length === 0) return null;
+  const names = supplierNamesOf(suppliers);
+  return (
+    <div className="flex flex-col gap-1.5 border-t px-4 py-3 text-sm">
+      <div className="flex h-6 items-center justify-between gap-4">
+        <span className="text-muted-foreground">On order</span>
+        <span className="tabular-nums">{formatCount(onOrder.onOrderBaseUnits, "unit")}</span>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {onOrder.lines.map((line) => (
+          <li className="flex items-center justify-between gap-4 text-xs" key={line.lineId}>
+            <Link
+              className="min-w-0 truncate font-medium outline-none hover:underline focus-visible:underline"
+              params={{ orderId: line.orderId }}
+              to="/purchases/$orderId"
+            >
+              Order <span className="tabular-nums">{formatOrderNumber(line.orderNumber)}</span> ·{" "}
+              {names.get(line.supplierId) ?? UNKNOWN_SUPPLIER}
+            </Link>
+            <span className="shrink-0 text-muted-foreground tabular-nums">
+              {PROGRESS_META[line.status].label} · {formatCount(line.remainingBaseUnits, "unit")}{" "}
+              due
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function StockPlanCard({ productId }: { readonly productId: string }) {
   const insight = useProductInsight(productId);
@@ -81,6 +126,11 @@ function StockPlanCard({ productId }: { readonly productId: string }) {
           </p>
         ) : null}
       </div>
+      <AppErrorBoundary fallback={null}>
+        <React.Suspense fallback={null}>
+          <OnOrder productId={productId} />
+        </React.Suspense>
+      </AppErrorBoundary>
     </FrameCard>
   );
 }

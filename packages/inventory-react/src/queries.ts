@@ -5,6 +5,7 @@ import type {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
+  StockMovementRow,
 } from "@store/client-db";
 import type {
   Category,
@@ -100,6 +101,23 @@ const invoiceItemFields = (item: Ref<InvoiceItemRow>) => ({
   rowVersion: item.rowVersion,
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
+});
+
+export const stockMovementFields = (movement: Ref<StockMovementRow>) => ({
+  id: movement.id,
+  productId: movement.productId,
+  batchId: movement.batchId,
+  invoiceId: movement.invoiceId,
+  purchaseOrderId: movement.purchaseOrderId,
+  type: movement.type,
+  packDelta: movement.packDelta,
+  unitDelta: movement.unitDelta,
+  note: movement.note,
+  organizationId: movement.organizationId,
+  actorUserId: movement.actorUserId,
+  deviceId: movement.deviceId,
+  operationId: movement.operationId,
+  createdAt: movement.createdAt,
 });
 
 const UNCATEGORIZED = "Uncategorized";
@@ -206,28 +224,29 @@ export const productQuery =
       .select(({ product, category }) => catalogProductFields(query, inventory, product, category))
       .findOne();
 
+const productsByIdQuery =
+  (inventory: Inventory, productIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
+    const [first = [], second, ...rest] = chunked(productIds, PRODUCT_IDS_PER_PREDICATE);
+    return productsWithCategory(query, inventory)
+      .where(({ product }) =>
+        second
+          ? or(
+              inArray(product.id, first),
+              inArray(product.id, second),
+              ...rest.map((ids) => inArray(product.id, ids)),
+            )
+          : inArray(product.id, first),
+      )
+      .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
+  };
+
 export const stockMovementsQuery =
   (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
     query
       .from({ movement: inventory.stockMovements })
       .where(({ movement }) => eq(movement.productId, productId))
       .orderBy(({ movement }) => movement.createdAt, "desc")
-      .select(({ movement }) => ({
-        id: movement.id,
-        productId: movement.productId,
-        batchId: movement.batchId,
-        invoiceId: movement.invoiceId,
-        purchaseOrderId: movement.purchaseOrderId,
-        type: movement.type,
-        packDelta: movement.packDelta,
-        unitDelta: movement.unitDelta,
-        note: movement.note,
-        organizationId: movement.organizationId,
-        actorUserId: movement.actorUserId,
-        deviceId: movement.deviceId,
-        operationId: movement.operationId,
-        createdAt: movement.createdAt,
-      }));
+      .select(({ movement }) => stockMovementFields(movement));
 
 export const invoicesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
@@ -291,7 +310,12 @@ export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> 
 export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
   useLiveSuspenseQuery({ query: productQuery(useCatalogReplica(), productId) }).data;
 
-const untilPaged = <Row, Live extends { readonly isReady: boolean }>(
+export const useSuspenseCatalogProductsById = (
+  productIds: ReadonlyArray<string>,
+): ReadonlyArray<Product> =>
+  useLiveSuspenseQuery({ query: productsByIdQuery(useCatalogReplica(), productIds) }).data;
+
+export const untilPaged = <Row, Live extends { readonly isReady: boolean }>(
   firstPage: ReadonlyArray<Row>,
   live: Live & { readonly data: ReadonlyArray<Row>; readonly hasNextPage: boolean },
   pageSize: number,
@@ -414,7 +438,7 @@ export const batchesForProducts = (
     );
 };
 
-const useLatestSuccess = <A, E>(result: AsyncResult.AsyncResult<A, E>): Option.Option<A> => {
+export const useLatestSuccess = <A, E>(result: AsyncResult.AsyncResult<A, E>): Option.Option<A> => {
   const current = AsyncResult.value(result);
   const [latest, setLatest] = React.useState<Option.Option<A>>(current);
   if (Option.isSome(current) && (Option.isNone(latest) || latest.value !== current.value)) {

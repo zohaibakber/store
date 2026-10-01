@@ -4,7 +4,15 @@ import type {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
+  PurchaseOrderItemRow,
+  PurchaseOrderRow,
+  ReceivedDelivery,
+  ReceiveDeliveryInput,
+  SavedPurchaseOrder,
+  SaveOrderDraftInput,
+  SaveSupplierInput,
   StockMovementRow,
+  SupplierRow,
 } from "@store/client-db";
 import type {
   CreateBatchInput,
@@ -31,7 +39,10 @@ export type Inventory = {
   readonly invoiceItems: InventoryCollection<InvoiceItemRow>;
   readonly invoices: InventoryCollection<InvoiceRow>;
   readonly products: InventoryCollection<ProductRow>;
+  readonly purchaseOrderItems: InventoryCollection<PurchaseOrderItemRow>;
+  readonly purchaseOrders: InventoryCollection<PurchaseOrderRow>;
   readonly stockMovements: InventoryCollection<StockMovementRow>;
+  readonly suppliers: InventoryCollection<SupplierRow>;
   readonly actions: InventoryActions;
   readonly atoms: WorkspaceAtoms;
   readonly dispose: () => Promise<void>;
@@ -69,6 +80,13 @@ export interface InventoryActions {
   readonly updateBatch: (input: UpdateBatchInput) => Promise<BatchRow>;
   readonly importInventory: (input: ImportInventoryInput) => Promise<ImportInventoryCommandResult>;
   readonly issueInvoice: (input: CreateInvoiceInput) => Promise<IssueInvoiceResult>;
+  readonly saveSupplier: (input: SaveSupplierInput) => Promise<SupplierRow>;
+  readonly deleteSupplier: (id: string) => Promise<void>;
+  readonly saveOrderDraft: (input: SaveOrderDraftInput) => Promise<SavedPurchaseOrder>;
+  readonly sendOrder: (id: string) => Promise<PurchaseOrderRow>;
+  readonly closeOrder: (id: string) => Promise<PurchaseOrderRow>;
+  readonly cancelOrder: (id: string) => Promise<PurchaseOrderRow>;
+  readonly receiveDelivery: (input: ReceiveDeliveryInput) => Promise<ReceivedDelivery>;
   readonly syncNow: () => void;
 }
 

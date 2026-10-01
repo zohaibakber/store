@@ -1,6 +1,7 @@
 import type { ProductAnalysis, SummaryReader } from "@store/client-db/node-analytics";
 import type {
   InsightsBatchFact,
+  InsightsOnOrderFact,
   InsightsProductFact,
   InsightsSummary,
   AnalyticsRun,
@@ -34,6 +35,7 @@ export const analyzeProducts = (input: {
   readonly products: ReadonlyArray<InsightsProductFact>;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
   readonly sales: ReadonlyArray<SaleFact>;
+  readonly onOrderOf: (productId: string) => number;
   readonly abcOf: (productId: string) => "A" | "B" | "C";
   readonly policy: StockPolicy;
   readonly now: number;
@@ -61,6 +63,7 @@ export const analyzeProducts = (input: {
     const analyzed = analyzeProduct({
       product,
       batches: batchesByProduct.get(product.id) ?? [],
+      onOrderUnits: input.onOrderOf(product.id),
       ledger,
       abc: input.abcOf(product.id),
       policy: input.policy,
@@ -94,6 +97,19 @@ export const analyzeProducts = (input: {
       },
     };
   });
+};
+
+export const onOrderChanges = (
+  stored: ReadonlyArray<InsightsOnOrderFact>,
+  current: ReadonlyArray<InsightsOnOrderFact>,
+): ReadonlyArray<string> => {
+  const before = new Map(stored.map((fact) => [fact.productId, fact.units]));
+  const changed: Array<string> = [];
+  for (const fact of current) {
+    if (before.get(fact.productId) !== fact.units) changed.push(fact.productId);
+    before.delete(fact.productId);
+  }
+  return [...changed, ...before.keys()];
 };
 
 export const summarizeRun = (input: {

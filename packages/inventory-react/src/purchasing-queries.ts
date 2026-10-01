@@ -1,0 +1,244 @@
+import { useAtomSuspense, useAtomValue } from "@effect/atom-react";
+import type { PurchaseOrderItemRow, PurchaseOrderRow, SupplierRow } from "@store/client-db";
+import {
+  OPEN_PURCHASE_ORDER_STATUSES,
+  purchasingBlockedByStaleReplica,
+  staleReplicaRejection,
+  type PurchaseOrder,
+  type PurchaseOrderStatus,
+  type StockMovement,
+  type Supplier,
+  type SupplierId,
+} from "@store/contracts";
+import {
+  eq,
+  inArray,
+  toArray,
+  useLiveInfiniteQuery,
+  useLiveQuery,
+  useLiveSuspenseQuery,
+  type InitialQueryBuilder,
+  type Ref,
+} from "@tanstack/react-db";
+import * as Option from "effect/Option";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+
+import { useCatalogReplica, useInventorySyncActivity } from "./provider";
+import {
+  NOTHING_ON_ORDER,
+  purchaseOrderTabStatuses,
+  type ProductOnOrder,
+  type PurchaseOrderTab,
+} from "./purchasing";
+import { HISTORY_PAGE_SIZE, stockMovementFields, untilPaged, useLatestSuccess } from "./queries";
+import type { Inventory } from "./types";
+
+const supplierFields = (supplier: Ref<SupplierRow>) => ({
+  id: supplier.id,
+  name: supplier.name,
+  phone: supplier.phone,
+  note: supplier.note,
+  organizationId: supplier.organizationId,
+  createdByUserId: supplier.createdByUserId,
+  updatedByUserId: supplier.updatedByUserId,
+  deviceId: supplier.deviceId,
+  operationId: supplier.operationId,
+  rowVersion: supplier.rowVersion,
+  createdAt: supplier.createdAt,
+  updatedAt: supplier.updatedAt,
+});
+
+const purchaseOrderItemFields = (item: Ref<PurchaseOrderItemRow>) => ({
+  id: item.id,
+  purchaseOrderId: item.purchaseOrderId,
+  productId: item.productId,
+  productName: item.productName,
+  quantity: item.quantity,
+  quantityType: item.quantityType,
+  baseUnitQuantity: item.baseUnitQuantity,
+  packCost: item.packCost,
+  receivedBaseUnits: item.receivedBaseUnits,
+  organizationId: item.organizationId,
+  createdByUserId: item.createdByUserId,
+  updatedByUserId: item.updatedByUserId,
+  deviceId: item.deviceId,
+  operationId: item.operationId,
+  rowVersion: item.rowVersion,
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+});
+
+const purchaseOrderFields = (
+  query: InitialQueryBuilder,
+  inventory: Pick<Inventory, "purchaseOrderItems">,
+  order: Ref<PurchaseOrderRow>,
+) => ({
+  id: order.id,
+  orderNumber: order.orderNumber,
+  supplierId: order.supplierId,
+  status: order.status,
+  note: order.note,
+  sentAt: order.sentAt,
+  expectedAt: order.expectedAt,
+  total: order.total,
+  organizationId: order.organizationId,
+  createdByUserId: order.createdByUserId,
+  updatedByUserId: order.updatedByUserId,
+  deviceId: order.deviceId,
+  operationId: order.operationId,
+  rowVersion: order.rowVersion,
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt,
+  items: toArray(
+    query
+      .from({ item: inventory.purchaseOrderItems })
+      .where(({ item }) => eq(item.purchaseOrderId, order.id))
+      .select(({ item }) => purchaseOrderItemFields(item)),
+  ),
+});
+
+const hasStatus = (order: Ref<PurchaseOrderRow>, statuses: ReadonlyArray<PurchaseOrderStatus>) => {
+  const [only, ...others] = statuses;
+  return only !== undefined && others.length === 0
+    ? eq(order.status, only)
+    : inArray(order.status, [...statuses]);
+};
+
+export const suppliersQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
+  query
+    .from({ supplier: inventory.suppliers })
+    .orderBy(({ supplier }) => supplier.name, { direction: "asc", stringSort: "locale" })
+    .select(({ supplier }) => supplierFields(supplier));
+
+export const purchaseOrdersQuery =
+  (inventory: Inventory, statuses: ReadonlyArray<PurchaseOrderStatus>) =>
+  (query: InitialQueryBuilder) =>
+    query
+      .from({ order: inventory.purchaseOrders })
+      .where(({ order }) => hasStatus(order, statuses))
+      .orderBy(({ order }) => order.createdAt, "desc")
+      .select(({ order }) => purchaseOrderFields(query, inventory, order));
+
+export const purchaseOrderQuery =
+  (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
+    query
+      .from({ order: inventory.purchaseOrders })
+      .where(({ order }) => eq(order.id, orderId))
+      .select(({ order }) => purchaseOrderFields(query, inventory, order))
+      .findOne();
+
+export const purchaseOrderDeliveriesQuery =
+  (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
+    query
+      .from({ movement: inventory.stockMovements })
+      .where(({ movement }) => eq(movement.purchaseOrderId, orderId))
+      .orderBy(({ movement }) => movement.createdAt, "desc")
+      .select(({ movement }) => stockMovementFields(movement));
+
+export const useSuppliers = () => {
+  const live = useLiveQuery({ query: suppliersQuery(useCatalogReplica()) });
+  const data: ReadonlyArray<Supplier> = live.data;
+  return { ...live, data };
+};
+
+export const useSuspenseSuppliers = (): ReadonlyArray<Supplier> =>
+  useLiveSuspenseQuery({ query: suppliersQuery(useCatalogReplica()) }).data;
+
+export const useSuspensePurchaseOrders = (
+  tab: PurchaseOrderTab,
+  limit = HISTORY_PAGE_SIZE,
+): ReadonlyArray<PurchaseOrder> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery({
+    query: (query) =>
+      purchaseOrdersQuery(inventory, purchaseOrderTabStatuses(tab))(query).limit(limit),
+  }).data;
+};
+
+export const useSuspensePurchaseOrderHistory = (
+  tab: PurchaseOrderTab,
+  pageSize = HISTORY_PAGE_SIZE,
+) => {
+  const inventory = useCatalogReplica();
+  const firstPage = useSuspensePurchaseOrders(tab, pageSize + 1);
+  const live = useLiveInfiniteQuery(purchaseOrdersQuery(inventory, purchaseOrderTabStatuses(tab)), {
+    pageSize,
+  });
+  const data: ReadonlyArray<PurchaseOrder> = live.data;
+  return untilPaged(firstPage, { ...live, data }, pageSize);
+};
+
+export const useSuspenseOpenPurchaseOrders = (
+  limit = HISTORY_PAGE_SIZE,
+): ReadonlyArray<PurchaseOrder> => {
+  const inventory = useCatalogReplica();
+  return useLiveSuspenseQuery({
+    query: (query) =>
+      purchaseOrdersQuery(inventory, OPEN_PURCHASE_ORDER_STATUSES)(query).limit(limit),
+  }).data;
+};
+
+export const usePurchaseOrder = (orderId: string) => {
+  const live = useLiveQuery({ query: purchaseOrderQuery(useCatalogReplica(), orderId) });
+  const data: PurchaseOrder | undefined = live.data;
+  return { ...live, data };
+};
+
+export const useSuspensePurchaseOrder = (orderId: string): PurchaseOrder | undefined =>
+  useLiveSuspenseQuery({ query: purchaseOrderQuery(useCatalogReplica(), orderId) }).data;
+
+export const useSuspensePurchaseOrderDeliveries = (orderId: string): ReadonlyArray<StockMovement> =>
+  useLiveSuspenseQuery({ query: purchaseOrderDeliveriesQuery(useCatalogReplica(), orderId) }).data;
+
+export const useSuspensePurchaseOrderCount = (tab: PurchaseOrderTab): number =>
+  useAtomSuspense(useCatalogReplica().atoms.purchaseOrderCount(tab)).value;
+
+const NO_PRODUCTS_ON_ORDER: ReadonlyMap<string, ProductOnOrder> = new Map();
+
+const NO_LEARNED_SUPPLIERS: ReadonlyMap<string, SupplierId> = new Map();
+
+const useLatest = <A, E>(result: AsyncResult.AsyncResult<A, E>, empty: A) => {
+  const latest = useLatestSuccess(result);
+  return {
+    data: Option.getOrElse(latest, () => empty),
+    isLoading: Option.isNone(latest) && !AsyncResult.isFailure(result),
+    isError: AsyncResult.isFailure(result),
+  };
+};
+
+export const useProductsOnOrder = (productIds: ReadonlyArray<string>) =>
+  useLatest(
+    useAtomValue(useCatalogReplica().atoms.productsOnOrder(productIds)),
+    NO_PRODUCTS_ON_ORDER,
+  );
+
+export const useSuspenseProductOnOrder = (productId: string): ProductOnOrder =>
+  useAtomSuspense(useCatalogReplica().atoms.productsOnOrder([productId])).value.get(productId) ??
+  NOTHING_ON_ORDER;
+
+export const useLearnedSuppliers = (productIds: ReadonlyArray<string>) =>
+  useLatest(
+    useAtomValue(useCatalogReplica().atoms.learnedSuppliers(productIds)),
+    NO_LEARNED_SUPPLIERS,
+  );
+
+export const useSuspenseLearnedSuppliers = (
+  productIds: ReadonlyArray<string>,
+): ReadonlyMap<string, SupplierId> =>
+  useAtomSuspense(useCatalogReplica().atoms.learnedSuppliers(productIds)).value;
+
+export type PurchasingGate =
+  | { readonly blocked: false }
+  | { readonly blocked: true; readonly message: string };
+
+const PURCHASING_OPEN: PurchasingGate = { blocked: false };
+
+const PURCHASING_BLOCKED: PurchasingGate = {
+  blocked: true,
+  message: staleReplicaRejection(null).message,
+};
+
+export const usePurchasingGate = (): PurchasingGate =>
+  purchasingBlockedByStaleReplica(useInventorySyncActivity().lowestActiveSchemaVersion ?? undefined)
+    ? PURCHASING_BLOCKED
+    : PURCHASING_OPEN;

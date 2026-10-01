@@ -1,3 +1,4 @@
+import { PurchaseOrderStatus } from "@store/contracts/catalog-write";
 import type {
   IndexedDbEntityTable,
   IndexedDbResidualPredicate,
@@ -16,6 +17,7 @@ import {
 } from "./subset-spec";
 
 const isStringScalar = Schema.is(Schema.String);
+const isPurchaseOrderStatus = Schema.is(PurchaseOrderStatus);
 const isIndexEqualsScalar = Schema.is(Schema.Union([Schema.String, Schema.Number]));
 
 type IndexedDbScanPick = {
@@ -99,10 +101,29 @@ const andLeaves = (
   return [predicate];
 };
 
-const ORDERED_INDEXES = {
-  invoices: { column: "createdAt", index: "byCreatedAt" },
-  products: { column: "name", index: "byNameKey" },
-} as const;
+type OrderedIndex = {
+  readonly column: string;
+  readonly index: Extract<IndexedDbScan, { readonly _tag: "indexPrefix" }>["index"];
+};
+
+const orderedIndexOf = (source: InventorySubsetSpec["source"]): OrderedIndex | undefined => {
+  switch (source) {
+    case "invoices":
+      return { column: "createdAt", index: "byCreatedAt" };
+    case "products":
+      return { column: "name", index: "byNameKey" };
+    case "suppliers":
+      return { column: "name", index: "byName" };
+    case "purchaseOrders":
+      return { column: "orderNumber", index: "byOrderNumber" };
+    case "categories":
+    case "batches":
+    case "invoiceItems":
+    case "stockMovements":
+    case "purchaseOrderItems":
+      return undefined;
+  }
+};
 
 const unfilteredScan = (
   source: InventorySubsetSpec["source"],
@@ -110,8 +131,7 @@ const unfilteredScan = (
 ): IndexedDbScan => {
   const [first] = orderBy;
   const reverse = first?.direction === "desc";
-  const ordered =
-    source === "invoices" || source === "products" ? ORDERED_INDEXES[source] : undefined;
+  const ordered = orderedIndexOf(source);
   if (first !== undefined && ordered?.column === first.column) {
     return { _tag: "indexPrefix", index: ordered.index, reverse };
   }
@@ -202,6 +222,45 @@ const pickScan = (
       break;
     }
     case "stockMovements": {
+      const byProduct = indexEq("productId", "byProduct");
+      if (byProduct) return byProduct;
+      break;
+    }
+    case "suppliers": {
+      const byName = indexEq("name", "byName");
+      if (byName) return byName;
+      break;
+    }
+    case "purchaseOrders": {
+      const byOrderNumber = indexEq("orderNumber", "byOrderNumber");
+      if (byOrderNumber) return byOrderNumber;
+      const bySupplier = indexEq("supplierId", "bySupplier");
+      if (bySupplier) return bySupplier;
+      const [first] = orderBy;
+      for (const [index, leaf] of leaves.entries()) {
+        if (
+          leaf._tag === "compare" &&
+          leaf.op === "eq" &&
+          leaf.column === "status" &&
+          isPurchaseOrderStatus(leaf.value)
+        ) {
+          consumed.add(index);
+          return {
+            scan: {
+              _tag: "indexEqualsOrdered",
+              index: "byStatusCreatedAt",
+              value: leaf.value,
+              reverse: first?.column === "createdAt" && first.direction === "desc",
+            },
+            consumed,
+          };
+        }
+      }
+      break;
+    }
+    case "purchaseOrderItems": {
+      const byPurchaseOrder = indexEq("purchaseOrderId", "byPurchaseOrder");
+      if (byPurchaseOrder) return byPurchaseOrder;
       const byProduct = indexEq("productId", "byProduct");
       if (byProduct) return byProduct;
       break;

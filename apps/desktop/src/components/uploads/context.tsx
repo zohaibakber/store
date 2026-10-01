@@ -18,11 +18,16 @@ type ProposedChange = ExtractedLine & {
   productId?: ProductId;
 };
 type UploadPhase = "idle" | "processing" | "ready" | "syncing";
+type InvoiceReference = {
+  readonly supplier: string | null;
+  readonly invoiceNumber: string | null;
+};
 
 interface UploadState {
   files: File[];
   phase: UploadPhase;
   changes: ProposedChange[];
+  invoice: InvoiceReference | null;
 }
 
 interface UploadActions {
@@ -30,6 +35,7 @@ interface UploadActions {
   removeFile: (file: File) => void;
   analyse: () => Promise<void>;
   applyChanges: () => Promise<void>;
+  dropChanges: (received: ReadonlyArray<ProposedChange>) => void;
 }
 
 interface UploadMeta {
@@ -66,6 +72,7 @@ function UploadProvider({
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
+  const [invoice, setInvoice] = useState<InvoiceReference | null>(null);
 
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
@@ -133,6 +140,7 @@ function UploadProvider({
             : { ...line, type: "create_product" };
         }),
       );
+      setInvoice({ supplier: payload.supplier, invoiceNumber: payload.invoiceNumber });
       setPhase("ready");
       toastManager.add({
         title: "Analysis done. Review the proposed changes.",
@@ -186,6 +194,7 @@ function UploadProvider({
       });
       setChanges([]);
       setFiles([]);
+      setInvoice(null);
       toastManager.add({
         title: `Created ${result.createdProducts} products and ${result.createdBatches} batches.`,
         type: "success",
@@ -202,13 +211,22 @@ function UploadProvider({
     }
   };
 
+  const dropChanges = (received: ReadonlyArray<ProposedChange>) => {
+    const remaining = changes.filter((change) => !received.includes(change));
+    setChanges(remaining);
+    if (remaining.length > 0) return;
+    setFiles([]);
+    setInvoice(null);
+    setPhase("idle");
+  };
+
   const processing = phase === "processing" || phase === "syncing";
 
   return (
     <UploadContext
       value={{
-        state: { files, phase, changes },
-        actions: { addFiles, removeFile, analyse, applyChanges },
+        state: { files, phase, changes, invoice },
+        actions: { addFiles, removeFile, analyse, applyChanges, dropChanges },
         meta: { processing, isOnline },
       }}
     >
@@ -229,6 +247,7 @@ export {
   isInvoice,
   useUpload,
   type ExtractedLine,
+  type InvoiceReference,
   type ProposedChange,
   type UploadPhase,
 };

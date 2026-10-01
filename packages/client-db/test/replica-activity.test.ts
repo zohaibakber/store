@@ -114,7 +114,7 @@ describe("sync activity", () => {
       ],
       rejected: [],
       caughtUpAt: 55,
-      lowestActiveSchemaVersion: null,
+      lowestActiveSchemaVersion: 1,
     } satisfies Parameters<typeof syncActivityFromOutbox>[0];
     expect(syncActivityFromOutbox(outbox)).toEqual({
       pendingCount: 3,
@@ -122,6 +122,7 @@ describe("sync activity", () => {
       rejected: [],
       lastCaughtUpAt: 55,
       firstSyncPending: false,
+      lowestActiveSchemaVersion: 1,
     });
     expect(syncStatusFromActivity(outbox)).toEqual({ _tag: "pendingConfirmation" });
     expect(syncStatusFromActivity({ ...outbox, statusCounts: [] })).toEqual({ _tag: "caughtUp" });

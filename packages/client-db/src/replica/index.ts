@@ -10,7 +10,10 @@ export {
   decodeInvoiceItemSqliteRows,
   decodeInvoiceSqliteRows,
   decodeProductSqliteRows,
+  decodePurchaseOrderItemSqliteRows,
+  decodePurchaseOrderSqliteRows,
   decodeStockMovementSqliteRows,
+  decodeSupplierSqliteRows,
 } from "./decode";
 export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
 export type { ElectronReplicaBridge } from "./electron-ipc-handle";
@@ -33,11 +36,20 @@ export { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "./sources";
 export { syncStatusFromOutbox, syncStatusWithHealth } from "./status";
 export {
   EMPTY_SYNC_ACTIVITY,
+  rejectedCommandLabel,
+  rejectedCommandSubject,
+  rejectionReason,
   syncActivityFromOutbox,
   syncActivityFromStatuses,
   syncStatusFromActivity,
 } from "./activity";
-export type { InventorySyncActivity, RejectedCommand, RejectedCommandTarget } from "./activity";
+export type {
+  InventorySyncActivity,
+  RejectedCommand,
+  RejectedCommandLabel,
+  RejectedCommandSubject,
+  RejectedCommandTarget,
+} from "./activity";
 export type { InventorySyncStatus, ReplicaSyncHealth } from "./status";
 export type {
   InventoryCollectionDescriptor,

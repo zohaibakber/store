@@ -12,10 +12,12 @@ import {
   PencilEdit02Icon,
   PlusSignCircleIcon,
   SettingsIcon,
+  ShoppingBasket01Icon,
   ShoppingCartAdd01Icon,
   SunMoonIcon,
   TagIcon,
   TagsIcon,
+  UserMultipleIcon,
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -275,6 +277,17 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       },
       {
         kind: "action",
+        id: "new-purchase-order",
+        label: "New purchase order",
+        keywords: "supplier buy restock order draft purchase",
+        icon: ShoppingBasket01Icon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases", search: { new: true } });
+        },
+      },
+      {
+        kind: "action",
         id: "go-home",
         label: "Go to Home",
         keywords: "dashboard overview",
@@ -306,6 +319,28 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         run: () => {
           close();
           void navigate({ to: "/products/categories" });
+        },
+      },
+      {
+        kind: "action",
+        id: "go-purchases",
+        label: "Go to Purchases",
+        keywords: "purchase orders supplier deliveries",
+        icon: ShoppingBasket01Icon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases" });
+        },
+      },
+      {
+        kind: "action",
+        id: "go-suppliers",
+        label: "Suppliers",
+        keywords: "go to suppliers wholesaler distributor vendor",
+        icon: UserMultipleIcon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases/suppliers" });
         },
       },
       {

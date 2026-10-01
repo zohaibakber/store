@@ -28,6 +28,9 @@ export const isPurchaseOrderOpen = (status: PurchaseOrderStatus): boolean => {
   }
 };
 
+export const OPEN_PURCHASE_ORDER_STATUSES: ReadonlyArray<PurchaseOrderStatus> =
+  PURCHASE_ORDER_STATUSES.filter(isPurchaseOrderOpen);
+
 export const canCreatePurchaseOrderAs = (status: PurchaseOrderStatus): boolean =>
   status === "draft";
 

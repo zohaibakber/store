@@ -1,0 +1,2 @@
+ALTER TABLE `product_insight` ADD `onOrderUnits` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX `product_insight_on_order_idx` ON `product_insight` (`runId`,`productId`,`onOrderUnits`) WHERE "product_insight"."onOrderUnits" > 0;

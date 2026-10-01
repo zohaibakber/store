@@ -45,6 +45,7 @@ export const productInsight = sqliteTable(
     abc: text().notNull(),
     priority: real().notNull(),
     hasOrder: integer({ mode: "number" }).notNull(),
+    onOrderUnits: integer({ mode: "number" }).notNull().default(0),
     revenue90d: real().notNull(),
     unitCost: real(),
     trend: text().notNull(),
@@ -73,6 +74,9 @@ export const productInsight = sqliteTable(
       table.status,
       table.hasOrder,
     ),
+    index("product_insight_on_order_idx")
+      .on(table.runId, table.productId, table.onOrderUnits)
+      .where(sql`${table.onOrderUnits} > 0`),
   ],
 );
 

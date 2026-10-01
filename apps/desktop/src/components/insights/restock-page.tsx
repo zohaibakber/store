@@ -1,4 +1,9 @@
-import { Download01Icon, InformationCircleIcon } from "@hugeicons/core-free-icons";
+import {
+  Cancel01Icon,
+  Download01Icon,
+  InformationCircleIcon,
+  ShoppingBasket01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   RESTOCK_VIEWS,
@@ -27,6 +32,9 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as React from "react";
 
+import { PurchasingGateNotice } from "@/components/purchases/gate-notice";
+import { OrderBuilderSheet } from "@/components/purchases/order-builder";
+import type { DraftLine } from "@/components/purchases/presentation";
 import {
   DataTable,
   DataTableColumnHeader,
@@ -40,11 +48,17 @@ import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { useInventoryInsights, useRestockExport, useRestockPage } from "@/lib/inventory";
+import {
+  useInventoryInsights,
+  usePurchasingGate,
+  useRestockExport,
+  useRestockPage,
+} from "@/lib/inventory";
 import { isString } from "@/lib/predicates";
 
 import { InsightsBuilding } from "./building";
@@ -106,10 +120,67 @@ function TwoLine({
   );
 }
 
+type OrderSelection = {
+  readonly selected: ReadonlyMap<string, DraftLine>;
+  readonly pageRows: ReadonlyArray<ProductInsight>;
+  readonly toggle: (insights: ReadonlyArray<ProductInsight>, checked: boolean) => void;
+};
+
+const OrderSelectionContext = React.createContext<OrderSelection | null>(null);
+
+const useOrderSelection = () => {
+  const selection = React.use(OrderSelectionContext);
+  if (!selection) throw new Error("Restock selection is used outside the restock table.");
+  return selection;
+};
+
+const draftLineOf = (insight: ProductInsight): DraftLine => ({
+  productId: insight.productId,
+  name: insight.name,
+  quantity: insight.order?.quantity ?? 1,
+  quantityType: insight.tracksPacks ? "pack" : "unit",
+  unitsPerPack: insight.unitsPerPack,
+  tracksPacks: insight.tracksPacks,
+  packCost: insight.unitCost === null ? null : Math.round(insight.unitCost * insight.unitsPerPack),
+});
+
+function SelectPageCheckbox() {
+  const { selected, pageRows, toggle } = useOrderSelection();
+  const chosen = pageRows.filter((insight) => selected.has(insight.productId)).length;
+  return (
+    <Checkbox
+      aria-label="Select all products on this page"
+      checked={pageRows.length > 0 && chosen === pageRows.length}
+      disabled={pageRows.length === 0}
+      indeterminate={chosen > 0 && chosen < pageRows.length}
+      onCheckedChange={(checked) => toggle(pageRows, checked)}
+    />
+  );
+}
+
+function SelectRowCheckbox({ insight }: { readonly insight: ProductInsight }) {
+  const { selected, toggle } = useOrderSelection();
+  return (
+    <Checkbox
+      aria-label={`Select ${insight.name}`}
+      checked={selected.has(insight.productId)}
+      onCheckedChange={(checked) => toggle([insight], checked)}
+      onClick={(event) => event.stopPropagation()}
+    />
+  );
+}
+
 const trendArrow = (trend: ProductInsight["demand"]["trend"]) =>
   trend === "rising" ? " ↑" : trend === "falling" ? " ↓" : "";
 
 const columns = columnHelper.columns([
+  columnHelper.display({
+    id: "select",
+    header: () => <SelectPageCheckbox />,
+    cell: ({ row }) => <SelectRowCheckbox insight={row.original} />,
+    enableHiding: false,
+    meta: { label: "Select" },
+  }),
   columnHelper.accessor("name", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Product" />,
     cell: ({ row }) => (
@@ -272,6 +343,9 @@ function RestockBody({
   const { summary } = useInventoryInsights();
   const navigate = useNavigate();
   const router = useRouter();
+  const gate = usePurchasingGate();
+  const [selected, setSelected] = React.useState<ReadonlyMap<string, DraftLine>>(new Map());
+  const [builderOpen, setBuilderOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [pageSize, setPageSize] = React.useState<number>(50);
   const [isPending, startTransition] = React.useTransition();
@@ -327,56 +401,105 @@ function RestockBody({
     },
   });
 
+  const toggle = (insights: ReadonlyArray<ProductInsight>, checked: boolean) =>
+    setSelected((current) => {
+      const next = new Map(current);
+      for (const insight of insights) {
+        if (checked) next.set(insight.productId, draftLineOf(insight));
+        else next.delete(insight.productId);
+      }
+      return next;
+    });
+
+  const deselect = (productIds: ReadonlyArray<string>) =>
+    setSelected((current) => {
+      const next = new Map(current);
+      for (const productId of productIds) next.delete(productId);
+      return next;
+    });
+
   return (
-    <DataTable
-      onRowClick={(row) =>
-        navigate({ to: "/products/$productId", params: { productId: row.original.productId } })
-      }
-      onRowPreload={(row) =>
-        void router.preloadRoute({
-          to: "/products/$productId",
-          params: { productId: row.original.productId },
-        })
-      }
-      className="gap-3"
-      table={table}
-    >
-      <PageActions>
-        <InsightsFreshness />
-        <DataTableFilter columnId="name" placeholder="Search products" />
-        <ExportButton />
-        <PlanningSheet />
-      </PageActions>
-      <div className="flex items-center gap-2">
-        <div className="min-w-0 overflow-x-auto">
-          <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
-            <TabsList aria-label="Stock view">
-              {RESTOCK_VIEWS.map((value) => (
-                <TabsTab key={value} value={value}>
-                  {VIEW_LABEL[value]}
-                  <Badge variant="outline">
-                    <span className="tabular-nums">
-                      {formatNumber(summary === null ? 0 : viewCount(summary, value))}
-                    </span>
-                  </Badge>
-                </TabsTab>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-        {summary === null ? null : <PolicyInfo summary={summary} />}
-      </div>
-      <div
-        aria-busy={isPending}
-        className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}
+    <OrderSelectionContext value={{ selected, pageRows: page.rows, toggle }}>
+      <DataTable
+        onRowClick={(row) =>
+          navigate({ to: "/products/$productId", params: { productId: row.original.productId } })
+        }
+        onRowPreload={(row) =>
+          void router.preloadRoute({
+            to: "/products/$productId",
+            params: { productId: row.original.productId },
+          })
+        }
+        className="gap-3"
+        table={table}
       >
-        <DataTableContent>
-          <DataTableFooter>
-            <DataTablePagination pageSizes={PAGE_SIZES} />
-          </DataTableFooter>
-        </DataTableContent>
-      </div>
-    </DataTable>
+        <PageActions>
+          <InsightsFreshness />
+          <DataTableFilter columnId="name" placeholder="Search products" />
+          <ExportButton />
+          <PlanningSheet />
+          {selected.size > 0 ? (
+            <Button
+              aria-label="Clear selection"
+              onClick={() => setSelected(new Map())}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
+            </Button>
+          ) : null}
+          <Button
+            disabled={gate.blocked || selected.size === 0}
+            onClick={() => setBuilderOpen(true)}
+            size="sm"
+          >
+            <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />
+            Order selected
+            {selected.size > 0 ? (
+              <Badge variant="secondary">
+                <span className="tabular-nums">{formatNumber(selected.size)}</span>
+              </Badge>
+            ) : null}
+          </Button>
+        </PageActions>
+        <PurchasingGateNotice gate={gate} />
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 overflow-x-auto">
+            <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
+              <TabsList aria-label="Stock view">
+                {RESTOCK_VIEWS.map((value) => (
+                  <TabsTab key={value} value={value}>
+                    {VIEW_LABEL[value]}
+                    <Badge variant="outline">
+                      <span className="tabular-nums">
+                        {formatNumber(summary === null ? 0 : viewCount(summary, value))}
+                      </span>
+                    </Badge>
+                  </TabsTab>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
+          {summary === null ? null : <PolicyInfo summary={summary} />}
+        </div>
+        <div
+          aria-busy={isPending}
+          className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}
+        >
+          <DataTableContent>
+            <DataTableFooter>
+              <DataTablePagination pageSizes={PAGE_SIZES} />
+            </DataTableFooter>
+          </DataTableContent>
+        </div>
+        <OrderBuilderSheet
+          onOpenChange={setBuilderOpen}
+          onOrdered={deselect}
+          open={builderOpen}
+          seed={[...selected.values()]}
+        />
+      </DataTable>
+    </OrderSelectionContext>
   );
 }
 

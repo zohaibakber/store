@@ -1,11 +1,15 @@
 import * as Schema from "effect/Schema";
 
+import { OPEN_PURCHASE_ORDER_STATUSES, purchaseOrderLineRemaining } from "../catalog/purchasing";
+
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;
 const MAX_INSIGHTS_WINDOW_DAYS = 400;
 export const MAX_INSIGHTS_PRODUCTS = 20_000;
 export const MAX_INSIGHTS_BATCHES = 60_000;
 export const MAX_INSIGHTS_SALES = 250_000;
+export const MAX_INSIGHTS_ON_ORDER = MAX_INSIGHTS_PRODUCTS;
+export const INSIGHTS_ON_ORDER_STATUSES = OPEN_PURCHASE_ORDER_STATUSES;
 
 const Integer = Schema.Number.check(Schema.isInt());
 const NonNegativeInteger = Integer.check(Schema.isGreaterThanOrEqualTo(0));
@@ -58,6 +62,12 @@ export const InsightsSaleFact = Schema.Struct({
 });
 export type InsightsSaleFact = typeof InsightsSaleFact.Type;
 
+export const InsightsOnOrderFact = Schema.Struct({
+  productId: Schema.String,
+  units: PositiveInteger,
+});
+export type InsightsOnOrderFact = typeof InsightsOnOrderFact.Type;
+
 const InsightsDayFact = Schema.Struct({
   day: Integer,
   invoices: NonNegativeInteger,
@@ -75,6 +85,7 @@ export const ReplicaInsightsFacts = Schema.Struct({
   products: Schema.Array(InsightsProductFact),
   batches: Schema.Array(InsightsBatchFact),
   sales: Schema.Array(InsightsSaleFact),
+  onOrder: Schema.Array(InsightsOnOrderFact),
   days: Schema.Array(InsightsDayFact),
   hours: Schema.Array(InsightsHourFact),
   truncated: Schema.Boolean,
@@ -163,4 +174,23 @@ export const makeInsightsSalesAccumulator = (
       truncated,
     }),
   };
+};
+
+type InsightsOpenOrderLine = {
+  readonly productId: string;
+  readonly baseUnitQuantity: number;
+  readonly receivedBaseUnits: number;
+};
+
+export const insightsOnOrderFacts = (
+  openOrderLines: Iterable<InsightsOpenOrderLine>,
+): ReadonlyArray<InsightsOnOrderFact> => {
+  const units = new Map<string, number>();
+  for (const line of openOrderLines) {
+    const remaining = purchaseOrderLineRemaining(line);
+    if (remaining > 0) units.set(line.productId, (units.get(line.productId) ?? 0) + remaining);
+  }
+  return [...units]
+    .map(([productId, total]) => ({ productId, units: total }))
+    .sort((left, right) => (left.productId < right.productId ? -1 : 1));
 };

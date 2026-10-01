@@ -6,7 +6,10 @@ import {
   decodeInvoiceItemSqliteRows,
   decodeInvoiceSqliteRows,
   decodeProductSqliteRows,
+  decodePurchaseOrderItemSqliteRows,
+  decodePurchaseOrderSqliteRows,
   decodeStockMovementSqliteRows,
+  decodeSupplierSqliteRows,
   inventoryReplicaScope,
   sqliteCollectionOptions,
   syncActivityFromOutbox,
@@ -37,6 +40,7 @@ import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
 import { makeInsightsSource, type InsightsSource } from "./insights-source";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
+import { countPurchaseOrders, readLearnedSupplierIds, readProductsOnOrder } from "./purchasing";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
 
@@ -121,6 +125,9 @@ const workspaceSources = (
   summarizeProducts: (filters, distinct) =>
     summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
   findProductsByNames: (names) => findProductsByNames(replica, names),
+  readProductsOnOrder: (productIds) => readProductsOnOrder(replica, productIds),
+  readLearnedSuppliers: (productIds) => readLearnedSupplierIds(replica, productIds),
+  countPurchaseOrders: (tab) => countPurchaseOrders(replica, tab),
   insights,
 });
 
@@ -192,6 +199,30 @@ const openCollections = (dbClient: DbClient, scopeId: string, deps: CollectionDe
     "stockMovements",
     "on-demand",
     decodeStockMovementSqliteRows,
+  ),
+  suppliers: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:suppliers`,
+    "suppliers",
+    "eager",
+    decodeSupplierSqliteRows,
+  ),
+  purchaseOrders: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:purchase-orders`,
+    "purchaseOrders",
+    "on-demand",
+    decodePurchaseOrderSqliteRows,
+  ),
+  purchaseOrderItems: mountCollection(
+    dbClient,
+    deps,
+    `${scopeId}:purchase-order-items`,
+    "purchaseOrderItems",
+    "on-demand",
+    decodePurchaseOrderItemSqliteRows,
   ),
 });
 

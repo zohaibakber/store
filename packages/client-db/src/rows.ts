@@ -1,3 +1,4 @@
+import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import {
   BatchId,
   CategoryId,
@@ -104,6 +105,15 @@ export const StockMovementRow = Schema.Struct({
   createdAt: NonNegativeInteger,
 });
 export type StockMovementRow = typeof StockMovementRow.Type;
+
+export const SupplierRow = syncEntityRows.supplier.schema;
+export type SupplierRow = SyncEntityRow<"supplier">;
+
+export const PurchaseOrderRow = syncEntityRows.purchaseOrder.schema;
+export type PurchaseOrderRow = SyncEntityRow<"purchaseOrder">;
+
+export const PurchaseOrderItemRow = syncEntityRows.purchaseOrderItem.schema;
+export type PurchaseOrderItemRow = SyncEntityRow<"purchaseOrderItem">;
 
 const TANSTACK_DB_VIRTUAL_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
 

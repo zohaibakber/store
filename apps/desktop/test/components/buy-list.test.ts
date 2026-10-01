@@ -53,6 +53,7 @@ const report = analyzeInsights(
       units: 5,
       revenue: 750,
     })),
+    onOrder: [],
     days: [],
     hours: [],
     truncated: false,

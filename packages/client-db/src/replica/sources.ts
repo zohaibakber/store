@@ -64,7 +64,13 @@ export const FILTER_COLUMNS = {
     "createdAt",
     "updatedAt",
   ]),
-  purchaseOrderItems: new Set(["id", "organizationId", "purchaseOrderId", "productId"]),
+  purchaseOrderItems: new Set([
+    "id",
+    "organizationId",
+    "purchaseOrderId",
+    "productId",
+    "createdAt",
+  ]),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const ORDER_COLUMNS = {
@@ -86,7 +92,7 @@ export const ORDER_COLUMNS = {
   stockMovements: new Set(["id", "productId", "batchId", "invoiceId", "operationId", "createdAt"]),
   suppliers: new Set(["id", "name", "updatedAt"]),
   purchaseOrders: new Set(["id", "orderNumber", "supplierId", "status", "createdAt", "updatedAt"]),
-  purchaseOrderItems: new Set(["id", "purchaseOrderId", "productId"]),
+  purchaseOrderItems: new Set(["id", "purchaseOrderId", "productId", "createdAt"]),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
 export const CASE_INSENSITIVE_ORDER_COLUMNS = {

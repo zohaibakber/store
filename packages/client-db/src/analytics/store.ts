@@ -10,6 +10,7 @@ import {
   RESTOCK_VIEW_STATUSES,
   StockStatus,
   type InsightsBatchFact,
+  type InsightsOnOrderFact,
   type InsightsProductFact,
   type RestockCursor,
   type RestockFilters,
@@ -473,6 +474,7 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
       abc: insight.abc,
       priority: insight.priority,
       hasOrder: insight.order === null ? 0 : 1,
+      onOrderUnits: insight.onOrderUnits,
       revenue90d: insight.revenue90d,
       unitCost: insight.unitCost,
       trend: insight.demand.trend,
@@ -802,6 +804,12 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
             or(gt(productInsight.revenue90d, 0), ne(productInsight.abc, "C")),
           ),
         )
+        .all(),
+    onOrderOf: (runId: number): ReadonlyArray<InsightsOnOrderFact> =>
+      orm
+        .select({ productId: productInsight.productId, units: productInsight.onOrderUnits })
+        .from(productInsight)
+        .where(and(eq(productInsight.runId, runId), sql`${productInsight.onOrderUnits} > 0`))
         .all(),
     storedProductIds: (runId: number, ids: ReadonlyArray<string>): ReadonlyArray<string> =>
       orm

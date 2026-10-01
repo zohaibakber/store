@@ -1,19 +1,31 @@
 import {
   projectCreateBatch,
   projectCreateCategory,
+  projectCancelOrder,
+  projectCloseOrder,
   projectCreateProduct,
   projectDeleteCategory,
   projectDeleteProduct,
+  projectDeleteSupplier,
   projectImportInventory,
   projectIssuedInvoice,
+  projectReceiveDelivery,
+  projectSaveOrderDraft,
+  projectSaveSupplier,
+  projectSendOrder,
   projectUpdateBatch,
   projectUpdateCategory,
   projectUpdateProduct,
   readCatalogRows,
   readNextInvoiceNumber,
+  readNextPurchaseOrderNumber,
+  readPurchasingRows,
   type CatalogProjectionContext,
   type CatalogRowsRequest,
   type ProductRow,
+  type ProjectionContext,
+  type PurchasingProjectionContext,
+  type PurchasingRowsRequest,
   type ReplicaHandle,
 } from "@store/client-db";
 import type { SyncCommandEnvelope } from "@store/contracts";
@@ -44,6 +56,8 @@ const withProjectedProduct = (
   };
 };
 
+const ORDER_NOT_SAVED = "The purchase order could not be saved locally.";
+
 const failureMessage = (cause: unknown, fallback: string) =>
   cause instanceof Error && cause.message ? cause.message : fallback;
 
@@ -73,15 +87,15 @@ export const makeInventoryActions = (
     }
   };
 
-  const runCommand = async <Result>(
+  const runProjected = async <Tables, Result>(
     fallbackMessage: string,
-    reads: CatalogRowsRequest,
-    run: (context: CatalogProjectionContext) => Promise<Result>,
+    read: () => Promise<Tables>,
+    run: (context: ProjectionContext<Tables>) => Promise<Result>,
   ): Promise<Result> => {
     const commandId = crypto.randomUUID();
     setCommandExecution({ _tag: "accepting", operationId: commandId });
     try {
-      const tables = await readCatalogRows(replica, reads);
+      const tables = await read();
       const occurredAt = Date.now();
       const result = await run({
         actor,
@@ -107,8 +121,21 @@ export const makeInventoryActions = (
     }
   };
 
+  const runCommand = <Result>(
+    fallbackMessage: string,
+    reads: CatalogRowsRequest,
+    run: (context: CatalogProjectionContext) => Promise<Result>,
+  ): Promise<Result> => runProjected(fallbackMessage, () => readCatalogRows(replica, reads), run);
+
+  const runPurchasing = <Result>(
+    fallbackMessage: string,
+    reads: PurchasingRowsRequest,
+    run: (context: PurchasingProjectionContext) => Promise<Result>,
+  ): Promise<Result> =>
+    runProjected(fallbackMessage, () => readPurchasingRows(replica, reads), run);
+
   const catalogCommand = async (
-    context: CatalogProjectionContext,
+    context: ProjectionContext<unknown>,
     writes: ReadonlyArray<CatalogRowWrite>,
   ) => {
     if (writes.length === 0) return;
@@ -276,6 +303,74 @@ export const makeInventoryActions = (
             invoiceId: projection.invoice.id,
             invoiceNumber: projection.invoice.invoiceNumber,
           };
+        },
+      ),
+    saveSupplier: (input) =>
+      runPurchasing(
+        "The supplier could not be saved locally.",
+        { allSuppliers: true },
+        async (context) => {
+          const projected = projectSaveSupplier(context, input);
+          await catalogCommand(context, projected.writes);
+          return projected.row;
+        },
+      ),
+    deleteSupplier: (id) =>
+      runPurchasing(
+        "The supplier could not be removed locally.",
+        { supplierIds: [id], anyOrderOfSupplier: id },
+        async (context) => {
+          const projected = projectDeleteSupplier(context, id);
+          await catalogCommand(context, projected.writes);
+        },
+      ),
+    saveOrderDraft: (input) => {
+      const orderIds = input.id === undefined ? [] : [input.id];
+      return runPurchasing(
+        ORDER_NOT_SAVED,
+        {
+          supplierIds: [input.supplierId],
+          orderIds,
+          itemsOfOrderIds: orderIds,
+          productIds: input.lines.map((line) => line.productId),
+        },
+        async (context) => {
+          const projected = projectSaveOrderDraft(
+            context,
+            input,
+            await readNextPurchaseOrderNumber(replica, context.actor.organizationId),
+          );
+          await catalogCommand(context, projected.writes);
+          return projected.row;
+        },
+      );
+    },
+    sendOrder: (id) =>
+      runPurchasing(ORDER_NOT_SAVED, { orderIds: [id], itemsOfOrderIds: [id] }, async (context) => {
+        const projected = projectSendOrder(context, id);
+        await catalogCommand(context, projected.writes);
+        return projected.row;
+      }),
+    closeOrder: (id) =>
+      runPurchasing(ORDER_NOT_SAVED, { orderIds: [id] }, async (context) => {
+        const projected = projectCloseOrder(context, id);
+        await catalogCommand(context, projected.writes);
+        return projected.row;
+      }),
+    cancelOrder: (id) =>
+      runPurchasing(ORDER_NOT_SAVED, { orderIds: [id] }, async (context) => {
+        const projected = projectCancelOrder(context, id);
+        await catalogCommand(context, projected.writes);
+        return projected.row;
+      }),
+    receiveDelivery: (input) =>
+      runPurchasing(
+        "The delivery could not be saved locally.",
+        { orderIds: [input.orderId], itemsOfOrderIds: [input.orderId], productsOfItems: true },
+        async (context) => {
+          const projected = projectReceiveDelivery(context, input);
+          await catalogCommand(context, projected.writes);
+          return projected.row;
         },
       ),
     syncNow: wakeSyncUpload,

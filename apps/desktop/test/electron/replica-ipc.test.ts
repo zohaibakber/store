@@ -96,6 +96,7 @@ const setupIpc = () => {
           products: [],
           batches: [],
           sales: [{ productId: "p-1", day: 20_000, units: 3, revenue: 300 }],
+          onOrder: [],
           days: [{ day: 20_000, invoices: 1, revenue: 300 }],
           hours: [{ hour: 9, invoices: 1, revenue: 300 }],
           truncated: false,

@@ -22,7 +22,14 @@ import {
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 import { appHost } from "@/host";
 
-type AppRoute = "/" | "/restock" | "/products" | "/products/categories" | "/invoices";
+type AppRoute =
+  | "/"
+  | "/restock"
+  | "/products"
+  | "/products/categories"
+  | "/purchases"
+  | "/purchases/suppliers"
+  | "/invoices";
 
 export type NavSubItem = {
   title: string;

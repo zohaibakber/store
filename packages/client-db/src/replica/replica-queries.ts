@@ -1,12 +1,32 @@
-import { INSIGHTS_DAY_MILLIS, INSIGHTS_HOUR_MILLIS } from "@store/contracts";
+import {
+  INSIGHTS_DAY_MILLIS,
+  INSIGHTS_HOUR_MILLIS,
+  INSIGHTS_ON_ORDER_STATUSES,
+} from "@store/contracts";
 import {
   categories,
   invoiceItems,
   invoices,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   replicaState,
 } from "@store/db/replica.schema";
-import { and, count, eq, gte, lt, ne, or, sql, sum, type SQL, type SQLWrapper } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gt,
+  gte,
+  inArray,
+  lt,
+  ne,
+  or,
+  sql,
+  sum,
+  type SQL,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { QueryBuilder, type SQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import { visibleBatches } from "./compile";
@@ -96,6 +116,30 @@ export const batchFacts = ({ organization, where }: FactScope = {}) =>
       ),
     )
     .orderBy(visibleBatches.productId, visibleBatches.expiresAt);
+
+export const onOrderFacts = ({ organization, where }: FactScope = {}) =>
+  replicaQueryBuilder
+    .select({
+      productId: purchaseOrderItems.productId,
+      units:
+        sql<number>`sum(${purchaseOrderItems.baseUnitQuantity} - ${purchaseOrderItems.receivedBaseUnits})`.as(
+          "units",
+        ),
+    })
+    .from(purchaseOrders)
+    .crossJoin(purchaseOrderItems)
+    .where(
+      and(
+        organization === undefined ? undefined : eq(purchaseOrders.organizationId, organization),
+        inArray(purchaseOrders.status, INSIGHTS_ON_ORDER_STATUSES),
+        eq(purchaseOrderItems.organizationId, purchaseOrders.organizationId),
+        eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id),
+        gt(purchaseOrderItems.baseUnitQuantity, purchaseOrderItems.receivedBaseUnits),
+        where,
+      ),
+    )
+    .groupBy(purchaseOrderItems.productId)
+    .orderBy(purchaseOrderItems.productId);
 
 export type InvoiceWindow = {
   readonly organization: SQLWrapper;

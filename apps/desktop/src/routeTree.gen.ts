@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as ProductsRouteImport } from './routes/products'
+import { Route as PurchasesRouteImport } from './routes/purchases'
 import { Route as RestockRouteImport } from './routes/restock'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -23,6 +24,9 @@ import { Route as ProductsProductIdRouteImport } from './routes/products/$produc
 import { Route as ProductsCategoriesRouteImport } from './routes/products/categories'
 import { Route as ProductsNewRouteImport } from './routes/products/new'
 import { Route as ProductsUploadRouteImport } from './routes/products/upload'
+import { Route as PurchasesIndexRouteImport } from './routes/purchases/index'
+import { Route as PurchasesOrderIdRouteImport } from './routes/purchases/$orderId'
+import { Route as PurchasesSuppliersRouteImport } from './routes/purchases/suppliers'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsAboutRouteImport } from './routes/settings/about'
 import { Route as SettingsAccountRouteImport } from './routes/settings/account'
@@ -43,6 +47,11 @@ const InvoicesRoute = InvoicesRouteImport.update({
 const ProductsRoute = ProductsRouteImport.update({
   id: '/products',
   path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PurchasesRoute = PurchasesRouteImport.update({
+  id: '/purchases',
+  path: '/purchases',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RestockRoute = RestockRouteImport.update({
@@ -100,6 +109,21 @@ const ProductsUploadRoute = ProductsUploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => ProductsRoute,
 } as any)
+const PurchasesIndexRoute = PurchasesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PurchasesRoute,
+} as any)
+const PurchasesOrderIdRoute = PurchasesOrderIdRouteImport.update({
+  id: '/$orderId',
+  path: '/$orderId',
+  getParentRoute: () => PurchasesRoute,
+} as any)
+const PurchasesSuppliersRoute = PurchasesSuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
+  getParentRoute: () => PurchasesRoute,
+} as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -135,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
+  '/purchases': typeof PurchasesRouteWithChildren
   '/restock': typeof RestockRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -144,12 +169,15 @@ export interface FileRoutesByFullPath {
   '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/purchases/$orderId': typeof PurchasesOrderIdRoute
+  '/purchases/suppliers': typeof PurchasesSuppliersRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/purchases/': typeof PurchasesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
@@ -163,12 +191,15 @@ export interface FileRoutesByTo {
   '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/purchases/$orderId': typeof PurchasesOrderIdRoute
+  '/purchases/suppliers': typeof PurchasesSuppliersRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices': typeof InvoicesIndexRoute
   '/products': typeof ProductsIndexRoute
+  '/purchases': typeof PurchasesIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/products/$productId/edit': typeof ProductsProductIdEditRoute
 }
@@ -177,6 +208,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/invoices': typeof InvoicesRouteWithChildren
   '/products': typeof ProductsRouteWithChildren
+  '/purchases': typeof PurchasesRouteWithChildren
   '/restock': typeof RestockRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sign-in': typeof SignInRoute
@@ -186,12 +218,15 @@ export interface FileRoutesById {
   '/products/categories': typeof ProductsCategoriesRoute
   '/products/new': typeof ProductsNewRoute
   '/products/upload': typeof ProductsUploadRoute
+  '/purchases/$orderId': typeof PurchasesOrderIdRoute
+  '/purchases/suppliers': typeof PurchasesSuppliersRoute
   '/settings/about': typeof SettingsAboutRoute
   '/settings/account': typeof SettingsAccountRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/organization': typeof SettingsOrganizationRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
+  '/purchases/': typeof PurchasesIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/products/$productId_/edit': typeof ProductsProductIdEditRoute
 }
@@ -201,6 +236,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invoices'
     | '/products'
+    | '/purchases'
     | '/restock'
     | '/settings'
     | '/sign-in'
@@ -210,12 +246,15 @@ export interface FileRouteTypes {
     | '/products/categories'
     | '/products/new'
     | '/products/upload'
+    | '/purchases/$orderId'
+    | '/purchases/suppliers'
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/organization'
     | '/invoices/'
     | '/products/'
+    | '/purchases/'
     | '/settings/'
     | '/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
@@ -229,12 +268,15 @@ export interface FileRouteTypes {
     | '/products/categories'
     | '/products/new'
     | '/products/upload'
+    | '/purchases/$orderId'
+    | '/purchases/suppliers'
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/organization'
     | '/invoices'
     | '/products'
+    | '/purchases'
     | '/settings'
     | '/products/$productId/edit'
   id:
@@ -242,6 +284,7 @@ export interface FileRouteTypes {
     | '/'
     | '/invoices'
     | '/products'
+    | '/purchases'
     | '/restock'
     | '/settings'
     | '/sign-in'
@@ -251,12 +294,15 @@ export interface FileRouteTypes {
     | '/products/categories'
     | '/products/new'
     | '/products/upload'
+    | '/purchases/$orderId'
+    | '/purchases/suppliers'
     | '/settings/about'
     | '/settings/account'
     | '/settings/appearance'
     | '/settings/organization'
     | '/invoices/'
     | '/products/'
+    | '/purchases/'
     | '/settings/'
     | '/products/$productId_/edit'
   fileRoutesById: FileRoutesById
@@ -265,6 +311,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InvoicesRoute: typeof InvoicesRouteWithChildren
   ProductsRoute: typeof ProductsRouteWithChildren
+  PurchasesRoute: typeof PurchasesRouteWithChildren
   RestockRoute: typeof RestockRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SignInRoute: typeof SignInRoute
@@ -291,6 +338,13 @@ declare module '@tanstack/react-router' {
       path: '/products'
       fullPath: '/products'
       preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/purchases': {
+      id: '/purchases'
+      path: '/purchases'
+      fullPath: '/purchases'
+      preLoaderRoute: typeof PurchasesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/restock': {
@@ -369,6 +423,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/products/upload'
       preLoaderRoute: typeof ProductsUploadRouteImport
       parentRoute: typeof ProductsRoute
+    }
+    '/purchases/': {
+      id: '/purchases/'
+      path: '/'
+      fullPath: '/purchases/'
+      preLoaderRoute: typeof PurchasesIndexRouteImport
+      parentRoute: typeof PurchasesRoute
+    }
+    '/purchases/$orderId': {
+      id: '/purchases/$orderId'
+      path: '/$orderId'
+      fullPath: '/purchases/$orderId'
+      preLoaderRoute: typeof PurchasesOrderIdRouteImport
+      parentRoute: typeof PurchasesRoute
+    }
+    '/purchases/suppliers': {
+      id: '/purchases/suppliers'
+      path: '/suppliers'
+      fullPath: '/purchases/suppliers'
+      preLoaderRoute: typeof PurchasesSuppliersRouteImport
+      parentRoute: typeof PurchasesRoute
     }
     '/settings/': {
       id: '/settings/'
@@ -453,6 +528,22 @@ const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
   ProductsRouteChildren,
 )
 
+interface PurchasesRouteChildren {
+  PurchasesOrderIdRoute: typeof PurchasesOrderIdRoute
+  PurchasesSuppliersRoute: typeof PurchasesSuppliersRoute
+  PurchasesIndexRoute: typeof PurchasesIndexRoute
+}
+
+const PurchasesRouteChildren: PurchasesRouteChildren = {
+  PurchasesOrderIdRoute: PurchasesOrderIdRoute,
+  PurchasesSuppliersRoute: PurchasesSuppliersRoute,
+  PurchasesIndexRoute: PurchasesIndexRoute,
+}
+
+const PurchasesRouteWithChildren = PurchasesRoute._addFileChildren(
+  PurchasesRouteChildren,
+)
+
 interface SettingsRouteChildren {
   SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsAccountRoute: typeof SettingsAccountRoute
@@ -477,6 +568,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InvoicesRoute: InvoicesRouteWithChildren,
   ProductsRoute: ProductsRouteWithChildren,
+  PurchasesRoute: PurchasesRouteWithChildren,
   RestockRoute: RestockRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SignInRoute: SignInRoute,

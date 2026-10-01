@@ -10,6 +10,13 @@ import type * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import type { ProductListRequest } from "./product-list";
+import { purchaseOrderTabStatuses, type PurchaseOrderTab } from "./purchasing";
+import {
+  purchaseOrderDeliveriesQuery,
+  purchaseOrderQuery,
+  purchaseOrdersQuery,
+  suppliersQuery,
+} from "./purchasing-queries";
 import {
   categoriesQuery,
   HISTORY_PAGE_SIZE,
@@ -68,3 +75,25 @@ export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: string)
 
 export const preloadInventoryInsights = (inventory: Inventory): Preload =>
   warmAtom(inventory, inventory.atoms.insights);
+
+export const preloadSuppliers = (inventory: Inventory): Preload =>
+  warmQuery(suppliersQuery(inventory));
+
+export const preloadPurchaseOrders = (inventory: Inventory, tab: PurchaseOrderTab): Preload =>
+  preloadAll([
+    preloadSuppliers(inventory),
+    warmAtom(inventory, inventory.atoms.purchaseOrderCount(tab)),
+    warmQuery((builder) =>
+      purchaseOrdersQuery(
+        inventory,
+        purchaseOrderTabStatuses(tab),
+      )(builder).limit(HISTORY_PAGE_SIZE + 1),
+    ),
+  ]);
+
+export const preloadPurchaseOrder = (inventory: Inventory, orderId: string): Preload =>
+  preloadAll([
+    preloadSuppliers(inventory),
+    warmQuery(purchaseOrderQuery(inventory, orderId)),
+    warmQuery(purchaseOrderDeliveriesQuery(inventory, orderId)),
+  ]);

@@ -21,6 +21,7 @@ import {
   type RestockCursor,
   type RestockFilters,
   type RestockPageRead,
+  type SupplierId,
   type SyncEntity,
 } from "@store/contracts";
 import { DEFAULT_STOCK_POLICY, StockPolicy } from "@store/services/insights";
@@ -51,6 +52,7 @@ import {
   type ProductListFilters,
   type ProductListRequest,
 } from "./product-list";
+import type { ProductOnOrder, PurchaseOrderTab } from "./purchasing";
 import { canonicalSearchLimit, canonicalSearchQuery } from "./search";
 
 let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
@@ -98,6 +100,15 @@ export type WorkspaceAtomSources = {
   readonly findProductsByNames: (
     names: ReadonlyArray<string>,
   ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
+  readonly readProductsOnOrder: (
+    productIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyMap<string, ProductOnOrder>, WorkspaceReadError>;
+  readonly readLearnedSuppliers: (
+    productIds: ReadonlyArray<string>,
+  ) => Effect.Effect<ReadonlyMap<string, SupplierId>, WorkspaceReadError>;
+  readonly countPurchaseOrders: (
+    tab: PurchaseOrderTab,
+  ) => Effect.Effect<number, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -110,6 +121,9 @@ const emptySources: WorkspaceAtomSources = {
   readProductPage: () => Effect.succeed([]),
   summarizeProducts: () => Effect.succeed({ count: 0, distinct: [] }),
   findProductsByNames: () => Effect.succeed([]),
+  readProductsOnOrder: () => Effect.succeed(new Map()),
+  readLearnedSuppliers: () => Effect.succeed(new Map()),
+  countPurchaseOrders: () => Effect.succeed(0),
   insights: emptyInsightsSource,
 };
 
@@ -123,7 +137,17 @@ const sameRowIds = (
   [...left.value].every((id) => right.value.has(id));
 
 const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
+const PURCHASE_ORDER_ENTITIES: ReadonlySet<SyncEntity> = new Set(["purchaseOrder"]);
+const ORDER_LINE_ENTITIES: ReadonlySet<SyncEntity> = new Set([
+  "purchaseOrder",
+  "purchaseOrderItem",
+]);
 export const CANDIDATE_QUERY_SEPARATOR = "\n";
+
+const idsKey = (ids: ReadonlyArray<string>) =>
+  [...new Set(ids)].sort().join(CANDIDATE_QUERY_SEPARATOR);
+
+const idsOfKey = (key: string) => (key === "" ? [] : key.split(CANDIDATE_QUERY_SEPARATOR));
 const INSIGHTS_ROLLOVER = Duration.minutes(15);
 
 const localUtcOffsetMinutes = (at: number) => -new Date(at).getTimezoneOffset();
@@ -244,6 +268,15 @@ export type WorkspaceAtoms = {
   readonly productInsight: (
     productId: string,
   ) => Atom.Atom<AsyncResult.AsyncResult<ProductInsight | null, WorkspaceReadError>>;
+  readonly productsOnOrder: (
+    productIds: ReadonlyArray<string>,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyMap<string, ProductOnOrder>, WorkspaceReadError>>;
+  readonly learnedSuppliers: (
+    productIds: ReadonlyArray<string>,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyMap<string, SupplierId>, WorkspaceReadError>>;
+  readonly purchaseOrderCount: (
+    tab: PurchaseOrderTab,
+  ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
 };
 
 export const createWorkspaceAtoms = (
@@ -289,6 +322,16 @@ export const createWorkspaceAtoms = (
           Effect.map((groups) => [...new Map(groups.flat().map((row) => [row.id, row])).values()]),
         ),
       ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
+  );
+  const productsOnOrderAtom = Atom.family((key: string) =>
+    Atom.make(sources.readProductsOnOrder(idsOfKey(key))).pipe(
+      refreshOnCommits(sources, ORDER_LINE_ENTITIES),
+    ),
+  );
+  const learnedSuppliersAtom = Atom.family((key: string) =>
+    Atom.make(sources.readLearnedSuppliers(idsOfKey(key))).pipe(
+      refreshOnCommits(sources, ORDER_LINE_ENTITIES),
     ),
   );
   return {
@@ -352,5 +395,12 @@ export const createWorkspaceAtoms = (
         ),
       ),
     productInsight: productInsightAtom,
+    productsOnOrder: (productIds) => productsOnOrderAtom(idsKey(productIds)),
+    learnedSuppliers: (productIds) => learnedSuppliersAtom(idsKey(productIds)),
+    purchaseOrderCount: Atom.family((tab: PurchaseOrderTab) =>
+      Atom.make(sources.countPurchaseOrders(tab)).pipe(
+        refreshOnCommits(sources, PURCHASE_ORDER_ENTITIES),
+      ),
+    ),
   };
 };

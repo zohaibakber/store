@@ -20,7 +20,10 @@ import type {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
+  PurchaseOrderItemRow,
+  PurchaseOrderRow,
   StockMovementRow,
+  SupplierRow,
 } from "../rows";
 import type { InvoiceCoherenceGate } from "./coherence";
 import type { ReplicaRowInvalid } from "./errors";
@@ -39,7 +42,10 @@ export type InventoryCollectionRow =
   | BatchRow
   | InvoiceRow
   | InvoiceItemRow
-  | StockMovementRow;
+  | StockMovementRow
+  | SupplierRow
+  | PurchaseOrderRow
+  | PurchaseOrderItemRow;
 
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
