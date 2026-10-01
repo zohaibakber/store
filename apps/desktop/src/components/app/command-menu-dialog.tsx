@@ -166,8 +166,6 @@ const matchInvoices = (invoices: ReadonlyArray<Invoice>, query: string, limit: n
   return matches.slice(0, limit);
 };
 
-const NO_GROUPS: ReadonlyArray<EntryGroup> = [];
-
 const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || event.altKey;
 
 export function InventoryCommandDialog({
@@ -562,7 +560,7 @@ function PaletteResults({
     return all.filter((group) => group.items.length > 0);
   }, [actions, invoices, page, productActions, products, query, recents, scope, trimmed]);
 
-  const shownGroups = useDeferredValue(groups, NO_GROUPS);
+  const shownGroups = useDeferredValue(groups);
 
   const runEntry = (entry: Entry) => {
     switch (entry.kind) {
