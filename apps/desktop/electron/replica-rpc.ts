@@ -110,7 +110,7 @@ const ReplicaPublishProgress = Schema.Union([
 
 const ReplicaPublishCommit = Schema.Union([
   Schema.TaggedStruct("committed", {}),
-  Schema.TaggedStruct("refused", { message: Schema.String }),
+  Schema.TaggedStruct("refused", { code: Schema.String, message: Schema.String }),
   Schema.TaggedStruct("unconfirmed", { message: Schema.String }),
 ]);
 
@@ -281,7 +281,12 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     stream: true,
   }),
   Rpc.make("PublishCommit", {
-    payload: { sourcePath: FilePath, importId: ImportId, seal: ReplicaPublishSeal },
+    payload: {
+      sourcePath: FilePath,
+      importId: ImportId,
+      seal: ReplicaPublishSeal,
+      acceptChangedFile: Schema.optionalKey(Schema.Boolean),
+    },
     success: ReplicaPublishCommit,
     error: ReplicaWorkerFailure,
   }),

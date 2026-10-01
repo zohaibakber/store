@@ -4,7 +4,11 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
-import type { SyncProxyRequest, SyncProxyResponse } from "./proxy-transport";
+import {
+  decodeHttpErrorBody,
+  type SyncProxyRequest,
+  type SyncProxyResponse,
+} from "./proxy-transport";
 
 export class ImportRefused extends Schema.TaggedError<ImportRefused>()("ImportRefused", {
   code: Schema.String,
@@ -38,12 +42,6 @@ const COMMIT_TIMEOUT_MILLIS = 120_000;
 
 const RETRIES = 2;
 
-const HttpErrorBody = Schema.Struct({
-  error: Schema.Struct({ code: Schema.String, message: Schema.String }),
-});
-
-const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(HttpErrorBody));
-
 const encodeCommit = Schema.encodeSync(Schema.fromJsonString(ImportCatalogRequest));
 
 const unreachable = () =>
@@ -56,7 +54,7 @@ const answersLater = (status: number) =>
 
 const failureOf = (response: SyncProxyResponse): ImportFailure => {
   if (answersLater(response.status)) return unreachable();
-  return Option.match(decodeErrorBody(response.bodyText), {
+  return Option.match(decodeHttpErrorBody(response.bodyText), {
     onNone: () =>
       new ImportRefused({
         code: "REFUSED",

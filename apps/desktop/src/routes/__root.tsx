@@ -102,9 +102,9 @@ function AppShell() {
           >
             <PageActionsProvider>
               <SiteHeader />
+              <LocalCatalogWitness workspace={workspace} />
               {inventory && lease ? (
                 <InventoryReady>
-                  <LocalCatalogWitness workspace={workspace} />
                   <PublishOffer />
                   <Suspense fallback={<PageLoading />}>
                     <Outlet />
