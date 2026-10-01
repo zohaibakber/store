@@ -40,16 +40,16 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
   return (
     <>
       <KpiGrid period={period} summary={summary} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         <AttentionFeed className="lg:col-span-2" summary={summary} />
         <StockHealth summary={summary} />
       </div>
       <RevenueTrend period={period} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <TopSellers period={period} />
         <SalesRhythm summary={summary} />
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <ExpiringSoon summary={summary} />
         <RecentInvoices />
       </div>

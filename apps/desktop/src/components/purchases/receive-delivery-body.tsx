@@ -12,6 +12,7 @@ import { useWindowKeydown } from "@/components/products/shortcuts";
 import { ExpiryPicker } from "@/components/shared/expiry-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Frame } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
@@ -349,46 +350,48 @@ export function ReceiveDeliveryBody({
       <SheetPanel>
         <div className="flex flex-col gap-4">
           <PurchasingGateNotice gate={gate} />
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="h-8">Product</TableHead>
-                <TableHead className="h-8 w-32">Batch</TableHead>
-                <TableHead className="h-8 w-32">Expiry</TableHead>
-                <TableHead className="h-8 w-20">Packs</TableHead>
-                <TableHead className="h-8 w-20">Units</TableHead>
-                <TableHead className="h-8 w-28">
-                  <span className="block text-end">Cost</span>
-                </TableHead>
-                <TableHead className="h-8 w-10">
-                  <span className="sr-only">Batches</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody onKeyDown={moveWithinColumn} ref={linesRef}>
-              {rows.flatMap((row) => {
-                const item = itemsById.get(row.itemId);
-                if (!item) return [];
-                return [
-                  <ReceiveLineRow
-                    entered={summary.enteredByItem.get(row.itemId) ?? 0}
-                    extra={firstRowOfItem.get(row.itemId) !== row.key}
-                    item={item}
-                    key={row.key}
-                    onChange={(patch) => change(row.key, patch)}
-                    onRemove={() =>
-                      setRows((current) => current.filter((other) => other.key !== row.key))
-                    }
-                    onSplit={() =>
-                      setRows((current) => splitRow(current, row.key, crypto.randomUUID()))
-                    }
-                    product={productOfItem(row.itemId)}
-                    row={row}
-                  />,
-                ];
-              })}
-            </TableBody>
-          </Table>
+          <Frame>
+            <Table className="table-fixed" variant="card">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="h-8">Product</TableHead>
+                  <TableHead className="h-8 w-32">Batch</TableHead>
+                  <TableHead className="h-8 w-32">Expiry</TableHead>
+                  <TableHead className="h-8 w-20">Packs</TableHead>
+                  <TableHead className="h-8 w-20">Units</TableHead>
+                  <TableHead className="h-8 w-28">
+                    <span className="block text-end">Cost</span>
+                  </TableHead>
+                  <TableHead className="h-8 w-10">
+                    <span className="sr-only">Batches</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody onKeyDown={moveWithinColumn} ref={linesRef}>
+                {rows.flatMap((row) => {
+                  const item = itemsById.get(row.itemId);
+                  if (!item) return [];
+                  return [
+                    <ReceiveLineRow
+                      entered={summary.enteredByItem.get(row.itemId) ?? 0}
+                      extra={firstRowOfItem.get(row.itemId) !== row.key}
+                      item={item}
+                      key={row.key}
+                      onChange={(patch) => change(row.key, patch)}
+                      onRemove={() =>
+                        setRows((current) => current.filter((other) => other.key !== row.key))
+                      }
+                      onSplit={() =>
+                        setRows((current) => splitRow(current, row.key, crypto.randomUUID()))
+                      }
+                      product={productOfItem(row.itemId)}
+                      row={row}
+                    />,
+                  ];
+                })}
+              </TableBody>
+            </Table>
+          </Frame>
         </div>
       </SheetPanel>
       <SheetFooter className="sm:items-center sm:justify-between">

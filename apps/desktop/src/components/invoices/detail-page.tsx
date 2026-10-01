@@ -96,10 +96,10 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
 
       <FrameCard
         description={`${formatCount(invoice.items.length, "line")} · ${formatCount(units, "unit")}`}
-        flush
+        table
         title="Items"
       >
-        <Table className="table-fixed">
+        <Table className="table-fixed" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>

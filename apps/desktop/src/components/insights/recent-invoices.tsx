@@ -36,7 +36,8 @@ export function RecentInvoices() {
           <HugeiconsIcon aria-hidden="true" icon={ArrowRight01Icon} />
         </Button>
       }
-      flush
+      flush={invoices.length === 0}
+      table={invoices.length > 0}
       title="Recent invoices"
     >
       {invoices.length === 0 ? (
@@ -50,7 +51,7 @@ export function RecentInvoices() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table aria-label="Recent invoices">
+        <Table aria-label="Recent invoices" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Invoice</TableHead>

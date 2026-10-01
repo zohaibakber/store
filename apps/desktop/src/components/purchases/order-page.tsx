@@ -152,7 +152,7 @@ function LinesCard({ order }: { readonly order: PurchaseOrder }) {
   return (
     <FrameCard
       description={`${formatCount(order.items.length, "line")} · ${formatCount(units.received, "unit")} of ${formatCount(units.ordered, "unit")} received`}
-      flush={order.items.length > 0}
+      table={order.items.length > 0}
       title="Lines"
     >
       {order.items.length === 0 ? (
@@ -163,7 +163,7 @@ function LinesCard({ order }: { readonly order: PurchaseOrder }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table className="table-fixed">
+        <Table className="table-fixed" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -209,7 +209,7 @@ function DeliveriesCard({
   return (
     <FrameCard
       description={deliveries.length === 0 ? undefined : formatCount(deliveries.length, "receipt")}
-      flush={deliveries.length > 0}
+      table={deliveries.length > 0}
       title="Deliveries"
     >
       {deliveries.length === 0 ? (
@@ -228,7 +228,7 @@ function DeliveriesCard({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table className="table-fixed">
+        <Table className="table-fixed" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-48">Date</TableHead>

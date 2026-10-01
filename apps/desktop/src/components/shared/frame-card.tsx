@@ -15,12 +15,14 @@ export function FrameCard({
   children,
   description,
   flush = false,
+  table = false,
   title,
   ...props
 }: Omit<React.ComponentProps<typeof CardFrame>, "title"> & {
   action?: React.ReactNode;
   description?: React.ReactNode;
   flush?: boolean;
+  table?: boolean;
   title?: React.ReactNode;
 }): React.ReactElement {
   const hasHeader = title != null || description != null || action != null;
@@ -40,7 +42,9 @@ export function FrameCard({
           )}
         </CardFrameHeader>
       )}
-      {flush ? (
+      {table ? (
+        children
+      ) : flush ? (
         <Card className="flex-1 overflow-hidden">{children}</Card>
       ) : (
         <Card className="flex-1">

@@ -143,7 +143,8 @@ export function AttentionFeed({
       description={
         summary.attentionCount > 0 ? formatCount(summary.attentionCount, "product") : undefined
       }
-      flush
+      flush={shown.length === 0}
+      table={shown.length > 0}
       title="Needs attention"
     >
       {shown.length === 0 ? (
@@ -153,7 +154,7 @@ export function AttentionFeed({
           title="All clear"
         />
       ) : (
-        <Table aria-label="Products that need restocking">
+        <Table aria-label="Products that need restocking" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -358,7 +359,12 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
   const products = period.topProducts.slice(0, 7);
   const topShare = products[0]?.share ?? 1;
   return (
-    <FrameCard description={`Last ${period.days} days`} flush title="Top sellers">
+    <FrameCard
+      description={`Last ${period.days} days`}
+      flush={products.length === 0}
+      table={products.length > 0}
+      title="Top sellers"
+    >
       {products.length === 0 ? (
         <EmptyState
           description="Record a sale and leaders show up here."
@@ -366,7 +372,7 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
           title="No sales yet"
         />
       ) : (
-        <Table aria-label="Top sellers">
+        <Table aria-label="Top sellers" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -494,7 +500,8 @@ export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary })
   return (
     <FrameCard
       description={`Within ${formatCount(summary.policy.expiryWarningDays, "day")}`}
-      flush
+      flush={batches.length === 0}
+      table={batches.length > 0}
       title="Expiring soon"
     >
       {batches.length === 0 ? (
@@ -504,7 +511,7 @@ export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary })
           title="Nothing expiring"
         />
       ) : (
-        <Table aria-label="Expiring batches">
+        <Table aria-label="Expiring batches" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>

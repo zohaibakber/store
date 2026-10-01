@@ -27,10 +27,10 @@ function InvoiceItems() {
             ? `${formatCount(lines.length, "line")} · ${formatCount(unitCount, "unit")}`
             : undefined
         }
-        flush
+        table
         title="Items"
       >
-        <Table className="table-fixed">
+        <Table className="table-fixed" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-8">

@@ -447,11 +447,11 @@ export function OrderBuilderBody({
                   ) : undefined
                 }
                 description={`${formatCount(group.lines.length, "line")} · est. ${formatPrice(groupTotal(group.lines))}`}
-                flush
                 key={group.key}
+                table
                 title={group.supplier === null ? "Needs a supplier" : group.supplier.name}
               >
-                <Table className="table-fixed">
+                <Table className="table-fixed" variant="card">
                   <TableBody>
                     {group.lines.map((line) => (
                       <BuilderLineRow
