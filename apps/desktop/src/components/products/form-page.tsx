@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 
-import { hasOpenPopup, useWindowKeydown } from "./shortcuts";
+import { hasOpenModal, hasOpenPopup, useWindowKeydown } from "./shortcuts";
 
 export function ProductFormPage({
   categories,
@@ -36,7 +36,7 @@ export function ProductFormPage({
   useWindowKeydown((event) => {
     if (event.defaultPrevented || event.isComposing) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      if (document.querySelector("[role=dialog], [role=alertdialog]")) return;
+      if (hasOpenModal()) return;
       event.preventDefault();
       void form.handleSubmit();
       return;
