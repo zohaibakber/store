@@ -1,6 +1,5 @@
 import { Cancel01Icon, PauseIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { formatPrice } from "@store/services/format";
 import { useEffect, useRef } from "react";
 
 import { useInvoiceCreate, type SaleDraftTab } from "@/components/invoices/create-context";
@@ -41,11 +40,6 @@ function DraftButton({
         variant={active ? "secondary" : "ghost"}
       >
         <span className="max-w-32 truncate">{tab.label}</span>
-        {tab.lineCount > 0 && (
-          <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
-            {formatPrice(tab.total)}
-          </span>
-        )}
         <span aria-hidden="true" className="w-4 shrink-0" />
       </Button>
       <span className="absolute end-1 top-1/2 inline-flex -translate-y-1/2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
