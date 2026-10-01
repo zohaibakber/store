@@ -69,7 +69,7 @@ import { ProgressBadge } from "./progress-badge";
 import { ReceiveDeliverySheet } from "./receive-delivery-sheet";
 import { SendOrderAction } from "./send-order";
 
-type Confirmation = "close" | "cancel";
+type Closing = "close" | "cancel";
 
 const muted = <span className="text-muted-foreground">{EMPTY}</span>;
 
@@ -280,7 +280,6 @@ export function PurchaseOrderPage({
 }) {
   const { cancelOrder, closeOrder } = useInventoryActions();
   const gate = usePurchasingGate();
-  const [confirmation, setConfirmation] = React.useState<Confirmation>("close");
   const [confirming, setConfirming] = React.useState(false);
   const [pending, setPending] = React.useState(false);
 
@@ -288,18 +287,13 @@ export function PurchaseOrderPage({
   const canMove = (to: PurchaseOrder["status"]) =>
     !gate.blocked && order.status !== to && canMovePurchaseOrder(order.status, to);
   const canSend = canMove("sent");
-  const canClose = canMove("closed");
-  const canCancel = canMove("cancelled");
   const canReceive = !gate.blocked && open && order.items.length > 0;
   const units = orderUnits(order.items);
   const number = formatOrderNumber(order.orderNumber);
+  const closing: Closing = units.received > 0 ? "close" : "cancel";
+  const canClose = canMove(closing === "close" ? "closed" : "cancelled");
 
-  const confirm = (kind: Confirmation) => {
-    setConfirmation(kind);
-    setConfirming(true);
-  };
-
-  const run = async (kind: Confirmation) => {
+  const run = async (kind: Closing) => {
     setPending(true);
     try {
       switch (kind) {
@@ -349,16 +343,8 @@ export function PurchaseOrderPage({
         {open ? (
           <PageAction>
             <Button
-              disabled={!canCancel || pending}
-              onClick={() => confirm("cancel")}
-              size="sm"
-              variant="ghost"
-            >
-              Cancel order
-            </Button>
-            <Button
               disabled={!canClose || pending}
-              onClick={() => confirm("close")}
+              onClick={() => setConfirming(true)}
               size="sm"
               variant="outline"
             >
@@ -382,14 +368,10 @@ export function PurchaseOrderPage({
       <AlertDialog onOpenChange={setConfirming} open={confirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmation === "cancel" ? `Cancel order ${number}?` : `Close order ${number}?`}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{`Close order ${number}?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmation === "cancel"
-                ? units.received > 0
-                  ? "Stock already received stays in your inventory. The order can no longer be changed or received."
-                  : "The order keeps its number and can no longer be changed or received."
+              {closing === "cancel"
+                ? "Nothing was received, so the order is cancelled. It keeps its number and can no longer be changed or received."
                 : units.received < units.ordered
                   ? `${formatCount(units.ordered - units.received, "unit")} not yet received will no longer count as on order.`
                   : "Everything on this order has been received."}
@@ -397,11 +379,8 @@ export function PurchaseOrderPage({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="ghost" />}>Keep order</AlertDialogClose>
-            <AlertDialogClose
-              onClick={() => void run(confirmation)}
-              render={<Button variant={confirmation === "cancel" ? "destructive" : "default"} />}
-            >
-              {confirmation === "cancel" ? "Cancel order" : "Close order"}
+            <AlertDialogClose onClick={() => void run(closing)} render={<Button />}>
+              Close order
             </AlertDialogClose>
           </AlertDialogFooter>
         </AlertDialogContent>
