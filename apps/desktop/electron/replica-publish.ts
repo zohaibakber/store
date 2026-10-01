@@ -112,8 +112,6 @@ const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: 
       summary,
     } satisfies Standing;
   }
-  // The sealed import id stays put after later local commits. Dropping it
-  // would stage a new import into an organization that already accepted it.
   return { _tag: "here", summary, pending: marker } satisfies Standing;
 });
 
@@ -186,9 +184,8 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
   counts: CatalogCounts,
 ) {
   const first = yield* commit(ports, marker);
-  // A later local commit changes the import id. Ask again with the stored
-  // seal: the server returns the previous result when that id and digest
-  // already landed, and commits the sealed parts only when it has not.
+  // sync.import_catalog returns the stored result when this import id and digest
+  // already landed, and commits the sealed parts only when that import has not.
   const resumed =
     first._tag === "refused" && first.code === FILE_CHANGED
       ? yield* commit(ports, marker, true)
@@ -199,8 +196,6 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
     case "unconfirmed":
       return Option.some(failed(resumed.message));
     case "refused":
-      // The organization already holds inventory, or the stored seal still does
-      // not match this file. Either way the sealed import stays on disk.
       return resumed.code === IMPORT_CONFLICT || resumed.code === FILE_CHANGED
         ? Option.some(failed(resumed.message))
         : Option.none<PublishOutcome>();
