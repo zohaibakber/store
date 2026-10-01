@@ -20,7 +20,7 @@ import {
 import { readDigestFence, type DigestFence } from "./coverage";
 import { shouldApplyCommitSequence } from "./decisions";
 import {
-  clearPendingProjection,
+  hasPendingProjection,
   renameCollidingShadow,
   renumberCollidingShadow,
   resolveRemoteRow,
@@ -107,11 +107,34 @@ const applyChange = Effect.fn("ReplicaApply.applyChange")(function* (
   return displaced;
 });
 
+const applySettledRows = Effect.fn("ReplicaApply.applySettledRows")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  group: SyncTransactionGroup,
+) {
+  for (const change of group.changes) {
+    switch (change.action) {
+      case "delete":
+        yield* removeEntityRow(tx, organizationId, change.entity, change.entityId);
+        break;
+      case "upsert":
+        yield* writeEntityRow(tx, change.entity, change.row);
+        break;
+    }
+  }
+  return mergeTouched(
+    ...group.changes.map((change) => touchedOfChange(change.entity, change.entityId)),
+  );
+});
+
 export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function* (
   tx: ReplicaDb,
   organizationId: string,
   group: SyncTransactionGroup,
 ) {
+  if (!(yield* hasPendingProjection(tx))) {
+    return yield* applySettledRows(tx, organizationId, group);
+  }
   const touched: Array<TouchedSet> = [];
   for (const change of group.changes) {
     const renumbered = yield* applyChange(tx, organizationId, change, group.operationId);
@@ -119,11 +142,7 @@ export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function*
     if (renumbered) touched.push(touchedOfKey(renumbered));
     yield* resolveRemoteRow(tx, change.entity, change.entityId);
   }
-  if (group.decision === "rejected") {
-    touched.push(yield* restorePendingProjection(tx, group.operationId));
-  } else {
-    yield* clearPendingProjection(tx, group.operationId);
-  }
+  touched.push(yield* restorePendingProjection(tx, group.operationId));
   const overlays = yield* tx
     .select({ batchId: stockOverlays.batchId })
     .from(stockOverlays)

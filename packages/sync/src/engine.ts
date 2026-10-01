@@ -32,7 +32,11 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
 import { CAUGHT_UP_RECORD_INTERVAL_MILLIS } from "./replica/activity";
 import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
-import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS, dueSince } from "./replica/cadence";
+import {
+  DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
+  dueSince,
+  type DigestVerificationCadence,
+} from "./replica/cadence";
 import {
   ReplicaCoverageRepairRequired,
   ReplicaStorageError,
@@ -138,8 +142,6 @@ const pullRequestFromStore = (
     })),
   );
 
-const STALE_UPLOAD_CLAIM_MILLIS = 60_000;
-
 export type SyncEngineMutex = {
   readonly withPermits: (
     permits: number,
@@ -147,7 +149,7 @@ export type SyncEngineMutex = {
 };
 
 type SyncEngineOptions = {
-  readonly digestVerificationIntervalMillis?: number;
+  readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
 };
 
@@ -159,7 +161,7 @@ export const makeSyncEngineFromReplicaStore = (
   mutex: SyncEngineMutex,
   transport: SyncTransport,
   options: SyncEngineOptions = {},
-): Effect.Effect<SyncEngineContract, SyncProtocolError | ReplicaStoreError> =>
+): Effect.Effect<SyncEngineContract> =>
   Effect.gen(function* () {
     const digestIntervalMillis =
       options.digestVerificationIntervalMillis ?? DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS;
@@ -173,9 +175,6 @@ export const makeSyncEngineFromReplicaStore = (
       feed: { _tag: "catchingUp", targetCommitSequence: "0" },
     });
     const withPermit = <A, E>(effect: Effect.Effect<A, E>) => mutex.withPermits(1)(effect);
-
-    const startedAt = yield* Clock.currentTimeMillis;
-    yield* withPermit(store.recoverStaleUploadClaims(startedAt - STALE_UPLOAD_CLAIM_MILLIS));
 
     const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
       request: EnqueueCommandRequest,
@@ -258,6 +257,7 @@ export const makeSyncEngineFromReplicaStore = (
       subscription: SyncSubscription,
       now: number,
     ) {
+      if (digestIntervalMillis === "never") return false;
       const lastVerifiedAt = yield* withPermit(store.readDigestVerification(subscription));
       return (
         (yield* Ref.get(believesCaughtUp)) && dueSince(lastVerifiedAt, now, digestIntervalMillis)

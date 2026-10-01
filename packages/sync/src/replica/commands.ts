@@ -14,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
-import { stampOf, withStockTouched } from "./commit-hub";
+import { EMPTY_TOUCHED, stampOf, withStockTouched, type TouchedSet } from "./commit-hub";
 import {
   checkAuthorityHead,
   checkIncarnation,
@@ -28,11 +28,7 @@ import {
 import { ReplicaStorageError } from "./errors";
 import { readCommandContext, readVisibleBatchStock } from "./lookup";
 import { restorePendingProjection, writePendingProjection } from "./pending";
-import {
-  checkEnqueueAllowed,
-  type CommandProjection,
-  type PendingRestoreResult,
-} from "./projection";
+import { checkEnqueueAllowed, type PendingRestoreResult } from "./projection";
 import {
   announcementFields,
   decideRegistration,
@@ -112,17 +108,19 @@ export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function
 
 export const parseStoredEnvelope = (row: OutboxRow) => decodeStoredEnvelope(row);
 
-type SavedLocalCommand = {
-  readonly status: CommandStatus;
-  readonly stamp: ReplicaReadStamp;
-  readonly changed: boolean;
-  readonly projection: CommandProjection | undefined;
-  readonly stockBatchIds: ReadonlyArray<string>;
+type AdmittedCommand = {
+  readonly envelope: SyncCommandEnvelope;
+  readonly state: typeof replicaState.$inferSelect;
+  readonly context: Effect.Success<ReturnType<typeof readCommandContext>>;
 };
+
+type CommandAdmission =
+  | { readonly _tag: "replayed"; readonly status: CommandStatus; readonly stamp: ReplicaReadStamp }
+  | ({ readonly _tag: "admitted" } & AdmittedCommand);
 
 const decodeEnvelope = Schema.decodeUnknownEffect(SyncCommandEnvelope);
 
-export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(function* (
+export const admitLocalCommand = Effect.fn("ReplicaCommands.admitLocalCommand")(function* (
   tx: ReplicaDb,
   request: EnqueueCommandRequest,
 ) {
@@ -138,13 +136,7 @@ export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(fu
     ),
   );
   if (replay !== undefined) {
-    return {
-      status: replay,
-      stamp: stampOf(state),
-      changed: false,
-      projection: undefined,
-      stockBatchIds: [],
-    } satisfies SavedLocalCommand;
+    return { _tag: "replayed", status: replay, stamp: stampOf(state) } satisfies CommandAdmission;
   }
   const envelope = yield* decodeEnvelope({
     organizationId: state.organizationId,
@@ -160,23 +152,40 @@ export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(fu
     withStock: true,
   });
   yield* checkEnqueueAllowed(envelope, context.lookup, context.unitsPerPackFor, context.stockFor);
-  const overlays = decideOverlays(envelope, context.unitsPerPackFor);
-  for (const overlay of overlays) {
-    yield* tx.insert(stockOverlays).values(overlay);
-  }
-  const projection = yield* writePendingProjection(
-    tx,
-    envelope,
-    { organizationId: state.organizationId, userId: state.userId },
-    context.lookup,
-  );
+  return { _tag: "admitted", envelope, state, context } satisfies CommandAdmission;
+});
+
+export const projectAdmittedCommand = Effect.fn("ReplicaCommands.projectAdmittedCommand")(
+  function* (tx: ReplicaDb, { envelope, state, context }: AdmittedCommand) {
+    const overlays = decideOverlays(envelope, context.unitsPerPackFor);
+    for (const overlay of overlays) {
+      yield* tx.insert(stockOverlays).values(overlay);
+    }
+    const projection = yield* writePendingProjection(
+      tx,
+      envelope,
+      { organizationId: state.organizationId, userId: state.userId },
+      context.lookup,
+    );
+    return withStockTouched(
+      projection,
+      overlays.map((overlay) => overlay.batchId),
+    );
+  },
+);
+
+export const queueAdmittedCommand = Effect.fn("ReplicaCommands.queueAdmittedCommand")(function* (
+  tx: ReplicaDb,
+  { envelope, state }: AdmittedCommand,
+  occurredAt: number,
+) {
   yield* tx.insert(commandOutbox).values({
     operationId: envelope.operationId,
     status: "pending",
     envelopeJson: encodeEnvelopeJson(envelope),
     receiptJson: null,
     clientSequence: envelope.clientSequence,
-    createdAt: request.occurredAt,
+    createdAt: occurredAt,
   });
   const localCommitVersion = state.localCommitVersion + 1;
   yield* tx
@@ -186,12 +195,35 @@ export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(fu
       localCommitVersion,
     })
     .where(eq(replicaState.id, state.id));
+  return stampOf({ activeGeneration: state.activeGeneration, localCommitVersion });
+});
+
+type SavedLocalCommand = {
+  readonly status: CommandStatus;
+  readonly stamp: ReplicaReadStamp;
+  readonly changed: boolean;
+  readonly touched: TouchedSet;
+};
+
+export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(function* (
+  tx: ReplicaDb,
+  request: EnqueueCommandRequest,
+) {
+  const admission = yield* admitLocalCommand(tx, request);
+  if (admission._tag === "replayed") {
+    return {
+      status: admission.status,
+      stamp: admission.stamp,
+      changed: false,
+      touched: EMPTY_TOUCHED,
+    } satisfies SavedLocalCommand;
+  }
+  const touched = yield* projectAdmittedCommand(tx, admission);
   return {
     status: "pending",
-    stamp: stampOf({ activeGeneration: state.activeGeneration, localCommitVersion }),
+    stamp: yield* queueAdmittedCommand(tx, admission, request.occurredAt),
     changed: true,
-    projection,
-    stockBatchIds: [...new Set(overlays.map((overlay) => overlay.batchId))],
+    touched,
   } satisfies SavedLocalCommand;
 });
 

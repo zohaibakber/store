@@ -463,12 +463,6 @@ export const renameIndexedDbCollidingShadow = (
     return `${entity}:${collision.id}`;
   });
 
-export const clearIndexedDbPendingProjection = (api: ReplicaQueryBuilder, operationId: string) =>
-  Effect.gen(function* () {
-    yield* api.from("pending_row_marks").delete("byOperation").equals(operationId);
-    yield* api.from("pending_row_journal").delete("byOperation").equals(operationId);
-  });
-
 const setIndexedDbMark = (
   api: ReplicaQueryBuilder,
   entity: SyncEntity,

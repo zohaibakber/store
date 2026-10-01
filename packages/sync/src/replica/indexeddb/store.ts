@@ -106,7 +106,6 @@ import {
 import { indexedDbPartitionDigest } from "./digest";
 import { readIndexedDbInsights } from "./insights";
 import {
-  clearIndexedDbPendingProjection,
   readIndexedDbCommandContext,
   removeEntityRow,
   renameIndexedDbCollidingShadow,
@@ -655,13 +654,7 @@ const makeScopedIndexedDbReplicaStore = (
           }
           yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
         }
-        if (group.decision === "rejected") {
-          touched.push(
-            yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
-          );
-        } else {
-          yield* clearIndexedDbPendingProjection(api, group.operationId);
-        }
+        touched.push(yield* restoreIndexedDbPendingProjection(api, generation, group.operationId));
         const overlays = yield* api
           .from("stock_overlays")
           .select("byCommand")

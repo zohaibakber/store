@@ -6,11 +6,13 @@ import {
   pendingRowJournal,
   pendingRowMarks,
   purchaseOrders,
+  stockOverlays,
   suppliers,
 } from "@store/db/replica.schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import {
   decodeEntity,
@@ -272,6 +274,21 @@ export const renameCollidingShadow = Effect.fn("ReplicaPending.renameCollidingSh
   return `${entity}:${collision.id}`;
 });
 
+const PendingPresence = Schema.Tuple([Schema.Struct({ pending: Schema.Number })]);
+
+const decodePendingPresence = Schema.decodeUnknownEffect(PendingPresence);
+
+export const hasPendingProjection = Effect.fn("ReplicaPending.hasPendingProjection")(function* (
+  tx: ReplicaDb,
+) {
+  const [presence] = yield* tx
+    .all(
+      sql`select (exists(select 1 from ${pendingRowMarks}) or exists(select 1 from ${pendingRowJournal}) or exists(select 1 from ${stockOverlays})) as pending`,
+    )
+    .pipe(Effect.flatMap(decodePendingPresence));
+  return presence.pending !== 0;
+});
+
 export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(function* (
   tx: ReplicaDb,
 ) {
@@ -281,14 +298,6 @@ export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(fun
     entityId: row.entityId,
     operationId: row.operationId,
   }));
-});
-
-export const clearPendingProjection = Effect.fn("ReplicaPending.clearPendingProjection")(function* (
-  tx: ReplicaDb,
-  operationId: string,
-) {
-  yield* tx.delete(pendingRowMarks).where(eq(pendingRowMarks.operationId, operationId));
-  yield* tx.delete(pendingRowJournal).where(eq(pendingRowJournal.operationId, operationId));
 });
 
 const setMark = Effect.fn("ReplicaPending.setMark")(function* (

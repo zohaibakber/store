@@ -7,6 +7,7 @@ import {
   incrementDecimalSequence,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  purchasingRejection,
   ReplicaClientSequence,
   STOCK_MOVEMENT_ROW_VERSION,
   SYNC_SCHEMA_VERSION,
@@ -27,7 +28,7 @@ import {
   type SyncSubmitCommandResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
+import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
   ReplicaBatchRow,
@@ -35,7 +36,10 @@ import {
   ReplicaInvoiceItemRow,
   ReplicaInvoiceRow,
   ReplicaProductRow,
+  ReplicaPurchaseOrderItemRow,
+  ReplicaPurchaseOrderRow,
   ReplicaStockMovementRow,
+  ReplicaSupplierRow,
 } from "@store/contracts/sync/replica-model";
 import {
   batches,
@@ -44,21 +48,28 @@ import {
   invoices,
   pendingRowJournal,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
+  suppliers,
 } from "@store/db/replica.schema";
-import { and, count, desc, eq, gt, inArray, notExists, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, notExists, or, sql, type SQL } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import { QueryBuilder, type SQLiteColumn } from "drizzle-orm/sqlite-core";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Order from "effect/Order";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { decodeStoredEnvelope } from "./replica/codecs";
 import { loadReplicaState } from "./replica/commands";
 import {
+  decideCatalogRow,
   projectCommand,
-  type ProjectedRow,
+  type CatalogEntity,
+  type CommandRejection,
+  type ProjectedUpsert,
   type ProjectionActor,
   type ReplicaCatalogLookup,
 } from "./replica/projection";
@@ -90,13 +101,18 @@ type InvoicePayload = Extract<SyncCommand, { readonly _tag: "issueInvoice" }>["p
 
 type InvoiceTake = InvoicePayload["allocations"][number];
 
-type ProjectedUpsert = Exclude<ProjectedRow, { readonly row: null }>;
-
 type AcceptedResult = Exclude<CommandReceipt["result"], { readonly _tag: "rejected" }>;
 
-type Rejection = {
-  readonly code: SyncProtocolCode;
-  readonly message: string;
+type Rejection = CommandRejection;
+
+type PurchasingEntity = Extract<CatalogEntity, "supplier" | "purchaseOrder" | "purchaseOrderItem">;
+
+type CatalogRowsById = {
+  readonly [Entity in CatalogEntity]: ReadonlyMap<string, SyncEntityRow<Entity>>;
+};
+
+type StagedCatalogRows = {
+  readonly [Entity in CatalogEntity]: Map<string, SyncEntityRow<Entity> | undefined>;
 };
 
 type Accepted = {
@@ -107,9 +123,7 @@ type Accepted = {
 type Decision = Result.Result<Accepted, Rejection>;
 
 type LocalCatalogFacts = {
-  readonly categories: ReadonlyMap<string, ReplicaCategoryRow>;
-  readonly products: ReadonlyMap<string, ReplicaProductRow>;
-  readonly batches: ReadonlyMap<string, ReplicaBatchRow>;
+  readonly rows: CatalogRowsById;
   readonly recordedMovementIds: ReadonlySet<string>;
   readonly categoriesHoldingOtherProducts: ReadonlySet<string>;
   readonly productsHoldingOtherStock: ReadonlySet<string>;
@@ -202,6 +216,26 @@ const upsertOf = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Reje
           )
         : OUT_OF_RANGE;
     }
+    case "supplier":
+      return Result.succeed(
+        changeOf("supplier", "upsert", projected.entityId, projected.row.rowVersion, projected.row),
+      );
+    case "purchaseOrder": {
+      const { row } = projected;
+      return fitsInt4(row.orderNumber, row.total)
+        ? Result.succeed(
+            changeOf("purchaseOrder", "upsert", projected.entityId, row.rowVersion, row),
+          )
+        : OUT_OF_RANGE;
+    }
+    case "purchaseOrderItem": {
+      const { row } = projected;
+      return fitsInt4(row.quantity, row.baseUnitQuantity, row.packCost, row.receivedBaseUnits)
+        ? Result.succeed(
+            changeOf("purchaseOrderItem", "upsert", projected.entityId, row.rowVersion, row),
+          )
+        : OUT_OF_RANGE;
+    }
   }
 };
 
@@ -217,75 +251,113 @@ const stampOf = (
   updatedAt: payload.occurredAt,
 });
 
-const NO_RULE_LOOKUPS = {
+const NO_CATALOG: ReplicaCatalogLookup = {
+  category: () => undefined,
+  product: () => undefined,
+  batch: () => undefined,
+  supplier: () => undefined,
+  purchaseOrder: () => undefined,
+  purchaseOrderItem: () => undefined,
   productInCategory: () => undefined,
   stockedBatchOfProduct: () => undefined,
-} satisfies Pick<ReplicaCatalogLookup, "productInCategory" | "stockedBatchOfProduct">;
+  supplierNamed: () => undefined,
+  purchaseOrdersOfSupplier: () => [],
+  itemsOfPurchaseOrder: () => [],
+  purchaseOrderNumbered: () => undefined,
+  highestPurchaseOrders: [],
+};
+
+const byHighestOrderNumber: Order.Order<{ readonly orderNumber: number }> = Order.flip(
+  Order.mapInput(Order.Number, (order) => order.orderNumber),
+);
 
 const decideCatalogWrite = (
-  envelope: SyncCommandEnvelope,
   payload: CatalogPayload,
   actor: ProjectionActor,
   facts: LocalCatalogFacts,
 ): Decision => {
-  const staged = {
-    categories: new Map<string, ReplicaCategoryRow | undefined>(),
-    products: new Map<string, ReplicaProductRow | undefined>(),
-    batches: new Map<string, ReplicaBatchRow | undefined>(),
-    movements: new Set<string>(),
+  const staged: StagedCatalogRows = {
+    category: new Map(),
+    product: new Map(),
+    batch: new Map(),
+    supplier: new Map(),
+    purchaseOrder: new Map(),
+    purchaseOrderItem: new Map(),
+  };
+  const stagedMovements = new Set<string>();
+
+  const current = <Entity extends CatalogEntity>(
+    entity: Entity,
+    id: string,
+  ): SyncEntityRow<Entity> | undefined => {
+    const overlay = staged[entity];
+    return overlay.has(id) ? overlay.get(id) : facts.rows[entity].get(id);
   };
 
-  const current = <Row>(
-    overlay: ReadonlyMap<string, Row | undefined>,
-    base: ReadonlyMap<string, Row>,
-    id: string,
-  ): Row | undefined => (overlay.has(id) ? overlay.get(id) : base.get(id));
-
-  const live = <Row>(
-    overlay: ReadonlyMap<string, Row | undefined>,
-    base: ReadonlyMap<string, Row>,
-  ): ReadonlyArray<Row> =>
-    [...new Set([...base.keys(), ...overlay.keys()])].flatMap((id) => {
-      const row = current(overlay, base, id);
+  const live = <Entity extends CatalogEntity>(
+    entity: Entity,
+  ): ReadonlyArray<SyncEntityRow<Entity>> =>
+    [...new Set([...facts.rows[entity].keys(), ...staged[entity].keys()])].flatMap((id) => {
+      const row = current(entity, id);
       return row === undefined ? [] : [row];
     });
 
   const lookup: ReplicaCatalogLookup = {
-    category: (id) => current(staged.categories, facts.categories, id),
-    product: (id) => current(staged.products, facts.products, id),
-    batch: (id) => current(staged.batches, facts.batches, id),
-    ...NO_RULE_LOOKUPS,
+    ...NO_CATALOG,
+    category: (id) => current("category", id),
+    product: (id) => current("product", id),
+    batch: (id) => current("batch", id),
+    supplier: (id) => current("supplier", id),
+    purchaseOrder: (id) => current("purchaseOrder", id),
+    purchaseOrderItem: (id) => current("purchaseOrderItem", id),
+    supplierNamed: (name) => live("supplier").find((supplier) => supplier.name === name),
+    purchaseOrdersOfSupplier: (supplierId) =>
+      live("purchaseOrder").filter((order) => order.supplierId === supplierId),
+    itemsOfPurchaseOrder: (purchaseOrderId) =>
+      live("purchaseOrderItem").filter((item) => item.purchaseOrderId === purchaseOrderId),
+    purchaseOrderNumbered: (orderNumber) =>
+      live("purchaseOrder").find((order) => order.orderNumber === orderNumber),
+    get highestPurchaseOrders() {
+      return Array.sort(live("purchaseOrder"), byHighestOrderNumber);
+    },
   };
 
   const categoryHoldsProduct = (categoryId: string): boolean =>
     facts.categoriesHoldingOtherProducts.has(categoryId) ||
-    live(staged.products, facts.products).some((product) => product.categoryId === categoryId);
+    live("product").some((product) => product.categoryId === categoryId);
 
   const productHoldsStock = (productId: string): boolean =>
     facts.productsHoldingOtherStock.has(productId) ||
-    live(staged.batches, facts.batches).some(
-      (batch) => batch.productId === productId && hasStock(batch),
-    );
+    live("batch").some((batch) => batch.productId === productId && hasStock(batch));
 
   const record = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Rejection> => {
     switch (projected.entity) {
       case "category":
-        staged.categories.set(projected.entityId, projected.row);
+        staged.category.set(projected.entityId, projected.row);
         return upsertOf(projected);
       case "product":
-        staged.products.set(projected.entityId, projected.row);
+        staged.product.set(projected.entityId, projected.row);
         return upsertOf(projected);
       case "batch":
-        staged.batches.set(projected.entityId, projected.row);
+        staged.batch.set(projected.entityId, projected.row);
+        return upsertOf(projected);
+      case "supplier":
+        staged.supplier.set(projected.entityId, projected.row);
+        return upsertOf(projected);
+      case "purchaseOrder":
+        staged.purchaseOrder.set(projected.entityId, projected.row);
+        return upsertOf(projected);
+      case "purchaseOrderItem":
+        staged.purchaseOrderItem.set(projected.entityId, projected.row);
         return upsertOf(projected);
       case "stockMovement": {
         if (
           facts.recordedMovementIds.has(projected.entityId) ||
-          staged.movements.has(projected.entityId)
+          stagedMovements.has(projected.entityId)
         ) {
           return rejected("ENTITY_CONFLICT", `Movement ${projected.entityId} is already recorded.`);
         }
-        staged.movements.add(projected.entityId);
+        stagedMovements.add(projected.entityId);
         return upsertOf(projected);
       }
       case "invoice":
@@ -296,29 +368,31 @@ const decideCatalogWrite = (
 
   const upsert = (
     write: Extract<CatalogRowWrite, { readonly action: "upsert" }>,
-    movementType: "stock_in" | "adjustment" = "stock_in",
   ): Result.Result<ReadonlyArray<SyncLogChange>, Rejection> =>
     Result.gen(function* () {
-      const projection = projectCommand(
-        {
-          ...envelope,
-          command: { _tag: "catalogWrite", payload: { ...payload, writes: [write] } },
-        },
-        actor,
-        lookup,
-      );
+      const rows = yield* decideCatalogRow(payload, actor, lookup, write);
+      const upserts = rows.flatMap((projected) => (projected.row === null ? [] : [projected]));
+      const receivedLine =
+        write.entity === "batch"
+          ? upserts.find((projected) => projected.entity === "purchaseOrderItem")
+          : undefined;
+      if (receivedLine !== undefined) yield* upsertOf(receivedLine);
       const changes: Array<SyncLogChange> = [];
-      for (const projected of projection.rows) {
-        if (projected.row === null) continue;
-        changes.push(
-          yield* record(
-            projected.entity === "stockMovement"
-              ? { ...projected, row: { ...projected.row, type: movementType } }
-              : projected,
-          ),
-        );
-      }
+      for (const projected of upserts) changes.push(yield* record(projected));
       return changes;
+    });
+
+  const remove = (
+    write: Extract<
+      CatalogRowWrite,
+      { readonly entity: PurchasingEntity; readonly action: "delete" }
+    >,
+  ): Result.Result<ReadonlyArray<SyncLogChange>, Rejection> =>
+    Result.map(decideCatalogRow(payload, actor, lookup, write), () => {
+      const existing = current(write.entity, write.id);
+      if (existing === undefined) return [];
+      staged[write.entity].set(write.id, undefined);
+      return [changeOf(write.entity, "delete", write.id, existing.rowVersion + 1, existing)];
     });
 
   const decideWrite = (
@@ -338,7 +412,7 @@ const decideCatalogWrite = (
             if (categoryHoldsProduct(write.id)) {
               return rejected("ENTITY_CONFLICT", catalogWriteError.categoryHasProducts);
             }
-            staged.categories.set(write.id, undefined);
+            staged.category.set(write.id, undefined);
             return Result.succeed([
               changeOf("category", "delete", write.id, existing.rowVersion + 1, existing),
             ]);
@@ -351,7 +425,7 @@ const decideCatalogWrite = (
               return rejected("ENTITY_CONFLICT", `Category ${write.id} is no longer available.`);
             }
             if (
-              live(staged.categories, facts.categories).some(
+              live("category").some(
                 (category) => category.name === write.row.name && category.id !== write.id,
               )
             ) {
@@ -382,7 +456,7 @@ const decideCatalogWrite = (
               ...stampOf(payload, actor, existing),
               deletedAt: payload.occurredAt,
             };
-            staged.products.set(write.id, undefined);
+            staged.product.set(write.id, undefined);
             return Result.succeed([
               changeOf("product", "delete", write.id, image.rowVersion, image),
             ]);
@@ -437,7 +511,7 @@ const decideCatalogWrite = (
               ...stampOf(payload, actor, existing),
               deletedAt: payload.occurredAt,
             };
-            staged.batches.set(write.id, undefined);
+            staged.batch.set(write.id, undefined);
             return Result.succeed([changeOf("batch", "delete", write.id, image.rowVersion, image)]);
           }
           case "upsert": {
@@ -447,9 +521,12 @@ const decideCatalogWrite = (
                 `Product ${write.row.productId} is not available in this organization.`,
               );
             }
+            if (write.receipt !== undefined && write.expectedRowVersion !== null) {
+              return Result.fail(purchasingRejection.receiptOnExistingBatch);
+            }
             if (write.expectedRowVersion === null) {
               return existing === undefined
-                ? upsert(write, "stock_in")
+                ? upsert(write)
                 : rejected("ENTITY_CONFLICT", `Batch ${write.id} already exists.`);
             }
             if (existing === undefined) {
@@ -458,10 +535,19 @@ const decideCatalogWrite = (
             if (write.expectedRowVersion !== existing.rowVersion) {
               return rejected("ENTITY_CONFLICT", `Batch ${write.id} changed since it was read.`);
             }
-            return upsert(write, "adjustment");
+            return upsert(write);
           }
         }
       }
+      case "supplier":
+      case "purchaseOrder":
+      case "purchaseOrderItem":
+        switch (write.action) {
+          case "delete":
+            return remove(write);
+          case "upsert":
+            return upsert(write);
+        }
     }
   };
 
@@ -567,10 +653,9 @@ const decideIssueInvoice = (
       },
       actor,
       {
-        category: () => undefined,
+        ...NO_CATALOG,
         product: (id) => facts.products.get(id),
         batch: (id) => facts.batches.get(id),
-        ...NO_RULE_LOOKUPS,
       },
     );
     const images = new Map<string, ProjectedUpsert>();
@@ -631,7 +716,7 @@ const decideIssueInvoice = (
 
 const queryBuilder = new QueryBuilder();
 
-const chunked = (ids: ReadonlyArray<string>) => Array.chunksOf(ids, IDS_PER_QUERY);
+const chunked = <Value>(values: ReadonlyArray<Value>) => Array.chunksOf(values, IDS_PER_QUERY);
 
 const unjournaled = (entity: SyncEntity, id: SQLiteColumn) =>
   notExists(
@@ -641,37 +726,47 @@ const unjournaled = (entity: SyncEntity, id: SQLiteColumn) =>
       .where(and(eq(pendingRowJournal.entity, entity), eq(pendingRowJournal.entityId, id))),
   );
 
-const earliestPriors = Effect.fn("LocalAuthority.earliestPriors")(function* (
-  tx: ReplicaDb,
-  entity: SyncEntity,
-) {
+type JournalPrior = {
+  readonly entityId: string;
+  readonly priorRowJson: string | null;
+  readonly clientSequence: string;
+};
+
+const NO_PRIORS: ReadonlyMap<string, JournalPrior> = new Map();
+
+const earliestPriors = Effect.fn("LocalAuthority.earliestPriors")(function* (tx: ReplicaDb) {
   const rows = yield* tx
     .select({
+      entity: pendingRowJournal.entity,
       entityId: pendingRowJournal.entityId,
       priorRowJson: pendingRowJournal.priorRowJson,
       clientSequence: commandOutbox.clientSequence,
     })
     .from(pendingRowJournal)
     .innerJoin(commandOutbox, eq(commandOutbox.operationId, pendingRowJournal.operationId))
-    .where(eq(pendingRowJournal.entity, entity))
     .all();
-  const earliest = new Map<string, (typeof rows)[number]>();
+  const earliest = new Map<string, Map<string, JournalPrior>>();
   for (const row of rows) {
-    const held = earliest.get(row.entityId);
+    const ofEntity = earliest.get(row.entity) ?? new Map<string, JournalPrior>();
+    const held = ofEntity.get(row.entityId);
     if (held === undefined || compareDecimalSequence(row.clientSequence, held.clientSequence) < 0) {
-      earliest.set(row.entityId, row);
+      ofEntity.set(row.entityId, row);
     }
+    earliest.set(row.entity, ofEntity);
   }
-  return earliest;
+  return (entity: SyncEntity): ReadonlyMap<string, JournalPrior> =>
+    earliest.get(entity) ?? NO_PRIORS;
 });
 
-const byId = <Row extends { readonly id: string }>(
-  rows: ReadonlyArray<Row>,
-): ReadonlyMap<string, Row> => new Map(rows.map((row) => [row.id, row]));
+type PriorsOf = Effect.Success<ReturnType<typeof earliestPriors>>;
+
+const byId = <Row extends { readonly id: string }>(rows: Iterable<Row>): ReadonlyMap<string, Row> =>
+  new Map(Array.fromIterable(rows).map((row) => [row.id, row]));
 
 const authoritativeView = <Row extends { readonly id: string }, Encoded>(
   tx: ReplicaDb,
   organizationId: string,
+  priorsOf: PriorsOf,
   entity: SyncEntity,
   schema: Schema.Codec<Row, Encoded>,
 ) =>
@@ -679,7 +774,7 @@ const authoritativeView = <Row extends { readonly id: string }, Encoded>(
     const table = syncEntityRows[entity].table;
     const decodeStored = Schema.decodeUnknownEffect(Schema.Array(schema));
     const decodePrior = Schema.decodeUnknownEffect(Schema.fromJsonString(schema));
-    const priors = yield* earliestPriors(tx, entity);
+    const priors = priorsOf(entity);
     const restored = byId(
       yield* Effect.forEach(
         [...priors.values()].flatMap((prior) =>
@@ -709,10 +804,21 @@ const authoritativeView = <Row extends { readonly id: string }, Encoded>(
           }),
         ]);
       });
+    const settled = (condition: SQL | undefined) =>
+      tx
+        .select()
+        .from(table)
+        .where(
+          and(eq(table.organizationId, organizationId), condition, unjournaled(entity, table.id)),
+        );
     return {
       restored,
       journaled: (id: string) => priors.has(id),
       rowsOf,
+      stored: (condition: SQL | undefined) =>
+        settled(condition).all().pipe(Effect.flatMap(decodeStored)),
+      firstStored: (condition: SQL | undefined, order: SQL | SQLiteColumn, limit: number) =>
+        settled(condition).orderBy(order).limit(limit).all().pipe(Effect.flatMap(decodeStored)),
     };
   });
 
@@ -735,8 +841,17 @@ type WriteReach = {
   readonly productIds: ReadonlyArray<string>;
   readonly batchIds: ReadonlyArray<string>;
   readonly movementIds: ReadonlyArray<string>;
+  readonly supplierIds: ReadonlyArray<string>;
+  readonly supplierNames: ReadonlyArray<string>;
+  readonly orderIds: ReadonlyArray<string>;
+  readonly orderNumbers: ReadonlyArray<number>;
+  readonly lineIds: ReadonlyArray<string>;
   readonly deletedCategoryIds: ReadonlyArray<string>;
   readonly stockCheckedProductIds: ReadonlyArray<string>;
+  readonly deletedSupplierIds: ReadonlyArray<string>;
+  readonly deletedOrderIds: ReadonlyArray<string>;
+  readonly writtenOrderIds: ReadonlyArray<string>;
+  readonly writtenLineIds: ReadonlyArray<string>;
 };
 
 const NO_REACH: WriteReach = {
@@ -745,8 +860,17 @@ const NO_REACH: WriteReach = {
   productIds: [],
   batchIds: [],
   movementIds: [],
+  supplierIds: [],
+  supplierNames: [],
+  orderIds: [],
+  orderNumbers: [],
+  lineIds: [],
   deletedCategoryIds: [],
   stockCheckedProductIds: [],
+  deletedSupplierIds: [],
+  deletedOrderIds: [],
+  writtenOrderIds: [],
+  writtenLineIds: [],
 };
 
 const reachOf = (write: CatalogRowWrite): WriteReach => {
@@ -774,12 +898,54 @@ const reachOf = (write: CatalogRowWrite): WriteReach => {
       switch (write.action) {
         case "delete":
           return { ...NO_REACH, batchIds: [write.id] };
-        case "upsert":
+        case "upsert": {
+          const lineIds = write.receipt === undefined ? [] : [write.receipt.purchaseOrderItemId];
           return {
             ...NO_REACH,
             batchIds: [write.id],
             productIds: [write.row.productId],
             movementIds: [write.movementId],
+            lineIds,
+            writtenLineIds: lineIds,
+          };
+        }
+      }
+    case "supplier":
+      switch (write.action) {
+        case "delete":
+          return { ...NO_REACH, supplierIds: [write.id], deletedSupplierIds: [write.id] };
+        case "upsert":
+          return { ...NO_REACH, supplierIds: [write.id], supplierNames: [write.row.name] };
+      }
+    case "purchaseOrder":
+      switch (write.action) {
+        case "delete":
+          return {
+            ...NO_REACH,
+            orderIds: [write.id],
+            writtenOrderIds: [write.id],
+            deletedOrderIds: [write.id],
+          };
+        case "upsert":
+          return {
+            ...NO_REACH,
+            orderIds: [write.id],
+            writtenOrderIds: [write.id],
+            supplierIds: [write.row.supplierId],
+            orderNumbers: write.expectedRowVersion === null ? [write.row.orderNumber] : [],
+          };
+      }
+    case "purchaseOrderItem":
+      switch (write.action) {
+        case "delete":
+          return { ...NO_REACH, lineIds: [write.id], writtenLineIds: [write.id] };
+        case "upsert":
+          return {
+            ...NO_REACH,
+            lineIds: [write.id],
+            writtenLineIds: [write.id],
+            orderIds: [write.row.purchaseOrderId],
+            productIds: [write.row.productId],
           };
       }
   }
@@ -787,7 +953,7 @@ const reachOf = (write: CatalogRowWrite): WriteReach => {
 
 const footprintOf = (payload: CatalogPayload) => {
   const reaches = payload.writes.map(reachOf);
-  const union = (pick: (reach: WriteReach) => ReadonlyArray<string>) =>
+  const union = <Value>(pick: (reach: WriteReach) => ReadonlyArray<Value>) =>
     new Set(reaches.flatMap(pick));
   return {
     categoryIds: union((reach) => reach.categoryIds),
@@ -795,10 +961,94 @@ const footprintOf = (payload: CatalogPayload) => {
     productIds: union((reach) => reach.productIds),
     batchIds: union((reach) => reach.batchIds),
     movementIds: union((reach) => reach.movementIds),
+    supplierIds: union((reach) => reach.supplierIds),
+    supplierNames: union((reach) => reach.supplierNames),
+    orderIds: union((reach) => reach.orderIds),
+    orderNumbers: union((reach) => reach.orderNumbers),
+    lineIds: union((reach) => reach.lineIds),
     deletedCategoryIds: union((reach) => reach.deletedCategoryIds),
     stockCheckedProductIds: union((reach) => reach.stockCheckedProductIds),
+    deletedSupplierIds: union((reach) => reach.deletedSupplierIds),
+    deletedOrderIds: union((reach) => reach.deletedOrderIds),
+    writtenOrderIds: union((reach) => reach.writtenOrderIds),
+    writtenLineIds: union((reach) => reach.writtenLineIds),
   };
 };
+
+const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  priorsOf: PriorsOf,
+  footprint: ReturnType<typeof footprintOf>,
+) {
+  const supplierView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "supplier",
+    ReplicaSupplierRow,
+  );
+  const orderView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "purchaseOrder",
+    ReplicaPurchaseOrderRow,
+  );
+  const lineView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "purchaseOrderItem",
+    ReplicaPurchaseOrderItemRow,
+  );
+  const untouchedOrders = footprint.writtenOrderIds.size + 1;
+  const untouchedLines = footprint.writtenLineIds.size + 1;
+
+  const lines = byId([
+    ...(yield* lineView.rowsOf(footprint.lineIds)).values(),
+    ...(yield* Effect.forEach([...footprint.deletedOrderIds], (orderId) =>
+      lineView.firstStored(
+        eq(purchaseOrderItems.purchaseOrderId, orderId),
+        purchaseOrderItems.id,
+        untouchedLines,
+      ),
+    )).flat(),
+    ...lineView.restored.values(),
+  ]);
+  const orders = byId([
+    ...(yield* orderView.rowsOf([
+      ...footprint.orderIds,
+      ...[...lines.values()].map((line) => line.purchaseOrderId),
+    ])).values(),
+    ...(yield* Effect.forEach([...footprint.deletedSupplierIds], (supplierId) =>
+      orderView.firstStored(
+        eq(purchaseOrders.supplierId, supplierId),
+        purchaseOrders.id,
+        untouchedOrders,
+      ),
+    )).flat(),
+    ...(yield* Effect.forEach(chunked([...footprint.orderNumbers]), (chunk) =>
+      orderView.stored(inArray(purchaseOrders.orderNumber, chunk)),
+    )).flat(),
+    ...(footprint.orderNumbers.size === 0
+      ? []
+      : yield* orderView.firstStored(undefined, desc(purchaseOrders.orderNumber), untouchedOrders)),
+    ...orderView.restored.values(),
+  ]);
+  const namedSuppliers = yield* Effect.forEach(chunked([...footprint.supplierNames]), (chunk) =>
+    supplierView.stored(inArray(suppliers.name, chunk)),
+  );
+  return {
+    supplier: byId([
+      ...(yield* supplierView.rowsOf(footprint.supplierIds)).values(),
+      ...namedSuppliers.flat(),
+      ...supplierView.restored.values(),
+    ]),
+    purchaseOrder: orders,
+    purchaseOrderItem: lines,
+  } satisfies Pick<CatalogRowsById, PurchasingEntity>;
+});
 
 const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* (
   tx: ReplicaDb,
@@ -806,12 +1056,32 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
   payload: CatalogPayload,
 ) {
   const footprint = footprintOf(payload);
-  const categoryView = yield* authoritativeView(tx, organizationId, "category", ReplicaCategoryRow);
-  const productView = yield* authoritativeView(tx, organizationId, "product", ReplicaProductRow);
-  const batchView = yield* authoritativeView(tx, organizationId, "batch", ReplicaBatchRow);
+  const priorsOf = yield* earliestPriors(tx);
+  const categoryView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "category",
+    ReplicaCategoryRow,
+  );
+  const productView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "product",
+    ReplicaProductRow,
+  );
+  const batchView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "batch",
+    ReplicaBatchRow,
+  );
   const movementView = yield* authoritativeView(
     tx,
     organizationId,
+    priorsOf,
     "stockMovement",
     ReplicaStockMovementRow,
   );
@@ -911,9 +1181,12 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
   ]);
 
   return {
-    categories: categoryRows,
-    products: productRows,
-    batches: batchRows,
+    rows: {
+      category: categoryRows,
+      product: productRows,
+      batch: batchRows,
+      ...(yield* loadPurchasingRows(tx, organizationId, priorsOf, footprint)),
+    },
     recordedMovementIds: new Set(movementRows.keys()),
     categoriesHoldingOtherProducts,
     productsHoldingOtherStock,
@@ -925,18 +1198,39 @@ const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(function* 
   organizationId: string,
   payload: InvoicePayload,
 ) {
-  const productView = yield* authoritativeView(tx, organizationId, "product", ReplicaProductRow);
-  const batchView = yield* authoritativeView(tx, organizationId, "batch", ReplicaBatchRow);
-  const invoiceView = yield* authoritativeView(tx, organizationId, "invoice", ReplicaInvoiceRow);
+  const priorsOf = yield* earliestPriors(tx);
+  const productView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "product",
+    ReplicaProductRow,
+  );
+  const batchView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "batch",
+    ReplicaBatchRow,
+  );
+  const invoiceView = yield* authoritativeView(
+    tx,
+    organizationId,
+    priorsOf,
+    "invoice",
+    ReplicaInvoiceRow,
+  );
   const itemView = yield* authoritativeView(
     tx,
     organizationId,
+    priorsOf,
     "invoiceItem",
     ReplicaInvoiceItemRow,
   );
   const movementView = yield* authoritativeView(
     tx,
     organizationId,
+    priorsOf,
     "stockMovement",
     ReplicaStockMovementRow,
   );
@@ -1009,7 +1303,7 @@ const decideCommand = (
     case "catalogWrite": {
       const { payload } = envelope.command;
       return loadCatalogFacts(tx, state.organizationId, payload).pipe(
-        Effect.map((facts) => decideCatalogWrite(envelope, payload, actor, facts)),
+        Effect.map((facts) => decideCatalogWrite(payload, actor, facts)),
       );
     }
   }
@@ -1106,6 +1400,11 @@ const storedReceipt = Effect.fn("LocalAuthority.storedReceipt")(function* (
 const incarnationOf = (state: ReplicaStateRow) =>
   decodeIncarnation(state.registeredAt === null ? `local-${state.replicaId}` : state.incarnation);
 
+const decodeEpoch = Schema.decodeUnknownEffect(SyncEpoch);
+
+const epochOf = (state: ReplicaStateRow) =>
+  decodeEpoch(state.registeredAt === null ? LOCAL_AUTHORITY_EPOCH : state.epoch);
+
 const pageOf = Effect.fn("LocalAuthority.pageOf")(function* (
   state: ReplicaStateRow,
   afterCommitSequence: OrgCommitSequence,
@@ -1114,7 +1413,7 @@ const pageOf = Effect.fn("LocalAuthority.pageOf")(function* (
   const applied = OrgCommitSequence.make(state.appliedCommitSequence);
   const last = transactions.at(-1)?.commitSequence;
   return {
-    epoch: LOCAL_AUTHORITY_EPOCH,
+    epoch: yield* epochOf(state),
     incarnation: yield* incarnationOf(state),
     subscription: OPERATIONAL_SUBSCRIPTION,
     schemaVersion: SYNC_SCHEMA_VERSION,
@@ -1187,6 +1486,87 @@ const snapshotUnavailable = Effect.fail(
   syncProtocolError("SNAPSHOT_UNAVAILABLE", "A local workspace has no snapshots."),
 );
 
+const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
+  tx: ReplicaDb,
+  request: SyncSubmitCommandRequest,
+) {
+  const state = yield* loadReplicaState(tx);
+  if (request.organizationId !== state.organizationId) {
+    return yield* Effect.fail(
+      syncProtocolError(
+        "ORGANIZATION_MISMATCH",
+        "The command does not belong to the active organization.",
+      ),
+    );
+  }
+  if (canonicalPayloadHash(request.command) !== request.payloadHash) {
+    return yield* Effect.fail(
+      syncProtocolError("INVALID_PAYLOAD_HASH", "The payload hash does not match."),
+    );
+  }
+  if (request.epoch !== (yield* epochOf(state))) {
+    return yield* Effect.fail(
+      syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match."),
+    );
+  }
+  const receipted = yield* storedReceipt(tx, request.operationId);
+  if (receipted !== undefined) {
+    if (receipted.payloadHash !== request.payloadHash) {
+      return yield* Effect.fail(
+        syncProtocolError("OPERATION_ID_REUSED", "The command id was reused."),
+      );
+    }
+    const page = yield* pageAfter(tx, state, request.afterCommitSequence);
+    return (
+      page === undefined ? receipted : { ...receipted, page }
+    ) satisfies SyncSubmitCommandResult;
+  }
+  if (request.replicaId !== state.replicaId || state.registeredAt === null) {
+    return yield* Effect.fail(
+      syncProtocolError("REPLICA_UNKNOWN", "This replica is not registered."),
+    );
+  }
+  const tail = yield* decidedTail(tx, state);
+  const expected = incrementDecimalSequence(tail.lastClientSequence);
+  if (compareDecimalSequence(request.clientSequence, expected) !== 0) {
+    return yield* Effect.fail(
+      syncProtocolError(
+        "REPLICA_SEQUENCE_GAP",
+        `Expected client sequence ${expected}, received ${request.clientSequence}.`,
+      ),
+    );
+  }
+  if (tail.unapplied !== undefined) {
+    return yield* Effect.fail(
+      SyncTransportUnavailable.make({
+        message: "An earlier decision has not reached the local replica yet.",
+        retryAfterMillis: RETRY_MILLIS,
+      }),
+    );
+  }
+  const { group, result } = groupOf(
+    nextCommitSequence(state),
+    request.operationId,
+    yield* decideCommand(tx, state, request),
+  );
+  const receipt = {
+    operationId: request.operationId,
+    replicaId: request.replicaId,
+    clientSequence: request.clientSequence,
+    payloadHash: request.payloadHash,
+    decision: group.decision,
+    commitSequence: group.commitSequence,
+    result,
+  } satisfies CommandReceipt;
+  if (request.afterCommitSequence !== state.appliedCommitSequence) {
+    return receipt satisfies SyncSubmitCommandResult;
+  }
+  return {
+    ...receipt,
+    page: yield* pageOf(state, request.afterCommitSequence, [group]),
+  } satisfies SyncSubmitCommandResult;
+});
+
 const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
   const reading = <A, E>(run: (tx: ReplicaDb) => Effect.Effect<A, E>) =>
     runReplicaTransaction(handle, run).pipe(Effect.mapError(readFailure));
@@ -1206,7 +1586,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
         const { lastClientSequence } = yield* decidedTail(tx, state);
         return {
           replicaId: request.replicaId,
-          epoch: LOCAL_AUTHORITY_EPOCH,
+          epoch: yield* epochOf(state),
           incarnation: yield* incarnationOf(state),
           nextClientSequence: ReplicaClientSequence.make(
             incrementDecimalSequence(lastClientSequence),
@@ -1214,6 +1594,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
           retentionFloor: applied,
           horizon: applied,
           schemaVersion: SYNC_SCHEMA_VERSION,
+          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION,
         } satisfies RegisterReplicaResult;
       }),
     );
@@ -1222,85 +1603,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
   const submitCommand = Effect.fn("LocalAuthority.submitCommand")(function* (
     request: SyncSubmitCommandRequest,
   ) {
-    return yield* reading((tx) =>
-      Effect.gen(function* () {
-        const state = yield* loadReplicaState(tx);
-        if (request.organizationId !== state.organizationId) {
-          return yield* Effect.fail(
-            syncProtocolError(
-              "ORGANIZATION_MISMATCH",
-              "The command does not belong to the active organization.",
-            ),
-          );
-        }
-        if (canonicalPayloadHash(request.command) !== request.payloadHash) {
-          return yield* Effect.fail(
-            syncProtocolError("INVALID_PAYLOAD_HASH", "The payload hash does not match."),
-          );
-        }
-        if (request.epoch !== LOCAL_AUTHORITY_EPOCH) {
-          return yield* Effect.fail(
-            syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match."),
-          );
-        }
-        const receipted = yield* storedReceipt(tx, request.operationId);
-        if (receipted !== undefined) {
-          if (receipted.payloadHash !== request.payloadHash) {
-            return yield* Effect.fail(
-              syncProtocolError("OPERATION_ID_REUSED", "The command id was reused."),
-            );
-          }
-          const page = yield* pageAfter(tx, state, request.afterCommitSequence);
-          return (
-            page === undefined ? receipted : { ...receipted, page }
-          ) satisfies SyncSubmitCommandResult;
-        }
-        if (request.replicaId !== state.replicaId || state.registeredAt === null) {
-          return yield* Effect.fail(
-            syncProtocolError("REPLICA_UNKNOWN", "This replica is not registered."),
-          );
-        }
-        const tail = yield* decidedTail(tx, state);
-        const expected = incrementDecimalSequence(tail.lastClientSequence);
-        if (compareDecimalSequence(request.clientSequence, expected) !== 0) {
-          return yield* Effect.fail(
-            syncProtocolError(
-              "REPLICA_SEQUENCE_GAP",
-              `Expected client sequence ${expected}, received ${request.clientSequence}.`,
-            ),
-          );
-        }
-        if (tail.unapplied !== undefined) {
-          return yield* Effect.fail(
-            SyncTransportUnavailable.make({
-              message: "An earlier decision has not reached the local replica yet.",
-              retryAfterMillis: RETRY_MILLIS,
-            }),
-          );
-        }
-        const { group, result } = groupOf(
-          nextCommitSequence(state),
-          request.operationId,
-          yield* decideCommand(tx, state, request),
-        );
-        const receipt = {
-          operationId: request.operationId,
-          replicaId: request.replicaId,
-          clientSequence: request.clientSequence,
-          payloadHash: request.payloadHash,
-          decision: group.decision,
-          commitSequence: group.commitSequence,
-          result,
-        } satisfies CommandReceipt;
-        if (request.afterCommitSequence !== state.appliedCommitSequence) {
-          return receipt satisfies SyncSubmitCommandResult;
-        }
-        return {
-          ...receipt,
-          page: yield* pageOf(state, request.afterCommitSequence, [group]),
-        } satisfies SyncSubmitCommandResult;
-      }),
-    );
+    return yield* reading((tx) => submitWithin(tx, request));
   });
 
   const getReceipt = Effect.fn("LocalAuthority.getReceipt")(function* (operationId: string) {
@@ -1311,7 +1614,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
     return yield* reading((tx) =>
       Effect.gen(function* () {
         const state = yield* loadReplicaState(tx);
-        if (request.epoch !== LOCAL_AUTHORITY_EPOCH) {
+        if (request.epoch !== (yield* epochOf(state))) {
           return yield* Effect.fail(
             syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match."),
           );
@@ -1341,6 +1644,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
 
 export const LocalAuthority = {
   make: makeLocalAuthority,
+  submitWithin,
   layer: Layer.effect(
     SyncTransportService,
     SqliteReplica.use((handle) => Effect.succeed(makeLocalAuthority(handle))),

@@ -9,6 +9,7 @@ import {
   purchaseOrderLineBaseUnits,
   purchasingRejection,
   receivedBaseUnitsOf,
+  SyncProtocolError,
   syncProtocolError,
   type CatalogRowWrite,
   type SyncCommandEnvelope,
@@ -17,6 +18,7 @@ import {
 } from "@store/contracts";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 
 import { freeDocumentNumber, type VisibleStock } from "./decisions";
 import { mapReplicaStoreFailure, type ReplicaStoreError } from "./errors";
@@ -217,7 +219,9 @@ type CatalogPass = {
   readonly rows: Array<ProjectedRow>;
 };
 
-type Rejection = { readonly code: SyncProtocolCode; readonly message: string };
+export type CommandRejection = { readonly code: SyncProtocolCode; readonly message: string };
+
+type Rejection = CommandRejection;
 
 type PurchasingEntity = "supplier" | "purchaseOrder" | "purchaseOrderItem";
 
@@ -316,13 +320,13 @@ const updatedMetadata = (pass: CatalogPass, existing: MutableRowMetadata) => ({
 const writtenMetadata = (pass: CatalogPass, existing: MutableRowMetadata | undefined) =>
   existing ? updatedMetadata(pass, existing) : insertedMetadata(pass);
 
-const movementType = (packDelta: number, unitDelta: number): "stock_in" | "adjustment" =>
-  packDelta >= 0 && unitDelta >= 0 ? "stock_in" : "adjustment";
-
 type VersionedTarget = {
   readonly id: string;
   readonly expectedRowVersion: number | null;
 };
+
+const movementType = (write: VersionedTarget): "stock_in" | "adjustment" =>
+  write.expectedRowVersion === null ? "stock_in" : "adjustment";
 
 const checkUpsertTarget = (
   pass: CatalogPass,
@@ -526,7 +530,7 @@ const writeBatch = (pass: CatalogPass, write: WriteOf<"batch">): void => {
             batchId: row.id,
             invoiceId: null,
             purchaseOrderId: line?.purchaseOrderId ?? null,
-            type: movementType(packDelta, unitDelta),
+            type: movementType(write),
             packDelta,
             unitDelta,
             note: write.note,
@@ -738,6 +742,20 @@ const runCatalogWrite = (
   for (const write of command.writes) applyCatalogWrite(pass, write);
   return pass.rows;
 };
+
+export const decideCatalogRow = (
+  command: CatalogWrite,
+  actor: ProjectionActor,
+  lookup: ReplicaCatalogLookup,
+  write: CatalogRowWrite,
+): Result.Result<ReadonlyArray<ProjectedRow>, CommandRejection> =>
+  Result.try({
+    try: () => runCatalogWrite({ ...command, writes: [write] }, actor, lookup, true),
+    catch: (cause) => {
+      if (cause instanceof SyncProtocolError) return { code: cause.code, message: cause.message };
+      throw cause;
+    },
+  });
 
 export const projectCommand = (
   envelope: SyncCommandEnvelope,

@@ -105,19 +105,23 @@ const overlayDeltasForInvoice = (
   operationId: string,
   allocations: ReadonlyArray<AllocationTake>,
   unitsPerPackFor: (productId: string) => number,
-): ReadonlyArray<StockOverlayDelta> =>
-  allocations.map((take) => {
+): ReadonlyArray<StockOverlayDelta> => {
+  const byBatch = new Map<string, StockOverlayDelta>();
+  for (const take of allocations) {
     const unitsPerPack = unitsPerPackFor(take.productId);
-    const packDeltaRaw = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
-    const unitDeltaRaw =
-      take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    return {
+    const held = byBatch.get(take.batchId);
+    byBatch.set(take.batchId, {
       commandId: operationId,
       batchId: take.batchId,
-      packDelta: Object.is(packDeltaRaw, -0) ? 0 : packDeltaRaw,
-      unitDelta: Object.is(unitDeltaRaw, -0) ? 0 : unitDeltaRaw,
-    };
-  });
+      packDelta:
+        (held?.packDelta ?? 0) - (take.quantityType === "pack" ? take.quantity : take.packsOpened),
+      unitDelta:
+        (held?.unitDelta ?? 0) +
+        (take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity),
+    });
+  }
+  return [...byBatch.values()];
+};
 
 export const decideOverlays = (
   command: { readonly operationId: string; readonly command: SyncCommand },

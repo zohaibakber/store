@@ -25,6 +25,7 @@ import {
   runReplicaTransaction,
   SqliteReplica,
   type SqliteReplicaHandle,
+  type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -194,6 +195,7 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
 
 type SqliteReplicaAuthority<SyncError> = {
   readonly sync: Layer.Layer<SyncEngine | SyncScheduler, SyncError, ReplicaStore | SqliteReplica>;
+  readonly store: SqliteReplicaStoreOptions;
   readonly wakesOnEnqueue: boolean;
 };
 
@@ -205,7 +207,7 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
   const publisher = createReplicaCommitPublisher();
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(authority.sync, layerCommitForwarding(workspaceToken, publisher)).pipe(
-      Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity)),
+      Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity, authority.store)),
       Layer.provideMerge(input.snapshotReader ?? layerHandleSnapshotReader),
       Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
     ),
@@ -264,7 +266,9 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
     enqueueCommand: async (request) => {
       const queued = await run(
         authority.wakesOnEnqueue
-          ? Effect.tap(store.enqueueCommand(request), () => scheduler.wake("localWrite"))
+          ? Effect.tap(store.enqueueCommand(request), (committed) =>
+              committed.value.status === "pending" ? scheduler.wake("localWrite") : Effect.void,
+            )
           : store.enqueueCommand(request),
       );
       return {
@@ -297,6 +301,7 @@ export const openSqliteReplicaSyncSession = <ReplicaError, TransportError>(
       live: input.live,
       policy: input.policy,
     }).pipe(Layer.provide(input.transport)),
+    store: {},
     wakesOnEnqueue: false,
   });
 
@@ -305,5 +310,6 @@ export const openSqliteReplicaLocalSession = <ReplicaError>(
 ): Promise<SqliteReplicaSyncSession> =>
   openSqliteReplicaSession(input, {
     sync: layerOwnedLocalSync.pipe(Layer.provide(LocalAuthority.layer)),
+    store: { authority: LocalAuthority.submitWithin },
     wakesOnEnqueue: true,
   });

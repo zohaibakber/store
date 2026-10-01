@@ -1,15 +1,21 @@
-import type {
-  CommandReceipt,
-  EnqueueCommandRequest,
-  RegisterReplicaResult,
-  SnapshotId,
-  SnapshotManifest,
-  SnapshotPartPayload,
-  SyncPullResult,
-  SyncSubscription,
-  SyncTransactionGroup,
+import {
+  OrgCommitSequence,
+  syncProtocolError,
+  type CommandReceipt,
+  type EnqueueCommandRequest,
+  type RegisterReplicaResult,
+  type SnapshotId,
+  type SnapshotManifest,
+  type SnapshotPartPayload,
+  type SyncCommandEnvelope,
+  type SyncPullResult,
+  type SyncSubmitCommandRequest,
+  type SyncSubmitCommandResult,
+  type SyncSubscription,
+  type SyncTransactionGroup,
 } from "@store/contracts";
 import type {
+  CommandStatus,
   Committed,
   ReplicaCommitNotice,
   ReplicaReadStamp,
@@ -18,6 +24,7 @@ import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
@@ -31,9 +38,12 @@ import {
   commandStatus,
   loadReplicaState,
   recordCaughtUp,
+  recordCommandReceipt,
   recoverStaleUploadClaims,
   releaseUploadClaim,
-  saveLocalCommand,
+  projectAdmittedCommand,
+  queueAdmittedCommand,
+  admitLocalCommand,
   settleUploadClaim,
   verifyAuthorityHeadNotBehind,
   verifyReplicaIncarnation,
@@ -45,7 +55,6 @@ import {
   mergeTouched,
   noticeFromState,
   stampOf,
-  withStockTouched,
   type TouchedSet,
 } from "../commit-hub";
 import {
@@ -119,6 +128,21 @@ type CheckpointWindow = {
   readonly prior: WindowSettings | undefined;
 };
 
+export type InTransactionAuthority = (
+  tx: ReplicaDb,
+  request: SyncSubmitCommandRequest,
+) => Effect.Effect<SyncSubmitCommandResult, unknown>;
+
+export type SqliteReplicaStoreOptions = {
+  readonly authority?: InTransactionAuthority;
+};
+
+type EnqueuedCommand = {
+  readonly status: CommandStatus;
+  readonly stamp: ReplicaReadStamp;
+  readonly touched: TouchedSet;
+};
+
 type SqliteReplicaStoreInternals = {
   readonly store: ReplicaStoreContract;
   readonly cleanup: Effect.Effect<void>;
@@ -130,6 +154,7 @@ type SqliteReplicaStoreInternals = {
 const makeSqliteReplicaStoreInternals = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
+  options: SqliteReplicaStoreOptions,
 ): Effect.Effect<SqliteReplicaStoreInternals> =>
   Effect.gen(function* () {
     const { publish, commits } = yield* makeReplicaCommitHub();
@@ -181,6 +206,12 @@ const makeSqliteReplicaStoreInternals = (
         }),
       ).pipe(Effect.tap((committed) => publish(committed.notice)));
 
+    const stampAfter = (notice: ReplicaCommitNotice | undefined): ReplicaReadStamp | undefined =>
+      notice && {
+        generationId: notice.generationId,
+        localCommitVersion: notice.localCommitVersion,
+      };
+
     const touchedNotice =
       <A>(touchedOf: (value: A) => TouchedSet) =>
       (value: A, after: ReplicaReadStamp) => {
@@ -193,29 +224,109 @@ const makeSqliteReplicaStoreInternals = (
         );
       };
 
+    const settleAndJournal = (
+      tx: ReplicaDb,
+      receipt: CommandReceipt,
+      claimId: string | undefined,
+    ) =>
+      (claimId === undefined
+        ? recordCommandReceipt(tx, receipt)
+        : settleUploadClaim(tx, claimId, receipt)
+      ).pipe(
+        Effect.tap((settled) =>
+          settled?.restored
+            ? recordActiveMutation(tx, () => ({ kind: "reject", operationId: receipt.operationId }))
+            : Effect.void,
+        ),
+      );
+
+    const settleWithPage = (
+      tx: ReplicaDb,
+      receipt: CommandReceipt,
+      page: SyncPullResult,
+      claimId: string | undefined,
+    ) =>
+      Effect.gen(function* () {
+        yield* verifyReplicaIncarnation(tx, page.incarnation);
+        const settled = yield* settleAndJournal(tx, receipt, claimId);
+        const applied = yield* applyPullResult(tx, page);
+        return { settled, applied };
+      });
+
+    const touchedBySettling = (value: Effect.Success<ReturnType<typeof settleWithPage>>) =>
+      mergeTouched(value.settled?.restored ?? EMPTY_TOUCHED, value.applied);
+
+    const decideWithin = (
+      tx: ReplicaDb,
+      envelope: SyncCommandEnvelope,
+      appliedCommitSequence: string,
+    ) =>
+      Effect.gen(function* () {
+        const authority = options.authority;
+        if (authority === undefined) return undefined;
+        const decided = yield* authority(tx, {
+          ...envelope,
+          afterCommitSequence: OrgCommitSequence.make(appliedCommitSequence),
+        }).pipe(
+          Effect.tapError((cause) =>
+            Effect.logDebug(
+              "The in-transaction authority left a command to the upload queue",
+              cause,
+            ),
+          ),
+          Effect.option,
+        );
+        if (Option.isNone(decided)) return undefined;
+        const { page, ...receipt } = decided.value;
+        if (page === undefined) return undefined;
+        if (receipt.result._tag === "rejected") {
+          return yield* Effect.fail(syncProtocolError(receipt.result.code, receipt.result.message));
+        }
+        return { receipt, page };
+      });
+
     const enqueueCommand = (request: EnqueueCommandRequest) =>
       commit(
         "SqliteReplicaStore.enqueueCommand",
         (tx) =>
-          saveLocalCommand(tx, request).pipe(
-            Effect.tap((saved) =>
-              saved.changed
-                ? recordActiveMutation(tx, () => ({
-                    kind: "local",
-                    operationId: request.operationId,
-                  }))
-                : Effect.void,
-            ),
-          ),
-        touchedNotice((saved) =>
-          withStockTouched(saved.projection ?? EMPTY_TOUCHED, saved.stockBatchIds),
-        ),
+          Effect.gen(function* () {
+            const admission = yield* admitLocalCommand(tx, request);
+            if (admission._tag === "replayed") {
+              return {
+                status: admission.status,
+                stamp: admission.stamp,
+                touched: EMPTY_TOUCHED,
+              } satisfies EnqueuedCommand;
+            }
+            const decided = yield* decideWithin(
+              tx,
+              admission.envelope,
+              admission.state.appliedCommitSequence,
+            );
+            const projected =
+              decided === undefined ? yield* projectAdmittedCommand(tx, admission) : EMPTY_TOUCHED;
+            const stamp = yield* queueAdmittedCommand(tx, admission, request.occurredAt);
+            yield* recordActiveMutation(tx, () => ({
+              kind: "local",
+              operationId: request.operationId,
+            }));
+            if (decided === undefined) {
+              return { status: "pending", stamp, touched: projected } satisfies EnqueuedCommand;
+            }
+            const settled = yield* settleWithPage(tx, decided.receipt, decided.page, undefined);
+            return {
+              status: (yield* commandStatus(tx, request.operationId)) ?? "pending",
+              stamp,
+              touched: touchedBySettling(settled),
+            } satisfies EnqueuedCommand;
+          }),
+        touchedNotice((queued) => queued.touched),
       ).pipe(
         Effect.map((committed) => ({
           value: {
             operationId: request.operationId,
             status: committed.value.status,
-            stamp: committed.value.stamp,
+            stamp: stampAfter(committed.notice) ?? committed.value.stamp,
           },
           notice: committed.notice,
         })),
@@ -228,19 +339,10 @@ const makeSqliteReplicaStoreInternals = (
         (claim, after) => claim && noticeFromState(databaseIdentity, after),
       );
 
-    const settleAndJournal = (tx: ReplicaDb, claimId: string, receipt: CommandReceipt) =>
-      settleUploadClaim(tx, claimId, receipt).pipe(
-        Effect.tap((settled) =>
-          settled?.restored
-            ? recordActiveMutation(tx, () => ({ kind: "reject", operationId: receipt.operationId }))
-            : Effect.void,
-        ),
-      );
-
     const settleClaim = (claimId: string, receipt: CommandReceipt) =>
       commit(
         "SqliteReplicaStore.settleUploadClaim",
-        (tx) => settleAndJournal(tx, claimId, receipt),
+        (tx) => settleAndJournal(tx, receipt, claimId),
         (settled, after) =>
           settled &&
           noticeFromState(
@@ -259,16 +361,8 @@ const makeSqliteReplicaStoreInternals = (
     const settleClaimWithPage = (claimId: string, receipt: CommandReceipt, page: SyncPullResult) =>
       commit(
         "SqliteReplicaStore.settleUploadWithPage",
-        (tx) =>
-          Effect.gen(function* () {
-            yield* verifyReplicaIncarnation(tx, page.incarnation);
-            const settled = yield* settleAndJournal(tx, claimId, receipt);
-            const applied = yield* applyPullResult(tx, page);
-            return { settled, applied };
-          }),
-        touchedNotice((value) =>
-          mergeTouched(value.settled?.restored ?? EMPTY_TOUCHED, value.applied),
-        ),
+        (tx) => settleWithPage(tx, receipt, page, claimId),
+        touchedNotice(touchedBySettling),
       ).pipe(
         Effect.flatMap((committed) =>
           verifyDigest(page, committed.value.applied.digestFence).pipe(
@@ -630,19 +724,21 @@ const makeSqliteReplicaStoreInternals = (
 export const makeSqliteReplicaStore = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
+  options: SqliteReplicaStoreOptions = {},
 ): Effect.Effect<ReplicaStoreContract> =>
-  makeSqliteReplicaStoreInternals(handle, databaseIdentity).pipe(
+  makeSqliteReplicaStoreInternals(handle, databaseIdentity, options).pipe(
     Effect.map((internals) => internals.store),
   );
 
 export const layerSqliteReplicaStore = (
   databaseIdentity: string,
+  options: SqliteReplicaStoreOptions = {},
 ): Layer.Layer<ReplicaStore, never, SqliteReplica> =>
   Layer.effect(
     ReplicaStore,
     Effect.gen(function* () {
       const handle = yield* SqliteReplica;
-      const internals = yield* makeSqliteReplicaStoreInternals(handle, databaseIdentity);
+      const internals = yield* makeSqliteReplicaStoreInternals(handle, databaseIdentity, options);
       yield* internals.requestCleanup;
       yield* Stream.fromQueue(internals.cleanupRequests).pipe(
         Stream.mapEffect(() => internals.cleanup),

@@ -36,19 +36,10 @@ export const writeEntityRow = Effect.fn("ReplicaRows.writeEntityRow")(function* 
 ) {
   const { table } = syncEntityRows[entity];
   const parsed = Schema.decodeUnknownSync(syncEntityRows[entity].schema)(row);
-  const existing = yield* tx
-    .select()
-    .from(table)
-    .where(inOrganization(table, parsed.organizationId, parsed.id))
-    .get();
-  if (existing) {
-    yield* tx
-      .update(table)
-      .set(parsed)
-      .where(inOrganization(table, parsed.organizationId, parsed.id));
-    return;
-  }
-  yield* tx.insert(table).values(parsed);
+  yield* tx
+    .insert(table)
+    .values(parsed)
+    .onConflictDoUpdate({ target: [table.organizationId, table.id], set: parsed });
 });
 
 export const removeEntityRow = Effect.fn("ReplicaRows.removeEntityRow")(function* (

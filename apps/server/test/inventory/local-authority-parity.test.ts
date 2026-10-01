@@ -4,7 +4,9 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
+  purchasingRejection,
   ReplicaClientSequence,
+  SYNC_SCHEMA_VERSION,
   type CatalogRowWrite,
   type CommandReceipt,
   type EnqueueCommandRequest,
@@ -12,6 +14,7 @@ import {
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
 } from "@store/contracts";
+import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -19,6 +22,9 @@ import {
   decodeInvoiceItemId,
   decodeOrganizationId,
   decodeProductId,
+  decodePurchaseOrderId,
+  decodePurchaseOrderItemId,
+  decodeSupplierId,
   type OrganizationId,
 } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
@@ -51,6 +57,12 @@ const IDLE_CATEGORY = decodeCategoryId("cat-idle");
 const IDLE_PRODUCT = decodeProductId("prod-idle");
 const SPARE_BATCH = decodeBatchId("batch-spare");
 const PACK_BATCH = decodeBatchId("batch-packs");
+const PACKED_PRODUCT = decodeProductId("prod-packed");
+const LOOSE_PRODUCT = decodeProductId("prod-loose");
+
+type DecisionPath = "queued" | "inline";
+
+const DECISION_PATHS: ReadonlyArray<DecisionPath> = ["queued", "inline"];
 
 type LocalSubmission = {
   readonly request: SyncSubmitCommandRequest;
@@ -99,11 +111,33 @@ const recordingLocalAuthority = (submissions: Array<LocalSubmission>) =>
     ),
   ).pipe(Layer.provide(LocalAuthority.layer));
 
-const twinLayer = (organizationId: string, submissions: Array<LocalSubmission>) =>
+const recordingStore = (
+  organizationId: string,
+  submissions: Array<LocalSubmission>,
+  path: DecisionPath,
+) => {
+  switch (path) {
+    case "queued":
+      return layerSqliteReplicaStore(`parity-${organizationId}`);
+    case "inline":
+      return layerSqliteReplicaStore(`parity-${organizationId}`, {
+        authority: (tx, request) =>
+          LocalAuthority.submitWithin(tx, request).pipe(
+            Effect.tap((result) => Effect.sync(() => submissions.push({ request, result }))),
+          ),
+      });
+  }
+};
+
+const twinLayer = (
+  organizationId: string,
+  submissions: Array<LocalSubmission>,
+  path: DecisionPath = "queued",
+) =>
   Layer.mergeAll(
     SyncEngine.layer().pipe(
       Layer.provideMerge(recordingLocalAuthority(submissions)),
-      Layer.provideMerge(layerSqliteReplicaStore(`parity-${organizationId}`)),
+      Layer.provideMerge(recordingStore(organizationId, submissions, path)),
       Layer.provideMerge(seededReplica(organizationId)),
     ),
     PgClient.layer({
@@ -132,7 +166,10 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
     );
     const postgresAuthority = typedCommands(makeInventoryCommands(db));
     const actor: InventoryActor = { organizationId, userId: USER_ID };
-    yield* postgresAuthority.register(actor, { replicaId: LAST_UNIT_REPLICA_A });
+    yield* postgresAuthority.register(actor, {
+      replicaId: LAST_UNIT_REPLICA_A,
+      schemaVersion: SYNC_SCHEMA_VERSION,
+    });
     yield* engine.ensureRegistered();
 
     const decide = (steps: Steps) =>
@@ -155,8 +192,8 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
     return { actor, store, localAuthority, postgresAuthority, decide };
   });
 
-const decideOnBoth = (organization: string, steps: Steps) => {
-  const organizationId = decodeOrganizationId(organization);
+const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "queued") => {
+  const organizationId = decodeOrganizationId(`${organization}-${path}`);
   const submissions: Array<LocalSubmission> = [];
   return Effect.runPromise(
     Effect.gen(function* () {
@@ -191,7 +228,7 @@ const decideOnBoth = (organization: string, steps: Steps) => {
         incarnation: localPage.incarnation,
       });
       return { decisions, repeated, localPage, postgresPage, digest: digest.value };
-    }).pipe(Effect.provide(twinLayer(organizationId, submissions)), Effect.scoped),
+    }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped),
   );
 };
 
@@ -329,6 +366,98 @@ const batchWrite = (
   },
 });
 
+const supplierWrite = (
+  id: string,
+  input: { readonly name: string; readonly phone?: string; readonly note?: string },
+  expectedRowVersion: number | null = null,
+): CatalogRowWrite => ({
+  entity: "supplier",
+  action: "upsert",
+  id: decodeSupplierId(id),
+  expectedRowVersion,
+  row: { name: input.name, phone: input.phone ?? null, note: input.note ?? null },
+});
+
+const orderWrite = (
+  id: string,
+  input: {
+    readonly orderNumber: number;
+    readonly supplierId: string;
+    readonly status?: "draft" | "sent" | "closed" | "cancelled";
+    readonly sentAt?: number;
+    readonly total?: number;
+  },
+  expectedRowVersion: number | null = null,
+): CatalogRowWrite => ({
+  entity: "purchaseOrder",
+  action: "upsert",
+  id: decodePurchaseOrderId(id),
+  expectedRowVersion,
+  row: {
+    orderNumber: input.orderNumber,
+    supplierId: decodeSupplierId(input.supplierId),
+    status: input.status ?? "draft",
+    note: null,
+    sentAt: input.sentAt ?? null,
+    expectedAt: null,
+    total: input.total ?? 0,
+  },
+});
+
+const lineWrite = (
+  id: string,
+  input: {
+    readonly purchaseOrderId: string;
+    readonly productId: string;
+    readonly quantity: number;
+    readonly quantityType: "unit" | "pack";
+    readonly baseUnitQuantity: number;
+    readonly packCost?: number;
+  },
+  expectedRowVersion: number | null = null,
+): CatalogRowWrite => ({
+  entity: "purchaseOrderItem",
+  action: "upsert",
+  id: decodePurchaseOrderItemId(id),
+  expectedRowVersion,
+  row: {
+    purchaseOrderId: decodePurchaseOrderId(input.purchaseOrderId),
+    productId: decodeProductId(input.productId),
+    productName: `Product ${input.productId}`,
+    quantity: input.quantity,
+    quantityType: input.quantityType,
+    baseUnitQuantity: input.baseUnitQuantity,
+    packCost: input.packCost ?? null,
+  },
+});
+
+const deliveryWrite = (
+  id: string,
+  input: {
+    readonly productId: string;
+    readonly lineId: string;
+    readonly movementId: string;
+    readonly packQuantity: number;
+    readonly unitQuantity: number;
+  },
+  expectedRowVersion: number | null = null,
+): CatalogRowWrite => ({
+  entity: "batch",
+  action: "upsert",
+  id: decodeBatchId(id),
+  expectedRowVersion,
+  movementId: input.movementId,
+  note: "Purchase order #1",
+  row: {
+    productId: decodeProductId(input.productId),
+    batchNumber: "D-1",
+    expiresAt: OCCURRED_AT + 86_400_000,
+    packQuantity: input.packQuantity,
+    unitQuantity: input.unitQuantity,
+  },
+  receipt: { purchaseOrderItemId: decodePurchaseOrderItemId(input.lineId) },
+});
+
 const removal = (
   entity: CatalogRowWrite["entity"],
   id: string,
@@ -341,6 +470,12 @@ const removal = (
       return { entity, action: "delete", id: decodeProductId(id), expectedRowVersion };
     case "batch":
       return { entity, action: "delete", id: decodeBatchId(id), expectedRowVersion };
+    case "supplier":
+      return { entity, action: "delete", id: decodeSupplierId(id), expectedRowVersion };
+    case "purchaseOrder":
+      return { entity, action: "delete", id: decodePurchaseOrderId(id), expectedRowVersion };
+    case "purchaseOrderItem":
+      return { entity, action: "delete", id: decodePurchaseOrderItemId(id), expectedRowVersion };
   }
 };
 
@@ -424,6 +559,134 @@ const seedSales = (unitsPerPack: number, packQuantity: number, unitQuantity: num
     ]),
   );
 
+const seedPurchasing = queued(
+  catalog("seed-purchasing", [
+    categoryWrite(GENERAL, "General"),
+    productWrite(PACKED_PRODUCT, { categoryId: GENERAL, name: "Packed", unitsPerPack: 10 }),
+    productWrite(LOOSE_PRODUCT, { categoryId: GENERAL, name: "Loose", unitsPerPack: 1 }),
+    supplierWrite("sup-acme", { name: "Acme" }),
+    supplierWrite("sup-globex", { name: "Globex", phone: "923001234567", note: "Net 30" }),
+  ]),
+);
+
+const draftOrder = queued(
+  catalog("draft-1", [
+    orderWrite("po-1", { orderNumber: 1, supplierId: "sup-acme", total: 1_500 }),
+    lineWrite("po-1-packed", {
+      purchaseOrderId: "po-1",
+      productId: PACKED_PRODUCT,
+      quantity: 3,
+      quantityType: "pack",
+      baseUnitQuantity: 30,
+      packCost: 500,
+    }),
+    lineWrite("po-1-loose", {
+      purchaseOrderId: "po-1",
+      productId: LOOSE_PRODUCT,
+      quantity: 20,
+      quantityType: "unit",
+      baseUnitQuantity: 20,
+    }),
+  ]),
+);
+
+const sendOrder = queued(
+  catalog("send-1", [
+    orderWrite(
+      "po-1",
+      {
+        orderNumber: 1,
+        supplierId: "sup-acme",
+        status: "sent",
+        sentAt: OCCURRED_AT + 1,
+        total: 1_500,
+      },
+      1,
+    ),
+  ]),
+);
+
+const partialDelivery = queued(
+  catalog("receive-part", [
+    deliveryWrite("batch-part", {
+      productId: PACKED_PRODUCT,
+      lineId: "po-1-packed",
+      movementId: "mv-part",
+      packQuantity: 1,
+      unitQuantity: 5,
+    }),
+  ]),
+);
+
+const closeOrder = queued(
+  catalog("close-1", [
+    orderWrite(
+      "po-1",
+      {
+        orderNumber: 1,
+        supplierId: "sup-acme",
+        status: "closed",
+        sentAt: OCCURRED_AT + 1,
+        total: 1_500,
+      },
+      2,
+    ),
+  ]),
+);
+
+const DRAFTED: Steps = [[seedPurchasing], [draftOrder]];
+
+const PARTLY_RECEIVED: Steps = [...DRAFTED, [sendOrder], [partialDelivery]];
+
+const CLOSED: Steps = [...PARTLY_RECEIVED, [closeOrder]];
+
+const REPACKED: Steps = [
+  ...PARTLY_RECEIVED,
+  [
+    queued(
+      catalog("repack", [
+        productWrite(LOOSE_PRODUCT, { categoryId: GENERAL, name: "Loose", unitsPerPack: 2 }, 1),
+      ]),
+    ),
+  ],
+];
+
+const stalePriceDelivery = catalog("receive-stale-price", [
+  productWrite(
+    LOOSE_PRODUCT,
+    { categoryId: GENERAL, name: "Loose", unitsPerPack: 1, retailPrice: 150 },
+    1,
+  ),
+  deliveryWrite("batch-stale-price", {
+    productId: LOOSE_PRODUCT,
+    lineId: "po-1-loose",
+    movementId: "mv-stale-price",
+    packQuantity: 0,
+    unitQuantity: 20,
+  }),
+]);
+
+const IMPORT_ROWS_PER_LINE = 2;
+
+const importedLines = (
+  categoryId: string,
+  first: number,
+  count: number,
+): ReadonlyArray<CatalogRowWrite> =>
+  Array.from({ length: count }, (_, offset) => first + offset).flatMap((line) => [
+    productWrite(`prod-import-${line}`, {
+      categoryId,
+      name: `Imported ${line}`,
+      unitsPerPack: 1,
+    }),
+    batchWrite(`batch-import-${line}`, {
+      productId: `prod-import-${line}`,
+      movementId: `mv-import-${line}`,
+      packQuantity: 0,
+      unitQuantity: 1,
+    }),
+  ]);
+
 describe("the local authority decides like the postgres authority", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
@@ -433,165 +696,464 @@ describe("the local authority decides like the postgres authority", () => {
     await database?.close();
   });
 
-  it("emits the same groups for catalog inserts, updates, deletes and their stock movements", async () => {
-    const twin = await decideOnBoth("org-parity-catalog", [
-      [
-        queued(
-          catalog("stock", [
-            categoryWrite("cat-1", "Painkillers"),
-            productWrite("prod-1", { categoryId: "cat-1", name: "Panadol", unitsPerPack: 10 }),
-            batchWrite("batch-1", {
-              productId: "prod-1",
-              movementId: "mv-stock",
-              packQuantity: 2,
-              unitQuantity: 0,
-            }),
-            batchWrite(SPARE_BATCH, {
-              productId: "prod-1",
-              movementId: "mv-spare",
-              packQuantity: 0,
-              unitQuantity: 0,
-            }),
-          ]),
-        ),
-      ],
-      [
-        queued(
-          catalog("edit", [
-            categoryWrite("cat-1", "Pain relief", 1),
-            productWrite(
-              "prod-1",
-              { categoryId: "cat-1", name: "Panadol Extra", unitsPerPack: 10, retailPrice: 120 },
-              1,
+  it.each(DECISION_PATHS)(
+    "emits the same groups for catalog inserts, updates, deletes and their stock movements when %s",
+    async (path) => {
+      const twin = await decideOnBoth(
+        "org-parity-catalog",
+        [
+          [
+            queued(
+              catalog("stock", [
+                categoryWrite("cat-1", "Painkillers"),
+                productWrite("prod-1", { categoryId: "cat-1", name: "Panadol", unitsPerPack: 10 }),
+                batchWrite("batch-1", {
+                  productId: "prod-1",
+                  movementId: "mv-stock",
+                  packQuantity: 2,
+                  unitQuantity: 0,
+                }),
+                batchWrite(SPARE_BATCH, {
+                  productId: "prod-1",
+                  movementId: "mv-spare",
+                  packQuantity: 0,
+                  unitQuantity: 0,
+                }),
+              ]),
             ),
-            batchWrite(
-              "batch-1",
-              {
-                productId: "prod-1",
-                movementId: "mv-recount",
-                packQuantity: 3,
-                unitQuantity: 5,
-                note: "Recount",
-              },
-              1,
+          ],
+          [
+            queued(
+              catalog("edit", [
+                categoryWrite("cat-1", "Pain relief", 1),
+                productWrite(
+                  "prod-1",
+                  {
+                    categoryId: "cat-1",
+                    name: "Panadol Extra",
+                    unitsPerPack: 10,
+                    retailPrice: 120,
+                  },
+                  1,
+                ),
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-recount",
+                    packQuantity: 3,
+                    unitQuantity: 5,
+                    note: "Recount",
+                  },
+                  1,
+                ),
+              ]),
             ),
-          ]),
-        ),
-      ],
-      [
-        queued(
-          catalog("shrink", [
-            batchWrite(
-              "batch-1",
-              { productId: "prod-1", movementId: "mv-shrink", packQuantity: 1, unitQuantity: 0 },
-              2,
+          ],
+          [
+            queued(
+              catalog("shrink", [
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-shrink",
+                    packQuantity: 1,
+                    unitQuantity: 0,
+                  },
+                  2,
+                ),
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-relabel",
+                    packQuantity: 1,
+                    unitQuantity: 0,
+                  },
+                  3,
+                ),
+              ]),
             ),
-            batchWrite(
-              "batch-1",
-              { productId: "prod-1", movementId: "mv-relabel", packQuantity: 1, unitQuantity: 0 },
-              3,
+          ],
+          [
+            queued(
+              catalog("second", [
+                categoryWrite("cat-2", "Vitamins"),
+                productWrite("prod-2", { categoryId: "cat-2", name: "Vitamin C", unitsPerPack: 1 }),
+                batchWrite("batch-3", {
+                  productId: "prod-2",
+                  movementId: "mv-vitamins",
+                  packQuantity: 0,
+                  unitQuantity: 4,
+                }),
+              ]),
             ),
-          ]),
-        ),
-      ],
-      [
-        queued(
-          catalog("second", [
-            categoryWrite("cat-2", "Vitamins"),
-            productWrite("prod-2", { categoryId: "cat-2", name: "Vitamin C", unitsPerPack: 1 }),
-            batchWrite("batch-3", {
-              productId: "prod-2",
-              movementId: "mv-vitamins",
-              packQuantity: 0,
-              unitQuantity: 4,
-            }),
-          ]),
-        ),
-      ],
-      [
-        queued(
-          catalog("empty", [
-            batchWrite(
-              "batch-3",
-              { productId: "prod-2", movementId: "mv-empty", packQuantity: 0, unitQuantity: 0 },
-              1,
+          ],
+          [
+            queued(
+              catalog("empty", [
+                batchWrite(
+                  "batch-3",
+                  { productId: "prod-2", movementId: "mv-empty", packQuantity: 0, unitQuantity: 0 },
+                  1,
+                ),
+              ]),
             ),
-          ]),
-        ),
-        queued(
-          catalog("drop-batches", [
-            removal("batch", "batch-3", 2),
-            removal("batch", SPARE_BATCH, 1),
-          ]),
-        ),
-        queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
-        queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
-      ],
-    ]);
+            queued(
+              catalog("drop-batches", [
+                removal("batch", "batch-3", 2),
+                removal("batch", SPARE_BATCH, 1),
+              ]),
+            ),
+            queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
+            queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
+          ],
+        ],
+        path,
+      );
 
-    expectParity(twin);
-    expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-      Array.from({ length: 8 }, () => "catalogWrite"),
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+        Array.from({ length: 8 }, () => "catalogWrite"),
+      );
+      expect(
+        twin.decisions.map(({ local }) =>
+          local.page?.transactions[0]?.changes.map((change) => `${change.action} ${change.entity}`),
+        ),
+      ).toEqual([
+        [
+          "upsert category",
+          "upsert product",
+          "upsert batch",
+          "upsert stockMovement",
+          "upsert batch",
+        ],
+        ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+        ["upsert batch", "upsert stockMovement", "upsert batch"],
+        ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+        ["upsert batch", "upsert stockMovement"],
+        ["delete batch", "delete batch"],
+        ["delete product"],
+        ["delete category"],
+      ]);
+    },
+  );
+
+  it.each(DECISION_PATHS)(
+    "emits the same groups for sales, including packs opened across batches, when %s",
+    async (path) => {
+      const twin = await decideOnBoth(
+        "org-parity-sales",
+        [
+          [seedSales(10, 2, 1)],
+          [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
+          [
+            queued(
+              sale("sale-split", 2, [
+                { quantity: 6, packsOpened: 1 },
+                { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
+              ]),
+            ),
+          ],
+          [
+            queued(
+              sale("sale-pack", 3, [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }], {
+                customerName: "  Ada Lovelace  ",
+              }),
+            ),
+            queued(sale("sale-loose", 4, [{ quantity: 3 }])),
+          ],
+          [queued(sale("sale-twice", 5, [{ quantity: 1 }, { quantity: 2, packsOpened: 1 }]))],
+        ],
+        path,
+      );
+
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
+        "catalogWrite",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+      ]);
+      expect(
+        twin.decisions[2]?.local.page?.transactions[0]?.changes.map((change) => change.entity),
+      ).toEqual([
+        "invoice",
+        "batch",
+        "invoiceItem",
+        "stockMovement",
+        "stockMovement",
+        "batch",
+        "invoiceItem",
+        "stockMovement",
+        "stockMovement",
+      ]);
+    },
+  );
+
+  it.each(DECISION_PATHS)(
+    "emits the same groups for suppliers, orders, lines and deliveries when %s",
+    async (path) => {
+      const twin = await decideOnBoth(
+        "org-parity-purchasing",
+        [
+          [seedPurchasing],
+          [draftOrder],
+          [sendOrder],
+          [partialDelivery],
+          [
+            queued(
+              catalog("receive-rest", [
+                productWrite(
+                  PACKED_PRODUCT,
+                  { categoryId: GENERAL, name: "Packed", unitsPerPack: 10, retailPrice: 130 },
+                  1,
+                ),
+                deliveryWrite("batch-rest", {
+                  productId: PACKED_PRODUCT,
+                  lineId: "po-1-packed",
+                  movementId: "mv-rest",
+                  packQuantity: 1,
+                  unitQuantity: 5,
+                }),
+                deliveryWrite("batch-loose", {
+                  productId: LOOSE_PRODUCT,
+                  lineId: "po-1-loose",
+                  movementId: "mv-loose",
+                  packQuantity: 0,
+                  unitQuantity: 20,
+                }),
+                deliveryWrite("batch-nothing", {
+                  productId: LOOSE_PRODUCT,
+                  lineId: "po-1-loose",
+                  movementId: "mv-nothing",
+                  packQuantity: 0,
+                  unitQuantity: 0,
+                }),
+              ]),
+            ),
+          ],
+          [closeOrder],
+          [
+            queued(
+              catalog("draft-2", [
+                orderWrite("po-2", { orderNumber: 2, supplierId: "sup-globex", total: 400 }),
+                lineWrite("po-2-packed", {
+                  purchaseOrderId: "po-2",
+                  productId: PACKED_PRODUCT,
+                  quantity: 1,
+                  quantityType: "pack",
+                  baseUnitQuantity: 10,
+                  packCost: 400,
+                }),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("cancel-2", [
+                orderWrite(
+                  "po-2",
+                  { orderNumber: 2, supplierId: "sup-globex", status: "cancelled", total: 400 },
+                  1,
+                ),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("draft-taken-number", [
+                orderWrite("po-3", { orderNumber: 1, supplierId: "sup-globex" }),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("replace-highest", [
+                removal("purchaseOrder", "po-3", 1),
+                orderWrite("po-4", { orderNumber: 2, supplierId: "sup-acme" }),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("add-line", [
+                lineWrite("po-4-loose", {
+                  purchaseOrderId: "po-4",
+                  productId: LOOSE_PRODUCT,
+                  quantity: 6,
+                  quantityType: "unit",
+                  baseUnitQuantity: 6,
+                }),
+              ]),
+            ),
+            queued(
+              catalog("edit-line", [
+                lineWrite(
+                  "po-4-loose",
+                  {
+                    purchaseOrderId: "po-4",
+                    productId: PACKED_PRODUCT,
+                    quantity: 2,
+                    quantityType: "pack",
+                    baseUnitQuantity: 20,
+                    packCost: 450,
+                  },
+                  1,
+                ),
+              ]),
+            ),
+            queued(
+              catalog("reissue", [
+                removal("purchaseOrderItem", "po-4-loose", 2),
+                removal("purchaseOrder", "po-4", 1),
+                orderWrite("po-5", { orderNumber: 3, supplierId: "sup-globex" }),
+                orderWrite("po-6", { orderNumber: 3, supplierId: "sup-globex" }),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("rename-supplier", [
+                supplierWrite("sup-globex", { name: "Globex Corp" }, 1),
+                supplierWrite("sup-initech", { name: "Initech" }),
+              ]),
+            ),
+            queued(
+              catalog("regroup", [
+                orderWrite("po-5", { orderNumber: 3, supplierId: "sup-initech" }, 1),
+                supplierWrite("sup-hooli", { name: "Hooli" }),
+                removal("supplier", "sup-hooli", 1),
+              ]),
+            ),
+          ],
+        ],
+        path,
+      );
+
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+        Array.from({ length: 15 }, () => "catalogWrite"),
+      );
+      expect(
+        twin.decisions.map(({ local }) =>
+          local.page?.transactions[0]?.changes.map((change) => `${change.action} ${change.entity}`),
+        ),
+      ).toEqual([
+        [
+          "upsert category",
+          "upsert product",
+          "upsert product",
+          "upsert supplier",
+          "upsert supplier",
+        ],
+        ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
+        ["upsert purchaseOrder"],
+        ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
+        [
+          "upsert product",
+          "upsert batch",
+          "upsert stockMovement",
+          "upsert purchaseOrderItem",
+          "upsert batch",
+          "upsert stockMovement",
+          "upsert purchaseOrderItem",
+          "upsert batch",
+          "upsert purchaseOrderItem",
+        ],
+        ["upsert purchaseOrder"],
+        ["upsert purchaseOrder", "upsert purchaseOrderItem"],
+        ["upsert purchaseOrder"],
+        ["upsert purchaseOrder"],
+        ["delete purchaseOrder", "upsert purchaseOrder"],
+        ["upsert purchaseOrderItem"],
+        ["upsert purchaseOrderItem"],
+        [
+          "delete purchaseOrderItem",
+          "delete purchaseOrder",
+          "upsert purchaseOrder",
+          "upsert purchaseOrder",
+        ],
+        ["upsert supplier", "upsert supplier"],
+        ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
+      ]);
+    },
+  );
+
+  it.each(DECISION_PATHS)(
+    "emits the same groups for an import that opens its own category, in one write or split, when %s",
+    async (path) => {
+      const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
+      const twin = await decideOnBoth(
+        "org-parity-import",
+        [
+          [
+            queued(
+              catalog("import-small", [
+                categoryWrite("cat-small", "Small import"),
+                ...importedLines("cat-small", 0, 2),
+              ]),
+            ),
+          ],
+          [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
+          [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
+          [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
+        ],
+        path,
+      );
+
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => local.result)).toEqual([
+        { _tag: "catalogWrite", rowsWritten: 5 },
+        { _tag: "catalogWrite", rowsWritten: 1 },
+        { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
+        { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
+      ]);
+    },
+    120_000,
+  );
+
+  it("refuses at enqueue what postgres rejects, and keeps no trace, when the store decides", async () => {
+    const organizationId = decodeOrganizationId("org-parity-refusal");
+    const submissions: Array<LocalSubmission> = [];
+    const refusal = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { actor, store, postgresAuthority, decide } = yield* openTwin(
+          organizationId,
+          submissions,
+        );
+        const engine = yield* SyncEngine;
+        yield* decide(REPACKED);
+        const before = yield* store.readSyncCursor();
+        const decidedBefore = submissions.length;
+        const failure = yield* Effect.flip(engine.saveCommand(queued(stalePriceDelivery)));
+        const refused = submissions.slice(decidedBefore);
+        return {
+          failure,
+          decisions: refused.length,
+          postgres: yield* Effect.forEach(refused, ({ request }) =>
+            postgresAuthority.submit(actor, request),
+          ),
+          status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
+          before,
+          after: yield* store.readSyncCursor(),
+        };
+      }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped),
     );
-    expect(
-      twin.decisions.map(({ local }) =>
-        local.page?.transactions[0]?.changes.map((change) => `${change.action} ${change.entity}`),
-      ),
-    ).toEqual([
-      ["upsert category", "upsert product", "upsert batch", "upsert stockMovement", "upsert batch"],
-      ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-      ["upsert batch", "upsert stockMovement", "upsert batch"],
-      ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-      ["upsert batch", "upsert stockMovement"],
-      ["delete batch", "delete batch"],
-      ["delete product"],
-      ["delete category"],
-    ]);
-  });
 
-  it("emits the same groups for sales, including packs opened across batches", async () => {
-    const twin = await decideOnBoth("org-parity-sales", [
-      [seedSales(10, 2, 1)],
-      [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
-      [
-        queued(
-          sale("sale-split", 2, [
-            { quantity: 6, packsOpened: 1 },
-            { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
-          ]),
-        ),
-      ],
-      [
-        queued(
-          sale("sale-pack", 3, [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }], {
-            customerName: "  Ada Lovelace  ",
-          }),
-        ),
-        queued(sale("sale-loose", 4, [{ quantity: 3 }])),
-      ],
+    expect(refusal.decisions).toBe(1);
+    expect(refusal.postgres.map(({ result }) => result)).toEqual([
+      { _tag: "rejected", code: "ENTITY_CONFLICT", message: refusal.failure.message },
     ]);
-
-    expectParity(twin);
-    expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
-      "catalogWrite",
-      "issueInvoice",
-      "issueInvoice",
-      "issueInvoice",
-      "issueInvoice",
-    ]);
-    expect(
-      twin.decisions[2]?.local.page?.transactions[0]?.changes.map((change) => change.entity),
-    ).toEqual([
-      "invoice",
-      "batch",
-      "invoiceItem",
-      "stockMovement",
-      "stockMovement",
-      "batch",
-      "invoiceItem",
-      "stockMovement",
-      "stockMovement",
-    ]);
+    expect(refusal.failure).toMatchObject({
+      code: "ENTITY_CONFLICT",
+      message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
+    });
+    expect(refusal.status).toBeUndefined();
+    expect(refusal.after).toEqual(refusal.before);
   });
 
   it("rejects with the same code and message whatever a queued command gets wrong", async () => {
@@ -845,6 +1407,293 @@ describe("the local authority decides like the postgres authority", () => {
         _tag: "rejected",
         code: "ENTITY_CONFLICT",
         message: "A record this command creates already exists.",
+      },
+    ],
+    [
+      "a supplier that still has orders",
+      PARTLY_RECEIVED,
+      catalog("drop-supplier", [removal("supplier", "sup-acme", 1)]),
+      { _tag: "rejected", ...purchasingRejection.supplierHasOrders },
+    ],
+    [
+      "a supplier left without orders in the same write",
+      DRAFTED,
+      catalog("move-then-drop", [
+        orderWrite("po-1", { orderNumber: 1, supplierId: "sup-globex", total: 1_500 }, 1),
+        removal("supplier", "sup-acme", 1),
+      ]),
+      { _tag: "catalogWrite", rowsWritten: 2 },
+    ],
+    [
+      "a supplier read before it changed",
+      DRAFTED,
+      catalog("stale-supplier", [removal("supplier", "sup-globex", 7)]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_CONFLICT",
+        message: "Supplier sup-globex changed since it was read.",
+      },
+    ],
+    [
+      "a supplier name that is taken",
+      DRAFTED,
+      catalog("supplier-name-taken", [supplierWrite("sup-new", { name: "Acme" })]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_CONFLICT",
+        message: "Supplier name Acme is already in use.",
+      },
+    ],
+    [
+      "an order for a supplier that does not exist",
+      DRAFTED,
+      catalog("order-orphan", [
+        orderWrite("po-orphan", { orderNumber: 2, supplierId: "sup-gone" }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_RELATION_INVALID",
+        message: "Supplier sup-gone is not available in this organization.",
+      },
+    ],
+    [
+      "an order created as sent",
+      DRAFTED,
+      catalog("order-born-sent", [
+        orderWrite("po-sent", { orderNumber: 2, supplierId: "sup-acme", status: "sent" }),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.orderTransitionInvalid },
+    ],
+    [
+      "a draft closed before it was sent",
+      DRAFTED,
+      catalog("close-draft", [
+        orderWrite("po-1", { orderNumber: 1, supplierId: "sup-acme", status: "closed" }, 1),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.orderTransitionInvalid },
+    ],
+    [
+      "an edit to a closed order",
+      CLOSED,
+      catalog("reopen", [
+        orderWrite("po-1", { orderNumber: 1, supplierId: "sup-acme", status: "sent" }, 3),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.orderNotOpen },
+    ],
+    [
+      "the removal of a sent order",
+      PARTLY_RECEIVED,
+      catalog("drop-sent", [removal("purchaseOrder", "po-1", 2)]),
+      { _tag: "rejected", ...purchasingRejection.orderNotDraft },
+    ],
+    [
+      "the removal of a draft that still has lines",
+      DRAFTED,
+      catalog("drop-with-lines", [removal("purchaseOrder", "po-1", 1)]),
+      { _tag: "rejected", ...purchasingRejection.orderHasItems },
+    ],
+    [
+      "the removal of a draft and its lines in one write",
+      DRAFTED,
+      catalog("drop-draft", [
+        removal("purchaseOrderItem", "po-1-packed", 1),
+        removal("purchaseOrderItem", "po-1-loose", 1),
+        removal("purchaseOrder", "po-1", 1),
+        orderWrite("po-next", { orderNumber: 1, supplierId: "sup-globex" }),
+        orderWrite("po-after", { orderNumber: 1, supplierId: "sup-globex" }),
+      ]),
+      { _tag: "catalogWrite", rowsWritten: 5 },
+    ],
+    [
+      "a line on an order that does not exist",
+      DRAFTED,
+      catalog("line-orphan", [
+        lineWrite("line-orphan", {
+          purchaseOrderId: "po-gone",
+          productId: LOOSE_PRODUCT,
+          quantity: 1,
+          quantityType: "unit",
+          baseUnitQuantity: 1,
+        }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_RELATION_INVALID",
+        message: "Purchase order po-gone is not available in this organization.",
+      },
+    ],
+    [
+      "a line for a product that does not exist",
+      DRAFTED,
+      catalog("line-no-product", [
+        lineWrite("line-no-product", {
+          purchaseOrderId: "po-1",
+          productId: "prod-gone",
+          quantity: 1,
+          quantityType: "unit",
+          baseUnitQuantity: 1,
+        }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_RELATION_INVALID",
+        message: "Product prod-gone is not available in this organization.",
+      },
+    ],
+    [
+      "a line whose base units disagree with the pack size",
+      DRAFTED,
+      catalog("line-miscounted", [
+        lineWrite("line-miscounted", {
+          purchaseOrderId: "po-1",
+          productId: PACKED_PRODUCT,
+          quantity: 2,
+          quantityType: "pack",
+          baseUnitQuantity: 2,
+        }),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.itemQuantityInvalid },
+    ],
+    [
+      "a line added to a closed order",
+      CLOSED,
+      catalog("line-late", [
+        lineWrite("line-late", {
+          purchaseOrderId: "po-1",
+          productId: LOOSE_PRODUCT,
+          quantity: 1,
+          quantityType: "unit",
+          baseUnitQuantity: 1,
+        }),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.orderNotOpen },
+    ],
+    [
+      "the removal of a line that has received stock",
+      PARTLY_RECEIVED,
+      catalog("drop-received", [removal("purchaseOrderItem", "po-1-packed", 2)]),
+      { _tag: "rejected", ...purchasingRejection.itemReceived },
+    ],
+    [
+      "a received line moved to another product",
+      PARTLY_RECEIVED,
+      catalog("move-received", [
+        lineWrite(
+          "po-1-packed",
+          {
+            purchaseOrderId: "po-1",
+            productId: LOOSE_PRODUCT,
+            quantity: 3,
+            quantityType: "unit",
+            baseUnitQuantity: 3,
+          },
+          2,
+        ),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.itemReceived },
+    ],
+    [
+      "a delivery against a closed order",
+      CLOSED,
+      catalog("receive-closed", [
+        deliveryWrite("batch-closed", {
+          productId: PACKED_PRODUCT,
+          lineId: "po-1-packed",
+          movementId: "mv-closed",
+          packQuantity: 1,
+          unitQuantity: 0,
+        }),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.orderNotOpen },
+    ],
+    [
+      "a delivery whose price change lost to another edit",
+      REPACKED,
+      stalePriceDelivery,
+      {
+        _tag: "rejected",
+        code: "ENTITY_CONFLICT",
+        message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
+      },
+    ],
+    [
+      "a delivery for a different product than its line",
+      PARTLY_RECEIVED,
+      catalog("receive-mismatch", [
+        deliveryWrite("batch-mismatch", {
+          productId: LOOSE_PRODUCT,
+          lineId: "po-1-packed",
+          movementId: "mv-mismatch",
+          packQuantity: 0,
+          unitQuantity: 1,
+        }),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.receiptProductMismatch },
+    ],
+    [
+      "a delivery recorded on a batch that already exists",
+      PARTLY_RECEIVED,
+      catalog("receive-existing", [
+        deliveryWrite(
+          "batch-part",
+          {
+            productId: PACKED_PRODUCT,
+            lineId: "po-1-packed",
+            movementId: "mv-existing",
+            packQuantity: 2,
+            unitQuantity: 5,
+          },
+          1,
+        ),
+      ]),
+      { _tag: "rejected", ...purchasingRejection.receiptOnExistingBatch },
+    ],
+    [
+      "a delivery against a line that does not exist",
+      PARTLY_RECEIVED,
+      catalog("receive-no-line", [
+        deliveryWrite("batch-no-line", {
+          productId: PACKED_PRODUCT,
+          lineId: "line-gone",
+          movementId: "mv-no-line",
+          packQuantity: 1,
+          unitQuantity: 0,
+        }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "ENTITY_RELATION_INVALID",
+        message: "Order line line-gone is not available in this organization.",
+      },
+    ],
+    [
+      "a delivery too large to count, though its movement id is taken",
+      PARTLY_RECEIVED,
+      catalog("receive-overflow", [
+        deliveryWrite("batch-overflow", {
+          productId: PACKED_PRODUCT,
+          lineId: "po-1-packed",
+          movementId: "mv-part",
+          packQuantity: 300_000_000,
+          unitQuantity: 0,
+        }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "INVALID_OPERATION",
+        message: "A value in this command is out of range.",
+      },
+    ],
+    [
+      "an order total too large to store",
+      DRAFTED,
+      catalog("order-overflow", [
+        orderWrite("po-huge", { orderNumber: 2, supplierId: "sup-acme", total: 3_000_000_000 }),
+      ]),
+      {
+        _tag: "rejected",
+        code: "INVALID_OPERATION",
+        message: "A value in this command is out of range.",
       },
     ],
   ];

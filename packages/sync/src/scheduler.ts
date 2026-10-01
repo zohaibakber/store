@@ -10,7 +10,10 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "./replica/cadence";
+import {
+  DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
+  type DigestVerificationCadence,
+} from "./replica/cadence";
 import {
   classifySyncFailure,
   dispositionFor,
@@ -41,7 +44,7 @@ export type SyncSchedulerPolicy = {
   readonly liveIdlePollMillis: number;
   readonly minPollMillis?: number;
   readonly maxRetryAfterMillis?: number;
-  readonly digestVerificationIntervalMillis?: number;
+  readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
 };
 

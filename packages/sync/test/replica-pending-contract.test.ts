@@ -503,7 +503,7 @@ for (const adapter of adapters) {
           const overlays = yield* harness.overlayCount();
           expect(findRow(batchRows, LAST_UNIT_BATCH_ID)?.["unitQuantity"]).toBe(25);
           expect(findRow(movementRows, "restock-1")?.["unitDelta"]).toBe(15);
-          expect(findRow(movementRows, "restock-1")?.["type"]).toBe("stock_in");
+          expect(findRow(movementRows, "restock-1")?.["type"]).toBe("adjustment");
           expect(overlays).toBe(0);
         }),
       ),
