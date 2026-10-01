@@ -5,6 +5,15 @@ import {
   type ReplicaSyncHealth,
 } from "@store/client-db";
 import {
+  backUpReplicaFile,
+  discardReplicaFile,
+  readReplicaFileSummary,
+  sealReplicaFile,
+  settleReplicaFile,
+  stageReplicaBackup,
+  type ReplicaFileSummary,
+} from "@store/client-db/node-backup";
+import {
   makeProxySyncTransport,
   openNodeLocalReplicaSession,
   openNodeReplicaSyncSession,
@@ -15,6 +24,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { identity } from "effect/Function";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -63,6 +73,21 @@ const timedOutProxy = (): ProxyFetchResult => ({
 });
 
 type WorkerBoot = typeof ReplicaWorkerBoot.Type;
+
+const LOCAL_ONLY_MESSAGE = "Only the workspace on this device can be restored from a file.";
+
+const ORGANIZATION_BACKUP_MESSAGE =
+  "This backup is a copy of an organization's data. Only a backup of this device's own workspace can be restored here.";
+
+const UNOPENABLE_BACKUP_MESSAGE = "This backup could not be opened by this version of Tabaaq.";
+
+const fileFailure = (failure: { readonly message: string }) =>
+  new ReplicaWorkerFailure({ message: failure.message });
+
+const countsOf = (summary: ReplicaFileSummary) => ({
+  products: summary.products,
+  sales: summary.sales,
+});
 
 type AuthorityLink = {
   readonly open: () => Promise<NodeReplicaSyncSession>;
@@ -188,15 +213,22 @@ export const makeReplicaWorkerHandlers = <R>(
       const syncHealth = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
       const link = yield* linkAuthority(config, openSession, openLocalSession);
 
+      const live = yield* Ref.make<NodeReplicaSyncSession | undefined>(undefined);
+
       const opened = yield* Effect.acquireRelease(
         Effect.tryPromise(link.open).pipe(
           Effect.map((session): NodeReplicaSyncSession | undefined => session),
           Effect.orElseSucceed((): NodeReplicaSyncSession | undefined => undefined),
+          Effect.tap((session) => Ref.set(live, session)),
         ),
-        (session) =>
-          session === undefined
-            ? Effect.void
-            : Effect.promise(() => session.close()).pipe(Effect.ignore),
+        () =>
+          Ref.getAndSet(live, undefined).pipe(
+            Effect.flatMap((session) =>
+              session === undefined
+                ? Effect.void
+                : Effect.promise(() => session.close()).pipe(Effect.ignore),
+            ),
+          ),
       );
 
       if (opened !== undefined) {
@@ -207,9 +239,61 @@ export const makeReplicaWorkerHandlers = <R>(
       }
 
       const withSession = <A>(use: (current: NodeReplicaSyncSession) => Promise<A>) =>
-        opened === undefined
-          ? Effect.fail(new ReplicaWorkerFailure({ message: "Replica worker is not booted." }))
-          : Effect.tryPromise({ try: () => use(opened), catch: workerFailure });
+        Ref.get(live).pipe(
+          Effect.flatMap((current) =>
+            current === undefined
+              ? Effect.fail(new ReplicaWorkerFailure({ message: "Replica worker is not booted." }))
+              : Effect.tryPromise({ try: () => use(current), catch: workerFailure }),
+          ),
+        );
+
+      const stageRestore = (
+        local: Extract<WorkerBoot, { readonly authority: "local" }>,
+        sourcePath: string,
+        stagedPath: string,
+      ) =>
+        Effect.gen(function* () {
+          const backup = yield* stageReplicaBackup({ sourcePath, stagedPath });
+          if (backup.organizationId !== local.organizationId || backup.userId !== local.userId) {
+            return yield* new ReplicaWorkerFailure({ message: ORGANIZATION_BACKUP_MESSAGE });
+          }
+          yield* Effect.acquireUseRelease(
+            Effect.tryPromise({
+              try: () =>
+                openLocalSession({
+                  ...sessionInput(local),
+                  path: stagedPath,
+                  databaseIdentity: stagedPath,
+                }),
+              catch: () => new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE }),
+            }),
+            (trial) =>
+              Effect.tryPromise({
+                try: () => trial.stamp(),
+                catch: () => new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE }),
+              }),
+            (trial) => Effect.tryPromise(() => trial.close()).pipe(Effect.ignore),
+          );
+          const current = yield* readReplicaFileSummary(local.databasePath);
+          return { current: countsOf(current), backup: countsOf(backup) };
+        }).pipe(
+          Effect.onError(() => discardReplicaFile(stagedPath)),
+          Effect.mapError(fileFailure),
+        );
+
+      const releaseForRestore = (
+        local: Extract<WorkerBoot, { readonly authority: "local" }>,
+        stagedPath: string,
+      ) =>
+        Effect.gen(function* () {
+          const stamp = yield* withSession((current) => current.stamp());
+          const closing = yield* Ref.getAndSet(live, undefined);
+          if (closing !== undefined) {
+            yield* Effect.tryPromise({ try: () => closing.close(), catch: workerFailure });
+          }
+          yield* settleReplicaFile(local.databasePath);
+          yield* sealReplicaFile(stagedPath, stamp.localCommitVersion);
+        }).pipe(Effect.mapError(fileFailure));
 
       return ReplicaWorkerRpcs.of({
         Engine: () => Effect.succeed(opened === undefined ? "unavailable" : "sqlite"),
@@ -239,6 +323,31 @@ export const makeReplicaWorkerHandlers = <R>(
           opened === undefined
             ? Effect.succeed({ drained: false, drainCount: 0 })
             : withSession((current) => current.wakeSyncUpload()),
+        BackUp: ({ destinationPath }) =>
+          backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
+            Effect.mapError(
+              (failure) =>
+                new ReplicaWorkerFailure({
+                  message: `The backup could not be written. ${failure.message}`,
+                }),
+            ),
+          ),
+        StageRestore: ({ sourcePath, stagedPath }) => {
+          switch (config.authority) {
+            case "local":
+              return stageRestore(config, sourcePath, stagedPath);
+            case "remote":
+              return Effect.fail(new ReplicaWorkerFailure({ message: LOCAL_ONLY_MESSAGE }));
+          }
+        },
+        ReleaseForRestore: ({ stagedPath }) => {
+          switch (config.authority) {
+            case "local":
+              return releaseForRestore(config, stagedPath);
+            case "remote":
+              return Effect.fail(new ReplicaWorkerFailure({ message: LOCAL_ONLY_MESSAGE }));
+          }
+        },
         Commits: () =>
           opened === undefined
             ? Stream.empty

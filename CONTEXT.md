@@ -10,6 +10,17 @@ The signed-in user's selected organization, plus its isolated local catalog
 replica. At most one authenticated workspace is active.
 _Avoid_: Session, active organization
 
+**Local workspace.**
+A workspace with no account, shown as "This device" on desktop. Its catalog is
+decided on the device by the local authority and never leaves it, except as a
+backup file the user saves.
+_Avoid_: Guest mode, offline mode, demo
+
+**Local authority.**
+The on-device decider that accepts or rejects commands for a local workspace
+using the same rules as the Postgres authority.
+_Avoid_: Offline sync, fake server
+
 **Catalog layout.**
 The physical columns for catalog entities in authoritative Postgres and in the
 SQLite catalog projection. Persistence only; not a business aggregate.

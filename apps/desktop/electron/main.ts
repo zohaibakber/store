@@ -8,7 +8,7 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, session, shell } from "electron";
 
 import { AuthBroker } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
@@ -27,7 +27,7 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
-import { registerReplicaWorkerIpc } from "./replica-ipc";
+import { registerReplicaWorkerIpc, type ReplicaBackupDialogs } from "./replica-ipc";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
@@ -183,8 +183,9 @@ const InvoiceUpload = Schema.Struct({
 const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", (event) => {
+  ipcMain.handle("auth:get-session", async (event) => {
     assertRendererIpc(event.senderFrame);
+    await authBroker.restore();
     return authBroker.snapshot;
   });
   ipcMain.handle("auth:get-oauth-redirect-uri", (event) => {
@@ -230,6 +231,36 @@ function registerServerIpc() {
     return authBroker.analyseInvoices(upload.files);
   });
 }
+
+const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
+
+const backupDialogs: ReplicaBackupDialogs = {
+  chooseDestination: async (suggestedName) => {
+    const options = {
+      title: "Back up to file",
+      buttonLabel: "Back up",
+      defaultPath: path.join(app.getPath("documents"), suggestedName),
+      filters: BACKUP_FILE_FILTERS,
+    };
+    const chosen = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
+    return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
+  },
+  chooseSource: async () => {
+    const options = {
+      title: "Restore from file",
+      buttonLabel: "Choose backup",
+      defaultPath: app.getPath("documents"),
+      filters: BACKUP_FILE_FILTERS,
+      properties: ["openFile" as const],
+    };
+    const chosen = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
+  },
+};
 
 const publishReplicaForeground = (visible: boolean) => {
   replicaWorker
@@ -385,6 +416,7 @@ void app.whenReady().then(async () => {
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
     liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,
+    backupDialogs,
   });
   await authBroker.initialize();
   publishSession(authBroker.snapshot);

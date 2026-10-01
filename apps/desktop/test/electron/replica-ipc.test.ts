@@ -120,6 +120,9 @@ const setupIpc = () => {
         foregrounds.push(visible);
       }),
     WakeSyncUpload: () => Effect.sync(() => ({ drained: true, drainCount: ++drainCount })),
+    BackUp: () => Effect.die("unused"),
+    StageRestore: () => Effect.die("unused"),
+    ReleaseForRestore: () => Effect.die("unused"),
     Commits: () =>
       Stream.make({
         generationId: "1",

@@ -1,3 +1,8 @@
+import type { InvoiceExtractionLine } from "@store/contracts/server-api.schema";
+
+import { hasReceivedStock, normalizeLine } from "./line";
+import { parseMajorCurrencyToMinor } from "./pack-size";
+
 export const parseCsvRecords = (contents: string): ReadonlyArray<ReadonlyArray<string>> => {
   const records: string[][] = [];
   let field = "";
@@ -48,3 +53,25 @@ export const parseCsvRecords = (contents: string): ReadonlyArray<ReadonlyArray<s
 
   return records.filter((record) => record.some((cell) => cell.trim().length > 0));
 };
+
+const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
+  const [headerRow = [], ...rows] = parseCsvRecords(contents);
+  const headers = headerRow.map((value) => value.trim().toLowerCase());
+  const valueAt = (row: ReadonlyArray<string>, name: string) =>
+    row[headers.indexOf(name)]?.trim() ?? "";
+  return rows.map((values) =>
+    normalizeLine({
+      name:
+        valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
+      batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
+      expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
+      packQuantity: valueAt(values, "packs") || valueAt(values, "pack quantity") || 0,
+      unitQuantity: valueAt(values, "units") || valueAt(values, "unit quantity") || 0,
+      unitsPerPack: valueAt(values, "units per pack") || 1,
+      packPrice: parseMajorCurrencyToMinor(valueAt(values, "pack price")),
+    }),
+  );
+};
+
+export const receivedStockFromCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> =>
+  parseCsv(contents).filter(hasReceivedStock);

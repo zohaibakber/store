@@ -76,6 +76,13 @@ export const ReplicaCommandStatusInput = Schema.Struct({
   operationId: NonEmptyString,
 });
 
+const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_096));
+
+export const ReplicaCatalogCounts = Schema.Struct({
+  products: NonNegativeInteger,
+  sales: NonNegativeInteger,
+});
+
 export const ReplicaWorkerBoot = Schema.Union([
   Schema.Struct({ ...LocalReplicaIdentity.fields, databasePath: Schema.String }),
   Schema.Struct({
@@ -213,6 +220,20 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   }),
   Rpc.make("WakeSyncUpload", {
     success: Schema.Struct({ drained: Schema.Boolean, drainCount: NonNegativeInteger }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("BackUp", {
+    payload: { destinationPath: FilePath },
+    success: Schema.Struct({ bytes: NonNegativeInteger }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("StageRestore", {
+    payload: { sourcePath: FilePath, stagedPath: FilePath },
+    success: Schema.Struct({ current: ReplicaCatalogCounts, backup: ReplicaCatalogCounts }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("ReleaseForRestore", {
+    payload: { stagedPath: FilePath },
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),

@@ -2,6 +2,7 @@ import { Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { createFileRoute } from "@tanstack/react-router";
 
+import { PdfReadingNeedsAccount } from "@/components/app/pdf-reading-needs-account";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -61,6 +62,7 @@ function UploadPage() {
             </AlertDescription>
           </Alert>
         )}
+        <PdfReadingNeedsAccount />
         <div className="flex flex-col gap-2">
           <UploadDropzone />
           <UploadAttachmentList />

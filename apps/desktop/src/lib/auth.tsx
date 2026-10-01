@@ -4,11 +4,14 @@ import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
 import { appHost, type AuthSessionBridge } from "@/host";
+import type { OpenWorkspace, Workspace } from "@/host-access";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { refreshBoundWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
 
 type AuthContextValue = {
   readonly refresh: () => Promise<void>;
+  readonly workspace: Workspace;
+  readonly workspaces: ReadonlyArray<OpenWorkspace>;
 } & (
   | { readonly _tag: "Loading"; readonly snapshot: WorkspaceSnapshot | null }
   | { readonly _tag: "Ready"; readonly snapshot: WorkspaceSnapshot }
@@ -45,7 +48,7 @@ const fallbackSession = (): WorkspaceSession => ({
 
 export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
   const router = useRouter();
-  const session = router.options.context.session;
+  const { access, session } = router.options.context;
   const current =
     React.useSyncExternalStore(session.subscribe, session.current) ?? fallbackSession();
 
@@ -59,12 +62,18 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
 
   const snapshot = current.snapshot;
   const error = snapshot.workspaceError ?? null;
+  const shared = {
+    snapshot,
+    refresh,
+    workspace: access.workspace(snapshot),
+    workspaces: access.workspaces(snapshot),
+  };
   const value: AuthContextValue =
     current._tag === "Switching"
-      ? { _tag: "Loading", snapshot, refresh }
+      ? { _tag: "Loading", ...shared }
       : error
-        ? { _tag: "Error", snapshot, error, refresh }
-        : { _tag: "Ready", snapshot, refresh };
+        ? { _tag: "Error", error, ...shared }
+        : { _tag: "Ready", ...shared };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

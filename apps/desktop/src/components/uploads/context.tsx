@@ -7,10 +7,9 @@ import {
   ambiguousImportProductMessage,
   importProductMatch,
 } from "@/components/uploads/same-product";
-import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 import { useCatalogProductLookup, useInventoryActions } from "@/lib/inventory";
-import { analyseInvoices } from "@/lib/server-api";
+import { useInvoiceReading } from "@/lib/invoice-reading";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
@@ -61,7 +60,7 @@ function UploadProvider({
 }) {
   const inventory = useInventoryActions();
   const lookupProducts = useCatalogProductLookup();
-  const isOnline = useOnline();
+  const { analyseInvoices, isOnline } = useInvoiceReading();
   const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
