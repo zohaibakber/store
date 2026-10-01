@@ -241,11 +241,7 @@ export function PlanningSheet() {
         <HugeiconsIcon aria-hidden="true" icon={Settings02Icon} />
         Planning
       </SheetTrigger>
-      <SheetPopup
-        className="titlebar-clear-sheet sm:max-w-xl"
-        showCloseButton={false}
-        variant="inset"
-      >
+      <SheetPopup className="sm:max-w-xl" showCloseButton={false} variant="inset">
         <SheetHeader>
           <SheetTitle>Planning</SheetTitle>
           <SheetDescription>

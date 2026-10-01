@@ -265,12 +265,12 @@
     );
   }
 
-  .titlebar-clear-sheet {
+  [data-slot="sheet-popup"] {
     margin-top: env(titlebar-area-height, 0px);
   }
 
   @media (width >= 40rem) {
-    .titlebar-clear-sheet {
+    [data-slot="sheet-popup"] {
       margin-top: max(0px, calc(env(titlebar-area-height, 0px) - 1rem));
     }
   }
