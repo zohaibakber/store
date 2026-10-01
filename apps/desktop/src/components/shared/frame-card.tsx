@@ -15,7 +15,7 @@ export function FrameCard({
   className,
   description,
   flush = false,
-  table = false,
+  table,
   title,
   ...props
 }: Omit<React.ComponentProps<typeof Frame>, "title"> & {
@@ -36,7 +36,7 @@ export function FrameCard({
     <FramePanel className="flex-1">{children}</FramePanel>
   );
 
-  if (table) {
+  if (table !== undefined) {
     return (
       <section className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
         {hasHeader && (
