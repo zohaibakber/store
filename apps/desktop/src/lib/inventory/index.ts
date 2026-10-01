@@ -6,6 +6,7 @@ export {
   preloadAll,
   preloadCatalogCategories,
   preloadCatalogProduct,
+  preloadCatalogProductsById,
   preloadInventoryInsights,
   preloadRestockPage,
   preloadInventoryInvoice,
@@ -13,8 +14,11 @@ export {
   preloadInvoiceList,
   preloadProductFacets,
   preloadProductList,
+  preloadProductSearch,
+  preloadProductStockPlan,
   preloadPurchaseOrder,
   preloadPurchaseOrderList,
+  preloadPurchaseOrderTabs,
   preloadStockMovementHistory,
   preloadSuppliers,
   useCatalogIsReady,
@@ -69,5 +73,5 @@ export {
   type ReceiveDeliveryLineInput,
   type SaveOrderDraftInput,
 } from "@store/inventory-react";
-export { preloadInventory } from "./preload";
+export { preloadCatalog, preloadInventory } from "./preload";
 export { InventoryProvider, InventoryReady } from "./provider";

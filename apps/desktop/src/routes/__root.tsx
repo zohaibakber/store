@@ -5,6 +5,7 @@ import {
   redirect,
   useRouterState,
 } from "@tanstack/react-router";
+import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { Suspense } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
@@ -32,6 +33,7 @@ interface RouterContext {
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly inventory: InventoryHost | null;
+  readonly registry: AtomRegistry.AtomRegistry;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({

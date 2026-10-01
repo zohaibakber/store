@@ -25,6 +25,7 @@ import * as React from "react";
 
 import type { ReplicaAuthority } from "./host";
 import { inPageOrder } from "./list-page";
+import { sharedLiveQuery } from "./live-collection";
 import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
   NOTHING_ON_ORDER,
@@ -107,7 +108,7 @@ const hasStatus = (order: Ref<PurchaseOrderRow>, statuses: ReadonlyArray<Purchas
     : inArray(order.status, [...statuses]);
 };
 
-export const suppliersQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
+const suppliersQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
   query
     .from({ supplier: inventory.suppliers })
     .orderBy(({ supplier }) => supplier.name, { direction: "asc", stringSort: "locale" })
@@ -122,14 +123,14 @@ export const purchaseOrdersQuery =
       .orderBy(({ order }) => order.createdAt, "desc")
       .select(({ order }) => purchaseOrderFields(query, inventory, order));
 
-export const purchaseOrdersByIdQuery =
+const purchaseOrdersByIdQuery =
   (inventory: Inventory, orderIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) =>
     query
       .from({ order: inventory.purchaseOrders })
       .where(({ order }) => inAnyOf(order.id, orderIds))
       .select(({ order }) => purchaseOrderFields(query, inventory, order));
 
-export const purchaseOrderQuery =
+const purchaseOrderQuery =
   (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
     query
       .from({ order: inventory.purchaseOrders })
@@ -137,13 +138,27 @@ export const purchaseOrderQuery =
       .select(({ order }) => purchaseOrderFields(query, inventory, order))
       .findOne();
 
-export const purchaseOrderDeliveriesQuery =
+const purchaseOrderDeliveriesQuery =
   (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
     query
       .from({ movement: inventory.stockMovements })
       .where(({ movement }) => eq(movement.purchaseOrderId, orderId))
       .orderBy(({ movement }) => movement.createdAt, "desc")
       .select(({ movement }) => stockMovementFields(movement));
+
+const openPurchaseOrdersQuery =
+  (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
+    purchaseOrdersQuery(inventory, OPEN_PURCHASE_ORDER_STATUSES)(query).limit(limit);
+
+export const liveSuppliers = sharedLiveQuery(suppliersQuery);
+
+export const livePurchaseOrdersById = sharedLiveQuery(purchaseOrdersByIdQuery);
+
+const liveOpenPurchaseOrders = sharedLiveQuery(openPurchaseOrdersQuery);
+
+export const livePurchaseOrder = sharedLiveQuery(purchaseOrderQuery);
+
+export const livePurchaseOrderDeliveries = sharedLiveQuery(purchaseOrderDeliveriesQuery);
 
 export const useSuppliers = () => {
   const live = useLiveQuery({ query: suppliersQuery(useCatalogReplica()) });
@@ -152,7 +167,7 @@ export const useSuppliers = () => {
 };
 
 export const useSuspenseSuppliers = (): ReadonlyArray<Supplier> =>
-  useLiveSuspenseQuery({ query: suppliersQuery(useCatalogReplica()) }).data;
+  useLiveSuspenseQuery(liveSuppliers(useCatalogReplica())).data;
 
 export const useSuspensePurchaseOrderPage = (
   request: PurchaseOrderListRequest,
@@ -161,9 +176,9 @@ export const useSuspensePurchaseOrderPage = (
   const ids = React.useDeferredValue(
     useAtomSuspense(inventory.atoms.purchaseOrderPage(request)).value,
   );
-  const orders: ReadonlyArray<PurchaseOrder> = useLiveSuspenseQuery({
-    query: purchaseOrdersByIdQuery(inventory, ids),
-  }).data;
+  const orders: ReadonlyArray<PurchaseOrder> = useLiveSuspenseQuery(
+    livePurchaseOrdersById(inventory, ids),
+  ).data;
   return React.useMemo(() => inPageOrder(ids, orders), [ids, orders]);
 };
 
@@ -174,13 +189,8 @@ export const useSuspensePurchaseOrderListCount = (filters: PurchaseOrderListFilt
 
 export const useSuspenseOpenPurchaseOrders = (
   limit = HISTORY_PAGE_SIZE,
-): ReadonlyArray<PurchaseOrder> => {
-  const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery({
-    query: (query) =>
-      purchaseOrdersQuery(inventory, OPEN_PURCHASE_ORDER_STATUSES)(query).limit(limit),
-  }).data;
-};
+): ReadonlyArray<PurchaseOrder> =>
+  useLiveSuspenseQuery(liveOpenPurchaseOrders(useCatalogReplica(), limit)).data;
 
 export const usePurchaseOrder = (orderId: string) => {
   const live = useLiveQuery({ query: purchaseOrderQuery(useCatalogReplica(), orderId) });
@@ -189,10 +199,10 @@ export const usePurchaseOrder = (orderId: string) => {
 };
 
 export const useSuspensePurchaseOrder = (orderId: string): PurchaseOrder | undefined =>
-  useLiveSuspenseQuery({ query: purchaseOrderQuery(useCatalogReplica(), orderId) }).data;
+  useLiveSuspenseQuery(livePurchaseOrder(useCatalogReplica(), orderId)).data;
 
 export const useSuspensePurchaseOrderDeliveries = (orderId: string): ReadonlyArray<StockMovement> =>
-  useLiveSuspenseQuery({ query: purchaseOrderDeliveriesQuery(useCatalogReplica(), orderId) }).data;
+  useLiveSuspenseQuery(livePurchaseOrderDeliveries(useCatalogReplica(), orderId)).data;
 
 export const useSuspensePurchaseOrderCount = (tab: PurchaseOrderTab): number =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderCount(tab)).value;
