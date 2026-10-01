@@ -6,10 +6,12 @@ export const isEditableTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable || target.closest("input, textarea, select, [role=combobox]") !== null);
 
-const isShown = (element: Element) => element.closest("[hidden]") === null;
+const NOT_IN_THE_WAY = "[hidden], [data-slot^=toast-viewport]";
+
+const isInTheWay = (element: Element) => element.closest(NOT_IN_THE_WAY) === null;
 
 const hasShown = (selector: string) =>
-  Array.from(document.querySelectorAll(selector)).some(isShown);
+  Array.from(document.querySelectorAll(selector)).some(isInTheWay);
 
 export const hasOpenPopup = () => hasShown(POPUP_SELECTOR);
 
