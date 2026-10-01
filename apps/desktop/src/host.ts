@@ -12,6 +12,7 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { InvoiceUploadFile } from "@/lib/invoice-upload";
 import type { NewSaleShortcut } from "@/lib/new-sale-shortcut";
 import type { WorkspaceBackupBridge } from "@/lib/workspace-backup";
+import type { WorkspacePublishBridge } from "@/lib/workspace-publish";
 
 export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
@@ -49,6 +50,7 @@ export interface AppHost {
   readonly updater?: AppUpdaterBridge;
   readonly theme?: { readonly setSource: (source: ThemeSource) => void };
   readonly backup?: WorkspaceBackupBridge;
+  readonly publish?: WorkspacePublishBridge;
 }
 
 let installed: AppHost | null = null;

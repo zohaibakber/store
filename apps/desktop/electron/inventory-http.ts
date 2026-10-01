@@ -1,3 +1,5 @@
+import { ImportId, ImportPartNumber } from "@store/contracts";
+import * as Schema from "effect/Schema";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
@@ -11,6 +13,9 @@ type InventoryHttpRequest = {
 
 const SNAPSHOT_ID = /^[A-Za-z0-9._-]{1,200}$/u;
 const SNAPSHOT_PART = /^[1-9][0-9]{0,8}$/u;
+
+const isImportId = Schema.is(ImportId);
+const isImportPartNumber = Schema.is(ImportPartNumber);
 
 const inventoryApiPath = (apiBaseUrl: string) => {
   const url = new URL(apiBaseUrl);
@@ -53,6 +58,20 @@ const isSnapshotPartPath = (apiPath: string, pathname: string): boolean => {
   return SNAPSHOT_ID.test(snapshotId) && SNAPSHOT_PART.test(partNumber);
 };
 
+const isImportPath = (apiPath: string, pathname: string): boolean => {
+  const prefix = `${apiPath}/sync/imports/`;
+  if (!pathname.startsWith(prefix)) return false;
+  const [importId, step, partNumber, ...extra] = pathname.slice(prefix.length).split("/");
+  if (extra.length > 0 || !isImportId(importId)) return false;
+  if (step === "commit") return partNumber === undefined;
+  return (
+    step === "parts" &&
+    partNumber !== undefined &&
+    SNAPSHOT_PART.test(partNumber) &&
+    isImportPartNumber(Number(partNumber))
+  );
+};
+
 const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest) => {
   const allowed = new URL(apiBaseUrl);
   const requested = new URL(request.url);
@@ -60,6 +79,7 @@ const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest
   const syncCommandPaths = SYNC_COMMAND_PATHS.map((command) => `${apiPath}/sync/${command}`);
   const routeAllowed =
     (request.method === "POST" && syncCommandPaths.includes(requested.pathname)) ||
+    (request.method === "POST" && isImportPath(apiPath, requested.pathname)) ||
     (request.method === "GET" && isReceiptPath(apiPath, requested.pathname)) ||
     (request.method === "GET" && isSnapshotPartPath(apiPath, requested.pathname));
   if (

@@ -26,6 +26,7 @@ import {
 import type { Workspace } from "@/host-access";
 import { signOut, useAuth } from "@/lib/auth";
 import { OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
+import { usePublishInProgress } from "@/lib/local-publish";
 
 type Identity = {
   readonly name: string;
@@ -121,6 +122,7 @@ function ThemeGroup() {
 export function NavUser() {
   const { snapshot, workspace } = useAuth();
   const { isMobile } = useSidebar();
+  const moving = usePublishInProgress();
   const signedIn = snapshot?.status === "authenticated";
   const identity = signedIn ? accountIdentity(snapshot.user) : DEVICE_IDENTITY;
   const sync = syncOf(workspace);
@@ -172,7 +174,7 @@ export function NavUser() {
               <>
                 <MenuSeparator />
                 <MenuGroup>
-                  <MenuItem onClick={() => void signOut()} variant="destructive">
+                  <MenuItem disabled={moving} onClick={() => void signOut()} variant="destructive">
                     <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />
                     Log out
                   </MenuItem>

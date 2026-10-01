@@ -14,9 +14,11 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import type { RestoreChoice, RestoreOutcome } from "../src/lib/workspace-backup";
+import type { PublishOffer, PublishProgress } from "../src/lib/workspace-publish";
 import {
   ReplicaInsightsSummaryInput,
   ReplicaProductInsightsInput,
@@ -33,7 +35,15 @@ import {
 } from "./backup-channels";
 import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
+  PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_OFFER_CHANNEL,
+  PUBLISH_PROGRESS_CHANNEL,
+  PUBLISH_START_CHANNEL,
+  type WorkspacePublishIpcBridge,
+} from "./publish-channels";
+import {
   admitReplicaKey,
+  LOCAL_REPLICA_KEY,
   makeReplicaAdmission,
   PROXY_CONCURRENCY,
   type ReplicaAdmission,
@@ -64,6 +74,13 @@ import {
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
+import {
+  discardPublish,
+  publishLocalWorkspace,
+  readPublishOffer,
+  type PublishPorts,
+} from "./replica-publish";
+import { isExpiredReplicaArchive } from "./replica-publish-files";
 import {
   backupFileName,
   removeReplicaFile,
@@ -116,13 +133,16 @@ type ReplicaSenderListener = {
   (event: "destroyed", listener: () => void): void;
 };
 
+export type ReplicaSentEvent =
+  | ReplicaCommitEvent
+  | ReplicaSyncHealthEvent
+  | ReplicaAnalyticsEvent
+  | PublishProgress;
+
 type ReplicaSender = {
   readonly id: number;
   readonly isDestroyed: () => boolean;
-  readonly send: (
-    channel: string,
-    event: ReplicaCommitEvent | ReplicaSyncHealthEvent | ReplicaAnalyticsEvent,
-  ) => void;
+  readonly send: (channel: string, event: ReplicaSentEvent) => void;
   readonly on: ReplicaSenderListener;
   readonly removeListener: ReplicaSenderListener;
 };
@@ -205,9 +225,27 @@ type BackupIpcHandlers = {
   ) => Promise<BackupResult<Channel>>;
 };
 
+const PUBLISH_CHANNEL_METHODS = {
+  [PUBLISH_OFFER_CHANNEL]: "offer",
+  [PUBLISH_START_CHANNEL]: "publish",
+  [PUBLISH_DISCARD_CHANNEL]: "discard",
+} satisfies Record<string, keyof WorkspacePublishIpcBridge>;
+
+type PublishResult<Channel extends keyof typeof PUBLISH_CHANNEL_METHODS> = BridgeResult<
+  WorkspacePublishIpcBridge[(typeof PUBLISH_CHANNEL_METHODS)[Channel]]
+>;
+
+type PublishIpcHandlers = {
+  readonly [Channel in keyof typeof PUBLISH_CHANNEL_METHODS]: (
+    event: ReplicaInvokeEvent,
+    input: ReplicaIpcInput,
+  ) => Promise<PublishResult<Channel>>;
+};
+
 type ReplicaIpcResult =
   | BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>
-  | BackupResult<keyof typeof BACKUP_CHANNEL_METHODS>;
+  | BackupResult<keyof typeof BACKUP_CHANNEL_METHODS>
+  | PublishResult<keyof typeof PUBLISH_CHANNEL_METHODS>;
 
 export type ReplicaIpcListener = (
   event: ReplicaInvokeEvent,
@@ -216,8 +254,9 @@ export type ReplicaIpcListener = (
 
 const prepareReplicaDirectory = async (directory: string) => {
   await mkdir(directory, { recursive: true });
+  const now = Date.now();
   const stale = (await readdir(directory)).filter(
-    (name) => !name.startsWith(REPLICA_STORAGE_PREFIX),
+    (name) => !name.startsWith(REPLICA_STORAGE_PREFIX) || isExpiredReplicaArchive(name, now),
   );
   await Promise.allSettled(
     stale.map((name) => rm(path.join(directory, name), { force: true, recursive: true })),
@@ -243,6 +282,16 @@ const EXHAUSTED_MESSAGE =
 const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
 
 const NO_WORKSPACE = "Open a workspace before using backups.";
+
+const PUBLISH_NEEDS_ORGANIZATION = "Open the organization that should receive this device's data.";
+
+const PUBLISH_LOCAL_OPEN = "Close the workspace on this device before moving its data.";
+
+const PUBLISH_UNDERWAY = "This device's data is already being moved.";
+
+const NO_PUBLISH_OFFER: PublishOffer = { _tag: "none" };
+
+const decodeOrganizationId = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 
 const failed = (message: string) => ({ _tag: "failed" as const, message });
 
@@ -279,6 +328,10 @@ export const registerReplicaWorkerIpc = (options: {
   };
   const closeGrace = options.closeGrace ?? Duration.seconds(8);
   const ownershipWait = options.ownershipWait ?? Duration.seconds(15);
+  const replicaDatabasePath = (key: string) =>
+    path.join(options.userDataPath, "replicas", sqliteReplicaFileName(key));
+  const localDatabasePath = replicaDatabasePath(LOCAL_REPLICA_KEY);
+  const publishTurn = Semaphore.makeUnsafe(1);
   const sessions = new Map<string, Session>();
   const stagedRestores = new Map<string, string>();
   const releasing = new Map<string, Set<Deferred.Deferred<void>>>();
@@ -837,16 +890,87 @@ export const registerReplicaWorkerIpc = (options: {
     },
   };
 
+  const publishPortsFor = (session: Session, organizationId: string): PublishPorts => ({
+    organizationId,
+    databasePath: localDatabasePath,
+    worker: (use) =>
+      onceOpenSession(session, (current) =>
+        current.supervisor.use((worker) => use(worker.client)),
+      ).pipe(Effect.mapError((cause) => new ReplicaWorkerFailure({ message: messageOf(cause) }))),
+    progress: (progress) =>
+      Effect.try(() => {
+        if (!session.sender.isDestroyed()) session.sender.send(PUBLISH_PROGRESS_CHANNEL, progress);
+      }).pipe(Effect.ignore),
+  });
+
+  const withLocalReplicaClosed = <A>(
+    session: Session | undefined,
+    organizationId: string,
+    use: (ports: PublishPorts) => Effect.Effect<A>,
+    otherwise: (message: string) => A,
+  ): Effect.Effect<A> =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        if (
+          session === undefined ||
+          session.identity.authority !== "remote" ||
+          session.identity.organizationId !== organizationId
+        ) {
+          return otherwise(PUBLISH_NEEDS_ORGANIZATION);
+        }
+        const own = yield* holdOwnership(localDatabasePath);
+        yield* awaitRelease(localDatabasePath, own);
+        if ([...sessions.values()].some((open) => open.databasePath === localDatabasePath)) {
+          return otherwise(PUBLISH_LOCAL_OPEN);
+        }
+        return yield* use(publishPortsFor(session, organizationId));
+      }),
+    ).pipe(Effect.catch((cause) => Effect.succeed(otherwise(messageOf(cause)))));
+
+  const publishHandlers: PublishIpcHandlers = {
+    [PUBLISH_OFFER_CHANNEL]: async (event, input) =>
+      Effect.runPromise(
+        withLocalReplicaClosed(
+          currentSession(event),
+          decodeOrganizationId(input),
+          readPublishOffer,
+          () => NO_PUBLISH_OFFER,
+        ),
+      ),
+    [PUBLISH_START_CHANNEL]: async (event, input) =>
+      Effect.runPromise(
+        publishTurn
+          .withPermitsIfAvailable(1)(
+            withLocalReplicaClosed(
+              currentSession(event),
+              decodeOrganizationId(input),
+              publishLocalWorkspace,
+              failed,
+            ),
+          )
+          .pipe(Effect.map(Option.getOrElse(() => failed(PUBLISH_UNDERWAY)))),
+      ),
+    [PUBLISH_DISCARD_CHANNEL]: async (event, input) =>
+      Effect.runPromise(
+        publishTurn
+          .withPermitsIfAvailable(1)(
+            withLocalReplicaClosed(
+              currentSession(event),
+              decodeOrganizationId(input),
+              discardPublish,
+              () => NO_PUBLISH_OFFER,
+            ),
+          )
+          .pipe(Effect.map(Option.getOrElse(() => NO_PUBLISH_OFFER))),
+      ),
+  };
+
   const handlers: ReplicaIpcHandlers = {
     [REPLICA_OPEN_CHANNEL]: async (event, input) => {
       assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
       const identity = decodeOpenInput(input);
       const workspaceToken = crypto.randomUUID();
-      const databasePath = path.join(
-        options.userDataPath,
-        "replicas",
-        sqliteReplicaFileName(Result.getOrThrow(admitReplicaKey(identity))),
-      );
+      const databasePath = replicaDatabasePath(Result.getOrThrow(admitReplicaKey(identity)));
       const scope = Effect.runSync(Scope.make());
       const gone = Effect.runSync(Deferred.make<void>());
       const release = () => {
@@ -1001,7 +1125,7 @@ export const registerReplicaWorkerIpc = (options: {
       ),
   };
 
-  const registered = { ...handlers, ...backupHandlers } satisfies Record<
+  const registered = { ...handlers, ...backupHandlers, ...publishHandlers } satisfies Record<
     string,
     ReplicaIpcListener
   >;

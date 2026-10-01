@@ -7,9 +7,11 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { signOut, useAuth } from "@/lib/auth";
+import { usePublishInProgress } from "@/lib/local-publish";
 
 export function AccountSettings() {
   const auth = useAuth();
+  const moving = usePublishInProgress();
   const user = auth.snapshot?.status === "authenticated" ? auth.snapshot.user : undefined;
 
   if (!user) return <SignInToSync title="Account" />;
@@ -27,6 +29,7 @@ export function AccountSettings() {
         </div>
         <Button
           className="shrink-0"
+          disabled={moving}
           onClick={() => void signOut()}
           size="sm"
           title="Local data stays on this device until another account signs in."

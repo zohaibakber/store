@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/menu";
 import type { OpenWorkspace } from "@/host-access";
 import { useAuth } from "@/lib/auth";
+import { usePublishInProgress } from "@/lib/local-publish";
 import { cn } from "@/lib/utils";
 import { useOpenWorkspace, workspaceKey, workspaceName } from "@/lib/workspace";
 
@@ -54,9 +55,11 @@ function WorkspaceSwitcher({
   readonly workspaces: ReadonlyArray<OpenWorkspace>;
 }) {
   const openWorkspace = useOpenWorkspace();
+  const moving = usePublishInProgress();
   return (
     <Menu>
       <MenuTrigger
+        disabled={moving}
         render={
           <Button
             aria-label={`Workspace: ${workspaceName(current)}. Switch workspace`}

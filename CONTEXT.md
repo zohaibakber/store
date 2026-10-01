@@ -13,13 +13,20 @@ _Avoid_: Session, active organization
 **Local workspace.**
 A workspace with no account, shown as "This device" on desktop. Its catalog is
 decided on the device by the local authority and never leaves it, except as a
-backup file the user saves.
+backup file the user saves or when its owner publishes it.
 _Avoid_: Guest mode, offline mode, demo
 
 **Local authority.**
 The on-device decider that accepts or rejects commands for a local workspace
 using the same rules as the Postgres authority.
 _Avoid_: Offline sync, fake server
+
+**Publish.**
+The one-time move of a local workspace's catalog into a new, empty organization.
+The device sends its rows, the authority imports them in one transaction, and
+every replica, including the publishing device, bootstraps from a snapshot. The
+local file is set aside, never merged.
+_Avoid_: Migrate, upload, merge
 
 **Catalog layout.**
 The physical columns for catalog entities in authoritative Postgres and in the

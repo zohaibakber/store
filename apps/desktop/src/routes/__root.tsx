@@ -12,6 +12,7 @@ import { AppLoading } from "@/components/app/loading";
 import { PageLoading } from "@/components/app/loading-spinner";
 import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NotFound } from "@/components/app/not-found";
+import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
 import { PageActionsProvider } from "@/components/shared/page-actions";
@@ -104,6 +105,7 @@ function AppShell() {
               {inventory && lease ? (
                 <InventoryReady>
                   <LocalCatalogWitness workspace={workspace} />
+                  <PublishOffer />
                   <Suspense fallback={<PageLoading />}>
                     <Outlet />
                   </Suspense>

@@ -255,7 +255,13 @@ describe("POST /api/sync/commands on Postgres", () => {
           readSnapshotPartEncoded: unused,
         };
         const server = yield* Effect.promise(() =>
-          serverFor(makeInventorySyncAuthority({ commands, snapshots })),
+          serverFor(
+            makeInventorySyncAuthority({
+              commands,
+              snapshots,
+              imports: { stagePart: unused, commit: unused },
+            }),
+          ),
         );
         return yield* use({ commands, handler: server.handler, published: server.published });
       }).pipe(Effect.provide(layer()), Effect.scoped),

@@ -28,22 +28,35 @@ const sidecarsOf = (file: string) => SIDECAR_SUFFIXES.map((suffix) => `${file}${
 export const removeReplicaFile = (file: string): Effect.Effect<void> =>
   removeAll([file, ...sidecarsOf(file)]);
 
+const closedUncleanly = (databasePath: string): Effect.Effect<boolean> =>
+  Effect.tryPromise(() => stat(`${databasePath}-wal`)).pipe(
+    Effect.map((wal) => wal.size > 0),
+    Effect.orElseSucceed(() => false),
+  );
+
+export const detachReplicaFile = Effect.fn("ReplicaRestore.detach")(function* (
+  databasePath: string,
+) {
+  if (yield* closedUncleanly(databasePath)) {
+    return yield* failure("The workspace did not close cleanly.");
+  }
+  yield* Effect.forEach(
+    sidecarsOf(databasePath),
+    (file) => attempt(() => rm(file, { force: true }), "The workspace file is still in use."),
+    { discard: true },
+  );
+});
+
 export const swapReplicaFile = Effect.fn("ReplicaRestore.swap")(function* (input: {
   readonly databasePath: string;
   readonly stagedPath: string;
   readonly previousPath: string;
 }) {
-  const unsettled = yield* Effect.tryPromise(() => stat(`${input.databasePath}-wal`)).pipe(
-    Effect.map((wal) => wal.size > 0),
-    Effect.orElseSucceed(() => false),
-  );
-  if (unsettled) return yield* failure("The workspace did not close cleanly.");
+  if (yield* closedUncleanly(input.databasePath)) {
+    return yield* failure("The workspace did not close cleanly.");
+  }
   yield* attempt(() => stat(input.stagedPath), "The chosen backup is no longer available.");
-  yield* Effect.forEach(
-    sidecarsOf(input.databasePath),
-    (file) => attempt(() => rm(file, { force: true }), "The workspace file is still in use."),
-    { discard: true },
-  );
+  yield* detachReplicaFile(input.databasePath);
   yield* Effect.tryPromise(() => link(input.databasePath, input.previousPath)).pipe(
     Effect.catch(() =>
       attempt(

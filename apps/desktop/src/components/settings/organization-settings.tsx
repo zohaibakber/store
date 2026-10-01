@@ -6,6 +6,7 @@ import { AcceptInvitationCard } from "@/components/settings/organization/accept-
 import { OrganizationInvitationsCard } from "@/components/settings/organization/invitations-card";
 import { OrganizationMembersCard } from "@/components/settings/organization/members-card";
 import { OrganizationProfileCard } from "@/components/settings/organization/profile-card";
+import { PublishSettings } from "@/components/settings/publish-settings";
 import { SignInToSync } from "@/components/settings/sign-in-to-sync";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -67,8 +68,11 @@ export function OrganizationSettings() {
   if (!snapshot) return <SignInToSync title="Organization" />;
 
   return (
-    <OrganizationProvider>
-      <OrganizationPanel userId={snapshot.user.id} />
-    </OrganizationProvider>
+    <>
+      <OrganizationProvider>
+        <OrganizationPanel userId={snapshot.user.id} />
+      </OrganizationProvider>
+      <PublishSettings />
+    </>
   );
 }

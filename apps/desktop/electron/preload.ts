@@ -22,6 +22,13 @@ import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inven
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
+  PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_OFFER_CHANNEL,
+  PUBLISH_PROGRESS_CHANNEL,
+  PUBLISH_START_CHANNEL,
+  type WorkspacePublishIpcBridge,
+} from "./publish-channels";
+import {
   REPLICA_ANALYTICS_CHANNEL,
   REPLICA_CANCEL_READ_CHANNEL,
   REPLICA_COMMAND_STATUS_CHANNEL,
@@ -118,6 +125,22 @@ const workspaceBackup: WorkspaceBackupIpcBridge = {
 };
 
 contextBridge.exposeInMainWorld("workspaceBackup", workspaceBackup);
+
+const workspacePublish: WorkspacePublishIpcBridge = {
+  offer: (organizationId) => ipcRenderer.invoke(PUBLISH_OFFER_CHANNEL, organizationId),
+  publish: (organizationId) => ipcRenderer.invoke(PUBLISH_START_CHANNEL, organizationId),
+  discard: (organizationId) => ipcRenderer.invoke(PUBLISH_DISCARD_CHANNEL, organizationId),
+  onProgress(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: Parameters<typeof callback>[0],
+    ) => callback(progress);
+    ipcRenderer.on(PUBLISH_PROGRESS_CHANNEL, listener);
+    return () => ipcRenderer.off(PUBLISH_PROGRESS_CHANNEL, listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("workspacePublish", workspacePublish);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

@@ -10,6 +10,7 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 
 import type { WorkspaceBackupIpcBridge } from "./backup-channels";
 import type { InventoryHttpBridge } from "./inventory-http-channels";
+import type { WorkspacePublishIpcBridge } from "./publish-channels";
 import type { ReplicaIpcBridge } from "./replica-channels";
 
 declare global {
@@ -25,6 +26,7 @@ declare global {
     inventoryHttp?: InventoryHttpBridge;
     replica?: ReplicaIpcBridge;
     workspaceBackup?: WorkspaceBackupIpcBridge;
+    workspacePublish?: WorkspacePublishIpcBridge;
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };
