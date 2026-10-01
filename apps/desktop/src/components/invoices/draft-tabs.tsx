@@ -133,13 +133,7 @@ function SaleDraftTabs() {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [draftId]);
 
-  if (!several) {
-    return started ? (
-      <PageActions>
-        <HoldSaleButton started />
-      </PageActions>
-    ) : null;
-  }
+  if (!several && !started) return null;
 
   return (
     <PageActions>
