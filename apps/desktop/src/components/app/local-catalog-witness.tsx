@@ -1,29 +1,32 @@
-import { Suspense, useEffect } from "react";
+import { useEffect } from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
-import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 import { witnessBoundLocalCatalog } from "@/session/workspace-session";
 
-function LocalCatalogState() {
-  const empty = useCatalogIsEmpty();
+function LocalFileWitness({ workspace }: { readonly workspace: "Local" | "Organization" }) {
   useEffect(() => {
-    void witnessBoundLocalCatalog(empty ? "empty" : "stocked").catch(() => undefined);
-  }, [empty]);
+    const read = appHost().publish?.localCatalog;
+    if (!read) return;
+    let current = true;
+    void read()
+      .then((report) => {
+        if (!current || report._tag === "unknown") return;
+        return witnessBoundLocalCatalog(report._tag);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [workspace]);
   return null;
 }
 
 export function LocalCatalogWitness({ workspace }: { readonly workspace: Workspace }) {
   switch (workspace._tag) {
     case "Local":
-      return (
-        <AppErrorBoundary fallback={null}>
-          <Suspense fallback={null}>
-            <LocalCatalogState />
-          </Suspense>
-        </AppErrorBoundary>
-      );
     case "Organization":
+      return <LocalFileWitness workspace={workspace._tag} />;
     case "None":
       return null;
   }

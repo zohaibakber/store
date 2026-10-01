@@ -23,6 +23,7 @@ import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
   PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_PROGRESS_CHANNEL,
   PUBLISH_START_CHANNEL,
@@ -130,6 +131,7 @@ const workspacePublish: WorkspacePublishIpcBridge = {
   offer: (organizationId) => ipcRenderer.invoke(PUBLISH_OFFER_CHANNEL, organizationId),
   publish: (organizationId) => ipcRenderer.invoke(PUBLISH_START_CHANNEL, organizationId),
   discard: (organizationId) => ipcRenderer.invoke(PUBLISH_DISCARD_CHANNEL, organizationId),
+  localCatalog: () => ipcRenderer.invoke(PUBLISH_LOCAL_CATALOG_CHANNEL),
   onProgress(callback) {
     const listener = (
       _event: Electron.IpcRendererEvent,

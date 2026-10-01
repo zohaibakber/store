@@ -146,7 +146,7 @@ export type SyncEngineMutex = {
 };
 
 type SyncEngineOptions = {
-  readonly digestVerificationIntervalMillis?: number;
+  readonly digestVerificationIntervalMillis?: number | "never";
   readonly pullMaxBytes?: number;
 };
 

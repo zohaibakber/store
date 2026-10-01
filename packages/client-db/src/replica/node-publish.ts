@@ -77,7 +77,7 @@ type ReplicaPublishChunk =
 
 export type ReplicaPublishCommit =
   | { readonly _tag: "committed" }
-  | { readonly _tag: "refused"; readonly message: string }
+  | { readonly _tag: "refused"; readonly code: string; readonly message: string }
   | { readonly _tag: "unconfirmed"; readonly message: string };
 
 const OUTSTANDING_STATUSES = ["pending", "sending", "accepted_awaiting_integration"] as const;
@@ -313,9 +313,18 @@ export const stagePublish = (input: {
 
 const decodeImportRequest = Schema.decodeUnknownEffect(ImportCatalogRequest);
 
-const refused = (failure: { readonly message: string }): ReplicaPublishCommit => ({
+const refused = (failure: {
+  readonly code: string;
+  readonly message: string;
+}): ReplicaPublishCommit => ({
   _tag: "refused",
+  code: failure.code,
   message: failure.message,
+});
+
+const DIGEST_MISMATCH = refused({
+  code: "ENTITY_CONFLICT",
+  message: "The rows that arrived do not match this device's data. Nothing was moved.",
 });
 
 export const commitPublish = (input: {
@@ -324,19 +333,28 @@ export const commitPublish = (input: {
   readonly importId: string;
   readonly seal: ReplicaPublishSeal;
   readonly client: ImportClient;
-}): Effect.Effect<ReplicaPublishCommit> =>
-  withReplica(input.path, (handle) => verifySealed(handle, input.importId, input.seal)).pipe(
+  readonly acceptChangedFile?: boolean;
+}): Effect.Effect<ReplicaPublishCommit> => {
+  const sealed = input.acceptChangedFile
+    ? Effect.void
+    : withReplica(input.path, (handle) => verifySealed(handle, input.importId, input.seal));
+  return sealed.pipe(
     Effect.andThen(decodeImportRequest({ organizationId: input.organizationId, ...input.seal })),
     Effect.flatMap((request) => input.client.commit(input.importId, request)),
-    Effect.as<ReplicaPublishCommit>({ _tag: "committed" }),
+    Effect.map((result): ReplicaPublishCommit =>
+      result.digest === input.seal.digest ? { _tag: "committed" } : DIGEST_MISMATCH,
+    ),
     Effect.catchTags({
-      ReplicaPublishFailure: (failure) => Effect.succeed(refused(failure)),
-      SchemaError: () => Effect.succeed(refused({ message: "The move is malformed." })),
+      ReplicaPublishFailure: (failure) =>
+        Effect.succeed(refused({ code: failure.reason, message: failure.message })),
+      SchemaError: () =>
+        Effect.succeed(refused({ code: "INVALID_OPERATION", message: "The move is malformed." })),
       ImportRefused: (failure) => Effect.succeed(refused(failure)),
       ImportUnavailable: (failure) =>
         Effect.succeed<ReplicaPublishCommit>({ _tag: "unconfirmed", message: failure.message }),
     }),
   );
+};
 
 export { ImportRefused, makeProxyImportClient } from "./proxy-import";
 export type { ImportClient } from "./proxy-import";

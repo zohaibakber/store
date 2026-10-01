@@ -1,10 +1,17 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import { readPublishSummary } from "@store/client-db/node-publish";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
+import {
+  localCatalogReport,
+  standingFromRowCount,
+  UNKNOWN_CATALOG,
+  type LocalCatalogReport,
+} from "../src/lib/local-catalog-standing";
 import type { CatalogCounts } from "../src/lib/workspace-backup";
 import type { PublishOffer, PublishOutcome, PublishProgress } from "../src/lib/workspace-publish";
 import {
@@ -17,18 +24,47 @@ import {
 } from "./replica-publish-files";
 import { removeReplicaFile } from "./replica-restore-files";
 import type { ReplicaPublishSummary, ReplicaWorkerFailure } from "./replica-rpc";
-import type { ReplicaWorkerClient } from "./replica-supervisor";
+
+type Summary = typeof ReplicaPublishSummary.Type;
+
+type StageEvent =
+  | { readonly _tag: "staged"; readonly rowCount: number }
+  | {
+      readonly _tag: "sealed";
+      readonly partCount: number;
+      readonly digest: string;
+      readonly digestVersion: number;
+    };
+
+type PublishCommitResult =
+  | { readonly _tag: "committed" }
+  | { readonly _tag: "refused"; readonly code: string; readonly message: string }
+  | { readonly _tag: "unconfirmed"; readonly message: string };
+
+type PublishClient = {
+  readonly PublishSummary: (input: {
+    readonly sourcePath: string;
+  }) => Effect.Effect<Summary, { readonly message: string }>;
+  readonly PublishCommit: (input: {
+    readonly sourcePath: string;
+    readonly importId: Summary["importId"];
+    readonly seal: PublishMarker["seal"];
+    readonly acceptChangedFile: boolean;
+  }) => Effect.Effect<PublishCommitResult, { readonly message: string }>;
+  readonly PublishStage: (input: {
+    readonly sourcePath: string;
+    readonly importId: Summary["importId"];
+  }) => Stream.Stream<StageEvent, { readonly message: string }>;
+};
 
 export type PublishPorts = {
   readonly organizationId: string;
   readonly databasePath: string;
   readonly worker: <A, E extends { readonly message: string }>(
-    use: (client: ReplicaWorkerClient) => Effect.Effect<A, E>,
+    use: (client: PublishClient) => Effect.Effect<A, E>,
   ) => Effect.Effect<A, ReplicaWorkerFailure>;
   readonly progress: (progress: PublishProgress) => Effect.Effect<void>;
 };
-
-type Summary = typeof ReplicaPublishSummary.Type;
 
 type Standing =
   | { readonly _tag: "absent" }
@@ -42,6 +78,10 @@ type Standing =
 const NO_OFFER: PublishOffer = { _tag: "none" };
 
 const NOTHING_TO_MOVE = "This device has no data to move.";
+
+const IMPORT_CONFLICT = "ENTITY_CONFLICT";
+
+const FILE_CHANGED = "changed";
 
 const MOVING_ELSEWHERE =
   "This device's data is already being moved to another organization. Open that organization to finish, or cancel that move.";
@@ -64,18 +104,26 @@ const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: 
     client.PublishSummary({ sourcePath: ports.databasePath }),
   );
   const marker = yield* readPublishMarker(ports.databasePath);
-  const pending = Option.filter(marker, (written) => written.importId === summary.importId);
-  if (Option.isSome(marker) && Option.isNone(pending)) {
-    yield* removePublishMarker(ports.databasePath);
+  if (Option.isNone(marker)) return { _tag: "here", summary, pending: marker } satisfies Standing;
+  if (marker.value.organizationId !== ports.organizationId) {
+    return {
+      _tag: "elsewhere",
+      organizationId: marker.value.organizationId,
+      summary,
+    } satisfies Standing;
   }
-  return Option.isSome(pending) && pending.value.organizationId !== ports.organizationId
-    ? ({
-        _tag: "elsewhere",
-        organizationId: pending.value.organizationId,
-        summary,
-      } satisfies Standing)
-    : ({ _tag: "here", summary, pending } satisfies Standing);
+  // The sealed import id stays put after later local commits. Dropping it
+  // would stage a new import into an organization that already accepted it.
+  return { _tag: "here", summary, pending: marker } satisfies Standing;
 });
+
+export const readLocalCatalogStanding = (databasePath: string): Effect.Effect<LocalCatalogReport> =>
+  readPublishSummary(databasePath).pipe(
+    Effect.map((summary) => localCatalogReport(standingFromRowCount(summary.rows))),
+    Effect.catchTag("ReplicaPublishFailure", (failure) =>
+      Effect.succeed(failure.reason === "empty" ? localCatalogReport("empty") : UNKNOWN_CATALOG),
+    ),
+  );
 
 export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffer> =>
   readStanding(ports).pipe(
@@ -105,12 +153,17 @@ export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffe
 export const discardPublish = (ports: PublishPorts): Effect.Effect<PublishOffer> =>
   removePublishMarker(ports.databasePath).pipe(Effect.andThen(readPublishOffer(ports)));
 
-const commit = (ports: PublishPorts, marker: Pick<PublishMarker, "importId" | "seal">) =>
+const commit = (
+  ports: PublishPorts,
+  marker: Pick<PublishMarker, "importId" | "seal">,
+  acceptChangedFile = false,
+) =>
   ports.worker((client) =>
     client.PublishCommit({
       sourcePath: ports.databasePath,
       importId: marker.importId,
       seal: marker.seal,
+      acceptChangedFile,
     }),
   );
 
@@ -132,14 +185,25 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
   marker: PublishMarker,
   counts: CatalogCounts,
 ) {
-  const resumed = yield* commit(ports, marker);
+  const first = yield* commit(ports, marker);
+  // A later local commit changes the import id. Ask again with the stored
+  // seal: the server returns the previous result when that id and digest
+  // already landed, and commits the sealed parts only when it has not.
+  const resumed =
+    first._tag === "refused" && first.code === FILE_CHANGED
+      ? yield* commit(ports, marker, true)
+      : first;
   switch (resumed._tag) {
     case "committed":
       return Option.some(yield* setAside(ports, counts));
     case "unconfirmed":
       return Option.some(failed(resumed.message));
     case "refused":
-      return Option.none<PublishOutcome>();
+      // The organization already holds inventory, or the stored seal still does
+      // not match this file. Either way the sealed import stays on disk.
+      return resumed.code === IMPORT_CONFLICT || resumed.code === FILE_CHANGED
+        ? Option.some(failed(resumed.message))
+        : Option.none<PublishOutcome>();
   }
 });
 

@@ -237,10 +237,12 @@ export const RELEASED_CLAIM_FIELDS = {
 export const nextUploadClaim = <Row>(pendingInSequence: ReadonlyArray<Row>): Row | undefined =>
   pendingInSequence[0];
 
+export type StaleClaimCutoff = number | "any";
+
 export const isStaleClaim = (
   row: { readonly claimedAt: number | null },
-  staleBefore: number,
-): boolean => row.claimedAt === null || row.claimedAt <= staleBefore;
+  staleBefore: StaleClaimCutoff,
+): boolean => staleBefore === "any" || row.claimedAt === null || row.claimedAt <= staleBefore;
 
 export const shouldApplyCommitSequence = (
   appliedCommitSequence: string,

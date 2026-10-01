@@ -36,6 +36,7 @@ import {
 import { assertTrustedIpcSender, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
   PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_PROGRESS_CHANNEL,
   PUBLISH_START_CHANNEL,
@@ -77,6 +78,7 @@ import {
 import {
   discardPublish,
   publishLocalWorkspace,
+  readLocalCatalogStanding,
   readPublishOffer,
   type PublishPorts,
 } from "./replica-publish";
@@ -229,6 +231,7 @@ const PUBLISH_CHANNEL_METHODS = {
   [PUBLISH_OFFER_CHANNEL]: "offer",
   [PUBLISH_START_CHANNEL]: "publish",
   [PUBLISH_DISCARD_CHANNEL]: "discard",
+  [PUBLISH_LOCAL_CATALOG_CHANNEL]: "localCatalog",
 } satisfies Record<string, keyof WorkspacePublishIpcBridge>;
 
 type PublishResult<Channel extends keyof typeof PUBLISH_CHANNEL_METHODS> = BridgeResult<
@@ -895,7 +898,13 @@ export const registerReplicaWorkerIpc = (options: {
     databasePath: localDatabasePath,
     worker: (use) =>
       onceOpenSession(session, (current) =>
-        current.supervisor.use((worker) => use(worker.client)),
+        current.supervisor.use((worker) =>
+          use({
+            PublishSummary: ({ sourcePath }) => worker.client.PublishSummary({ sourcePath }),
+            PublishCommit: (input) => worker.client.PublishCommit(input),
+            PublishStage: (input) => worker.client.PublishStage(input),
+          }),
+        ),
       ).pipe(Effect.mapError((cause) => new ReplicaWorkerFailure({ message: messageOf(cause) }))),
     progress: (progress) =>
       Effect.try(() => {
@@ -963,6 +972,8 @@ export const registerReplicaWorkerIpc = (options: {
           )
           .pipe(Effect.map(Option.getOrElse(() => NO_PUBLISH_OFFER))),
       ),
+    [PUBLISH_LOCAL_CATALOG_CHANNEL]: async () =>
+      Effect.runPromise(readLocalCatalogStanding(localDatabasePath)),
   };
 
   const handlers: ReplicaIpcHandlers = {

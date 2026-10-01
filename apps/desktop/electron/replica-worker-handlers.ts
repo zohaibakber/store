@@ -390,13 +390,14 @@ export const makeReplicaWorkerHandlers = <R>(
           stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
             Stream.mapError(fileFailure),
           ),
-        PublishCommit: ({ sourcePath, importId, seal }) =>
+        PublishCommit: ({ sourcePath, importId, seal, acceptChangedFile }) =>
           commitPublish({
             path: sourcePath,
             organizationId: config.organizationId,
             importId,
             seal,
             client: link.imports,
+            acceptChangedFile,
           }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
         Commits: () =>
           opened === undefined

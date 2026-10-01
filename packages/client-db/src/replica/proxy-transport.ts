@@ -57,7 +57,9 @@ const SyncHttpErrorBody = Schema.Struct({
   }),
 });
 
-const decodeHttpErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(SyncHttpErrorBody));
+export const decodeHttpErrorBody = Schema.decodeUnknownOption(
+  Schema.fromJsonString(SyncHttpErrorBody),
+);
 
 const mapHttpFailure = (response: SyncProxyResponse, now: number) => {
   const { status, bodyText } = response;

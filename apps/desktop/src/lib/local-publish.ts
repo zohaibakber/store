@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
-import { useContext } from "react";
+import { use } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
@@ -116,7 +116,7 @@ export const usePublishTarget = (): PublishTarget | null => {
 };
 
 export const useLocalPublish = (organization: PublishTarget) => {
-  const registry = useContext(RegistryContext);
+  const registry = use(RegistryContext);
   const offer = Option.getOrElse(
     AsyncResult.value(useAtomValue(offerAtom(organization.id))),
     () => NO_OFFER,

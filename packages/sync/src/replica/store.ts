@@ -22,6 +22,7 @@ import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
 import type { ClaimNextUploadInput, UploadClaim } from "./commands";
+import type { StaleClaimCutoff } from "./decisions";
 import type { ReplicaStoreError } from "./errors";
 import type { ReplicaRegistrationOutcome } from "./registration";
 
@@ -99,7 +100,7 @@ interface ReplicaUploadClaimStore {
   ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
 
   readonly recoverStaleUploadClaims: (
-    staleBefore: number,
+    staleBefore: StaleClaimCutoff,
   ) => Effect.Effect<Committed<number>, ReplicaStoreError>;
 }
 
