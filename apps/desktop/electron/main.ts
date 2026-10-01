@@ -8,7 +8,17 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  session,
+  shell,
+} from "electron";
 
 import { AuthBroker } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
@@ -31,6 +41,7 @@ import { registerReplicaWorkerIpc, type ReplicaBackupDialogs } from "./replica-i
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
+import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
 import { setupUpdater } from "./updater";
 import { registerWebContentsSecurity } from "./web-contents-security";
@@ -262,6 +273,19 @@ const backupDialogs: ReplicaBackupDialogs = {
   },
 };
 
+const choosePdfDestination = async (suggestedName: string) => {
+  const options = {
+    title: "Save as PDF",
+    buttonLabel: "Save",
+    defaultPath: path.join(app.getPath("documents"), suggestedName),
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  };
+  const chosen = win
+    ? await dialog.showSaveDialog(win, options)
+    : await dialog.showSaveDialog(options);
+  return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
+};
+
 const publishReplicaForeground = (visible: boolean) => {
   replicaWorker
     ?.setForeground(visible)
@@ -400,6 +424,13 @@ void app.whenReady().then(async () => {
   registerNewSaleAccelerator();
   registerAuthIpc();
   registerServerIpc();
+  registerShareIpc({
+    ipcMain,
+    allowedOrigins: allowedRendererOrigins,
+    openExternal: (url) => shell.openExternal(url),
+    writeClipboardText: (text) => clipboard.writeText(text),
+    choosePdfDestination,
+  });
   createWindow();
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({

@@ -46,6 +46,12 @@ import {
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
+import {
+  SHARE_COPY_TEXT_CHANNEL,
+  SHARE_OPEN_EXTERNAL_CHANNEL,
+  SHARE_SAVE_PDF_CHANNEL,
+  type ShareIpcBridge,
+} from "./share-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
@@ -118,6 +124,14 @@ const workspaceBackup: WorkspaceBackupIpcBridge = {
 };
 
 contextBridge.exposeInMainWorld("workspaceBackup", workspaceBackup);
+
+const sharing: ShareIpcBridge = {
+  openExternal: (url) => ipcRenderer.invoke(SHARE_OPEN_EXTERNAL_CHANNEL, url),
+  copyText: (text) => ipcRenderer.invoke(SHARE_COPY_TEXT_CHANNEL, text),
+  savePdf: (fileStem) => ipcRenderer.invoke(SHARE_SAVE_PDF_CHANNEL, fileStem),
+};
+
+contextBridge.exposeInMainWorld("sharing", sharing);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

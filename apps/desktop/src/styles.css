@@ -319,3 +319,29 @@
     }
   }
 }
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: var(--color-white);
+    --foreground: var(--color-black);
+    --muted-foreground: var(--color-neutral-600);
+    --border: var(--color-neutral-300);
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: var(--color-white) !important;
+  }
+
+  body:has(> [data-print-root]) > :not([data-print-root]) {
+    display: none !important;
+  }
+}

@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
+import { isWhatsAppUrl } from "@store/services/purchasing";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 
@@ -73,6 +74,15 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
     },
     analyseInvoices: (files) => broker.analyseInvoices(files),
     newSaleShortcut: altNewSaleShortcut,
+    openExternal: async (url) => {
+      if (!isWhatsAppUrl(url)) throw new Error("Only WhatsApp links can be opened.");
+      window.open(url, "_blank", "noopener");
+    },
+    copyText: (text) => navigator.clipboard.writeText(text),
+    savePdf: async () => {
+      window.print();
+      return { _tag: "printed" };
+    },
   };
 
   return {

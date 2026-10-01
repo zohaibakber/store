@@ -374,9 +374,7 @@ export function PurchaseOrderPage({
               <HugeiconsIcon aria-hidden="true" icon={PackageReceiveIcon} />
               Receive
             </ShortcutButton>
-            {order.status === "draft" ? (
-              <SendOrderAction disabled={!canSend} order={order} supplier={supplier} />
-            ) : null}
+            <SendOrderAction canMarkSent={canSend} order={order} supplier={supplier} />
           </PageAction>
         ) : null}
       </PageHeader>
