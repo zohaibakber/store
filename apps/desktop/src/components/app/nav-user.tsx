@@ -1,4 +1,12 @@
-import { ComputerIcon, Login01Icon, LogoutIcon, SettingsIcon } from "@hugeicons/core-free-icons";
+import {
+  ComputerIcon,
+  Login01Icon,
+  LogoutIcon,
+  Moon02Icon,
+  SettingsIcon,
+  Sun03Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
@@ -12,8 +20,6 @@ import {
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
@@ -97,28 +103,34 @@ const syncOf = (workspace: Workspace): SyncSlots => {
   }
 };
 
+const THEMES = [
+  { value: "system", label: "System", icon: ComputerIcon },
+  { value: "light", label: "Light", icon: Sun03Icon },
+  { value: "dark", label: "Dark", icon: Moon02Icon },
+] as const;
+
 function ThemeGroup() {
   const { preference, setTheme } = useTheme();
   return (
     <MenuGroup>
       <MenuGroupLabel>Theme</MenuGroupLabel>
-      <MenuRadioGroup
-        aria-label="Theme"
-        onValueChange={(value) => {
-          if (value === "system" || value === "light" || value === "dark") setTheme(value);
-        }}
-        value={preference}
-      >
-        <MenuRadioItem closeOnClick={false} value="system">
-          System
-        </MenuRadioItem>
-        <MenuRadioItem closeOnClick={false} value="light">
-          Light
-        </MenuRadioItem>
-        <MenuRadioItem closeOnClick={false} value="dark">
-          Dark
-        </MenuRadioItem>
-      </MenuRadioGroup>
+      {THEMES.map((theme) => (
+        <MenuItem
+          aria-checked={preference === theme.value}
+          closeOnClick={false}
+          key={theme.value}
+          onClick={() => setTheme(theme.value)}
+          role="menuitemradio"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={theme.icon} />
+          {theme.label}
+          {preference === theme.value ? (
+            <span className="ms-auto inline-flex">
+              <HugeiconsIcon aria-hidden="true" className="size-4" icon={Tick02Icon} />
+            </span>
+          ) : null}
+        </MenuItem>
+      ))}
     </MenuGroup>
   );
 }
