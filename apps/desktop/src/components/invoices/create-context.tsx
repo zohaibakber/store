@@ -221,6 +221,9 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,
         type: "success",
       });
+      setLines([]);
+      setCustomerName("");
+      setBulkDiscount(0);
       await navigate({
         to: "/invoices/$invoiceId",
         params: { invoiceId: invoice.invoiceId },
