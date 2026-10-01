@@ -18,7 +18,7 @@ export const Website = Cloudflare.Website.Vite(
       rootDir: import.meta.dirname,
       domain: siteHostname,
       env: {
-        VITE_API_URL: Output.interpolate`${api.url}`,
+        VITE_API_URL: Output.map(api.routes, () => `https://${siteHostname}`),
         VITE_AUTH_URL: Output.interpolate`${auth.url}`,
       },
       assets: { notFoundHandling: "single-page-application" as const },
