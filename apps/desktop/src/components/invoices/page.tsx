@@ -7,6 +7,7 @@ import { DataTable, DataTableFilter } from "@/components/shared/data-table";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
+import { usePageInRange } from "@/hooks/use-page-in-range";
 import {
   useSuspenseInvoiceCount,
   useSuspenseInvoicePage,
@@ -29,6 +30,13 @@ function InvoicesPage({
   const router = useRouter();
   const rows = useSuspenseInvoicePage(request);
   const total = useSuspenseInvoiceCount(request.filters);
+  usePageInRange({
+    page: view.page,
+    pageSize: view.size,
+    total,
+    settled: !loading,
+    onPageChange: (page) => onViewChange({ ...view, page }),
+  });
   const table = useInvoicesTable({ rows, total, view, onViewChange });
 
   return (

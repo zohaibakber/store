@@ -187,36 +187,22 @@ const commitNotices = (feed: ReplicaChangeFeed) =>
 const touching = (entities: ReadonlySet<SyncEntity>) => (notice: ReplicaCommitNotice) =>
   [...entities].some((entity) => noticeAffects(notice, entity));
 
-const refreshOnCommits =
-  (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>, settle?: Duration.Duration) =>
-  <A extends Atom.Atom<unknown>>(self: A) => {
-    const relevant = commitNotices(sources.changes).pipe(Stream.filter(touching(entities)));
-    return Atom.makeRefreshOnSignal(
-      Atom.make(settle === undefined ? relevant : relevant.pipe(Stream.debounce(settle))).pipe(
-        Atom.setIdleTTL(0),
-      ),
-    )(self);
-  };
-
 const commitsTouching = (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>) =>
   Atom.make(commitNotices(sources.changes).pipe(Stream.filter(touching(entities))));
 
-const readAfterCommits = <A, E>(commits: Atom.Atom<unknown>, read: Effect.Effect<A, E>) =>
-  Atom.make((get) => {
-    get(commits);
-    return read;
-  });
+const readAfter =
+  (signal: Atom.Atom<unknown>) =>
+  <A, E>(read: (get: Atom.AtomContext) => Effect.Effect<A, E>) =>
+    Atom.make((get) => {
+      get(signal);
+      return read(get);
+    });
 
 const insightsContextOf = (policy: StockPolicy): Effect.Effect<InsightsContext> =>
   Effect.map(Clock.currentTimeMillis, (now) => ({
     policy,
     utcOffsetMinutes: localUtcOffsetMinutes(now),
   }));
-
-const refreshOnInsightChanges =
-  (source: InsightsSource) =>
-  <A extends Atom.Atom<unknown>>(self: A) =>
-    Atom.makeRefreshOnSignal(Atom.make(source.changes).pipe(Atom.setIdleTTL(0)))(self);
 
 class ProductInsightRequest extends Request.Class<
   { readonly productId: string; readonly context: InsightsContext },
@@ -328,63 +314,59 @@ export const createWorkspaceAtoms = (
   sources: WorkspaceAtomSources = emptySources,
 ): WorkspaceAtoms => {
   const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
-  const insights = Atom.make((get) =>
+  const afterInsightChanges = readAfter(Atom.make(sources.insights.changes));
+  const afterProductCommits = readAfter(commitsTouching(sources, PRODUCT_ENTITIES));
+  const afterSupplierCommits = readAfter(commitsTouching(sources, SUPPLIER_ENTITIES));
+  const afterInvoiceCommits = readAfter(commitsTouching(sources, INVOICE_ENTITIES));
+  const afterOrderCommits = readAfter(commitsTouching(sources, PURCHASE_ORDER_ENTITIES));
+  const afterOrderLineCommits = readAfter(commitsTouching(sources, ORDER_LINE_ENTITIES));
+  const insights = afterInsightChanges((get) =>
     insightsContextOf(get(stockPolicyAtom)).pipe(Effect.flatMap(sources.insights.readSummary)),
-  ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER), refreshOnInsightChanges(sources.insights));
+  ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER));
   const productResolver = productInsightResolver(sources.insights);
   const restockPageAtom = Atom.family((key: string) =>
-    Atom.make((get) =>
+    afterInsightChanges((get) =>
       insightsContextOf(get(stockPolicyAtom)).pipe(
         Effect.flatMap((context) =>
           sources.insights.readRestockPage(context, decodeRestockKey(key)),
         ),
       ),
-    ).pipe(refreshOnInsightChanges(sources.insights)),
+    ),
   );
   const productInsightAtom = Atom.family((productId: string) =>
-    Atom.make((get) =>
+    afterInsightChanges((get) =>
       insightsContextOf(get(stockPolicyAtom)).pipe(
         Effect.flatMap((context) =>
           Effect.request(new ProductInsightRequest({ productId, context }), productResolver),
         ),
       ),
-    ).pipe(refreshOnInsightChanges(sources.insights)),
+    ),
   );
   const productSearchAtom = Atom.family((limit: number) =>
-    Atom.family((query: string) =>
-      Atom.make(sources.searchProducts(query, limit)).pipe(
-        refreshOnCommits(sources, PRODUCT_ENTITIES),
-      ),
-    ),
+    Atom.family((query: string) => afterProductCommits(() => sources.searchProducts(query, limit))),
   );
   const productCandidatesAtom = Atom.family((limit: number) =>
     Atom.family((queries: string) =>
-      Atom.make(
+      afterProductCommits(() =>
         Effect.forEach(queries === "" ? [] : queries.split(CANDIDATE_QUERY_SEPARATOR), (query) =>
           sources.searchProducts(query, limit),
         ).pipe(
           Effect.map((groups) => [...new Map(groups.flat().map((row) => [row.id, row])).values()]),
         ),
-      ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+      ),
     ),
   );
   const productsOnOrderAtom = Atom.family((key: string) =>
-    Atom.make(sources.readProductsOnOrder(idsOfKey(key))).pipe(
-      refreshOnCommits(sources, ORDER_LINE_ENTITIES),
-    ),
+    afterOrderLineCommits(() => sources.readProductsOnOrder(idsOfKey(key))),
   );
   const learnedSuppliersAtom = Atom.family((key: string) =>
-    Atom.make(sources.readLearnedSuppliers(idsOfKey(key))).pipe(
-      refreshOnCommits(sources, ORDER_LINE_ENTITIES),
-    ),
+    afterOrderLineCommits(() => sources.readLearnedSuppliers(idsOfKey(key))),
   );
-  const invoiceCommits = commitsTouching(sources, INVOICE_ENTITIES);
-  const purchaseOrderCommits = commitsTouching(sources, PURCHASE_ORDER_ENTITIES);
   const purchaseOrderCountAtom = Atom.family((tab: PurchaseOrderTab) =>
-    readAfterCommits(purchaseOrderCommits, sources.countPurchaseOrders({ tab })),
+    afterOrderCommits(() => sources.countPurchaseOrders({ tab })),
   );
   const purchaseOrderSearchCountAtom = Atom.family((filters: PurchaseOrderListFilters) =>
-    readAfterCommits(purchaseOrderCommits, sources.countPurchaseOrders(filters)),
+    afterOrderCommits(() => sources.countPurchaseOrders(filters)),
   );
   return {
     registry,
@@ -392,10 +374,9 @@ export const createWorkspaceAtoms = (
     syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
     syncing: Atom.make(false).pipe(Atom.keepAlive),
     pendingRowIds: Atom.family((entity: SyncEntity) =>
-      Atom.make(sources.readPendingRowIds(entity)).pipe(
-        refreshOnCommits(sources, new Set([entity])),
-        Atom.withEquality(sameRowIds),
-      ),
+      readAfter(commitsTouching(sources, new Set([entity])))(() =>
+        sources.readPendingRowIds(entity),
+      ).pipe(Atom.withEquality(sameRowIds)),
     ),
     productSearch: (limit: number) => {
       const bounded = canonicalSearchLimit(limit);
@@ -406,16 +387,16 @@ export const createWorkspaceAtoms = (
       return (queries: string) => productCandidatesAtom(bounded)(queries);
     },
     productPage: Atom.family((request: ProductListRequest) =>
-      Atom.make(sources.readProductPage(request)).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+      afterProductCommits(() => sources.readProductPage(request)),
     ),
     productCount: Atom.family((filters: ProductListFilters) =>
-      Atom.make(
+      afterProductCommits(() =>
         sources.summarizeProducts(filters, []).pipe(Effect.map((summary) => summary.count)),
-      ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+      ),
     ),
-    productFacets: Atom.make(
+    productFacets: afterProductCommits(() =>
       sources.summarizeProducts({}, PRODUCT_FACET_COLUMNS).pipe(Effect.map(facetsFrom)),
-    ).pipe(refreshOnCommits(sources, PRODUCT_ENTITIES)),
+    ),
     productLookup: Atom.fn((names: ReadonlyArray<string>) => sources.findProductsByNames(names), {
       concurrent: true,
     }),
@@ -451,20 +432,18 @@ export const createWorkspaceAtoms = (
     learnedSuppliers: (productIds) => learnedSuppliersAtom(idsKey(productIds)),
     purchaseOrderCount: purchaseOrderCountAtom,
     purchaseOrderPage: Atom.family((request: PurchaseOrderListRequest) =>
-      readAfterCommits(purchaseOrderCommits, sources.readPurchaseOrderPage(request)),
+      afterOrderCommits(() => sources.readPurchaseOrderPage(request)),
     ),
     purchaseOrderListCount: (filters) =>
       filters.supplierIds === undefined
         ? purchaseOrderCountAtom(filters.tab)
         : purchaseOrderSearchCountAtom(filters),
-    supplierCount: Atom.make(sources.countSuppliers).pipe(
-      refreshOnCommits(sources, SUPPLIER_ENTITIES),
-    ),
+    supplierCount: afterSupplierCommits(() => sources.countSuppliers),
     invoicePage: Atom.family((request: InvoiceListRequest) =>
-      readAfterCommits(invoiceCommits, sources.readInvoicePage(request)),
+      afterInvoiceCommits(() => sources.readInvoicePage(request)),
     ),
     invoiceCount: Atom.family((filters: InvoiceListFilters) =>
-      readAfterCommits(invoiceCommits, sources.countInvoices(filters)),
+      afterInvoiceCommits(() => sources.countInvoices(filters)),
     ),
   };
 };

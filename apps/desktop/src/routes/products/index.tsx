@@ -24,6 +24,7 @@ import {
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
+import { usePageInRange } from "@/hooks/use-page-in-range";
 import { formValidator } from "@/lib/form-schema";
 import {
   PRODUCT_SORT_COLUMNS,
@@ -134,6 +135,13 @@ function ProductsContent({
   const facets = useSuspenseProductFacets();
   const page = useSuspenseProductPage(request);
   const total = useSuspenseProductCount(request.filters);
+  usePageInRange({
+    page: view.page,
+    pageSize: view.size,
+    total,
+    settled: !loading,
+    onPageChange: (page) => onViewChange({ ...view, page }),
+  });
   const rows = React.useMemo(() => {
     const names = new Map(categories.map((category) => [category.id, category.name]));
     return page.map((product) => ({
