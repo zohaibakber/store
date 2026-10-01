@@ -15,6 +15,7 @@ export function FrameCard({
   className,
   description,
   flush = false,
+  heading,
   table,
   title,
   ...props
@@ -22,6 +23,7 @@ export function FrameCard({
   action?: React.ReactNode;
   description?: React.ReactNode;
   flush?: boolean;
+  heading?: "inside" | "outside";
   table?: boolean;
   title?: React.ReactNode;
 }): React.ReactElement {
@@ -36,7 +38,7 @@ export function FrameCard({
     <FramePanel className="flex-1">{children}</FramePanel>
   );
 
-  if (table !== undefined) {
+  if ((heading ?? (table === undefined ? "inside" : "outside")) === "outside") {
     return (
       <section className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
         {hasHeader && (

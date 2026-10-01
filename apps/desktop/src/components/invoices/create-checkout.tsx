@@ -32,7 +32,7 @@ function InvoiceCheckout() {
   } = useInvoiceCreate();
 
   return (
-    <FrameCard title="Summary">
+    <FrameCard heading="outside" title="Summary">
       <div className="flex flex-col gap-4">
         <Field>
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
