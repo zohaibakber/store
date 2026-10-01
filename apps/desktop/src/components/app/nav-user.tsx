@@ -17,12 +17,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import type { Workspace } from "@/host-access";
 import { signOut, useAuth } from "@/lib/auth";
 import { OnDeviceRetry, OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
@@ -31,16 +26,24 @@ import { usePublishInProgress } from "@/lib/local-publish";
 type Identity = {
   readonly name: string;
   readonly detail: string;
+  readonly mark: React.ReactNode;
   readonly avatar: React.ReactNode;
 };
 
 const DEVICE_IDENTITY: Identity = {
   name: "This device",
   detail: "No account",
-  avatar: (
-    <AvatarFallback>
+  mark: (
+    <span className="flex size-4 shrink-0 items-center justify-center group-data-[collapsible=icon]:size-8">
       <HugeiconsIcon aria-hidden="true" className="size-4" icon={ComputerIcon} />
-    </AvatarFallback>
+    </span>
+  ),
+  avatar: (
+    <Avatar className="size-8 shrink-0">
+      <AvatarFallback>
+        <HugeiconsIcon aria-hidden="true" className="size-4" icon={ComputerIcon} />
+      </AvatarFallback>
+    </Avatar>
   ),
 };
 
@@ -48,29 +51,30 @@ const accountIdentity = (user: {
   readonly name: string;
   readonly email: string;
   readonly image?: string | null;
-}): Identity => ({
-  name: user.name,
-  detail: user.email,
-  avatar: (
-    <>
+}): Identity => {
+  const avatar = (
+    <Avatar className="size-8 shrink-0">
       <AvatarImage alt={user.name} src={user.image ?? undefined} />
       <AvatarFallback>{initials(user.name)}</AvatarFallback>
-    </>
-  ),
-});
+    </Avatar>
+  );
+  return { name: user.name, detail: user.email, mark: avatar, avatar };
+};
 
 function IdentityRow({
-  identity,
+  mark,
+  name,
   detail,
 }: {
-  readonly identity: Identity;
+  readonly mark: React.ReactNode;
+  readonly name: string;
   readonly detail: React.ReactNode;
 }) {
   return (
     <>
-      <Avatar className="size-8 shrink-0">{identity.avatar}</Avatar>
+      {mark}
       <span className="grid min-w-0 flex-1 text-left leading-tight">
-        <span className="truncate text-sm font-medium">{identity.name}</span>
+        <span className="truncate text-sm font-medium">{name}</span>
         {detail}
       </span>
     </>
@@ -121,7 +125,6 @@ function ThemeGroup() {
 
 export function NavUser() {
   const { snapshot, workspace } = useAuth();
-  const { isMobile } = useSidebar();
   const moving = usePublishInProgress();
   const signedIn = snapshot?.status === "authenticated";
   const identity = signedIn ? accountIdentity(snapshot.user) : DEVICE_IDENTITY;
@@ -136,10 +139,10 @@ export function NavUser() {
               <SidebarMenuButton aria-label="Account menu" size="lg" tooltip={identity.name} />
             }
           >
-            <IdentityRow detail={sync.status} identity={identity} />
+            <IdentityRow detail={sync.status} mark={identity.mark} name={identity.name} />
           </MenuTrigger>
           {sync.action}
-          <MenuPopup align="end" className="w-62" side={isMobile ? "top" : "right"}>
+          <MenuPopup align="start" className="w-62" side="top">
             <MenuGroup>
               <MenuGroupLabel>
                 <span className="flex w-full items-center gap-2">
@@ -149,7 +152,8 @@ export function NavUser() {
                         {identity.detail}
                       </span>
                     }
-                    identity={identity}
+                    mark={identity.avatar}
+                    name={identity.name}
                   />
                 </span>
               </MenuGroupLabel>
