@@ -257,8 +257,12 @@ function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function DataTableFooter({ className, ...props }: React.ComponentProps<"footer">) {
-  return <FrameFooter className={className} data-slot="data-table-footer" {...props} />;
+function DataTableFooter({ children, className, ...props }: React.ComponentProps<"footer">) {
+  return (
+    <FrameFooter className={className} data-slot="data-table-footer" {...props}>
+      <div className="-mx-3 -my-2">{children}</div>
+    </FrameFooter>
+  );
 }
 
 interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInput> {
