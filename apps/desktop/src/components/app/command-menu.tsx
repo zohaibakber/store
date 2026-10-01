@@ -9,7 +9,10 @@ import {
   type ReactNode,
 } from "react";
 
-type CommandDialog = ComponentType<{ readonly onOpenChange: (open: boolean) => void }>;
+type CommandDialog = ComponentType<{
+  readonly onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
+}>;
 
 const loadCommandDialog = (): Promise<CommandDialog> =>
   import("@/components/app/command-menu-dialog").then((module) => module.InventoryCommandDialog);
@@ -59,7 +62,7 @@ export function CommandMenuProvider({ children }: { readonly children: ReactNode
   return (
     <CommandMenuContext.Provider value={context}>
       {children}
-      {isOpen && Dialog ? <Dialog onOpenChange={setIsOpen} /> : null}
+      {Dialog ? <Dialog onOpenChange={setIsOpen} open={isOpen} /> : null}
     </CommandMenuContext.Provider>
   );
 }

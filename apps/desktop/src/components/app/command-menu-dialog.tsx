@@ -28,6 +28,7 @@ import { formatPrice } from "@store/services/format";
 import type { StockStatus } from "@store/services/insights";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
+  Activity,
   Fragment,
   Suspense,
   useDeferredValue,
@@ -57,7 +58,6 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import {
   useRecentProducts,
@@ -170,23 +170,42 @@ const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || e
 
 export function InventoryCommandDialog({
   onOpenChange,
+  open,
 }: {
   readonly onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
 }) {
   const auth = useAuth();
   const { access, inventory } = RootRoute.useRouteContext();
   const scope = access.inventoryScope(auth.snapshot);
+  const [session, setSession] = useState(0);
+  const [presented, setPresented] = useState(open);
+  if (open && !presented) setPresented(true);
 
   return (
-    <CommandDialog onOpenChange={onOpenChange} open>
-      <CommandDialogPopup aria-label="Search" className="max-h-128 max-w-2xl">
-        {!inventory ? (
-          <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
-        ) : !scope ? (
-          <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
-        ) : (
-          <LiveCommandMenu onOpenChange={onOpenChange} />
-        )}
+    <CommandDialog
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={(nowOpen) => {
+        if (nowOpen) return;
+        setPresented(false);
+        setSession((current) => current + 1);
+      }}
+      open={open}
+    >
+      <CommandDialogPopup
+        aria-label="Search"
+        className="max-h-128 max-w-2xl"
+        portalProps={{ keepMounted: true }}
+      >
+        <Activity mode={presented ? "visible" : "hidden"}>
+          {!inventory ? (
+            <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
+          ) : !scope ? (
+            <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
+          ) : (
+            <LiveCommandMenu key={session} onOpenChange={onOpenChange} />
+          )}
+        </Activity>
       </CommandDialogPopup>
     </CommandDialog>
   );
@@ -683,29 +702,24 @@ function PaletteResults({
           </span>
         </div>
       ) : (
-        <Tabs
-          onValueChange={(value) => {
-            const next = SCOPES.find((entry) => entry.value === value);
-            if (next) onScopeChange(next.value);
-            inputRef.current?.focus();
-          }}
-          value={scope}
-        >
-          <div className="px-3">
-            <TabsList aria-label="Search scope" variant="underline">
-              {SCOPES.map((entry) => (
-                <TabsTab
-                  key={entry.value}
-                  onMouseDown={(event) => event.preventDefault()}
-                  tabIndex={-1}
-                  value={entry.value}
-                >
-                  {entry.label}
-                </TabsTab>
-              ))}
-            </TabsList>
-          </div>
-        </Tabs>
+        <div aria-label="Search scope" className="flex items-center gap-1.5 px-3 pb-2" role="group">
+          {SCOPES.map((entry) => (
+            <Button
+              aria-pressed={entry.value === scope}
+              key={entry.value}
+              onClick={() => {
+                onScopeChange(entry.value);
+                inputRef.current?.focus();
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              size="xs"
+              tabIndex={-1}
+              variant={entry.value === scope ? "default" : "secondary"}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>
       )}
       <CommandPanel>
         {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
