@@ -14,10 +14,10 @@ export function AccountSettings() {
   const moving = usePublishInProgress();
   const user = auth.snapshot?.status === "authenticated" ? auth.snapshot.user : undefined;
 
-  if (!user) return <SignInToSync title="Account" />;
+  if (!user) return <SignInToSync />;
 
   return (
-    <FrameCard title="Account">
+    <FrameCard>
       <div className="flex items-center gap-3">
         <Avatar className="size-9 shrink-0">
           <AvatarImage alt={user.name} src={user.image ?? undefined} />

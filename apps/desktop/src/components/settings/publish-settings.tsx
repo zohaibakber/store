@@ -35,7 +35,7 @@ function PublishSettingsFor({ organization }: { readonly organization: PublishTa
   const { state, move, cancelElsewhere } = useLocalPublish(organization);
   if (state._tag === "Nothing") return null;
   return (
-    <FrameCard title="This device">
+    <FrameCard>
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2">
           <div className="min-w-0">

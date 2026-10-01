@@ -12,7 +12,7 @@ export function AboutSettings() {
   const checkForAppUpdate = useCheckForAppUpdate();
 
   return (
-    <FrameCard title="About Tabaaq">
+    <FrameCard>
       <dl className="flex flex-col divide-y text-sm">
         <div
           className={cn(

@@ -5,9 +5,9 @@ import { Link } from "@tanstack/react-router";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 
-export function SignInToSync({ title }: { readonly title: string }) {
+export function SignInToSync() {
   return (
-    <FrameCard title={title}>
+    <FrameCard>
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">This device</p>

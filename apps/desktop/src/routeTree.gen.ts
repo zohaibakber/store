@@ -28,11 +28,7 @@ import { Route as PurchasesIndexRouteImport } from './routes/purchases/index'
 import { Route as PurchasesOrderIdRouteImport } from './routes/purchases/$orderId'
 import { Route as PurchasesSuppliersRouteImport } from './routes/purchases/suppliers'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
-import { Route as SettingsAboutRouteImport } from './routes/settings/about'
-import { Route as SettingsAccountRouteImport } from './routes/settings/account'
-import { Route as SettingsAppearanceRouteImport } from './routes/settings/appearance'
-import { Route as SettingsBackupRouteImport } from './routes/settings/backup'
-import { Route as SettingsOrganizationRouteImport } from './routes/settings/organization'
+import { Route as SettingsSectionRouteImport } from './routes/settings/$section'
 import { Route as ProductsProductIdEditRouteImport } from './routes/products/$productId_.edit'
 
 const IndexRoute = IndexRouteImport.update({
@@ -130,29 +126,9 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsAboutRoute = SettingsAboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsAccountRoute = SettingsAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
-  id: '/appearance',
-  path: '/appearance',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsBackupRoute = SettingsBackupRouteImport.update({
-  id: '/backup',
-  path: '/backup',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsOrganizationRoute = SettingsOrganizationRouteImport.update({
-  id: '/organization',
-  path: '/organization',
+const SettingsSectionRoute = SettingsSectionRouteImport.update({
+  id: '/$section',
+  path: '/$section',
   getParentRoute: () => SettingsRoute,
 } as any)
 const ProductsProductIdEditRoute = ProductsProductIdEditRouteImport.update({
@@ -177,11 +153,7 @@ export interface FileRoutesByFullPath {
   '/products/upload': typeof ProductsUploadRoute
   '/purchases/$orderId': typeof PurchasesOrderIdRoute
   '/purchases/suppliers': typeof PurchasesSuppliersRoute
-  '/settings/about': typeof SettingsAboutRoute
-  '/settings/account': typeof SettingsAccountRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
-  '/settings/backup': typeof SettingsBackupRoute
-  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/purchases/': typeof PurchasesIndexRoute
@@ -200,11 +172,7 @@ export interface FileRoutesByTo {
   '/products/upload': typeof ProductsUploadRoute
   '/purchases/$orderId': typeof PurchasesOrderIdRoute
   '/purchases/suppliers': typeof PurchasesSuppliersRoute
-  '/settings/about': typeof SettingsAboutRoute
-  '/settings/account': typeof SettingsAccountRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
-  '/settings/backup': typeof SettingsBackupRoute
-  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/invoices': typeof InvoicesIndexRoute
   '/products': typeof ProductsIndexRoute
   '/purchases': typeof PurchasesIndexRoute
@@ -228,11 +196,7 @@ export interface FileRoutesById {
   '/products/upload': typeof ProductsUploadRoute
   '/purchases/$orderId': typeof PurchasesOrderIdRoute
   '/purchases/suppliers': typeof PurchasesSuppliersRoute
-  '/settings/about': typeof SettingsAboutRoute
-  '/settings/account': typeof SettingsAccountRoute
-  '/settings/appearance': typeof SettingsAppearanceRoute
-  '/settings/backup': typeof SettingsBackupRoute
-  '/settings/organization': typeof SettingsOrganizationRoute
+  '/settings/$section': typeof SettingsSectionRoute
   '/invoices/': typeof InvoicesIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/purchases/': typeof PurchasesIndexRoute
@@ -257,11 +221,7 @@ export interface FileRouteTypes {
     | '/products/upload'
     | '/purchases/$orderId'
     | '/purchases/suppliers'
-    | '/settings/about'
-    | '/settings/account'
-    | '/settings/appearance'
-    | '/settings/backup'
-    | '/settings/organization'
+    | '/settings/$section'
     | '/invoices/'
     | '/products/'
     | '/purchases/'
@@ -280,11 +240,7 @@ export interface FileRouteTypes {
     | '/products/upload'
     | '/purchases/$orderId'
     | '/purchases/suppliers'
-    | '/settings/about'
-    | '/settings/account'
-    | '/settings/appearance'
-    | '/settings/backup'
-    | '/settings/organization'
+    | '/settings/$section'
     | '/invoices'
     | '/products'
     | '/purchases'
@@ -307,11 +263,7 @@ export interface FileRouteTypes {
     | '/products/upload'
     | '/purchases/$orderId'
     | '/purchases/suppliers'
-    | '/settings/about'
-    | '/settings/account'
-    | '/settings/appearance'
-    | '/settings/backup'
-    | '/settings/organization'
+    | '/settings/$section'
     | '/invoices/'
     | '/products/'
     | '/purchases/'
@@ -464,39 +416,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/about': {
-      id: '/settings/about'
-      path: '/about'
-      fullPath: '/settings/about'
-      preLoaderRoute: typeof SettingsAboutRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/account': {
-      id: '/settings/account'
-      path: '/account'
-      fullPath: '/settings/account'
-      preLoaderRoute: typeof SettingsAccountRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/appearance': {
-      id: '/settings/appearance'
-      path: '/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof SettingsAppearanceRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/backup': {
-      id: '/settings/backup'
-      path: '/backup'
-      fullPath: '/settings/backup'
-      preLoaderRoute: typeof SettingsBackupRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/organization': {
-      id: '/settings/organization'
-      path: '/organization'
-      fullPath: '/settings/organization'
-      preLoaderRoute: typeof SettingsOrganizationRouteImport
+    '/settings/$section': {
+      id: '/settings/$section'
+      path: '/$section'
+      fullPath: '/settings/$section'
+      preLoaderRoute: typeof SettingsSectionRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/products/$productId_/edit': {
@@ -564,20 +488,12 @@ const PurchasesRouteWithChildren = PurchasesRoute._addFileChildren(
 )
 
 interface SettingsRouteChildren {
-  SettingsAboutRoute: typeof SettingsAboutRoute
-  SettingsAccountRoute: typeof SettingsAccountRoute
-  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
-  SettingsBackupRoute: typeof SettingsBackupRoute
-  SettingsOrganizationRoute: typeof SettingsOrganizationRoute
+  SettingsSectionRoute: typeof SettingsSectionRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsAboutRoute: SettingsAboutRoute,
-  SettingsAccountRoute: SettingsAccountRoute,
-  SettingsAppearanceRoute: SettingsAppearanceRoute,
-  SettingsBackupRoute: SettingsBackupRoute,
-  SettingsOrganizationRoute: SettingsOrganizationRoute,
+  SettingsSectionRoute: SettingsSectionRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 

@@ -6,8 +6,6 @@ import { AcceptInvitationCard } from "@/components/settings/organization/accept-
 import { OrganizationInvitationsCard } from "@/components/settings/organization/invitations-card";
 import { OrganizationMembersCard } from "@/components/settings/organization/members-card";
 import { OrganizationProfileCard } from "@/components/settings/organization/profile-card";
-import { PublishSettings } from "@/components/settings/publish-settings";
-import { SignInToSync } from "@/components/settings/sign-in-to-sync";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -65,14 +63,11 @@ export function OrganizationSettings() {
   const auth = useAuth();
   const snapshot = auth.snapshot?.status === "authenticated" ? auth.snapshot : null;
 
-  if (!snapshot) return <SignInToSync title="Organization" />;
+  if (!snapshot) return null;
 
   return (
-    <>
-      <OrganizationProvider>
-        <OrganizationPanel userId={snapshot.user.id} />
-      </OrganizationProvider>
-      <PublishSettings />
-    </>
+    <OrganizationProvider>
+      <OrganizationPanel userId={snapshot.user.id} />
+    </OrganizationProvider>
   );
 }
