@@ -328,7 +328,7 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
         )}
       </Frame>
       <Sheet onOpenChange={setOpen} open={open}>
-        <SheetPopup variant="inset">
+        <SheetPopup className="titlebar-clear-sheet" showCloseButton={false} variant="inset">
           <SheetHeader>
             <SheetTitle>{editing === null ? "Add supplier" : "Edit supplier"}</SheetTitle>
             <SheetDescription>

@@ -1,4 +1,4 @@
-import { Settings02Icon } from "@hugeicons/core-free-icons";
+import { ArrowReloadHorizontalIcon, Settings02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { DEFAULT_STOCK_POLICY, type StockPolicy } from "@store/services/insights";
 import * as React from "react";
@@ -25,6 +25,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { toastManager } from "@/components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStockPolicy } from "@/lib/inventory";
 
 type WholeKey = Exclude<keyof StockPolicy, "serviceLevel">;
@@ -204,22 +205,29 @@ function PlanningForm({
           </FrameCard>
         </div>
       </SheetPanel>
-      <SheetFooter className="sm:justify-between">
-        <Button
-          onClick={() => setDraft(DEFAULT_STOCK_POLICY)}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Reset to defaults
+      <SheetFooter>
+        <SheetClose render={<Button size="sm" variant="ghost" />}>Cancel</SheetClose>
+        <Button size="sm" type="submit">
+          Save
         </Button>
-        <div className="flex gap-2">
-          <SheetClose render={<Button size="sm" variant="ghost" />}>Cancel</SheetClose>
-          <Button size="sm" type="submit">
-            Save
-          </Button>
-        </div>
       </SheetFooter>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label="Reset to defaults"
+              className="absolute end-2 top-2"
+              onClick={() => setDraft(DEFAULT_STOCK_POLICY)}
+              size="icon"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <HugeiconsIcon aria-hidden="true" icon={ArrowReloadHorizontalIcon} />
+        </TooltipTrigger>
+        <TooltipPopup>Reset to defaults</TooltipPopup>
+      </Tooltip>
     </Form>
   );
 }
@@ -233,7 +241,11 @@ export function PlanningSheet() {
         <HugeiconsIcon aria-hidden="true" icon={Settings02Icon} />
         Planning
       </SheetTrigger>
-      <SheetPopup className="sm:max-w-xl" variant="inset">
+      <SheetPopup
+        className="titlebar-clear-sheet sm:max-w-xl"
+        showCloseButton={false}
+        variant="inset"
+      >
         <SheetHeader>
           <SheetTitle>Planning</SheetTitle>
           <SheetDescription>

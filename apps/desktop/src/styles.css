@@ -265,6 +265,16 @@
     );
   }
 
+  .titlebar-clear-sheet {
+    margin-top: env(titlebar-area-height, 0px);
+  }
+
+  @media (width >= 40rem) {
+    .titlebar-clear-sheet {
+      margin-top: max(0px, calc(env(titlebar-area-height, 0px) - 1rem));
+    }
+  }
+
   [data-slot="chart"] .ts-chart {
     color: var(--muted-foreground);
   }

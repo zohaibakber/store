@@ -223,7 +223,7 @@ function BatchSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {trigger}
-      <SheetPopup variant="inset">
+      <SheetPopup className="titlebar-clear-sheet" showCloseButton={false} variant="inset">
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>

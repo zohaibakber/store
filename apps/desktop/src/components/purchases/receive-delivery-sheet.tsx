@@ -43,7 +43,8 @@ export function ReceiveDeliverySheet({
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
       <SheetPopup
-        className="sm:max-w-4xl"
+        className="titlebar-clear-sheet sm:max-w-4xl"
+        showCloseButton={false}
         initialFocus={() =>
           popupRef.current?.querySelector<HTMLInputElement>(
             "[data-slot=table-body] input:not(:disabled)",

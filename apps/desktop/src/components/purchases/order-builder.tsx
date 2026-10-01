@@ -32,7 +32,11 @@ export function OrderBuilderSheet({
 }) {
   return (
     <Sheet onOpenChange={onOpenChange} open={open}>
-      <SheetPopup className="sm:max-w-3xl" variant="inset">
+      <SheetPopup
+        className="titlebar-clear-sheet sm:max-w-3xl"
+        showCloseButton={false}
+        variant="inset"
+      >
         <SheetHeader>
           <SheetTitle>New purchase order</SheetTitle>
           <SheetDescription>
