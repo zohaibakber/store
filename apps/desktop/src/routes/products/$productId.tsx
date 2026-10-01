@@ -166,11 +166,7 @@ function DetailsCard({ product }: { readonly product: Product }) {
   ];
 
   return (
-    <FrameCard
-      action={<ProductVisibilitySelect product={product} />}
-      heading="outside"
-      title="Details"
-    >
+    <FrameCard action={<ProductVisibilitySelect product={product} />} title="Details">
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 xl:grid-cols-6">
         {details.map((detail) => (
           <div className="flex min-w-0 flex-col gap-0.5" key={detail.label}>

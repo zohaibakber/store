@@ -96,7 +96,6 @@ function StockPlanCard({ productId }: { readonly productId: string }) {
       action={<StatusBadge status={insight.status} />}
       description={describeDemand(insight.demand)}
       flush
-      heading="outside"
       title="Stock plan"
     >
       <div className="flex flex-col gap-2 px-4 py-3">

@@ -237,12 +237,7 @@ export function AttentionFeed({
 export function StockHealth({ summary }: { readonly summary: InsightsSummary }) {
   const tracked = HEALTH_ORDER.reduce((total, status) => total + summary.counts[status], 0);
   return (
-    <FrameCard
-      description={formatCount(tracked, "product")}
-      flush
-      heading="outside"
-      title="Stock health"
-    >
+    <FrameCard description={formatCount(tracked, "product")} flush title="Stock health">
       <div className="flex flex-col gap-1 p-2">
         <ul aria-label="Products by stock status" className="flex flex-col">
           {HEALTH_ORDER.map((status) => {
@@ -314,7 +309,6 @@ export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
         />
       }
       flush
-      heading="outside"
       title="Revenue"
     >
       {period.series.every((day) => day.revenue === 0 && day.previousRevenue === 0) ? (
@@ -456,7 +450,6 @@ export function SalesRhythm({ summary }: { readonly summary: InsightsSummary }) 
             }`
       }
       flush
-      heading="outside"
       title="Sales rhythm"
     >
       {peakWeekday.weekday < 0 ? (
