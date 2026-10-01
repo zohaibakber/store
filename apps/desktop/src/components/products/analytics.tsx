@@ -6,7 +6,6 @@ import { Suspense, useState } from "react";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import type { RestockView } from "@/components/insights/restock-page";
-import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
@@ -126,17 +125,15 @@ const PENDING_TILES = (
 
 export function ProductAnalytics() {
   return (
-    <FrameCard flush>
-      <div
-        aria-live="polite"
-        className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6"
-      >
-        <AppErrorBoundary fallback={PENDING_TILES}>
-          <Suspense fallback={PENDING_TILES}>
-            <StockTiles />
-          </Suspense>
-        </AppErrorBoundary>
-      </div>
-    </FrameCard>
+    <div
+      aria-live="polite"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-6"
+    >
+      <AppErrorBoundary fallback={PENDING_TILES}>
+        <Suspense fallback={PENDING_TILES}>
+          <StockTiles />
+        </Suspense>
+      </AppErrorBoundary>
+    </div>
   );
 }

@@ -2,7 +2,6 @@ import type { InsightsSummary } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import type { SalesPeriod } from "@store/services/insights";
 
-import { FrameCard } from "@/components/shared/frame-card";
 import { Badge } from "@/components/ui/badge";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 
@@ -94,60 +93,61 @@ export function KpiGrid({
   const span = `previous ${period.days} days`;
   const series = period.series.map((day) => day.revenue);
   return (
-    <FrameCard aria-label="Key figures" flush role="region">
-      <div className="grid grid-cols-1 gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
-          change={period.revenueChange}
-          detail={`${formatPrice(period.previousRevenue)} in the ${span}`}
-          label="Revenue"
-          value={formatPrice(period.revenue)}
-        >
-          <Sparkline label={`Daily revenue, last ${period.days} days`} values={series} />
-        </Kpi>
-        <Kpi
-          detail={
-            period.grossProfit === null
-              ? "Add purchase prices to see profit"
-              : period.costCoverage < 0.995
-                ? `Covers ${formatShare(period.costCoverage)} of sales with known costs`
-                : "Revenue minus purchase cost"
-          }
-          label="Gross profit"
-          value={period.grossProfit === null ? EMPTY : formatPrice(period.grossProfit)}
-        >
-          {period.margin === null ? null : (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatShare(period.margin)} margin
-            </span>
-          )}
-        </Kpi>
-        <Kpi
-          change={period.invoicesChange}
-          detail={
-            period.averageBasket === null
-              ? "No sales in this period"
-              : `${formatPrice(period.averageBasket)} average sale`
-          }
-          label="Sales"
-          value={formatNumber(period.invoices)}
-        >
+    <section
+      aria-label="Key figures"
+      className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-4"
+    >
+      <Kpi
+        change={period.revenueChange}
+        detail={`${formatPrice(period.previousRevenue)} in the ${span}`}
+        label="Revenue"
+        value={formatPrice(period.revenue)}
+      >
+        <Sparkline label={`Daily revenue, last ${period.days} days`} values={series} />
+      </Kpi>
+      <Kpi
+        detail={
+          period.grossProfit === null
+            ? "Add purchase prices to see profit"
+            : period.costCoverage < 0.995
+              ? `Covers ${formatShare(period.costCoverage)} of sales with known costs`
+              : "Revenue minus purchase cost"
+        }
+        label="Gross profit"
+        value={period.grossProfit === null ? EMPTY : formatPrice(period.grossProfit)}
+      >
+        {period.margin === null ? null : (
           <span className="text-xs text-muted-foreground tabular-nums">
-            {formatCount(summary.sales.today.invoices, "sale")} today ·{" "}
-            {formatPrice(summary.sales.today.revenue)}
+            {formatShare(period.margin)} margin
           </span>
-        </Kpi>
-        <Kpi
-          detail={`${formatPrice(summary.inventory.valueAtRetail)} at retail`}
-          label="Stock value"
-          value={formatPrice(summary.inventory.valueAtCost)}
-        >
-          {summary.inventory.deadStockValue > 0 ? (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {formatPrice(summary.inventory.deadStockValue)} not selling
-            </span>
-          ) : null}
-        </Kpi>
-      </div>
-    </FrameCard>
+        )}
+      </Kpi>
+      <Kpi
+        change={period.invoicesChange}
+        detail={
+          period.averageBasket === null
+            ? "No sales in this period"
+            : `${formatPrice(period.averageBasket)} average sale`
+        }
+        label="Sales"
+        value={formatNumber(period.invoices)}
+      >
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatCount(summary.sales.today.invoices, "sale")} today ·{" "}
+          {formatPrice(summary.sales.today.revenue)}
+        </span>
+      </Kpi>
+      <Kpi
+        detail={`${formatPrice(summary.inventory.valueAtRetail)} at retail`}
+        label="Stock value"
+        value={formatPrice(summary.inventory.valueAtCost)}
+      >
+        {summary.inventory.deadStockValue > 0 ? (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {formatPrice(summary.inventory.deadStockValue)} not selling
+          </span>
+        ) : null}
+      </Kpi>
+    </section>
   );
 }
