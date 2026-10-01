@@ -63,6 +63,7 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
         }
         options.location.assign(url);
       },
+      hasPendingOAuthCallback: () => pendingOAuthCallback !== null,
       onOAuthCallback: (listener) => {
         const callback = pendingOAuthCallback;
         pendingOAuthCallback = null;

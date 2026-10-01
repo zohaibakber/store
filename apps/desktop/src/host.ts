@@ -27,6 +27,7 @@ export type SignInBridge = {
   readonly oauthRedirectUri: () => Promise<string>;
   readonly openAuthorization: (url: string) => Promise<void>;
   readonly onOAuthCallback?: (listener: (url: string) => void) => () => void;
+  readonly hasPendingOAuthCallback?: () => boolean;
 };
 
 export type AppUpdaterBridge = {

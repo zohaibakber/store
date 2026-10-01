@@ -117,11 +117,6 @@ function IdentifierSignIn({
             <GoogleIcon aria-hidden="true" className="size-4" />
             Continue with Google
           </Button>
-          {googleBusy ? (
-            <p className="text-center text-xs text-muted-foreground">
-              Finish signing in with Google in your browser.
-            </p>
-          ) : null}
         </Field>
       </form>
     </div>
@@ -311,24 +306,47 @@ function PasswordRegistration({
   );
 }
 
-export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
-  const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
-  const [busy, setBusy] = React.useState<"idle" | "email" | "google">("idle");
-  const [error, setError] = React.useState<string | null>(null);
+type GoogleCallback = { readonly completing: boolean; readonly error: string | null };
+
+export function useGoogleCallback(): GoogleCallback {
+  const [state, setState] = React.useState<GoogleCallback>(() => ({
+    completing: appHost().signIn.hasPendingOAuthCallback?.() ?? false,
+    error: null,
+  }));
 
   React.useEffect(
     () =>
       appHost().signIn.onOAuthCallback?.((url) => {
-        void completeGoogle(url).catch((cause: unknown) => {
-          reportError(cause, { op: "google-sign-in-callback" });
-          setError(
-            cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
-          );
-          setBusy("idle");
-        });
+        setState({ completing: true, error: null });
+        completeGoogle(url).then(
+          (completed) => {
+            if (!completed) setState({ completing: false, error: null });
+          },
+          (cause: unknown) => {
+            reportError(cause, { op: "google-sign-in-callback" });
+            setState({
+              completing: false,
+              error:
+                cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
+            });
+          },
+        );
       }),
     [],
   );
+
+  return state;
+}
+
+export function AuthForm({
+  className,
+  callbackError = null,
+  ...props
+}: React.ComponentProps<"div"> & { readonly callbackError?: string | null }) {
+  const [step, setStep] = React.useState<AuthStep>({ _tag: "Identifier" });
+  const [busy, setBusy] = React.useState<"idle" | "email" | "google">("idle");
+  const [error, setError] = React.useState<string | null>(null);
+  const shownError = error ?? callbackError;
 
   const run = async (lane: "email" | "google", operation: () => Promise<void>) => {
     setBusy(lane);
@@ -349,10 +367,10 @@ export function AuthForm({ className, ...props }: React.ComponentProps<"div">) {
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      {error ? (
+      {shownError ? (
         <Alert variant="error">
           <AlertTitle>Could not continue</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{shownError}</AlertDescription>
         </Alert>
       ) : null}
       {step._tag === "Identifier" ? (
