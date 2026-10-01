@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import {
   useRecentProducts,
   useRememberRecentProduct,
@@ -234,6 +235,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const newSaleLabel = appHost().newSaleShortcut.label;
+  const startSale = useStartSale();
 
   return useMemo(() => {
     const go = (to: "/" | "/restock" | "/products" | "/invoices" | "/settings") => () => {
@@ -250,7 +252,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         shortcut: newSaleLabel,
         run: () => {
           close();
-          void navigate({ to: "/invoices/new" });
+          startSale();
         },
       },
       {
@@ -368,7 +370,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         run: () => setTheme(theme === "dark" ? "light" : "dark"),
       },
     ] satisfies ReadonlyArray<ActionEntry>;
-  }, [close, navigate, newSaleLabel, setTheme, theme]);
+  }, [close, navigate, newSaleLabel, setTheme, startSale, theme]);
 }
 
 function useProductActions(close: () => void) {
