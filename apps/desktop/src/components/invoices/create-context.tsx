@@ -45,7 +45,6 @@ import {
   addSaleProduct,
   AUTO_BATCH,
   canOpenSaleDraft,
-  closeSaleDraft,
   cycleSaleDraft,
   quantitiesInOtherDrafts,
   removeSaleLine,
@@ -244,15 +243,26 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         customerName: customerName.trim() || null,
         items,
       });
-      toastManager.add({
-        title: `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`,
-        type: "success",
-      });
-      store.update((state) => closeSaleDraft(state, draft.id));
-      await navigate({
-        to: "/invoices/$invoiceId",
-        params: { invoiceId: invoice.invoiceId },
-      });
+      const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
+      const view = () =>
+        navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.invoiceId } });
+      if (store.complete(draft.id)) {
+        const toastId = toastManager.add({
+          actionProps: {
+            children: "View",
+            onClick: () => {
+              toastManager.close(toastId);
+              void view();
+            },
+          },
+          title,
+          type: "success",
+        });
+        store.focusSearch();
+      } else {
+        toastManager.add({ title, type: "success" });
+        await view();
+      }
     } catch (error) {
       toastManager.add({
         title: storeErrorMessage(error, "Could not create the invoice."),

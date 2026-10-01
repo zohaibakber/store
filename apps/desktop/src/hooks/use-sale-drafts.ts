@@ -8,8 +8,10 @@ import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { saleDraftsAtom } from "@/lib/preferences";
 import {
   canOpenSaleDraft,
+  closeSaleDraft,
   discardSaleDraft,
   draftHasLines,
+  isBlankDraft,
   MAX_SALE_DRAFTS,
   openSaleDraft,
   parkedSaleCount,
@@ -67,6 +69,11 @@ const saleDraftStore = (registry: AtomRegistry.AtomRegistry, workspace: string) 
         title: discardedTitle(discarded.draft),
       });
     },
+    complete: (id: number) =>
+      registry.modify(atom, (state) => {
+        const next = closeSaleDraft(state, id);
+        return [next.drafts.some((draft) => !isBlankDraft(draft)), next];
+      }),
     beginCompleting: (id: number) =>
       registry.modify(completingAtom, (tokens) => {
         const token = completionToken(workspace, id);
