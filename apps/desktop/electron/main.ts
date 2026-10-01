@@ -45,6 +45,7 @@ import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
+import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
 import { setupUpdater } from "./updater";
 import { registerWebContentsSecurity } from "./web-contents-security";
 
@@ -193,7 +194,6 @@ const InvoiceUpload = Schema.Struct({
     }),
   ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
 });
-const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
   ipcMain.handle("auth:get-session", async (event) => {
@@ -356,7 +356,9 @@ ipcMain.on("theme:set-source", (event, input) => {
     return;
   }
   const source = Schema.decodeUnknownOption(ThemeSource)(input);
-  if (source._tag === "Some") nativeTheme.themeSource = source.value;
+  if (source._tag === "None") return;
+  nativeTheme.themeSource = source.value;
+  void saveThemeSource(app.getPath("userData"), source.value).catch(() => undefined);
 });
 
 app.on("window-all-closed", () => {
@@ -433,6 +435,7 @@ void app.whenReady().then(async () => {
     writeClipboardText: (text) => clipboard.writeText(text),
     choosePdfDestination,
   });
+  nativeTheme.themeSource = readThemeSource(app.getPath("userData"));
   createWindow();
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
