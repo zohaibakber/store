@@ -180,13 +180,9 @@ function LinesCard({ order }: { readonly order: PurchaseOrder }) {
           </TableBody>
           <TableFooter>
             <TableRow>
-              <TableCell colSpan={4}>
-                <span className="block text-end text-base font-medium">Total</span>
-              </TableCell>
-              <TableCell>
-                <span className="block text-end text-base font-medium tabular-nums">
-                  {formatPrice(order.total)}
-                </span>
+              <TableCell colSpan={4}>Total</TableCell>
+              <TableCell className="text-end">
+                <span className="tabular-nums">{formatPrice(order.total)}</span>
               </TableCell>
             </TableRow>
           </TableFooter>
