@@ -184,8 +184,7 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
   counts: CatalogCounts,
 ) {
   const first = yield* commit(ports, marker);
-  // sync.import_catalog returns the stored result when this import id and digest
-  // already landed, and commits the sealed parts only when that import has not.
+  // sync.import_catalog returns the stored result when this import id and digest already landed.
   const resumed =
     first._tag === "refused" && first.code === FILE_CHANGED
       ? yield* commit(ports, marker, true)
