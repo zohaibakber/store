@@ -89,6 +89,8 @@ const VIEW_LABEL = {
 
 const PAGE_SIZES = [25, 50, 100] as const;
 
+export const RESTOCK_PAGE_SIZE = 50;
+
 const STATUS_RANK = new Map<StockStatus, number>(
   [...HEALTH_ORDER, "inactive" as const].map((status, index) => [status, index]),
 );
@@ -347,7 +349,7 @@ function RestockBody({
   const [selected, setSelected] = React.useState<ReadonlyMap<string, DraftLine>>(new Map());
   const [builderOpen, setBuilderOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
-  const [pageSize, setPageSize] = React.useState<number>(50);
+  const [pageSize, setPageSize] = React.useState<number>(RESTOCK_PAGE_SIZE);
   const [isPending, startTransition] = React.useTransition();
   const term = search.trim();
   const shownView = React.useDeferredValue(view);

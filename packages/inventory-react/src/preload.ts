@@ -1,3 +1,4 @@
+import type { RestockPageRequest } from "@store/contracts";
 import {
   createLiveQueryCollection,
   type Context,
@@ -85,6 +86,12 @@ export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: string)
 
 export const preloadInventoryInsights = (inventory: Inventory): Preload =>
   warmAtom(inventory, inventory.atoms.insights);
+
+export const preloadRestockPage = (inventory: Inventory, request: RestockPageRequest): Preload =>
+  preloadAll([
+    preloadInventoryInsights(inventory),
+    warmAtom(inventory, inventory.atoms.restockPage(request)),
+  ]);
 
 export const preloadSuppliers = (inventory: Inventory): Preload =>
   warmQuery(suppliersQuery(inventory));

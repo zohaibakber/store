@@ -7,6 +7,7 @@ export {
   preloadCatalogCategories,
   preloadCatalogProduct,
   preloadInventoryInsights,
+  preloadRestockPage,
   preloadInventoryInvoice,
   preloadInventoryInvoices,
   preloadInvoiceList,
