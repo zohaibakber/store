@@ -37,18 +37,17 @@ function DraftButton({
           discardDraft(tab.id);
         }}
         size="sm"
-        variant={active ? "secondary" : "ghost"}
+        variant={active ? "default" : "secondary"}
       >
         <span className="max-w-32 truncate">{tab.label}</span>
-        <span aria-hidden="true" className="w-4 shrink-0" />
       </Button>
-      <span className="absolute end-1 top-1/2 inline-flex -translate-y-1/2 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+      <span className="absolute -end-2.5 -top-2 z-10 inline-flex scale-75 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <Button
           aria-label={`Discard ${tab.label}`}
           onClick={() => discardDraft(tab.id)}
           size="icon-xs"
           tabIndex={-1}
-          variant="ghost"
+          variant="outline"
         >
           <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
         </Button>
@@ -122,7 +121,7 @@ function SaleDraftTabs() {
     <PageActions>
       <div
         aria-label="Open sales"
-        className="flex min-w-0 scrollbar-none items-center gap-1 overflow-x-auto"
+        className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto py-2 pe-2"
         ref={stripRef}
         role="group"
       >
