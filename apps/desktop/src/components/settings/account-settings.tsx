@@ -17,7 +17,7 @@ export function AccountSettings() {
   if (!user) return <SignInToSync />;
 
   return (
-    <FrameCard>
+    <FrameCard title="Account">
       <div className="flex items-center gap-3">
         <Avatar className="size-9 shrink-0">
           <AvatarImage alt={user.name} src={user.image ?? undefined} />

@@ -2,7 +2,6 @@ import { DatabaseExportIcon, DatabaseRestoreIcon } from "@hugeicons/core-free-ic
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 
-import { FrameCard } from "@/components/shared/frame-card";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -233,15 +232,5 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
 
 export function BackupSettings() {
   const [bridge] = useState(() => appHost().backup);
-  return (
-    <FrameCard>
-      {bridge ? (
-        <BackupControls bridge={bridge} />
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Backup files are made in the Tabaaq desktop app.
-        </p>
-      )}
-    </FrameCard>
-  );
+  return bridge ? <BackupControls bridge={bridge} /> : null;
 }

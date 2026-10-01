@@ -4,7 +4,6 @@ import { Suspense } from "react";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { PublishProgressBar } from "@/components/app/publish-progress";
-import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import { catalogContents } from "@/lib/catalog-counts";
 import {
@@ -35,42 +34,38 @@ function PublishSettingsFor({ organization }: { readonly organization: PublishTa
   const { state, move, cancelElsewhere } = useLocalPublish(organization);
   if (state._tag === "Nothing") return null;
   return (
-    <FrameCard>
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Move this device’s data to {organization.name}</p>
-            <p
-              className={
-                state._tag === "Failed"
-                  ? "text-xs text-destructive"
-                  : "text-xs text-muted-foreground"
-              }
-            >
-              {explanationOf(state, organization)}
-            </p>
-          </div>
-          {state._tag === "Moving" ? <PublishProgressBar progress={state.progress} /> : null}
-        </div>
-        {state._tag === "Elsewhere" ? (
-          <Button className="shrink-0" onClick={cancelElsewhere} size="sm" variant="outline">
-            Cancel that move
-          </Button>
-        ) : (
-          <Button
-            className="shrink-0"
-            disabled={state._tag === "Occupied" || state._tag === "Moving"}
-            loading={state._tag === "Moving"}
-            onClick={move}
-            size="sm"
-            variant="outline"
+    <div className="flex items-center justify-between gap-4 border-b pb-3">
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="min-w-0">
+          <p className="text-sm">Move this device’s data to {organization.name}</p>
+          <p
+            className={
+              state._tag === "Failed" ? "text-xs text-destructive" : "text-xs text-muted-foreground"
+            }
           >
-            <HugeiconsIcon aria-hidden="true" icon={CloudUploadIcon} />
-            {state._tag === "Failed" ? "Try again" : "Move data"}
-          </Button>
-        )}
+            {explanationOf(state, organization)}
+          </p>
+        </div>
+        {state._tag === "Moving" ? <PublishProgressBar progress={state.progress} /> : null}
       </div>
-    </FrameCard>
+      {state._tag === "Elsewhere" ? (
+        <Button className="shrink-0" onClick={cancelElsewhere} size="sm" variant="outline">
+          Cancel that move
+        </Button>
+      ) : (
+        <Button
+          className="shrink-0"
+          disabled={state._tag === "Occupied" || state._tag === "Moving"}
+          loading={state._tag === "Moving"}
+          onClick={move}
+          size="sm"
+          variant="outline"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={CloudUploadIcon} />
+          {state._tag === "Failed" ? "Try again" : "Move data"}
+        </Button>
+      )}
+    </div>
   );
 }
 

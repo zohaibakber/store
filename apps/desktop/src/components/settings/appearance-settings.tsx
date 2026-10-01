@@ -3,7 +3,7 @@ import { FrameCard } from "@/components/shared/frame-card";
 
 export function AppearanceSettings() {
   return (
-    <FrameCard>
+    <FrameCard title="Appearance">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium">Theme</p>
