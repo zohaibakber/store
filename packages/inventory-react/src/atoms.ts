@@ -44,6 +44,7 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { WorkspaceReadFailure } from "./errors";
 import { emptyInsightsSource, type InsightsSource } from "./insights-source";
+import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
 import {
   facetsFrom,
   PRODUCT_FACET_COLUMNS,
@@ -52,7 +53,12 @@ import {
   type ProductListFilters,
   type ProductListRequest,
 } from "./product-list";
-import type { ProductOnOrder, PurchaseOrderTab } from "./purchasing";
+import type {
+  ProductOnOrder,
+  PurchaseOrderListFilters,
+  PurchaseOrderListRequest,
+  PurchaseOrderTab,
+} from "./purchasing";
 import { canonicalSearchLimit, canonicalSearchQuery } from "./search";
 
 let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
@@ -106,10 +112,19 @@ export type WorkspaceAtomSources = {
   readonly readLearnedSuppliers: (
     productIds: ReadonlyArray<string>,
   ) => Effect.Effect<ReadonlyMap<string, SupplierId>, WorkspaceReadError>;
+  readonly readPurchaseOrderPage: (
+    request: PurchaseOrderListRequest,
+  ) => Effect.Effect<ReadonlyArray<string>, WorkspaceReadError>;
   readonly countPurchaseOrders: (
-    tab: PurchaseOrderTab,
+    filters: PurchaseOrderListFilters,
   ) => Effect.Effect<number, WorkspaceReadError>;
   readonly countSuppliers: Effect.Effect<number, WorkspaceReadError>;
+  readonly readInvoicePage: (
+    request: InvoiceListRequest,
+  ) => Effect.Effect<ReadonlyArray<string>, WorkspaceReadError>;
+  readonly countInvoices: (
+    filters: InvoiceListFilters,
+  ) => Effect.Effect<number, WorkspaceReadError>;
   readonly initialActivity?: InventorySyncActivity;
 };
 
@@ -124,8 +139,11 @@ const emptySources: WorkspaceAtomSources = {
   findProductsByNames: () => Effect.succeed([]),
   readProductsOnOrder: () => Effect.succeed(new Map()),
   readLearnedSuppliers: () => Effect.succeed(new Map()),
+  readPurchaseOrderPage: () => Effect.succeed([]),
   countPurchaseOrders: () => Effect.succeed(0),
   countSuppliers: Effect.succeed(0),
+  readInvoicePage: () => Effect.succeed([]),
+  countInvoices: () => Effect.succeed(0),
   insights: emptyInsightsSource,
 };
 
@@ -139,6 +157,7 @@ const sameRowIds = (
   [...left.value].every((id) => right.value.has(id));
 
 const PRODUCT_ENTITIES: ReadonlySet<SyncEntity> = new Set(["product"]);
+const INVOICE_ENTITIES: ReadonlySet<SyncEntity> = new Set(["invoice"]);
 const SUPPLIER_ENTITIES: ReadonlySet<SyncEntity> = new Set(["supplier"]);
 const PURCHASE_ORDER_ENTITIES: ReadonlySet<SyncEntity> = new Set(["purchaseOrder"]);
 const ORDER_LINE_ENTITIES: ReadonlySet<SyncEntity> = new Set([
@@ -178,6 +197,15 @@ const refreshOnCommits =
       ),
     )(self);
   };
+
+const commitsTouching = (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>) =>
+  Atom.make(commitNotices(sources.changes).pipe(Stream.filter(touching(entities))));
+
+const readAfterCommits = <A, E>(commits: Atom.Atom<unknown>, read: Effect.Effect<A, E>) =>
+  Atom.make((get) => {
+    get(commits);
+    return read;
+  });
 
 const insightsContextOf = (policy: StockPolicy): Effect.Effect<InsightsContext> =>
   Effect.map(Clock.currentTimeMillis, (now) => ({
@@ -280,7 +308,19 @@ export type WorkspaceAtoms = {
   readonly purchaseOrderCount: (
     tab: PurchaseOrderTab,
   ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
+  readonly purchaseOrderPage: (
+    request: PurchaseOrderListRequest,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<string>, WorkspaceReadError>>;
+  readonly purchaseOrderListCount: (
+    filters: PurchaseOrderListFilters,
+  ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
   readonly supplierCount: Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
+  readonly invoicePage: (
+    request: InvoiceListRequest,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlyArray<string>, WorkspaceReadError>>;
+  readonly invoiceCount: (
+    filters: InvoiceListFilters,
+  ) => Atom.Atom<AsyncResult.AsyncResult<number, WorkspaceReadError>>;
 };
 
 export const createWorkspaceAtoms = (
@@ -337,6 +377,14 @@ export const createWorkspaceAtoms = (
     Atom.make(sources.readLearnedSuppliers(idsOfKey(key))).pipe(
       refreshOnCommits(sources, ORDER_LINE_ENTITIES),
     ),
+  );
+  const invoiceCommits = commitsTouching(sources, INVOICE_ENTITIES);
+  const purchaseOrderCommits = commitsTouching(sources, PURCHASE_ORDER_ENTITIES);
+  const purchaseOrderCountAtom = Atom.family((tab: PurchaseOrderTab) =>
+    readAfterCommits(purchaseOrderCommits, sources.countPurchaseOrders({ tab })),
+  );
+  const purchaseOrderSearchCountAtom = Atom.family((filters: PurchaseOrderListFilters) =>
+    readAfterCommits(purchaseOrderCommits, sources.countPurchaseOrders(filters)),
   );
   return {
     registry,
@@ -401,13 +449,22 @@ export const createWorkspaceAtoms = (
     productInsight: productInsightAtom,
     productsOnOrder: (productIds) => productsOnOrderAtom(idsKey(productIds)),
     learnedSuppliers: (productIds) => learnedSuppliersAtom(idsKey(productIds)),
-    purchaseOrderCount: Atom.family((tab: PurchaseOrderTab) =>
-      Atom.make(sources.countPurchaseOrders(tab)).pipe(
-        refreshOnCommits(sources, PURCHASE_ORDER_ENTITIES),
-      ),
+    purchaseOrderCount: purchaseOrderCountAtom,
+    purchaseOrderPage: Atom.family((request: PurchaseOrderListRequest) =>
+      readAfterCommits(purchaseOrderCommits, sources.readPurchaseOrderPage(request)),
     ),
+    purchaseOrderListCount: (filters) =>
+      filters.supplierIds === undefined
+        ? purchaseOrderCountAtom(filters.tab)
+        : purchaseOrderSearchCountAtom(filters),
     supplierCount: Atom.make(sources.countSuppliers).pipe(
       refreshOnCommits(sources, SUPPLIER_ENTITIES),
+    ),
+    invoicePage: Atom.family((request: InvoiceListRequest) =>
+      readAfterCommits(invoiceCommits, sources.readInvoicePage(request)),
+    ),
+    invoiceCount: Atom.family((filters: InvoiceListFilters) =>
+      readAfterCommits(invoiceCommits, sources.countInvoices(filters)),
     ),
   };
 };

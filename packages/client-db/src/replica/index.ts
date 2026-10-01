@@ -1,4 +1,5 @@
 export {
+  containsText,
   InventorySubsetSpec,
   InventorySubsetSummary,
   InventorySubsetSummarySpec,
@@ -32,7 +33,7 @@ export {
   type NoticeAccumulator,
 } from "./collection-notices";
 export { NOTICE_BUFFER_CAPACITY, offerCoalescing } from "./notice-coalescing";
-export { DEFAULT_COLLECTION_MAXIMUM_ROWS } from "./sources";
+export { DEFAULT_COLLECTION_MAXIMUM_ROWS, MAX_IN_VALUES } from "./sources";
 export { syncStatusFromOutbox, syncStatusWithHealth } from "./status";
 export {
   EMPTY_SYNC_ACTIVITY,

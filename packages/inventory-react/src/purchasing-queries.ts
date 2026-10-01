@@ -14,7 +14,7 @@ import {
   eq,
   inArray,
   toArray,
-  useLiveInfiniteQuery,
+  or,
   useLiveQuery,
   useLiveSuspenseQuery,
   type InitialQueryBuilder,
@@ -22,16 +22,25 @@ import {
 } from "@tanstack/react-db";
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as React from "react";
 
 import type { ReplicaAuthority } from "./host";
+import { inPageOrder } from "./list-page";
 import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
   NOTHING_ON_ORDER,
-  purchaseOrderTabStatuses,
   type ProductOnOrder,
+  type PurchaseOrderListFilters,
+  type PurchaseOrderListRequest,
   type PurchaseOrderTab,
 } from "./purchasing";
-import { HISTORY_PAGE_SIZE, stockMovementFields, untilPaged, useLatestSuccess } from "./queries";
+import {
+  chunked,
+  HISTORY_PAGE_SIZE,
+  IDS_PER_PREDICATE,
+  stockMovementFields,
+  useLatestSuccess,
+} from "./queries";
 import type { Inventory } from "./types";
 
 const supplierFields = (supplier: Ref<SupplierRow>) => ({
@@ -120,6 +129,23 @@ export const purchaseOrdersQuery =
       .orderBy(({ order }) => order.createdAt, "desc")
       .select(({ order }) => purchaseOrderFields(query, inventory, order));
 
+export const purchaseOrdersByIdQuery =
+  (inventory: Inventory, orderIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
+    const [first = [], second, ...rest] = chunked(orderIds, IDS_PER_PREDICATE);
+    return query
+      .from({ order: inventory.purchaseOrders })
+      .where(({ order }) =>
+        second
+          ? or(
+              inArray(order.id, first),
+              inArray(order.id, second),
+              ...rest.map((ids) => inArray(order.id, ids)),
+            )
+          : inArray(order.id, first),
+      )
+      .select(({ order }) => purchaseOrderFields(query, inventory, order));
+  };
+
 export const purchaseOrderQuery =
   (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
     query
@@ -145,29 +171,21 @@ export const useSuppliers = () => {
 export const useSuspenseSuppliers = (): ReadonlyArray<Supplier> =>
   useLiveSuspenseQuery({ query: suppliersQuery(useCatalogReplica()) }).data;
 
-export const useSuspensePurchaseOrders = (
-  tab: PurchaseOrderTab,
-  limit = HISTORY_PAGE_SIZE,
+export const useSuspensePurchaseOrderPage = (
+  request: PurchaseOrderListRequest,
 ): ReadonlyArray<PurchaseOrder> => {
   const inventory = useCatalogReplica();
-  return useLiveSuspenseQuery({
-    query: (query) =>
-      purchaseOrdersQuery(inventory, purchaseOrderTabStatuses(tab))(query).limit(limit),
+  const ids = React.useDeferredValue(
+    useAtomSuspense(inventory.atoms.purchaseOrderPage(request)).value,
+  );
+  const orders: ReadonlyArray<PurchaseOrder> = useLiveSuspenseQuery({
+    query: purchaseOrdersByIdQuery(inventory, ids),
   }).data;
+  return React.useMemo(() => inPageOrder(ids, orders), [ids, orders]);
 };
 
-export const useSuspensePurchaseOrderHistory = (
-  tab: PurchaseOrderTab,
-  pageSize = HISTORY_PAGE_SIZE,
-) => {
-  const inventory = useCatalogReplica();
-  const firstPage = useSuspensePurchaseOrders(tab, pageSize + 1);
-  const live = useLiveInfiniteQuery(purchaseOrdersQuery(inventory, purchaseOrderTabStatuses(tab)), {
-    pageSize,
-  });
-  const data: ReadonlyArray<PurchaseOrder> = live.data;
-  return untilPaged(firstPage, { ...live, data }, pageSize);
-};
+export const useSuspensePurchaseOrderListCount = (filters: PurchaseOrderListFilters): number =>
+  useAtomSuspense(useCatalogReplica().atoms.purchaseOrderListCount(filters)).value;
 
 export const useSuspenseOpenPurchaseOrders = (
   limit = HISTORY_PAGE_SIZE,

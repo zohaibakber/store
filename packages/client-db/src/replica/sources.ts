@@ -42,7 +42,14 @@ export const FILTER_COLUMNS = {
     "strength",
   ]),
   batches: new Set(["id", "organizationId", "productId", "expiresAt"]),
-  invoices: new Set(["id", "organizationId", "invoiceNumber", "operationId", "createdAt"]),
+  invoices: new Set([
+    "id",
+    "organizationId",
+    "invoiceNumber",
+    "customerName",
+    "operationId",
+    "createdAt",
+  ]),
   invoiceItems: new Set(["id", "organizationId", "invoiceId", "productId", "batchId"]),
   stockMovements: new Set([
     "id",
@@ -110,6 +117,8 @@ export const CASE_INSENSITIVE_ORDER_COLUMNS = {
 export const MAX_IN_VALUES = 200;
 
 export const MAX_LIKE_PATTERN_LENGTH = 256;
+
+export const LIKE_ESCAPE = "\\";
 
 export const DEFAULT_COLLECTION_MAXIMUM_ROWS = 500;
 

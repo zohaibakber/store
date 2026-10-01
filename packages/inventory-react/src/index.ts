@@ -65,9 +65,16 @@ export {
   useSuspenseCatalogSuggestions,
   useSuspenseInventoryInvoice,
   useSuspenseInventoryInvoices,
-  useSuspenseInvoiceHistory,
+  useSuspenseInvoiceCount,
+  useSuspenseInvoicePage,
   useSuspenseProductSearch,
 } from "./queries";
+export {
+  INVOICE_SORT_COLUMNS,
+  type InvoiceListFilters,
+  type InvoiceListRequest,
+  type InvoiceSortColumn,
+} from "./invoice-list";
 export {
   matchCatalogProducts,
   summarizeProductStock,
@@ -77,10 +84,14 @@ export {
 } from "./search";
 export {
   NOTHING_ON_ORDER,
+  PURCHASE_ORDER_SORT_COLUMNS,
   PURCHASE_ORDER_TABS,
   purchaseOrderTabStatuses,
   type ProductOnOrder,
   type ProductOrderLine,
+  type PurchaseOrderListFilters,
+  type PurchaseOrderListRequest,
+  type PurchaseOrderSortColumn,
   type PurchaseOrderTab,
 } from "./purchasing";
 export {
@@ -95,8 +106,8 @@ export {
   useSuspensePurchaseOrder,
   useSuspensePurchaseOrderCount,
   useSuspensePurchaseOrderDeliveries,
-  useSuspensePurchaseOrderHistory,
-  useSuspensePurchaseOrders,
+  useSuspensePurchaseOrderListCount,
+  useSuspensePurchaseOrderPage,
   useSuspenseSupplierCount,
   useSuspenseSuppliers,
   type PurchasingGate,
@@ -131,11 +142,11 @@ export {
   preloadInventoryInsights,
   preloadInventoryInvoice,
   preloadInventoryInvoices,
-  preloadInvoiceHistory,
+  preloadInvoiceList,
   preloadProductFacets,
   preloadProductList,
   preloadPurchaseOrder,
-  preloadPurchaseOrders,
+  preloadPurchaseOrderList,
   preloadStockMovementHistory,
   preloadSuppliers,
 } from "./preload";

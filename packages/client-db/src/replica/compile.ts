@@ -165,7 +165,9 @@ const textSearchMatch = (predicate: SubsetPredicate, index: TextSearchIndex) => 
   const columns: Array<string> = [];
   let text: string | undefined;
   for (const leaf of leaves) {
-    if (leaf._tag !== "like" || !index.columns.has(leaf.column)) return undefined;
+    if (leaf._tag !== "like" || leaf.escape !== undefined || !index.columns.has(leaf.column)) {
+      return undefined;
+    }
     const contained = containedText(leaf.pattern);
     if (contained === undefined || (text !== undefined && contained !== text)) return undefined;
     text = contained;
@@ -218,8 +220,12 @@ const lowerPredicate = (
           yield* column(predicate.column),
           toSqliteParameter(predicate.value),
         );
-      case "like":
-        return like(yield* column(predicate.column), predicate.pattern);
+      case "like": {
+        const target = yield* column(predicate.column);
+        return predicate.escape === undefined
+          ? like(target, predicate.pattern)
+          : sql`${target} like ${predicate.pattern} escape '\\'`;
+      }
     }
   });
 

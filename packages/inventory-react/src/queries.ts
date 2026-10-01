@@ -33,6 +33,8 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as React from "react";
 
 import { CANDIDATE_QUERY_SEPARATOR, minuteClockAtom, stockPolicyAtom } from "./atoms";
+import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
+import { inPageOrder } from "./list-page";
 import { useSuspenseProductFacets } from "./product-list-hooks";
 import { useCatalogReplica } from "./provider";
 import {
@@ -42,11 +44,11 @@ import {
 } from "./search";
 import type { Inventory } from "./types";
 
-const PRODUCT_IDS_PER_PREDICATE = 32;
+export const IDS_PER_PREDICATE = 32;
 
 export const HISTORY_PAGE_SIZE = 50;
 
-const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
+export const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
   Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
     values.slice(index * size, (index + 1) * size),
   );
@@ -226,7 +228,7 @@ export const productQuery =
 
 const productsByIdQuery =
   (inventory: Inventory, productIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
-    const [first = [], second, ...rest] = chunked(productIds, PRODUCT_IDS_PER_PREDICATE);
+    const [first = [], second, ...rest] = chunked(productIds, IDS_PER_PREDICATE);
     return productsWithCategory(query, inventory)
       .where(({ product }) =>
         second
@@ -261,6 +263,23 @@ export const invoiceQuery =
       .where(({ invoice }) => eq(invoice.id, invoiceId))
       .select(({ invoice }) => invoiceFields(query, inventory, invoice))
       .findOne();
+
+export const invoicesByIdQuery =
+  (inventory: Inventory, invoiceIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
+    const [first = [], second, ...rest] = chunked(invoiceIds, IDS_PER_PREDICATE);
+    return query
+      .from({ invoice: inventory.invoices })
+      .where(({ invoice }) =>
+        second
+          ? or(
+              inArray(invoice.id, first),
+              inArray(invoice.id, second),
+              ...rest.map((ids) => inArray(invoice.id, ids)),
+            )
+          : inArray(invoice.id, first),
+      )
+      .select(({ invoice }) => invoiceFields(query, inventory, invoice));
+  };
 
 export const useCatalogCategories = () => {
   const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
@@ -343,13 +362,17 @@ export const useSuspenseInventoryInvoices = (limit = HISTORY_PAGE_SIZE): Readonl
     .data;
 };
 
-export const useSuspenseInvoiceHistory = (pageSize = HISTORY_PAGE_SIZE) => {
+export const useSuspenseInvoicePage = (request: InvoiceListRequest): ReadonlyArray<Invoice> => {
   const inventory = useCatalogReplica();
-  const firstPage = useSuspenseInventoryInvoices(pageSize + 1);
-  const live = useLiveInfiniteQuery(invoicesQuery(inventory), { pageSize });
-  const data: ReadonlyArray<Invoice> = live.data;
-  return untilPaged(firstPage, { ...live, data }, pageSize);
+  const ids = React.useDeferredValue(useAtomSuspense(inventory.atoms.invoicePage(request)).value);
+  const invoices: ReadonlyArray<Invoice> = useLiveSuspenseQuery({
+    query: invoicesByIdQuery(inventory, ids),
+  }).data;
+  return React.useMemo(() => inPageOrder(ids, invoices), [ids, invoices]);
 };
+
+export const useSuspenseInvoiceCount = (filters: InvoiceListFilters): number =>
+  useAtomSuspense(useCatalogReplica().atoms.invoiceCount(filters)).value;
 
 export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
   useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data;
@@ -359,7 +382,7 @@ const batchesForIds = (
   inventory: Pick<Inventory, "batches">,
   productIds: ReadonlyArray<string>,
 ) => {
-  const chunks = chunked(productIds, PRODUCT_IDS_PER_PREDICATE);
+  const chunks = chunked(productIds, IDS_PER_PREDICATE);
   return builder
     .from({ batch: inventory.batches })
     .where(({ batch }) => {
@@ -423,7 +446,7 @@ export const batchesForProducts = (
   inventory: Pick<Inventory, "batches">,
   productIds: ReadonlyArray<string>,
 ) => {
-  const [first, second, ...rest] = chunked(productIds, PRODUCT_IDS_PER_PREDICATE);
+  const [first, second, ...rest] = chunked(productIds, IDS_PER_PREDICATE);
   if (!first) return undefined;
   return builder
     .from({ batch: inventory.batches })

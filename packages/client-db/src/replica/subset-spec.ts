@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import {
   CASE_INSENSITIVE_ORDER_COLUMNS,
   INVENTORY_COLLECTION_SOURCES,
+  LIKE_ESCAPE,
   MAX_BATCH_ROWS,
   MAX_BATCH_SPECS,
   MAX_DISTINCT_COLUMNS,
@@ -34,9 +35,29 @@ export const SubsetLeafPredicate = Schema.Union([
   Schema.TaggedStruct("like", {
     column: SubsetColumn,
     pattern: Schema.String.check(Schema.isMaxLength(MAX_LIKE_PATTERN_LENGTH)),
+    escape: Schema.optionalKey(Schema.Literal(LIKE_ESCAPE)),
   }),
 ]);
 export type SubsetLeafPredicate = typeof SubsetLeafPredicate.Type;
+
+const LIKE_WILDCARDS = new Set(["%", "_", LIKE_ESCAPE]);
+
+const escapedLikeText = (text: string): string => {
+  let escaped = "";
+  for (const character of text) {
+    const next = LIKE_WILDCARDS.has(character) ? `${LIKE_ESCAPE}${character}` : character;
+    if (escaped.length + next.length > MAX_LIKE_PATTERN_LENGTH - 2) break;
+    escaped += next;
+  }
+  return escaped;
+};
+
+export const containsText = (column: string, text: string): SubsetLeafPredicate => ({
+  _tag: "like",
+  column,
+  pattern: `%${escapedLikeText(text)}%`,
+  escape: LIKE_ESCAPE,
+});
 
 export type SubsetPredicate =
   | SubsetLeafPredicate

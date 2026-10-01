@@ -68,7 +68,14 @@ const toResidual = (predicate: SubsetPredicate): IndexedDbResidualPredicate => {
     case "isNull":
       return { _tag: "isNull", column: predicate.column };
     case "like":
-      return { _tag: "like", column: predicate.column, pattern: predicate.pattern };
+      return predicate.escape === undefined
+        ? { _tag: "like", column: predicate.column, pattern: predicate.pattern }
+        : {
+            _tag: "like",
+            column: predicate.column,
+            pattern: predicate.pattern,
+            escape: predicate.escape,
+          };
     case "and":
       return {
         _tag: "and",

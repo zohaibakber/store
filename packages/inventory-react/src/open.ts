@@ -37,12 +37,14 @@ import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } 
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import { replicaAuthorityOf, type InventoryHost, type InventoryScope } from "./host";
 import { makeInsightsSource, type InsightsSource } from "./insights-source";
+import { countInvoices, readInvoicePageIds } from "./invoice-list";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import {
   countPurchaseOrders,
   countSuppliers,
   readLearnedSupplierIds,
   readProductsOnOrder,
+  readPurchaseOrderPageIds,
 } from "./purchasing";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActor } from "./types";
@@ -130,8 +132,11 @@ const workspaceSources = (
   findProductsByNames: (names) => findProductsByNames(replica, names),
   readProductsOnOrder: (productIds) => readProductsOnOrder(replica, productIds),
   readLearnedSuppliers: (productIds) => readLearnedSupplierIds(replica, productIds),
-  countPurchaseOrders: (tab) => countPurchaseOrders(replica, tab),
+  readPurchaseOrderPage: (request) => readPurchaseOrderPageIds(replica, request),
+  countPurchaseOrders: (filters) => countPurchaseOrders(replica, filters),
   countSuppliers: countSuppliers(replica),
+  readInvoicePage: (request) => readInvoicePageIds(replica, request),
+  countInvoices: (filters) => countInvoices(replica, filters),
   insights,
 });
 
