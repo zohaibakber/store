@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/empty";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { usePageInRange } from "@/hooks/use-page-in-range";
 import { EMPTY, formatDateTime, formatNumber } from "@/lib/format";
 import {
   PURCHASE_ORDER_SORT_COLUMNS,
@@ -287,6 +288,13 @@ export function PurchaseOrdersPage({
   const gate = usePurchasingGate();
   const orders = useSuspensePurchaseOrderPage(request);
   const total = useSuspensePurchaseOrderListCount(request.filters);
+  usePageInRange({
+    page: view.page,
+    pageSize: view.size,
+    total,
+    settled: !loading,
+    onPageChange: (page) => onViewChange({ ...view, page }),
+  });
   const rows = React.useMemo(
     (): ReadonlyArray<OrderRow> =>
       orders.map((order) => ({

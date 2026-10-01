@@ -14,7 +14,6 @@ import {
   eq,
   inArray,
   toArray,
-  or,
   useLiveQuery,
   useLiveSuspenseQuery,
   type InitialQueryBuilder,
@@ -34,13 +33,7 @@ import {
   type PurchaseOrderListRequest,
   type PurchaseOrderTab,
 } from "./purchasing";
-import {
-  chunked,
-  HISTORY_PAGE_SIZE,
-  IDS_PER_PREDICATE,
-  stockMovementFields,
-  useLatestSuccess,
-} from "./queries";
+import { HISTORY_PAGE_SIZE, inAnyOf, stockMovementFields, useLatestSuccess } from "./queries";
 import type { Inventory } from "./types";
 
 const supplierFields = (supplier: Ref<SupplierRow>) => ({
@@ -130,21 +123,11 @@ export const purchaseOrdersQuery =
       .select(({ order }) => purchaseOrderFields(query, inventory, order));
 
 export const purchaseOrdersByIdQuery =
-  (inventory: Inventory, orderIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
-    const [first = [], second, ...rest] = chunked(orderIds, IDS_PER_PREDICATE);
-    return query
+  (inventory: Inventory, orderIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) =>
+    query
       .from({ order: inventory.purchaseOrders })
-      .where(({ order }) =>
-        second
-          ? or(
-              inArray(order.id, first),
-              inArray(order.id, second),
-              ...rest.map((ids) => inArray(order.id, ids)),
-            )
-          : inArray(order.id, first),
-      )
+      .where(({ order }) => inAnyOf(order.id, orderIds))
       .select(({ order }) => purchaseOrderFields(query, inventory, order));
-  };
 
 export const purchaseOrderQuery =
   (inventory: Inventory, orderId: string) => (query: InitialQueryBuilder) =>
@@ -185,7 +168,9 @@ export const useSuspensePurchaseOrderPage = (
 };
 
 export const useSuspensePurchaseOrderListCount = (filters: PurchaseOrderListFilters): number =>
-  useAtomSuspense(useCatalogReplica().atoms.purchaseOrderListCount(filters)).value;
+  React.useDeferredValue(
+    useAtomSuspense(useCatalogReplica().atoms.purchaseOrderListCount(filters)).value,
+  );
 
 export const useSuspenseOpenPurchaseOrders = (
   limit = HISTORY_PAGE_SIZE,

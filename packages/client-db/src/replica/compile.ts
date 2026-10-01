@@ -224,7 +224,7 @@ const lowerPredicate = (
         const target = yield* column(predicate.column);
         return predicate.escape === undefined
           ? like(target, predicate.pattern)
-          : sql`${target} like ${predicate.pattern} escape '\\'`;
+          : sql`${target} like ${predicate.pattern} escape ${predicate.escape}`;
       }
     }
   });

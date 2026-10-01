@@ -1,6 +1,5 @@
 import {
   containsText,
-  decodeInvoiceSqliteRows,
   type ReplicaSubsetReader,
   type ReplicaSummaryReader,
   type SubsetPredicate,
@@ -33,14 +32,9 @@ export const readInvoicePageIds = (
   reader: ReplicaSubsetReader,
   request: InvoiceListRequest,
 ): Effect.Effect<ReadonlyArray<string>, WorkspaceReadFailure> =>
-  readPageIds(
-    reader,
-    "invoices",
-    invoiceListWhere(request.filters),
-    request,
-    decodeInvoiceSqliteRows,
-    readFailure,
-  ).pipe(Effect.withSpan("InvoiceList.readPage"));
+  readPageIds(reader, "invoices", invoiceListWhere(request.filters), request, readFailure).pipe(
+    Effect.withSpan("InvoiceList.readPage"),
+  );
 
 export const countInvoices = (
   reader: ReplicaSummaryReader,

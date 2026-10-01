@@ -44,14 +44,20 @@ import {
 } from "./search";
 import type { Inventory } from "./types";
 
-export const IDS_PER_PREDICATE = 32;
+const IDS_PER_PREDICATE = 32;
 
 export const HISTORY_PAGE_SIZE = 50;
 
-export const chunked = <Value>(values: ReadonlyArray<Value>, size: number) =>
-  Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
-    values.slice(index * size, (index + 1) * size),
-  );
+export const inAnyOf = (value: Parameters<typeof inArray>[0], ids: ReadonlyArray<string>) => {
+  const [first = [], second, ...rest] = Arr.chunksOf(ids, IDS_PER_PREDICATE);
+  return second
+    ? or(
+        inArray(value, first),
+        inArray(value, second),
+        ...rest.map((chunk) => inArray(value, chunk)),
+      )
+    : inArray(value, first);
+};
 
 const categoryFields = (category: Ref<CategoryRow>) => ({
   id: category.id,
@@ -227,20 +233,10 @@ export const productQuery =
       .findOne();
 
 const productsByIdQuery =
-  (inventory: Inventory, productIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
-    const [first = [], second, ...rest] = chunked(productIds, IDS_PER_PREDICATE);
-    return productsWithCategory(query, inventory)
-      .where(({ product }) =>
-        second
-          ? or(
-              inArray(product.id, first),
-              inArray(product.id, second),
-              ...rest.map((ids) => inArray(product.id, ids)),
-            )
-          : inArray(product.id, first),
-      )
+  (inventory: Inventory, productIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) =>
+    productsWithCategory(query, inventory)
+      .where(({ product }) => inAnyOf(product.id, productIds))
       .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
-  };
 
 export const stockMovementsQuery =
   (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
@@ -265,21 +261,11 @@ export const invoiceQuery =
       .findOne();
 
 export const invoicesByIdQuery =
-  (inventory: Inventory, invoiceIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) => {
-    const [first = [], second, ...rest] = chunked(invoiceIds, IDS_PER_PREDICATE);
-    return query
+  (inventory: Inventory, invoiceIds: ReadonlyArray<string>) => (query: InitialQueryBuilder) =>
+    query
       .from({ invoice: inventory.invoices })
-      .where(({ invoice }) =>
-        second
-          ? or(
-              inArray(invoice.id, first),
-              inArray(invoice.id, second),
-              ...rest.map((ids) => inArray(invoice.id, ids)),
-            )
-          : inArray(invoice.id, first),
-      )
+      .where(({ invoice }) => inAnyOf(invoice.id, invoiceIds))
       .select(({ invoice }) => invoiceFields(query, inventory, invoice));
-  };
 
 export const useCatalogCategories = () => {
   const live = useLiveQuery({ query: categoriesQuery(useCatalogReplica()) });
@@ -376,7 +362,7 @@ export const useSuspenseInvoicePage = (request: InvoiceListRequest): ReadonlyArr
 };
 
 export const useSuspenseInvoiceCount = (filters: InvoiceListFilters): number =>
-  useAtomSuspense(useCatalogReplica().atoms.invoiceCount(filters)).value;
+  React.useDeferredValue(useAtomSuspense(useCatalogReplica().atoms.invoiceCount(filters)).value);
 
 export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
   useLiveSuspenseQuery({ query: invoiceQuery(useCatalogReplica(), invoiceId) }).data;
@@ -386,19 +372,9 @@ const batchesForIds = (
   inventory: Pick<Inventory, "batches">,
   productIds: ReadonlyArray<string>,
 ) => {
-  const chunks = chunked(productIds, IDS_PER_PREDICATE);
   return builder
     .from({ batch: inventory.batches })
-    .where(({ batch }) => {
-      const [first = [], second, ...rest] = chunks;
-      return second
-        ? or(
-            inArray(batch.productId, first),
-            inArray(batch.productId, second),
-            ...rest.map((ids) => inArray(batch.productId, ids)),
-          )
-        : inArray(batch.productId, first);
-    })
+    .where(({ batch }) => inAnyOf(batch.productId, productIds))
     .select(({ batch }) => batchFields(batch));
 };
 
@@ -450,19 +426,10 @@ export const batchesForProducts = (
   inventory: Pick<Inventory, "batches">,
   productIds: ReadonlyArray<string>,
 ) => {
-  const [first, second, ...rest] = chunked(productIds, IDS_PER_PREDICATE);
-  if (!first) return undefined;
+  if (productIds.length === 0) return undefined;
   return builder
     .from({ batch: inventory.batches })
-    .where(({ batch }) =>
-      second
-        ? or(
-            inArray(batch.productId, first),
-            inArray(batch.productId, second),
-            ...rest.map((ids) => inArray(batch.productId, ids)),
-          )
-        : inArray(batch.productId, first),
-    );
+    .where(({ batch }) => inAnyOf(batch.productId, productIds));
 };
 
 export const useLatestSuccess = <A, E>(result: AsyncResult.AsyncResult<A, E>): Option.Option<A> => {

@@ -1,5 +1,4 @@
 import {
-  decodePurchaseOrderSqliteRows,
   MAX_IN_VALUES,
   readLearnedSuppliers,
   readOpenOrderLines,
@@ -16,6 +15,7 @@ import {
   type PurchaseOrderStatus,
   type SupplierId,
 } from "@store/contracts";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
@@ -142,12 +142,15 @@ const statusIs = (statuses: ReadonlyArray<PurchaseOrderStatus>): SubsetPredicate
 };
 
 const supplierIn = (supplierIds: ReadonlyArray<string>): SubsetPredicate => {
-  const chunks = Array.from({ length: Math.ceil(supplierIds.length / MAX_IN_VALUES) }, (_, index) =>
-    supplierIds.slice(index * MAX_IN_VALUES, (index + 1) * MAX_IN_VALUES),
-  ).map((values): SubsetPredicate => ({ _tag: "in", column: "supplierId", values }));
-  const [only, ...others] = chunks;
-  if (only === undefined) return { _tag: "in", column: "supplierId", values: [] };
-  return others.length === 0 ? only : { _tag: "or", predicates: chunks };
+  const inChunk = (values: ReadonlyArray<string>): SubsetPredicate => ({
+    _tag: "in",
+    column: "supplierId",
+    values,
+  });
+  const [first = [], ...rest] = Arr.chunksOf(supplierIds, MAX_IN_VALUES);
+  return rest.length === 0
+    ? inChunk(first)
+    : { _tag: "or", predicates: [first, ...rest].map(inChunk) };
 };
 
 const purchaseOrderListWhere = (filters: PurchaseOrderListFilters): SubsetPredicate | undefined =>
@@ -165,7 +168,6 @@ export const readPurchaseOrderPageIds = (
     "purchaseOrders",
     purchaseOrderListWhere(request.filters),
     request,
-    decodePurchaseOrderSqliteRows,
     readFailure,
   ).pipe(Effect.withSpan("Purchasing.readOrderPage"));
 

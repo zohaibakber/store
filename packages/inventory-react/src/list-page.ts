@@ -1,12 +1,12 @@
 import type {
   InventorySubsetSpec,
   InventorySubsetSummarySpec,
-  ReplicaRow,
   ReplicaSubsetReader,
   ReplicaSummaryReader,
   SubsetPredicate,
 } from "@store/client-db";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import type { WorkspaceReadFailure } from "./errors";
 
@@ -56,19 +56,22 @@ const summarySpec = (
 ): InventorySubsetSummarySpec =>
   where ? { source, where, distinct: [] } : { source, distinct: [] };
 
-export const readPageIds = <Column extends string, Row extends { readonly id: string }, E>(
+const decodePageRows = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ id: Schema.String })),
+);
+
+export const readPageIds = <Column extends string>(
   reader: ReplicaSubsetReader,
   source: ListSource,
   where: SubsetPredicate | undefined,
   page: ListPage<Column>,
-  decodeRows: (rows: ReadonlyArray<ReplicaRow>) => Effect.Effect<ReadonlyArray<Row>, E>,
   failure: () => WorkspaceReadFailure,
-): Effect.Effect<ReadonlyArray<Row["id"]>, WorkspaceReadFailure> =>
+): Effect.Effect<ReadonlyArray<string>, WorkspaceReadFailure> =>
   Effect.tryPromise({
     try: () => reader.readSubset(pageSpec(source, where, page)),
     catch: failure,
   }).pipe(
-    Effect.flatMap((read) => decodeRows(read.rows)),
+    Effect.flatMap((read) => decodePageRows(read.rows)),
     Effect.map((rows) => rows.map((row) => row.id)),
     Effect.mapError(failure),
   );
