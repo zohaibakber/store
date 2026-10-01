@@ -10,6 +10,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { saleDraftLimitMessage } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import { MAX_SALE_DRAFTS } from "@/lib/sale-drafts";
+import { cn } from "@/lib/utils";
 
 function DraftButton({
   active,
@@ -26,7 +27,7 @@ function DraftButton({
   const shortcut = index < MAX_SALE_DRAFTS ? `Alt+${index + 1} ` : "";
 
   return (
-    <span className="group relative inline-flex shrink-0" data-active={active ? "" : undefined}>
+    <span className="relative inline-flex shrink-0" data-active={active ? "" : undefined}>
       <Button
         aria-keyshortcuts={`${shortcut}Delete`}
         aria-pressed={active}
@@ -40,18 +41,20 @@ function DraftButton({
         variant={active ? "default" : "secondary"}
       >
         <span className="max-w-32 truncate">{tab.label}</span>
+        <span aria-hidden="true" className="w-3.5 shrink-0" />
       </Button>
-      <span className="absolute -end-2.5 -top-2 z-10 inline-flex scale-75 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-        <Button
-          aria-label={`Discard ${tab.label}`}
-          onClick={() => discardDraft(tab.id)}
-          size="icon-xs"
-          tabIndex={-1}
-          variant="outline"
-        >
-          <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
-        </Button>
-      </span>
+      <button
+        aria-label={`Discard ${tab.label}`}
+        className={cn(
+          "absolute end-1.25 top-1/2 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md opacity-64 outline-none hover:opacity-100 focus-visible:opacity-100",
+          active ? "text-primary-foreground" : "text-secondary-foreground",
+        )}
+        onClick={() => discardDraft(tab.id)}
+        tabIndex={-1}
+        type="button"
+      >
+        <HugeiconsIcon aria-hidden="true" className="size-3.5" icon={Cancel01Icon} />
+      </button>
     </span>
   );
 }
@@ -121,7 +124,7 @@ function SaleDraftTabs() {
     <PageActions>
       <div
         aria-label="Open sales"
-        className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto py-2 pe-2"
+        className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto"
         ref={stripRef}
         role="group"
       >
