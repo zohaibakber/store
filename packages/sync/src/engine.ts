@@ -420,6 +420,7 @@ export const makeSyncEngineFromReplicaStore = (
         subscription: OPERATIONAL_SUBSCRIPTION,
         replicaId: cursor.replicaId,
       });
+      yield* Ref.set(believesCaughtUp, false);
     });
 
     const catchUp = Effect.fn("SyncEngine.catchUp")(function* () {
