@@ -101,8 +101,8 @@ function InvoiceCreatePage({
       {addProductId && (
         <AddProductFromSearch key={addProductId} onDone={onProductAdded} productId={addProductId} />
       )}
-      <PageLayout contentClassName="gap-3">
-        <SaleDraftTabs />
+      <SaleDraftTabs />
+      <PageLayout>
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <InvoiceItems />
           <div className="lg:sticky lg:top-12">
