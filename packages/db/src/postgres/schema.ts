@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -573,5 +574,44 @@ export const snapshotParts = pgTable(
     }),
     check("snapshot_parts_part_number_positive", sql`${table.partNumber} > 0`),
     check("snapshot_parts_byte_length_nonnegative", sql`${table.byteLength} >= 0`),
+  ],
+);
+
+export const importParts = pgTable(
+  "import_parts",
+  {
+    organizationId: tenantId(),
+    importId: text("import_id").notNull(),
+    partNumber: integer("part_number").notNull(),
+    byteLength: integer("byte_length").notNull(),
+    sha256: text("sha256").notNull(),
+    frames: jsonb("frames").notNull(),
+    receivedAt: epochMilliseconds("received_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "import_parts_pk",
+      columns: [table.organizationId, table.importId, table.partNumber],
+    }),
+    index("import_parts_received_at_idx").on(table.receivedAt),
+    check("import_parts_part_number_positive", sql`${table.partNumber} > 0`),
+    check("import_parts_byte_length_positive", sql`${table.byteLength} > 0`),
+  ],
+);
+
+export const catalogImports = pgTable(
+  "catalog_imports",
+  {
+    organizationId: tenantId(),
+    importId: text("import_id").notNull(),
+    committedByUserId: text("committed_by_user_id").notNull(),
+    committedAt: epochMilliseconds("committed_at").notNull(),
+    resultJson: text("result_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "catalog_imports_organization_id_pk",
+      columns: [table.organizationId],
+    }),
   ],
 );

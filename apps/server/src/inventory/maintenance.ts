@@ -22,6 +22,8 @@ const MaintenancePolicy = Schema.Struct({
   snapshotRowDeleteBatchRows: Schema.Number,
   lagTransactions: Schema.Number,
   minimumRebuildMillis: Schema.Number,
+  abandonedImportMillis: Schema.Number,
+  abandonedImportBatchParts: Schema.Number,
 });
 export type MaintenancePolicy = typeof MaintenancePolicy.Type;
 
@@ -39,6 +41,8 @@ export const MAINTENANCE_POLICY = {
   snapshotRowDeleteBatchRows: 500,
   lagTransactions: SNAPSHOT_POLICY.lagTransactions,
   minimumRebuildMillis: SNAPSHOT_POLICY.minimumRebuildMillis,
+  abandonedImportMillis: 24 * 60 * 60_000,
+  abandonedImportBatchParts: 64,
 } as const satisfies MaintenancePolicy & { readonly cronExpression: string };
 
 const OrganizationMaintenance = Schema.Struct({
@@ -62,6 +66,7 @@ export const MaintenanceSummary = Schema.Struct({
   published: Schema.Number,
   retention: Schema.Array(OrganizationMaintenance),
   failures: Schema.Array(MaintenanceFailure),
+  sweptImportParts: Schema.Number,
   more: Schema.Boolean,
   elapsedMillis: Schema.Number,
 });

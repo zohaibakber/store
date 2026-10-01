@@ -33,6 +33,7 @@ import {
 import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
 import { InventoryAuthorityLive } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
+import { InventoryImports } from "./src/inventory/imports";
 import { InventoryLive } from "./src/inventory/live-horizon";
 import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
@@ -83,6 +84,7 @@ export const ApiLive = Api.make(
     const inventory = yield* Effect.all({
       commands: InventoryCommands,
       snapshots: InventorySnapshots,
+      imports: InventoryImports,
       live: InventoryLive,
       maintenance: InventoryMaintenance,
     }).pipe(

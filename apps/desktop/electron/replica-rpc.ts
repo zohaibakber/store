@@ -7,8 +7,11 @@ import {
 import {
   CommandStatus,
   EnqueueCommandRequest,
+  ImportId,
+  ImportPartNumber,
   LOCAL_ORGANIZATION_ID,
   LOCAL_USER_ID,
+  PartitionDigest,
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
 } from "@store/contracts";
@@ -18,6 +21,7 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
 
 export const ReplicaWorkspaceToken = NonEmptyString;
 
@@ -83,6 +87,30 @@ export const ReplicaCatalogCounts = Schema.Struct({
   sales: NonNegativeInteger,
   purchaseOrders: NonNegativeInteger,
 });
+
+export const ReplicaPublishSummary = Schema.Struct({
+  importId: ImportId,
+  ...ReplicaCatalogCounts.fields,
+  rows: NonNegativeInteger,
+  outstanding: NonNegativeInteger,
+});
+
+export const ReplicaPublishSeal = Schema.Struct({
+  partCount: ImportPartNumber,
+  digest: PartitionDigest,
+  digestVersion: PositiveInteger,
+});
+
+const ReplicaPublishProgress = Schema.Union([
+  Schema.TaggedStruct("staged", { partNumber: ImportPartNumber, rowCount: NonNegativeInteger }),
+  Schema.TaggedStruct("sealed", ReplicaPublishSeal.fields),
+]);
+
+const ReplicaPublishCommit = Schema.Union([
+  Schema.TaggedStruct("committed", {}),
+  Schema.TaggedStruct("refused", { message: Schema.String }),
+  Schema.TaggedStruct("unconfirmed", { message: Schema.String }),
+]);
 
 export const ReplicaWorkerBoot = Schema.Union([
   Schema.Struct({ ...LocalReplicaIdentity.fields, databasePath: Schema.String }),
@@ -235,6 +263,22 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   }),
   Rpc.make("ReleaseForRestore", {
     payload: { stagedPath: FilePath },
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("PublishSummary", {
+    payload: { sourcePath: FilePath },
+    success: ReplicaPublishSummary,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("PublishStage", {
+    payload: { sourcePath: FilePath, importId: ImportId },
+    success: ReplicaPublishProgress,
+    error: ReplicaWorkerFailure,
+    stream: true,
+  }),
+  Rpc.make("PublishCommit", {
+    payload: { sourcePath: FilePath, importId: ImportId, seal: ReplicaPublishSeal },
+    success: ReplicaPublishCommit,
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),

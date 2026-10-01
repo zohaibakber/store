@@ -62,3 +62,10 @@ export const recentProductsAtom = Atom.family((workspace: string) =>
     defaultValue: (): ReadonlyArray<RecentProduct> => [],
   }).pipe(Atom.keepAlive),
 );
+
+export const publishOfferDismissedAtom = Atom.kvs({
+  runtime: preferencesRuntime,
+  key: "store.publish-offer-dismissed",
+  schema: Schema.Array(Schema.String),
+  defaultValue: (): ReadonlyArray<string> => [],
+}).pipe(Atom.keepAlive);

@@ -23,6 +23,8 @@ export const unusedSyncAuthority: SyncAuthorityContract = {
   pull: unused,
   acquireSnapshot: unused,
   readSnapshotPart: unused,
+  stageImportPart: unused,
+  commitImport: unused,
 };
 
 export const silentLiveFanout = Layer.succeed(LiveFanout, {

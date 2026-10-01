@@ -25,14 +25,12 @@ import {
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  type ReplicaCommitEvent,
-  type ReplicaAnalyticsEvent,
-  type ReplicaSyncHealthEvent,
 } from "../../electron/replica-channels";
 import {
   registerReplicaWorkerIpc,
   type ReplicaInvokeEvent,
   type ReplicaIpcListener,
+  type ReplicaSentEvent,
 } from "../../electron/replica-ipc";
 import {
   ReplicaReaderRpcs,
@@ -124,6 +122,9 @@ const setupIpc = () => {
     BackUp: () => Effect.die("unused"),
     StageRestore: () => Effect.die("unused"),
     ReleaseForRestore: () => Effect.die("unused"),
+    PublishSummary: () => Effect.die("unused"),
+    PublishStage: () => Stream.die("unused"),
+    PublishCommit: () => Effect.die("unused"),
     Commits: () =>
       Stream.make({
         generationId: "1",
@@ -226,7 +227,7 @@ const setupIpc = () => {
   });
   const sent: Array<{
     readonly channel: string;
-    readonly event: ReplicaCommitEvent | ReplicaSyncHealthEvent | ReplicaAnalyticsEvent;
+    readonly event: ReplicaSentEvent;
   }> = [];
   const emitters = new Map<number, EventEmitter>();
   const emitterFor = (id: number) => {

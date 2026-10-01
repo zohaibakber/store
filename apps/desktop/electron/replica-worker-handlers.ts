@@ -14,6 +14,15 @@ import {
   type ReplicaFileSummary,
 } from "@store/client-db/node-backup";
 import {
+  commitPublish,
+  ImportRefused,
+  makeProxyImportClient,
+  readPublishSummary,
+  stagePublish,
+  type ImportClient,
+  type ReplicaPublishCommit,
+} from "@store/client-db/node-publish";
+import {
   makeProxySyncTransport,
   openNodeLocalReplicaSession,
   openNodeReplicaSyncSession,
@@ -81,6 +90,8 @@ const ORGANIZATION_BACKUP_MESSAGE =
 
 const UNOPENABLE_BACKUP_MESSAGE = "This backup could not be opened by this version of Tabaaq.";
 
+const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this device's data.";
+
 const fileFailure = (failure: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: failure.message });
 
@@ -98,6 +109,7 @@ type AuthorityLink = {
   readonly respondToken: (requestId: string, token: AccessTokenResult) => Effect.Effect<void>;
   readonly setForeground: (session: NodeReplicaSyncSession, visible: boolean) => Promise<void>;
   readonly healthOf: (health: ReplicaSyncHealth) => ReplicaSyncHealth;
+  readonly imports: ImportClient;
 };
 
 const sessionInput = (config: WorkerBoot) => ({
@@ -163,6 +175,7 @@ const linkRemoteAuthority = (
         if (visible) await session.wake("focus");
       },
       healthOf: identity,
+      imports: makeProxyImportClient(proxyFetch),
     };
   });
 
@@ -177,6 +190,15 @@ const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
   }
 };
 
+const needsOrganization = Effect.fail(
+  new ImportRefused({ code: "ORGANIZATION_REQUIRED", message: PUBLISH_NEEDS_ORGANIZATION }),
+);
+
+const localImports: ImportClient = {
+  stagePart: () => needsOrganization,
+  commit: () => needsOrganization,
+};
+
 const linkLocalAuthority = (
   config: Extract<WorkerBoot, { readonly authority: "local" }>,
   openSession: typeof openNodeLocalReplicaSession,
@@ -188,6 +210,7 @@ const linkLocalAuthority = (
   respondToken: () => Effect.void,
   setForeground: () => Promise.resolve(),
   healthOf: onDeviceHealth,
+  imports: localImports,
 });
 
 const linkAuthority = (
@@ -296,6 +319,19 @@ export const makeReplicaWorkerHandlers = <R>(
           yield* sealReplicaFile(stagedPath, stamp.localCommitVersion);
         }).pipe(Effect.mapError(fileFailure));
 
+      const afterPublish = (sourcePath: string, outcome: ReplicaPublishCommit) => {
+        switch (outcome._tag) {
+          case "committed":
+            return settleReplicaFile(sourcePath).pipe(
+              Effect.ignore,
+              Effect.andThen(withSession((current) => current.wake("focus")).pipe(Effect.ignore)),
+            );
+          case "refused":
+          case "unconfirmed":
+            return Effect.void;
+        }
+      };
+
       return ReplicaWorkerRpcs.of({
         Engine: () => Effect.succeed(opened === undefined ? "unavailable" : "sqlite"),
         Stamp: () => withSession((current) => current.stamp()).pipe(Effect.map(stampOf)),
@@ -349,6 +385,20 @@ export const makeReplicaWorkerHandlers = <R>(
               return Effect.fail(new ReplicaWorkerFailure({ message: LOCAL_ONLY_MESSAGE }));
           }
         },
+        PublishSummary: ({ sourcePath }) =>
+          readPublishSummary(sourcePath).pipe(Effect.mapError(fileFailure)),
+        PublishStage: ({ sourcePath, importId }) =>
+          stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
+            Stream.mapError(fileFailure),
+          ),
+        PublishCommit: ({ sourcePath, importId, seal }) =>
+          commitPublish({
+            path: sourcePath,
+            organizationId: config.organizationId,
+            importId,
+            seal,
+            client: link.imports,
+          }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
         Commits: () =>
           opened === undefined
             ? Stream.empty

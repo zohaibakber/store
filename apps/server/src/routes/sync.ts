@@ -1,4 +1,5 @@
-import { SyncNotFound } from "@store/contracts/sync/http-errors";
+import { MAX_IMPORT_PART_BYTES } from "@store/contracts";
+import { SyncForbidden, SyncNotFound } from "@store/contracts/sync/http-errors";
 import * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -43,21 +44,25 @@ const commandTooLargeResponse = () =>
     { status: 413 },
   );
 
+const importPartTooLargeResponse = () =>
+  HttpServerResponse.jsonUnsafe(
+    publicError("IMPORT_PART_TOO_LARGE", "The import part is too large to store."),
+    { status: 413 },
+  );
+
 const utf8 = new TextDecoder();
 
-const declaresOversizedBody = (request: HttpServerRequest.HttpServerRequest) => {
+const declaresOversizedBody = (request: HttpServerRequest.HttpServerRequest, maxBytes: number) => {
   const declared = Number(request.headers["content-length"]);
-  return Number.isFinite(declared) && declared > MAX_SUBMIT_BODY_BYTES;
+  return Number.isFinite(declared) && declared > maxBytes;
 };
 
-const boundedBodyText = (request: HttpServerRequest.HttpServerRequest) =>
-  declaresOversizedBody(request)
+const boundedBodyText = (request: HttpServerRequest.HttpServerRequest, maxBytes: number) =>
+  declaresOversizedBody(request, maxBytes)
     ? Effect.succeed(undefined)
     : request.arrayBuffer.pipe(
         Effect.orDie,
-        Effect.map((buffer) =>
-          buffer.byteLength > MAX_SUBMIT_BODY_BYTES ? undefined : utf8.decode(buffer),
-        ),
+        Effect.map((buffer) => (buffer.byteLength > maxBytes ? undefined : utf8.decode(buffer))),
       );
 
 const syncActor = (identity: CurrentOrganizationContext): InventoryActor => ({
@@ -75,6 +80,23 @@ const asActor = <A, R>(
     Effect.withSpan(`SyncHandlers.${span}`),
   );
 
+const ownerRequired = SyncForbidden.make(
+  publicError("OWNER_REQUIRED", "Only an owner can move a device's data into this organization."),
+);
+
+const asOwner = <A, R>(
+  span: string,
+  run: (actor: InventoryActor) => Effect.Effect<A, SyncAuthorityError, R>,
+) =>
+  CurrentOrganization.pipe(
+    Effect.flatMap((identity) =>
+      identity.role === "owner"
+        ? Effect.mapError(run(syncActor(identity)), mapSyncError)
+        : Effect.fail(ownerRequired),
+    ),
+    Effect.withSpan(`SyncHandlers.${span}`),
+  );
+
 export const SyncHandlers = HttpApiBuilder.group(
   StoreApi,
   "sync",
@@ -89,7 +111,7 @@ export const SyncHandlers = HttpApiBuilder.group(
       .handleRaw("submitCommand", ({ request }) =>
         asActor("submitCommand", (actor) =>
           Effect.gen(function* () {
-            const bodyText = yield* boundedBodyText(request);
+            const bodyText = yield* boundedBodyText(request, MAX_SUBMIT_BODY_BYTES);
             if (bodyText === undefined) return commandTooLargeResponse();
             const submitted = yield* authority.submitCommand(actor, bodyText);
             if (submitted.fanout !== null) {
@@ -126,6 +148,34 @@ export const SyncHandlers = HttpApiBuilder.group(
         asActor("readSnapshotPart", (actor) =>
           authority.readSnapshotPart(actor, params.snapshotId, params.partNumber),
         ).pipe(Effect.map((part) => snapshotPartResponse(part, request.headers["if-none-match"]))),
+      )
+      .handleRaw("stageImportPart", ({ params, request }) =>
+        asOwner("stageImportPart", (actor) =>
+          Effect.gen(function* () {
+            const bodyText = yield* boundedBodyText(request, MAX_IMPORT_PART_BYTES);
+            if (bodyText === undefined) return importPartTooLargeResponse();
+            const staged = yield* authority.stageImportPart(
+              actor,
+              params.importId,
+              params.partNumber,
+              bodyText,
+            );
+            return encodedJsonResponse(staged.json);
+          }),
+        ),
+      )
+      .handle("commitImport", ({ params, payload }) =>
+        asOwner("commitImport", (actor) =>
+          authority
+            .commitImport(actor, params.importId, payload)
+            .pipe(
+              Effect.tap((committed) =>
+                committed.fanout === null
+                  ? Effect.void
+                  : fanout.publish(actor.organizationId, committed.fanout),
+              ),
+            ),
+        ).pipe(Effect.map((committed) => encodedJsonResponse(committed.json))),
       );
   }),
 );

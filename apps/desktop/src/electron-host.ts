@@ -4,6 +4,7 @@ import type { AppHost } from "@/host";
 import { controlNewSaleShortcut } from "@/lib/new-sale-shortcut";
 import { decodedShareBridge } from "@/lib/share";
 import { decodedBackupBridge } from "@/lib/workspace-backup";
+import { decodedPublishBridge } from "@/lib/workspace-publish";
 
 type PreloadBridges = Pick<
   Window,
@@ -14,6 +15,7 @@ type PreloadBridges = Pick<
   | "electronTheme"
   | "workspaceBackup"
   | "sharing"
+  | "workspacePublish"
 >;
 
 export const electronAppHost = (bridges: PreloadBridges): AppHost => {
@@ -35,5 +37,6 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
     updater: bridges.updater,
     theme: bridges.electronTheme,
     backup: bridges.workspaceBackup && decodedBackupBridge(bridges.workspaceBackup),
+    publish: bridges.workspacePublish && decodedPublishBridge(bridges.workspacePublish),
   };
 };
