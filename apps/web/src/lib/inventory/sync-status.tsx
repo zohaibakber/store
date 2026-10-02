@@ -21,10 +21,11 @@ import {
 } from "@store/inventory-react";
 import { useState } from "react";
 
-import { SidebarMenuAction } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { canCheckForAppUpdate, useCheckForAppUpdate } from "@/hooks/use-app-updater";
 import { useOnline } from "@/hooks/use-online";
+import type { Workspace } from "@/host-access";
 import { acknowledgedRejectionsAtom } from "@/lib/preferences";
 import { cn } from "@/lib/utils";
 
@@ -97,13 +98,14 @@ function SyncButtonView({
     <Tooltip>
       <TooltipTrigger
         render={
-          <SidebarMenuAction
+          <Button
             aria-label={label}
-            className="peer-data-[size=lg]/menu-button:top-3.5"
             onAnimationIteration={() => {
               if (!syncing) setSpinning(false);
             }}
             onClick={onSync}
+            size="icon-sm"
+            variant="ghost"
           />
         }
       >
@@ -116,24 +118,26 @@ function SyncButtonView({
           icon={icon}
         />
       </TooltipTrigger>
-      <TooltipPopup side="right">{label}</TooltipPopup>
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
     </Tooltip>
   );
 }
 
-export function SidebarSyncButton() {
+export function WorkspaceSyncAction({ workspace }: { readonly workspace: Workspace }) {
   if (!useCatalogIsReady()) return null;
-  return <ReadySyncButton />;
+  switch (workspace._tag) {
+    case "Local":
+      return <ReadyOnDeviceAction />;
+    case "Organization":
+      return <ReadySyncButton />;
+    case "None":
+      return null;
+  }
 }
 
 export function OnDeviceStatus() {
   if (!useCatalogIsReady()) return null;
   return <ReadyOnDeviceStatus />;
-}
-
-export function OnDeviceAction() {
-  if (!useCatalogIsReady()) return null;
-  return <ReadyOnDeviceAction />;
 }
 
 function OnDeviceActionButton({
@@ -153,11 +157,12 @@ function OnDeviceActionButton({
     <Tooltip>
       <TooltipTrigger
         render={
-          <SidebarMenuAction
+          <Button
             aria-label={label}
-            className="peer-data-[size=lg]/menu-button:top-3.5"
             disabled={busy}
             onClick={onClick}
+            size="icon-sm"
+            variant="ghost"
           />
         }
       >
@@ -167,20 +172,20 @@ function OnDeviceActionButton({
           icon={icon}
         />
       </TooltipTrigger>
-      <TooltipPopup side="right">{label}</TooltipPopup>
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
     </Tooltip>
   );
 }
 
 function ReadyOnDeviceAction() {
   const { retrySync } = useInventoryActions();
-  const { status, dismissible, dismiss } = useSyncIssue();
+  const { status, label, dismissible, dismiss } = useSyncIssue();
   const [retrying, setRetrying] = useState(false);
   if (dismissible) {
     return (
       <OnDeviceActionButton
         icon={Cancel01Icon}
-        label="Dismiss"
+        label={`${label} Click to dismiss.`}
         onClick={dismiss}
         tone="text-muted-foreground"
       />
@@ -197,7 +202,7 @@ function ReadyOnDeviceAction() {
     <OnDeviceActionButton
       busy={retrying}
       icon={RefreshCwIcon}
-      label="Try again"
+      label={`${label} Click to try again.`}
       onClick={retry}
       tone="text-warning-foreground"
     />

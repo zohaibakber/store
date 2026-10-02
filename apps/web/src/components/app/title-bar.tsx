@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
-function TitleBar({ children, className, ...props }: React.ComponentProps<"header">) {
+function TitleBar({ className, ...props }: React.ComponentProps<"header">) {
   return (
     <header
       className={cn(
@@ -16,10 +16,17 @@ function TitleBar({ children, className, ...props }: React.ComponentProps<"heade
       )}
       data-slot="title-bar"
       {...props}
-    >
-      {children}
-      <div aria-hidden="true" className="titlebar-end-padding" />
-    </header>
+    />
+  );
+}
+
+function TitleBarEnd({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("titlebar-end-padding flex items-center justify-end gap-1", className)}
+      data-slot="title-bar-end"
+      {...props}
+    />
   );
 }
 
@@ -53,4 +60,4 @@ function TitleBarSearch() {
   );
 }
 
-export { TitleBar, TitleBarSearch, TitleBarStart };
+export { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart };

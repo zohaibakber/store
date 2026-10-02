@@ -24,9 +24,8 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import type { Workspace } from "@/host-access";
 import { signOut, useAuth } from "@/lib/auth";
-import { OnDeviceAction, OnDeviceStatus, SidebarSyncButton } from "@/lib/inventory/sync-status";
+import { OnDeviceStatus } from "@/lib/inventory/sync-status";
 import { usePublishInProgress } from "@/lib/local-publish";
 
 type Identity = {
@@ -39,11 +38,7 @@ type Identity = {
 const DEVICE_IDENTITY: Identity = {
   name: "This device",
   detail: "No account",
-  mark: (
-    <span className="flex size-4 shrink-0 items-center justify-center group-data-[collapsible=icon]:size-8">
-      <HugeiconsIcon aria-hidden="true" className="size-4" icon={ComputerIcon} />
-    </span>
-  ),
+  mark: <HugeiconsIcon aria-hidden="true" icon={ComputerIcon} />,
   avatar: (
     <Avatar className="size-8 shrink-0">
       <AvatarFallback>
@@ -58,13 +53,18 @@ const accountIdentity = (user: {
   readonly email: string;
   readonly image?: string | null;
 }): Identity => {
-  const avatar = (
-    <Avatar className="size-8 shrink-0">
+  const face = (
+    <>
       <AvatarImage alt={user.name} src={user.image ?? undefined} />
       <AvatarFallback>{initials(user.name)}</AvatarFallback>
-    </Avatar>
+    </>
   );
-  return { name: user.name, detail: user.email, mark: avatar, avatar };
+  return {
+    name: user.name,
+    detail: user.email,
+    mark: <Avatar className="-mx-0.5 size-5 shrink-0">{face}</Avatar>,
+    avatar: <Avatar className="size-8 shrink-0">{face}</Avatar>,
+  };
 };
 
 function IdentityRow({
@@ -86,22 +86,6 @@ function IdentityRow({
     </>
   );
 }
-
-type SyncSlots = {
-  readonly status: React.ReactNode;
-  readonly action: React.ReactNode;
-};
-
-const syncOf = (workspace: Workspace): SyncSlots => {
-  switch (workspace._tag) {
-    case "Local":
-      return { status: <OnDeviceStatus />, action: <OnDeviceAction /> };
-    case "Organization":
-      return { status: null, action: <SidebarSyncButton /> };
-    case "None":
-      return { status: null, action: null };
-  }
-};
 
 const THEMES = [
   { value: "system", label: "System", icon: ComputerIcon },
@@ -140,29 +124,30 @@ export function NavUser() {
   const moving = usePublishInProgress();
   const signedIn = snapshot?.status === "authenticated";
   const identity = signedIn ? accountIdentity(snapshot.user) : DEVICE_IDENTITY;
-  const sync = syncOf(workspace);
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <Menu>
           <MenuTrigger
-            render={
-              <SidebarMenuButton aria-label="Account menu" size="lg" tooltip={identity.name} />
-            }
+            render={<SidebarMenuButton aria-label="Account menu" tooltip={identity.name} />}
           >
-            <IdentityRow detail={sync.status} mark={identity.mark} name={identity.name} />
+            {identity.mark}
+            <span>{identity.name}</span>
           </MenuTrigger>
-          {sync.action}
           <MenuPopup align="start" className="w-(--anchor-width) min-w-56!" side="top">
             <MenuGroup>
               <MenuGroupLabel>
                 <span className="flex w-full items-center gap-2">
                   <IdentityRow
                     detail={
-                      <span className="truncate text-xs text-muted-foreground">
-                        {identity.detail}
-                      </span>
+                      workspace._tag === "Local" ? (
+                        <OnDeviceStatus />
+                      ) : (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {identity.detail}
+                        </span>
+                      )
                     }
                     mark={identity.avatar}
                     name={identity.name}
