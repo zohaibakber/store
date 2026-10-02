@@ -421,7 +421,7 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
     >
       <Frame
         className={cn(
-          "w-full *:data-[slot=table-container]:overflow-x-visible **:data-[slot=table-head]:sticky **:data-[slot=table-head]:top-16 **:data-[slot=table-head]:z-10",
+          "w-full *:data-[slot=table-container]:overflow-x-visible **:data-[slot=table-head]:sticky **:data-[slot=table-head]:top-0 **:data-[slot=table-head]:z-10",
           className,
         )}
         {...props}

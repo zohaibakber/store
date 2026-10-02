@@ -34,10 +34,7 @@ function PageToolbar({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="page-toolbar"
-      className={cn(
-        "sticky top-0 z-10 -my-4 flex h-16 min-w-0 shrink-0 items-center justify-end gap-2 bg-background",
-        className,
-      )}
+      className={cn("-my-4 flex h-16 min-w-0 shrink-0 items-center justify-end gap-2", className)}
       {...props}
     />
   );

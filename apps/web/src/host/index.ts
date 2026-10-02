@@ -49,8 +49,17 @@ export type ThemeSource = "dark" | "light" | "system";
 
 export type ThemeBridge = { readonly setSource: (source: ThemeSource) => void };
 
+export type WindowControlsBridge = {
+  readonly minimize: () => void;
+  readonly toggleMaximize: () => void;
+  readonly close: () => void;
+  readonly isMaximized: () => boolean;
+  readonly onMaximizedChange: (listener: () => void) => () => void;
+};
+
 export type DesktopShellBridge = {
   readonly onNewSale: (listener: () => void) => () => void;
+  readonly window: WindowControlsBridge;
 };
 
 export interface AppHost {

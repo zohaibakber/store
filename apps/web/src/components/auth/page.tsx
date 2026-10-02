@@ -2,6 +2,7 @@ import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
+import { WindowDragStrip } from "@/components/app/window-controls";
 import { PasswordInput } from "@/components/auth/password-input";
 import { BrandMark } from "@/components/brand-mark";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,10 +31,7 @@ const messageOf = (cause: unknown) =>
 export function AuthScreen({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10">
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 z-0 h-10 [-webkit-app-region:drag]"
-      />
+      <WindowDragStrip />
       <div className="relative z-10 w-full max-w-sm">{children}</div>
     </div>
   );

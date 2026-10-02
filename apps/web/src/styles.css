@@ -258,23 +258,6 @@
 }
 
 @layer components {
-  .titlebar-end-padding {
-    padding-inline-end: max(
-      0.5rem,
-      calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.25rem)
-    );
-  }
-
-  [data-slot="sheet-popup"] {
-    margin-top: env(titlebar-area-height, 0px);
-  }
-
-  @media (width >= 40rem) {
-    [data-slot="sheet-popup"] {
-      margin-top: max(0px, calc(env(titlebar-area-height, 0px) - 1rem));
-    }
-  }
-
   [data-slot="chart"] .ts-chart {
     color: var(--muted-foreground);
   }

@@ -65,6 +65,10 @@ import {
   UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
+  WINDOW_CLOSE_CHANNEL,
+  WINDOW_MAXIMIZED_CHANNEL,
+  WINDOW_MINIMIZE_CHANNEL,
+  WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
   type ReplicaAnalyticsEvent,
   type ReplicaCommitEvent,
   type ReplicaSyncHealthEvent,
@@ -233,11 +237,23 @@ const electronTheme: ThemeBridge = {
 
 contextBridge.exposeInMainWorld("electronTheme", electronTheme);
 
+const windowMaximized = makeReplayChannel<boolean>();
+ipcRenderer.on(WINDOW_MAXIMIZED_CHANNEL, (_event, maximized: boolean) =>
+  windowMaximized.publish(maximized),
+);
+
 const desktopShell: DesktopShellBridge = {
   onNewSale(callback) {
     const listener = () => callback();
     ipcRenderer.on(NEW_SALE_CHANNEL, listener);
     return () => ipcRenderer.off(NEW_SALE_CHANNEL, listener);
+  },
+  window: {
+    minimize: () => ipcRenderer.send(WINDOW_MINIMIZE_CHANNEL),
+    toggleMaximize: () => ipcRenderer.send(WINDOW_TOGGLE_MAXIMIZE_CHANNEL),
+    close: () => ipcRenderer.send(WINDOW_CLOSE_CHANNEL),
+    isMaximized: () => windowMaximized.current() ?? false,
+    onMaximizedChange: (listener) => windowMaximized.subscribe(() => listener()),
   },
 };
 

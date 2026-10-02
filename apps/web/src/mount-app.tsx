@@ -12,6 +12,7 @@ import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { WindowDragStrip } from "@/components/app/window-controls";
 import { ThemeProvider } from "@/components/theme/provider";
 import { appHost } from "@/host";
 import type { HostAccessPolicy } from "@/host-access";
@@ -60,7 +61,10 @@ export const mountApp = (input: {
     <React.StrictMode>
       <AppErrorBoundary
         fallback={
-          <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
+          <main className="relative min-h-svh pt-10">
+            <WindowDragStrip />
+            <p className="p-4 text-sm">The app hit an unexpected error. Reopen it to try again.</p>
+          </main>
         }
       >
         <RegistryContext.Provider value={registry}>

@@ -120,7 +120,7 @@ function InvoiceCreatePage({
         <SaleDraftTabs />
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <InvoiceItems />
-          <div className="lg:sticky lg:top-16">
+          <div className="lg:sticky lg:top-4">
             <InvoiceCheckout />
           </div>
         </div>

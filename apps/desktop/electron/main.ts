@@ -27,6 +27,10 @@ import {
   AUTH_SESSION_CHANGED_CHANNEL,
   OAUTH_CALLBACK_CHANNEL,
   THEME_SET_SOURCE_CHANNEL,
+  WINDOW_CLOSE_CHANNEL,
+  WINDOW_MAXIMIZED_CHANNEL,
+  WINDOW_MINIMIZE_CHANNEL,
+  WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from "./ipc-channels";
 import { isTrustedIpcSenderFrame } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
@@ -106,22 +110,11 @@ if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
   }
 }
 
-const TITLE_BAR_HEIGHT = 40;
 const WINDOW_LIGHT_BACKGROUND = "#ffffff";
 const WINDOW_DARK_BACKGROUND = "#161616";
-const TITLE_BAR_LIGHT_SYMBOL_COLOR = "#1f2937";
-const TITLE_BAR_DARK_SYMBOL_COLOR = "#f8fafc";
 
 const windowBackground = () =>
   nativeTheme.shouldUseDarkColors ? WINDOW_DARK_BACKGROUND : WINDOW_LIGHT_BACKGROUND;
-
-const titleBarOverlay = () => ({
-  color: `${windowBackground()}00`,
-  height: TITLE_BAR_HEIGHT,
-  symbolColor: nativeTheme.shouldUseDarkColors
-    ? TITLE_BAR_DARK_SYMBOL_COLOR
-    : TITLE_BAR_LIGHT_SYMBOL_COLOR,
-});
 
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
@@ -211,21 +204,18 @@ const publishReplicaForeground = (visible: boolean) => {
     .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
 };
 
+const publishWindowMaximized = () => {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send(WINDOW_MAXIMIZED_CHANNEL, win.isMaximized());
+};
+
 function createWindow() {
   win = new BrowserWindow({
     icon: appIconPath(),
     show: false,
     autoHideMenuBar: true,
     backgroundColor: windowBackground(),
-    ...(process.platform === "darwin"
-      ? {
-          titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 16, y: 18 },
-        }
-      : {
-          titleBarStyle: "hidden" as const,
-          titleBarOverlay: titleBarOverlay(),
-        }),
+    titleBarStyle: "hidden",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       backgroundThrottling: true,
@@ -244,6 +234,7 @@ function createWindow() {
 
   win.once("ready-to-show", () => win?.show());
   win.webContents.on("did-finish-load", deliverOAuthCallback);
+  win.webContents.on("did-finish-load", publishWindowMaximized);
   win.webContents.on("console-message", (event) => {
     if (event.level === "debug" || event.level === "info") return;
     const location = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : "";
@@ -256,6 +247,8 @@ function createWindow() {
   win.on("closed", () => {
     win = null;
   });
+  win.on("maximize", publishWindowMaximized);
+  win.on("unmaximize", publishWindowMaximized);
   win.on("blur", () => publishReplicaForeground(false));
   win.on("minimize", () => publishReplicaForeground(false));
   win.on("hide", () => publishReplicaForeground(false));
@@ -270,8 +263,21 @@ nativeTheme.on("updated", () => {
   if (!win || win.isDestroyed()) return;
 
   win.setBackgroundColor(windowBackground());
-  if (process.platform !== "darwin") win.setTitleBarOverlay(titleBarOverlay());
 });
+
+const onWindowControl = (channel: string, control: (window: BrowserWindow) => void) => {
+  ipcMain.on(channel, (event) => {
+    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
+    if (!win || win.isDestroyed()) return;
+    control(win);
+  });
+};
+
+onWindowControl(WINDOW_MINIMIZE_CHANNEL, (window) => window.minimize());
+onWindowControl(WINDOW_TOGGLE_MAXIMIZE_CHANNEL, (window) =>
+  window.isMaximized() ? window.unmaximize() : window.maximize(),
+);
+onWindowControl(WINDOW_CLOSE_CHANNEL, (window) => window.close());
 
 ipcMain.on(THEME_SET_SOURCE_CHANNEL, (event, input) => {
   if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;

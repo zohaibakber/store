@@ -54,6 +54,10 @@ export const SHARE_SAVE_PDF_CHANNEL = "share:save-pdf";
 export const THEME_SET_SOURCE_CHANNEL = "theme:set-source";
 
 export const NEW_SALE_CHANNEL = "shell:new-sale";
+export const WINDOW_MINIMIZE_CHANNEL = "shell:window-minimize";
+export const WINDOW_TOGGLE_MAXIMIZE_CHANNEL = "shell:window-toggle-maximize";
+export const WINDOW_CLOSE_CHANNEL = "shell:window-close";
+export const WINDOW_MAXIMIZED_CHANNEL = "shell:window-maximized";
 
 export const UPDATER_CHECK_CHANNEL = "updater:check";
 export const UPDATER_DOWNLOAD_CHANNEL = "updater:download";

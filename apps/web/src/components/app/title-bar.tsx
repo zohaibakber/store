@@ -23,7 +23,7 @@ function TitleBar({ className, ...props }: React.ComponentProps<"header">) {
 function TitleBarEnd({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("titlebar-end-padding flex items-center justify-end gap-1", className)}
+      className={cn("flex items-center justify-end gap-1 pe-2", className)}
       data-slot="title-bar-end"
       {...props}
     />
