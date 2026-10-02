@@ -68,6 +68,7 @@ const facts = (input: {
     products: input.products,
     batches: input.batches,
     sales: input.sales,
+    onOrder: [],
     days: [...byDay.values()],
     hours: [{ hour: 18, invoices: 40, revenue: 1 }],
     truncated: false,

@@ -122,11 +122,87 @@ const BASES: ReadonlyArray<readonly [string, Schema.Json]> = [
     ]),
   ],
   [
+    "batch receipt",
+    catalog([
+      {
+        entity: "batch",
+        action: "upsert",
+        id: "batch-1",
+        expectedRowVersion: null,
+        movementId: "movement-1",
+        note: null,
+        row: {
+          productId: "product-1",
+          batchNumber: null,
+          expiresAt: null,
+          packQuantity: 4,
+          unitQuantity: 2,
+        },
+        receipt: { purchaseOrderItemId: "line-1" },
+      },
+    ]),
+  ],
+  [
+    "supplier upsert",
+    catalog([
+      {
+        entity: "supplier",
+        action: "upsert",
+        id: "supplier-1",
+        expectedRowVersion: null,
+        row: { name: "Acme Distributors", phone: "923001234567", note: "Tuesdays" },
+      },
+    ]),
+  ],
+  [
+    "purchase order upsert",
+    catalog([
+      {
+        entity: "purchaseOrder",
+        action: "upsert",
+        id: "order-1",
+        expectedRowVersion: 2,
+        row: {
+          orderNumber: 7,
+          supplierId: "supplier-1",
+          status: "sent",
+          note: "Call before delivery",
+          sentAt: 1_700_000_000_000,
+          expectedAt: 1_700_086_400_000,
+          total: 1_200,
+        },
+      },
+    ]),
+  ],
+  [
+    "purchase order line upsert",
+    catalog([
+      {
+        entity: "purchaseOrderItem",
+        action: "upsert",
+        id: "line-1",
+        expectedRowVersion: null,
+        row: {
+          purchaseOrderId: "order-1",
+          productId: "product-1",
+          productName: "Paracetamol",
+          quantity: 3,
+          quantityType: "pack",
+          baseUnitQuantity: 30,
+          packCost: 400,
+        },
+      },
+    ]),
+  ],
+  [
     "deletes",
     catalog([
       { entity: "category", action: "delete", id: "category-2", expectedRowVersion: 1 },
       { entity: "product", action: "delete", id: "product-2", expectedRowVersion: 2 },
       { entity: "batch", action: "delete", id: "batch-2", expectedRowVersion: 5 },
+      { entity: "supplier", action: "delete", id: "supplier-2", expectedRowVersion: 1 },
+      { entity: "purchaseOrder", action: "delete", id: "order-2", expectedRowVersion: 3 },
+      { entity: "purchaseOrderItem", action: "delete", id: "line-2", expectedRowVersion: 4 },
     ]),
   ],
 ];

@@ -17,17 +17,18 @@ import {
   type AnalyticsRun,
   type InsightsBatchFact,
   type InsightsContext,
+  type InsightsOnOrderFact,
   type InsightsProductFact,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
-import { classifyRevenueRanking, insightsWindowFor } from "@store/services/insights";
+import { classifyRevenueRanking, insightsWindowFor, onOrderLookup } from "@store/services/insights";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { analyzeProducts, summarizeRun } from "./analytics-analysis";
+import { analyzeProducts, onOrderChanges, summarizeRun } from "./analytics-analysis";
 import { RELEVANT_ENTITIES, type ChangeFeed } from "./analytics-changes";
 
 const PRODUCT_PAGE_SIZE = 500;
@@ -229,6 +230,7 @@ const readChanged = (snapshot: InventorySnapshot, keys: ReadonlyArray<string>, d
       productIds.length === 0 ? [] : snapshot.batchesForProducts(productIds),
     ),
     sales: productIds.length === 0 ? [] : snapshot.sales(dates.days, productIds),
+    onOrder: snapshot.onOrder(),
     facts: snapshot.windowFacts(dates.window),
   };
 };
@@ -238,10 +240,12 @@ const analyzeStaged = (
   runId: number,
   context: InsightsContext,
   dates: RunDates,
+  onOrder: ReadonlyArray<InsightsOnOrderFact>,
   reportAnalyzed: (count: number) => Effect.Effect<void>,
 ) =>
   Effect.gen(function* () {
     const { store } = deps;
+    const onOrderOf = onOrderLookup(onOrder);
     const abc = new Map<string, "A" | "B" | "C">();
     classifyRevenueRanking(
       store.workSales.revenueRanking(runId, dates.today - RANKING_DAYS + 1, dates.today),
@@ -259,6 +263,7 @@ const analyzeStaged = (
             products: staged.map((entry) => entry.product),
             batches: staged.flatMap((entry) => entry.batches),
             sales: store.workSales.range(runId, first.product.id, last.product.id),
+            onOrderOf,
             abcOf: abcLookup(abc),
             policy: context.policy,
             now: dates.now,
@@ -297,7 +302,7 @@ const attemptFull = (deps: PipelineDeps, context: InsightsContext, dates: RunDat
     if (settled === undefined) return yield* new SourceMoved();
     const changed = settled.value;
     if (changed.productIds.length > 0) store.staged.replace(runId, changed);
-    yield* analyzeStaged(deps, runId, context, dates, advance);
+    yield* analyzeStaged(deps, runId, context, dates, changed.onOrder, advance);
     const { days, hours } = changed.facts;
     return store.publish({
       runId,
@@ -336,17 +341,14 @@ const readIncremental = (
   snapshot: InventorySnapshot,
   keys: ReadonlyArray<string>,
   stored: ReturnType<AnalyticsStore["rankingOf"]>,
+  storedOnOrder: ReadonlyArray<InsightsOnOrderFact>,
   dates: RunDates,
 ) => {
   const resolution = snapshot.resolveTouched(keys, INCREMENTAL_PRODUCT_LIMIT);
-  if (
-    resolution.unresolved ||
-    resolution.overflow ||
-    resolution.productIds.size > INCREMENTAL_PRODUCT_LIMIT
-  ) {
-    return undefined;
-  }
-  const affected = resolution.productIds;
+  if (resolution.unresolved || resolution.overflow) return undefined;
+  const onOrder = snapshot.onOrder();
+  const affected = new Set([...resolution.productIds, ...onOrderChanges(storedOnOrder, onOrder)]);
+  if (affected.size > INCREMENTAL_PRODUCT_LIMIT) return undefined;
   const affectedIds = [...affected];
   const products = snapshot.productsByIds(affectedIds);
   const affectedSales = affectedIds.length === 0 ? [] : snapshot.sales(dates.days, affectedIds);
@@ -387,6 +389,7 @@ const readIncremental = (
     batches:
       targets.length === 0 ? [] : snapshot.batchesForProducts(targets.map((product) => product.id)),
     sales: [...affectedSales, ...flippedSales],
+    onOrder,
     abc,
     facts: snapshot.windowFacts(dates.window),
   };
@@ -404,9 +407,10 @@ const runIncremental = (
     const { store } = deps;
     const base = { generation: published.sourceGeneration, version: published.sourceVersion };
     const stored = store.rankingOf(published.runId);
+    const storedOnOrder = store.onOrderOf(published.runId);
     yield* deps.progress(0, pendingKeys.length);
     const settled = yield* settle(deps, base, start, pendingKeys, (snapshot, keys) =>
-      readIncremental(snapshot, keys, stored, dates),
+      readIncremental(snapshot, keys, stored, storedOnOrder, dates),
     ).pipe(Effect.catchTag("SourceMoved", () => Effect.succeed(undefined)));
     if (settled === undefined) return undefined;
     const read = settled.value;
@@ -414,6 +418,7 @@ const runIncremental = (
       products: read.targets,
       batches: read.batches,
       sales: read.sales,
+      onOrderOf: onOrderLookup(read.onOrder),
       abcOf: abcLookup(read.abc),
       policy: context.policy,
       now: dates.now,

@@ -3,6 +3,8 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  ReplicaClientSequence,
+  SYNC_SCHEMA_VERSION,
 } from "@store/contracts";
 import {
   LAST_UNIT_EPOCH,
@@ -194,6 +196,28 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
         expect(notices.map((notice) => notice.touchedEntities)).toEqual([[]]);
         expect((yield* harness.readActivity()).caughtUpAt).toBe(1_234);
         expect(yield* harness.store.readStamp()).toEqual(before);
+      }),
+    ),
+  );
+
+  it.effect("reports the lowest schema version another device still runs", () =>
+    withHarness((harness) =>
+      Effect.gen(function* () {
+        expect((yield* harness.readActivity()).lowestActiveSchemaVersion).toBeNull();
+        yield* harness.store.adoptRegistration(
+          {
+            replicaId: LAST_UNIT_REPLICA_A,
+            epoch: LAST_UNIT_EPOCH,
+            incarnation: AuthorityIncarnation.make(harness.incarnation),
+            nextClientSequence: ReplicaClientSequence.make("1"),
+            retentionFloor: OrgCommitSequence.make("0"),
+            horizon: OrgCommitSequence.make("0"),
+            schemaVersion: SYNC_SCHEMA_VERSION,
+            lowestActiveSchemaVersion: 1,
+          },
+          1_234,
+        );
+        expect((yield* harness.readActivity()).lowestActiveSchemaVersion).toBe(1);
       }),
     ),
   );

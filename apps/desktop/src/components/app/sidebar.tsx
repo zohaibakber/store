@@ -3,8 +3,10 @@ import {
   HomeIcon,
   Invoice01Icon,
   SettingsIcon,
+  ShoppingBasket01Icon,
   TagIcon,
   TagsIcon,
+  UserMultipleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
@@ -64,12 +66,6 @@ const navMain = [
     icon: <HugeiconsIcon icon={HomeIcon} />,
   },
   {
-    title: "Restock",
-    url: "/restock",
-    icon: <HugeiconsIcon icon={PackageIcon} />,
-    badge: <RestockCount />,
-  },
-  {
     title: "Products",
     url: "/products",
     icon: <HugeiconsIcon icon={TagIcon} />,
@@ -80,6 +76,24 @@ const navMain = [
         icon: <HugeiconsIcon icon={TagsIcon} />,
       },
     ],
+  },
+  {
+    title: "Purchases",
+    url: "/purchases",
+    icon: <HugeiconsIcon icon={ShoppingBasket01Icon} />,
+    items: [
+      {
+        title: "Suppliers",
+        url: "/purchases/suppliers",
+        icon: <HugeiconsIcon icon={UserMultipleIcon} />,
+      },
+    ],
+  },
+  {
+    title: "Restock",
+    url: "/restock",
+    icon: <HugeiconsIcon icon={PackageIcon} />,
+    badge: <RestockCount />,
   },
   {
     title: "Invoices",

@@ -1,5 +1,5 @@
-import type { SyncCommand } from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
+import type { SyncCommand, SyncEntity } from "@store/contracts";
+import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import {
   batches,
   categories,
@@ -7,80 +7,143 @@ import {
   invoices,
   pendingRowMarks,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   stockOverlays,
+  suppliers,
 } from "@store/db/replica.schema";
-import { and, eq, gt, inArray, max, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, max, ne, or } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import type { NamedEntity, NumberedEntity } from "./codecs";
 import { EMPTY_STOCK, withPendingOverlays, type VisibleStock } from "./decisions";
-import { loadCatalog, type CatalogReads, type CommandFootprint } from "./footprint";
-import type { ReplicaCatalogLookup } from "./projection";
+import { loadCatalog, type CatalogReads } from "./footprint";
+import type { CatalogEntity, ReplicaCatalogLookup } from "./projection";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
-const decodeCategory = Schema.decodeUnknownSync(syncEntityRows.category.schema);
-const decodeProduct = Schema.decodeUnknownSync(syncEntityRows.product.schema);
 const decodeBatch = Schema.decodeUnknownSync(syncEntityRows.batch.schema);
 
 const IDS_PER_QUERY = 400;
 
 const chunked = (ids: ReadonlyArray<string>) => Array.chunksOf(ids, IDS_PER_QUERY);
 
-const readCategoriesById = Effect.fn("ReplicaLookup.readCategoriesById")(function* (
+const numberedTables = {
+  invoice: { table: invoices, number: invoices.invoiceNumber },
+  purchaseOrder: { table: purchaseOrders, number: purchaseOrders.orderNumber },
+} as const;
+
+export const readNumberHolder = (
   tx: ReplicaDb,
   organizationId: string,
+  entity: NumberedEntity,
+  number: number,
+  excludedId: string,
+) => {
+  const numbered = numberedTables[entity];
+  return tx
+    .select({ id: numbered.table.id })
+    .from(numbered.table)
+    .where(
+      and(
+        eq(numbered.table.organizationId, organizationId),
+        eq(numbered.number, number),
+        ne(numbered.table.id, excludedId),
+      ),
+    )
+    .limit(1)
+    .get();
+};
+
+export const readHighestNumber = (
+  tx: ReplicaDb,
+  organizationId: string,
+  entity: NumberedEntity,
+  excludedId?: string,
+) => {
+  const numbered = numberedTables[entity];
+  return tx
+    .select({ highest: max(numbered.number) })
+    .from(numbered.table)
+    .where(
+      excludedId === undefined
+        ? eq(numbered.table.organizationId, organizationId)
+        : and(eq(numbered.table.organizationId, organizationId), ne(numbered.table.id, excludedId)),
+    )
+    .get()
+    .pipe(Effect.map((row) => row?.highest ?? 0));
+};
+
+const namedTables = {
+  category: categories,
+  supplier: suppliers,
+} as const;
+
+export const readNameHolder = (
+  tx: ReplicaDb,
+  organizationId: string,
+  entity: NamedEntity,
+  name: string,
+  excludedId: string,
+) => {
+  const table = namedTables[entity];
+  return tx
+    .select({ id: table.id, name: table.name })
+    .from(table)
+    .where(
+      and(eq(table.organizationId, organizationId), eq(table.name, name), ne(table.id, excludedId)),
+    )
+    .limit(1)
+    .get();
+};
+
+const selectRowsById = Effect.fn("ReplicaLookup.selectRowsById")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  entity: SyncEntity,
   ids: ReadonlyArray<string>,
 ) {
+  const { table } = syncEntityRows[entity];
   const rows = yield* Effect.forEach(chunked(ids), (chunk) =>
     tx
       .select()
-      .from(categories)
-      .where(and(eq(categories.organizationId, organizationId), inArray(categories.id, chunk)))
+      .from(table)
+      .where(and(eq(table.organizationId, organizationId), inArray(table.id, chunk)))
       .all(),
   );
-  return rows.flat().map((row) => decodeCategory(row));
+  return rows.flat();
 });
 
-const readProductsById = Effect.fn("ReplicaLookup.readProductsById")(function* (
+const readRowsById = <Entity extends CatalogEntity>(
   tx: ReplicaDb,
   organizationId: string,
+  entity: Entity,
   ids: ReadonlyArray<string>,
-) {
-  const rows = yield* Effect.forEach(chunked(ids), (chunk) =>
-    tx
-      .select()
-      .from(products)
-      .where(and(eq(products.organizationId, organizationId), inArray(products.id, chunk)))
-      .all(),
+) => {
+  const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);
+  return selectRowsById(tx, organizationId, entity, ids).pipe(
+    Effect.map((rows): ReadonlyArray<SyncEntityRow<Entity>> => rows.map((row) => decode(row))),
   );
-  return rows.flat().map((row) => decodeProduct(row));
-});
-
-const readBatchesById = Effect.fn("ReplicaLookup.readBatchesById")(function* (
-  tx: ReplicaDb,
-  organizationId: string,
-  ids: ReadonlyArray<string>,
-) {
-  const rows = yield* Effect.forEach(chunked(ids), (chunk) =>
-    tx
-      .select()
-      .from(batches)
-      .where(and(eq(batches.organizationId, organizationId), inArray(batches.id, chunk)))
-      .all(),
-  );
-  return rows.flat().map((row) => decodeBatch(row));
-});
+};
 
 const sqliteCatalogReads = (
   tx: ReplicaDb,
   organizationId: string,
 ): CatalogReads<unknown, never> => ({
-  rowsOf: (footprint: CommandFootprint) =>
+  rowsOf: (footprint) =>
     Effect.all({
-      categories: readCategoriesById(tx, organizationId, footprint.categoryIds),
-      products: readProductsById(tx, organizationId, footprint.productIds),
-      batches: readBatchesById(tx, organizationId, footprint.batchIds),
+      category: readRowsById(tx, organizationId, "category", footprint.category),
+      product: readRowsById(tx, organizationId, "product", footprint.product),
+      batch: readRowsById(tx, organizationId, "batch", footprint.batch),
+      supplier: readRowsById(tx, organizationId, "supplier", footprint.supplier),
+      purchaseOrder: readRowsById(tx, organizationId, "purchaseOrder", footprint.purchaseOrder),
+      purchaseOrderItem: readRowsById(
+        tx,
+        organizationId,
+        "purchaseOrderItem",
+        footprint.purchaseOrderItem,
+      ),
     }),
   productInCategory: (categoryId) =>
     tx
@@ -103,6 +166,57 @@ const sqliteCatalogReads = (
       .limit(1)
       .get()
       .pipe(Effect.map((row) => (row ? decodeBatch(row) : undefined))),
+  supplierNamed: (name) =>
+    tx
+      .select({ id: suppliers.id })
+      .from(suppliers)
+      .where(and(eq(suppliers.organizationId, organizationId), eq(suppliers.name, name)))
+      .limit(1)
+      .get(),
+  purchaseOrdersOfSupplier: (supplierId, limit) =>
+    tx
+      .select({ id: purchaseOrders.id })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.organizationId, organizationId),
+          eq(purchaseOrders.supplierId, supplierId),
+        ),
+      )
+      .limit(limit)
+      .all(),
+  itemsOfPurchaseOrder: (purchaseOrderId, limit) =>
+    tx
+      .select({ id: purchaseOrderItems.id })
+      .from(purchaseOrderItems)
+      .where(
+        and(
+          eq(purchaseOrderItems.organizationId, organizationId),
+          eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId),
+        ),
+      )
+      .limit(limit)
+      .all(),
+  purchaseOrderNumbered: (orderNumber) =>
+    tx
+      .select({ id: purchaseOrders.id })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.organizationId, organizationId),
+          eq(purchaseOrders.orderNumber, orderNumber),
+        ),
+      )
+      .limit(1)
+      .get(),
+  highestPurchaseOrders: (limit) =>
+    tx
+      .select({ id: purchaseOrders.id, orderNumber: purchaseOrders.orderNumber })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.organizationId, organizationId))
+      .orderBy(desc(purchaseOrders.orderNumber))
+      .limit(limit)
+      .all(),
 });
 
 export const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(function* (
@@ -173,7 +287,7 @@ export const readCommandContext = Effect.fn("ReplicaLookup.readCommandContext")(
     checkRules: options.checkRules,
   });
   const stock = options.withStock
-    ? yield* readVisibleStock(tx, rows.batches)
+    ? yield* readVisibleStock(tx, rows.batch)
     : new Map<string, VisibleStock>();
   return {
     lookup,
@@ -187,7 +301,7 @@ export const readUnitsPerPack = Effect.fn("ReplicaLookup.readUnitsPerPack")(func
   organizationId: string,
   productIds: ReadonlyArray<string>,
 ) {
-  const rows = yield* readProductsById(tx, organizationId, [...new Set(productIds)]);
+  const rows = yield* readRowsById(tx, organizationId, "product", [...new Set(productIds)]);
   const unitsPerPack = new Map<string, number>(rows.map((row) => [row.id, row.unitsPerPack]));
   return (productId: string) => unitsPerPack.get(productId) ?? 1;
 });
@@ -197,60 +311,6 @@ export const readVisibleBatchStock = Effect.fn("ReplicaLookup.readVisibleBatchSt
   organizationId: string,
   batchId: string,
 ) {
-  const rows = yield* readBatchesById(tx, organizationId, [batchId]);
+  const rows = yield* readRowsById(tx, organizationId, "batch", [batchId]);
   return (yield* readVisibleStock(tx, rows)).get(batchId);
 });
-
-export const readInvoiceNumberHolder = (
-  tx: ReplicaDb,
-  organizationId: string,
-  invoiceNumber: number,
-  excludedId: string,
-) =>
-  tx
-    .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        eq(invoices.invoiceNumber, invoiceNumber),
-        ne(invoices.id, excludedId),
-      ),
-    )
-    .limit(1)
-    .get();
-
-export const readHighestInvoiceNumber = (
-  tx: ReplicaDb,
-  organizationId: string,
-  excludedId?: string,
-) =>
-  tx
-    .select({ highest: max(invoices.invoiceNumber) })
-    .from(invoices)
-    .where(
-      excludedId === undefined
-        ? eq(invoices.organizationId, organizationId)
-        : and(eq(invoices.organizationId, organizationId), ne(invoices.id, excludedId)),
-    )
-    .get()
-    .pipe(Effect.map((row) => row?.highest ?? 0));
-
-export const readCategoryNameHolder = (
-  tx: ReplicaDb,
-  organizationId: string,
-  name: string,
-  excludedId: string,
-) =>
-  tx
-    .select({ id: categories.id, name: categories.name })
-    .from(categories)
-    .where(
-      and(
-        eq(categories.organizationId, organizationId),
-        eq(categories.name, name),
-        ne(categories.id, excludedId),
-      ),
-    )
-    .limit(1)
-    .get();

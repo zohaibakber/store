@@ -1,4 +1,6 @@
 export * from "./ids";
+export * from "./catalog/purchasing";
+export * from "./local-workspace";
 export * from "./catalog/rules";
 export * from "./catalog/write";
 export * from "./schema-primitives";
@@ -8,6 +10,7 @@ export * from "./store/invoice-allocation";
 export * from "./store/schema";
 export * from "./sync/canonical-json";
 export * from "./sync/digest";
+export * from "./sync/import";
 export * from "./sync/live";
 export * from "./sync/protocol";
 export * from "./sync/replica-analytics";

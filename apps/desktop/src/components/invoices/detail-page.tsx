@@ -96,10 +96,10 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
 
       <FrameCard
         description={`${formatCount(invoice.items.length, "line")} · ${formatCount(units, "unit")}`}
-        flush
+        table
         title="Items"
       >
-        <Table className="table-fixed">
+        <Table className="table-fixed" variant="card">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -140,27 +140,19 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
             {discount > 0 && (
               <>
                 <TableRow>
-                  <TableCell colSpan={4}>
-                    <span className="block text-end text-muted-foreground">Subtotal</span>
-                  </TableCell>
+                  <TableCell colSpan={4}>Subtotal</TableCell>
                   <AmountCell>{formatPrice(subtotal)}</AmountCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={4}>
-                    <span className="block text-end text-muted-foreground">Discount</span>
-                  </TableCell>
+                  <TableCell colSpan={4}>Discount</TableCell>
                   <AmountCell>{`−${formatPrice(discount)}`}</AmountCell>
                 </TableRow>
               </>
             )}
             <TableRow>
-              <TableCell colSpan={4}>
-                <span className="block text-end text-base font-medium">Total</span>
-              </TableCell>
-              <TableCell>
-                <span className="block text-end text-base font-medium tabular-nums">
-                  {formatPrice(invoice.total)}
-                </span>
+              <TableCell colSpan={4}>Total</TableCell>
+              <TableCell className="text-end">
+                <span className="tabular-nums">{formatPrice(invoice.total)}</span>
               </TableCell>
             </TableRow>
           </TableFooter>

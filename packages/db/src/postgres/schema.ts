@@ -6,6 +6,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -186,6 +187,115 @@ export const invoiceItems = pgTable(
   ],
 );
 
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: entityId(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    note: text("note"),
+    ...timestamps,
+    ...mutableMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "suppliers_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    uniqueIndex("suppliers_organization_id_name_uidx").on(table.organizationId, table.name),
+    index("suppliers_organization_id_updated_at_idx").on(table.organizationId, table.updatedAt),
+  ],
+);
+
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: entityId(),
+    orderNumber: integer("order_number").notNull(),
+    supplierId: text("supplier_id").notNull(),
+    status: text("status")
+      .$type<"draft" | "sent" | "closed" | "cancelled">()
+      .notNull()
+      .default("draft"),
+    note: text("note"),
+    sentAt: epochMilliseconds("sent_at"),
+    expectedAt: epochMilliseconds("expected_at"),
+    total: integer("total").notNull().default(0),
+    ...timestamps,
+    ...mutableMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "purchase_orders_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    foreignKey({
+      name: "purchase_orders_organization_supplier_fk",
+      columns: [table.organizationId, table.supplierId],
+      foreignColumns: [suppliers.organizationId, suppliers.id],
+    }),
+    uniqueIndex("purchase_orders_organization_id_order_number_uidx").on(
+      table.organizationId,
+      table.orderNumber,
+    ),
+    index("purchase_orders_organization_id_supplier_id_idx").on(
+      table.organizationId,
+      table.supplierId,
+    ),
+    index("purchase_orders_organization_id_status_created_at_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt,
+    ),
+    check("purchase_orders_order_number_positive", sql`${table.orderNumber} > 0`),
+    check(
+      "purchase_orders_status",
+      sql`${table.status} in ('draft', 'sent', 'closed', 'cancelled')`,
+    ),
+  ],
+);
+
+export const purchaseOrderItems = pgTable(
+  "purchase_order_items",
+  {
+    id: entityId(),
+    purchaseOrderId: text("purchase_order_id").notNull(),
+    productId: text("product_id").notNull(),
+    productName: text("product_name").notNull(),
+    quantity: integer("quantity").notNull(),
+    quantityType: text("quantity_type").$type<"unit" | "pack">().notNull().default("pack"),
+    baseUnitQuantity: integer("base_unit_quantity").notNull(),
+    packCost: integer("pack_cost"),
+    receivedBaseUnits: integer("received_base_units").notNull().default(0),
+    ...timestamps,
+    ...mutableMetadata,
+  },
+  (table) => [
+    primaryKey({
+      name: "purchase_order_items_organization_id_id_pk",
+      columns: [table.organizationId, table.id],
+    }),
+    foreignKey({
+      name: "purchase_order_items_organization_purchase_order_fk",
+      columns: [table.organizationId, table.purchaseOrderId],
+      foreignColumns: [purchaseOrders.organizationId, purchaseOrders.id],
+    }),
+    foreignKey({
+      name: "purchase_order_items_organization_product_fk",
+      columns: [table.organizationId, table.productId],
+      foreignColumns: [products.organizationId, products.id],
+    }),
+    index("purchase_order_items_organization_id_purchase_order_id_idx").on(
+      table.organizationId,
+      table.purchaseOrderId,
+    ),
+    index("purchase_order_items_organization_id_product_id_idx").on(
+      table.organizationId,
+      table.productId,
+    ),
+  ],
+);
+
 export const stockMovements = pgTable(
   "stock_movements",
   {
@@ -193,6 +303,7 @@ export const stockMovements = pgTable(
     productId: text("product_id").notNull(),
     batchId: text("batch_id").notNull(),
     invoiceId: text("invoice_id"),
+    purchaseOrderId: text("purchase_order_id"),
     type: text("type").$type<"stock_in" | "sale" | "open_pack" | "adjustment">().notNull(),
     packDelta: integer("pack_delta").notNull().default(0),
     unitDelta: integer("unit_delta").notNull().default(0),
@@ -223,6 +334,11 @@ export const stockMovements = pgTable(
       columns: [table.organizationId, table.invoiceId],
       foreignColumns: [invoices.organizationId, invoices.id],
     }),
+    foreignKey({
+      name: "stock_movements_organization_purchase_order_fk",
+      columns: [table.organizationId, table.purchaseOrderId],
+      foreignColumns: [purchaseOrders.organizationId, purchaseOrders.id],
+    }),
     index("stock_movements_organization_id_product_id_idx").on(
       table.organizationId,
       table.productId,
@@ -236,6 +352,9 @@ export const stockMovements = pgTable(
       table.organizationId,
       table.operationId,
     ),
+    index("stock_movements_organization_id_purchase_order_id_idx")
+      .on(table.organizationId, table.purchaseOrderId)
+      .where(sql`${table.purchaseOrderId} is not null`),
   ],
 );
 
@@ -280,6 +399,7 @@ export const replicas = pgTable(
     processedThroughClientSequence: numericDecimalString("processed_through_client_sequence"),
     registeredAt: epochMilliseconds("registered_at").notNull(),
     lastSeenAt: epochMilliseconds("last_seen_at").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(1),
   },
   (table) => [
     primaryKey({
@@ -454,5 +574,44 @@ export const snapshotParts = pgTable(
     }),
     check("snapshot_parts_part_number_positive", sql`${table.partNumber} > 0`),
     check("snapshot_parts_byte_length_nonnegative", sql`${table.byteLength} >= 0`),
+  ],
+);
+
+export const importParts = pgTable(
+  "import_parts",
+  {
+    organizationId: tenantId(),
+    importId: text("import_id").notNull(),
+    partNumber: integer("part_number").notNull(),
+    byteLength: integer("byte_length").notNull(),
+    sha256: text("sha256").notNull(),
+    frames: jsonb("frames").notNull(),
+    receivedAt: epochMilliseconds("received_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "import_parts_pk",
+      columns: [table.organizationId, table.importId, table.partNumber],
+    }),
+    index("import_parts_received_at_idx").on(table.receivedAt),
+    check("import_parts_part_number_positive", sql`${table.partNumber} > 0`),
+    check("import_parts_byte_length_positive", sql`${table.byteLength} > 0`),
+  ],
+);
+
+export const catalogImports = pgTable(
+  "catalog_imports",
+  {
+    organizationId: tenantId(),
+    importId: text("import_id").notNull(),
+    committedByUserId: text("committed_by_user_id").notNull(),
+    committedAt: epochMilliseconds("committed_at").notNull(),
+    resultJson: text("result_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "catalog_imports_organization_id_pk",
+      columns: [table.organizationId],
+    }),
   ],
 );

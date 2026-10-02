@@ -12,9 +12,10 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { partitionEntityDigests } from "../digest";
 import { ReplicaStorageError } from "../errors";
 import { generationBounds } from "./query";
-import type { ReplicaQueryBuilder } from "./schema";
+import { entityStore, type ReplicaQueryBuilder } from "./schema";
 
 const CHUNK_ROWS = 1_000;
 const MAX_ATTEMPTS = 3;
@@ -29,10 +30,6 @@ const outsideUtf16Agreement = (id: string): boolean => {
   return false;
 };
 
-const rowsOf = <Row extends { readonly id: string; readonly rowVersion: number }>(
-  rows: ReadonlyArray<Row>,
-): ReadonlyArray<DigestRow> => rows.map((row) => ({ id: row.id, version: String(row.rowVersion) }));
-
 const chunkOf = (
   api: ReplicaQueryBuilder,
   entity: PartitionEntity,
@@ -44,73 +41,24 @@ const chunkOf = (
     onSome: (id) => [generation, id],
   });
   const upper: [number, []] = [generation, []];
-  const range = { excludeLowerBound: Option.isSome(after) };
-  switch (entity) {
-    case "category":
-      return api
-        .from("categories")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(Effect.map(rowsOf));
-    case "product":
-      return api
-        .from("products")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(Effect.map(rowsOf));
-    case "batch":
-      return api
-        .from("batches")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(Effect.map(rowsOf));
-    case "invoice":
-      return api
-        .from("invoices")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(Effect.map(rowsOf));
-    case "invoiceItem":
-      return api
-        .from("invoice_items")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(Effect.map(rowsOf));
-    case "stockMovement":
-      return api
-        .from("stock_movements")
-        .select()
-        .between(lower, upper, range)
-        .limit(CHUNK_ROWS)
-        .pipe(
-          Effect.map((rows) =>
-            rows.map((row) => ({ id: row.id, version: String(STOCK_MOVEMENT_ROW_VERSION) })),
-          ),
-        );
-  }
+  return api
+    .from(entityStore(entity))
+    .select()
+    .between(lower, upper, { excludeLowerBound: Option.isSome(after) })
+    .limit(CHUNK_ROWS)
+    .pipe(
+      Effect.map((rows) =>
+        rows.map((row) => ({
+          id: row.id,
+          version: String("rowVersion" in row ? row.rowVersion : STOCK_MOVEMENT_ROW_VERSION),
+        })),
+      ),
+    );
 };
 
 const countOf = (api: ReplicaQueryBuilder, entity: PartitionEntity, generation: number) => {
   const [lower, upper] = generationBounds(generation);
-  switch (entity) {
-    case "category":
-      return api.from("categories").count().between(lower, upper);
-    case "product":
-      return api.from("products").count().between(lower, upper);
-    case "batch":
-      return api.from("batches").count().between(lower, upper);
-    case "invoice":
-      return api.from("invoices").count().between(lower, upper);
-    case "invoiceItem":
-      return api.from("invoice_items").count().between(lower, upper);
-    case "stockMovement":
-      return api.from("stock_movements").count().between(lower, upper);
-  }
+  return api.from(entityStore(entity)).count().between(lower, upper);
 };
 
 type EntityScan = {
@@ -209,14 +157,9 @@ export const indexedDbPartitionDigest = Effect.fn("IndexedDbDigest.partitionDige
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const before = yield* stateStamp(api);
     if ((yield* api.from("pending_row_marks").count()) > 0) return undefined;
-    const report = yield* finishPartitionDigestReport({
-      category: yield* entityDigest(api, "category", before.generation),
-      product: yield* entityDigest(api, "product", before.generation),
-      batch: yield* entityDigest(api, "batch", before.generation),
-      invoice: yield* entityDigest(api, "invoice", before.generation),
-      invoiceItem: yield* entityDigest(api, "invoiceItem", before.generation),
-      stockMovement: yield* entityDigest(api, "stockMovement", before.generation),
-    });
+    const report = yield* finishPartitionDigestReport(
+      yield* partitionEntityDigests((entity) => entityDigest(api, entity, before.generation)),
+    );
     const after = yield* stateStamp(api);
     if (after.generation === before.generation && after.version === before.version) return report;
   }

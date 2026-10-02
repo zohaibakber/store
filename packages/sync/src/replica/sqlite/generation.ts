@@ -1,14 +1,13 @@
 import { SyncTransactionGroup } from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   batches,
-  categories,
   generationJournal,
   generationState,
   invoiceItems,
   invoices,
   pendingRowJournal,
   pendingRowMarks,
-  products,
   snapshotStagedRows,
   stockMovements,
   stockOverlays,
@@ -23,12 +22,7 @@ import { ReplicaStorageError } from "../errors";
 import type { ReplicaDb } from "../sql-client/drizzle";
 
 export const GENERATION_TABLES = [
-  categories,
-  products,
-  batches,
-  invoices,
-  invoiceItems,
-  stockMovements,
+  ...Object.values(syncEntityRows).map((entry) => entry.table),
   pendingRowMarks,
   pendingRowJournal,
   stockOverlays,

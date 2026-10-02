@@ -1,5 +1,6 @@
 export { SyncEngine } from "./engine";
 export type { LiveNetworkSignal } from "./live-socket";
+export { MAX_REJECTED_ACTIVITY_ROWS } from "./replica/activity";
 export type { OutboxActivityRow, ReplicaOutboxActivity } from "./replica/activity";
 export { IndexedDbReplicaStore } from "./replica/indexeddb/store";
 export { ReplicaStore } from "./replica/store";
@@ -10,7 +11,7 @@ export type {
   SyncSchedulerStatus,
   SyncWakeReason,
 } from "./scheduler";
-export { layerOwnedHttpSync } from "./session";
+export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
 export type { OwnedLiveHost } from "./session";
 export {
   dispositionFor,

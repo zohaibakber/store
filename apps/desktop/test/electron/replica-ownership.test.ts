@@ -16,14 +16,12 @@ import {
   REPLICA_COMMIT_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_STAMP_CHANNEL,
-  type ReplicaAnalyticsEvent,
-  type ReplicaCommitEvent,
-  type ReplicaSyncHealthEvent,
 } from "../../electron/replica-channels";
 import {
   registerReplicaWorkerIpc,
   type ReplicaInvokeEvent,
   type ReplicaIpcListener,
+  type ReplicaSentEvent,
 } from "../../electron/replica-ipc";
 import {
   ReplicaReaderRpcs,
@@ -98,10 +96,17 @@ const makeWorld = (
           ),
         ReadInsights: () => Effect.die("unused"),
         ReadOutboxStatuses: () => Effect.die("unused"),
+        ReadSyncActivity: () => Effect.die("unused"),
         EnqueueCommand: () => Effect.die("unused"),
         ReadCommandStatus: () => Effect.die("unused"),
         SetForeground: () => Effect.void,
         WakeSyncUpload: () => Effect.die("unused"),
+        BackUp: () => Effect.die("unused"),
+        StageRestore: () => Effect.die("unused"),
+        ReleaseForRestore: () => Effect.die("unused"),
+        PublishSummary: () => Effect.die("unused"),
+        PublishStage: () => Stream.die("unused"),
+        PublishCommit: () => Effect.die("unused"),
         Commits: () => Stream.fromQueue(commits),
         SyncHealth: () => Stream.make({ _tag: "running" as const }),
         ProxyRequests: () => Stream.never,
@@ -155,7 +160,7 @@ const makeWorld = (
 
   const sent: Array<{
     readonly channel: string;
-    readonly event: ReplicaCommitEvent | ReplicaSyncHealthEvent | ReplicaAnalyticsEvent;
+    readonly event: ReplicaSentEvent;
   }> = [];
   const senderEvent = (id: number): ReplicaInvokeEvent => ({
     senderFrame: { url: allowed[0]! },
@@ -178,6 +183,7 @@ const makeWorld = (
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(
       await invoke(REPLICA_OPEN_CHANNEL, event, {
+        authority: "remote",
         organizationId: "org-1",
         userId: "user-1",
         replicaId: "device-1",

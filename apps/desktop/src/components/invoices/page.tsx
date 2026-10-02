@@ -1,28 +1,43 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Invoice } from "@store/contracts";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 
-import { InvoicesTable, useInvoicesTable } from "@/components/invoices/table";
+import { InvoicesTable, useInvoicesTable, type InvoiceListView } from "@/components/invoices/table";
 import { DataTable, DataTableFilter } from "@/components/shared/data-table";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
+import { usePageInRange } from "@/hooks/use-page-in-range";
+import {
+  useSuspenseInvoiceCount,
+  useSuspenseInvoicePage,
+  type InvoiceListRequest,
+} from "@/lib/inventory";
+import { cn } from "@/lib/utils";
 
 function InvoicesPage({
-  invoices,
-  hasMore,
-  loadingMore,
-  onLoadMore,
+  loading,
+  onViewChange,
+  request,
+  view,
 }: {
-  invoices: readonly Invoice[];
-  hasMore: boolean;
-  loadingMore: boolean;
-  onLoadMore: () => void;
+  readonly loading: boolean;
+  readonly onViewChange: (view: InvoiceListView) => void;
+  readonly request: InvoiceListRequest;
+  readonly view: InvoiceListView;
 }) {
   const navigate = useNavigate();
   const router = useRouter();
-  const table = useInvoicesTable(invoices);
+  const rows = useSuspenseInvoicePage(request);
+  const total = useSuspenseInvoiceCount(request.filters);
+  usePageInRange({
+    page: view.page,
+    pageSize: view.size,
+    total,
+    settled: !loading,
+    onPageChange: (page) => onViewChange({ ...view, page }),
+  });
+  const table = useInvoicesTable({ rows, total, view, onViewChange });
 
   return (
     <DataTable
@@ -30,7 +45,6 @@ function InvoicesPage({
       onRowPreload={(row) =>
         void router.preloadRoute({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })
       }
-      moreRows={{ hasMore, loading: loadingMore, onLoadMore }}
       table={table}
     >
       <PageActions>
@@ -41,7 +55,9 @@ function InvoicesPage({
         </Button>
       </PageActions>
       <PageLayout>
-        <InvoicesTable />
+        <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
+          <InvoicesTable />
+        </div>
       </PageLayout>
     </DataTable>
   );

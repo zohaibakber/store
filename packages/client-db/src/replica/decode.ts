@@ -7,7 +7,10 @@ import {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
+  PurchaseOrderItemRow,
+  PurchaseOrderRow,
   StockMovementRow,
+  SupplierRow,
 } from "../rows";
 import { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource } from "./sources";
@@ -40,3 +43,12 @@ export const decodeInvoiceSqliteRows = sqliteRowsDecoder("invoices", InvoiceRow)
 export const decodeInvoiceItemSqliteRows = sqliteRowsDecoder("invoiceItems", InvoiceItemRow);
 
 export const decodeStockMovementSqliteRows = sqliteRowsDecoder("stockMovements", StockMovementRow);
+
+export const decodeSupplierSqliteRows = sqliteRowsDecoder("suppliers", SupplierRow);
+
+export const decodePurchaseOrderSqliteRows = sqliteRowsDecoder("purchaseOrders", PurchaseOrderRow);
+
+export const decodePurchaseOrderItemSqliteRows = sqliteRowsDecoder(
+  "purchaseOrderItems",
+  PurchaseOrderItemRow,
+);

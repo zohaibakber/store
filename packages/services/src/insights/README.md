@@ -8,11 +8,37 @@ inventory value.
 
 The replica does the heavy lifting. `ReplicaHandle.readInsights(window)` returns
 `ReplicaInsightsFacts` (`@store/contracts/sync/replica-insights`): compact product
-and stocked-batch facts plus sales already grouped by product and local day, and
-invoice totals by day and hour. SQLite aggregates with `GROUP BY` in the replica
-worker; IndexedDB walks the `byCreatedAt` index once. Every list has a hard cap
-and the read reports `truncated` instead of growing without bound. The window is
-180 local days so the 90-day period has a comparable previous period.
+and stocked-batch facts plus sales already grouped by product and local day,
+units on order grouped by product, and invoice totals by day and hour. SQLite
+aggregates with `GROUP BY` in the replica worker; IndexedDB walks the
+`byCreatedAt` index once. Every list has a hard cap and the read reports
+`truncated` instead of growing without bound. The window is 180 local days so
+the 90-day period has a comparable previous period.
+
+## On order
+
+`onOrder` holds, per product, the base units still to arrive on open purchase
+orders: `purchaseOrderLineRemaining` summed over the lines of every order whose
+status is in `INSIGHTS_ON_ORDER_STATUSES`. Products with nothing left to arrive
+have no fact.
+
+- Open means draft or sent (`isPurchaseOrderOpen`). A draft counts, so a product
+  already put on an order is not suggested again while the order waits to be
+  sent. Cancelling the draft or removing the line releases the units. This is
+  the same number `useProductsOnOrder` shows.
+- A line that received more than it ordered counts as zero, not negative.
+- All three reads use that one definition. SQLite joins open orders to their
+  lines in one grouped query (`onOrderFacts`). IndexedDB reads open orders from
+  `byStatusCreatedAt`, then their lines from `byPurchaseOrder`, and sums with
+  `insightsOnOrderFacts`. The Electron analytics worker runs `onOrderFacts`
+  against its read-only replica connection.
+
+The analytics worker refreshes on `purchaseOrder` and `purchaseOrderItem`
+commit notices. It does not resolve those keys to products, because a deleted
+line or a line moved to another product no longer names the product it left.
+Each incremental run instead compares the current facts with the
+`onOrderUnits` stored for the published run and re-analyzes every product whose
+number changed. A full run reads the facts once, at the stamp it settles on.
 
 ## Demand
 
@@ -42,12 +68,20 @@ its creation day. Today is excluded because it is partial.
 - Status, in order: `out` (nothing sellable, and it sells), `critical` (cover
   shorter than lead time), `dead` (no sale for the dead-stock period), `low` (at
   or under the reorder point), `overstock`, `healthy`, `inactive`.
-- Orders are suggested only for products with demand, rounded up to whole packs
-  for pack-tracking categories, costed from the purchase price.
+- Orders are suggested only for products with demand. The quantity is
+  order-up-to minus usable stock minus `onOrderUnits`; nothing is suggested when
+  that is zero or less. It is rounded up to whole packs for pack-tracking
+  categories and costed from the purchase price.
+- Units on order change the suggestion only. Status, days of cover and priority
+  describe the shelf, so a product that is out stays `out` until the delivery is
+  received. When the units on order cover the whole shortfall, its alert says
+  how much is on order instead of asking for an order.
 
 ## Limits
 
 Zero-sale days while out of stock count as no demand, so a long stockout biases
-the forecast down. There is no seasonality, supplier minimum, or open purchase
-order model. Missing purchase prices leave products out of margin and value
-totals, and the report says how many.
+the forecast down. There is no seasonality or supplier minimum. Units on order
+count in full whatever the order's expected date, so an order due after the
+cover period still lowers the suggestion, and a draft nobody sends keeps doing
+so until it is cancelled. Missing purchase prices leave products out of margin
+and value totals, and the report says how many.

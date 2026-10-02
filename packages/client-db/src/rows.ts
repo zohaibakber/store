@@ -1,4 +1,13 @@
-import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "@store/contracts/ids";
+import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
+import {
+  BatchId,
+  CategoryId,
+  InvoiceId,
+  InvoiceItemId,
+  ProductId,
+  PurchaseOrderId,
+} from "@store/contracts/ids";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
@@ -82,6 +91,9 @@ export const StockMovementRow = Schema.Struct({
   productId: ProductId,
   batchId: BatchId,
   invoiceId: Schema.NullOr(InvoiceId),
+  purchaseOrderId: Schema.NullOr(PurchaseOrderId).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
   packDelta: SignedInteger,
   unitDelta: SignedInteger,
@@ -93,6 +105,15 @@ export const StockMovementRow = Schema.Struct({
   createdAt: NonNegativeInteger,
 });
 export type StockMovementRow = typeof StockMovementRow.Type;
+
+export const SupplierRow = syncEntityRows.supplier.schema;
+export type SupplierRow = SyncEntityRow<"supplier">;
+
+export const PurchaseOrderRow = syncEntityRows.purchaseOrder.schema;
+export type PurchaseOrderRow = SyncEntityRow<"purchaseOrder">;
+
+export const PurchaseOrderItemRow = syncEntityRows.purchaseOrderItem.schema;
+export type PurchaseOrderItemRow = SyncEntityRow<"purchaseOrderItem">;
 
 const TANSTACK_DB_VIRTUAL_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
 

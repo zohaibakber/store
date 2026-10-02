@@ -1,14 +1,10 @@
-import {
-  InvoiceExtraction,
-  type InvoiceExtractionLine,
-  invoiceExtractionJsonSchema,
-} from "@store/contracts/server-api.schema";
+import { InvoiceExtraction, invoiceExtractionJsonSchema } from "@store/contracts/server-api.schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { decodeModelJson, ModelScalar, type ModelOutput } from "../model-json";
-import { parseCsvRecords } from "./csv";
-import { parseMajorCurrencyToMinor, parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
+import { receivedStockFromCsv } from "./csv";
+import { normalizeLine, nullableString } from "./line";
 
 class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
   "InvoiceExtractionError",
@@ -29,7 +25,6 @@ const InvoiceModelLine = Schema.Struct({
   unitsPerPack: modelField,
   packPrice: modelField,
 });
-type InvoiceModelLine = typeof InvoiceModelLine.Type;
 
 const InvoiceModelOutput = Schema.Struct({
   supplier: modelField,
@@ -71,79 +66,11 @@ const instructions = [
   "Respond with JSON matching the provided schema and nothing else.",
 ].join("\n");
 
-const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
-const isNumber = <Value>(value: Value): value is Value & number => typeof value === "number";
-
-const toFiniteNumber = (value: ModelScalar | undefined): number | null => {
-  if (isNumber(value)) return Number.isFinite(value) ? value : null;
-  if (!isString(value)) return null;
-  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const nullableString = (value: ModelScalar | undefined): string | null => {
-  if (isString(value)) return value.trim() || null;
-  if (value !== undefined && value !== null) return String(value);
-  return null;
-};
-
-const count = (value: ModelScalar | undefined, fallback: number, minimum: number): number =>
-  Math.max(minimum, Math.round(toFiniteNumber(value) ?? fallback));
-
-const unspecifiedItemName = "Unspecified item";
-
-const hasReceivedStock = (line: InvoiceExtractionLine): boolean => {
-  const name = line.name.trim();
-  return (
-    name.length > 0 && name !== unspecifiedItemName && line.packQuantity + line.unitQuantity > 0
-  );
-};
-
-const normalizeLine = (value: InvoiceModelLine): InvoiceExtractionLine => {
-  const name = nullableString(value.name) ?? unspecifiedItemName;
-  return {
-    name,
-    batchNumber: nullableString(value.batchNumber),
-    expiresAt: nullableString(value.expiresAt),
-    packQuantity: count(value.packQuantity, 0, 0),
-    unitQuantity: count(value.unitQuantity, 0, 0),
-    unitsPerPack: salvageUnitsPerPack(
-      name,
-      isString(value.unitsPerPack) || isNumber(value.unitsPerPack)
-        ? parseUnitsPerPack(value.unitsPerPack, 1)
-        : 1,
-    ),
-    packPrice:
-      value.packPrice == null
-        ? null
-        : Math.max(0, Math.round(toFiniteNumber(value.packPrice) ?? 0)),
-  };
-};
-
 const normalizeExtraction = (value: typeof InvoiceModelOutput.Type) => ({
   supplier: nullableString(value.supplier),
   invoiceNumber: nullableString(value.invoiceNumber),
   lines: value.lines.map(normalizeLine),
 });
-
-const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
-  const [headerRow = [], ...rows] = parseCsvRecords(contents);
-  const headers = headerRow.map((value) => value.trim().toLowerCase());
-  const valueAt = (row: ReadonlyArray<string>, name: string) =>
-    row[headers.indexOf(name)]?.trim() ?? "";
-  return rows.map((values) =>
-    normalizeLine({
-      name:
-        valueAt(values, "name") || valueAt(values, "product") || valueAt(values, "product name"),
-      batchNumber: valueAt(values, "batch") || valueAt(values, "batch number") || null,
-      expiresAt: valueAt(values, "expiry") || valueAt(values, "expires at") || null,
-      packQuantity: valueAt(values, "packs") || valueAt(values, "pack quantity") || 0,
-      unitQuantity: valueAt(values, "units") || valueAt(values, "unit quantity") || 0,
-      unitsPerPack: valueAt(values, "units per pack") || 1,
-      packPrice: parseMajorCurrencyToMinor(valueAt(values, "pack price")),
-    }),
-  );
-};
 
 const isFailure = (
   document: ConvertedDocument,
@@ -177,7 +104,7 @@ export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
     const csvContents = yield* Effect.tryPromise(() =>
       Promise.all(csvFiles.map((file) => file.text())),
     );
-    const csvLines = csvContents.flatMap(parseCsv).filter(hasReceivedStock);
+    const csvLines = csvContents.flatMap(receivedStockFromCsv);
     const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
     if (csvLines.length > 0 || !aiFiles.length)
       return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({

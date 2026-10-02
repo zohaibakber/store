@@ -174,12 +174,15 @@ describe("IndexedDB subset query path", () => {
           product("p-5", "Adol 50% (syrup)", null),
         ],
       });
-      const matching = (column: string, pattern: string) =>
+      const matching = (column: string, pattern: string, escape?: string) =>
         store
           .querySubset({
             table: "products",
             scan: { _tag: "generationPrefix", reverse: false },
-            residual: { _tag: "like", column, pattern },
+            residual:
+              escape === undefined
+                ? { _tag: "like", column, pattern }
+                : { _tag: "like", column, pattern, escape },
             orderBy: [{ column: "id", direction: "asc", nulls: "first", collation: "binary" }],
             limit: 20,
             offset: 0,
@@ -192,6 +195,8 @@ describe("IndexedDB subset query path", () => {
       expect(yield* matching("composition", "%PARA%")).toEqual(["p-1", "p-3"]);
       expect(yield* matching("name", "%(syrup)")).toEqual(["p-5"]);
       expect(yield* matching("composition", "%")).toEqual(["p-1", "p-3", "p-4"]);
+      expect(yield* matching("name", "%0\\% (S%", "\\")).toEqual(["p-5"]);
+      expect(yield* matching("name", "\\_alpol", "\\")).toEqual([]);
 
       yield* store.dispose();
       indexedDB.deleteDatabase(name);

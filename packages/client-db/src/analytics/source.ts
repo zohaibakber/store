@@ -2,12 +2,20 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlit
 
 import {
   insightsDayStart,
+  MAX_INSIGHTS_ON_ORDER,
   type InsightsBatchFact,
+  type InsightsOnOrderFact,
   type InsightsProductFact,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
-import { batches, invoiceItems, invoices, products } from "@store/db/replica.schema";
-import { and, count, eq, fillPlaceholders, gt, gte, lte, sql } from "drizzle-orm";
+import {
+  batches,
+  invoiceItems,
+  invoices,
+  products,
+  purchaseOrderItems,
+} from "@store/db/replica.schema";
+import { and, count, eq, exists, fillPlaceholders, gt, gte, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -19,6 +27,7 @@ import {
   inJsonList,
   invoiceDays,
   invoiceHours,
+  onOrderFacts,
   productDaySales,
   productFacts,
   replicaQueryBuilder,
@@ -60,6 +69,7 @@ export type InventorySnapshot = {
   readonly productsByIds: (ids: ReadonlyArray<string>) => ReadonlyArray<InsightsProductFact>;
   readonly batchesBetween: (firstId: string, lastId: string) => ReadonlyArray<InsightsBatchFact>;
   readonly batchesForProducts: (ids: ReadonlyArray<string>) => ReadonlyArray<InsightsBatchFact>;
+  readonly onOrder: () => ReadonlyArray<InsightsOnOrderFact>;
   readonly windowFacts: (window: ReplicaInsightsWindow) => {
     readonly days: ReadonlyArray<DayFact>;
     readonly hours: ReadonlyArray<HourFact>;
@@ -87,6 +97,19 @@ const invoiceWindow: InvoiceWindow = {
   since: sql.placeholder("since"),
   until: sql.placeholder("until"),
 };
+
+const orderedProductIsVisible = exists(
+  replicaQueryBuilder
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, purchaseOrderItems.organizationId),
+        eq(products.id, purchaseOrderItems.productId),
+        eq(products.visible, true),
+      ),
+    ),
+);
 
 const statements = {
   stamp: statement(replicaStampQuery),
@@ -117,6 +140,9 @@ const statements = {
   ),
   batchesForProducts: statement(
     batchFacts({ organization, where: inJsonList(visibleBatches.productId, list) }),
+  ),
+  onOrder: statement(
+    onOrderFacts({ organization, where: orderedProductIsVisible }).limit(MAX_INSIGHTS_ON_ORDER),
   ),
   days: statement(invoiceDays(invoiceWindow)),
   hours: statement(invoiceHours(invoiceWindow)),
@@ -189,6 +215,9 @@ const BatchRow = Schema.Struct({
   expiresAt: Schema.NullOr(Schema.Number),
 });
 const decodeBatches = Schema.decodeUnknownSync(Schema.Array(BatchRow));
+
+const OnOrderRow = Schema.Struct({ productId: Schema.String, units: Schema.Number });
+const decodeOnOrder = Schema.decodeUnknownSync(Schema.Array(OnOrderRow));
 
 const StateRow = Schema.Struct({
   organizationId: Schema.String,
@@ -284,6 +313,7 @@ const makeSnapshot = (
       decodeBatches(
         all(statements.batchesForProducts, { organization: organizationId, ids: ids(values) }),
       ),
+    onOrder: () => decodeOnOrder(all(statements.onOrder, { organization: organizationId })),
     windowFacts: (window) => {
       const bounds = {
         organization: organizationId,
@@ -331,6 +361,8 @@ const makeSnapshot = (
         "invoiceItem",
         "category",
         "stockMovement",
+        "purchaseOrder",
+        "purchaseOrderItem",
       ]);
       for (const [entity, held] of grouped) {
         if (!known.has(entity)) unresolved = true;

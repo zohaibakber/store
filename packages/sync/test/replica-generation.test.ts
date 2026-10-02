@@ -43,11 +43,16 @@ import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
+  CASE_PRODUCT_ID,
   catalogEnvelope,
   FIXTURE_NOW,
   NEW_CATEGORY_ID,
+  ORDER_ID,
+  ORDER_LINE_ID,
+  placeOrderWrites,
   renameProductWrite,
   seedCatalogGroup,
+  SUPPLIER_NAME,
 } from "./lib/pending-fixture";
 import { seedReplicaTenUnits, withSeededReplica } from "./lib/replica-fixture";
 
@@ -121,8 +126,53 @@ const parts: ReadonlyArray<SnapshotPartPayload> = [
       rowVersion: 3,
       row: productImage("Snapshot name"),
     },
+    {
+      entity: "supplier",
+      entityId: "snapshot-supplier",
+      rowVersion: 3,
+      row: {
+        id: "snapshot-supplier",
+        name: "Snapshot wholesaler",
+        phone: null,
+        note: null,
+        ...managed,
+      },
+    },
   ]),
   partOf(2, [
+    {
+      entity: "purchaseOrder",
+      entityId: "snapshot-order",
+      rowVersion: 3,
+      row: {
+        id: "snapshot-order",
+        orderNumber: 1,
+        supplierId: "snapshot-supplier",
+        status: "sent",
+        note: null,
+        sentAt: FIXTURE_NOW,
+        expectedAt: null,
+        total: 100,
+        ...managed,
+      },
+    },
+    {
+      entity: "purchaseOrderItem",
+      entityId: "snapshot-order-line",
+      rowVersion: 3,
+      row: {
+        id: "snapshot-order-line",
+        purchaseOrderId: "snapshot-order",
+        productId: LAST_UNIT_PRODUCT_ID,
+        productName: "Snapshot name",
+        quantity: 2,
+        quantityType: "unit",
+        baseUnitQuantity: 2,
+        packCost: 50,
+        receivedBaseUnits: 1,
+        ...managed,
+      },
+    },
     {
       entity: "batch",
       entityId: LAST_UNIT_BATCH_ID,
@@ -188,6 +238,8 @@ type DumpedRow = {
   readonly id?: string;
   readonly name?: string;
   readonly unitQuantity?: number;
+  readonly orderNumber?: number;
+  readonly receivedBaseUnits?: number;
   readonly entity?: string;
 };
 
@@ -248,6 +300,9 @@ const dumpState = (handle: Open["handle"]) =>
         ),
         triggers: yield* schemaDependents(tx),
         batches: yield* table("batches", "id"),
+        suppliers: yield* table("suppliers", "id"),
+        purchaseOrders: yield* table("purchase_orders", "id"),
+        purchaseOrderItems: yield* table("purchase_order_items", "id"),
         marks: yield* table("pending_row_marks", "entity, entityId"),
         journal: yield* table("pending_row_journal", "operationId, entity, entityId"),
         overlays: yield* table("stock_overlays", "commandId, batchId"),
@@ -312,8 +367,20 @@ const scenario = (
     return dump;
   });
 
+const placeOrderCommand = enqueueRequestOf(
+  catalogEnvelope({ operationId: "local-order", clientSequence: "9", writes: placeOrderWrites }),
+  1,
+);
+
 const events = new Map<number, ScenarioEvent>([
-  [1, (store) => store.enqueueCommand(categoryCommand(1))],
+  [
+    1,
+    (store) =>
+      Effect.all([
+        store.enqueueCommand(placeOrderCommand),
+        store.enqueueCommand(categoryCommand(1)),
+      ]),
+  ],
   [2, (store) => store.applyTransactionGroup(remoteRename("2", "Remote before horizon"))],
   [101, (store) => store.applyTransactionGroup(remoteRename("4", "Remote after horizon"))],
   [
@@ -343,14 +410,17 @@ describe("replica snapshot generations", () => {
           const definitionOf = (table: string) =>
             Effect.gen(function* () {
               const columns = yield* tx.all<unknown>(sql.raw(`pragma table_info(${table})`));
-              const indexes = yield* tx.all<{ readonly name: string; readonly unique: number }>(
-                sql.raw(`pragma index_list(${table})`),
-              );
+              const indexes = yield* tx.all<{
+                readonly name: string;
+                readonly unique: number;
+                readonly partial: number;
+              }>(sql.raw(`pragma index_list(${table})`));
               const named = indexes.filter((index) => !index.name.startsWith("sqlite_autoindex_"));
               const detail = yield* Effect.forEach(named, (index) =>
                 tx.all<unknown>(sql.raw(`pragma index_xinfo(${index.name})`)).pipe(
                   Effect.map((info) => ({
                     unique: index.unique,
+                    partial: index.partial,
                     name: index.name,
                     info: JSON.stringify(info),
                   })),
@@ -383,6 +453,9 @@ describe("replica snapshot generations", () => {
             expect(standby.detail.map((index) => `${index.unique}`).sort()).toEqual(
               active.detail.map((index) => `${index.unique}`).sort(),
             );
+            expect(standby.detail.map((index) => `${index.partial}`).sort()).toEqual(
+              active.detail.map((index) => `${index.partial}`).sort(),
+            );
           }
         }),
       ).pipe(Effect.orDie),
@@ -412,8 +485,21 @@ describe("replica snapshot generations", () => {
         "pending",
         "pending",
         "pending",
+        "pending",
       ]);
-      expect(clean.products).toHaveLength(1);
+      expect(clean.suppliers.map((row) => row.name)).toEqual([
+        "Snapshot wholesaler",
+        SUPPLIER_NAME,
+      ]);
+      expect(clean.purchaseOrders.map((row) => [row.id, row.orderNumber])).toEqual([
+        [ORDER_ID, 2],
+        ["snapshot-order", 1],
+      ]);
+      expect(clean.purchaseOrderItems.map((row) => [row.id, row.receivedBaseUnits])).toEqual([
+        [ORDER_LINE_ID, 0],
+        ["snapshot-order-line", 1],
+      ]);
+      expect(clean.products.map((row) => row.id)).toEqual([LAST_UNIT_PRODUCT_ID, CASE_PRODUCT_ID]);
       expect(clean.categories.map((row) => row.name)).toEqual(
         expect.arrayContaining(["General", "Category 1", "Category 2"]),
       );
@@ -428,6 +514,7 @@ describe("replica snapshot generations", () => {
           lastUnitBuyerAEnvelope.operationId,
           "local-category-1",
           "local-category-2",
+          "local-order",
           "local-rename",
         ].sort(),
       );

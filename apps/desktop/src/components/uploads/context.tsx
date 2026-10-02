@@ -4,13 +4,17 @@ import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import {
+  DEFAULT_IMPORT_CATEGORY_NAME,
+  importCategoryOf,
+  type ImportCategory,
+} from "@/components/uploads/import-category";
+import {
   ambiguousImportProductMessage,
   importProductMatch,
 } from "@/components/uploads/same-product";
-import { useOnline } from "@/hooks/use-online";
 import { parseExpiryDate } from "@/lib/format";
 import { useCatalogProductLookup, useInventoryActions } from "@/lib/inventory";
-import { analyseInvoices } from "@/lib/server-api";
+import { useInvoiceReading } from "@/lib/invoice-reading";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
@@ -18,11 +22,18 @@ type ProposedChange = ExtractedLine & {
   productId?: ProductId;
 };
 type UploadPhase = "idle" | "processing" | "ready" | "syncing";
+type InvoiceReference = {
+  readonly supplier: string | null;
+  readonly invoiceNumber: string | null;
+};
 
 interface UploadState {
   files: File[];
   phase: UploadPhase;
   changes: ProposedChange[];
+  invoice: InvoiceReference | null;
+  categories: readonly Category[];
+  category: ImportCategory;
 }
 
 interface UploadActions {
@@ -30,6 +41,9 @@ interface UploadActions {
   removeFile: (file: File) => void;
   analyse: () => Promise<void>;
   applyChanges: () => Promise<void>;
+  dropChanges: (received: ReadonlyArray<ProposedChange>) => void;
+  chooseCategory: (id: string) => void;
+  nameCategory: (name: string) => void;
 }
 
 interface UploadMeta {
@@ -61,11 +75,15 @@ function UploadProvider({
 }) {
   const inventory = useInventoryActions();
   const lookupProducts = useCatalogProductLookup();
-  const isOnline = useOnline();
+  const { analyseInvoices, isOnline } = useInvoiceReading();
   const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
+  const [invoice, setInvoice] = useState<InvoiceReference | null>(null);
+  const [chosenCategoryId, setChosenCategoryId] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState(DEFAULT_IMPORT_CATEGORY_NAME);
+  const category = importCategoryOf(categories, chosenCategoryId, categoryName);
 
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
@@ -133,6 +151,7 @@ function UploadProvider({
             : { ...line, type: "create_product" };
         }),
       );
+      setInvoice({ supplier: payload.supplier, invoiceNumber: payload.invoiceNumber });
       setPhase("ready");
       toastManager.add({
         title: "Analysis done. Review the proposed changes.",
@@ -158,34 +177,31 @@ function UploadProvider({
       });
       return;
     }
-    const generalCategory =
-      categories.find((category) => category.name.trim().toLocaleLowerCase() === "general") ??
-      categories[0];
-    if (!generalCategory) {
-      toastManager.add({
-        title: "Create a category before importing inventory.",
-        type: "error",
-      });
+    if (category._tag === "New" && category.name.trim() === "") {
+      toastManager.add({ title: "Name the category for the new products.", type: "error" });
       return;
     }
     busyRef.current = true;
     setPhase("syncing");
     try {
-      const result = await inventory.importInventory({
-        categoryId: generalCategory.id,
-        lines: changes.map((change) => ({
-          name: change.name,
-          batchNumber: change.batchNumber,
-          expiresAt: parseExpiryDate(change.expiresAt),
-          unitsPerPack: change.unitsPerPack,
-          packQuantity: change.packQuantity,
-          unitQuantity: change.unitQuantity,
-          purchasePrice: change.packPrice,
-          productId: change.productId ?? null,
-        })),
-      });
+      const lines = changes.map((change) => ({
+        name: change.name,
+        batchNumber: change.batchNumber,
+        expiresAt: parseExpiryDate(change.expiresAt),
+        unitsPerPack: change.unitsPerPack,
+        packQuantity: change.packQuantity,
+        unitQuantity: change.unitQuantity,
+        purchasePrice: change.packPrice,
+        productId: change.productId ?? null,
+      }));
+      const result = await inventory.importInventory(
+        category._tag === "Existing"
+          ? { categoryId: category.id, lines }
+          : { newCategory: { name: category.name }, lines },
+      );
       setChanges([]);
       setFiles([]);
+      setInvoice(null);
       toastManager.add({
         title: `Created ${result.createdProducts} products and ${result.createdBatches} batches.`,
         type: "success",
@@ -202,13 +218,30 @@ function UploadProvider({
     }
   };
 
+  const dropChanges = (received: ReadonlyArray<ProposedChange>) => {
+    const remaining = changes.filter((change) => !received.includes(change));
+    setChanges(remaining);
+    if (remaining.length > 0) return;
+    setFiles([]);
+    setInvoice(null);
+    setPhase("idle");
+  };
+
   const processing = phase === "processing" || phase === "syncing";
 
   return (
     <UploadContext
       value={{
-        state: { files, phase, changes },
-        actions: { addFiles, removeFile, analyse, applyChanges },
+        state: { files, phase, changes, invoice, categories, category },
+        actions: {
+          addFiles,
+          removeFile,
+          analyse,
+          applyChanges,
+          dropChanges,
+          chooseCategory: setChosenCategoryId,
+          nameCategory: setCategoryName,
+        },
         meta: { processing, isOnline },
       }}
     >
@@ -229,6 +262,7 @@ export {
   isInvoice,
   useUpload,
   type ExtractedLine,
+  type InvoiceReference,
   type ProposedChange,
   type UploadPhase,
 };

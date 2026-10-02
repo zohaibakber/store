@@ -5,6 +5,7 @@ import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useInventoryInsights } from "@/lib/inventory";
+import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 
 import { InsightsBuilding } from "./building";
 import { InsightsFreshness } from "./freshness";
@@ -19,6 +20,7 @@ import {
   StockHealth,
   TopSellers,
 } from "./sections";
+import { Welcome } from "./welcome";
 
 const RANGE_OPTIONS = [
   { value: "7", label: "7D" },
@@ -38,17 +40,17 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
   return (
     <>
       <KpiGrid period={period} summary={summary} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <AttentionFeed className="lg:col-span-2" summary={summary} />
-        <StockHealth summary={summary} />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <AttentionFeed summary={summary} />
+        <ExpiringSoon summary={summary} />
       </div>
       <RevenueTrend period={period} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TopSellers period={period} />
+        <StockHealth summary={summary} />
         <SalesRhythm summary={summary} />
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ExpiringSoon summary={summary} />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <TopSellers period={period} />
         <RecentInvoices />
       </div>
     </>
@@ -62,6 +64,13 @@ export function OverviewPage({
   readonly range: SalesRange;
   readonly onRangeChange: (range: SalesRange) => void;
 }) {
+  if (useCatalogIsEmpty()) {
+    return (
+      <PageLayout>
+        <Welcome />
+      </PageLayout>
+    );
+  }
   return (
     <PageLayout>
       <PageActions>

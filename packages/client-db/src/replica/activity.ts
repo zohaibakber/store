@@ -1,39 +1,57 @@
 import {
   CommandReceipt,
+  CommandStatus,
   SyncCommandEnvelope,
-  type CommandStatus,
+  SyncEntity,
   type SyncCommand,
-  type SyncEntity,
+  type SyncProtocolCode,
 } from "@store/contracts";
-import type { OutboxActivityRow, ReplicaOutboxActivity } from "@store/sync/browser";
+import type { CatalogRowWrite } from "@store/contracts/catalog-write";
+import {
+  MAX_REJECTED_ACTIVITY_ROWS,
+  type OutboxActivityRow,
+  type ReplicaOutboxActivity,
+} from "@store/sync/browser";
+import * as Array from "effect/Array";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { syncStatusFromOutbox, type InventorySyncStatus } from "./status";
+const MAX_REJECTED_COMMAND_TARGETS = 32;
 
-export type RejectedCommandTarget = {
-  readonly entity: SyncEntity;
-  readonly id: string;
-};
+const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
 
-export type RejectedCommand = {
-  readonly operationId: string;
-  readonly clientSequence: string;
-  readonly createdAt: number;
-  readonly command: SyncCommand["_tag"];
-  readonly code: string;
-  readonly message: string;
-  readonly targets: ReadonlyArray<RejectedCommandTarget>;
-  readonly productId: string | null;
-};
+export const RejectedCommandTarget = Schema.Struct({ entity: SyncEntity, id: Schema.String });
+export type RejectedCommandTarget = typeof RejectedCommandTarget.Type;
 
-export type InventorySyncActivity = {
-  readonly pendingCount: number;
-  readonly rejectedCount: number;
-  readonly rejected: ReadonlyArray<RejectedCommand>;
-  readonly lastCaughtUpAt: number | null;
-  readonly firstSyncPending: boolean;
-};
+export const RejectedCommand = Schema.Struct({
+  operationId: Schema.String,
+  clientSequence: Schema.String,
+  createdAt: Schema.Number,
+  command: Schema.Literals(["issueInvoice", "catalogWrite"]),
+  code: Schema.String,
+  message: Schema.String,
+  targets: Schema.Array(RejectedCommandTarget).check(
+    Schema.isMaxLength(MAX_REJECTED_COMMAND_TARGETS),
+  ),
+  productId: Schema.NullOr(Schema.String),
+});
+export type RejectedCommand = typeof RejectedCommand.Type;
+
+export const InventorySyncActivity = Schema.Struct({
+  pendingCount: Count,
+  rejectedCount: Count,
+  rejected: Schema.Array(RejectedCommand).check(Schema.isMaxLength(MAX_REJECTED_ACTIVITY_ROWS)),
+  lastCaughtUpAt: Schema.NullOr(Schema.Number),
+  firstSyncPending: Schema.Boolean,
+  lowestActiveSchemaVersion: Schema.NullOr(Schema.Number),
+});
+export type InventorySyncActivity = typeof InventorySyncActivity.Type;
+
+export const ReplicaSyncActivity = Schema.Struct({
+  statuses: Schema.Array(CommandStatus),
+  activity: InventorySyncActivity,
+});
+export type ReplicaSyncActivity = typeof ReplicaSyncActivity.Type;
 
 export const EMPTY_SYNC_ACTIVITY: InventorySyncActivity = {
   pendingCount: 0,
@@ -41,6 +59,7 @@ export const EMPTY_SYNC_ACTIVITY: InventorySyncActivity = {
   rejected: [],
   lastCaughtUpAt: null,
   firstSyncPending: false,
+  lowestActiveSchemaVersion: null,
 };
 
 const PENDING_STATUSES: ReadonlySet<CommandStatus> = new Set([
@@ -69,6 +88,28 @@ const uniqueTargets = (
   });
 };
 
+const sameEntity = (left: RejectedCommandTarget, right: RejectedCommandTarget) =>
+  left.entity === right.entity;
+
+const boundedTargets = (
+  targets: ReadonlyArray<RejectedCommandTarget>,
+): ReadonlyArray<RejectedCommandTarget> => {
+  const unique = uniqueTargets(targets);
+  if (unique.length <= MAX_REJECTED_COMMAND_TARGETS) return unique;
+  const firstOfEachEntity = Array.dedupeWith(unique, sameEntity);
+  return Array.take(
+    [...firstOfEachEntity, ...unique.filter((target) => !firstOfEachEntity.includes(target))],
+    MAX_REJECTED_COMMAND_TARGETS,
+  );
+};
+
+const writeTargets = (write: CatalogRowWrite): ReadonlyArray<RejectedCommandTarget> => {
+  const target = { entity: write.entity, id: write.id };
+  return write.entity === "batch" && write.action === "upsert" && write.receipt !== undefined
+    ? [target, { entity: "purchaseOrderItem", id: write.receipt.purchaseOrderItemId }]
+    : [target];
+};
+
 export type CommandTargets = {
   readonly targets: ReadonlyArray<RejectedCommandTarget>;
   readonly productId: string | null;
@@ -83,16 +124,14 @@ export const commandTargets = (command: SyncCommand): CommandTargets => {
         return [];
       });
       return {
-        targets: uniqueTargets(
-          command.payload.writes.map((write) => ({ entity: write.entity, id: write.id })),
-        ),
+        targets: boundedTargets(command.payload.writes.flatMap(writeTargets)),
         productId: productIds[0] ?? null,
       };
     }
     case "issueInvoice": {
       const productIds = command.payload.input.items.map((item) => item.productId);
       return {
-        targets: uniqueTargets([
+        targets: boundedTargets([
           { entity: "invoice", id: command.payload.invoiceId },
           ...productIds.map((id) => ({ entity: "product" as const, id })),
         ]),
@@ -100,6 +139,71 @@ export const commandTargets = (command: SyncCommand): CommandTargets => {
       };
     }
   }
+};
+
+export type RejectedCommandSubject = "sale" | "delivery" | "purchaseOrder" | "supplier" | "stock";
+
+export const rejectedCommandSubject = (
+  rejected: Pick<RejectedCommand, "command" | "targets">,
+): RejectedCommandSubject => {
+  switch (rejected.command) {
+    case "issueInvoice":
+      return "sale";
+    case "catalogWrite": {
+      const entities = new Set(rejected.targets.map((target) => target.entity));
+      const onOrderLine = entities.has("purchaseOrderItem");
+      if (onOrderLine && entities.has("batch")) return "delivery";
+      if (onOrderLine || entities.has("purchaseOrder")) return "purchaseOrder";
+      return entities.has("supplier") ? "supplier" : "stock";
+    }
+  }
+};
+
+const SUBJECT_NOUNS = {
+  sale: "Sale",
+  delivery: "Delivery",
+  purchaseOrder: "Purchase order",
+  supplier: "Supplier",
+  stock: "Stock change",
+} as const satisfies Record<RejectedCommandSubject, string>;
+
+const REJECTION_REASONS: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    INSUFFICIENT_STOCK: "Not enough stock",
+    ENTITY_CONFLICT: "Changed on another device",
+    ENTITY_RELATION_INVALID: "Linked item is missing",
+    ENTITY_WRITE_FAILED: "Couldn't be saved on the server",
+    INVOICE_IDENTITY_CONFLICT: "Invoice number already used",
+    INVALID_OPERATION: "Not allowed",
+    SUPPLIER_HAS_ORDERS: "Supplier still has purchase orders",
+    PURCHASE_ORDER_TRANSITION_INVALID: "Order status changed on another device",
+    PURCHASE_ORDER_NOT_OPEN: "Order is already closed or cancelled",
+    PURCHASE_ORDER_NOT_DRAFT: "Only a draft order can be deleted",
+    PURCHASE_ORDER_HAS_ITEMS: "Remove the order's lines first",
+    PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "Pack size changed; enter the quantity again",
+    PURCHASE_ORDER_ITEM_RECEIVED: "Line already has received stock",
+    PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "Delivery is for a different product",
+    REPLICA_SCHEMA_OUTDATED: "Update Tabaaq on your other devices first",
+  } satisfies Partial<Record<SyncProtocolCode, string>>),
+);
+
+export const rejectionReason = (code: string): string => REJECTION_REASONS.get(code) ?? "Rejected";
+
+export type RejectedCommandLabel = {
+  readonly subject: RejectedCommandSubject;
+  readonly title: string;
+  readonly detail: string;
+};
+
+export const rejectedCommandLabel = (
+  rejected: Pick<RejectedCommand, "command" | "targets" | "code" | "message">,
+): RejectedCommandLabel => {
+  const subject = rejectedCommandSubject(rejected);
+  return {
+    subject,
+    title: `${SUBJECT_NOUNS[subject]}: ${rejectionReason(rejected.code)}`,
+    detail: rejected.message,
+  };
 };
 
 export const rejectedCommandFromOutbox = (row: OutboxActivityRow): Option.Option<RejectedCommand> =>
@@ -125,7 +229,7 @@ export const rejectedCommandFromOutbox = (row: OutboxActivityRow): Option.Option
     }),
   );
 
-export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): InventorySyncActivity => {
+const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): InventorySyncActivity => {
   let pendingCount = 0;
   let rejectedCount = 0;
   for (const entry of activity.statusCounts) {
@@ -138,13 +242,17 @@ export const syncActivityFromOutbox = (activity: ReplicaOutboxActivity): Invento
     rejected: activity.rejected.flatMap((row) => Option.toArray(rejectedCommandFromOutbox(row))),
     lastCaughtUpAt: activity.caughtUpAt,
     firstSyncPending: activity.caughtUpAt === null,
+    lowestActiveSchemaVersion: activity.lowestActiveSchemaVersion,
   };
 };
 
-export const syncStatusFromActivity = (activity: ReplicaOutboxActivity): InventorySyncStatus =>
-  syncStatusFromOutbox(
-    activity.statusCounts.filter((entry) => entry.count > 0).map((entry) => entry.status),
-  );
+const presentStatuses = (activity: ReplicaOutboxActivity): ReadonlyArray<CommandStatus> =>
+  activity.statusCounts.filter((entry) => entry.count > 0).map((entry) => entry.status);
+
+export const replicaSyncActivityOf = (outbox: ReplicaOutboxActivity): ReplicaSyncActivity => ({
+  statuses: presentStatuses(outbox),
+  activity: syncActivityFromOutbox(outbox),
+});
 
 export const syncActivityFromStatuses = (
   statuses: ReadonlyArray<CommandStatus>,

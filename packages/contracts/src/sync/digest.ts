@@ -14,7 +14,7 @@ const utf8 = new TextEncoder();
 
 export const STOCK_MOVEMENT_ROW_VERSION = 1;
 
-export const PARTITION_ENTITIES = [
+export const PARTITION_ENTITIES_V3 = [
   "category",
   "product",
   "batch",
@@ -23,7 +23,27 @@ export const PARTITION_ENTITIES = [
   "stockMovement",
 ] as const satisfies ReadonlyArray<SyncEntity>;
 
+export const PARTITION_ENTITIES = [
+  ...PARTITION_ENTITIES_V3,
+  "supplier",
+  "purchaseOrder",
+  "purchaseOrderItem",
+] as const satisfies ReadonlyArray<SyncEntity>;
+
 export type PartitionEntity = (typeof PARTITION_ENTITIES)[number];
+
+export const partitionEntityRecord = <Value>(of: (entity: PartitionEntity) => Value) =>
+  ({
+    category: of("category"),
+    product: of("product"),
+    batch: of("batch"),
+    invoice: of("invoice"),
+    invoiceItem: of("invoiceItem"),
+    stockMovement: of("stockMovement"),
+    supplier: of("supplier"),
+    purchaseOrder: of("purchaseOrder"),
+    purchaseOrderItem: of("purchaseOrderItem"),
+  }) satisfies Record<PartitionEntity, Value>;
 
 type PartitionLeafList = {
   readonly count: number;
@@ -159,51 +179,25 @@ export const finishPartitionDigestReport = Effect.fn("PartitionDigest.finish")(f
     version: PARTITION_DIGEST_VERSION,
     digest,
     count,
-    entities: {
-      category: entities.category.digest,
-      product: entities.product.digest,
-      batch: entities.batch.digest,
-      invoice: entities.invoice.digest,
-      invoiceItem: entities.invoiceItem.digest,
-      stockMovement: entities.stockMovement.digest,
-    },
+    entities: partitionEntityRecord((entity) => entities[entity].digest),
   } satisfies PartitionDigestReport;
 });
 
 const partitionDigestReport = Effect.fn("PartitionDigest.report")(function* (
   lists: PartitionLeafLists,
 ) {
-  return yield* finishPartitionDigestReport({
-    category: {
-      count: lists.category.count,
-      digest: yield* entityDigest("category", lists.category),
-    },
-    product: { count: lists.product.count, digest: yield* entityDigest("product", lists.product) },
-    batch: { count: lists.batch.count, digest: yield* entityDigest("batch", lists.batch) },
-    invoice: { count: lists.invoice.count, digest: yield* entityDigest("invoice", lists.invoice) },
-    invoiceItem: {
-      count: lists.invoiceItem.count,
-      digest: yield* entityDigest("invoiceItem", lists.invoiceItem),
-    },
-    stockMovement: {
-      count: lists.stockMovement.count,
-      digest: yield* entityDigest("stockMovement", lists.stockMovement),
-    },
+  const digestOf = Effect.fnUntraced(function* (entity: PartitionEntity) {
+    const list = lists[entity];
+    return { count: list.count, digest: yield* entityDigest(entity, list) };
   });
+  return yield* finishPartitionDigestReport(yield* Effect.all(partitionEntityRecord(digestOf)));
 });
 
 export const partitionDigestOf = (sources: Iterable<PartitionLeafSource>) => {
   const all = [...sources];
   const leavesOf = (entity: PartitionEntity) =>
     sortedPartitionLeaves(all.filter((source) => source.entity === entity).map(partitionLeaf));
-  return partitionDigestReport({
-    category: leavesOf("category"),
-    product: leavesOf("product"),
-    batch: leavesOf("batch"),
-    invoice: leavesOf("invoice"),
-    invoiceItem: leavesOf("invoiceItem"),
-    stockMovement: leavesOf("stockMovement"),
-  });
+  return partitionDigestReport(partitionEntityRecord(leavesOf));
 };
 
 export const divergedPartitionEntities = (

@@ -16,7 +16,7 @@ import {
   writeEntityRow,
   writeEntityRows,
 } from "./pending";
-import { outboxWithStatus, type ReplicaQueryBuilder } from "./schema";
+import { ENTITY_STORES, outboxWithStatus, type ReplicaQueryBuilder } from "./schema";
 
 const PROMOTE_CHUNK_ROWS = 500;
 
@@ -24,41 +24,13 @@ const SWEEP_CHUNK_ROWS = 500;
 
 const MAX_GENERATION = Number.MAX_SAFE_INTEGER;
 
-type GenerationStore =
-  | "categories"
-  | "products"
-  | "batches"
-  | "invoices"
-  | "invoice_items"
-  | "stock_movements";
-
-const GENERATION_STORES: ReadonlyArray<GenerationStore> = [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-];
+type GenerationStore = (typeof ENTITY_STORES)[number];
 
 type GenerationRange = readonly [[number], [number, []]];
 
 const hasRowsIn = (api: ReplicaQueryBuilder, store: GenerationStore, range: GenerationRange) => {
   const [lower, upper] = range;
-  switch (store) {
-    case "categories":
-      return api.from("categories").select().between(lower, upper).limit(1);
-    case "products":
-      return api.from("products").select().between(lower, upper).limit(1);
-    case "batches":
-      return api.from("batches").select().between(lower, upper).limit(1);
-    case "invoices":
-      return api.from("invoices").select().between(lower, upper).limit(1);
-    case "invoice_items":
-      return api.from("invoice_items").select().between(lower, upper).limit(1);
-    case "stock_movements":
-      return api.from("stock_movements").select().between(lower, upper).limit(1);
-  }
+  return api.from(store).select().between(lower, upper).limit(1);
 };
 
 const deleteChunkIn = (
@@ -67,20 +39,7 @@ const deleteChunkIn = (
   range: GenerationRange,
 ) => {
   const [lower, upper] = range;
-  switch (store) {
-    case "categories":
-      return api.from("categories").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-    case "products":
-      return api.from("products").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-    case "batches":
-      return api.from("batches").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-    case "invoices":
-      return api.from("invoices").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-    case "invoice_items":
-      return api.from("invoice_items").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-    case "stock_movements":
-      return api.from("stock_movements").delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
-  }
+  return api.from(store).delete().between(lower, upper).limit(SWEEP_CHUNK_ROWS);
 };
 
 const unreferencedRanges = (keep: ReadonlyArray<number>): ReadonlyArray<GenerationRange> => {
@@ -340,7 +299,7 @@ export const sweepIndexedDbStorageStep = (api: ReplicaQueryBuilder) =>
         .map((row) => row.generation),
     ];
     for (const range of unreferencedRanges(keep)) {
-      for (const store of GENERATION_STORES) {
+      for (const store of ENTITY_STORES) {
         if ((yield* hasRowsIn(api, store, range)).length > 0) {
           yield* deleteChunkIn(api, store, range);
           return { remaining: true };

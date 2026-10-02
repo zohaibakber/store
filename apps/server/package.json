@@ -22,6 +22,7 @@
     "pg": "^8.23.0"
   },
   "devDependencies": {
+    "@store/sync": "workspace:*",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "alchemy": "catalog:",

@@ -7,8 +7,8 @@ import {
   type PartitionDigestReport,
   type PartitionEntity,
   type SyncCommand,
+  SyncEntity,
   type SyncCommandEnvelope,
-  type SyncEntity,
   type SyncProtocolError,
 } from "@store/contracts";
 import type { CommandStatus } from "@store/contracts/sync/replica-model";
@@ -41,20 +41,16 @@ export const OUTSTANDING_COMMAND_STATUSES: ReadonlyArray<CommandStatus> = [
   "accepted_awaiting_integration",
 ];
 
-export const SYNC_ENTITIES: ReadonlyArray<SyncEntity> = [
-  "category",
-  "product",
-  "batch",
-  "invoice",
-  "invoiceItem",
-  "stockMovement",
-];
+export const SYNC_ENTITIES: ReadonlyArray<SyncEntity> = SyncEntity.literals;
 
 const syncEntityDependencyOrder = {
   category: 0,
+  supplier: 0,
   product: 1,
+  purchaseOrder: 1,
   batch: 2,
   invoice: 2,
+  purchaseOrderItem: 2,
   invoiceItem: 3,
   stockMovement: 4,
 } as const satisfies Record<SyncEntity, number>;
@@ -109,19 +105,23 @@ const overlayDeltasForInvoice = (
   operationId: string,
   allocations: ReadonlyArray<AllocationTake>,
   unitsPerPackFor: (productId: string) => number,
-): ReadonlyArray<StockOverlayDelta> =>
-  allocations.map((take) => {
+): ReadonlyArray<StockOverlayDelta> => {
+  const byBatch = new Map<string, StockOverlayDelta>();
+  for (const take of allocations) {
     const unitsPerPack = unitsPerPackFor(take.productId);
-    const packDeltaRaw = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
-    const unitDeltaRaw =
-      take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    return {
+    const held = byBatch.get(take.batchId);
+    byBatch.set(take.batchId, {
       commandId: operationId,
       batchId: take.batchId,
-      packDelta: Object.is(packDeltaRaw, -0) ? 0 : packDeltaRaw,
-      unitDelta: Object.is(unitDeltaRaw, -0) ? 0 : unitDeltaRaw,
-    };
-  });
+      packDelta:
+        (held?.packDelta ?? 0) - (take.quantityType === "pack" ? take.quantity : take.packsOpened),
+      unitDelta:
+        (held?.unitDelta ?? 0) +
+        (take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity),
+    });
+  }
+  return [...byBatch.values()];
+};
 
 export const decideOverlays = (
   command: { readonly operationId: string; readonly command: SyncCommand },
@@ -319,5 +319,5 @@ export const decideJournalRestore = (
   return successor ? { _tag: "handDown", successor: successor.operationId } : { _tag: "leave" };
 };
 
-export const freeInvoiceNumber = (invoiceNumber: number, highestOtherNumber: number): number =>
-  Math.max(highestOtherNumber, invoiceNumber) + 1;
+export const freeDocumentNumber = (proposed: number, highestOtherNumber: number): number =>
+  Math.max(highestOtherNumber, proposed) + 1;

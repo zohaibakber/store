@@ -21,3 +21,6 @@ export const preloadInventory = (
     ),
   );
 };
+
+export const preloadCatalog = (context: Parameters<typeof preloadInventory>[0]): Promise<void> =>
+  preloadInventory(context, () => Effect.void);

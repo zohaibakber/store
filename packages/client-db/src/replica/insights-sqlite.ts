@@ -1,5 +1,6 @@
 import {
   MAX_INSIGHTS_BATCHES,
+  MAX_INSIGHTS_ON_ORDER,
   MAX_INSIGHTS_PRODUCTS,
   MAX_INSIGHTS_SALES,
   type ReplicaInsightsFacts,
@@ -14,6 +15,7 @@ import {
   currentOrganization,
   invoiceDays,
   invoiceHours,
+  onOrderFacts,
   productDaySales,
   productFacts,
   type InvoiceWindow,
@@ -50,6 +52,11 @@ const SaleFactRow = Schema.Struct({
   revenue: Schema.Number,
 });
 
+const OnOrderFactRow = Schema.Struct({
+  productId: Schema.String,
+  units: Schema.Number,
+});
+
 const DayFactRow = Schema.Struct({
   day: Schema.Number,
   invoices: Schema.Number,
@@ -83,11 +90,15 @@ export const readSqliteInsightsFacts = Effect.fn("ReplicaNodeSqlite.readInsights
   const saleRows = yield* db.all(
     productDaySales({ ...scope, visibleOnly: false }).limit(MAX_INSIGHTS_SALES + 1),
   );
+  const onOrderRows = yield* db.all(
+    onOrderFacts({ organization: currentOrganization }).limit(MAX_INSIGHTS_ON_ORDER + 1),
+  );
   const dayRows = yield* db.all(invoiceDays(scope));
   const hourRows = yield* db.all(invoiceHours(scope));
   const products = yield* decodeRows(ProductFactRow, productRows.slice(0, MAX_INSIGHTS_PRODUCTS));
   const batches = yield* decodeRows(BatchFactRow, batchRows.slice(0, MAX_INSIGHTS_BATCHES));
   const sales = yield* decodeRows(SaleFactRow, saleRows.slice(0, MAX_INSIGHTS_SALES));
+  const onOrder = yield* decodeRows(OnOrderFactRow, onOrderRows.slice(0, MAX_INSIGHTS_ON_ORDER));
   const days = yield* decodeRows(DayFactRow, dayRows);
   const hours = yield* decodeRows(HourFactRow, hourRows);
   const facts: ReplicaInsightsFacts = {
@@ -99,12 +110,14 @@ export const readSqliteInsightsFacts = Effect.fn("ReplicaNodeSqlite.readInsights
     })),
     batches,
     sales,
+    onOrder,
     days,
     hours,
     truncated:
       productRows.length > MAX_INSIGHTS_PRODUCTS ||
       batchRows.length > MAX_INSIGHTS_BATCHES ||
-      saleRows.length > MAX_INSIGHTS_SALES,
+      saleRows.length > MAX_INSIGHTS_SALES ||
+      onOrderRows.length > MAX_INSIGHTS_ON_ORDER,
   };
   return facts;
 });

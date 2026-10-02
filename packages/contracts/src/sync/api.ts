@@ -12,6 +12,13 @@ import {
   SyncServiceUnavailable,
 } from "./http-errors";
 import {
+  ImportCatalogRequest,
+  ImportCatalogResult,
+  ImportId,
+  ImportPartReceipt,
+  MAX_IMPORT_PARTS,
+} from "./import";
+import {
   CommandReceipt,
   RegisterReplicaRequest,
   RegisterReplicaResult,
@@ -82,6 +89,27 @@ export const syncGroup = HttpApiGroup.make("sync")
         ),
       }),
       success: SnapshotPartPayload,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("stageImportPart", "/api/sync/imports/:importId/parts/:partNumber", {
+      params: Schema.Struct({
+        importId: ImportId,
+        partNumber: Schema.NumberFromString.pipe(
+          Schema.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: MAX_IMPORT_PARTS })),
+        ),
+      }),
+      payload: SnapshotPartPayload,
+      success: ImportPartReceipt,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("commitImport", "/api/sync/imports/:importId/commit", {
+      params: Schema.Struct({ importId: ImportId }),
+      payload: ImportCatalogRequest,
+      success: ImportCatalogResult,
       error: SyncHttpErrors,
     }),
   );

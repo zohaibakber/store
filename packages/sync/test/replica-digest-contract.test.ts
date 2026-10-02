@@ -269,6 +269,83 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
       },
     ],
   },
+  {
+    commitSequence: OrgCommitSequence.make("7"),
+    operationId: "remote-delivery",
+    decision: "accepted",
+    changes: [
+      {
+        entity: "supplier",
+        action: "upsert",
+        entityId: "remote-supplier",
+        rowVersion: 2,
+        row: {
+          id: "remote-supplier",
+          name: "Remote wholesaler",
+          phone: "923001234567",
+          note: null,
+          ...managed("remote-delivery", 2),
+        },
+      },
+      {
+        entity: "purchaseOrder",
+        action: "upsert",
+        entityId: "remote-order",
+        rowVersion: 3,
+        row: {
+          id: "remote-order",
+          orderNumber: 4,
+          supplierId: "remote-supplier",
+          status: "sent",
+          note: null,
+          sentAt: FIXTURE_NOW,
+          expectedAt: null,
+          total: 500,
+          ...managed("remote-delivery", 3),
+        },
+      },
+      {
+        entity: "purchaseOrderItem",
+        action: "upsert",
+        entityId: "remote-order-line",
+        rowVersion: 2,
+        row: {
+          id: "remote-order-line",
+          purchaseOrderId: "remote-order",
+          productId: LAST_UNIT_PRODUCT_ID,
+          productName: "Ten pack",
+          quantity: 10,
+          quantityType: "unit",
+          baseUnitQuantity: 10,
+          packCost: 50,
+          receivedBaseUnits: 4,
+          ...managed("remote-delivery", 2),
+        },
+      },
+      {
+        entity: "stockMovement",
+        action: "upsert",
+        entityId: "remote-delivery-movement",
+        rowVersion: 1,
+        row: {
+          id: "remote-delivery-movement",
+          productId: LAST_UNIT_PRODUCT_ID,
+          batchId: LAST_UNIT_BATCH_ID,
+          invoiceId: null,
+          purchaseOrderId: "remote-order",
+          type: "stock_in",
+          packDelta: 0,
+          unitDelta: 4,
+          note: null,
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          actorUserId: "user-2",
+          deviceId: "replica-b",
+          operationId: "remote-delivery",
+          createdAt: FIXTURE_NOW,
+        },
+      },
+    ],
+  },
 ];
 
 const withEngine = <A, E>(
@@ -364,9 +441,12 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
             const exit = yield* Effect.exit(engine.downloadOnce(pullRequest));
             expect(Exit.isSuccess(exit)).toBe(true);
           }
-          expect(yield* Ref.get(authority.requested)).toEqual([true, true, true, true, true]);
+          expect(yield* Ref.get(authority.requested)).toEqual([
+            true,
+            ...remoteChanges.map(() => true),
+          ]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(
-            NOW + 4 * 25_200_000,
+            NOW + remoteChanges.length * 25_200_000,
           );
         }),
       );

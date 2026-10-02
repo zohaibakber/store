@@ -2,15 +2,22 @@ import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as IndexedDbTable from "@effect/platform-browser/IndexedDbTable";
 import * as IndexedDbVersion from "@effect/platform-browser/IndexedDbVersion";
+import { SyncEntity, type SyncEntityChange } from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   CommandStatus,
+  replicaEntitySchemas,
   ReplicaBatchRow,
   ReplicaCategoryRow,
   ReplicaInvoiceItemRow,
   ReplicaInvoiceRow,
   ReplicaProductRow,
+  ReplicaPurchaseOrderItemRow,
+  ReplicaPurchaseOrderRow,
   ReplicaStockMovementRow,
+  ReplicaSupplierRow,
 } from "@store/contracts/sync/replica-model";
+import { getTableName } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -38,6 +45,8 @@ export const ReplicaStateRow = Schema.Struct({
   activeGeneration: PositiveInteger,
   caughtUpAt: Schema.NullOr(NonNegativeInteger),
   registeredAt: Schema.NullOr(NonNegativeInteger),
+  announcedSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInteger)),
+  lowestActiveSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInteger)),
 });
 export type ReplicaStateRow = typeof ReplicaStateRow.Type;
 
@@ -195,12 +204,6 @@ type StoredProductRow = typeof StoredProductRow.Type;
 export const storedProduct = (generation: number, row: typeof ReplicaProductRow.Type) =>
   ({ generation, ...row, nameKey: foldAsciiCase(row.name) }) satisfies StoredProductRow;
 
-export const productImage = ({
-  generation: _generation,
-  nameKey: _nameKey,
-  ...row
-}: StoredProductRow) => row;
-
 class ProductTable extends IndexedDbTable.make({
   name: "products",
   schema: StoredProductRow,
@@ -277,6 +280,39 @@ class StockMovementTable extends IndexedDbTable.make({
   durability: "strict",
 }) {}
 
+class SupplierTable extends IndexedDbTable.make({
+  name: "suppliers",
+  schema: withGeneration(ReplicaSupplierRow.fields),
+  keyPath: ["generation", "id"],
+  indexes: {
+    byName: ["generation", "name"],
+  },
+  durability: "strict",
+}) {}
+
+class PurchaseOrderTable extends IndexedDbTable.make({
+  name: "purchase_orders",
+  schema: withGeneration(ReplicaPurchaseOrderRow.fields),
+  keyPath: ["generation", "id"],
+  indexes: {
+    byOrderNumber: ["generation", "orderNumber"],
+    bySupplier: ["generation", "supplierId"],
+    byStatusCreatedAt: ["generation", "status", "createdAt"],
+  },
+  durability: "strict",
+}) {}
+
+class PurchaseOrderItemTable extends IndexedDbTable.make({
+  name: "purchase_order_items",
+  schema: withGeneration(ReplicaPurchaseOrderItemRow.fields),
+  keyPath: ["generation", "id"],
+  indexes: {
+    byPurchaseOrder: ["generation", "purchaseOrderId"],
+    byProduct: ["generation", "productId"],
+  },
+  durability: "strict",
+}) {}
+
 class ReplicaV1 extends IndexedDbVersion.make(
   ReplicaStateTable,
   OutboxTable,
@@ -309,6 +345,26 @@ class ReplicaV2 extends IndexedDbVersion.make(
   InvoiceTableV2,
   InvoiceItemTable,
   StockMovementTable,
+) {}
+
+class ReplicaV3 extends IndexedDbVersion.make(
+  ReplicaStateTable,
+  OutboxTable,
+  CoverageTable,
+  SnapshotImportTable,
+  StockOverlayTable,
+  StagedSnapshotTable,
+  PendingRowMarkTable,
+  PendingRowJournalTableV2,
+  CategoryTable,
+  ProductTable,
+  BatchTable,
+  InvoiceTableV2,
+  InvoiceItemTable,
+  StockMovementTable,
+  SupplierTable,
+  PurchaseOrderTable,
+  PurchaseOrderItemTable,
 ) {}
 
 export class ReplicaIndexedDb extends IndexedDbDatabase.make(
@@ -344,13 +400,48 @@ export class ReplicaIndexedDb extends IndexedDbDatabase.make(
     yield* api.createObjectStore("stock_movements");
     yield* api.createIndex("stock_movements", "byProduct");
   }),
-).add(
-  ReplicaV2,
-  Effect.fn("ReplicaIndexedDb.addLookupIndexes")(function* (_from, api) {
-    yield* api.createIndex("invoices", "byInvoiceNumber");
-    yield* api.createIndex("pending_row_journal", "byEntity");
-  }),
-) {}
+)
+  .add(
+    ReplicaV2,
+    Effect.fn("ReplicaIndexedDb.addLookupIndexes")(function* (_from, api) {
+      yield* api.createIndex("invoices", "byInvoiceNumber");
+      yield* api.createIndex("pending_row_journal", "byEntity");
+    }),
+  )
+  .add(
+    ReplicaV3,
+    Effect.fn("ReplicaIndexedDb.addPurchasing")(function* (_from, api) {
+      yield* api.createObjectStore("suppliers");
+      yield* api.createIndex("suppliers", "byName");
+      yield* api.createObjectStore("purchase_orders");
+      yield* api.createIndex("purchase_orders", "byOrderNumber");
+      yield* api.createIndex("purchase_orders", "bySupplier");
+      yield* api.createIndex("purchase_orders", "byStatusCreatedAt");
+      yield* api.createObjectStore("purchase_order_items");
+      yield* api.createIndex("purchase_order_items", "byPurchaseOrder");
+      yield* api.createIndex("purchase_order_items", "byProduct");
+      const imports = yield* api.from("snapshot_imports").select();
+      yield* Effect.forEach(
+        imports.filter((row) => row.stage === "importing" || row.stage === "caught_up"),
+        (row) => api.from("snapshot_imports").upsert({ ...row, stage: "failed" }),
+        { discard: true },
+      );
+      const coverage = yield* api.from("replica_coverage").select();
+      yield* Effect.forEach(
+        coverage,
+        (row) => api.from("replica_coverage").upsert({ ...row, verifiedAt: null }),
+        { discard: true },
+      );
+    }),
+  ) {}
+
+export type IndexedDbTableName = Parameters<ReplicaQueryBuilder["from"]>[0];
+
+export type EntityStore<Entity extends SyncEntity> =
+  (typeof syncEntityRows)[Entity]["table"]["_"]["name"];
+
+export const entityStore = <Entity extends SyncEntity>(entity: Entity): EntityStore<Entity> =>
+  getTableName(syncEntityRows[entity].table);
 
 export type ReplicaQueryBuilder = IndexedDbQueryBuilder.IndexedDbQueryBuilder<
   (typeof ReplicaIndexedDb)["version"]
@@ -370,3 +461,14 @@ export const countOutboxWithStatus = (api: ReplicaQueryBuilder, status: CommandS
   const [lower, upper] = statusBounds(status);
   return api.from("command_outbox").count("byStatusSequence").between(lower, upper);
 };
+
+export const ENTITY_STORES = SyncEntity.literals.map(entityStore);
+
+export const storedEntityRow = (
+  generation: number,
+  entity: SyncEntity,
+  row: SyncEntityChange["row"],
+) =>
+  entity === "product"
+    ? storedProduct(generation, Schema.decodeUnknownSync(replicaEntitySchemas.product)(row))
+    : { generation, ...Schema.decodeUnknownSync(replicaEntitySchemas[entity])(row) };

@@ -1,52 +1,76 @@
 import type * as React from "react";
 
 import {
-  Card,
-  CardFrame,
-  CardFrameAction,
-  CardFrameDescription,
-  CardFrameHeader,
-  CardFrameTitle,
-  CardPanel,
-} from "@/components/ui/card";
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@/components/ui/frame";
+import { cn } from "@/lib/utils";
 
 export function FrameCard({
   action,
   children,
+  className,
   description,
   flush = false,
+  table,
   title,
   ...props
-}: Omit<React.ComponentProps<typeof CardFrame>, "title"> & {
+}: Omit<React.ComponentProps<typeof Frame>, "title"> & {
   action?: React.ReactNode;
   description?: React.ReactNode;
   flush?: boolean;
+  table?: boolean;
   title?: React.ReactNode;
 }): React.ReactElement {
   const hasHeader = title != null || description != null || action != null;
+  const body = table ? (
+    children
+  ) : flush ? (
+    <FramePanel className="flex-1 overflow-hidden">
+      <div className="-m-5">{children}</div>
+    </FramePanel>
+  ) : (
+    <FramePanel className="flex-1">{children}</FramePanel>
+  );
+
+  if (table !== undefined) {
+    return (
+      <section className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
+        {hasHeader && (
+          <div className="flex min-h-7 min-w-0 items-center gap-3 px-1">
+            {title != null && <h2 className="shrink-0 text-sm font-medium">{title}</h2>}
+            {description != null && (
+              <p className="min-w-0 truncate text-sm text-muted-foreground tabular-nums">
+                {description}
+              </p>
+            )}
+            {action != null && <div className="ms-auto flex shrink-0 items-center">{action}</div>}
+          </div>
+        )}
+        <Frame>{body}</Frame>
+      </section>
+    );
+  }
 
   return (
-    <CardFrame {...props}>
+    <Frame className={className} {...props}>
       {hasHeader && (
-        <CardFrameHeader className="flex h-11 min-w-0 flex-row items-center">
-          {title != null && <CardFrameTitle className="shrink-0">{title}</CardFrameTitle>}
+        <FrameHeader className="min-w-0 flex-row items-center">
+          {title != null && <FrameTitle className="shrink-0">{title}</FrameTitle>}
           {description != null && (
-            <CardFrameDescription className="min-w-0">
+            <FrameDescription className="ms-3 min-w-0">
               <span className="block truncate tabular-nums">{description}</span>
-            </CardFrameDescription>
+            </FrameDescription>
           )}
           {action != null && (
-            <CardFrameAction className="ms-auto shrink-0 items-center">{action}</CardFrameAction>
+            <div className="-my-2 ms-auto flex shrink-0 items-center ps-3">{action}</div>
           )}
-        </CardFrameHeader>
+        </FrameHeader>
       )}
-      {flush ? (
-        <Card className="flex-1 overflow-hidden">{children}</Card>
-      ) : (
-        <Card className="flex-1">
-          <CardPanel>{children}</CardPanel>
-        </Card>
-      )}
-    </CardFrame>
+      {body}
+    </Frame>
   );
 }

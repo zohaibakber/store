@@ -1,6 +1,9 @@
 import {
+  INSIGHTS_ON_ORDER_STATUSES,
+  insightsOnOrderFacts,
   makeInsightsSalesAccumulator,
   MAX_INSIGHTS_BATCHES,
+  MAX_INSIGHTS_ON_ORDER,
   MAX_INSIGHTS_PRODUCTS,
   type ReplicaInsightsFacts,
   type ReplicaInsightsWindow,
@@ -12,6 +15,7 @@ import type { ReplicaQueryBuilder } from "./schema";
 import { readVisibleStockContext, withVisibleStock } from "./stock";
 
 const INVOICE_ITEM_READ_CONCURRENCY = 24;
+const ORDER_LINE_READ_CONCURRENCY = 24;
 
 export const readIndexedDbInsights = (
   api: ReplicaQueryBuilder,
@@ -41,6 +45,19 @@ export const readIndexedDbInsights = (
       (invoice) => api.from("invoice_items").select("byInvoice").equals([generation, invoice.id]),
       { concurrency: INVOICE_ITEM_READ_CONCURRENCY },
     );
+    const openOrders = yield* Effect.forEach(INSIGHTS_ON_ORDER_STATUSES, (status) =>
+      api
+        .from("purchase_orders")
+        .select("byStatusCreatedAt")
+        .between([generation, status], [generation, status, []]),
+    );
+    const orderLines = yield* Effect.forEach(
+      openOrders.flat(),
+      (order) =>
+        api.from("purchase_order_items").select("byPurchaseOrder").equals([generation, order.id]),
+      { concurrency: ORDER_LINE_READ_CONCURRENCY },
+    );
+    const onOrder = insightsOnOrderFacts(orderLines.flat());
     const accumulator = makeInsightsSalesAccumulator(window);
     invoices.every((invoice, index) => accumulator.addInvoice(invoice, lines[index] ?? []));
     const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -72,11 +89,13 @@ export const readIndexedDbInsights = (
         expiresAt: batch.expiresAt,
       })),
       sales: sales.sales,
+      onOrder: onOrder.slice(0, MAX_INSIGHTS_ON_ORDER),
       days: sales.days,
       hours: sales.hours,
       truncated:
         sales.truncated ||
         products.length > MAX_INSIGHTS_PRODUCTS ||
-        stocked.length > MAX_INSIGHTS_BATCHES,
+        stocked.length > MAX_INSIGHTS_BATCHES ||
+        onOrder.length > MAX_INSIGHTS_ON_ORDER,
     } satisfies ReplicaInsightsFacts;
   });

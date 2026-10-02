@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import type { SqlClient } from "effect/unstable/sql/SqlClient";
 
+import { replicaSyncActivityOf } from "./activity";
 import { openSqliteReplicaSyncSession, type SqliteReplicaIdentity } from "./sql-client-session";
 import type { ReplicaHandle } from "./types";
 
@@ -59,7 +60,7 @@ export const openSqlClientReplicaHandle = async <E>(
     workspaceToken: input.databaseName,
     engine: "sqlite",
     replicaId: session.replicaId,
-    readOutboxActivity: session.readOutboxActivity,
+    readSyncActivity: async () => replicaSyncActivityOf(await session.readOutboxActivity()),
     readPendingRowIds: session.readPendingRowIds,
     stamp: session.stamp,
     readSubset: session.readSubset,

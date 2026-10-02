@@ -24,7 +24,7 @@ import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-produc
 import { formatNumber } from "@/lib/format";
 import { useSuspenseProductSearch } from "@/lib/inventory";
 
-const RESULT_LIMIT = 20;
+export const SALE_SEARCH_LIMIT = 20;
 
 const isEditableTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -85,7 +85,7 @@ function ProductPickerSearch({
   const recents = useRecentProducts();
   const { quantity, term } = parseSaleQuery(query);
   const searchTerm = useDeferredValue(term);
-  const products = useSuspenseProductSearch(searchTerm, RESULT_LIMIT);
+  const products = useSuspenseProductSearch(searchTerm, SALE_SEARCH_LIMIT);
   const isStale = searchTerm !== term;
   const items: ReadonlyArray<PickerItem> = term
     ? products.map((product) => ({ kind: "product", product }))

@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,11 +9,22 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  session,
+  shell,
+} from "electron";
 
 import { AuthBroker } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
+import { hostDeviceLabel } from "./device-label";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
 import { assertTrustedIpcSender } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
@@ -27,11 +39,13 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
-import { registerReplicaWorkerIpc } from "./replica-ipc";
+import { registerReplicaWorkerIpc, type ReplicaBackupDialogs } from "./replica-ipc";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
+import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
+import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
 import { setupUpdater } from "./updater";
 import { registerWebContentsSecurity } from "./web-contents-security";
 
@@ -180,11 +194,11 @@ const InvoiceUpload = Schema.Struct({
     }),
   ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
 });
-const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 
 function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", (event) => {
+  ipcMain.handle("auth:get-session", async (event) => {
     assertRendererIpc(event.senderFrame);
+    await authBroker.restore();
     return authBroker.snapshot;
   });
   ipcMain.handle("auth:get-oauth-redirect-uri", (event) => {
@@ -230,6 +244,49 @@ function registerServerIpc() {
     return authBroker.analyseInvoices(upload.files);
   });
 }
+
+const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
+
+const backupDialogs: ReplicaBackupDialogs = {
+  chooseDestination: async (suggestedName) => {
+    const options = {
+      title: "Back up to file",
+      buttonLabel: "Back up",
+      defaultPath: path.join(app.getPath("documents"), suggestedName),
+      filters: BACKUP_FILE_FILTERS,
+    };
+    const chosen = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
+    return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
+  },
+  chooseSource: async () => {
+    const options = {
+      title: "Restore from file",
+      buttonLabel: "Choose backup",
+      defaultPath: app.getPath("documents"),
+      filters: BACKUP_FILE_FILTERS,
+      properties: ["openFile" as const],
+    };
+    const chosen = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
+  },
+};
+
+const choosePdfDestination = async (suggestedName: string) => {
+  const options = {
+    title: "Save as PDF",
+    buttonLabel: "Save",
+    defaultPath: path.join(app.getPath("documents"), suggestedName),
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  };
+  const chosen = win
+    ? await dialog.showSaveDialog(win, options)
+    : await dialog.showSaveDialog(options);
+  return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
+};
 
 const publishReplicaForeground = (visible: boolean) => {
   replicaWorker
@@ -299,7 +356,9 @@ ipcMain.on("theme:set-source", (event, input) => {
     return;
   }
   const source = Schema.decodeUnknownOption(ThemeSource)(input);
-  if (source._tag === "Some") nativeTheme.themeSource = source.value;
+  if (source._tag === "None") return;
+  nativeTheme.themeSource = source.value;
+  void saveThemeSource(app.getPath("userData"), source.value).catch(() => undefined);
 });
 
 app.on("window-all-closed", () => {
@@ -369,6 +428,14 @@ void app.whenReady().then(async () => {
   registerNewSaleAccelerator();
   registerAuthIpc();
   registerServerIpc();
+  registerShareIpc({
+    ipcMain,
+    allowedOrigins: allowedRendererOrigins,
+    openExternal: (url) => shell.openExternal(url),
+    writeClipboardText: (text) => clipboard.writeText(text),
+    choosePdfDestination,
+  });
+  nativeTheme.themeSource = readThemeSource(app.getPath("userData"));
   createWindow();
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
@@ -382,9 +449,11 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
+    deviceLabel: hostDeviceLabel(hostname()),
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
     liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,
+    backupDialogs,
   });
   await authBroker.initialize();
   publishSession(authBroker.snapshot);

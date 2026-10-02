@@ -118,6 +118,10 @@ const resumeFrame = (cursor: HubCursor) =>
 const transactionsFrame = (publish: HubPublish) =>
   `{"_tag":"transactions","epoch":${json(publish.epoch)},"subscription":${json(OPERATIONAL_SUBSCRIPTION)},"schemaVersion":${SYNC_SCHEMA_VERSION},"fromCommitSequence":${json(publish.horizon)},"toCommitSequence":${json(publish.horizon)},"transactions":[${publish.group}]}`;
 
+const carriesGroup = (publish: HubPublish, attachment: HubAttachment): boolean =>
+  publish.group !== "" &&
+  (attachment.maxBytes === null || publish.byteLength <= attachment.maxBytes);
+
 export const advanceCursor = (current: HubCursor | undefined, next: HubCursor): HubCursor =>
   current === undefined ||
   current.epoch !== next.epoch ||
@@ -167,12 +171,12 @@ export const publishToSockets = (
     if (attachment.replicaId === publish.originReplicaId) continue;
     if (attachment.epoch !== publish.epoch) {
       trySend(socket, resumeFrame(cursor));
-    } else if (attachment.maxBytes !== null && publish.byteLength > attachment.maxBytes) {
-      wake ??= wakeFrame(cursor);
-      trySend(socket, wake);
-    } else {
+    } else if (carriesGroup(publish, attachment)) {
       frame ??= transactionsFrame(publish);
       trySend(socket, frame);
+    } else {
+      wake ??= wakeFrame(cursor);
+      trySend(socket, wake);
     }
     delivered += 1;
   }

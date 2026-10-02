@@ -3,16 +3,16 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Batch } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { format } from "date-fns";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
+import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
-  AUTO_BATCH,
   lineTotal,
   paisaToRupees,
   suggestedPrice,
-  useInvoiceCreate,
+  type MissingSaleLine,
   type SaleLine,
-} from "@/components/invoices/create-context";
+} from "@/components/invoices/sale-line";
 import { Button } from "@/components/ui/button";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
 import {
@@ -23,8 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { EMPTY, pluralize } from "@/lib/format";
+import { EMPTY, formatCount, formatNumber, pluralize } from "@/lib/format";
+import { AUTO_BATCH } from "@/lib/sale-drafts";
 
 const quantityItems = [
   { label: "Unit", value: "unit" },
@@ -43,14 +45,122 @@ const batchLabel = (batch: Batch) => {
   return expiry ? `Exp ${expiry}` : EMPTY;
 };
 
+const elsewhereHint = (line: SaleLine) => {
+  if (!line.elsewhere || line.elsewhere.units === 0) return null;
+  const { sales, units } = line.elsewhere;
+  const amount = line.product.category.tracksPacks
+    ? formatCount(units, "unit")
+    : formatNumber(units);
+  return `${amount} in ${sales > 1 ? "other sales" : "another sale"}`;
+};
+
+function LineRow({
+  children,
+  invalid,
+  lineKey,
+  name,
+}: {
+  children: ReactNode;
+  invalid: boolean;
+  lineKey: number;
+  name: string;
+}) {
+  const {
+    actions: { focusSearch, removeLine },
+  } = useInvoiceCreate();
+
+  const remove = (row: HTMLTableRowElement) => {
+    const sibling = row.nextElementSibling ?? row.previousElementSibling;
+    removeLine(lineKey);
+    if (sibling instanceof HTMLElement && sibling.dataset.saleLine != null) sibling.focus();
+    else focusSearch();
+  };
+
+  return (
+    <TableRow
+      aria-invalid={invalid ? true : undefined}
+      data-sale-line=""
+      onKeyDown={(event) => {
+        const onRow = event.target === event.currentTarget;
+        const removeKey =
+          (onRow && (event.key === "Delete" || event.key === "Backspace")) ||
+          (event.key === "Backspace" && (event.ctrlKey || event.metaKey));
+        if (!removeKey) return;
+        event.preventDefault();
+        remove(event.currentTarget);
+      }}
+      tabIndex={0}
+    >
+      {children}
+      <TableCell>
+        <div className="-my-1.5 flex justify-end">
+          <Button
+            aria-label={`Remove ${name}`}
+            onClick={(event) => {
+              const row = event.currentTarget.closest("tr");
+              if (row) remove(row);
+            }}
+            size="icon-sm"
+            tabIndex={-1}
+            variant="ghost"
+          >
+            <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function LineNumber({ index }: { index: number }) {
+  return (
+    <TableCell>
+      <span className="block text-end text-xs text-muted-foreground tabular-nums">{index + 1}</span>
+    </TableCell>
+  );
+}
+
+function InvoiceMissingLine({ index, line }: { index: number; line: MissingSaleLine }) {
+  if (line.kind === "loading") {
+    return (
+      <LineRow invalid={false} lineKey={line.key} name="line">
+        <LineNumber index={index} />
+        <TableCell colSpan={5}>
+          <Skeleton className="h-4 w-48" />
+        </TableCell>
+      </LineRow>
+    );
+  }
+
+  return (
+    <LineRow invalid lineKey={line.key} name="unavailable product">
+      <LineNumber index={index} />
+      <TableCell className="max-w-0" colSpan={5}>
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="shrink-0 leading-tight font-medium">Product no longer available</span>
+          <span
+            className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-destructive-foreground"
+            role="alert"
+          >
+            Remove this line to complete the sale.
+          </span>
+        </div>
+      </TableCell>
+    </LineRow>
+  );
+}
+
 function LineBatch({ line }: { line: SaleLine }) {
   const {
     actions: { updateLine },
   } = useInvoiceCreate();
-  const batches = line.product.batches.filter((batch) => batchStock(line, batch) > 0);
+  const batches = line.product.batches.filter(
+    (batch) => batchStock(line, batch) > 0 || batch.id === line.batchId,
+  );
   const [only] = batches;
+  const chosen = line.batchId === AUTO_BATCH || batches.some((batch) => batch.id === line.batchId);
 
-  if (batches.length <= 1) {
+  if (batches.length <= 1 && chosen) {
     return (
       <span className="block truncate text-xs leading-tight text-muted-foreground tabular-nums">
         {only ? batchLabel(only) : EMPTY}
@@ -61,13 +171,14 @@ function LineBatch({ line }: { line: SaleLine }) {
   const items: ReadonlyArray<{ label: string; value: SaleLine["batchId"] }> = [
     { label: "Auto", value: AUTO_BATCH },
     ...batches.map((batch) => ({ label: batchLabel(batch), value: batch.id })),
+    ...(chosen ? [] : [{ label: "Unavailable", value: line.batchId }]),
   ];
 
   return (
     <Select<SaleLine["batchId"]>
       items={items}
       onValueChange={(value) => {
-        if (value) updateLine(line.key, { batchId: value });
+        if (value) updateLine(line, { batchId: value });
       }}
       value={line.batchId}
     >
@@ -97,19 +208,13 @@ function InvoiceCreateLine({
   line: SaleLine;
 }) {
   const {
-    actions: { focusSearch, removeLine, setLineQuantityUnit, updateLine },
+    actions: { focusSearch, setLineQuantityUnit, updateLine },
   } = useInvoiceCreate();
 
   const total = lineTotal(line);
   const suggested = paisaToRupees(suggestedPrice(line.product, line.quantityUnit));
   const priceChanged = line.salePrice != null && suggested != null && line.salePrice !== suggested;
-
-  const remove = (row: HTMLTableRowElement) => {
-    const sibling = row.nextElementSibling ?? row.previousElementSibling;
-    removeLine(line.key);
-    if (sibling instanceof HTMLElement && sibling.dataset.saleLine != null) sibling.focus();
-    else focusSearch();
-  };
+  const hint = elsewhereHint(line);
 
   const returnOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.ctrlKey || event.metaKey) return;
@@ -118,25 +223,8 @@ function InvoiceCreateLine({
   };
 
   return (
-    <TableRow
-      aria-invalid={error ? true : undefined}
-      data-sale-line=""
-      onKeyDown={(event) => {
-        const onRow = event.target === event.currentTarget;
-        const removeKey =
-          (onRow && (event.key === "Delete" || event.key === "Backspace")) ||
-          (event.key === "Backspace" && (event.ctrlKey || event.metaKey));
-        if (!removeKey) return;
-        event.preventDefault();
-        remove(event.currentTarget);
-      }}
-      tabIndex={0}
-    >
-      <TableCell>
-        <span className="block text-end text-xs text-muted-foreground tabular-nums">
-          {index + 1}
-        </span>
-      </TableCell>
+    <LineRow invalid={error !== null} lineKey={line.key} name={line.product.name}>
+      <LineNumber index={index} />
       <TableCell className="max-w-0">
         <div className="flex min-w-0 items-baseline gap-1.5">
           <span className="min-w-0 truncate leading-tight font-medium capitalize">
@@ -155,6 +243,7 @@ function InvoiceCreateLine({
           ) : (
             <span className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-muted-foreground">
               {line.product.category.name}
+              {hint && ` · ${hint}`}
             </span>
           )}
         </div>
@@ -170,7 +259,7 @@ function InvoiceCreateLine({
             className="w-16"
             format={{ useGrouping: false }}
             min={1}
-            onValueChange={(quantity) => updateLine(line.key, { quantity })}
+            onValueChange={(quantity) => updateLine(line, { quantity })}
             size="sm"
             step={1}
             value={line.quantity}
@@ -220,7 +309,7 @@ function InvoiceCreateLine({
             className="w-20"
             format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
             min={0}
-            onValueChange={(salePrice) => updateLine(line.key, { salePrice })}
+            onValueChange={(salePrice) => updateLine(line, { salePrice })}
             size="sm"
             step={1}
             value={line.salePrice}
@@ -239,24 +328,8 @@ function InvoiceCreateLine({
           {total == null ? EMPTY : formatPrice(total)}
         </span>
       </TableCell>
-      <TableCell>
-        <div className="-my-1.5 flex justify-end">
-          <Button
-            aria-label={`Remove ${line.product.name}`}
-            onClick={(event) => {
-              const row = event.currentTarget.closest("tr");
-              if (row) remove(row);
-            }}
-            size="icon-sm"
-            tabIndex={-1}
-            variant="ghost"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
-          </Button>
-        </div>
-      </TableCell>
-    </TableRow>
+    </LineRow>
   );
 }
 
-export { InvoiceCreateLine };
+export { InvoiceCreateLine, InvoiceMissingLine };

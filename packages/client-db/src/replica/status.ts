@@ -7,12 +7,17 @@ export type InventorySyncStatus =
   | { readonly _tag: "caughtUp" }
   | { readonly _tag: "rejected"; readonly message: string }
   | { readonly _tag: "storageError"; readonly message: string }
+  | { readonly _tag: "updateRequired"; readonly message: string }
   | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
 
 export type ReplicaSyncHealth =
   | { readonly _tag: "running"; readonly syncing?: boolean }
   | { readonly _tag: "storageError"; readonly message: string }
+  | { readonly _tag: "updateRequired"; readonly message: string }
   | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
+
+const UPDATE_REQUIRED_MESSAGE =
+  "This version of the app is too old to sync. Update it to continue. Pending changes are saved on this device.";
 
 export const syncStatusFromOutbox = (
   statuses: ReadonlyArray<CommandStatus>,
@@ -43,6 +48,8 @@ export const syncHealthFromScheduler = (
       };
     case "stopped":
       return { _tag: "recoveryRequired", message: status.message };
+    case "updateRequired":
+      return { _tag: "updateRequired", message: UPDATE_REQUIRED_MESSAGE };
     case "running":
       return { _tag: "running", syncing };
   }

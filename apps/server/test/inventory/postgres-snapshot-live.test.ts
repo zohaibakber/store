@@ -4,8 +4,11 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  PARTITION_DIGEST_VERSION,
+  PARTITION_DIGEST_VERSION_V3,
   SnapshotId,
   SnapshotPartPayload,
+  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncProtocolError,
   type AcquireSnapshotRequest,
@@ -25,9 +28,12 @@ import {
   downloadLeases,
   inventoryState,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   replicas,
   snapshotJobs,
   snapshotParts,
+  suppliers,
 } from "@store/db/postgres/schema";
 import { asc, eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
@@ -218,7 +224,8 @@ describe("postgres snapshot acquisition", () => {
     expect(result.encoded.roundTrips).toBe(1);
     expect(result.again.roundTrips).toBe(1);
     expect(result.manifest.horizon).toBe(OrgCommitSequence.make("2"));
-    expect(result.manifest.schemaVersion).toBe(1);
+    expect(result.manifest.schemaVersion).toBe(SYNC_SCHEMA_VERSION);
+    expect(result.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION_V3);
     expect(result.manifest.parts).toHaveLength(1);
     expect(result.manifest.entityCounts).toEqual([
       { entity: "category", rowCount: 1 },
@@ -241,6 +248,74 @@ describe("postgres snapshot acquisition", () => {
       sha256: result.encoded.result.sha256,
     });
     expect(readyManifest(result.again.result).snapshotId).toBe(result.manifest.snapshotId);
+  });
+
+  it("carries suppliers, purchase orders and their lines once the organization has them", async () => {
+    const organizationId = decodeOrganizationId("org-snap-purchasing");
+    const actor = actorFor(organizationId);
+    const result = await run(
+      Effect.gen(function* () {
+        const { snapshots, db } = yield* openAuthority(organizationId);
+        yield* db.insert(suppliers).values({
+          id: "supplier-1",
+          name: "Acme Distributors",
+          phone: null,
+          note: null,
+          ...metadata(organizationId, "seed-supplier"),
+        });
+        yield* db.insert(purchaseOrders).values({
+          id: "order-1",
+          orderNumber: 1,
+          supplierId: "supplier-1",
+          status: "sent",
+          note: null,
+          sentAt: OCCURRED_AT,
+          expectedAt: null,
+          total: 500,
+          ...metadata(organizationId, "seed-order"),
+        });
+        yield* db.insert(purchaseOrderItems).values({
+          id: "line-1",
+          purchaseOrderId: "order-1",
+          productId: LAST_UNIT_PRODUCT_ID,
+          productName: "Last unit",
+          quantity: 5,
+          quantityType: "pack",
+          baseUnitQuantity: 5,
+          packCost: 100,
+          receivedBaseUnits: 2,
+          ...metadata(organizationId, "seed-line"),
+        });
+        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
+        const part = yield* readPart(snapshots, actor, manifest.snapshotId, 1);
+        return { manifest, part };
+      }),
+    );
+    expect(result.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
+    expect(result.manifest.entityCounts).toEqual([
+      { entity: "category", rowCount: 1 },
+      { entity: "product", rowCount: 1 },
+      { entity: "batch", rowCount: 1 },
+      { entity: "invoice", rowCount: 0 },
+      { entity: "invoiceItem", rowCount: 0 },
+      { entity: "stockMovement", rowCount: 0 },
+      { entity: "supplier", rowCount: 1 },
+      { entity: "purchaseOrder", rowCount: 1 },
+      { entity: "purchaseOrderItem", rowCount: 1 },
+    ]);
+    expect(result.part.rows.map((row) => [row.entity, row.entityId])).toEqual([
+      ["category", "general"],
+      ["product", LAST_UNIT_PRODUCT_ID],
+      ["batch", LAST_UNIT_BATCH_ID],
+      ["supplier", "supplier-1"],
+      ["purchaseOrder", "order-1"],
+      ["purchaseOrderItem", "line-1"],
+    ]);
+    expect(result.part.rows.at(-1)?.row).toMatchObject({
+      purchaseOrderId: "order-1",
+      receivedBaseUnits: 2,
+      rowVersion: 1,
+    });
   });
 
   it("chunks rows into parts of the configured size", async () => {

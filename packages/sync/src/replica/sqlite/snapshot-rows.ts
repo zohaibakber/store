@@ -1,13 +1,5 @@
 import { syncProtocolError, type SyncEntity } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
-import {
-  batches,
-  categories,
-  invoiceItems,
-  invoices,
-  products,
-  stockMovements,
-} from "@store/db/replica.schema";
 import { getTableColumns, getTableName, sql, type SQL } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -15,15 +7,6 @@ import * as Schema from "effect/Schema";
 
 import type { ReplicaDb } from "../sql-client/drizzle";
 import { standbyTable } from "./generation";
-
-const entityTables = {
-  category: { table: categories, rowVersion: categories.rowVersion },
-  product: { table: products, rowVersion: products.rowVersion },
-  batch: { table: batches, rowVersion: batches.rowVersion },
-  invoice: { table: invoices, rowVersion: invoices.rowVersion },
-  invoiceItem: { table: invoiceItems, rowVersion: invoiceItems.rowVersion },
-  stockMovement: { table: stockMovements, rowVersion: undefined },
-} as const;
 
 const UPSERTED_ROWS_PER_STATEMENT = 400;
 
@@ -43,15 +26,15 @@ const upsertStatement = (
   columns: ReadonlyArray<string>,
   rows: ReadonlyArray<SnapshotRecord>,
 ): SQL => {
-  const { table, rowVersion } = entityTables[entity];
+  const { table } = syncEntityRows[entity];
   const conflictTarget = sql.join(
     [table.organizationId, table.id].map((column) => sql.identifier(column.name)),
     sql`, `,
   );
   const newerRowVersion =
-    rowVersion === undefined
-      ? sql``
-      : sql` where excluded.${sql.identifier(rowVersion.name)} >= ${sql.identifier(rowVersion.name)}`;
+    "rowVersion" in table
+      ? sql` where excluded.${sql.identifier(table.rowVersion.name)} >= ${sql.identifier(table.rowVersion.name)}`
+      : sql``;
   const columnList = sql.join(
     columns.map((column) => sql.identifier(column)),
     sql`, `,
@@ -81,7 +64,7 @@ export const upsertSnapshotRows = Effect.fn("ReplicaSnapshotRows.upsert")(functi
   entity: SyncEntity,
   rows: ReadonlyArray<unknown>,
 ) {
-  const columns = Object.values(getTableColumns(entityTables[entity].table)).map(
+  const columns = Object.values(getTableColumns(syncEntityRows[entity].table)).map(
     (column) => column.name,
   );
   const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);

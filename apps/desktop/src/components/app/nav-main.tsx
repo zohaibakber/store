@@ -20,9 +20,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
+import { useParkedSaleCountIn } from "@/hooks/use-sale-drafts";
+import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { appHost } from "@/host";
+import { formatCount } from "@/lib/format";
 
-type AppRoute = "/" | "/restock" | "/products" | "/products/categories" | "/invoices";
+type AppRoute =
+  | "/"
+  | "/restock"
+  | "/products"
+  | "/products/categories"
+  | "/purchases"
+  | "/purchases/suppliers"
+  | "/invoices";
 
 export type NavSubItem = {
   title: string;
@@ -43,9 +53,11 @@ const isWithin = (pathname: string, url: string) =>
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
-  const { open: openCommandMenu } = useCommandMenu();
+  const { open: openCommandMenu, preload: preloadCommandMenu } = useCommandMenu();
   const newSaleShortcut = appHost().newSaleShortcut;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const parkedSales = useParkedSaleCountIn(useWorkspaceStorageKey(), pathname === "/invoices/new");
+  const parkedLabel = `${formatCount(parkedSales, "sale")} in progress`;
   const isActive = (item: NavMainItem) =>
     isWithin(pathname, item.url) && !(item.items ?? []).some((sub) => isWithin(pathname, sub.url));
 
@@ -61,15 +73,28 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              tooltip="New Sale"
+              tooltip={parkedSales > 0 ? `New Sale · ${parkedLabel}` : "New Sale"}
               aria-keyshortcuts={newSaleShortcut.ariaKeyShortcuts}
               render={<Link to="/invoices/new" onClick={closeMobileSidebar} />}
             >
               <HugeiconsIcon icon={PlusSignCircleIcon} />
               <span>New Sale</span>
             </SidebarMenuButton>
+            {parkedSales > 0 && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1 right-1 hidden size-2 rounded-full bg-primary group-data-[collapsible=icon]:block"
+              />
+            )}
             <SidebarMenuBadge>
-              <Kbd>{newSaleShortcut.label}</Kbd>
+              <span className="flex items-center gap-1.5">
+                {parkedSales > 0 && (
+                  <span aria-label={parkedLabel} className="tabular-nums">
+                    {parkedSales}
+                  </span>
+                )}
+                <Kbd>{newSaleShortcut.label}</Kbd>
+              </span>
             </SidebarMenuBadge>
           </SidebarMenuItem>
           <SidebarMenuItem>
@@ -78,6 +103,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               aria-keyshortcuts="Control+K"
               aria-haspopup="dialog"
               onClick={openCommandMenu}
+              onFocus={preloadCommandMenu}
+              onPointerEnter={preloadCommandMenu}
             >
               <HugeiconsIcon icon={SearchIcon} />
               <span>Search</span>

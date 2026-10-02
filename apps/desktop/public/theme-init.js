@@ -3,7 +3,8 @@ const storageKey = "store-electron-theme";
 let preference = "dark";
 
 try {
-  const savedPreference = localStorage.getItem(storageKey);
+  const stored = localStorage.getItem(storageKey);
+  const savedPreference = stored === null ? null : stored.replace(/^"|"$/g, "");
   if (savedPreference === "light" || savedPreference === "dark" || savedPreference === "system") {
     preference = savedPreference;
   }

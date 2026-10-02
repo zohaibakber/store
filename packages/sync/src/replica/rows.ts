@@ -1,13 +1,5 @@
 import type { SyncEntity, SyncEntityChange } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
-import {
-  batches,
-  categories,
-  invoiceItems,
-  invoices,
-  products,
-  stockMovements,
-} from "@store/db/replica.schema";
 import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -15,20 +7,10 @@ import * as Schema from "effect/Schema";
 import type { ReplicaEntityRowImage } from "./projection";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
-const entityTables = {
-  category: categories,
-  product: products,
-  batch: batches,
-  invoice: invoices,
-  invoiceItem: invoiceItems,
-  stockMovement: stockMovements,
-} as const;
+type EntityTable = (typeof syncEntityRows)[SyncEntity]["table"];
 
-const inOrganization = (
-  table: (typeof entityTables)[SyncEntity],
-  organizationId: string,
-  entityId: string,
-) => and(eq(table.organizationId, organizationId), eq(table.id, entityId));
+const inOrganization = (table: EntityTable, organizationId: string, entityId: string) =>
+  and(eq(table.organizationId, organizationId), eq(table.id, entityId));
 
 export const selectEntityRow = Effect.fn("ReplicaRows.selectEntityRow")(function* (
   tx: ReplicaDb,
@@ -36,7 +18,7 @@ export const selectEntityRow = Effect.fn("ReplicaRows.selectEntityRow")(function
   entity: SyncEntity,
   entityId: string,
 ) {
-  const table = entityTables[entity];
+  const { table } = syncEntityRows[entity];
   const row = yield* tx
     .select()
     .from(table)
@@ -52,21 +34,12 @@ export const writeEntityRow = Effect.fn("ReplicaRows.writeEntityRow")(function* 
   entity: SyncEntity,
   row: SyncEntityChange["row"],
 ) {
-  const table = entityTables[entity];
+  const { table } = syncEntityRows[entity];
   const parsed = Schema.decodeUnknownSync(syncEntityRows[entity].schema)(row);
-  const existing = yield* tx
-    .select()
-    .from(table)
-    .where(inOrganization(table, parsed.organizationId, parsed.id))
-    .get();
-  if (existing) {
-    yield* tx
-      .update(table)
-      .set(parsed)
-      .where(inOrganization(table, parsed.organizationId, parsed.id));
-    return;
-  }
-  yield* tx.insert(table).values(parsed);
+  yield* tx
+    .insert(table)
+    .values(parsed)
+    .onConflictDoUpdate({ target: [table.organizationId, table.id], set: parsed });
 });
 
 export const removeEntityRow = Effect.fn("ReplicaRows.removeEntityRow")(function* (
@@ -75,6 +48,6 @@ export const removeEntityRow = Effect.fn("ReplicaRows.removeEntityRow")(function
   entity: SyncEntity,
   entityId: string,
 ) {
-  const table = entityTables[entity];
+  const { table } = syncEntityRows[entity];
   yield* tx.delete(table).where(inOrganization(table, organizationId, entityId));
 });

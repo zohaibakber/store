@@ -8,8 +8,11 @@ import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 
+import type { WorkspaceBackupIpcBridge } from "./backup-channels";
 import type { InventoryHttpBridge } from "./inventory-http-channels";
+import type { WorkspacePublishIpcBridge } from "./publish-channels";
 import type { ReplicaIpcBridge } from "./replica-channels";
+import type { ShareIpcBridge } from "./share-channels";
 
 declare global {
   namespace NodeJS {
@@ -23,6 +26,9 @@ declare global {
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
     replica?: ReplicaIpcBridge;
+    workspaceBackup?: WorkspaceBackupIpcBridge;
+    sharing?: ShareIpcBridge;
+    workspacePublish?: WorkspacePublishIpcBridge;
     electronTheme?: {
       setSource: (source: "dark" | "light" | "system") => void;
     };

@@ -13,6 +13,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import { replicaSyncActivityOf } from "./activity";
 import { layerCommitForwarding } from "./commit-forwarding";
 import { makeReplicaLifetime } from "./lifetime";
 import { readOutboxStatusesSqlite } from "./node-outbox";
@@ -142,7 +143,10 @@ export const openNodeReplicaSqlite = async (
     replicaId,
     stamp,
     query,
-    readOutboxActivity: () => withHandle((handle) => readOutboxActivitySqlite(handle.db)),
+    readSyncActivity: () =>
+      withHandle((handle) =>
+        readOutboxActivitySqlite(handle.db).pipe(Effect.map(replicaSyncActivityOf)),
+      ),
     readPendingRowIds: (entity) =>
       withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
     readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
@@ -170,7 +174,7 @@ export {
   runReplicaQuery,
   seedReplicaIdentity,
 } from "./sql-client-session";
-export { openNodeReplicaSyncSession } from "./node-sync";
+export { openNodeLocalReplicaSession, openNodeReplicaSyncSession } from "./node-sync";
 export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly";
 export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
 export type { ReplicaSnapshotRunner } from "./snapshot-read";

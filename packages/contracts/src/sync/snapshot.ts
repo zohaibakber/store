@@ -4,13 +4,12 @@ import * as Struct from "effect/Struct";
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
   OrgCommitSequence,
-  PartitionDigestVersion,
   SyncEpoch,
   SyncLogChange,
   SyncSchemaVersion,
   SyncSubscription,
 } from "./protocol";
-import { SyncEntity } from "./schema";
+import { knownEntityRecords, SyncEntity } from "./schema";
 
 export const MAX_SNAPSHOT_PART_ROWS = 2_000;
 
@@ -43,15 +42,15 @@ export const SnapshotManifest = Schema.Struct({
   schemaVersion: SyncSchemaVersion,
   horizon: OrgCommitSequence,
   parts: Schema.Array(SnapshotPartRef),
-  entityCounts: Schema.Array(SnapshotEntityCount),
-  digestVersion: PartitionDigestVersion,
+  entityCounts: knownEntityRecords(SnapshotEntityCount),
+  digestVersion: PositiveInt,
 });
 export type SnapshotManifest = typeof SnapshotManifest.Type;
 
 export const SnapshotPartPayload = Schema.Struct({
   snapshotId: SnapshotId,
   partNumber: SnapshotPartRef.fields.partNumber,
-  rows: Schema.Array(SnapshotRow),
+  rows: knownEntityRecords(SnapshotRow),
 });
 export type SnapshotPartPayload = typeof SnapshotPartPayload.Type;
 

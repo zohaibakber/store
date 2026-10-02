@@ -49,7 +49,11 @@ export function InventoryReady({ children }: { readonly children: React.ReactNod
   return <FirstSyncGate>{children}</FirstSyncGate>;
 }
 
-const HALTED_SYNC: ReadonlySet<string> = new Set(["storageError", "recoveryRequired"]);
+const HALTED_SYNC: ReadonlySet<string> = new Set([
+  "storageError",
+  "updateRequired",
+  "recoveryRequired",
+]);
 
 export const useFirstSyncPending = () => {
   const { firstSyncPending } = useInventorySyncActivity();

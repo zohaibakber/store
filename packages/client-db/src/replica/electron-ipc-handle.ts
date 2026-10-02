@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { ReplicaSyncActivity } from "./activity";
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
 import type { ReplicaSyncHealth } from "./status";
@@ -29,10 +30,13 @@ import type {
   ReplicaReadOptions,
 } from "./types";
 
+type ElectronReplicaAuthority = "local" | "remote";
+
 export type ElectronReplicaOpenIdentity = {
   readonly organizationId: string;
   readonly userId: string;
   readonly replicaId: string;
+  readonly authority?: ElectronReplicaAuthority;
 };
 
 type CommitStamp = {
@@ -42,7 +46,7 @@ type CommitStamp = {
 
 export type ElectronReplicaBridge = {
   readonly open: (
-    identity: ElectronReplicaOpenIdentity,
+    identity: Required<ElectronReplicaOpenIdentity>,
   ) => Promise<{ readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" }>;
   readonly close: (workspaceToken: string) => Promise<void>;
   readonly stamp: (workspaceToken: string) => Promise<CommitStamp>;
@@ -119,6 +123,9 @@ export type ElectronReplicaBridge = {
     callback: (health: ReplicaSyncHealth) => void,
   ) => () => void;
   readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
+  readonly readSyncActivity: (
+    workspaceToken: string,
+  ) => Promise<typeof ReplicaSyncActivity.Encoded>;
   readonly enqueueCommand: (input: {
     readonly workspaceToken: string;
     readonly request: typeof EnqueueCommandRequest.Encoded;
@@ -148,6 +155,7 @@ const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
 const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
 const encodeEnqueueRequest = Schema.encodeSync(EnqueueCommandRequest);
 const decodeQueuedCommandStatus = Schema.decodeUnknownSync(CommandStatus);
+const decodeSyncActivity = Schema.decodeUnknownSync(ReplicaSyncActivity);
 
 const decodedSome = <A>(
   values: ReadonlyArray<string>,
@@ -158,7 +166,13 @@ export const openElectronIpcReplicaHandle = async (
   bridge: ElectronReplicaBridge,
   identity: ElectronReplicaOpenIdentity,
 ): Promise<ReplicaHandle> => {
-  const opened = await bridge.open(identity);
+  const authority = identity.authority ?? "remote";
+  const opened = await bridge.open({
+    authority,
+    organizationId: identity.organizationId,
+    userId: identity.userId,
+    replicaId: identity.replicaId,
+  });
   const { workspaceToken } = opened;
   if (opened.engine !== "sqlite") {
     await bridge.close(workspaceToken).catch(() => undefined);
@@ -254,6 +268,19 @@ export const openElectronIpcReplicaHandle = async (
       options?.signal === undefined ? undefined : { signal: options.signal },
     );
 
+  const wakeSurface = (): Pick<ReplicaHandle, "wakeSyncUpload"> => {
+    switch (authority) {
+      case "local":
+        return {};
+      case "remote":
+        return {
+          wakeSyncUpload: () => {
+            void bridge.wakeSyncUpload(workspaceToken).catch(() => undefined);
+          },
+        };
+    }
+  };
+
   return {
     workspaceToken,
     engine: "sqlite",
@@ -289,6 +316,7 @@ export const openElectronIpcReplicaHandle = async (
     },
     readOutboxStatuses: async () =>
       decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
+    readSyncActivity: async () => decodeSyncActivity(await bridge.readSyncActivity(workspaceToken)),
     enqueueCommand: async (request) => {
       const queued = await bridge.enqueueCommand({
         workspaceToken,
@@ -311,9 +339,7 @@ export const openElectronIpcReplicaHandle = async (
       return unsubscribe;
     },
     retryRecovery: () => bridge.retryRecovery(workspaceToken),
-    wakeSyncUpload: () => {
-      void bridge.wakeSyncUpload(workspaceToken).catch(() => undefined);
-    },
+    ...wakeSurface(),
     close: lifetime.close,
   };
 };

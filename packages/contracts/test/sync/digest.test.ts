@@ -24,7 +24,7 @@ describe("partition digest", () => {
     expect(sortedPartitionLeaves(UNICODE_IDS).leaves).toBe(byBytes.join("\n"));
   });
 
-  it("follows the documented byte format for the version 3 history digest", async () => {
+  it("follows the documented byte format for the version 4 digest over nine entities", async () => {
     const report = await Effect.runPromise(
       partitionDigestOf([
         { entity: "category", entityId: "general", rowVersion: 1 },
@@ -32,9 +32,11 @@ describe("partition digest", () => {
         { entity: "invoice", entityId: "i-1", rowVersion: 4 },
         { entity: "invoiceItem", entityId: "ii-1", rowVersion: 1 },
         { entity: "stockMovement", entityId: "m-10", rowVersion: 1 },
+        { entity: "purchaseOrderItem", entityId: "poi-1", rowVersion: 2 },
+        { entity: "supplier", entityId: "s-1", rowVersion: 3 },
       ]),
     );
-    expect(PARTITION_DIGEST_DOMAIN).toBe("store.sync.partition-digest.v3");
+    expect(PARTITION_DIGEST_DOMAIN).toBe("store.sync.partition-digest.v4");
     const entity = (name: string, leaves: ReadonlyArray<string>) =>
       sha256([PARTITION_DIGEST_DOMAIN, name, String(leaves.length), leaves.join("\n")].join("\n"));
     const entities = {
@@ -44,15 +46,18 @@ describe("partition digest", () => {
       invoice: entity("invoice", ["invoice:i-1:4"]),
       invoiceItem: entity("invoiceItem", ["invoiceItem:ii-1:1"]),
       stockMovement: entity("stockMovement", ["stockMovement:m-10:1", "stockMovement:m-2:1"]),
+      supplier: entity("supplier", ["supplier:s-1:3"]),
+      purchaseOrder: entity("purchaseOrder", []),
+      purchaseOrderItem: entity("purchaseOrderItem", ["purchaseOrderItem:poi-1:2"]),
     };
     expect(report).toEqual({
-      version: 3,
-      count: 5,
+      version: 4,
+      count: 7,
       entities,
       digest: sha256(
         [
           PARTITION_DIGEST_DOMAIN,
-          "5",
+          "7",
           ...Object.entries(entities).map(([name, digest]) => `${name}:${digest}`),
         ].join("\n"),
       ),

@@ -1,23 +1,25 @@
 import {
   createContext,
-  lazy,
-  Suspense,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
+  type ComponentType,
   type ReactNode,
 } from "react";
 
-const InventoryCommandDialog = lazy(() =>
-  import("@/components/app/command-menu-dialog").then((module) => ({
-    default: module.InventoryCommandDialog,
-  })),
-);
+type CommandDialog = ComponentType<{
+  readonly onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
+}>;
+
+const loadCommandDialog = (): Promise<CommandDialog> =>
+  import("@/components/app/command-menu-dialog").then((module) => module.InventoryCommandDialog);
 
 interface CommandMenuContextValue {
   readonly open: () => void;
+  readonly preload: () => void;
 }
 
 const CommandMenuContext = createContext<CommandMenuContextValue | null>(null);
@@ -30,8 +32,20 @@ export function useCommandMenu(): CommandMenuContextValue {
 
 export function CommandMenuProvider({ children }: { readonly children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const open = useCallback(() => setIsOpen(true), []);
-  const context = useMemo(() => ({ open }), [open]);
+  const [Dialog, setDialog] = useState<CommandDialog | null>(null);
+  const preload = useCallback(() => {
+    void loadCommandDialog().then((loaded) => setDialog(() => loaded));
+  }, []);
+  const open = useCallback(() => {
+    preload();
+    setIsOpen(true);
+  }, [preload]);
+  const context = useMemo(() => ({ open, preload }), [open, preload]);
+
+  useEffect(() => {
+    const handle = requestIdleCallback(preload);
+    return () => cancelIdleCallback(handle);
+  }, [preload]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -39,20 +53,16 @@ export function CommandMenuProvider({ children }: { readonly children: ReactNode
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
 
       event.preventDefault();
-      setIsOpen(true);
+      open();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open]);
 
   return (
     <CommandMenuContext.Provider value={context}>
       {children}
-      {isOpen && (
-        <Suspense fallback={<span className="sr-only">Loading product search…</span>}>
-          <InventoryCommandDialog onOpenChange={setIsOpen} />
-        </Suspense>
-      )}
+      {Dialog ? <Dialog onOpenChange={setIsOpen} open={isOpen} /> : null}
     </CommandMenuContext.Provider>
   );
 }

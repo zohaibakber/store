@@ -1,9 +1,11 @@
+import { LOCAL_ORGANIZATION_ID, LOCAL_USER_ID } from "@store/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 
-import { ReplicaWorkerFailure } from "./replica-rpc";
+import { ReplicaWorkerFailure, type ReplicaOpenInput } from "./replica-rpc";
 
 export const PROXY_CONCURRENCY = 4;
 export const SNAPSHOT_DOWNLOAD_CONCURRENCY = 2;
@@ -16,6 +18,34 @@ export const WORKER_RPC_CONCURRENCY =
 const READER_CONTROL_SLOTS = 2;
 const READER_FINITE_READS = 2;
 export const READER_RPC_CONCURRENCY = READER_CONTROL_SLOTS + READER_FINITE_READS;
+
+export const LOCAL_REPLICA_KEY = `${LOCAL_ORGANIZATION_ID}-${LOCAL_USER_ID}`;
+
+const PATH_SEPARATOR = /[\\/]/u;
+
+const RESERVED_ORGANIZATION = LOCAL_ORGANIZATION_ID.toLowerCase();
+
+const isReservedOrganization = (organizationId: string) =>
+  organizationId.toLowerCase() === RESERVED_ORGANIZATION;
+
+export const admitReplicaKey = (
+  identity: typeof ReplicaOpenInput.Type,
+): Result.Result<string, ReplicaWorkerFailure> => {
+  switch (identity.authority) {
+    case "local":
+      return Result.succeed(LOCAL_REPLICA_KEY);
+    case "remote": {
+      const key = `${identity.organizationId}-${identity.userId}`;
+      return isReservedOrganization(identity.organizationId) || PATH_SEPARATOR.test(key)
+        ? Result.fail(
+            new ReplicaWorkerFailure({
+              message: "An organization workspace cannot open this catalog replica.",
+            }),
+          )
+        : Result.succeed(key);
+    }
+  }
+};
 
 export type ReplicaAdmissionLimits = {
   readonly turnWait: Duration.Input;

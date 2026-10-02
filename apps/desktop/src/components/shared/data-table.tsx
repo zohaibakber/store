@@ -9,19 +9,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Column, ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
-import {
-  Children,
-  createContext,
-  isValidElement,
-  use,
-  useEffect,
-  useEffectEvent,
-  useId,
-  useRef,
-} from "react";
+import { Children, createContext, isValidElement, use, useEffect, useId, useRef } from "react";
 import type React from "react";
 
-import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { Button } from "@/components/ui/button";
 import {
   Combobox,
@@ -158,15 +148,8 @@ interface DataTablePaginationAccess {
   ): void;
 }
 
-interface DataTableMoreRows {
-  readonly hasMore: boolean;
-  readonly loading: boolean;
-  readonly onLoadMore: () => void;
-}
-
 interface DataTableContextValue {
   table: DataTableInstance;
-  moreRows?: DataTableMoreRows;
   onRowClick?: (row: DataTableRow) => void;
   onRowPreload?: (row: DataTableRow) => void;
 }
@@ -186,14 +169,12 @@ interface DataTableProps<
   table: ReactTable<TFeatures, TData>;
   onRowClick?: (row: Row<TFeatures, TData>) => void;
   onRowPreload?: (row: Row<TFeatures, TData>) => void;
-  moreRows?: DataTableMoreRows;
 }
 
 function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   table,
   onRowClick,
   onRowPreload,
-  moreRows,
   className,
   ...props
 }: DataTableProps<TFeatures, TData>) {
@@ -252,24 +233,11 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
       ),
   };
 
-  const { pageIndex, pageSize } = contextTable.state.pagination ?? { pageIndex: 0, pageSize: 25 };
-  const needsRows =
-    moreRows !== undefined &&
-    moreRows.hasMore &&
-    !moreRows.loading &&
-    configuredTable.getRowCount() < (pageIndex + 2) * pageSize;
-  const loadMore = useEffectEvent(() => moreRows?.onLoadMore());
-  const loadedRows = table.options.data.length;
-  useEffect(() => {
-    if (needsRows) loadMore();
-  }, [needsRows, loadedRows]);
-
   return (
     <DataTableContext
       // SAFETY: TanStack rows are consumed only through the structural DataTableRow API.
       value={{
         table: contextTable,
-        moreRows,
         onRowClick: onRowClick as DataTableContextValue["onRowClick"],
         onRowPreload: onRowPreload as DataTableContextValue["onRowPreload"],
       }}
@@ -289,8 +257,12 @@ function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-function DataTableFooter({ className, ...props }: React.ComponentProps<"footer">) {
-  return <FrameFooter className={className} data-slot="data-table-footer" {...props} />;
+function DataTableFooter({ children, className, ...props }: React.ComponentProps<"footer">) {
+  return (
+    <FrameFooter className={className} data-slot="data-table-footer" {...props}>
+      <div className="-mx-3 -my-2">{children}</div>
+    </FrameFooter>
+  );
 }
 
 interface DataTableFilterProps extends React.ComponentProps<typeof InputGroupInput> {
@@ -559,7 +531,7 @@ function DataTableColumnHeader({ column, title, className, ...props }: DataTable
 }
 
 function DataTableContent({ className, children, ...props }: React.ComponentProps<"div">) {
-  const { table, moreRows, onRowClick, onRowPreload } = useDataTable();
+  const { table, onRowClick, onRowPreload } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
     <div
@@ -595,11 +567,7 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell className="h-24" colSpan={table.getAllLeafColumns().length}>
-                  {moreRows?.hasMore ? (
-                    <LoadingSpinner />
-                  ) : (
-                    <p className="text-center text-muted-foreground">No results.</p>
-                  )}
+                  <p className="text-center text-muted-foreground">No results.</p>
                 </TableCell>
               </TableRow>
             ) : (
@@ -639,11 +607,9 @@ function DataTablePagination({
   pageSizes = DEFAULT_PAGE_SIZES,
   ...props
 }: React.ComponentProps<"div"> & { pageSizes?: ReadonlyArray<number> }) {
-  const { table, moreRows } = useDataTable();
+  const { table } = useDataTable();
   const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 25 };
   const rowCount = table.getRowCount();
-  const hasMore = moreRows?.hasMore ?? false;
-  const canNextPage = table.getCanNextPage();
   const firstResult = pageIndex * pageSize + 1;
   const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
   const sizes = [...new Set<number>([...pageSizes, pageSize])].sort((a, b) => a - b);
@@ -653,7 +619,7 @@ function DataTablePagination({
       <p className="text-xs text-muted-foreground tabular-nums">
         {rowCount === 0
           ? formatCount(0, "result")
-          : `${formatNumber(firstResult)}–${formatNumber(lastResult)} of ${formatNumber(rowCount)}${hasMore ? "+" : ""}`}
+          : `${formatNumber(firstResult)}–${formatNumber(lastResult)} of ${formatNumber(rowCount)}`}
       </p>
       <div className="flex items-center gap-2">
         <Select
@@ -694,8 +660,7 @@ function DataTablePagination({
                 className="sm:*:[svg]:hidden"
                 render={
                   <Button
-                    disabled={!canNextPage && !hasMore}
-                    loading={!canNextPage && (moreRows?.loading ?? false)}
+                    disabled={!table.getCanNextPage()}
                     onClick={() => table.nextPage()}
                     size="sm"
                     type="button"

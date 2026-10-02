@@ -2,9 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { InsightsError } from "@/components/insights/insights-error";
-import { RESTOCK_VIEWS, RestockPage, type RestockView } from "@/components/insights/restock-page";
+import {
+  RESTOCK_PAGE_SIZE,
+  RESTOCK_VIEWS,
+  RestockPage,
+  type RestockView,
+} from "@/components/insights/restock-page";
 import { formValidator } from "@/lib/form-schema";
-import { preloadInventory, preloadInventoryInsights } from "@/lib/inventory";
+import { preloadInventory, preloadRestockPage } from "@/lib/inventory";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const DEFAULT_VIEW: RestockView = "action";
@@ -15,7 +20,15 @@ const restockSearch = formValidator(
 
 export const Route = createFileRoute("/restock")({
   validateSearch: restockSearch,
-  loader: ({ context }) => preloadInventory(context, preloadInventoryInsights),
+  loaderDeps: ({ search }) => ({ view: search.view ?? DEFAULT_VIEW }),
+  loader: ({ context, deps }) =>
+    preloadInventory(context, (inventory) =>
+      preloadRestockPage(inventory, {
+        filters: { view: deps.view, search: undefined },
+        cursor: null,
+        limit: RESTOCK_PAGE_SIZE,
+      }),
+    ),
   component: RestockRoute,
   errorComponent: InsightsError,
   staticData: { breadcrumb: "Restock" },

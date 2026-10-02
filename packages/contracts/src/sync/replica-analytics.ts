@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 export const MAX_PRODUCT_INSIGHT_IDS = 200;
 export const MAX_RESTOCK_PAGE_ROWS = 100;
 const MAX_RESTOCK_SEARCH_LENGTH = 100;
-export const ANALYTICS_ALGORITHM_VERSION = 1;
+export const ANALYTICS_ALGORITHM_VERSION = 2;
 export const SUMMARY_ATTENTION_LIMIT = 8;
 export const SUMMARY_EXPIRING_LIMIT = 50;
 export const ANALYTICS_HISTORY_DAYS = 180;
@@ -98,6 +98,7 @@ export const ProductInsight = Schema.Struct({
   safetyStock: Schema.Number,
   reorderPoint: Schema.Number,
   orderUpTo: Schema.Number,
+  onOrderUnits: Schema.Number,
   order: Schema.NullOr(OrderSuggestion),
   unitCost: Schema.NullOr(Schema.Number),
   unitPrice: Schema.NullOr(Schema.Number),

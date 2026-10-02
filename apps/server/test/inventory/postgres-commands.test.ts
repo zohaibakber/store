@@ -648,7 +648,9 @@ describe("postgres inventory commands", () => {
         transactions: 0,
       });
     }
-    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({ version: 3 });
+    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({
+      version: PARTITION_DIGEST_VERSION,
+    });
     expect(JSON.parse(counted.caughtUp.result.body).page.transactions).toHaveLength(1);
     expect(JSON.parse(counted.behind.result.body).page.transactions).toHaveLength(2);
     expect(JSON.parse(counted.replayed.result.body).page.transactions).toHaveLength(2);

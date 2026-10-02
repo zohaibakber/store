@@ -1,12 +1,16 @@
 import { CheckmarkCircle02Icon, FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import * as React from "react";
 
+import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
 import { formatCount, formatNumber } from "@/lib/format";
 
 import { useUpload } from "./context";
+import { UploadImportCategoryField } from "./import-category-field";
+import { UploadOrderMatch } from "./order-match";
 
 function UploadProposedChanges() {
   const {
@@ -36,6 +40,16 @@ function UploadProposedChanges() {
           Apply {formatCount(changes.length, "change")}
         </Button>
       </div>
+
+      {changes.some((change) => change.type === "create_product") ? (
+        <UploadImportCategoryField />
+      ) : null}
+
+      <AppErrorBoundary fallback={null}>
+        <React.Suspense fallback={null}>
+          <UploadOrderMatch />
+        </React.Suspense>
+      </AppErrorBoundary>
 
       <div className="flex flex-col gap-2">
         {changes.map((change, index) => {

@@ -13,6 +13,7 @@ export {
   inventoryContribution,
   MAX_ALERTS,
   missingCostsAlert,
+  onOrderLookup,
   productAlerts,
   SALES_RANGES,
   salesPeriodSeries,

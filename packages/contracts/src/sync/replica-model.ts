@@ -7,6 +7,9 @@ import {
   InvoiceRow,
   InvoiceItemRow,
   StockMovementRow,
+  SupplierRow,
+  PurchaseOrderRow,
+  PurchaseOrderItemRow,
   syncEntityRows,
   type SyncEntityRow,
 } from "./entity-rows";
@@ -30,6 +33,15 @@ export type ReplicaInvoiceItemRow = SyncEntityRow<"invoiceItem">;
 export const ReplicaStockMovementRow = StockMovementRow;
 export type ReplicaStockMovementRow = SyncEntityRow<"stockMovement">;
 
+export const ReplicaSupplierRow = SupplierRow;
+export type ReplicaSupplierRow = SyncEntityRow<"supplier">;
+
+export const ReplicaPurchaseOrderRow = PurchaseOrderRow;
+export type ReplicaPurchaseOrderRow = SyncEntityRow<"purchaseOrder">;
+
+export const ReplicaPurchaseOrderItemRow = PurchaseOrderItemRow;
+export type ReplicaPurchaseOrderItemRow = SyncEntityRow<"purchaseOrderItem">;
+
 export const replicaEntitySchemas = {
   category: ReplicaCategoryRow,
   product: ReplicaProductRow,
@@ -37,6 +49,9 @@ export const replicaEntitySchemas = {
   invoice: ReplicaInvoiceRow,
   invoiceItem: ReplicaInvoiceItemRow,
   stockMovement: ReplicaStockMovementRow,
+  supplier: ReplicaSupplierRow,
+  purchaseOrder: ReplicaPurchaseOrderRow,
+  purchaseOrderItem: ReplicaPurchaseOrderItemRow,
 } as const satisfies Record<SyncEntity, (typeof syncEntityRows)[SyncEntity]["schema"]>;
 
 export const CommandStatus = Schema.Literals([

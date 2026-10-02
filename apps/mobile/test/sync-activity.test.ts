@@ -28,6 +28,7 @@ const activity = (overrides: Partial<InventorySyncActivity>): InventorySyncActiv
   rejected: [],
   lastCaughtUpAt: null,
   firstSyncPending: false,
+  lowestActiveSchemaVersion: null,
   ...overrides,
 });
 

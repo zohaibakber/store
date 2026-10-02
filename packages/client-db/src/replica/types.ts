@@ -10,7 +10,6 @@ import type {
   ReplicaInsightsWindow,
   SyncEntity,
 } from "@store/contracts";
-import type { ReplicaOutboxActivity } from "@store/sync/browser";
 import { IR, type CollectionConfig, type LoadSubsetOptions } from "@tanstack/db";
 import type * as Effect from "effect/Effect";
 
@@ -20,8 +19,12 @@ import type {
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
+  PurchaseOrderItemRow,
+  PurchaseOrderRow,
   StockMovementRow,
+  SupplierRow,
 } from "../rows";
+import type { ReplicaSyncActivity } from "./activity";
 import type { InvoiceCoherenceGate } from "./coherence";
 import type { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
@@ -39,7 +42,10 @@ export type InventoryCollectionRow =
   | BatchRow
   | InvoiceRow
   | InvoiceItemRow
-  | StockMovementRow;
+  | StockMovementRow
+  | SupplierRow
+  | PurchaseOrderRow
+  | PurchaseOrderItemRow;
 
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
@@ -160,7 +166,7 @@ type ReplicaMutationSurface = {
 
 export type ReplicaActivitySurface = {
   readonly replicaId?: string;
-  readonly readOutboxActivity?: () => Promise<ReplicaOutboxActivity>;
+  readonly readSyncActivity?: () => Promise<ReplicaSyncActivity>;
   readonly readPendingRowIds?: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
 };
 

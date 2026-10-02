@@ -3,6 +3,7 @@ import {
   MAX_TRANSPORT_PAYLOAD_BYTES,
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
+  PARTITION_DIGEST_VERSION_V3,
   PartitionDigestReport,
   partitionDigestOf,
   SnapshotPartPayload,
@@ -120,7 +121,10 @@ const leavesOf = (rows: ReadonlyArray<SnapshotRow>) =>
 
 const serverDigest = (db: InventoryDrizzle, organizationId: string) =>
   db
-    .execute(sql`select "sync"."partition_digest"(${organizationId})::text as "value"`, "objects")
+    .execute(
+      sql`select "sync"."partition_digest"(${organizationId}, ${PARTITION_DIGEST_VERSION})::text as "value"`,
+      "objects",
+    )
     .pipe(Effect.map((rows) => decodeDigestText(decodeTextRows(rows)[0]?.value)));
 
 describe("postgres history snapshots", () => {
@@ -166,7 +170,7 @@ describe("postgres history snapshots", () => {
         })),
       },
     });
-    expect(outcome.history.digestVersion).toBe(PARTITION_DIGEST_VERSION);
+    expect(outcome.history.digestVersion).toBe(PARTITION_DIGEST_VERSION_V3);
     expect(outcome.history.entityCounts).toEqual([
       { entity: "category", rowCount: 1 },
       { entity: "product", rowCount: 3 },

@@ -11,9 +11,24 @@ import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
 import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
+import {
+  BACKUP_SAVE_CHANNEL,
+  RESTORE_APPLY_CHANNEL,
+  RESTORE_CHOOSE_CHANNEL,
+  RESTORE_DISCARD_CHANNEL,
+  type WorkspaceBackupIpcBridge,
+} from "./backup-channels";
 import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
 import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
+import {
+  PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_LOCAL_CATALOG_CHANNEL,
+  PUBLISH_OFFER_CHANNEL,
+  PUBLISH_PROGRESS_CHANNEL,
+  PUBLISH_START_CHANNEL,
+  type WorkspacePublishIpcBridge,
+} from "./publish-channels";
 import {
   REPLICA_ANALYTICS_CHANNEL,
   REPLICA_CANCEL_READ_CHANNEL,
@@ -21,6 +36,7 @@ import {
   REPLICA_CLOSE_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
+  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_INSIGHTS_SUMMARY_CHANNEL,
   REPLICA_OUTBOX_CHANNEL,
@@ -39,6 +55,12 @@ import {
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
+import {
+  SHARE_COPY_TEXT_CHANNEL,
+  SHARE_OPEN_EXTERNAL_CHANNEL,
+  SHARE_SAVE_PDF_CHANNEL,
+  type ShareIpcBridge,
+} from "./share-channels";
 
 const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
   channel: string,
@@ -89,6 +111,8 @@ const replica: ReplicaIpcBridge = {
   },
   readOutboxStatuses: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
+  readSyncActivity: (workspaceToken) =>
+    ipcRenderer.invoke(REPLICA_ACTIVITY_CHANNEL, workspaceToken),
   enqueueCommand: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),
   readCommandStatus: (input) => ipcRenderer.invoke(REPLICA_COMMAND_STATUS_CHANNEL, input),
   wakeSyncUpload: (workspaceToken) => ipcRenderer.invoke(REPLICA_WAKE_CHANNEL, workspaceToken),
@@ -102,6 +126,40 @@ const replica: ReplicaIpcBridge = {
 };
 
 contextBridge.exposeInMainWorld("replica", replica);
+
+const workspaceBackup: WorkspaceBackupIpcBridge = {
+  backUp: () => ipcRenderer.invoke(BACKUP_SAVE_CHANNEL),
+  chooseRestore: () => ipcRenderer.invoke(RESTORE_CHOOSE_CHANNEL),
+  applyRestore: () => ipcRenderer.invoke(RESTORE_APPLY_CHANNEL),
+  discardRestore: () => ipcRenderer.invoke(RESTORE_DISCARD_CHANNEL),
+};
+
+contextBridge.exposeInMainWorld("workspaceBackup", workspaceBackup);
+
+const sharing: ShareIpcBridge = {
+  openExternal: (url) => ipcRenderer.invoke(SHARE_OPEN_EXTERNAL_CHANNEL, url),
+  copyText: (text) => ipcRenderer.invoke(SHARE_COPY_TEXT_CHANNEL, text),
+  savePdf: (fileStem) => ipcRenderer.invoke(SHARE_SAVE_PDF_CHANNEL, fileStem),
+};
+
+contextBridge.exposeInMainWorld("sharing", sharing);
+
+const workspacePublish: WorkspacePublishIpcBridge = {
+  offer: (organizationId) => ipcRenderer.invoke(PUBLISH_OFFER_CHANNEL, organizationId),
+  publish: (organizationId) => ipcRenderer.invoke(PUBLISH_START_CHANNEL, organizationId),
+  discard: (organizationId) => ipcRenderer.invoke(PUBLISH_DISCARD_CHANNEL, organizationId),
+  localCatalog: () => ipcRenderer.invoke(PUBLISH_LOCAL_CATALOG_CHANNEL),
+  onProgress(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: Parameters<typeof callback>[0],
+    ) => callback(progress);
+    ipcRenderer.on(PUBLISH_PROGRESS_CHANNEL, listener);
+    return () => ipcRenderer.off(PUBLISH_PROGRESS_CHANNEL, listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("workspacePublish", workspacePublish);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
 ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {

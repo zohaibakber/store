@@ -5,12 +5,15 @@ import {
   redirect,
   useRouterState,
 } from "@tanstack/react-router";
+import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { Suspense } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { AppLoading } from "@/components/app/loading";
 import { PageLoading } from "@/components/app/loading-spinner";
+import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NotFound } from "@/components/app/not-found";
+import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteHeader } from "@/components/app/site-header";
 import { PageActionsProvider } from "@/components/shared/page-actions";
@@ -30,6 +33,7 @@ interface RouterContext {
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly inventory: InventoryHost | null;
+  readonly registry: AtomRegistry.AtomRegistry;
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -72,6 +76,7 @@ function AuthenticatedLayout() {
 
 function AppShell() {
   const { access, inventory, catalog } = Route.useRouteContext();
+  const { workspace } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [sidebarOpen, setSidebarOpen] = useSidebarPreference();
   const chrome = access.chrome({ pathname });
@@ -99,8 +104,10 @@ function AppShell() {
           >
             <PageActionsProvider>
               <SiteHeader />
+              <LocalCatalogWitness workspace={workspace} />
               {inventory && lease ? (
                 <InventoryReady>
+                  <PublishOffer />
                   <Suspense fallback={<PageLoading />}>
                     <Outlet />
                   </Suspense>

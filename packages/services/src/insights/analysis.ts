@@ -20,6 +20,7 @@ import {
   insightsDayOf,
   insightsDayStart,
   type InsightsBatchFact,
+  type InsightsOnOrderFact,
   type InsightsProductFact,
   type ReplicaInsightsFacts,
 } from "@store/contracts/sync/replica-insights";
@@ -176,6 +177,13 @@ const classifyAbc = (
   return classes;
 };
 
+export const onOrderLookup = (facts: Iterable<InsightsOnOrderFact>) => {
+  const units = new Map<string, number>();
+  for (const fact of facts)
+    units.set(fact.productId, (units.get(fact.productId) ?? 0) + fact.units);
+  return (productId: string) => units.get(productId) ?? 0;
+};
+
 const unitCostOf = (product: InsightsProductFact) =>
   product.purchasePrice === null ? null : product.purchasePrice / product.unitsPerPack;
 
@@ -252,9 +260,11 @@ const fefoStockPosition = (
 
 const orderFor = (
   product: InsightsProductFact,
-  units: number,
+  shortfallUnits: number,
+  onOrderUnits: number,
   unitCost: number | null,
 ): OrderSuggestion | null => {
+  const units = shortfallUnits - onOrderUnits;
   if (units <= 0) return null;
   const packSize = product.tracksPacks ? product.unitsPerPack : 1;
   const quantity = Math.ceil(units / packSize);
@@ -275,6 +285,7 @@ type AnalyzedProduct = {
 export const analyzeProduct = (input: {
   readonly product: InsightsProductFact;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
+  readonly onOrderUnits: number;
   readonly ledger: SalesLedger | undefined;
   readonly abc: AbcClass;
   readonly policy: StockPolicy;
@@ -282,7 +293,7 @@ export const analyzeProduct = (input: {
   readonly today: number;
   readonly utcOffsetMinutes: number;
 }): AnalyzedProduct => {
-  const { product, ledger, policy, now, today } = input;
+  const { product, ledger, policy, now, today, onOrderUnits } = input;
   const createdDay = insightsDayOf(product.createdAt, input.utcOffsetMinutes);
   const observedDays = Math.max(0, Math.min(DEMAND_HISTORY_DAYS, today - createdDay));
   const series = (ledger?.series ?? new Float64Array(DEMAND_HISTORY_DAYS)).subarray(
@@ -330,7 +341,9 @@ export const analyzeProduct = (input: {
   const unitPrice = unitPriceOf(product, ledger);
   const needsStock = status === "out" || status === "critical" || status === "low";
   const order =
-    needsStock && rate > 0 ? orderFor(product, orderUpTo - usableUnits, unitCost) : null;
+    needsStock && rate > 0
+      ? orderFor(product, orderUpTo - usableUnits, onOrderUnits, unitCost)
+      : null;
   const lostRevenuePerDay =
     (status === "out" || status === "critical") && unitPrice !== null ? rate * unitPrice : 0;
   const stockValueAtCost =
@@ -360,6 +373,7 @@ export const analyzeProduct = (input: {
     safetyStock,
     reorderPoint,
     orderUpTo,
+    onOrderUnits,
     order,
     unitCost,
     unitPrice,
@@ -586,7 +600,11 @@ export const productAlerts = (
       id: `${alert.kind}:${insight.productId}`,
       productId: insight.productId,
     });
-  const buy = insight.order ? ` Order ${orderLabel(insight.order)}.` : "";
+  const buy = insight.order
+    ? ` Order ${orderLabel(insight.order)}.`
+    : insight.onOrderUnits > 0
+      ? ` ${unitsLabel(insight.onOrderUnits)} already on order.`
+      : "";
   switch (insight.status) {
     case "out":
       push({
@@ -734,6 +752,7 @@ export const analyzeInsights = (
     if (group) group.push(batch);
     else batchesByProduct.set(batch.productId, [batch]);
   }
+  const onOrderOf = onOrderLookup(facts.onOrder);
 
   const products: Array<ProductInsight> = [];
   const expiring: Array<ExpiringBatch> = [];
@@ -741,6 +760,7 @@ export const analyzeInsights = (
     const analyzed = analyzeProduct({
       product,
       batches: batchesByProduct.get(product.id) ?? [],
+      onOrderUnits: onOrderOf(product.id),
       ledger: ledgers.get(product.id),
       abc: abc.get(product.id) ?? "C",
       policy,

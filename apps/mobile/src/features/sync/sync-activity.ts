@@ -1,4 +1,8 @@
-import type { InventorySyncActivity, RejectedCommand } from "@store/inventory-react";
+import {
+  rejectedCommandLabel,
+  type InventorySyncActivity,
+  type RejectedCommand,
+} from "@store/inventory-react";
 
 import { formatCount, formatDateTime } from "../format";
 
@@ -20,19 +24,7 @@ export type SyncActivityView = {
   readonly hiddenRejected: number;
 };
 
-const REASONS: ReadonlyMap<string, string> = new Map([
-  ["INSUFFICIENT_STOCK", "Not enough stock"],
-  ["ENTITY_CONFLICT", "Changed on another device"],
-  ["ENTITY_RELATION_INVALID", "Linked item is missing"],
-  ["ENTITY_WRITE_FAILED", "Couldn't be saved on the server"],
-  ["INVOICE_IDENTITY_CONFLICT", "Invoice number already used"],
-  ["INVALID_OPERATION", "Not allowed"],
-]);
-
-const commandNoun = (rejected: RejectedCommand) =>
-  rejected.command === "issueInvoice" ? "Sale" : "Stock change";
-
-export const rejectionReason = (code: string) => REASONS.get(code) ?? "Rejected";
+export { rejectionReason } from "@store/inventory-react";
 
 export const lastSyncedLabel = (lastCaughtUpAt: number | null, now: number): string => {
   if (lastCaughtUpAt === null) return "Not synced on this phone yet";
@@ -49,12 +41,15 @@ const pendingLabel = (count: number): string => {
   return `${formatCount(count)} changes waiting to upload`;
 };
 
-const rejectedRowView = (rejected: RejectedCommand): RejectedRowView => ({
-  key: rejected.operationId,
-  title: `${commandNoun(rejected)}: ${rejectionReason(rejected.code)}`,
-  detail: rejected.message,
-  productId: rejected.productId,
-});
+const rejectedRowView = (rejected: RejectedCommand): RejectedRowView => {
+  const label = rejectedCommandLabel(rejected);
+  return {
+    key: rejected.operationId,
+    title: label.title,
+    detail: label.detail,
+    productId: rejected.productId,
+  };
+};
 
 export const syncActivityView = (
   activity: InventorySyncActivity,

@@ -6,7 +6,21 @@ export const isEditableTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable || target.closest("input, textarea, select, [role=combobox]") !== null);
 
-export const hasOpenPopup = () => document.querySelector(POPUP_SELECTOR) !== null;
+const NOT_IN_THE_WAY = "[hidden], [data-slot^=toast-viewport]";
+
+const isInTheWay = (element: Element) => element.closest(NOT_IN_THE_WAY) === null;
+
+const hasShown = (selector: string) =>
+  Array.from(document.querySelectorAll(selector)).some(isInTheWay);
+
+export const hasOpenPopup = () => hasShown(POPUP_SELECTOR);
+
+const MODAL_SELECTOR = "[role=dialog], [role=alertdialog], [role=menu]";
+
+export const hasOpenModal = () => hasShown(MODAL_SELECTOR);
+
+export const isInListbox = (target: EventTarget | null) =>
+  target instanceof Element && target.closest("[role=listbox]") !== null;
 
 export const isPlainKey = (event: KeyboardEvent, key: string) =>
   event.key.toLowerCase() === key &&

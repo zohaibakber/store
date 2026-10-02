@@ -54,6 +54,7 @@ describe("sync HTTP", () => {
         acquireSnapshot: unused,
         readSnapshotPartEncoded: unused,
       },
+      imports: { stagePart: unused, commit: unused },
     });
     const response = await appFor(true, { syncAuthority }).request(
       "/api/sync/commands",

@@ -6,6 +6,7 @@ import {
   PARTITION_DIGEST_VERSION,
   ReplicaClientSequence,
   SnapshotId,
+  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   syncProtocolError,
   type CatalogRowWrite,
@@ -140,6 +141,7 @@ const makeAuthority = (
     readonly offlineRegistrations?: number;
     readonly pullFailure?: SyncProtocolError;
     readonly calls?: Queue.Enqueue<AuthorityCall>;
+    readonly lowestActiveSchemaVersion?: number;
   } = {},
 ) => {
   const record = (call: AuthorityCall) =>
@@ -159,7 +161,11 @@ const makeAuthority = (
             offline -= 1;
             return Effect.fail(SyncTransportOffline.make({ message: "offline" }));
           }
-          return Effect.succeed({ ...registration(identity), replicaId: request.replicaId });
+          return Effect.succeed({
+            ...registration(identity),
+            replicaId: request.replicaId,
+            lowestActiveSchemaVersion: options.lowestActiveSchemaVersion,
+          });
         }),
       ),
     submitCommand: (envelope) =>
@@ -403,6 +409,36 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
     ),
   );
 
+  it.effect("announces again only while another device holds purchasing back", () =>
+    withHarness(make, (store) =>
+      Effect.gen(function* () {
+        const identity = { epoch: "1", incarnation: "authority-h", nextClientSequence: "1" };
+        const held = makeAuthority(identity, {
+          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION - 1,
+        });
+        yield* (yield* engineFor(store, held.transport)).ensureRegistered();
+        expect(held.counts.registers).toBe(1);
+        expect(yield* store.readSyncCursor()).toMatchObject({
+          registered: true,
+          announcedSchemaVersion: SYNC_SCHEMA_VERSION,
+          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION - 1,
+        });
+
+        const released = makeAuthority(identity, {
+          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION,
+        });
+        yield* (yield* engineFor(store, released.transport)).ensureRegistered();
+        expect(released.counts.registers).toBe(1);
+        expect(yield* store.readSyncCursor()).toMatchObject({
+          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION,
+        });
+
+        yield* (yield* engineFor(store, released.transport)).ensureRegistered();
+        expect(released.counts.registers).toBe(1);
+      }),
+    ),
+  );
+
   it.effect("retries an offline registration on the next wake without blocking local writes", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
@@ -430,6 +466,44 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(authority.accepted).toEqual(["1"]);
         expect(authority.counts.pulls).toBeGreaterThan(0);
         expect(yield* store.readSyncCursor()).toMatchObject({ registered: true });
+      }),
+    ),
+  );
+});
+
+describe("schema version announcement", () => {
+  it.effect("registers once more when a replica registered by an older build opens", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const identity = { epoch: "1", incarnation: "authority-i", nextClientSequence: "1" };
+        const handle = yield* openReplicaStore();
+        yield* runReplicaTransaction(handle, (tx) =>
+          tx.insert(replicaState).values({
+            id: "singleton",
+            organizationId: LAST_UNIT_ORGANIZATION_ID,
+            userId: USER_ID,
+            replicaId: LAST_UNIT_REPLICA_A,
+            epoch: identity.epoch,
+            incarnation: identity.incarnation,
+            appliedCommitSequence: "0",
+            nextClientSequence: "1",
+            localCommitVersion: 0,
+            registeredAt: FIXTURE_NOW,
+          }),
+        ).pipe(Effect.orDie);
+        const store = yield* makeSqliteReplicaStore(handle, "sqlite-announcement");
+        expect(yield* store.readSyncCursor()).toMatchObject({
+          registered: true,
+          announcedSchemaVersion: undefined,
+        });
+        const authority = makeAuthority(identity);
+        yield* (yield* engineFor(store, authority.transport)).ensureRegistered();
+        yield* (yield* engineFor(store, authority.transport)).ensureRegistered();
+        expect(authority.counts.registers).toBe(1);
+        expect(yield* store.readSyncCursor()).toMatchObject({
+          announcedSchemaVersion: SYNC_SCHEMA_VERSION,
+          lowestActiveSchemaVersion: undefined,
+        });
       }),
     ),
   );

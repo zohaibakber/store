@@ -1,3 +1,4 @@
+import * as Option from "effect/Option";
 import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
@@ -5,11 +6,11 @@ import { CatalogWriteCommand } from "../catalog/write";
 import { InvoiceId, OrganizationId } from "../ids";
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import { IssueInvoiceCommand } from "../store/schema";
-import { SyncEntityChange } from "./schema";
+import { knownEntityRecords, SyncEntityChange } from "./schema";
 
 export const MAX_SYNC_PULL_TRANSACTIONS = 1_000;
 
-export const SYNC_SCHEMA_VERSION = 1;
+export const SYNC_SCHEMA_VERSION = 2;
 
 export const SyncSchemaVersion = PositiveInt;
 export type SyncSchemaVersion = typeof SyncSchemaVersion.Type;
@@ -50,10 +51,18 @@ const PayloadHash = Sha256Hex;
 export const PartitionDigest = Sha256Hex;
 export type PartitionDigest = typeof PartitionDigest.Type;
 
-export const PARTITION_DIGEST_VERSION = 3 as const;
+export const PARTITION_DIGEST_VERSION = 4 as const;
+
+export const PARTITION_DIGEST_VERSION_V3 = 3 as const;
 
 export const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
 export type PartitionDigestVersion = typeof PartitionDigestVersion.Type;
+
+export const RequestedPartitionDigestVersion = Schema.Literals([
+  PARTITION_DIGEST_VERSION_V3,
+  PARTITION_DIGEST_VERSION,
+]);
+export type RequestedPartitionDigestVersion = typeof RequestedPartitionDigestVersion.Type;
 
 export const PartitionDigestReport = Schema.Struct({
   version: PartitionDigestVersion,
@@ -66,6 +75,9 @@ export const PartitionDigestReport = Schema.Struct({
     invoice: PartitionDigest,
     invoiceItem: PartitionDigest,
     stockMovement: PartitionDigest,
+    supplier: PartitionDigest,
+    purchaseOrder: PartitionDigest,
+    purchaseOrderItem: PartitionDigest,
   }),
 });
 export type PartitionDigestReport = typeof PartitionDigestReport.Type;
@@ -99,6 +111,15 @@ export const SyncProtocolCode = Schema.Literals([
   "SNAPSHOT_UNAVAILABLE",
   "SCHEMA_VERSION_UNSUPPORTED",
   "INCARNATION_MISMATCH",
+  "SUPPLIER_HAS_ORDERS",
+  "PURCHASE_ORDER_TRANSITION_INVALID",
+  "PURCHASE_ORDER_NOT_OPEN",
+  "PURCHASE_ORDER_NOT_DRAFT",
+  "PURCHASE_ORDER_HAS_ITEMS",
+  "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
+  "PURCHASE_ORDER_ITEM_RECEIVED",
+  "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
+  "REPLICA_SCHEMA_OUTDATED",
 ]);
 export type SyncProtocolCode = typeof SyncProtocolCode.Type;
 
@@ -185,9 +206,32 @@ export const CommandReceipt = Schema.Struct({
 });
 export type CommandReceipt = typeof CommandReceipt.Type;
 
+export const MAX_DEVICE_LABEL_LENGTH = 64;
+
+export const DeviceLabel = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(MAX_DEVICE_LABEL_LENGTH),
+);
+export type DeviceLabel = typeof DeviceLabel.Type;
+
+const decodeDeviceLabel = Schema.decodeUnknownOption(DeviceLabel);
+
+export const deviceLabelOf = (name: string): DeviceLabel | undefined =>
+  Option.getOrUndefined(
+    decodeDeviceLabel(
+      name
+        .replace(/[\p{Cc}\p{Cf}\s]+/gu, " ")
+        .trim()
+        .slice(0, MAX_DEVICE_LABEL_LENGTH)
+        .replace(/[\uD800-\uDBFF]$/u, "")
+        .trim(),
+    ),
+  );
+
 export const RegisterReplicaRequest = Schema.Struct({
   replicaId: SyncIdentifier,
   deviceLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  schemaVersion: Schema.optionalKey(SyncSchemaVersion),
 });
 export type RegisterReplicaRequest = typeof RegisterReplicaRequest.Type;
 
@@ -199,6 +243,7 @@ export const RegisterReplicaResult = Schema.Struct({
   retentionFloor: OrgCommitSequence,
   horizon: OrgCommitSequence,
   schemaVersion: SyncSchemaVersion,
+  lowestActiveSchemaVersion: Schema.optionalKey(SyncSchemaVersion),
 });
 export type RegisterReplicaResult = typeof RegisterReplicaResult.Type;
 
@@ -206,7 +251,7 @@ export const SyncPullRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   afterCommitSequence: OrgCommitSequence,
-  digestVersion: Schema.optionalKey(PartitionDigestVersion),
+  digestVersion: Schema.optionalKey(RequestedPartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;
@@ -218,7 +263,7 @@ export const SyncTransactionGroup = Schema.Struct({
   commitSequence: OrgCommitSequence,
   operationId: SyncIdentifier,
   decision: CommandDecision,
-  changes: Schema.Array(SyncLogChange),
+  changes: knownEntityRecords(SyncLogChange),
 });
 export type SyncTransactionGroup = typeof SyncTransactionGroup.Type;
 

@@ -4,13 +4,26 @@ import {
   invoiceItems,
   invoices,
   products,
+  purchaseOrderItems,
+  purchaseOrders,
   stockMovements,
+  suppliers,
 } from "@store/db/store.schema";
 import { createSelectSchema } from "drizzle-orm/effect-schema";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { BatchId, CategoryId, InvoiceId, InvoiceItemId, ProductId } from "../ids";
+import { PurchaseOrderQuantityType, PurchaseOrderStatus } from "../catalog/write";
+import {
+  BatchId,
+  CategoryId,
+  InvoiceId,
+  InvoiceItemId,
+  ProductId,
+  PurchaseOrderId,
+  PurchaseOrderItemId,
+  SupplierId,
+} from "../ids";
 import { PositiveInt } from "../schema-primitives";
 import type { SyncEntity } from "./schema";
 
@@ -61,10 +74,40 @@ export const InvoiceItemRow = createSelectSchema(invoiceItems, {
 export const StockMovementRow = createSelectSchema(stockMovements, {
   productId: ProductId,
   batchId: BatchId,
+  purchaseOrderId: Schema.NullOr(PurchaseOrderId).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(null)),
+  ),
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
   packDelta: Schema.Int,
   unitDelta: Schema.Int,
   createdAt: Schema.Natural,
+});
+
+export const SupplierRow = createSelectSchema(suppliers, {
+  id: SupplierId,
+  name: Schema.NonEmptyString,
+});
+
+export const PurchaseOrderRow = createSelectSchema(purchaseOrders, {
+  id: PurchaseOrderId,
+  orderNumber: PositiveInt,
+  supplierId: SupplierId,
+  status: PurchaseOrderStatus,
+  sentAt: NullableNatural,
+  expectedAt: NullableNatural,
+  total: Schema.Natural,
+});
+
+export const PurchaseOrderItemRow = createSelectSchema(purchaseOrderItems, {
+  id: PurchaseOrderItemId,
+  purchaseOrderId: PurchaseOrderId,
+  productId: ProductId,
+  productName: Schema.NonEmptyString,
+  quantity: PositiveInt,
+  quantityType: PurchaseOrderQuantityType,
+  baseUnitQuantity: PositiveInt,
+  packCost: NullableNatural,
+  receivedBaseUnits: Schema.Natural,
 });
 
 export const syncEntityRows = {
@@ -74,6 +117,9 @@ export const syncEntityRows = {
   invoice: { table: invoices, schema: InvoiceRow },
   invoiceItem: { table: invoiceItems, schema: InvoiceItemRow },
   stockMovement: { table: stockMovements, schema: StockMovementRow },
+  supplier: { table: suppliers, schema: SupplierRow },
+  purchaseOrder: { table: purchaseOrders, schema: PurchaseOrderRow },
+  purchaseOrderItem: { table: purchaseOrderItems, schema: PurchaseOrderItemRow },
 } as const satisfies Record<SyncEntity, { readonly table: unknown; readonly schema: Schema.Top }>;
 
 export type SyncEntityRow<E extends SyncEntity> = (typeof syncEntityRows)[E]["schema"]["Type"];

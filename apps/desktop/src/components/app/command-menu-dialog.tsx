@@ -12,10 +12,12 @@ import {
   PencilEdit02Icon,
   PlusSignCircleIcon,
   SettingsIcon,
+  ShoppingBasket01Icon,
   ShoppingCartAdd01Icon,
   SunMoonIcon,
   TagIcon,
   TagsIcon,
+  UserMultipleIcon,
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -26,6 +28,7 @@ import { formatPrice } from "@store/services/format";
 import type { StockStatus } from "@store/services/insights";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
+  Activity,
   Fragment,
   Suspense,
   useDeferredValue,
@@ -45,17 +48,16 @@ import {
   CommandDialog,
   CommandDialogPopup,
   CommandEmpty,
-  CommandFooter,
   CommandGroup,
   CommandGroupLabel,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandPanel,
   CommandShortcut,
 } from "@/components/ui/command";
+import { FrameFooter, FramePanel } from "@/components/ui/frame";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import {
   useRecentProducts,
   useRememberRecentProduct,
@@ -68,7 +70,7 @@ import {
   useCatalogIsReady,
   useProductInsight,
   useSuspenseCatalogProduct,
-  useSuspenseProductSearch,
+  useProductSearch,
 } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 import { Route as RootRoute } from "@/routes/__root";
@@ -167,23 +169,42 @@ const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || e
 
 export function InventoryCommandDialog({
   onOpenChange,
+  open,
 }: {
   readonly onOpenChange: (open: boolean) => void;
+  readonly open: boolean;
 }) {
   const auth = useAuth();
   const { access, inventory } = RootRoute.useRouteContext();
   const scope = access.inventoryScope(auth.snapshot);
+  const [session, setSession] = useState(0);
+  const [presented, setPresented] = useState(open);
+  if (open && !presented) setPresented(true);
 
   return (
-    <CommandDialog onOpenChange={onOpenChange} open>
-      <CommandDialogPopup aria-label="Search" className="max-h-128 max-w-2xl">
-        {!inventory ? (
-          <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
-        ) : !scope ? (
-          <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
-        ) : (
-          <LiveCommandMenu onOpenChange={onOpenChange} />
-        )}
+    <CommandDialog
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={(nowOpen) => {
+        if (nowOpen) return;
+        setPresented(false);
+        setSession((current) => current + 1);
+      }}
+      open={open}
+    >
+      <CommandDialogPopup
+        aria-label="Search"
+        className="max-h-128 max-w-2xl"
+        portalProps={{ keepMounted: true }}
+      >
+        <Activity mode={presented ? "visible" : "hidden"}>
+          {!inventory ? (
+            <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
+          ) : !scope ? (
+            <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
+          ) : (
+            <LiveCommandMenu key={session} onOpenChange={onOpenChange} />
+          )}
+        </Activity>
       </CommandDialogPopup>
     </CommandDialog>
   );
@@ -232,6 +253,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const newSaleLabel = appHost().newSaleShortcut.label;
+  const startSale = useStartSale();
 
   return useMemo(() => {
     const go = (to: "/" | "/restock" | "/products" | "/invoices" | "/settings") => () => {
@@ -248,7 +270,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         shortcut: newSaleLabel,
         run: () => {
           close();
-          void navigate({ to: "/invoices/new" });
+          startSale();
         },
       },
       {
@@ -275,19 +297,22 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       },
       {
         kind: "action",
+        id: "new-purchase-order",
+        label: "New purchase order",
+        keywords: "supplier buy restock order draft purchase",
+        icon: ShoppingBasket01Icon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases", search: { new: true } });
+        },
+      },
+      {
+        kind: "action",
         id: "go-home",
         label: "Go to Home",
         keywords: "dashboard overview",
         icon: HomeIcon,
         run: go("/"),
-      },
-      {
-        kind: "action",
-        id: "go-restock",
-        label: "Go to Restock",
-        keywords: "reorder order low stock",
-        icon: PackageIcon,
-        run: go("/restock"),
       },
       {
         kind: "action",
@@ -307,6 +332,36 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
           close();
           void navigate({ to: "/products/categories" });
         },
+      },
+      {
+        kind: "action",
+        id: "go-purchases",
+        label: "Go to Purchases",
+        keywords: "purchase orders supplier deliveries",
+        icon: ShoppingBasket01Icon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases" });
+        },
+      },
+      {
+        kind: "action",
+        id: "go-suppliers",
+        label: "Suppliers",
+        keywords: "go to suppliers wholesaler distributor vendor",
+        icon: UserMultipleIcon,
+        run: () => {
+          close();
+          void navigate({ to: "/purchases/suppliers" });
+        },
+      },
+      {
+        kind: "action",
+        id: "go-restock",
+        label: "Go to Restock",
+        keywords: "reorder order low stock",
+        icon: PackageIcon,
+        run: go("/restock"),
       },
       {
         kind: "action",
@@ -333,7 +388,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         run: () => setTheme(theme === "dark" ? "light" : "dark"),
       },
     ] satisfies ReadonlyArray<ActionEntry>;
-  }, [close, navigate, newSaleLabel, setTheme, theme]);
+  }, [close, navigate, newSaleLabel, setTheme, startSale, theme]);
 }
 
 function useProductActions(close: () => void) {
@@ -398,8 +453,10 @@ function PaletteResults({
   const productActions = useProductActions(close);
   const recents = useRecentProducts();
   const trimmed = searchQuery.trim();
-  const products = useSuspenseProductSearch(trimmed, PRODUCT_LIMIT);
-  const invoices = useInventoryInvoices(INVOICE_WINDOW).data;
+  const products = useProductSearch(trimmed, PRODUCT_LIMIT);
+  const searchesInvoices =
+    page.kind === "root" && (scope === "invoices" || (scope === "all" && trimmed !== ""));
+  const invoices = useInventoryInvoices(INVOICE_WINDOW, searchesInvoices).data;
 
   const highlight = (entry: Entry | undefined) => {
     setHighlighted(entry);
@@ -521,6 +578,8 @@ function PaletteResults({
     return all.filter((group) => group.items.length > 0);
   }, [actions, invoices, page, productActions, products, query, recents, scope, trimmed]);
 
+  const shownGroups = useDeferredValue(groups);
+
   const runEntry = (entry: Entry) => {
     switch (entry.kind) {
       case "product":
@@ -606,7 +665,7 @@ function PaletteResults({
       autoHighlight="always"
       filter={null}
       inline
-      items={groups}
+      items={shownGroups}
       itemToStringValue={(item: Entry) => item.id}
       keepHighlight
       onItemHighlighted={highlight}
@@ -620,85 +679,90 @@ function PaletteResults({
         placeholder={page.kind === "product" ? "Search actions…" : PLACEHOLDERS[scope]}
         ref={inputRef}
       />
-      {page.kind === "product" ? (
-        <div className="flex h-9 items-center gap-2 px-4 text-sm">
-          <Button
-            aria-label="Back to results"
-            onClick={() => {
-              closePage();
+      <div className="flex min-h-0 flex-col px-1">
+        <FramePanel className="flex min-h-0 flex-col overflow-hidden">
+          <div className="-m-5 flex min-h-0 flex-col">
+            {page.kind === "product" ? (
+              <div className="flex h-9 shrink-0 items-center gap-2 px-4 pt-1 text-sm">
+                <Button
+                  aria-label="Back to results"
+                  onClick={() => {
+                    closePage();
+                    inputRef.current?.focus();
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  size="icon-xs"
+                  variant="ghost"
+                >
+                  <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
+                </Button>
+                <Badge variant="outline">
+                  <span className="max-w-80 truncate capitalize">{productLabel(page.target)}</span>
+                </Badge>
+                <span className="truncate text-xs text-muted-foreground">
+                  {page.target.category.name}
+                </span>
+              </div>
+            ) : (
+              <div
+                aria-label="Search scope"
+                className="flex shrink-0 items-center gap-1.5 px-3 pt-3"
+                role="group"
+              >
+                {SCOPES.map((entry) => (
+                  <Button
+                    aria-pressed={entry.value === scope}
+                    key={entry.value}
+                    onClick={() => {
+                      onScopeChange(entry.value);
+                      inputRef.current?.focus();
+                    }}
+                    onMouseDown={(event) => event.preventDefault()}
+                    size="sm"
+                    tabIndex={-1}
+                    variant={entry.value === scope ? "default" : "secondary"}
+                  >
+                    {entry.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
+            <CommandList>
+              {(group: EntryGroup) => (
+                <Fragment key={group.value}>
+                  <CommandGroup items={[...group.items]}>
+                    <CommandGroupLabel>{group.value}</CommandGroupLabel>
+                    <CommandCollection>
+                      {(entry: Entry) => (
+                        <CommandItem key={entry.id} onClick={() => runEntry(entry)} value={entry}>
+                          <EntryRow entry={entry} />
+                        </CommandItem>
+                      )}
+                    </CommandCollection>
+                  </CommandGroup>
+                </Fragment>
+              )}
+            </CommandList>
+          </div>
+        </FramePanel>
+      </div>
+      <FrameFooter>
+        <div className="-my-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <FooterHints
+            entry={highlighted}
+            onOpenActions={() => {
+              if (highlightedTarget) openPage(highlightedTarget);
               inputRef.current?.focus();
             }}
-            onMouseDown={(event) => event.preventDefault()}
-            size="icon-xs"
-            variant="ghost"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
-          </Button>
-          <Badge variant="outline">
-            <span className="max-w-80 truncate capitalize">{productLabel(page.target)}</span>
-          </Badge>
-          <span className="truncate text-xs text-muted-foreground">
-            {page.target.category.name}
-          </span>
-        </div>
-      ) : (
-        <Tabs
-          onValueChange={(value) => {
-            const next = SCOPES.find((entry) => entry.value === value);
-            if (next) onScopeChange(next.value);
-            inputRef.current?.focus();
-          }}
-          value={scope}
-        >
-          <div className="px-3">
-            <TabsList aria-label="Search scope" variant="underline">
-              {SCOPES.map((entry) => (
-                <TabsTab
-                  key={entry.value}
-                  onMouseDown={(event) => event.preventDefault()}
-                  tabIndex={-1}
-                  value={entry.value}
-                >
-                  {entry.label}
-                </TabsTab>
-              ))}
-            </TabsList>
+            page={page}
+          />
+          <div className="flex items-center gap-4">
+            {page.kind === "root" ? <Hint keys={<Kbd>Tab</Kbd>} label="Scope" /> : null}
+            <Hint keys={<Kbd>Esc</Kbd>} label={page.kind === "product" ? "Back" : "Close"} />
           </div>
-        </Tabs>
-      )}
-      <CommandPanel>
-        <CommandEmpty>{emptyMessage}</CommandEmpty>
-        <CommandList>
-          {(group: EntryGroup) => (
-            <Fragment key={group.value}>
-              <CommandGroup items={[...group.items]}>
-                <CommandGroupLabel>{group.value}</CommandGroupLabel>
-                <CommandCollection>
-                  {(entry: Entry) => (
-                    <CommandItem key={entry.id} onClick={() => runEntry(entry)} value={entry}>
-                      <EntryRow entry={entry} />
-                    </CommandItem>
-                  )}
-                </CommandCollection>
-              </CommandGroup>
-            </Fragment>
-          )}
-        </CommandList>
-      </CommandPanel>
-      <CommandFooter>
-        <FooterHints
-          entry={highlighted}
-          onOpenActions={() => {
-            if (highlightedTarget) openPage(highlightedTarget);
-            inputRef.current?.focus();
-          }}
-          page={page}
-        />
-        <div className="flex items-center gap-4">
-          {page.kind === "root" ? <Hint keys={<Kbd>Tab</Kbd>} label="Scope" /> : null}
-          <Hint keys={<Kbd>Esc</Kbd>} label={page.kind === "product" ? "Back" : "Close"} />
         </div>
-      </CommandFooter>
+      </FrameFooter>
     </Command>
   );
 }

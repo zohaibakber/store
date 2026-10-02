@@ -17,19 +17,16 @@ import type {
   UpdateProductInput,
 } from "@store/contracts/store.schema";
 
+import {
+  commandIds,
+  requiredRow,
+  type CatalogReadableCollection,
+  type CatalogWriteIds,
+  type ProjectionContext,
+} from "./projection-context";
 import { persistableRow, type BatchRow, type CategoryRow, type ProductRow } from "./rows";
 
-export type CatalogActor = {
-  readonly organizationId: string;
-  readonly userId: string;
-  readonly deviceId: string;
-};
-
-export type CatalogWriteIds = {
-  readonly now: () => number;
-  readonly operationId: () => string;
-  readonly rowId: () => string;
-};
+export type { CatalogActor, CatalogWriteIds, ProjectionContext } from "./projection-context";
 
 const CATALOG_IMPORT_ROWS_PER_LINE = 2;
 
@@ -37,26 +34,13 @@ const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(
   MAX_CATALOG_WRITE_ROWS / CATALOG_IMPORT_ROWS_PER_LINE,
 );
 
-type CatalogReadableCollection<Row extends { readonly id: string }> = {
-  readonly state: {
-    get: (id: string) => Row | undefined;
-    values: () => Iterable<Row>;
-  };
-};
-
 export type CatalogProjectionTables = {
   readonly batches: CatalogReadableCollection<BatchRow>;
   readonly categories: CatalogReadableCollection<CategoryRow>;
   readonly products: CatalogReadableCollection<ProductRow>;
 };
 
-export type CatalogProjectionContext = {
-  readonly actor: CatalogActor;
-  readonly commandId: string;
-  readonly occurredAt: number;
-  readonly ids: CatalogWriteIds;
-  readonly tables: CatalogProjectionTables;
-};
+export type CatalogProjectionContext = ProjectionContext<CatalogProjectionTables>;
 
 type CatalogRowProjection<Row> = {
   readonly writes: ReadonlyArray<CatalogRowWrite>;
@@ -73,21 +57,11 @@ type CatalogImportProjection = {
   readonly createdBatches: number;
 };
 
-const requiredRow = <Row>(row: Row | undefined, label: string): Row => {
-  if (!row) throw new Error(`${label} no longer exists.`);
-  return row;
-};
-
 const requireNonNegativeQuantity = (quantity: number, label: string) => {
   if (!Number.isSafeInteger(quantity) || quantity < 0) {
     throw new Error(`${label} must be a non-negative whole number.`);
   }
 };
-
-const commandIds = (context: CatalogProjectionContext) => ({
-  now: () => context.occurredAt,
-  operationId: () => context.commandId,
-});
 
 const activeCategory = (tables: CatalogProjectionTables, categoryId: string) => {
   const category = tables.categories.state.get(categoryId);
@@ -106,7 +80,7 @@ const categoryFieldsOf = (row: CategoryRow) => ({
   tracksPacks: row.tracksPacks,
 });
 
-const productFieldsOf = (row: ProductRow) => ({
+export const productFieldsOf = (row: ProductRow) => ({
   name: row.name,
   categoryId: row.categoryId,
   aisle: row.aisle,
@@ -417,7 +391,7 @@ export const projectImportInventory = (
       row: {
         ...(existing ? productFieldsOf(existing) : null),
         name,
-        categoryId: category.id,
+        categoryId: existing?.categoryId ?? category.id,
         aisle: existing?.aisle ?? null,
         composition: existing?.composition ?? null,
         strength: existing?.strength ?? null,

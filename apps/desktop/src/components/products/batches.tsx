@@ -223,7 +223,7 @@ function BatchSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {trigger}
-      <SheetPopup variant="inset">
+      <SheetPopup showCloseButton={false} variant="inset">
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
@@ -662,7 +662,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
   return (
     <FrameCard
       description={`${stock} on hand · ${formatCount(product.batches.length, "batch", "batches")}`}
-      flush={product.batches.length > 0}
+      table={product.batches.length > 0}
       title="Stock batches"
     >
       {product.batches.length === 0 ? (
@@ -678,7 +678,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table>
+        <Table variant="card">
           <TableHeader>
             <TableRow>
               {tracksPacks ? <TableHead>Batch</TableHead> : null}
@@ -766,7 +766,7 @@ export function ProductStockMovementsCard({
           </Button>
         ) : undefined
       }
-      flush={movements.length > 0}
+      table={movements.length > 0}
       title="Recent movements"
     >
       {movements.length === 0 ? (
@@ -777,7 +777,7 @@ export function ProductStockMovementsCard({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table>
+        <Table variant="card">
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>

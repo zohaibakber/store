@@ -1,9 +1,11 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
   syncProtocolError,
+  type DeviceLabel,
   type SyncProtocolCode,
   type SyncProtocolError,
 } from "@store/contracts";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -30,6 +32,7 @@ export type OwnedHttpSyncOptions = {
   readonly databaseIdentity: string;
   readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
+  readonly deviceLabel?: DeviceLabel | undefined;
 };
 
 export const recoverFrom = (
@@ -60,6 +63,16 @@ export const recoverFrom = (
       return Effect.fail(syncProtocolError(code, "The sync failure has no local recovery."));
   }
 };
+
+const CLAIMED_AT_ANY_TIME = Number.POSITIVE_INFINITY;
+
+const releaseAbandonedClaims = (store: ReplicaStoreContract): Effect.Effect<void> =>
+  store.recoverStaleUploadClaims(CLAIMED_AT_ANY_TIME).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning("Upload claims left by an earlier owner could not be released", error),
+    ),
+    Effect.asVoid,
+  );
 
 const ownHttpSync = (
   options: OwnedHttpSyncOptions,
@@ -113,7 +126,9 @@ const ownHttpSync = (
       setNetworkOwner: (owned) =>
         inner.setNetworkOwner(owned).pipe(Effect.andThen(SubscriptionRef.set(owner, owned))),
     };
-    const acquired = yield* ownership.tryAcquire(() => scheduler.setNetworkOwner(true));
+    const acquired = yield* ownership.tryAcquire(() =>
+      releaseAbandonedClaims(store).pipe(Effect.andThen(scheduler.setNetworkOwner(true))),
+    );
     yield* Effect.addFinalizer(() =>
       scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
     );
@@ -131,9 +146,10 @@ const ownHttpSync = (
     return scheduler;
   });
 
-const engineOptions = (policy: SyncSchedulerPolicy | undefined) => ({
+const engineOptions = (policy: SyncSchedulerPolicy | undefined, deviceLabel?: DeviceLabel) => ({
   digestVerificationIntervalMillis: policy?.digestVerificationIntervalMillis,
   pullMaxBytes: policy?.pullMaxBytes,
+  deviceLabel,
 });
 
 export const layerOwnedHttpSync = (
@@ -144,5 +160,43 @@ export const layerOwnedHttpSync = (
   ReplicaStore | SyncTransportService
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
-    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy))),
+    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy, options.deviceLabel))),
   );
+
+const LOCAL_SYNC_POLICY: SyncSchedulerPolicy = {
+  activePollMillis: Number.POSITIVE_INFINITY,
+  backoffMillis: [],
+  hiddenPollMillis: Number.POSITIVE_INFINITY,
+  liveIdlePollMillis: Number.POSITIVE_INFINITY,
+  digestVerificationIntervalMillis: "never",
+};
+
+const ownLocalSync: Effect.Effect<
+  SyncSchedulerContract,
+  ReplicaStoreError,
+  ReplicaStore | SyncEngine | Scope.Scope
+> = Effect.gen(function* () {
+  const store = yield* ReplicaStore;
+  const engine = yield* SyncEngine;
+  yield* releaseAbandonedClaims(store);
+  const cursor = yield* store.readSyncCursor();
+  if (!cursor.bootstrapped) yield* store.recordCaughtUp(yield* Clock.currentTimeMillis);
+  const scheduler = yield* SyncScheduler.make(
+    {
+      register: () => engine.ensureRegistered(),
+      drainUpload: () => engine.drainUploads().pipe(Effect.asVoid),
+      catchUp: () => engine.catchUp(),
+    },
+    LOCAL_SYNC_POLICY,
+  );
+  yield* scheduler.setNetworkOwner(true);
+  return scheduler;
+});
+
+export const layerOwnedLocalSync: Layer.Layer<
+  SyncEngine | SyncScheduler,
+  SyncProtocolError | ReplicaStoreError,
+  ReplicaStore | SyncTransportService
+> = Layer.effect(SyncScheduler, ownLocalSync).pipe(
+  Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),
+);

@@ -2,6 +2,8 @@ import {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
+  ImportCatalogRequest,
+  ImportId,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
@@ -15,8 +17,10 @@ import * as Schema from "effect/Schema";
 
 import type { InventoryCommandsContract, SyncRequestMalformed } from "./commands";
 import type { InventoryDatabaseError, InventoryError } from "./errors";
+import type { InventoryImportsContract } from "./imports";
 import type {
   EncodedJsonBody,
+  ImportedCatalog,
   EncodedSnapshotPart,
   InventoryActor,
   SubmittedCommand,
@@ -72,6 +76,17 @@ export interface SyncAuthorityContract {
     snapshotId: SnapshotId,
     partNumber: number,
   ) => Effect.Effect<EncodedSnapshotPart, SyncAuthorityError, RuntimeContext>;
+  readonly stageImportPart: (
+    actor: InventoryActor,
+    importId: ImportId,
+    partNumber: number,
+    bodyText: string,
+  ) => Effect.Effect<EncodedJsonBody, SyncAuthorityError, RuntimeContext>;
+  readonly commitImport: (
+    actor: InventoryActor,
+    importId: ImportId,
+    request: ImportCatalogRequest,
+  ) => Effect.Effect<ImportedCatalog, SyncAuthorityError, RuntimeContext>;
 }
 
 export class SyncAuthority extends Context.Service<SyncAuthority, SyncAuthorityContract>()(
@@ -86,6 +101,7 @@ const toSyncAuthorityError = <A, R>(
 export const makeInventorySyncAuthority = (stores: {
   readonly commands: InventoryCommandsContract;
   readonly snapshots: InventorySnapshotsContract;
+  readonly imports: InventoryImportsContract;
 }): SyncAuthorityContract => ({
   registerReplica: (actor, request) =>
     toSyncAuthorityError(stores.commands.register(actor, request)),
@@ -100,4 +116,8 @@ export const makeInventorySyncAuthority = (stores: {
     toSyncAuthorityError(stores.snapshots.acquireSnapshot(actor, request)),
   readSnapshotPart: (actor, snapshotId, partNumber) =>
     toSyncAuthorityError(stores.snapshots.readSnapshotPartEncoded(actor, snapshotId, partNumber)),
+  stageImportPart: (actor, importId, partNumber, bodyText) =>
+    toSyncAuthorityError(stores.imports.stagePart(actor, importId, partNumber, bodyText)),
+  commitImport: (actor, importId, request) =>
+    toSyncAuthorityError(stores.imports.commit(actor, importId, request)),
 });

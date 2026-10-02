@@ -1,17 +1,13 @@
+import type { SyncEntity } from "@store/contracts";
+import type { PurchaseOrderStatus } from "@store/contracts/catalog-write";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { foldAsciiCase, type ReplicaQueryBuilder } from "./schema";
+import { foldAsciiCase, type EntityStore, type ReplicaQueryBuilder } from "./schema";
 
-export type IndexedDbEntityTable =
-  | "categories"
-  | "products"
-  | "batches"
-  | "invoices"
-  | "invoice_items"
-  | "stock_movements";
+export type IndexedDbEntityTable = EntityStore<SyncEntity>;
 
 type IndexedDbIndexName = Extract<IndexedDbScan, { readonly _tag: "indexPrefix" }>["index"];
 
@@ -25,7 +21,10 @@ export type IndexedDbScan =
         | "byProduct"
         | "byCreatedAt"
         | "byOperation"
-        | "byInvoice";
+        | "byInvoice"
+        | "bySupplier"
+        | "byOrderNumber"
+        | "byPurchaseOrder";
       readonly value: string | number;
     }
   | {
@@ -37,13 +36,22 @@ export type IndexedDbScan =
         | "byCategory"
         | "byProduct"
         | "byOperation"
-        | "byInvoice";
+        | "byInvoice"
+        | "bySupplier"
+        | "byOrderNumber"
+        | "byPurchaseOrder";
       readonly reverse: boolean;
     }
   | {
       readonly _tag: "indexEqualsOrdered";
       readonly index: "byCategoryName";
       readonly value: string;
+      readonly reverse: boolean;
+    }
+  | {
+      readonly _tag: "indexEqualsOrdered";
+      readonly index: "byStatusCreatedAt";
+      readonly value: PurchaseOrderStatus;
       readonly reverse: boolean;
     }
   | { readonly _tag: "generationPrefix"; readonly reverse: boolean };
@@ -61,7 +69,12 @@ export type IndexedDbResidualPredicate =
       readonly values: ReadonlyArray<string | number | boolean | null>;
     }
   | { readonly _tag: "isNull"; readonly column: string }
-  | { readonly _tag: "like"; readonly column: string; readonly pattern: string }
+  | {
+      readonly _tag: "like";
+      readonly column: string;
+      readonly pattern: string;
+      readonly escape?: string;
+    }
   | {
       readonly _tag: "and";
       readonly predicates: ReadonlyArray<IndexedDbResidualPredicate>;
@@ -184,30 +197,43 @@ const matchesCompare = (
 
 const REGEXP_SPECIALS = /[.*+?^${}()|[\]\\/]/u;
 
-const likeExpression = (pattern: string): RegExp => {
+const NEVER_MATCHES = /(?!)/u;
+
+const likeExpression = (pattern: string, escape: string | undefined): RegExp => {
   let source = "";
+  let literal = false;
   for (const character of foldAsciiCase(pattern)) {
-    if (character === "%") source += "[\\s\\S]*";
-    else if (character === "_") source += "[\\s\\S]";
+    if (!literal && character === escape) {
+      literal = true;
+      continue;
+    }
+    if (!literal && character === "%") source += "[\\s\\S]*";
+    else if (!literal && character === "_") source += "[\\s\\S]";
     else source += REGEXP_SPECIALS.test(character) ? `\\${character}` : character;
+    literal = false;
   }
-  return new RegExp(`^${source}$`, "u");
+  return literal ? NEVER_MATCHES : new RegExp(`^${source}$`, "u");
 };
 
 const likeExpressions = new Map<string, RegExp>();
 
-const likeExpressionFor = (pattern: string): RegExp => {
-  const cached = likeExpressions.get(pattern);
+const likeExpressionFor = (pattern: string, escape: string | undefined): RegExp => {
+  const key = escape === undefined ? `-${pattern}` : `+${escape}${pattern}`;
+  const cached = likeExpressions.get(key);
   if (cached) return cached;
-  const compiled = likeExpression(pattern);
+  const compiled = likeExpression(pattern, escape);
   if (likeExpressions.size >= 64) likeExpressions.clear();
-  likeExpressions.set(pattern, compiled);
+  likeExpressions.set(key, compiled);
   return compiled;
 };
 
-const matchesLike = (value: IndexedDbCellValue | undefined, pattern: string): boolean => {
+const matchesLike = (
+  value: IndexedDbCellValue | undefined,
+  pattern: string,
+  escape: string | undefined,
+): boolean => {
   if (value === null || value === undefined) return false;
-  return likeExpressionFor(pattern).test(foldAsciiCase(stringifyCell(value)));
+  return likeExpressionFor(pattern, escape).test(foldAsciiCase(stringifyCell(value)));
 };
 
 const matchesResidual = (
@@ -225,7 +251,7 @@ const matchesResidual = (
     case "isNull":
       return cell(row, predicate.column) === null || cell(row, predicate.column) === undefined;
     case "like":
-      return matchesLike(cell(row, predicate.column), predicate.pattern);
+      return matchesLike(cell(row, predicate.column), predicate.pattern, predicate.escape);
     case "and":
       return predicate.predicates.every((part) => matchesResidual(row, part));
     case "or":
@@ -259,22 +285,7 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
   const table = plan.table;
   const scan = plan.scan;
 
-  const fromPrimary = () => {
-    switch (table) {
-      case "categories":
-        return api.from("categories").select();
-      case "products":
-        return api.from("products").select();
-      case "batches":
-        return api.from("batches").select();
-      case "invoices":
-        return api.from("invoices").select();
-      case "invoice_items":
-        return api.from("invoice_items").select();
-      case "stock_movements":
-        return api.from("stock_movements").select();
-    }
-  };
+  const fromPrimary = () => api.from(table).select();
 
   if (scan._tag === "primaryEquals") {
     return fromPrimary().equals([generation, scan.id]);
@@ -336,6 +347,42 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
             .equals([generation, String(scan.value)]);
         }
         break;
+      case "suppliers":
+        if (scan.index === "byName") {
+          return api
+            .from("suppliers")
+            .select("byName")
+            .equals([generation, String(scan.value)]);
+        }
+        break;
+      case "purchase_orders":
+        if (scan.index === "bySupplier") {
+          return api
+            .from("purchase_orders")
+            .select("bySupplier")
+            .equals([generation, String(scan.value)]);
+        }
+        if (scan.index === "byOrderNumber") {
+          return api
+            .from("purchase_orders")
+            .select("byOrderNumber")
+            .equals([generation, Number(scan.value)]);
+        }
+        break;
+      case "purchase_order_items":
+        if (scan.index === "byPurchaseOrder") {
+          return api
+            .from("purchase_order_items")
+            .select("byPurchaseOrder")
+            .equals([generation, String(scan.value)]);
+        }
+        if (scan.index === "byProduct") {
+          return api
+            .from("purchase_order_items")
+            .select("byProduct")
+            .equals([generation, String(scan.value)]);
+        }
+        break;
     }
   }
 
@@ -371,15 +418,44 @@ const selectRows = (api: ReplicaQueryBuilder, plan: IndexedDbSubsetPlan, generat
         const query = api.from("stock_movements").select("byProduct").between(lower, upper);
         return scan.reverse ? query.reverse() : query;
       }
+      case "suppliers": {
+        const query = api.from("suppliers").select("byName").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
+      case "purchase_orders": {
+        const query =
+          scan.index === "byOrderNumber"
+            ? api.from("purchase_orders").select("byOrderNumber").between(lower, upper)
+            : api.from("purchase_orders").select("bySupplier").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
+      case "purchase_order_items": {
+        const query =
+          scan.index === "byProduct"
+            ? api.from("purchase_order_items").select("byProduct").between(lower, upper)
+            : api.from("purchase_order_items").select("byPurchaseOrder").between(lower, upper);
+        return scan.reverse ? query.reverse() : query;
+      }
     }
   }
 
   if (scan._tag === "indexEqualsOrdered") {
-    const query = api
-      .from("products")
-      .select("byCategoryName")
-      .between([generation, scan.value], [generation, scan.value, []]);
-    return scan.reverse ? query.reverse() : query;
+    switch (scan.index) {
+      case "byCategoryName": {
+        const query = api
+          .from("products")
+          .select("byCategoryName")
+          .between([generation, scan.value], [generation, scan.value, []]);
+        return scan.reverse ? query.reverse() : query;
+      }
+      case "byStatusCreatedAt": {
+        const query = api
+          .from("purchase_orders")
+          .select("byStatusCreatedAt")
+          .between([generation, scan.value], [generation, scan.value, []]);
+        return scan.reverse ? query.reverse() : query;
+      }
+    }
   }
 
   const prefix = fromPrimary().between(lower, upper);
@@ -396,10 +472,14 @@ const indexOrder = (
       return { column: "name", collation: "binary" };
     case "byNameKey":
       return { column: "name", collation: "nocase" };
+    case "byOrderNumber":
+      return { column: "orderNumber" };
     case "byCategory":
     case "byProduct":
     case "byOperation":
     case "byInvoice":
+    case "bySupplier":
+    case "byPurchaseOrder":
       return undefined;
   }
 };
@@ -429,7 +509,14 @@ const orderMatchesScan = (plan: IndexedDbSubsetPlan): boolean => {
       );
     }
     case "indexEqualsOrdered":
-      return first.column === "name" && collation === "nocase" && descending === plan.scan.reverse;
+      switch (plan.scan.index) {
+        case "byCategoryName":
+          return (
+            first.column === "name" && collation === "nocase" && descending === plan.scan.reverse
+          );
+        case "byStatusCreatedAt":
+          return first.column === "createdAt" && descending === plan.scan.reverse;
+      }
     case "generationPrefix":
       return first.column === "id" && collation === "binary" && descending === plan.scan.reverse;
     case "primaryEquals":
@@ -454,25 +541,11 @@ const primaryChunk = (
     onSome: (id) => [generation, id],
   });
   const upper: [number, []] = [generation, []];
-  const range = { excludeLowerBound: Option.isSome(after) };
-  switch (table) {
-    case "categories":
-      return api.from("categories").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "products":
-      return api.from("products").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "batches":
-      return api.from("batches").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "invoices":
-      return api.from("invoices").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "invoice_items":
-      return api.from("invoice_items").select().between(lower, upper, range).limit(SCAN_CHUNK_ROWS);
-    case "stock_movements":
-      return api
-        .from("stock_movements")
-        .select()
-        .between(lower, upper, range)
-        .limit(SCAN_CHUNK_ROWS);
-  }
+  return api
+    .from(table)
+    .select()
+    .between(lower, upper, { excludeLowerBound: Option.isSome(after) })
+    .limit(SCAN_CHUNK_ROWS);
 };
 
 const primaryKeysetRows = (
@@ -535,7 +608,10 @@ type KeysetScan =
       readonly index: "byName" | "byNameKey" | "byCreatedAt";
       readonly reverse: boolean;
     }
-  | Extract<IndexedDbScan, { readonly _tag: "indexEqualsOrdered" }>;
+  | Extract<
+      IndexedDbScan,
+      { readonly _tag: "indexEqualsOrdered"; readonly index: "byCategoryName" }
+    >;
 
 const orderedIndexChunk = (
   api: ReplicaQueryBuilder,
@@ -613,7 +689,7 @@ const keysetScan = (
 ): KeysetScan | undefined => {
   switch (scan._tag) {
     case "indexEqualsOrdered":
-      return scan;
+      return scan.index === "byCategoryName" ? scan : undefined;
     case "indexEquals":
       return order === "any" && table === "products" && scan.index === "byCategory"
         ? {
@@ -626,6 +702,9 @@ const keysetScan = (
     case "indexPrefix":
       switch (scan.index) {
         case "byName":
+          return table === "categories"
+            ? { _tag: "indexPrefix", index: scan.index, reverse: scan.reverse }
+            : undefined;
         case "byNameKey":
         case "byCreatedAt":
           return { _tag: "indexPrefix", index: scan.index, reverse: scan.reverse };
@@ -633,6 +712,9 @@ const keysetScan = (
         case "byProduct":
         case "byOperation":
         case "byInvoice":
+        case "bySupplier":
+        case "byOrderNumber":
+        case "byPurchaseOrder":
           return undefined;
       }
     case "primaryEquals":
@@ -782,7 +864,9 @@ const nativeCount = (api: ReplicaQueryBuilder, generation: number, plan: Indexed
         ? countCategory(api, generation, String(plan.scan.value))
         : undefined;
     case "indexEqualsOrdered":
-      return countCategory(api, generation, plan.scan.value);
+      return plan.scan.index === "byCategoryName"
+        ? countCategory(api, generation, plan.scan.value)
+        : undefined;
     case "primaryEquals":
     case "indexPrefix":
       return undefined;
@@ -795,20 +879,7 @@ const countGeneration = (
   generation: number,
 ) => {
   const [lower, upper] = generationBounds(generation);
-  switch (table) {
-    case "categories":
-      return api.from("categories").count().between(lower, upper);
-    case "products":
-      return api.from("products").count().between(lower, upper);
-    case "batches":
-      return api.from("batches").count().between(lower, upper);
-    case "invoices":
-      return api.from("invoices").count().between(lower, upper);
-    case "invoice_items":
-      return api.from("invoice_items").count().between(lower, upper);
-    case "stock_movements":
-      return api.from("stock_movements").count().between(lower, upper);
-  }
+  return api.from(table).count().between(lower, upper);
 };
 
 export const summarizeIndexedDbSubset = (

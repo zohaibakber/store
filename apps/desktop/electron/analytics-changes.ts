@@ -15,6 +15,8 @@ export const RELEVANT_ENTITIES = [
   "invoice",
   "invoiceItem",
   "category",
+  "purchaseOrder",
+  "purchaseOrderItem",
 ] as const;
 
 const RELEVANT: ReadonlySet<string> = new Set(RELEVANT_ENTITIES);

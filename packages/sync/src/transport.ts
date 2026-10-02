@@ -66,11 +66,20 @@ export class SyncTransportInvalid extends Schema.TaggedError<SyncTransportInvali
   },
 ) {}
 
+export class SyncTransportUndecodable extends Schema.TaggedError<SyncTransportUndecodable>()(
+  "SyncTransportUndecodable",
+  {
+    message: Schema.String,
+    status: OptionalNumber,
+  },
+) {}
+
 export type SyncTransportError =
   | SyncTransportUnavailable
   | SyncTransportOffline
   | SyncTransportAuthRequired
-  | SyncTransportInvalid;
+  | SyncTransportInvalid
+  | SyncTransportUndecodable;
 
 export type SyncFailure = SyncTransportError | SyncProtocolError;
 
@@ -84,6 +93,7 @@ export type SyncFailureDisposition =
   | { readonly _tag: "retry"; readonly delayMillis: number | undefined }
   | { readonly _tag: "pauseForAuth"; readonly status: number }
   | { readonly _tag: "stop"; readonly status: number | undefined; readonly message: string }
+  | { readonly _tag: "updateRequired"; readonly message: string }
   | { readonly _tag: "recover"; readonly code: SyncProtocolCode }
   | { readonly _tag: "storageError"; readonly message: string }
   | {
@@ -187,13 +197,14 @@ export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailur
     error instanceof SyncTransportUnavailable ||
     error instanceof SyncTransportOffline ||
     error instanceof SyncTransportAuthRequired ||
-    error instanceof SyncTransportInvalid
+    error instanceof SyncTransportInvalid ||
+    error instanceof SyncTransportUndecodable
   ) {
     return error;
   }
   if (HttpClientError.isHttpClientError(error)) return fromHttpClientError(error, now);
   if (error instanceof Schema.SchemaError) {
-    return SyncTransportInvalid.make({ message: error.message });
+    return SyncTransportUndecodable.make({ message: error.message });
   }
   const typed = decodeTypedHttpError(error);
   if (Option.isSome(typed)) {
@@ -223,6 +234,9 @@ export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition 
     if (error.code === "REPLICA_SEQUENCE_GAP") {
       return { _tag: "recoveryRequired", code: error.code, message: error.message };
     }
+    if (error.code === "SCHEMA_VERSION_UNSUPPORTED") {
+      return { _tag: "updateRequired", message: error.message };
+    }
     return RECOVERABLE_PROTOCOL_CODES.has(error.code)
       ? { _tag: "recover", code: error.code }
       : { _tag: "stop", status: undefined, message: error.message };
@@ -232,6 +246,9 @@ export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition 
   }
   if (error instanceof SyncTransportInvalid) {
     return { _tag: "stop", status: error.status, message: error.message };
+  }
+  if (error instanceof SyncTransportUndecodable) {
+    return { _tag: "updateRequired", message: error.message };
   }
   if (error instanceof SyncTransportUnavailable) {
     return { _tag: "retry", delayMillis: error.retryAfterMillis };

@@ -1,29 +1,37 @@
 import { SyncEntity, type SyncCommandEnvelope } from "@store/contracts";
-import type { ReplicaCategoryRow, ReplicaInvoiceRow } from "@store/contracts/sync/replica-model";
 import {
   categories,
   commandOutbox,
   invoices,
   pendingRowJournal,
   pendingRowMarks,
+  purchaseOrders,
+  stockOverlays,
+  suppliers,
 } from "@store/db/replica.schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
-import { decodeEntity, decodeRowJson, encodeRowJson } from "./codecs";
-import { nextFreeCategoryName } from "./collisions";
-import { loadReplicaState } from "./commands";
-import { byEntityDependency, decideJournalRestore, freeInvoiceNumber } from "./decisions";
 import {
-  readCategoryNameHolder,
-  readHighestInvoiceNumber,
-  readInvoiceNumberHolder,
-} from "./lookup";
+  decodeEntity,
+  decodeRowJson,
+  encodeRowJson,
+  type NamedEntity,
+  type NamedImage,
+  type NumberedEntity,
+  type NumberedImage,
+} from "./codecs";
+import { nextFreeName } from "./collisions";
+import { loadReplicaState } from "./commands";
+import { byEntityDependency, decideJournalRestore, freeDocumentNumber } from "./decisions";
+import { readHighestNumber, readNameHolder, readNumberHolder } from "./lookup";
 import {
   projectCommand,
   type CommandProjection,
   type PendingRestoreResult,
+  type ProjectedUpsert,
   type ProjectionActor,
   type ReplicaCatalogLookup,
 } from "./projection";
@@ -53,30 +61,60 @@ const clearMark = Effect.fn("ReplicaPending.clearMark")(function* (
     .where(and(eq(pendingRowMarks.entity, entity), eq(pendingRowMarks.entityId, entityId)));
 });
 
-const withFreeInvoiceNumber = Effect.fn("ReplicaPending.withFreeInvoiceNumber")(function* (
+const freeName = Effect.fn("ReplicaPending.freeName")(function* (
   tx: ReplicaDb,
   organizationId: string,
-  row: ReplicaInvoiceRow,
+  entity: NamedEntity,
+  row: NamedImage,
 ) {
-  const holder = yield* readInvoiceNumberHolder(tx, organizationId, row.invoiceNumber, row.id);
-  if (!holder) return row;
-  const highest = yield* readHighestInvoiceNumber(tx, organizationId, row.id);
-  return { ...row, invoiceNumber: freeInvoiceNumber(row.invoiceNumber, highest) };
-});
-
-const withFreeCategoryName = Effect.fn("ReplicaPending.withFreeCategoryName")(function* (
-  tx: ReplicaDb,
-  organizationId: string,
-  row: ReplicaCategoryRow,
-) {
-  const holder = yield* readCategoryNameHolder(tx, organizationId, row.name, row.id);
-  if (!holder) return row;
-  const name = yield* nextFreeCategoryName(row.name, (candidate) =>
-    readCategoryNameHolder(tx, organizationId, candidate, row.id).pipe(
+  const holder = yield* readNameHolder(tx, organizationId, entity, row.name, row.id);
+  if (!holder) return row.name;
+  return yield* nextFreeName(row.name, (candidate) =>
+    readNameHolder(tx, organizationId, entity, candidate, row.id).pipe(
       Effect.map((other) => other !== undefined),
     ),
   );
-  return { ...row, name };
+});
+
+const freeInvoiceNumber = Effect.fn("ReplicaPending.freeInvoiceNumber")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  row: NumberedImage,
+) {
+  const holder = yield* readNumberHolder(tx, organizationId, "invoice", row.number, row.id);
+  if (!holder) return row.number;
+  const highest = yield* readHighestNumber(tx, organizationId, "invoice", row.id);
+  return freeDocumentNumber(row.number, highest);
+});
+
+const withoutCollisions = Effect.fn("ReplicaPending.withoutCollisions")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  projected: ProjectedUpsert,
+) {
+  switch (projected.entity) {
+    case "category":
+    case "supplier":
+      return {
+        ...projected.row,
+        name: yield* freeName(tx, organizationId, projected.entity, projected.row),
+      };
+    case "invoice":
+      return {
+        ...projected.row,
+        invoiceNumber: yield* freeInvoiceNumber(tx, organizationId, {
+          id: projected.row.id,
+          number: projected.row.invoiceNumber,
+        }),
+      };
+    case "product":
+    case "batch":
+    case "invoiceItem":
+    case "stockMovement":
+    case "purchaseOrder":
+    case "purchaseOrderItem":
+      return projected.row;
+  }
 });
 
 export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProjection")(function* (
@@ -116,17 +154,11 @@ export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProj
     }
     if (projected.row === null) {
       yield* removeEntityRow(tx, organizationId, projected.entity, projected.entityId);
-    } else if (projected.entity === "category" && resolveCollisions) {
+    } else if (resolveCollisions) {
       yield* writeEntityRow(
         tx,
         projected.entity,
-        yield* withFreeCategoryName(tx, organizationId, projected.row),
-      );
-    } else if (projected.entity === "invoice" && resolveCollisions) {
-      yield* writeEntityRow(
-        tx,
-        projected.entity,
-        yield* withFreeInvoiceNumber(tx, organizationId, projected.row),
+        yield* withoutCollisions(tx, organizationId, projected),
       );
     } else {
       yield* writeEntityRow(tx, projected.entity, projected.row);
@@ -146,55 +178,115 @@ export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProj
   return projection satisfies CommandProjection;
 });
 
-export const renumberCollidingShadowInvoice = Effect.fn(
-  "ReplicaPending.renumberCollidingShadowInvoice",
-)(function* (
+const renumberRow = (
   tx: ReplicaDb,
   organizationId: string,
-  incoming: { readonly id: string; readonly invoiceNumber: number },
-  operationId: string,
-) {
-  const collision = yield* readInvoiceNumberHolder(
-    tx,
-    organizationId,
-    incoming.invoiceNumber,
-    incoming.id,
-  );
-  if (!collision) return undefined;
-  const mark = yield* pendingMarkFor(tx, "invoice", collision.id);
-  if (mark === undefined || mark === operationId) return undefined;
-  const highest = yield* readHighestInvoiceNumber(tx, organizationId);
-  yield* tx
-    .update(invoices)
-    .set({ invoiceNumber: freeInvoiceNumber(incoming.invoiceNumber, highest) })
-    .where(and(eq(invoices.organizationId, organizationId), eq(invoices.id, collision.id)));
-  return `invoice:${collision.id}`;
-});
+  entity: NumberedEntity,
+  entityId: string,
+  number: number,
+) => {
+  switch (entity) {
+    case "invoice":
+      return tx
+        .update(invoices)
+        .set({ invoiceNumber: number })
+        .where(and(eq(invoices.organizationId, organizationId), eq(invoices.id, entityId)));
+    case "purchaseOrder":
+      return tx
+        .update(purchaseOrders)
+        .set({ orderNumber: number })
+        .where(
+          and(eq(purchaseOrders.organizationId, organizationId), eq(purchaseOrders.id, entityId)),
+        );
+  }
+};
 
-export const renameCollidingShadowCategory = Effect.fn(
-  "ReplicaPending.renameCollidingShadowCategory",
-)(function* (
+export const renumberCollidingShadow = Effect.fn("ReplicaPending.renumberCollidingShadow")(
+  function* (
+    tx: ReplicaDb,
+    organizationId: string,
+    entity: NumberedEntity,
+    incoming: NumberedImage,
+    operationId: string,
+  ) {
+    const collision = yield* readNumberHolder(
+      tx,
+      organizationId,
+      entity,
+      incoming.number,
+      incoming.id,
+    );
+    if (!collision) return undefined;
+    const mark = yield* pendingMarkFor(tx, entity, collision.id);
+    if (mark === undefined || mark === operationId) return undefined;
+    const highest = yield* readHighestNumber(tx, organizationId, entity);
+    yield* renumberRow(
+      tx,
+      organizationId,
+      entity,
+      collision.id,
+      freeDocumentNumber(incoming.number, highest),
+    );
+    return `${entity}:${collision.id}`;
+  },
+);
+
+const renameRow = (
   tx: ReplicaDb,
   organizationId: string,
-  incoming: { readonly id: string; readonly name: string },
+  entity: NamedEntity,
+  entityId: string,
+  name: string,
+) => {
+  switch (entity) {
+    case "category":
+      return tx
+        .update(categories)
+        .set({ name })
+        .where(and(eq(categories.organizationId, organizationId), eq(categories.id, entityId)));
+    case "supplier":
+      return tx
+        .update(suppliers)
+        .set({ name })
+        .where(and(eq(suppliers.organizationId, organizationId), eq(suppliers.id, entityId)));
+  }
+};
+
+export const renameCollidingShadow = Effect.fn("ReplicaPending.renameCollidingShadow")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  entity: NamedEntity,
+  incoming: NamedImage,
   operationId: string,
 ) {
-  const collision = yield* readCategoryNameHolder(tx, organizationId, incoming.name, incoming.id);
+  const collision = yield* readNameHolder(tx, organizationId, entity, incoming.name, incoming.id);
   if (!collision) return undefined;
-  const mark = yield* pendingMarkFor(tx, "category", collision.id);
+  const mark = yield* pendingMarkFor(tx, entity, collision.id);
   if (mark === undefined || mark === operationId) return undefined;
-  const name = yield* nextFreeCategoryName(collision.name, (candidate) =>
+  const name = yield* nextFreeName(collision.name, (candidate) =>
     candidate === incoming.name
       ? Effect.succeed(true)
-      : readCategoryNameHolder(tx, organizationId, candidate, "").pipe(
+      : readNameHolder(tx, organizationId, entity, candidate, "").pipe(
           Effect.map((other) => other !== undefined),
         ),
   );
-  yield* tx
-    .update(categories)
-    .set({ name })
-    .where(and(eq(categories.organizationId, organizationId), eq(categories.id, collision.id)));
-  return `category:${collision.id}`;
+  yield* renameRow(tx, organizationId, entity, collision.id, name);
+  return `${entity}:${collision.id}`;
+});
+
+const PendingPresence = Schema.Tuple([Schema.Struct({ pending: Schema.Number })]);
+
+const decodePendingPresence = Schema.decodeUnknownEffect(PendingPresence);
+
+export const hasPendingProjection = Effect.fn("ReplicaPending.hasPendingProjection")(function* (
+  tx: ReplicaDb,
+) {
+  const [presence] = yield* tx
+    .all(
+      sql`select (exists(select 1 from ${pendingRowMarks}) or exists(select 1 from ${pendingRowJournal}) or exists(select 1 from ${stockOverlays})) as pending`,
+    )
+    .pipe(Effect.flatMap(decodePendingPresence));
+  return presence.pending !== 0;
 });
 
 export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(function* (
@@ -206,14 +298,6 @@ export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(fun
     entityId: row.entityId,
     operationId: row.operationId,
   }));
-});
-
-export const clearPendingProjection = Effect.fn("ReplicaPending.clearPendingProjection")(function* (
-  tx: ReplicaDb,
-  operationId: string,
-) {
-  yield* tx.delete(pendingRowMarks).where(eq(pendingRowMarks.operationId, operationId));
-  yield* tx.delete(pendingRowJournal).where(eq(pendingRowJournal.operationId, operationId));
 });
 
 const setMark = Effect.fn("ReplicaPending.setMark")(function* (

@@ -2,6 +2,7 @@ import {
   decodeSyncLiveServerFrame,
   LIVE_SOCKET_CLOSE,
   LIVE_SOCKET_PROTOCOL,
+  SYNC_SCHEMA_VERSION,
 } from "@store/contracts";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -184,7 +185,7 @@ describe("OrgHub", () => {
       _tag: "transactions",
       epoch: "1",
       subscription: "operational",
-      schemaVersion: 1,
+      schemaVersion: SYNC_SCHEMA_VERSION,
       fromCommitSequence: "6",
       toCommitSequence: "6",
       transactions: [

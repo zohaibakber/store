@@ -25,14 +25,12 @@ import {
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  type ReplicaCommitEvent,
-  type ReplicaAnalyticsEvent,
-  type ReplicaSyncHealthEvent,
 } from "../../electron/replica-channels";
 import {
   registerReplicaWorkerIpc,
   type ReplicaInvokeEvent,
   type ReplicaIpcListener,
+  type ReplicaSentEvent,
 } from "../../electron/replica-ipc";
 import {
   ReplicaReaderRpcs,
@@ -67,7 +65,12 @@ const enqueueRequest = {
   },
 };
 
-const openInput = { organizationId: "org-1", userId: "user-1", replicaId: "device-1" };
+const openInput = {
+  authority: "remote",
+  organizationId: "org-1",
+  userId: "user-1",
+  replicaId: "device-1",
+};
 
 const decodeOpened = Schema.decodeUnknownSync(
   Schema.Struct({
@@ -96,12 +99,14 @@ const setupIpc = () => {
           products: [],
           batches: [],
           sales: [{ productId: "p-1", day: 20_000, units: 3, revenue: 300 }],
+          onOrder: [],
           days: [{ day: 20_000, invoices: 1, revenue: 300 }],
           hours: [{ hour: 9, invoices: 1, revenue: 300 }],
           truncated: false,
         },
       }),
     ReadOutboxStatuses: () => Effect.succeed(["pending" as const]),
+    ReadSyncActivity: () => Effect.die("unused"),
     EnqueueCommand: ({ request }) =>
       Effect.succeed({
         operationId: request.operationId,
@@ -115,6 +120,12 @@ const setupIpc = () => {
         foregrounds.push(visible);
       }),
     WakeSyncUpload: () => Effect.sync(() => ({ drained: true, drainCount: ++drainCount })),
+    BackUp: () => Effect.die("unused"),
+    StageRestore: () => Effect.die("unused"),
+    ReleaseForRestore: () => Effect.die("unused"),
+    PublishSummary: () => Effect.die("unused"),
+    PublishStage: () => Stream.die("unused"),
+    PublishCommit: () => Effect.die("unused"),
     Commits: () =>
       Stream.make({
         generationId: "1",
@@ -217,7 +228,7 @@ const setupIpc = () => {
   });
   const sent: Array<{
     readonly channel: string;
-    readonly event: ReplicaCommitEvent | ReplicaSyncHealthEvent | ReplicaAnalyticsEvent;
+    readonly event: ReplicaSentEvent;
   }> = [];
   const emitters = new Map<number, EventEmitter>();
   const emitterFor = (id: number) => {

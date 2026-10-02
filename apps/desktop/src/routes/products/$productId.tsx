@@ -35,6 +35,7 @@ import {
   PageHeading,
   PageLayout,
 } from "@/components/shared/page-layout";
+import { ShortcutButton } from "@/components/shared/shortcut-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -46,10 +47,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { toastStoreError } from "@/lib/errors";
 import { formValidator } from "@/lib/form-schema";
@@ -58,6 +57,7 @@ import {
   preloadAll,
   preloadCatalogProduct,
   preloadInventory,
+  preloadProductStockPlan,
   preloadStockMovementHistory,
   useInventoryActions,
   useSuspenseCatalogProduct,
@@ -75,6 +75,7 @@ export const Route = createFileRoute("/products/$productId")({
       preloadAll([
         preloadCatalogProduct(inventory, params.productId),
         preloadStockMovementHistory(inventory, params.productId),
+        preloadProductStockPlan(inventory, params.productId),
       ]),
     ),
   validateSearch: productSearch,
@@ -177,27 +178,6 @@ function DetailsCard({ product }: { readonly product: Product }) {
         ))}
       </dl>
     </FrameCard>
-  );
-}
-
-function ShortcutButton({
-  children,
-  label,
-  shortcut,
-  ...props
-}: React.ComponentProps<typeof Button> & { readonly label: string; readonly shortcut: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<Button aria-keyshortcuts={shortcut} size="sm" {...props} />}>
-        {children}
-      </TooltipTrigger>
-      <TooltipPopup>
-        <span className="inline-flex items-center gap-2">
-          {label}
-          <Kbd>{shortcut}</Kbd>
-        </span>
-      </TooltipPopup>
-    </Tooltip>
   );
 }
 

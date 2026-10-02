@@ -17,13 +17,16 @@ const RejectedOutboxRow = Schema.Struct({
   receiptJson: Schema.NullOr(Schema.String),
 });
 
-const CaughtUpRow = Schema.Struct({ caughtUpAt: Schema.NullOr(Schema.Number) });
+const ActivityStateRow = Schema.Struct({
+  caughtUpAt: Schema.NullOr(Schema.Number),
+  lowestActiveSchemaVersion: Schema.NullOr(Schema.Number),
+});
 
 const PendingRowIdRow = Schema.Struct({ entityId: Schema.String });
 
 const decodeStatusCountRows = Schema.decodeUnknownEffect(Schema.Array(StatusCountRow));
 const decodeRejectedOutboxRows = Schema.decodeUnknownEffect(Schema.Array(RejectedOutboxRow));
-const decodeCaughtUpRow = Schema.decodeUnknownEffect(CaughtUpRow);
+const decodeActivityStateRow = Schema.decodeUnknownEffect(ActivityStateRow);
 const decodePendingRowIdRows = Schema.decodeUnknownEffect(Schema.Array(PendingRowIdRow));
 
 const ACTIVITY_STATUSES = [
@@ -60,15 +63,18 @@ export const readOutboxActivitySqlite = Effect.fn("SqliteReplicaActivity.readOut
       .all()
       .pipe(Effect.flatMap(decodeRejectedOutboxRows), Effect.orDie);
     const state = yield* db
-      .select({ caughtUpAt: replicaState.caughtUpAt })
+      .select({
+        caughtUpAt: replicaState.caughtUpAt,
+        lowestActiveSchemaVersion: replicaState.lowestActiveSchemaVersion,
+      })
       .from(replicaState)
       .where(eq(replicaState.id, "singleton"))
       .all()
       .pipe(
-        Effect.flatMap((rows) => decodeCaughtUpRow(rows[0])),
+        Effect.flatMap((rows) => decodeActivityStateRow(rows[0])),
         Effect.orDie,
       );
-    return { statusCounts, rejected, caughtUpAt: state.caughtUpAt } satisfies ReplicaOutboxActivity;
+    return { statusCounts, rejected, ...state } satisfies ReplicaOutboxActivity;
   },
 );
 

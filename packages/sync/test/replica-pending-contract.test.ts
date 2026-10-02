@@ -4,12 +4,14 @@ import {
   ReplicaClientSequence,
   SnapshotId,
   SnapshotPartHash,
+  type CatalogRowWrite,
   type SnapshotManifest,
   type SnapshotPartPayload,
   type SyncCommandEnvelope,
   type SyncEntity,
   type SyncTransactionGroup,
 } from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import { decodeInvoiceId, decodeInvoiceItemId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import {
@@ -21,39 +23,44 @@ import {
   lastUnitBuyerACommand,
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
-import {
-  batches,
-  categories,
-  invoiceItems,
-  invoices,
-  products,
-  stockMovements,
-  stockOverlays,
-} from "@store/db/replica.schema";
+import { stockOverlays } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import type { IndexedDbEntityTable, IndexedDbSubsetRow } from "../src/replica/indexeddb/query";
+import type { IndexedDbSubsetRow } from "../src/replica/indexeddb/query";
+import { entityStore } from "../src/replica/indexeddb/schema";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
+  acceptedCatalogReceipt,
   catalogEnvelope,
   deleteSpareBatchWrite,
+  deliveryWrite,
+  DELIVERY_BATCH_ID,
+  DELIVERY_MOVEMENT_ID,
   FIXTURE_NOW,
   insertCategoryWrite,
   NEW_CATEGORY_ID,
+  ORDER_ID,
+  ORDER_LINE_ID,
+  orderLineWrite,
+  orderWrite,
+  placeOrderWrites,
   rejectedReceipt,
   renameProductWrite,
   restockBatchWrite,
   seedCatalogGroup,
   seedSpareBatchGroup,
   SPARE_BATCH_ID,
+  SUPPLIER_ID,
+  SUPPLIER_NAME,
+  supplierWrite,
 } from "./lib/pending-fixture";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
@@ -69,24 +76,6 @@ type Harness = {
   readonly close: () => Effect.Effect<void, unknown>;
 };
 
-const sqliteTables = {
-  category: categories,
-  product: products,
-  batch: batches,
-  invoice: invoices,
-  invoiceItem: invoiceItems,
-  stockMovement: stockMovements,
-} as const;
-
-const indexedTables = {
-  category: "categories",
-  product: "products",
-  batch: "batches",
-  invoice: "invoices",
-  invoiceItem: "invoice_items",
-  stockMovement: "stock_movements",
-} as const satisfies Record<SyncEntity, IndexedDbEntityTable>;
-
 const makeSqliteHarness = Effect.fn("harness.sqlite")(function* () {
   const scope = yield* Scope.make();
   const handle = yield* Scope.provide(seedReplicaTenUnits(), scope);
@@ -95,9 +84,9 @@ const makeSqliteHarness = Effect.fn("harness.sqlite")(function* () {
   return {
     store,
     rows: (entity: SyncEntity) =>
-      runReplicaTransaction(handle, (tx) => tx.select().from(sqliteTables[entity]).all()).pipe(
-        Effect.map((rows) => rows.map((row) => decodeEntityRow(row))),
-      ),
+      runReplicaTransaction(handle, (tx) =>
+        tx.select().from(syncEntityRows[entity].table).all(),
+      ).pipe(Effect.map((rows) => rows.map((row) => decodeEntityRow(row)))),
     overlayCount: () =>
       runReplicaTransaction(handle, (tx) => tx.select().from(stockOverlays).all()).pipe(
         Effect.map((rows) => rows.length),
@@ -129,7 +118,7 @@ const makeIndexedHarness = Effect.fn("harness.indexeddb")(function* () {
     rows: (entity: SyncEntity) =>
       store
         .querySubset({
-          table: indexedTables[entity],
+          table: entityStore(entity),
           scan: { _tag: "generationPrefix", reverse: false },
           residual: undefined,
           orderBy: [],
@@ -514,7 +503,7 @@ for (const adapter of adapters) {
           const overlays = yield* harness.overlayCount();
           expect(findRow(batchRows, LAST_UNIT_BATCH_ID)?.["unitQuantity"]).toBe(25);
           expect(findRow(movementRows, "restock-1")?.["unitDelta"]).toBe(15);
-          expect(findRow(movementRows, "restock-1")?.["type"]).toBe("stock_in");
+          expect(findRow(movementRows, "restock-1")?.["type"]).toBe("adjustment");
           expect(overlays).toBe(0);
         }),
       ),
@@ -843,6 +832,281 @@ for (const adapter of adapters) {
           expect(second).toEqual(first);
         }),
       ),
+    );
+    const placeOrder = catalogEnvelope({
+      operationId: "order-place",
+      clientSequence: "1",
+      writes: placeOrderWrites,
+    });
+
+    const purchasing = (clientSequence: string, writes: ReadonlyArray<CatalogRowWrite>) =>
+      catalogEnvelope({ operationId: `purchasing-${clientSequence}`, clientSequence, writes });
+
+    const refusalOf = (harness: Harness, writes: ReadonlyArray<CatalogRowWrite>) =>
+      Effect.flip(harness.store.enqueueCommand(enqueueRequestOf(purchasing("99", writes), 1))).pipe(
+        Effect.map((failure) => (failure._tag === "SyncProtocolError" ? failure.code : failure)),
+      );
+
+    const orderDelete: CatalogRowWrite = {
+      entity: "purchaseOrder",
+      action: "delete",
+      id: ORDER_ID,
+      expectedRowVersion: 1,
+    };
+
+    const lineDelete = (expectedRowVersion: number): CatalogRowWrite => ({
+      entity: "purchaseOrderItem",
+      action: "delete",
+      id: ORDER_LINE_ID,
+      expectedRowVersion,
+    });
+
+    const supplierDelete: CatalogRowWrite = {
+      entity: "supplier",
+      action: "delete",
+      id: SUPPLIER_ID,
+      expectedRowVersion: 1,
+    };
+
+    it.effect("projects a delivery onto its order line and restores it when rejected", () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+          const receive = purchasing("2", [
+            deliveryWrite(),
+            orderWrite({ status: "sent", expectedRowVersion: 1 }),
+          ]);
+          yield* harness.store.enqueueCommand(enqueueRequestOf(receive, 2));
+
+          const line = findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID);
+          expect(line?.["receivedBaseUnits"]).toBe(15);
+          expect(line?.["rowVersion"]).toBe(2);
+          const movement = findRow(yield* harness.rows("stockMovement"), DELIVERY_MOVEMENT_ID);
+          expect(movement?.["purchaseOrderId"]).toBe(ORDER_ID);
+          expect(movement?.["type"]).toBe("stock_in");
+          const order = findRow(yield* harness.rows("purchaseOrder"), ORDER_ID);
+          expect(order?.["status"]).toBe("sent");
+          expect(order?.["orderNumber"]).toBe(1);
+
+          yield* harness.store.claimNextUpload({ claimId: "claim-place", claimedAt: 10 });
+          yield* harness.store.settleUploadClaim(
+            "claim-place",
+            acceptedCatalogReceipt(placeOrder, "10", placeOrderWrites.length),
+          );
+          yield* harness.store.claimNextUpload({ claimId: "claim-receive", claimedAt: 11 });
+          yield* harness.store.settleUploadClaim("claim-receive", rejectedReceipt(receive, "11"));
+
+          const restored = findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID);
+          expect(restored?.["receivedBaseUnits"]).toBe(0);
+          expect(restored?.["rowVersion"]).toBe(1);
+          expect(findRow(yield* harness.rows("purchaseOrder"), ORDER_ID)?.["status"]).toBe("draft");
+          expect(findRow(yield* harness.rows("batch"), DELIVERY_BATCH_ID)).toBeUndefined();
+          expect(
+            findRow(yield* harness.rows("stockMovement"), DELIVERY_MOVEMENT_ID),
+          ).toBeUndefined();
+        }),
+      ),
+    );
+
+    it.effect("refuses purchasing writes with the code the authority would give", () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+          const draftRefusals: ReadonlyArray<readonly [string, ReadonlyArray<CatalogRowWrite>]> = [
+            ["ENTITY_CONFLICT", [supplierWrite({ id: "supplier-twin" })]],
+            ["SUPPLIER_HAS_ORDERS", [supplierDelete]],
+            [
+              "PURCHASE_ORDER_TRANSITION_INVALID",
+              [orderWrite({ id: "order-sent", orderNumber: 2, status: "sent" })],
+            ],
+            [
+              "ENTITY_RELATION_INVALID",
+              [orderWrite({ id: "order-orphan", orderNumber: 2, supplierId: "supplier-missing" })],
+            ],
+            [
+              "PURCHASE_ORDER_TRANSITION_INVALID",
+              [orderWrite({ status: "closed", expectedRowVersion: 1 })],
+            ],
+            ["ENTITY_CONFLICT", [{ ...orderDelete, expectedRowVersion: 5 }]],
+            ["PURCHASE_ORDER_HAS_ITEMS", [orderDelete]],
+            [
+              "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
+              [orderLineWrite({ id: "line-miscounted", baseUnitQuantity: 20 })],
+            ],
+            [
+              "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
+              [deliveryWrite({ productId: LAST_UNIT_PRODUCT_ID })],
+            ],
+            ["INVALID_OPERATION", [deliveryWrite({ expectedRowVersion: 1 })]],
+            ["ENTITY_RELATION_INVALID", [deliveryWrite({ lineId: "line-missing" })]],
+          ];
+          for (const [code, writes] of draftRefusals) {
+            expect(yield* refusalOf(harness, writes)).toBe(code);
+          }
+
+          yield* harness.store.enqueueCommand(
+            enqueueRequestOf(
+              purchasing("2", [
+                deliveryWrite(),
+                orderWrite({ status: "sent", expectedRowVersion: 1 }),
+              ]),
+              2,
+            ),
+          );
+          expect(yield* refusalOf(harness, [lineDelete(2)])).toBe("PURCHASE_ORDER_ITEM_RECEIVED");
+          expect(yield* refusalOf(harness, [{ ...orderDelete, expectedRowVersion: 2 }])).toBe(
+            "PURCHASE_ORDER_NOT_DRAFT",
+          );
+
+          yield* harness.store.enqueueCommand(
+            enqueueRequestOf(
+              purchasing("3", [orderWrite({ status: "cancelled", expectedRowVersion: 2 })]),
+              3,
+            ),
+          );
+          const closedRefusals: ReadonlyArray<ReadonlyArray<CatalogRowWrite>> = [
+            [orderWrite({ status: "sent", expectedRowVersion: 3 })],
+            [orderLineWrite({ id: "line-late" })],
+            [deliveryWrite({ batchId: "batch-late" })],
+          ];
+          for (const writes of closedRefusals) {
+            expect(yield* refusalOf(harness, writes)).toBe("PURCHASE_ORDER_NOT_OPEN");
+          }
+          expect(yield* harness.rows("purchaseOrder")).toHaveLength(1);
+          expect(yield* harness.rows("purchaseOrderItem")).toHaveLength(1);
+        }),
+      ),
+    );
+
+    it.effect("applies the writes of one command in order", () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+          yield* harness.store.enqueueCommand(
+            enqueueRequestOf(purchasing("2", [lineDelete(1), orderDelete, supplierDelete]), 2),
+          );
+          expect(yield* harness.rows("purchaseOrderItem")).toHaveLength(0);
+          expect(yield* harness.rows("purchaseOrder")).toHaveLength(0);
+          expect(yield* harness.rows("supplier")).toHaveLength(0);
+        }),
+      ),
+    );
+
+    it.effect("gives a new order the next free number when its proposed number is taken", () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+          yield* harness.store.enqueueCommand(
+            enqueueRequestOf(
+              purchasing("2", [
+                orderWrite({ id: "order-2", orderNumber: 1 }),
+                orderWrite({ id: "order-3", orderNumber: 7 }),
+                orderWrite({ id: "order-4", orderNumber: 7 }),
+              ]),
+              2,
+            ),
+          );
+          const orders = yield* harness.rows("purchaseOrder");
+          expect(
+            ["order-2", "order-3", "order-4"].map((id) => findRow(orders, id)?.["orderNumber"]),
+          ).toEqual([2, 7, 8]);
+        }),
+      ),
+    );
+
+    const remotePurchasingRows: SnapshotPartPayload["rows"] = [
+      {
+        entity: "supplier",
+        entityId: "remote-supplier",
+        rowVersion: 1,
+        row: {
+          id: "remote-supplier",
+          name: SUPPLIER_NAME,
+          phone: null,
+          note: null,
+          createdAt: FIXTURE_NOW,
+          updatedAt: FIXTURE_NOW,
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          createdByUserId: "user-2",
+          updatedByUserId: "user-2",
+          deviceId: "replica-b",
+          operationId: "remote-purchasing-op",
+          rowVersion: 1,
+        },
+      },
+      {
+        entity: "purchaseOrder",
+        entityId: "remote-order",
+        rowVersion: 1,
+        row: {
+          id: "remote-order",
+          orderNumber: 1,
+          supplierId: "remote-supplier",
+          status: "sent",
+          note: null,
+          sentAt: FIXTURE_NOW,
+          expectedAt: null,
+          total: 0,
+          createdAt: FIXTURE_NOW,
+          updatedAt: FIXTURE_NOW,
+          organizationId: LAST_UNIT_ORGANIZATION_ID,
+          createdByUserId: "user-2",
+          updatedByUserId: "user-2",
+          deviceId: "replica-b",
+          operationId: "remote-purchasing-op",
+          rowVersion: 1,
+        },
+      },
+    ];
+
+    const expectDisplacedShadows = (harness: Harness) =>
+      Effect.gen(function* () {
+        const suppliers = yield* harness.rows("supplier");
+        const orders = yield* harness.rows("purchaseOrder");
+        expect(findRow(suppliers, "remote-supplier")?.["name"]).toBe(SUPPLIER_NAME);
+        expect(findRow(suppliers, SUPPLIER_ID)?.["name"]).toBe(`${SUPPLIER_NAME} (2)`);
+        expect(findRow(orders, "remote-order")?.["orderNumber"]).toBe(1);
+        expect(findRow(orders, ORDER_ID)?.["orderNumber"]).toBe(2);
+      });
+
+    it.effect("moves supplier and order shadows aside before writing the remote rows", () =>
+      withHarness((harness) =>
+        Effect.gen(function* () {
+          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+          const applied = yield* harness.store.applyTransactionGroup({
+            commitSequence: OrgCommitSequence.make("8"),
+            operationId: "remote-purchasing-op",
+            decision: "accepted",
+            changes: remotePurchasingRows.map((row) => ({ ...row, action: "upsert" as const })),
+          });
+          yield* expectDisplacedShadows(harness);
+          expect(applied.notice?.touchedKeys).toEqual(
+            expect.arrayContaining([`supplier:${SUPPLIER_ID}`, `purchaseOrder:${ORDER_ID}`]),
+          );
+        }),
+      ),
+    );
+
+    it.effect(
+      "moves supplier and order shadows aside when snapshot activation re-applies them",
+      () =>
+        withHarness((harness) =>
+          Effect.gen(function* () {
+            yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+            yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
+            yield* harness.store.importSnapshotPart(snapshotManifest, {
+              ...snapshotPart,
+              rows: [...snapshotPart.rows, ...remotePurchasingRows],
+            });
+            yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
+            yield* expectDisplacedShadows(harness);
+            expect(findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID)).toBeDefined();
+            const marks = yield* harness.store.readPendingMarks();
+            expect(
+              marks.filter((mark) => mark.operationId === placeOrder.operationId),
+            ).toHaveLength(placeOrderWrites.length);
+          }),
+        ),
     );
   });
 }

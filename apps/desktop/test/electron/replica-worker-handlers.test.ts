@@ -74,6 +74,7 @@ const boot = () => {
   const directory = mkdtempSync(path.join(tmpdir(), "replica-worker-"));
   directories.push(directory);
   return {
+    authority: "remote" as const,
     organizationId: "org-1",
     userId: "user-1",
     replicaId: "replica-1",

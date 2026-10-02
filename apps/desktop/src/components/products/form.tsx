@@ -435,7 +435,7 @@ function StrengthField({ form }: { form: ProductFormApi }) {
                       onValueChange={(value) => value && unitField.handleChange(value)}
                       value={unitField.state.value}
                     >
-                      <SelectTrigger aria-label="Strength unit" size="sm">
+                      <SelectTrigger aria-label="Strength unit" id={`${control.id}-unit`} size="sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

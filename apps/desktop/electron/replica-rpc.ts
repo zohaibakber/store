@@ -1,3 +1,4 @@
+import { ReplicaSyncActivity } from "@store/client-db";
 import {
   InventorySubsetBatch,
   InventorySubsetSpec,
@@ -6,7 +7,13 @@ import {
 } from "@store/client-db/subset-spec";
 import {
   CommandStatus,
+  DeviceLabel,
   EnqueueCommandRequest,
+  ImportId,
+  ImportPartNumber,
+  LOCAL_ORGANIZATION_ID,
+  LOCAL_USER_ID,
+  PartitionDigest,
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
 } from "@store/contracts";
@@ -16,14 +23,27 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
+const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
 
 export const ReplicaWorkspaceToken = NonEmptyString;
 
-export const ReplicaOpenInput = Schema.Struct({
+const LocalReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("local"),
+  organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
+  userId: Schema.Literal(LOCAL_USER_ID),
+  replicaId: NonEmptyString,
+});
+
+const RemoteReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("remote"),
   organizationId: NonEmptyString,
   userId: NonEmptyString,
   replicaId: NonEmptyString,
 });
+
+export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
+
+export type ReplicaAuthority = (typeof ReplicaOpenInput.Type)["authority"];
 
 export const ReplicaReadSubsetInput = Schema.Struct({
   workspaceToken: NonEmptyString,
@@ -62,11 +82,47 @@ export const ReplicaCommandStatusInput = Schema.Struct({
   operationId: NonEmptyString,
 });
 
-export const ReplicaWorkerBoot = Schema.Struct({
-  ...ReplicaOpenInput.fields,
-  databasePath: Schema.String,
-  apiBaseUrl: Schema.String,
+const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_096));
+
+export const ReplicaCatalogCounts = Schema.Struct({
+  products: NonNegativeInteger,
+  sales: NonNegativeInteger,
+  purchaseOrders: NonNegativeInteger,
 });
+
+export const ReplicaPublishSummary = Schema.Struct({
+  importId: ImportId,
+  ...ReplicaCatalogCounts.fields,
+  rows: NonNegativeInteger,
+  outstanding: NonNegativeInteger,
+});
+
+export const ReplicaPublishSeal = Schema.Struct({
+  partCount: ImportPartNumber,
+  digest: PartitionDigest,
+  digestVersion: PositiveInteger,
+});
+
+const ReplicaPublishProgress = Schema.Union([
+  Schema.TaggedStruct("staged", { partNumber: ImportPartNumber, rowCount: NonNegativeInteger }),
+  Schema.TaggedStruct("sealed", ReplicaPublishSeal.fields),
+]);
+
+const ReplicaPublishCommit = Schema.Union([
+  Schema.TaggedStruct("committed", {}),
+  Schema.TaggedStruct("refused", { code: Schema.String, message: Schema.String }),
+  Schema.TaggedStruct("unconfirmed", { message: Schema.String }),
+]);
+
+export const ReplicaWorkerBoot = Schema.Union([
+  Schema.Struct({ ...LocalReplicaIdentity.fields, databasePath: Schema.String }),
+  Schema.Struct({
+    ...RemoteReplicaIdentity.fields,
+    databasePath: Schema.String,
+    apiBaseUrl: Schema.String,
+    deviceLabel: Schema.optionalKey(DeviceLabel),
+  }),
+]);
 
 export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
@@ -86,6 +142,7 @@ export const ReplicaCommitNotice = Schema.Struct({
 export const ReplicaSyncHealth = Schema.Union([
   Schema.TaggedStruct("running", { syncing: Schema.optionalKey(Schema.Boolean) }),
   Schema.TaggedStruct("storageError", { message: Schema.String }),
+  Schema.TaggedStruct("updateRequired", { message: Schema.String }),
   Schema.TaggedStruct("recoveryRequired", {
     message: Schema.String,
     retryable: Schema.optionalKey(Schema.Boolean),
@@ -175,6 +232,7 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     success: Schema.Array(CommandStatus),
     error: ReplicaWorkerFailure,
   }),
+  Rpc.make("ReadSyncActivity", { success: ReplicaSyncActivity, error: ReplicaWorkerFailure }),
   Rpc.make("EnqueueCommand", {
     payload: { request: EnqueueCommandRequest },
     success: Schema.Struct({
@@ -195,6 +253,41 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   }),
   Rpc.make("WakeSyncUpload", {
     success: Schema.Struct({ drained: Schema.Boolean, drainCount: NonNegativeInteger }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("BackUp", {
+    payload: { destinationPath: FilePath },
+    success: Schema.Struct({ bytes: NonNegativeInteger }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("StageRestore", {
+    payload: { sourcePath: FilePath, stagedPath: FilePath },
+    success: Schema.Struct({ current: ReplicaCatalogCounts, backup: ReplicaCatalogCounts }),
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("ReleaseForRestore", {
+    payload: { stagedPath: FilePath },
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("PublishSummary", {
+    payload: { sourcePath: FilePath },
+    success: ReplicaPublishSummary,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("PublishStage", {
+    payload: { sourcePath: FilePath, importId: ImportId },
+    success: ReplicaPublishProgress,
+    error: ReplicaWorkerFailure,
+    stream: true,
+  }),
+  Rpc.make("PublishCommit", {
+    payload: {
+      sourcePath: FilePath,
+      importId: ImportId,
+      seal: ReplicaPublishSeal,
+      acceptChangedFile: Schema.optionalKey(Schema.Boolean),
+    },
+    success: ReplicaPublishCommit,
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),

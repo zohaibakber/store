@@ -28,4 +28,5 @@ export type ReplicaOutboxActivity = {
   readonly statusCounts: ReadonlyArray<OutboxStatusCount>;
   readonly rejected: ReadonlyArray<OutboxActivityRow>;
   readonly caughtUpAt: number | null;
+  readonly lowestActiveSchemaVersion: number | null;
 };

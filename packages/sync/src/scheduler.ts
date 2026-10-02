@@ -10,7 +10,10 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "./replica/cadence";
+import {
+  DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
+  type DigestVerificationCadence,
+} from "./replica/cadence";
 import {
   classifySyncFailure,
   dispositionFor,
@@ -41,7 +44,7 @@ export type SyncSchedulerPolicy = {
   readonly liveIdlePollMillis: number;
   readonly minPollMillis?: number;
   readonly maxRetryAfterMillis?: number;
-  readonly digestVerificationIntervalMillis?: number;
+  readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
 };
 
@@ -69,6 +72,7 @@ export type SyncSchedulerStatus =
       readonly status: number | undefined;
       readonly message: string;
     }
+  | { readonly _tag: "updateRequired"; readonly message: string }
   | { readonly _tag: "storageError"; readonly message: string }
   | {
       readonly _tag: "recoveryRequired";
@@ -134,6 +138,8 @@ const terminalStatus = (disposition: SyncFailureDisposition): SyncSchedulerStatu
       return { _tag: "pausedForAuth", status: disposition.status };
     case "stop":
       return { _tag: "stopped", status: disposition.status, message: disposition.message };
+    case "updateRequired":
+      return { _tag: "updateRequired", message: disposition.message };
     case "storageError":
       return { _tag: "storageError", message: disposition.message };
     case "recoveryRequired":

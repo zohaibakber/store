@@ -43,10 +43,10 @@ import {
   type ReplicaOutboxActivity,
 } from "../activity";
 import {
-  decodeCategoryRow,
   decodeEntity,
+  decodeNamedRow,
+  decodeNumberedRow,
   decodeOutboxEnvelope,
-  decodeInvoiceRow,
   encodeEnvelopeJson,
   encodeReceiptJson,
 } from "../codecs";
@@ -88,6 +88,8 @@ import {
 import { generationResetNotice } from "../generation-reset";
 import { checkEnqueueAllowed, type PendingRestoreResult } from "../projection";
 import {
+  announcementFields,
+  announcementOf,
   decideRegistration,
   UNRECEIPTED_COMMAND_STATUSES,
   type ReplicaRegistrationOutcome,
@@ -104,11 +106,10 @@ import {
 import { indexedDbPartitionDigest } from "./digest";
 import { readIndexedDbInsights } from "./insights";
 import {
-  clearIndexedDbPendingProjection,
   readIndexedDbCommandContext,
   removeEntityRow,
-  renameIndexedDbCollidingCategory,
-  renumberIndexedDbCollidingInvoice,
+  renameIndexedDbCollidingShadow,
+  renumberIndexedDbCollidingShadow,
   resolveIndexedDbRemoteRow,
   restoreIndexedDbPendingProjection,
   writeEntityRow,
@@ -124,8 +125,10 @@ import {
 } from "./query";
 import {
   countOutboxWithStatus,
+  ENTITY_STORES,
   outboxWithStatus,
   ReplicaIndexedDb,
+  type IndexedDbTableName,
   type OutboxRow,
   type ReplicaQueryBuilder,
   type ReplicaStateRow,
@@ -155,46 +158,23 @@ type MakeIndexedDbReplicaStoreInput = {
   readonly IDBKeyRange?: typeof IDBKeyRange;
 };
 
-type IndexedDbTableName = Parameters<ReplicaQueryBuilder["from"]>[0];
-
 const ENTITY_TABLES = [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
   "command_outbox",
   "stock_overlays",
   "replica_state",
   "replica_coverage",
   "pending_row_marks",
   "pending_row_journal",
-] as const;
-
-const GENERATION_TABLES = [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
+  ...ENTITY_STORES,
 ] as const;
 
 const SNAPSHOT_TABLES = [...ENTITY_TABLES, "snapshot_imports", "snapshot_staged_rows"] as const;
 
-const PROMOTE_TABLES = [
-  "categories",
-  "products",
-  "batches",
-  "invoices",
-  "invoice_items",
-  "stock_movements",
-  "snapshot_imports",
-  "snapshot_staged_rows",
-] as const;
+const IMPORT_TABLES = ["snapshot_imports", ...ENTITY_STORES] as const;
 
-const SWEEP_TABLES = [...PROMOTE_TABLES, "replica_state"] as const;
+const PROMOTE_TABLES = ["snapshot_imports", "snapshot_staged_rows", ...ENTITY_STORES] as const;
+
+const SWEEP_TABLES = ["replica_state", ...PROMOTE_TABLES] as const;
 
 const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   if (cause instanceof IndexedDbDatabase.IndexedDbDatabaseError) {
@@ -284,6 +264,40 @@ const undoLocalEffects = (
       overlays.map((overlay) => overlay.batchId),
     );
   });
+
+const displaceCollidingShadow = (
+  api: ReplicaQueryBuilder,
+  generation: number,
+  change: SyncEntityChange,
+  operationId: string,
+): Effect.Effect<string | undefined, unknown> => {
+  switch (change.entity) {
+    case "invoice":
+    case "purchaseOrder":
+      return renumberIndexedDbCollidingShadow(
+        api,
+        generation,
+        change.entity,
+        decodeNumberedRow(change.entity, change.row),
+        operationId,
+      );
+    case "category":
+    case "supplier":
+      return renameIndexedDbCollidingShadow(
+        api,
+        generation,
+        change.entity,
+        decodeNamedRow(change.entity, change.row),
+        operationId,
+      );
+    case "product":
+    case "batch":
+    case "invoiceItem":
+    case "stockMovement":
+    case "purchaseOrderItem":
+      return Effect.succeed(undefined);
+  }
+};
 
 const subsetTables = (plan: IndexedDbSubsetPlan): ReadonlyArray<IndexedDbTableName> =>
   plan.table === "batches"
@@ -629,35 +643,18 @@ const makeScopedIndexedDbReplicaStore = (
           if (change.action === "delete") {
             yield* removeEntityRow(api, generation, change.entity, change.entityId);
           } else {
-            if (change.entity === "invoice") {
-              const renumbered = yield* renumberIndexedDbCollidingInvoice(
-                api,
-                generation,
-                decodeInvoiceRow(change.row),
-                group.operationId,
-              );
-              if (renumbered) touched.push(touchedOfKey(renumbered));
-            }
-            if (change.entity === "category") {
-              const renamed = yield* renameIndexedDbCollidingCategory(
-                api,
-                generation,
-                decodeCategoryRow(change.row),
-                group.operationId,
-              );
-              if (renamed) touched.push(touchedOfKey(renamed));
-            }
+            const displaced = yield* displaceCollidingShadow(
+              api,
+              generation,
+              change,
+              group.operationId,
+            );
+            if (displaced) touched.push(touchedOfKey(displaced));
             yield* writeEntityRow(api, generation, change.entity, change.row);
           }
           yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
         }
-        if (group.decision === "rejected") {
-          touched.push(
-            yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
-          );
-        } else {
-          yield* clearIndexedDbPendingProjection(api, group.operationId);
-        }
+        touched.push(yield* restoreIndexedDbPendingProjection(api, generation, group.operationId));
         const overlays = yield* api
           .from("stock_overlays")
           .select("byCommand")
@@ -918,8 +915,11 @@ const makeScopedIndexedDbReplicaStore = (
                 incarnation: decision.incarnation,
                 nextClientSequence: decision.nextClientSequence,
                 registeredAt,
+                ...announcementFields(authority),
               });
+              return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
             }
+            yield* api.from("replica_state").upsert({ ...state, ...announcementFields(authority) });
             return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
           }),
         ),
@@ -950,6 +950,7 @@ const makeScopedIndexedDbReplicaStore = (
                 receiptJson: row.receiptJson,
               })),
               caughtUpAt: state.caughtUpAt,
+              lowestActiveSchemaVersion: state.lowestActiveSchemaVersion ?? null,
             } satisfies ReplicaOutboxActivity;
           }),
         ),
@@ -1004,8 +1005,8 @@ const makeScopedIndexedDbReplicaStore = (
           epoch: state.epoch,
           appliedCommitSequence: state.appliedCommitSequence,
           replicaId: state.replicaId,
-          registered: state.registeredAt !== null,
           bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
+          ...announcementOf(state),
         })),
       adoptRegistration,
       enqueueCommand,
@@ -1034,7 +1035,7 @@ const makeScopedIndexedDbReplicaStore = (
         withQuery((api) =>
           readwrite(
             api,
-            ["snapshot_imports", ...GENERATION_TABLES],
+            IMPORT_TABLES,
             "relaxed",
           )(importIndexedDbSnapshotPart(api, manifest, part)),
         ),

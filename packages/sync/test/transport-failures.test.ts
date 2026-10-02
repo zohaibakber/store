@@ -21,6 +21,7 @@ import {
   SyncTransportInvalid,
   SyncTransportOffline,
   SyncTransportUnavailable,
+  SyncTransportUndecodable,
 } from "../src/transport";
 
 const NOW = Date.UTC(2026, 8, 22, 12, 0, 0);
@@ -83,10 +84,12 @@ describe("transport failure taxonomy", () => {
     expect(dispositionFor(failure)._tag).toBe("stop");
   });
 
-  it("maps a schema decode failure to a malformed failure", () => {
+  it("maps a schema decode failure to an undecodable failure that asks for an update", () => {
     const failure = schemaDecodeFailure();
     expect(failure).toBeInstanceOf(Schema.SchemaError);
-    expect(failure && mapSyncFailure(failure, NOW)).toBeInstanceOf(SyncTransportInvalid);
+    const mapped = failure && mapSyncFailure(failure, NOW);
+    expect(mapped).toBeInstanceOf(SyncTransportUndecodable);
+    expect(mapped && dispositionFor(mapped)._tag).toBe("updateRequired");
   });
 
   it("maps a transport error to an offline failure that retries", () => {

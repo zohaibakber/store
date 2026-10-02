@@ -7,7 +7,7 @@ import { commandOutbox, replicaState, stockOverlays } from "@store/db/replica.sc
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-import { decodeCategoryRow, decodeInvoiceRow } from "./codecs";
+import { decodeNamedRow, decodeNumberedRow } from "./codecs";
 import { loadReplicaState } from "./commands";
 import {
   EMPTY_TOUCHED,
@@ -20,9 +20,9 @@ import {
 import { readDigestFence, type DigestFence } from "./coverage";
 import { shouldApplyCommitSequence } from "./decisions";
 import {
-  clearPendingProjection,
-  renameCollidingShadowCategory,
-  renumberCollidingShadowInvoice,
+  hasPendingProjection,
+  renameCollidingShadow,
+  renumberCollidingShadow,
   resolveRemoteRow,
   restorePendingProjection,
 } from "./pending";
@@ -58,6 +58,40 @@ export const feedAfterPull = (pulled: SyncPullResult, appliedThrough: string): R
   };
 };
 
+const displaceCollidingShadow = (
+  tx: ReplicaDb,
+  organizationId: string,
+  change: SyncTransactionGroup["changes"][number],
+  operationId: string,
+) => {
+  switch (change.entity) {
+    case "invoice":
+    case "purchaseOrder":
+      return renumberCollidingShadow(
+        tx,
+        organizationId,
+        change.entity,
+        decodeNumberedRow(change.entity, change.row),
+        operationId,
+      );
+    case "category":
+    case "supplier":
+      return renameCollidingShadow(
+        tx,
+        organizationId,
+        change.entity,
+        decodeNamedRow(change.entity, change.row),
+        operationId,
+      );
+    case "product":
+    case "batch":
+    case "invoiceItem":
+    case "stockMovement":
+    case "purchaseOrderItem":
+      return Effect.succeed(undefined);
+  }
+};
+
 const applyChange = Effect.fn("ReplicaApply.applyChange")(function* (
   tx: ReplicaDb,
   organizationId: string,
@@ -68,24 +102,29 @@ const applyChange = Effect.fn("ReplicaApply.applyChange")(function* (
     yield* removeEntityRow(tx, organizationId, change.entity, change.entityId);
     return undefined;
   }
-  const renamed =
-    change.entity === "invoice"
-      ? yield* renumberCollidingShadowInvoice(
-          tx,
-          organizationId,
-          decodeInvoiceRow(change.row),
-          operationId,
-        )
-      : change.entity === "category"
-        ? yield* renameCollidingShadowCategory(
-            tx,
-            organizationId,
-            decodeCategoryRow(change.row),
-            operationId,
-          )
-        : undefined;
+  const displaced = yield* displaceCollidingShadow(tx, organizationId, change, operationId);
   yield* writeEntityRow(tx, change.entity, change.row);
-  return renamed;
+  return displaced;
+});
+
+const applySettledRows = Effect.fn("ReplicaApply.applySettledRows")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
+  group: SyncTransactionGroup,
+) {
+  for (const change of group.changes) {
+    switch (change.action) {
+      case "delete":
+        yield* removeEntityRow(tx, organizationId, change.entity, change.entityId);
+        break;
+      case "upsert":
+        yield* writeEntityRow(tx, change.entity, change.row);
+        break;
+    }
+  }
+  return mergeTouched(
+    ...group.changes.map((change) => touchedOfChange(change.entity, change.entityId)),
+  );
 });
 
 export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function* (
@@ -93,6 +132,9 @@ export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function*
   organizationId: string,
   group: SyncTransactionGroup,
 ) {
+  if (!(yield* hasPendingProjection(tx))) {
+    return yield* applySettledRows(tx, organizationId, group);
+  }
   const touched: Array<TouchedSet> = [];
   for (const change of group.changes) {
     const renumbered = yield* applyChange(tx, organizationId, change, group.operationId);
@@ -100,11 +142,7 @@ export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function*
     if (renumbered) touched.push(touchedOfKey(renumbered));
     yield* resolveRemoteRow(tx, change.entity, change.entityId);
   }
-  if (group.decision === "rejected") {
-    touched.push(yield* restorePendingProjection(tx, group.operationId));
-  } else {
-    yield* clearPendingProjection(tx, group.operationId);
-  }
+  touched.push(yield* restorePendingProjection(tx, group.operationId));
   const overlays = yield* tx
     .select({ batchId: stockOverlays.batchId })
     .from(stockOverlays)

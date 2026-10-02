@@ -67,7 +67,7 @@ const ReceiptRows = Schema.Array(
   Schema.Struct({ receipt: Schema.NullOr(Schema.fromJsonString(CommandReceipt)) }),
 );
 
-const decodeEncodedRows = Schema.decodeUnknownEffect(EncodedRows);
+export const decodeEncodedRows = Schema.decodeUnknownEffect(EncodedRows);
 const decodeSubmittedRows = Schema.decodeUnknownEffect(SubmittedRows);
 const decodeReceiptRows = Schema.decodeUnknownEffect(ReceiptRows);
 const decodeRegisterResult = Schema.decodeUnknownEffect(
@@ -80,14 +80,14 @@ type FunctionOutcome = {
   readonly error_message: string | null;
 };
 
-const bodyOrProtocolError = (row: FunctionOutcome) =>
+export const bodyOrProtocolError = (row: FunctionOutcome) =>
   row.error_code !== null
     ? protocol(row.error_code, row.error_message ?? row.error_code)
     : row.body === null
       ? Effect.fail(databaseError(new Error("The sync function returned no body.")))
       : Effect.succeed(row.body);
 
-const decodedWith =
+export const decodedWith =
   <I, A>(decode: (input: I) => Effect.Effect<A, Schema.SchemaError>) =>
   (input: I) =>
     decode(input).pipe(Effect.mapError(databaseError));
@@ -103,7 +103,7 @@ const malformedRequest = SyncRequestMalformed.make({
 
 export const MAX_SUBMIT_BODY_BYTES = 2 * 1024 * 1024;
 
-const actorJson = (actor: InventoryActor) =>
+export const actorJson = (actor: InventoryActor) =>
   JSON.stringify({ organizationId: actor.organizationId, userId: actor.userId });
 
 export interface InventoryCommandsContract {
@@ -144,7 +144,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
           ${request.afterCommitSequence}::text,
           ${MAX_SYNC_PULL_TRANSACTIONS}::integer,
           ${pullByteBudget(request.maxBytes)}::integer,
-          ${request.digestVersion !== undefined}::boolean
+          ${request.digestVersion ?? null}::integer
         )`,
         "objects",
       ),

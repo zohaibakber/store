@@ -149,10 +149,11 @@ describe("openSqlClientReplicaHandle", () => {
       },
     });
     await handle.enqueueCommand(categoryRequest());
-    const activity = await handle.readOutboxActivity?.();
-    expect(activity?.statusCounts.map((entry) => entry.count)).toEqual([1]);
-    expect(["pending", "sending"]).toContain(activity?.statusCounts[0]?.status);
-    expect(activity?.rejected).toEqual([]);
+    const read = await handle.readSyncActivity?.();
+    expect(read?.statuses).toHaveLength(1);
+    expect(["pending", "sending"]).toContain(read?.statuses[0]);
+    expect(read?.activity.pendingCount).toBe(1);
+    expect(read?.activity.rejected).toEqual([]);
     expect(await handle.readPendingRowIds?.("category")).toEqual(["category-1"]);
     await handle.close();
   });
