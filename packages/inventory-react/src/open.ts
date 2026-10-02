@@ -13,10 +13,10 @@ import { collectionOptions, DbClient } from "@tanstack/react-db";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
+import * as Atom from "effect/reactivity/Atom";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import * as Atom from "effect/unstable/reactivity/Atom";
 
 import { createWorkspaceAtoms, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, STORAGE_FAILED } from "./errors";

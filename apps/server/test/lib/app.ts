@@ -10,7 +10,7 @@ import {
 import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as HttpEffect from "effect/unstable/http/HttpEffect";
+import * as HttpEffect from "effect/http/HttpEffect";
 
 import { makeWorkerFetch, type WorkerServices } from "../../src/http/app";
 import type { ServerRuntimeContract } from "../../src/http/runtime";

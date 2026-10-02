@@ -5,12 +5,12 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import type * as Rpc from "effect/rpc/Rpc";
+import * as RpcClient from "effect/rpc/RpcClient";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as RpcWorker from "effect/rpc/RpcWorker";
 import type * as Schema from "effect/Schema";
-import type * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
-import * as WorkerPlatform from "effect/unstable/workers/Worker";
+import * as WorkerPlatform from "effect/workers/Worker";
 
 import {
   ANALYTICS_WORKER_RPC_CONCURRENCY,

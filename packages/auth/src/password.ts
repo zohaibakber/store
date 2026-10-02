@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
@@ -38,7 +38,7 @@ const derive = (password: Password, salt: Uint8Array, iterations: number) =>
   }).pipe(Effect.mapError((failure) => hashingFailed(failure.cause)));
 
 const decodeSaltOrHash = (value: string) =>
-  Effect.fromResult(Encoding.decodeBase64Url(value)).pipe(
+  Effect.fromResult(Base64Url.decode(value)).pipe(
     Effect.mapError(
       (cause) =>
         new PasswordHashError({
@@ -53,7 +53,7 @@ const hashPassword = Effect.fn("Password.hash")(function* (password: Password) {
   const salt = yield* crypto.randomBytes(SALT_BYTES).pipe(Effect.mapError(hashingFailed));
   const hash = yield* derive(password, salt, WORKERD_PBKDF2_ITERATIONS);
   return PasswordHash.make(
-    `pbkdf2-sha256$${WORKERD_PBKDF2_ITERATIONS}$${Encoding.encodeBase64Url(salt)}$${Encoding.encodeBase64Url(hash)}`,
+    `pbkdf2-sha256$${WORKERD_PBKDF2_ITERATIONS}$${Base64Url.encode(salt)}$${Base64Url.encode(hash)}`,
   );
 });
 

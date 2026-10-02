@@ -15,12 +15,12 @@ import {
 import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 import { AuthCrypto } from "../src/crypto";
 import { ephemeralStoreLayer } from "../src/ephemeral";
@@ -108,14 +108,14 @@ export const forgingSigner = await idTokenSigner(googleSigner.kid);
 
 export const mintIdToken = async (claims: IdTokenClaims, signer: IdTokenSigner = googleSigner) => {
   const signingInput = [{ alg: "RS256", typ: "JWT", kid: signer.kid }, claims]
-    .map((part) => Encoding.encodeBase64Url(JSON.stringify(part)))
+    .map((part) => Base64Url.encode(JSON.stringify(part)))
     .join(".");
   const signature = await crypto.subtle.sign(
     RS256.name,
     signer.privateKey,
     new TextEncoder().encode(signingInput),
   );
-  return `${signingInput}.${Encoding.encodeBase64Url(new Uint8Array(signature))}`;
+  return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
 };
 
 export const googleClaims = (profile: {

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useInventoryState, type InventorySyncStatus } from "@store/inventory-react";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
 import { useSyncNow } from "@/inventory";

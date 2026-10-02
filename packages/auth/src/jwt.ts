@@ -1,7 +1,7 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -99,7 +99,7 @@ export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
 }) {}
 
 const decodeBase64Url = (value: string) =>
-  Effect.fromResult(Encoding.decodeBase64Url(value)).pipe(
+  Effect.fromResult(Base64Url.decode(value)).pipe(
     Effect.mapError(
       (cause) =>
         new JwtError({
@@ -249,7 +249,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
           cause,
         }),
     ),
-    Effect.map(Encoding.encodeBase64Url),
+    Effect.map(Base64Url.encode),
   );
   const encodedPayload = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtPayload))(
     payload,
@@ -262,7 +262,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
           cause,
         }),
     ),
-    Effect.map(Encoding.encodeBase64Url),
+    Effect.map(Base64Url.encode),
   );
   const signingInput = `${encodedHeader}.${encodedPayload}`;
   const signature = yield* Effect.tryPromise({
@@ -280,9 +280,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
       }),
   });
   return {
-    token: AccessToken.make(
-      `${signingInput}.${Encoding.encodeBase64Url(new Uint8Array(signature))}`,
-    ),
+    token: AccessToken.make(`${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`),
     expiresAt: expiresAt * 1_000,
   } satisfies IssuedAccessToken;
 });

@@ -1,9 +1,9 @@
 import { MAX_INVOICE_UPLOAD_BYTES, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import { extractInvoice } from "@store/services";
 import * as Effect from "effect/Effect";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as Multipart from "effect/http/Multipart";
 import * as Stream from "effect/Stream";
-import * as Multipart from "effect/unstable/http/Multipart";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { CurrentOrganization } from "../auth/organization";
 import { StoreApi } from "../http/api";

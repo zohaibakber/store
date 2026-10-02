@@ -39,6 +39,7 @@ import {
 } from "@store/workspace";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as MutableRef from "effect/MutableRef";
@@ -47,7 +48,6 @@ import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { app, net, safeStorage } from "electron";
 
 import { replacePrivateFile } from "./private-file";

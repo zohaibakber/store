@@ -1,6 +1,6 @@
 import type * as Layer from "effect/Layer";
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
+import * as Atom from "effect/reactivity/Atom";
 
 let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
 

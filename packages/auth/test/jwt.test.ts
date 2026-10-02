@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
@@ -85,9 +85,9 @@ describe("ES256 access tokens", () => {
           sign: (data: Uint8Array<ArrayBuffer>) => Promise<ArrayBuffer>,
         ) =>
           Effect.gen(function* () {
-            const signingInput = `${Encoding.encodeBase64Url(encodeHeader({ ...header, typ: "JWT" }))}.${claims}`;
+            const signingInput = `${Base64Url.encode(encodeHeader({ ...header, typ: "JWT" }))}.${claims}`;
             const signature = yield* Effect.promise(() => sign(textEncoder.encode(signingInput)));
-            const token = `${signingInput}.${Encoding.encodeBase64Url(new Uint8Array(signature))}`;
+            const token = `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
             return (yield* Effect.flip(verify(token))).reason;
           });
         return [

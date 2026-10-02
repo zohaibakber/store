@@ -2,8 +2,8 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { DeviceCommand, OrganizationDevice } from "@store/contracts";
 import { useInventoryState } from "@store/inventory-react";
 import { Effect } from "effect";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
 import { appHost } from "@/host";

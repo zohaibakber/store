@@ -1,11 +1,11 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import type * as HttpClientError from "effect/http/HttpClientError";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import type * as HttpClientError from "effect/unstable/http/HttpClientError";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import { AuthHttpApi } from "./http-api";
 import { authHttpErrorStatus, type AuthHttpError } from "./http-errors";

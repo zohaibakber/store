@@ -18,9 +18,9 @@ import {
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
 } from "@store/contracts";
+import * as Rpc from "effect/rpc/Rpc";
+import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
-import * as Rpc from "effect/unstable/rpc/Rpc";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 const PERMANENT_STREAMS = 4;
 const CONTROL_SLOTS = 8;

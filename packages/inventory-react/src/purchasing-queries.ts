@@ -19,7 +19,7 @@ import {
   type Ref,
 } from "@tanstack/react-db";
 import * as Option from "effect/Option";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as React from "react";
 
 import type { ReplicaAuthority } from "./host";

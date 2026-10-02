@@ -1,8 +1,8 @@
 import type { RestockPageRequest } from "@store/contracts";
 import * as Effect from "effect/Effect";
-import type * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import type * as Atom from "effect/unstable/reactivity/Atom";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import type * as AsyncResult from "effect/reactivity/AsyncResult";
+import type * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import type { InvoiceListRequest } from "./invoice-list";
 import { PURCHASE_ORDER_TABS } from "./list-request";

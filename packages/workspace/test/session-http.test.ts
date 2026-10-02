@@ -1,9 +1,9 @@
 import { AccessToken, RefreshToken, TokenSet, sessionEndingCodes } from "@store/auth";
 import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadSessionSnapshot } from "../src/session-broker";

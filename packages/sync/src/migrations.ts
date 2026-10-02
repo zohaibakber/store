@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as EffectRecord from "effect/Record";
 import * as Schema from "effect/Schema";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import { SqlClient } from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import { SqlClient } from "effect/sql/SqlClient";
 
 const STATEMENT_SEPARATOR = "--> statement-breakpoint";
 

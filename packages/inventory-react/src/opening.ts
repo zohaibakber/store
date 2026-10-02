@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import * as Schedule from "effect/Schedule";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import * as Atom from "effect/unstable/reactivity/Atom";
 
 import type { CatalogBusy, CatalogOpenFailure, StaleCatalogLease } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";

@@ -6,7 +6,7 @@ import {
   WorkspaceSnapshot,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 export const authenticateToken = (
   verify: AccessTokenVerifier,

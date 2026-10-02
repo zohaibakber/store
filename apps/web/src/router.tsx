@@ -1,6 +1,6 @@
 import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
-import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";

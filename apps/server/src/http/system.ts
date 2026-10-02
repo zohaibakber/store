@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import { authenticateRequest, workspaceSnapshotOf } from "../auth/session";
 import { StoreApi } from "./api";

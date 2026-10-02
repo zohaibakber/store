@@ -2,9 +2,9 @@ import type { AccessClaims, AccessTokenVerifier } from "@store/auth";
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as Layer from "effect/Layer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
 import { Forbidden, Unauthenticated, unauthenticated } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";

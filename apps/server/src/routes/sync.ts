@@ -1,9 +1,9 @@
 import { MAX_IMPORT_PART_BYTES } from "@store/contracts";
 import { SyncForbidden, SyncNotFound } from "@store/contracts/sync/api";
 import * as Effect from "effect/Effect";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import { CurrentOrganization } from "../auth/organization";
 import { StoreApi } from "../http/api";

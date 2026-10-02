@@ -1,12 +1,12 @@
 import { ProductScanInput, ProductScanResult } from "@store/contracts/server-api.schema";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Headers from "effect/http/Headers";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 class ScanOffline extends Schema.TaggedError<ScanOffline>()("ScanOffline", {}) {}
 

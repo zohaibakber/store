@@ -2,7 +2,7 @@ import { OtpCode, WebCrypto, type OtpChallengeId } from "@store/auth";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
@@ -29,13 +29,13 @@ export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worke
     const sha256 = (value: string) =>
       crypto
         .digest("SHA-256", textEncoder.encode(value))
-        .pipe(failed("sha256"), Effect.map(Encoding.encodeBase64Url));
+        .pipe(failed("sha256"), Effect.map(Base64Url.encode));
 
     const peppered = (pepper: Pepper, value: string) =>
       sha256(`${Redacted.value(pepper)}:${value}`);
 
     const randomToken = (bytes: number) =>
-      crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Encoding.encodeBase64Url));
+      crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Base64Url.encode));
 
     return {
       randomId: crypto.randomUUIDv4.pipe(failed("randomId")),
@@ -53,7 +53,7 @@ export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worke
         WebCrypto.hmacSha256(
           textEncoder.encode(Redacted.value(pepper)),
           textEncoder.encode(`otp:${challengeId}:${code}`),
-        ).pipe(failed("otpVerifier"), Effect.map(Encoding.encodeBase64Url)),
+        ).pipe(failed("otpVerifier"), Effect.map(Base64Url.encode)),
       matches: (left: string, right: string) =>
         WebCrypto.constantTimeEqual(textEncoder.encode(left), textEncoder.encode(right)).pipe(
           failed("matches"),
