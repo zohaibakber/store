@@ -5,12 +5,7 @@ import * as Schema from "effect/Schema";
 
 import { CategoryField } from "@/components/products/category-field";
 import { SuggestField } from "@/components/products/suggest-field";
-import {
-  ControlGroup,
-  ControlGroupAddon,
-  ControlGroupNumberInput,
-  ControlGroupText,
-} from "@/components/shared/control-group";
+import { NumberControl } from "@/components/shared/control-group";
 import { FormField, type FormControlProps } from "@/components/shared/form-field";
 import { Fieldset } from "@/components/ui/fieldset";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "@/components/ui/number-field";
@@ -227,25 +222,21 @@ function PriceInput({
   step: number;
 }) {
   return (
-    <ControlGroup>
-      <ControlGroupNumberInput
-        format={{ maximumFractionDigits: fractionDigits }}
-        id={control.id}
-        inputProps={{
-          className: "text-start",
-          "aria-invalid": control["aria-invalid"],
-          name: control.name,
-          onBlur: field.handleBlur,
-        }}
-        min={0}
-        onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
-        step={step}
-        value={numberFieldValue(field.state.value)}
-      />
-      <ControlGroupAddon>
-        <ControlGroupText>PKR</ControlGroupText>
-      </ControlGroupAddon>
-    </ControlGroup>
+    <NumberControl
+      addon="PKR"
+      format={{ maximumFractionDigits: fractionDigits }}
+      id={control.id}
+      inputProps={{
+        className: "text-start",
+        "aria-invalid": control["aria-invalid"],
+        name: control.name,
+        onBlur: field.handleBlur,
+      }}
+      min={0}
+      onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
+      step={step}
+      value={numberFieldValue(field.state.value)}
+    />
   );
 }
 
@@ -410,22 +401,8 @@ function StrengthField({ form }: { form: ProductFormApi }) {
       children={(field) => (
         <FormField field={field} label="Strength">
           {(control) => (
-            <ControlGroup>
-              <ControlGroupNumberInput
-                format={{ maximumFractionDigits: 2 }}
-                id={control.id}
-                inputProps={{
-                  className: "text-start",
-                  "aria-invalid": control["aria-invalid"],
-                  name: control.name,
-                  onBlur: field.handleBlur,
-                  placeholder: "e.g. 500",
-                }}
-                min={0}
-                onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
-                value={numberFieldValue(field.state.value)}
-              />
-              <ControlGroupAddon>
+            <NumberControl
+              addon={
                 <form.Field
                   name="strengthUnit"
                   children={(unitField) => (
@@ -450,8 +427,20 @@ function StrengthField({ form }: { form: ProductFormApi }) {
                     </Select>
                   )}
                 />
-              </ControlGroupAddon>
-            </ControlGroup>
+              }
+              format={{ maximumFractionDigits: 2 }}
+              id={control.id}
+              inputProps={{
+                className: "text-start",
+                "aria-invalid": control["aria-invalid"],
+                name: control.name,
+                onBlur: field.handleBlur,
+                placeholder: "e.g. 500",
+              }}
+              min={0}
+              onValueChange={(value) => field.handleChange(value === null ? "" : String(value))}
+              value={numberFieldValue(field.state.value)}
+            />
           )}
         </FormField>
       )}
@@ -560,4 +549,4 @@ function UnitPriceField({
   );
 }
 
-export { ProductForm, categoryTracksPacks, useProductCreateForm, useProductUpdateForm };
+export { ProductForm, useProductCreateForm, useProductUpdateForm };

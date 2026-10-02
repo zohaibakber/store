@@ -1,5 +1,6 @@
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 
 import type { AuthRepositoryApi } from "./repository";
 
@@ -10,13 +11,13 @@ export const SESSION_PRUNE_POLICY = {
   maxBatches: 20,
 } as const;
 
-export type SessionPrunePolicy = {
+type SessionPrunePolicy = {
   readonly retainAfterExpiryMillis: number;
   readonly batchRows: number;
   readonly maxBatches: number;
 };
 
-export type SessionPruneProgress = {
+type SessionPruneProgress = {
   readonly deleted: number;
   readonly batches: number;
   readonly more: boolean;
@@ -28,18 +29,23 @@ export const pruneExpiredSessions = Effect.fn("AuthMaintenance.pruneExpiredSessi
 ) {
   const now = yield* Clock.currentTimeMillis;
   const expiredBefore = now - policy.retainAfterExpiryMillis;
-  let deleted = 0;
-  let batches = 0;
-  while (batches < policy.maxBatches) {
-    const pruned = yield* repository.pruneExpiredSessions({
-      expiredBefore,
-      limit: policy.batchRows,
-    });
-    deleted += pruned;
-    batches += 1;
-    if (pruned < policy.batchRows) {
-      return { deleted, batches, more: false } satisfies SessionPruneProgress;
-    }
-  }
-  return { deleted, batches, more: true } satisfies SessionPruneProgress;
+  const progress = yield* Ref.make({ deleted: 0, batches: 0 });
+  const lastBatch = yield* repository
+    .pruneExpiredSessions({ expiredBefore, limit: policy.batchRows })
+    .pipe(
+      Effect.tap((pruned) =>
+        Ref.update(progress, ({ deleted, batches }) => ({
+          deleted: deleted + pruned,
+          batches: batches + 1,
+        })),
+      ),
+      Effect.repeat({
+        while: (pruned) => pruned >= policy.batchRows,
+        times: policy.maxBatches - 1,
+      }),
+    );
+  return {
+    ...(yield* Ref.get(progress)),
+    more: lastBatch >= policy.batchRows,
+  } satisfies SessionPruneProgress;
 });

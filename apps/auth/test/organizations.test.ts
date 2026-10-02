@@ -1,504 +1,252 @@
 import {
   EmailAddress,
   OrganizationName,
-  OrganizationSlug,
+  type AccessToken,
   type OrganizationCommand,
+  type OrganizationId,
+  type OrganizationRole,
 } from "@store/auth";
-import type { RuntimeContext } from "alchemy";
-import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import { AuthService } from "../src/service";
-import { harness, seedOrganization, seedSession, seedUser, type Harness } from "./harness";
+import { count, failing, harness, refreshWith, run, signUp, type Harness } from "./harness";
 
-type Api = ReturnType<typeof AuthService.of>;
-
-const run = <A, E>(instance: Harness, use: (auth: Api) => Effect.Effect<A, E, RuntimeContext>) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const auth = yield* AuthService;
-      return yield* use(auth);
-    }).pipe(Effect.provide(instance.layer)),
-  );
-
-const command = (instance: Harness, accessToken: string, input: OrganizationCommand) =>
+const command = (instance: Harness, accessToken: AccessToken, input: OrganizationCommand) =>
   run(instance, (auth) => auth.organize({ accessToken, command: input }));
 
-const failing = (instance: Harness, accessToken: string, input: OrganizationCommand) =>
-  run(instance, (auth) => Effect.flip(auth.organize({ accessToken, command: input })));
+const refused = (instance: Harness, accessToken: AccessToken, input: OrganizationCommand) =>
+  failing(instance, (auth) => auth.organize({ accessToken, command: input }));
 
-const accessTokenFor = (input: {
-  readonly userId: string;
-  readonly sessionId: string;
-  readonly organizationId: string;
-  readonly email: string;
-  readonly role: "owner" | "admin" | "member";
-  readonly organizationName?: string;
-}) =>
-  btoa(
-    JSON.stringify({
-      subject: input.userId,
-      sessionId: input.sessionId,
-      activeOrganizationId: input.organizationId,
-      organizationName: input.organizationName ?? "Store",
-      organizationSlug: null,
-      role: input.role,
-      email: input.email,
-      name: input.email,
-      image: null,
-      expiresAt: Date.now() + 300_000,
-    }),
-  );
+type InvitableRole = Exclude<OrganizationRole, "owner">;
 
-const withOwner = () => {
-  const instance = harness();
-  const owner = seedUser(instance.store, { id: "owner", email: "owner@example.com" });
-  const organizationId = seedOrganization(instance.store, {
-    id: "organization-1",
-    name: "Owner Store",
-    members: [{ userId: owner.id, role: "owner" }],
-  });
-  const session = seedSession(instance.store, {
-    id: "session-owner",
-    userId: owner.id,
+const invite = async (
+  instance: Harness,
+  accessToken: AccessToken,
+  organizationId: OrganizationId,
+  email: string,
+  role: InvitableRole,
+) => {
+  const invited = await command(instance, accessToken, {
+    _tag: "InviteMember",
     organizationId,
+    email: EmailAddress.make(email),
+    role,
   });
+  if (invited._tag !== "Invited") throw new Error("expected an invitation");
+  return invited;
+};
+
+const withOwner = async () => {
+  const instance = harness();
+  const owner = await signUp(instance, "owner@example.com");
   return {
     instance,
     owner,
+    ownerId: owner.workspace.user.id,
+    organizationId: owner.workspace.activeOrganization.id,
+  };
+};
+
+const memberships = (instance: Harness, organizationId: OrganizationId, where = "1 = 1") =>
+  count(
+    instance,
+    `SELECT count(*) AS total FROM auth_organization_membership WHERE organizationId = ? AND ${where}`,
     organizationId,
-    session,
-    token: accessTokenFor({
-      userId: owner.id,
-      sessionId: session.id,
-      organizationId,
-      email: owner.email,
-      role: "owner",
-      organizationName: "Owner Store",
-    }),
+  );
+
+const withTeam = async () => {
+  const base = await withOwner();
+  const join = async (email: string, role: InvitableRole) => {
+    const session = await signUp(base.instance, email);
+    const invited = await invite(
+      base.instance,
+      base.owner.accessToken,
+      base.organizationId,
+      email,
+      role,
+    );
+    await command(base.instance, session.accessToken, {
+      _tag: "AcceptInvitation",
+      token: invited.token,
+    });
+    const joined = await refreshWith(base.instance, session.refreshToken);
+    if (joined._tag !== "Success") throw new Error("expected a refreshed session");
+    return { id: session.workspace.user.id, accessToken: joined.success.accessToken };
+  };
+  return {
+    ...base,
+    admin: await join("admin@example.com", "admin"),
+    member: await join("member@example.com", "member"),
   };
 };
 
 describe("organization invitations", () => {
-  it("hands the inviter a token that the invited address can redeem", async () => {
-    const { instance, token, organizationId } = withOwner();
-    const invitee = seedUser(instance.store, { id: "invitee", email: "invitee@example.com" });
-    seedOrganization(instance.store, {
-      id: "organization-invitee",
-      name: "Invitee Store",
-      members: [{ userId: invitee.id, role: "owner" }],
-    });
-    const inviteeSession = seedSession(instance.store, {
-      id: "session-invitee",
-      userId: invitee.id,
-      organizationId: instance.store.organizations[1]!.id,
-    });
-
-    const invited = await command(instance, token, {
-      _tag: "InviteMember",
-      organizationId,
-      email: invitee.email,
-      role: "admin",
-    });
-    expect(invited).toMatchObject({ _tag: "Invited" });
-    if (invited._tag !== "Invited") throw new Error("expected an invitation");
-    expect(instance.store.sentInvitations).toHaveLength(1);
-
-    const accepted = await command(
-      instance,
-      accessTokenFor({
-        userId: invitee.id,
-        sessionId: inviteeSession.id,
-        organizationId: inviteeSession.activeOrganizationId,
-        email: invitee.email,
-        role: "owner",
-      }),
-      { _tag: "AcceptInvitation", token: invited.token },
-    );
-
-    expect(accepted).toEqual({
-      _tag: "Joined",
-      organization: {
-        id: organizationId,
-        name: "Owner Store",
-        slug: null,
-        role: "admin",
-      },
-    });
-    expect(
-      instance.store.memberships.filter((entry) => entry.organizationId === organizationId),
-    ).toHaveLength(2);
-    expect(
-      instance.store.sessions.find((entry) => entry.id === inviteeSession.id)?.activeOrganizationId,
-    ).toBe(organizationId);
-  });
-
   it("refuses a token presented by anyone but the invited address", async () => {
-    const { instance, token, organizationId } = withOwner();
-    const outsider = seedUser(instance.store, { id: "outsider", email: "outsider@example.com" });
-    const outsiderOrganization = seedOrganization(instance.store, {
-      id: "organization-outsider",
-      name: "Outsider Store",
-      members: [{ userId: outsider.id, role: "owner" }],
-    });
-    const outsiderSession = seedSession(instance.store, {
-      id: "session-outsider",
-      userId: outsider.id,
-      organizationId: outsiderOrganization,
-    });
-
-    const invited = await command(instance, token, {
-      _tag: "InviteMember",
-      organizationId,
-      email: EmailAddress.make("invitee@example.com"),
-      role: "member",
-    });
-    if (invited._tag !== "Invited") throw new Error("expected an invitation");
-
-    const failure = await failing(
+    const { instance, owner, organizationId } = await withOwner();
+    const outsider = await signUp(instance, "outsider@example.com");
+    const invited = await invite(
       instance,
-      accessTokenFor({
-        userId: outsider.id,
-        sessionId: outsiderSession.id,
-        organizationId: outsiderOrganization,
-        email: outsider.email,
-        role: "owner",
-      }),
-      { _tag: "AcceptInvitation", token: invited.token },
+      owner.accessToken,
+      organizationId,
+      "invitee@example.com",
+      "member",
     );
+
+    const failure = await refused(instance, outsider.accessToken, {
+      _tag: "AcceptInvitation",
+      token: invited.token,
+    });
 
     expect(failure).toMatchObject({ status: 403, code: "INVITATION_EMAIL_MISMATCH" });
-    expect(
-      instance.store.memberships.filter((entry) => entry.organizationId === organizationId),
-    ).toHaveLength(1);
+    expect(memberships(instance, organizationId)).toBe(1);
   });
 
-  it("spends an invitation once", async () => {
-    const { instance, token, organizationId } = withOwner();
-    const invitee = seedUser(instance.store, { id: "invitee", email: "invitee@example.com" });
-    const inviteeOrganization = seedOrganization(instance.store, {
-      id: "organization-invitee",
-      name: "Invitee Store",
-      members: [{ userId: invitee.id, role: "owner" }],
-    });
-    const inviteeSession = seedSession(instance.store, {
-      id: "session-invitee",
-      userId: invitee.id,
-      organizationId: inviteeOrganization,
-    });
-    const inviteeToken = accessTokenFor({
-      userId: invitee.id,
-      sessionId: inviteeSession.id,
-      organizationId: inviteeOrganization,
-      email: invitee.email,
-      role: "owner",
-    });
-
-    const invited = await command(instance, token, {
-      _tag: "InviteMember",
+  it("spends an invitation once, for the invited role", async () => {
+    const { instance, owner, organizationId } = await withOwner();
+    const invitee = await signUp(instance, "invitee@example.com");
+    const invited = await invite(
+      instance,
+      owner.accessToken,
       organizationId,
-      email: invitee.email,
-      role: "member",
-    });
-    if (invited._tag !== "Invited") throw new Error("expected an invitation");
+      "invitee@example.com",
+      "admin",
+    );
+    const accept: OrganizationCommand = { _tag: "AcceptInvitation", token: invited.token };
 
-    await command(instance, inviteeToken, {
-      _tag: "AcceptInvitation",
-      token: invited.token,
-    });
-    const second = await failing(instance, inviteeToken, {
-      _tag: "AcceptInvitation",
-      token: invited.token,
-    });
+    const joined = await command(instance, invitee.accessToken, accept);
+    const second = await refused(instance, invitee.accessToken, accept);
 
+    expect(joined).toMatchObject({ _tag: "Joined", organization: { id: organizationId } });
     expect(second).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
+    expect(memberships(instance, organizationId)).toBe(2);
+    expect(memberships(instance, organizationId, "role = 'admin'")).toBe(1);
   });
 });
 
 describe("organization role guards", () => {
-  const withTeam = () => {
-    const instance = harness();
-    const owner = seedUser(instance.store, { id: "owner", email: "owner@example.com" });
-    const admin = seedUser(instance.store, { id: "admin", email: "admin@example.com" });
-    const member = seedUser(instance.store, { id: "member", email: "member@example.com" });
-    const organizationId = seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "Store",
-      members: [
-        { userId: owner.id, role: "owner" },
-        { userId: admin.id, role: "admin" },
-        { userId: member.id, role: "member" },
-      ],
+  it("keeps role changes, removals of the owner, and renames away from lesser roles", async () => {
+    const team = await withTeam();
+
+    const promote = await refused(team.instance, team.admin.accessToken, {
+      _tag: "ChangeMemberRole",
+      organizationId: team.organizationId,
+      userId: team.member.id,
+      role: "admin",
     });
-    for (const user of [owner, admin, member]) {
-      seedSession(instance.store, {
-        id: `session-${user.id}`,
-        userId: user.id,
-        organizationId,
-      });
+    const removeOwner = await refused(team.instance, team.admin.accessToken, {
+      _tag: "RemoveMember",
+      organizationId: team.organizationId,
+      userId: team.ownerId,
+    });
+    const rename = await refused(team.instance, team.member.accessToken, {
+      _tag: "UpdateOrganization",
+      organizationId: team.organizationId,
+      name: OrganizationName.make("Renamed"),
+    });
+
+    for (const failure of [promote, removeOwner, rename]) {
+      expect(failure).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
     }
-    const tokenFor = (user: typeof owner, role: "owner" | "admin" | "member") =>
-      accessTokenFor({
-        userId: user.id,
-        sessionId: `session-${user.id}`,
-        organizationId,
-        email: user.email,
-        role,
-      });
-    return {
-      instance,
-      organizationId,
-      owner,
-      admin,
-      member,
-      ownerToken: tokenFor(owner, "owner"),
-      adminToken: tokenFor(admin, "admin"),
-      memberToken: tokenFor(member, "member"),
-    };
-  };
-
-  it("lets only the owner change roles", async () => {
-    const team = withTeam();
-
-    const failure = await failing(team.instance, team.adminToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-      role: "admin",
-    });
-    expect(failure).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
-
-    const applied = await command(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-      role: "admin",
-    });
-    expect(applied).toEqual({ _tag: "Applied" });
-    expect(
-      team.instance.store.memberships.find((entry) => entry.userId === team.member.id)?.role,
-    ).toBe("admin");
+    expect(memberships(team.instance, team.organizationId, "role = 'member'")).toBe(1);
+    expect(memberships(team.instance, team.organizationId, "role = 'owner'")).toBe(1);
+    expect(team.instance.revocations).toEqual([]);
   });
 
   it("lets one of two owners be removed and then keeps the remaining owner", async () => {
-    const team = withTeam();
-    const promoted = await command(team.instance, team.ownerToken, {
+    const team = await withTeam();
+    await command(team.instance, team.owner.accessToken, {
       _tag: "ChangeMemberRole",
       organizationId: team.organizationId,
       userId: team.admin.id,
       role: "owner",
     });
-    expect(promoted).toEqual({ _tag: "Applied" });
-
-    const removed = await command(team.instance, team.ownerToken, {
+    const removed = await command(team.instance, team.owner.accessToken, {
       _tag: "RemoveMember",
       organizationId: team.organizationId,
       userId: team.admin.id,
     });
     expect(removed).toEqual({ _tag: "Applied" });
 
-    const demote = await failing(team.instance, team.ownerToken, {
+    const demote = await refused(team.instance, team.owner.accessToken, {
       _tag: "ChangeMemberRole",
       organizationId: team.organizationId,
-      userId: team.owner.id,
+      userId: team.ownerId,
       role: "member",
     });
+
     expect(demote).toMatchObject({ status: 409, code: "LAST_OWNER" });
-    expect(team.instance.store.memberships.filter((entry) => entry.role === "owner")).toHaveLength(
-      1,
-    );
+    expect(memberships(team.instance, team.organizationId, "role = 'owner'")).toBe(1);
   });
 
-  it("lets an admin remove a member but not the owner, closing only that member's sockets", async () => {
-    const team = withTeam();
+  it("ends a removed member's sessions and sockets, and nobody else's", async () => {
+    const team = await withTeam();
 
-    const refused = await failing(team.instance, team.adminToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.owner.id,
-    });
-    expect(refused).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
-    expect(team.instance.revocations).toEqual([]);
-
-    const applied = await command(team.instance, team.adminToken, {
+    const applied = await command(team.instance, team.admin.accessToken, {
       _tag: "RemoveMember",
       organizationId: team.organizationId,
       userId: team.member.id,
     });
     expect(applied).toEqual({ _tag: "Applied" });
-    expect(team.instance.store.memberships.some((entry) => entry.userId === team.member.id)).toBe(
-      false,
-    );
+    expect(memberships(team.instance, team.organizationId)).toBe(2);
     expect(team.instance.revocations).toEqual([
       { organizationId: team.organizationId, userId: team.member.id },
     ]);
+
+    const removed = await failing(team.instance, (auth) => auth.roster(team.member.accessToken));
+    expect(removed).toMatchObject({ status: 401, code: "SESSION_REVOKED" });
+    const kept = await run(team.instance, (auth) => auth.roster(team.admin.accessToken));
+    expect(kept.members).toHaveLength(2);
   });
 
   it("closes the live sockets of a demoted member but not of a promoted one", async () => {
-    const team = withTeam();
-    await command(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-      role: "admin",
-    });
-    await command(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-      role: "admin",
-    });
-    await failing(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.owner.id,
-      role: "member",
-    });
+    const team = await withTeam();
+    const changeRole = (userId: typeof team.ownerId, role: OrganizationRole) =>
+      command(team.instance, team.owner.accessToken, {
+        _tag: "ChangeMemberRole",
+        organizationId: team.organizationId,
+        userId,
+        role,
+      });
+
+    await changeRole(team.member.id, "admin");
     expect(team.instance.revocations).toEqual([]);
 
-    await command(team.instance, team.ownerToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.admin.id,
-      role: "member",
-    });
+    await changeRole(team.admin.id, "member");
     expect(team.instance.revocations).toEqual([
       { organizationId: team.organizationId, userId: team.admin.id },
     ]);
   });
 
   it("hides an organization the caller does not belong to", async () => {
-    const team = withTeam();
-    const outsider = seedUser(team.instance.store, {
-      id: "outsider",
-      email: "outsider@example.com",
-    });
-    const elsewhere = seedOrganization(team.instance.store, {
-      id: "organization-2",
-      name: "Elsewhere",
-      members: [{ userId: outsider.id, role: "owner" }],
-    });
+    const team = await withTeam();
+    const outsider = await signUp(team.instance, "outsider@example.com");
 
-    const failure = await failing(team.instance, team.memberToken, {
+    const failure = await refused(team.instance, team.member.accessToken, {
       _tag: "InviteMember",
-      organizationId: elsewhere,
+      organizationId: outsider.workspace.activeOrganization.id,
       email: EmailAddress.make("someone@example.com"),
       role: "member",
     });
     expect(failure).toMatchObject({ status: 404, code: "ORGANIZATION_NOT_FOUND" });
+    expect(count(team.instance, "SELECT count(*) AS total FROM auth_organization_invitation")).toBe(
+      2,
+    );
   });
 
-  it("lets an admin rename the organization but keeps a member out", async () => {
-    const team = withTeam();
-
-    const refused = await failing(team.instance, team.memberToken, {
-      _tag: "UpdateOrganization",
-      organizationId: team.organizationId,
-      name: OrganizationName.make("Renamed"),
-      slug: null,
-    });
-    expect(refused).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
-
-    const updated = await command(team.instance, team.adminToken, {
-      _tag: "UpdateOrganization",
-      organizationId: team.organizationId,
-      name: OrganizationName.make("Renamed"),
-      slug: OrganizationSlug.make("renamed"),
-    });
-    expect(updated).toEqual({
-      _tag: "Updated",
-      organization: {
-        id: team.organizationId,
-        name: "Renamed",
-        slug: "renamed",
-        role: "admin",
-      },
-    });
-  });
-
-  it("refuses a handle another store already uses", async () => {
-    const team = withTeam();
-    const stranger = seedUser(team.instance.store, {
-      id: "stranger",
-      email: "stranger@example.com",
-    });
-    seedOrganization(team.instance.store, {
-      id: "organization-taken",
-      name: "Taken",
-      slug: "taken",
-      members: [{ userId: stranger.id, role: "owner" }],
-    });
-
-    const failure = await failing(team.instance, team.ownerToken, {
-      _tag: "UpdateOrganization",
-      organizationId: team.organizationId,
-      name: OrganizationName.make("Store"),
-      slug: OrganizationSlug.make("taken"),
-    });
-    expect(failure).toMatchObject({ status: 409, code: "SLUG_TAKEN" });
-  });
-});
-
-describe("the organization roster", () => {
   it("keeps the pending invitation list away from plain members", async () => {
-    const { instance, token, organizationId } = withOwner();
-    const member = seedUser(instance.store, { id: "member", email: "member@example.com" });
-    instance.store.memberships.push({
-      organizationId,
-      userId: member.id,
-      role: "member",
-      createdAt: 1,
-    });
-    const memberSession = seedSession(instance.store, {
-      id: "session-member",
-      userId: member.id,
-      organizationId,
-    });
-
-    await command(instance, token, {
-      _tag: "InviteMember",
-      organizationId,
-      email: EmailAddress.make("someone@example.com"),
-      role: "member",
-    });
-
-    const asOwner = await run(instance, (auth) => auth.roster(token));
-    const asMember = await run(instance, (auth) =>
-      auth.roster(
-        accessTokenFor({
-          userId: member.id,
-          sessionId: memberSession.id,
-          organizationId,
-          email: member.email,
-          role: "member",
-        }),
-      ),
+    const team = await withTeam();
+    await invite(
+      team.instance,
+      team.owner.accessToken,
+      team.organizationId,
+      "someone@example.com",
+      "member",
     );
 
-    expect(asOwner.organization).toEqual({
-      id: organizationId,
-      name: "Owner Store",
-      slug: null,
-      role: "owner",
-    });
+    const asOwner = await run(team.instance, (auth) => auth.roster(team.owner.accessToken));
+    const asMember = await run(team.instance, (auth) => auth.roster(team.member.accessToken));
+
     expect(asOwner.invitations).toHaveLength(1);
-    expect(asOwner.members).toHaveLength(2);
     expect(asMember.invitations).toHaveLength(0);
-    expect(asMember.members).toHaveLength(2);
-  });
-
-  it("turns away a request without a session", async () => {
-    const instance = harness();
-    const failure = await run(instance, (auth) => Effect.flip(auth.roster("not-a-token")));
-    expect(failure).toMatchObject({ status: 401, code: "UNAUTHENTICATED" });
-  });
-
-  it("turns away a token whose session was revoked", async () => {
-    const { instance, token, session } = withOwner();
-    const index = instance.store.sessions.findIndex((entry) => entry.id === session.id);
-    instance.store.sessions[index] = { ...session, revokedAt: Date.now() };
-
-    const failure = await run(instance, (auth) => Effect.flip(auth.roster(token)));
-    expect(failure).toMatchObject({ status: 401, code: "SESSION_REVOKED" });
+    expect(asMember.organization).toMatchObject({ id: team.organizationId, role: "member" });
   });
 });

@@ -76,7 +76,7 @@ export const UploadHandlers = HttpApiBuilder.group(
       Effect.fn("UploadHandlers.extract")(function* ({ payload }) {
         const identity = yield* CurrentOrganization;
         const rateLimit = yield* runtime
-          .limitInvoiceExtraction(`${identity.organizationId}:${identity.user.id}`)
+          .limitInvoiceExtraction(`${identity.organizationId}:${identity.userId}`)
           .pipe(Effect.orDie);
         if (!rateLimit.success) {
           yield* retryAfter(RATE_LIMITS.invoiceExtraction.period * 1_000);

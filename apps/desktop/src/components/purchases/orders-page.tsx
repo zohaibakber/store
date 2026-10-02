@@ -3,35 +3,19 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  createColumnHelper,
-  functionalUpdate,
-  metaHelper,
-  rowPaginationFeature,
-  rowSortingFeature,
-  tableFeatures,
-  useTable,
-  type ColumnFiltersState,
-  type PaginationState,
-  type SortingState,
-  type Updater,
-} from "@tanstack/react-table";
-import * as Schema from "effect/Schema";
+import { createColumnHelper } from "@tanstack/react-table";
 import * as React from "react";
 
 import { formatInvoiceTime } from "@/components/invoices/invoice-time";
-import {
-  DataTable,
-  DataTableColumnHeader,
-  DataTableContent,
-  DataTableFilter,
-  DataTableFooter,
-  DataTablePagination,
-  type DataTableColumnMeta,
-} from "@/components/shared/data-table";
+import { DataTable, DataTableColumnHeader, DataTableFilter } from "@/components/shared/data-table";
 import { FrameCard } from "@/components/shared/frame-card";
+import {
+  ListTableContent,
+  listView,
+  useListTable,
+  type ListTableFeatures,
+  type ListView,
+} from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +30,6 @@ import {
 } from "@/components/ui/empty";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { usePageInRange } from "@/hooks/use-page-in-range";
 import { EMPTY, formatDateTime, formatNumber } from "@/lib/format";
 import {
   PURCHASE_ORDER_SORT_COLUMNS,
@@ -56,23 +39,26 @@ import {
   useSuspensePurchaseOrderListCount,
   useSuspensePurchaseOrderPage,
   type PurchaseOrderListRequest,
+  type PurchaseOrderSortColumn,
   type PurchaseOrderTab,
 } from "@/lib/inventory";
-import { cn } from "@/lib/utils";
 
 import { PurchasingGateNotice } from "./gate-notice";
 import { OrderBuilderSheet } from "./order-builder";
-import {
-  DEFAULT_PURCHASE_ORDER_LIST_VIEW,
-  formatOrderNumber,
-  orderProgress,
-  orderUnits,
-  PURCHASE_ORDER_PAGE_SIZES,
-  UNKNOWN_SUPPLIER,
-  type PurchaseOrderListView,
-  type PurchaseOrderPageSize,
-} from "./presentation";
+import { formatOrderNumber, orderProgress, orderUnits, UNKNOWN_SUPPLIER } from "./presentation";
 import { ProgressBadge } from "./progress-badge";
+
+export const purchaseOrderList = listView({
+  sortColumns: PURCHASE_ORDER_SORT_COLUMNS,
+  sort: "createdAt",
+  desc: true,
+});
+
+export const DEFAULT_PURCHASE_ORDER_TAB: PurchaseOrderTab = "open";
+
+export type PurchaseOrderListView = ListView<PurchaseOrderSortColumn> & {
+  readonly tab: PurchaseOrderTab;
+};
 
 const TAB_LABEL = {
   open: "Open",
@@ -97,17 +83,7 @@ const TAB_EMPTY = {
 
 type OrderRow = PurchaseOrder & { readonly supplierName: string };
 
-const features = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSortingFeature,
-  columnMeta: metaHelper<DataTableColumnMeta>(),
-});
-
-const columnHelper = createColumnHelper<typeof features, OrderRow>();
-
-const SUPPLIER_COLUMN = "supplier";
+const columnHelper = createColumnHelper<ListTableFeatures, OrderRow>();
 
 const columns = columnHelper.columns([
   columnHelper.accessor("orderNumber", {
@@ -126,7 +102,7 @@ const columns = columnHelper.columns([
     meta: { label: "Order" },
   }),
   columnHelper.accessor("supplierName", {
-    id: SUPPLIER_COLUMN,
+    id: "supplier",
     header: "Supplier",
     cell: ({ getValue }) => <span className="block max-w-64 truncate">{getValue()}</span>,
     enableSorting: false,
@@ -179,74 +155,6 @@ const columns = columnHelper.columns([
   }),
 ]);
 
-const isSortColumn = Schema.is(Schema.Literals(PURCHASE_ORDER_SORT_COLUMNS));
-
-const isText = Schema.is(Schema.String);
-
-const viewWithFilters = (
-  view: PurchaseOrderListView,
-  filters: ColumnFiltersState,
-): PurchaseOrderListView => {
-  const value = filters.find((filter) => filter.id === SUPPLIER_COLUMN)?.value;
-  return { ...view, page: 0, q: isText(value) && value.trim() !== "" ? value : undefined };
-};
-
-const viewWithSorting = (
-  view: PurchaseOrderListView,
-  sorting: SortingState,
-): PurchaseOrderListView => {
-  const [first] = sorting;
-  return first && isSortColumn(first.id)
-    ? { ...view, sort: first.id, desc: first.desc, page: 0 }
-    : {
-        ...view,
-        sort: DEFAULT_PURCHASE_ORDER_LIST_VIEW.sort,
-        desc: DEFAULT_PURCHASE_ORDER_LIST_VIEW.desc,
-        page: 0,
-      };
-};
-
-const pageSizeFrom = (size: number): PurchaseOrderPageSize =>
-  PURCHASE_ORDER_PAGE_SIZES.find((candidate) => candidate === size) ??
-  DEFAULT_PURCHASE_ORDER_LIST_VIEW.size;
-
-const viewWithPagination = (
-  view: PurchaseOrderListView,
-  pagination: PaginationState,
-): PurchaseOrderListView => {
-  const size = pageSizeFrom(pagination.pageSize);
-  return { ...view, size, page: size === view.size ? Math.max(0, pagination.pageIndex) : 0 };
-};
-
-function useOrdersTable(input: {
-  readonly rows: ReadonlyArray<OrderRow>;
-  readonly total: number;
-  readonly view: PurchaseOrderListView;
-  readonly onViewChange: (view: PurchaseOrderListView) => void;
-}) {
-  const { view, onViewChange } = input;
-  const pagination: PaginationState = { pageIndex: view.page, pageSize: view.size };
-  const sorting: SortingState = [{ id: view.sort, desc: view.desc }];
-  const columnFilters: ColumnFiltersState = view.q ? [{ id: SUPPLIER_COLUMN, value: view.q }] : [];
-  return useTable({
-    features,
-    columns,
-    data: input.rows,
-    getRowId: (order) => order.id,
-    manualPagination: true,
-    manualSorting: true,
-    manualFiltering: true,
-    rowCount: input.total,
-    state: { pagination, sorting, columnFilters },
-    onPaginationChange: (updater: Updater<PaginationState>) =>
-      onViewChange(viewWithPagination(view, functionalUpdate(updater, pagination))),
-    onSortingChange: (updater: Updater<SortingState>) =>
-      onViewChange(viewWithSorting(view, functionalUpdate(updater, sorting))),
-    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
-      onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters))),
-  });
-}
-
 function TabCount({ tab }: { readonly tab: PurchaseOrderTab }) {
   return <span className="tabular-nums">{formatNumber(useSuspensePurchaseOrderCount(tab))}</span>;
 }
@@ -288,13 +196,6 @@ export function PurchaseOrdersPage({
   const gate = usePurchasingGate();
   const orders = useSuspensePurchaseOrderPage(request);
   const total = useSuspensePurchaseOrderListCount(request.filters);
-  usePageInRange({
-    page: view.page,
-    pageSize: view.size,
-    total,
-    settled: !loading,
-    onPageChange: (page) => onViewChange({ ...view, page }),
-  });
   const rows = React.useMemo(
     (): ReadonlyArray<OrderRow> =>
       orders.map((order) => ({
@@ -303,7 +204,18 @@ export function PurchaseOrdersPage({
       })),
     [orders, supplierNames],
   );
-  const table = useOrdersTable({ rows, total, view, onViewChange });
+  const table = useListTable({
+    list: purchaseOrderList,
+    columns,
+    rows,
+    total,
+    getRowId: (order) => order.id,
+    view,
+    onViewChange,
+    loading,
+    filters: { supplier: view.q },
+    viewWithFilters: (filters) => ({ ...view, q: filters.supplier }),
+  });
   const empty = TAB_EMPTY[request.filters.tab];
   const searching = request.filters.supplierIds !== undefined;
 
@@ -366,13 +278,7 @@ export function PurchaseOrdersPage({
             </Empty>
           </FrameCard>
         ) : (
-          <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
-            <DataTableContent>
-              <DataTableFooter>
-                <DataTablePagination pageSizes={PURCHASE_ORDER_PAGE_SIZES} />
-              </DataTableFooter>
-            </DataTableContent>
-          </div>
+          <ListTableContent loading={loading} />
         )}
       </DataTable>
       <OrderBuilderSheet onOpenChange={onBuilderOpenChange} open={builderOpen} />

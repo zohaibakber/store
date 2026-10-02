@@ -10,14 +10,14 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
-import { Suspense } from "react";
 import type * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
 import { WorkspaceLogo } from "@/components/app/workspace-logo";
+import { restockActionCount } from "@/components/insights/presentation";
 import {
   Sidebar,
   SidebarContent,
@@ -34,7 +34,7 @@ import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;
-  const count = counts === undefined ? 0 : counts.out + counts.critical + counts.low;
+  const count = counts === undefined ? 0 : restockActionCount(counts);
   if (count === 0) return null;
   return (
     <SidebarMenuBadge aria-label={`${count} products need restocking`}>
@@ -51,11 +51,9 @@ function RestockCount() {
 function RestockCountSynced() {
   if (useFirstSyncPending()) return null;
   return (
-    <AppErrorBoundary fallback={null}>
-      <Suspense fallback={null}>
-        <RestockCountReady />
-      </Suspense>
-    </AppErrorBoundary>
+    <AsyncBoundary fallback={null}>
+      <RestockCountReady />
+    </AsyncBoundary>
   );
 }
 

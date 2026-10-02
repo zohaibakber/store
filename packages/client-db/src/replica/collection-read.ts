@@ -12,7 +12,6 @@ import type {
   ReplicaRow,
   ReplicaSubsetRead,
   ReplicaSubsetReader,
-  SqliteCollectionDependencies,
 } from "./types";
 
 export type PlannedRead<Row extends InventoryCollectionRow> = {
@@ -20,19 +19,28 @@ export type PlannedRead<Row extends InventoryCollectionRow> = {
   readonly rows: ReadonlyArray<Row>;
 };
 
+export type ReadSubset = (spec: InventorySubsetSpec) => Effect.Effect<ReplicaSubsetRead, unknown>;
+
+export const interruptibleReads =
+  (reader: ReplicaSubsetReader): ReadSubset =>
+  (spec) =>
+    Effect.tryPromise({
+      try: (signal) => reader.readSubset(spec, { signal }),
+      catch: (cause) => cause,
+    });
+
 const afterKey = (where: SubsetPredicate | undefined, after: string | undefined) => {
   if (after === undefined) return where;
   const cursor: SubsetPredicate = { _tag: "compare", column: "id", op: "gt", value: after };
   return where ? { _tag: "and" as const, predicates: [where, cursor] } : cursor;
 };
 
-export const drainSubset = async (
-  reader: ReplicaSubsetReader,
+export const drainSubset = Effect.fnUntraced(function* (
+  read: ReadSubset,
   source: InventoryCollectionSource,
   where: SubsetPredicate | undefined,
   pageRows: number,
-  signal?: AbortSignal,
-): Promise<ReplicaSubsetRead> => {
+) {
   const rows: Array<ReplicaRow> = [];
   let stamp: ReplicaQueryStamp | undefined;
   let after: string | undefined;
@@ -44,10 +52,7 @@ export const drainSubset = async (
       limit: pageRows,
       offset: 0,
     };
-    const page = await reader.readSubset(
-      pageWhere ? { ...spec, where: pageWhere } : spec,
-      signal === undefined ? undefined : { signal },
-    );
+    const page = yield* read(pageWhere ? { ...spec, where: pageWhere } : spec);
     if (
       stamp !== undefined &&
       (page.stamp.generationId !== stamp.generationId ||
@@ -61,54 +66,37 @@ export const drainSubset = async (
     stamp ??= page.stamp;
     rows.push(...page.rows);
     const last = page.rows.at(-1)?.["id"];
-    if (page.rows.length < pageRows || !Predicate.isString(last)) return { stamp, rows };
+    if (page.rows.length < pageRows || !Predicate.isString(last)) {
+      return { stamp, rows } satisfies ReplicaSubsetRead;
+    }
     after = last;
   }
-};
+});
 
 const decoded = <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   read: ReplicaSubsetRead,
-): PlannedRead<Row> => ({
-  stamp: read.stamp,
-  rows: Effect.runSync(descriptor.decodeRows(read.rows)),
-});
+): Effect.Effect<PlannedRead<Row>, unknown> =>
+  Effect.map(descriptor.decodeRows(read.rows), (rows) => ({ stamp: read.stamp, rows }));
 
-export const readCollectionSubset = async <Row extends InventoryCollectionRow>(
+export const readCollectionSubset = <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
-  dependencies: SqliteCollectionDependencies,
+  read: ReadSubset,
   options: LoadSubsetOptions,
-  signal?: AbortSignal,
-): Promise<PlannedRead<Row>> => {
-  const plan = Effect.runSync(planInventoryRead(descriptor, options));
-  const read =
-    plan._tag === "window"
-      ? await dependencies.executor.readSubset(
-          plan.spec,
-          signal === undefined ? undefined : { signal },
-        )
-      : await drainSubset(
-          dependencies.executor,
-          descriptor.source,
-          plan.where,
-          descriptor.maximumRows,
-          signal,
-        );
-  return decoded(descriptor, read);
-};
-
-export const readCollectionSource = async <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  dependencies: SqliteCollectionDependencies,
-  signal?: AbortSignal,
-): Promise<PlannedRead<Row>> =>
-  decoded(
-    descriptor,
-    await drainSubset(
-      dependencies.executor,
-      descriptor.source,
-      undefined,
-      descriptor.maximumRows,
-      signal,
+): Effect.Effect<PlannedRead<Row>, unknown> =>
+  planInventoryRead(descriptor, options).pipe(
+    Effect.flatMap((plan) =>
+      plan._tag === "window"
+        ? read(plan.spec)
+        : drainSubset(read, descriptor.source, plan.where, descriptor.maximumRows),
     ),
+    Effect.flatMap((subset) => decoded(descriptor, subset)),
+  );
+
+export const readCollectionSource = <Row extends InventoryCollectionRow>(
+  descriptor: InventoryCollectionDescriptor<Row>,
+  read: ReadSubset,
+): Effect.Effect<PlannedRead<Row>, unknown> =>
+  drainSubset(read, descriptor.source, undefined, descriptor.maximumRows).pipe(
+    Effect.flatMap((subset) => decoded(descriptor, subset)),
   );

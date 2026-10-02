@@ -10,14 +10,14 @@ import { colors, space } from "@/theme/tokens";
 import { Text } from "@/ui/text";
 
 import {
-  type ExecutablePlan,
+  commitFailureMessage,
   identityOf,
   useCategoryChoices,
   useCatalogMatcher,
   useScanCommit,
 } from "../catalog";
 import { useScanDrafts } from "../drafts";
-import type { MatchedProduct } from "../fields";
+import type { ExecutablePlan, MatchedProduct } from "../fields";
 import type { ScanIdentity } from "../matching";
 import { DraftRow, type DraftRowItem } from "../review/draft-row";
 import { Banner, CommitBar } from "../review/parts";
@@ -43,9 +43,6 @@ const renderRow = ({ item }: { readonly item: DraftRowItem }) => (
 );
 
 const rowKey = (item: DraftRowItem) => item.id;
-
-const failureMessage = (cause: unknown) =>
-  cause instanceof Error && cause.message ? cause.message : "Could not save on this phone.";
 
 function BatchList({ catalog }: { readonly catalog: BatchCatalog | null }) {
   const insets = useSafeAreaInsets();
@@ -89,7 +86,7 @@ function BatchList({ catalog }: { readonly catalog: BatchCatalog | null }) {
         saved += 1;
       }
     } catch (cause) {
-      setError(failureMessage(cause));
+      setError(commitFailureMessage(cause));
     }
     setSaving(false);
     if (saved === 0) return;

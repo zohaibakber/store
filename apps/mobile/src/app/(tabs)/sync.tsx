@@ -1,12 +1,12 @@
 import { StyleSheet, View } from "react-native";
 
-import { useSyncRefresh } from "@/features/sync/sync-now";
 import { SyncOverview } from "@/features/sync/sync-overview";
 import { AccountAvatar, TabHeader } from "@/features/tab-header";
+import { useSyncNow } from "@/inventory";
 import { colors } from "@/theme/tokens";
 
 export default function SyncScreen() {
-  const { syncNow } = useSyncRefresh();
+  const syncNow = useSyncNow();
   return (
     <View style={styles.screen}>
       <TabHeader title="Sync" trailing={<AccountAvatar />} />

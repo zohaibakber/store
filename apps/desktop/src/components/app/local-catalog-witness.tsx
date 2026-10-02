@@ -1,6 +1,6 @@
-import { Suspense, useEffect } from "react";
+import { useEffect } from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
 import { useCatalogIsReady } from "@/lib/inventory";
@@ -38,11 +38,9 @@ export function LocalCatalogWitness({ workspace }: { readonly workspace: Workspa
   switch (workspace._tag) {
     case "Local":
       return (
-        <AppErrorBoundary fallback={null}>
-          <Suspense fallback={null}>
-            <OpenLocalCatalog />
-          </Suspense>
-        </AppErrorBoundary>
+        <AsyncBoundary fallback={null}>
+          <OpenLocalCatalog />
+        </AsyncBoundary>
       );
     case "Organization":
       return <ClosedLocalCatalog />;

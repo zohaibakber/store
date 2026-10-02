@@ -46,7 +46,6 @@ import {
   queueAdmittedCommand,
   admitLocalCommand,
   settleUploadClaim,
-  verifyAuthorityHeadNotBehind,
   verifyReplicaIncarnation,
   type ClaimNextUploadInput,
 } from "../commands";
@@ -76,8 +75,7 @@ import {
   stepSnapshotActivation,
   type SnapshotStep,
 } from "../import";
-import { listPendingMarks } from "../pending";
-import { announcementOf } from "../registration";
+import { syncCursorOf } from "../registration";
 import type { ReplicaDb } from "../sql-client/drizzle";
 import {
   runReplicaTransaction,
@@ -89,7 +87,6 @@ import {
   type ReplicaStoreContract,
   type ReplicaStoreError,
   type SnapshotActivation,
-  type VerifyAuthorityInput,
 } from "../store";
 import {
   BULK_CLEAR_IDLE_MILLIS,
@@ -105,6 +102,7 @@ import {
   refreshPlannerStats,
   type BulkClear,
 } from "./generation";
+import { listPendingMarks } from "./pending-rows";
 import {
   maintainReplicaPlanner,
   PLANNER_CHECK_INTERVAL,
@@ -129,7 +127,7 @@ type CheckpointWindow = {
   readonly prior: WindowSettings | undefined;
 };
 
-export type InTransactionAuthority = (
+type InTransactionAuthority = (
   tx: ReplicaDb,
   request: SyncSubmitCommandRequest,
 ) => Effect.Effect<SyncSubmitCommandResult, unknown>;
@@ -621,15 +619,7 @@ const makeSqliteReplicaStoreInternals = (
     const store = {
       readSyncCursor: () =>
         withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
-          loadReplicaState(tx).pipe(
-            Effect.map((state) => ({
-              epoch: state.epoch,
-              appliedCommitSequence: state.appliedCommitSequence,
-              replicaId: state.replicaId,
-              bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
-              ...announcementOf(state),
-            })),
-          ),
+          loadReplicaState(tx).pipe(Effect.map(syncCursorOf)),
         ),
       adoptRegistration: (authority: RegisterReplicaResult, registeredAt: number) =>
         withTx("SqliteReplicaStore.adoptRegistration", (tx) =>
@@ -687,12 +677,6 @@ const makeSqliteReplicaStoreInternals = (
           Effect.andThen(requestCleanup),
         ),
       activateSnapshot,
-      verifyAuthority: (input: VerifyAuthorityInput) =>
-        withTx("SqliteReplicaStore.verifyAuthority", (tx) =>
-          verifyReplicaIncarnation(tx, input.incarnation).pipe(
-            Effect.andThen(verifyAuthorityHeadNotBehind(tx, input.horizon)),
-          ),
-        ),
       markCoverageRepair: (subscription: SyncSubscription) =>
         withTx("SqliteReplicaStore.markCoverageRepair", (tx) =>
           markCoverageRepair(tx, subscription),

@@ -1,291 +1,181 @@
-import { AccessToken, InvitationToken, RefreshToken, TokenSet } from "@store/auth";
+import { AccessToken, RefreshToken, TokenSet, sessionEndingCodes } from "@store/auth";
+import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  MemoryTokenStore,
-  RequestError,
-  SessionHttp,
-  cookieSessionNeedsRefresh,
-  layerSessionHttp,
-  refreshTokenNeedsRefresh,
-  requestErrorFromPayload,
-  type SessionCredential,
-  type SessionHttpApi,
-} from "../src/session-http";
+import { loadSessionSnapshot } from "../src/session-broker";
+import { SessionHttp, layerSessionHttp, sessionFetch } from "../src/session-http";
 
-const API = "http://localhost:8787";
-const AUTH = "http://localhost:8788";
+const API = "https://api.example.test";
+const AUTH = "https://auth.example.test";
+const REFRESH = `POST ${AUTH}/v1/session/refresh`;
+const SESSION = `GET ${API}/api/auth/session`;
 
-const workspace = {
+const workspace = decodeAuthenticatedWorkspace({
   status: "authenticated",
   user: { id: "user-1", name: "Owner", email: "owner@example.com", image: null },
-  activeOrganization: { id: "org-1", name: "Store", slug: null, role: "owner" },
-  organizations: [{ id: "org-1", name: "Store", slug: null, role: "owner" }],
+  activeOrganization: { id: "org-1", name: "Store", role: "owner" },
+  organizations: [{ id: "org-1", name: "Store", role: "owner" }],
   isOnline: true,
-};
-
-const tokens = (accessToken: string, accessExpiresAt: number) =>
-  TokenSet.make({
-    accessToken: AccessToken.make(accessToken),
-    accessExpiresAt,
-    refreshToken: RefreshToken.make(`${accessToken}.secret`),
-    refreshExpiresAt: accessExpiresAt + 60_000,
-  });
-
-const refreshed = (accessToken: string) =>
-  Response.json({ ...tokens(accessToken, Date.now() + 120_000), workspace });
-
-type Sent = {
-  readonly route: string;
-  readonly authorization: string | null;
-  readonly body: string;
-};
-
-const upstream = (routes: Record<string, (sent: Sent) => Response | Promise<Response>>) => {
-  const sent: Array<Sent> = [];
-  const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = new Request(input, init);
-    const url = new URL(request.url);
-    const record = {
-      route: `${request.method} ${url.origin}${url.pathname}`,
-      authorization: request.headers.get("authorization"),
-      body: await request.text(),
-    };
-    sent.push(record);
-    const route = routes[record.route];
-    if (!route) throw new TypeError(`Unexpected request: ${record.route}`);
-    return route(record);
-  };
-  return { fetch, sent, count: (route: string) => sent.filter((s) => s.route === route).length };
-};
-
-const session = (
-  server: ReturnType<typeof upstream>,
-  options: {
-    readonly credential?: SessionCredential;
-    readonly initial?: TokenSet | null;
-    readonly apiBaseUrl?: string;
-    readonly authBaseUrl?: string;
-    readonly rejected?: () => void;
-  } = {},
-) => {
-  const store = new MemoryTokenStore();
-  store.set(options.initial ?? null);
-  const runtime = ManagedRuntime.make(
-    layerSessionHttp({
-      apiBaseUrl: options.apiBaseUrl ?? API,
-      authBaseUrl: options.authBaseUrl ?? AUTH,
-      tokens: store,
-      credential: options.credential ?? "refreshToken",
-      onRefreshed: () => Effect.void,
-      onRejected: Effect.sync(() => options.rejected?.()),
-    }).pipe(
-      Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, server.fetch)),
-    ),
-  );
-  const use = <A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E>) =>
-    runtime.runPromise(SessionHttp.use(f));
-  return { store, runtime, use };
-};
-
-describe("session-http helpers", () => {
-  it("applies cookie vs refresh-token refresh gates", () => {
-    const now = Date.now();
-    const fresh = tokens("access", now + 60_000);
-    const stale = tokens("access", now + 1_000);
-    expect(cookieSessionNeedsRefresh(null, false, now)).toBe(true);
-    expect(cookieSessionNeedsRefresh(fresh, false, now)).toBe(false);
-    expect(cookieSessionNeedsRefresh(fresh, true, now)).toBe(true);
-    expect(refreshTokenNeedsRefresh(stale, false, now)).toBe(true);
-    expect(refreshTokenNeedsRefresh(fresh, false, now)).toBe(false);
-    expect(refreshTokenNeedsRefresh(null, false, now)).toBe(false);
-    expect(refreshTokenNeedsRefresh(fresh, true, now)).toBe(true);
-    expect(refreshTokenNeedsRefresh(null, true, now)).toBe(false);
-  });
-
-  it("parses nested and flat request failures", () => {
-    expect(requestErrorFromPayload({ message: "Nope." }, 403)).toMatchObject({
-      message: "Nope.",
-      status: 403,
-    });
-    expect(
-      requestErrorFromPayload({ error: { code: "FORBIDDEN", message: "Denied." } }, 403),
-    ).toMatchObject({
-      message: "Denied.",
-      status: 403,
-      code: "FORBIDDEN",
-    });
-    expect(requestErrorFromPayload(null, 500)).toMatchObject({
-      message: "Request failed (500)",
-      status: 500,
-    });
-  });
 });
 
-describe("SessionHttp", () => {
-  it("injects the bearer token and parses JSON failures", async () => {
-    const server = upstream({
-      [`GET ${API}/api/auth/session`]: () =>
-        Response.json({ message: "This session is not authorized." }, { status: 403 }),
-    });
-    const client = session(server, {
-      credential: "cookie",
-      initial: tokens("access", Date.now() + 60_000),
-      apiBaseUrl: `${API}/api/`,
-      authBaseUrl: `${AUTH}/`,
-    });
-
-    await expect(client.use((s) => s.workspace)).rejects.toBeInstanceOf(RequestError);
-    await expect(client.use((s) => Effect.succeed(s.authBaseUrl))).resolves.toBe(AUTH);
-    expect(server.sent).toEqual([
-      { route: `GET ${API}/api/auth/session`, authorization: "Bearer access", body: "" },
-    ]);
+const tokens = (name: string) =>
+  TokenSet.make({
+    accessToken: AccessToken.make(name),
+    accessExpiresAt: Date.now() + 600_000,
+    refreshToken: RefreshToken.make(`${name}.secret`),
+    refreshExpiresAt: Date.now() + 86_400_000,
   });
 
-  it("coalesces concurrent refreshes", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const server = upstream({
-      [`POST ${AUTH}/v1/session/refresh`]: async () => {
-        await gate;
-        return refreshed("next");
-      },
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 1_000) });
+type Route = () => Response | Promise<Response>;
 
-    const first = client.use((s) => s.ensureFreshAccess());
-    const second = client.use((s) => s.ensureFreshAccess());
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    release();
-    const [a, b] = await Promise.all([first, second]);
-
-    expect(server.count(`POST ${AUTH}/v1/session/refresh`)).toBe(1);
-    expect(a?.accessToken).toBe("next");
-    expect(b?.accessToken).toBe("next");
-    expect(client.store.get()?.accessToken).toBe("next");
-  });
-
-  it("sends typed organization commands as JSON with the bearer token", async () => {
-    const server = upstream({
-      [`POST ${AUTH}/v1/organization`]: () =>
-        Response.json({
-          _tag: "Joined",
-          organization: { id: "org-2", name: "Other", slug: null, role: "member" },
+const harness = (routes: Readonly<Record<string, Route>>) => {
+  const sent: Array<string> = [];
+  const outcome = { rejected: 0, forgotten: 0 };
+  let local: WorkspaceSnapshot = { ...workspace, isOnline: false };
+  const send: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const route = `${request.method} ${request.url}`;
+    sent.push(route);
+    const respond = routes[route];
+    if (respond === undefined) throw new TypeError(`Unexpected request: ${route}`);
+    return respond();
+  };
+  const runtime = ManagedRuntime.make(
+    layerSessionHttp({
+      apiBaseUrl: API,
+      authBaseUrl: AUTH,
+      credential: "refreshToken",
+      onRefreshed: (refreshed) =>
+        Effect.sync(() => {
+          local = refreshed.workspace;
         }),
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 60_000) });
-
-    const result = await client.use((s) =>
-      s.organize({ _tag: "AcceptInvitation", token: InvitationToken.make("invite-token") }),
+      onRejected: Effect.sync(() => {
+        outcome.rejected += 1;
+      }),
+    }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
+    ),
+  );
+  const seeded = runtime.runPromise(
+    SessionHttp.use((session) => session.setTokens(tokens("issued"))),
+  );
+  const held = () => runtime.runPromise(SessionHttp.use((session) => session.tokens));
+  const load = async () => {
+    await seeded;
+    return runtime.runPromise(
+      loadSessionSnapshot({
+        getLocalSnapshot: () => local,
+        publish: (snapshot) => {
+          local = snapshot;
+          return snapshot;
+        },
+        clearAuthenticated: Effect.sync(() => {
+          outcome.forgotten += 1;
+        }),
+      }),
     );
+  };
+  return { seeded, held, sent, outcome, runtime, load };
+};
 
-    expect(result).toMatchObject({ _tag: "Joined", organization: { id: "org-2" } });
-    expect(server.sent).toEqual([
-      {
-        route: `POST ${AUTH}/v1/organization`,
-        authorization: "Bearer access",
-        body: '{"_tag":"AcceptInvitation","token":"invite-token"}',
-      },
-    ]);
+const denied = () => Response.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
+
+const authFailure = (status: number, code: string) => () =>
+  Response.json({ error: { code, message: "The session has expired." } }, { status });
+
+const page = (status: number) => () =>
+  new Response("<html><body>Sign in to this network</body></html>", {
+    status,
+    headers: { "content-type": "text/html" },
   });
 
-  it("forces one coalesced refresh and replays once after a 401", async () => {
-    const server = upstream({
-      [`POST ${AUTH}/v1/session/refresh`]: () => refreshed("refreshed"),
-      [`GET ${API}/api/auth/session`]: (sent) =>
-        sent.authorization === "Bearer refreshed"
-          ? Response.json(workspace)
-          : Response.json({ message: "Expired" }, { status: 401 }),
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 60_000) });
+const survivable: ReadonlyArray<readonly [string, Route]> = [
+  ["an HTML 403", page(403)],
+  ["an HTML 401", page(401)],
+  ["a 401 without our error body", () => Response.json({}, { status: 401 })],
+  ["a 401 with a code that does not end a session", authFailure(401, "INVALID_CREDENTIALS")],
+  ["a 403 carrying a session-ending code", authFailure(403, "INVALID_REFRESH_TOKEN")],
+  ["a 503", authFailure(503, "AUTH_UNAVAILABLE")],
+  ["a network failure", () => Promise.reject(new TypeError("fetch failed"))],
+  ["a refresh that never answers", () => new Promise<Response>(() => undefined)],
+  ["a successful rotation", () => Response.json({ ...tokens("rotated"), workspace })],
+];
 
-    await expect(client.use((s) => s.workspace)).resolves.toMatchObject({
-      status: "authenticated",
-    });
-
-    expect(server.sent.map((s) => [s.route, s.authorization])).toEqual([
-      [`GET ${API}/api/auth/session`, "Bearer access"],
-      [`POST ${AUTH}/v1/session/refresh`, null],
-      [`GET ${API}/api/auth/session`, "Bearer refreshed"],
-    ]);
+const elapse = async <A>(pending: Promise<A>) => {
+  let settled = false;
+  const tracked = pending.finally(() => {
+    settled = true;
   });
+  while (!settled) await vi.advanceTimersByTimeAsync(1_000);
+  return tracked;
+};
 
-  it("replays late 401s from the prior token without another rotation", async () => {
-    let delay = 0;
-    const server = upstream({
-      [`POST ${AUTH}/v1/session/refresh`]: () => refreshed("next"),
-      [`GET ${API}/api/auth/session`]: async (sent) => {
-        if (sent.authorization === "Bearer next") return Response.json(workspace);
-        delay += 10;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        return Response.json({ message: "Expired" }, { status: 401 });
-      },
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 60_000) });
+afterEach(() => {
+  vi.useRealTimers();
+});
 
-    await Promise.all(Array.from({ length: 3 }, () => client.use((s) => s.workspace)));
+describe("session authority", () => {
+  it("only a decoded session-ending refresh failure clears the session", async () => {
+    for (const code of sessionEndingCodes) {
+      const test = harness({ [SESSION]: denied, [REFRESH]: authFailure(401, code) });
 
-    expect(server.count(`POST ${AUTH}/v1/session/refresh`)).toBe(1);
-    expect(server.count(`GET ${API}/api/auth/session`)).toBe(6);
+      const snapshot = await test.load();
+
+      expect(snapshot.status, code).toBe("unauthenticated");
+      expect(await test.held(), code).toBeNull();
+      expect(test.outcome, code).toEqual({ rejected: 1, forgotten: 1 });
+      await test.runtime.dispose();
+    }
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    for (const [name, respond] of survivable) {
+      const test = harness({ [SESSION]: denied, [REFRESH]: respond });
+
+      const snapshot = await elapse(test.load());
+
+      expect(test.sent, name).toContain(REFRESH);
+      expect(snapshot.status, name).toBe("authenticated");
+      expect((await test.held())?.refreshToken, name).toBeDefined();
+      expect(test.outcome, name).toEqual({ rejected: 0, forgotten: 0 });
+      await elapse(test.runtime.dispose());
+    }
   });
 
   it("discards a refresh that completes after the session was cleared", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
+    let release = (_response: Response) => {};
+    const test = harness({
+      [REFRESH]: () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
     });
-    const server = upstream({
-      [`POST ${AUTH}/v1/session/refresh`]: async () => {
-        await gate;
-        return refreshed("next");
-      },
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 1_000) });
 
-    const pending = client.use((s) => s.ensureFreshAccess());
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    await client.use((s) => s.setTokens(null));
-    release();
+    await test.seeded;
+    const pending = test.runtime.runPromise(
+      SessionHttp.use((session) => session.ensureFreshAccess(true)),
+    );
+    await vi.waitFor(() => expect(test.sent).toEqual([REFRESH]));
+    await test.runtime.runPromise(SessionHttp.use((session) => session.setTokens(null)));
+    release(Response.json({ ...tokens("rotated"), workspace }));
 
     await expect(pending).resolves.toBeNull();
-    expect(client.store.get()).toBeNull();
+    expect(await test.held()).toBeNull();
   });
 
-  it("does not replay when refresh is explicitly rejected", async () => {
-    let rejections = 0;
-    const server = upstream({
-      [`POST ${AUTH}/v1/session/refresh`]: () => Response.json({}, { status: 401 }),
-      [`GET ${API}/api/auth/session`]: () => Response.json({ message: "Expired" }, { status: 401 }),
-    });
-    const client = session(server, {
-      initial: tokens("access", Date.now() + 60_000),
-      rejected: () => {
-        rejections += 1;
-      },
-    });
+  it("refuses every origin but the API before touching the session", async () => {
+    const test = harness({});
+    const authenticatedFetch = sessionFetch((effect, options) =>
+      test.runtime.runPromise(effect, options),
+    );
 
-    await expect(client.use((s) => s.workspace)).rejects.toMatchObject({ status: 401 });
-    expect(server.count(`GET ${API}/api/auth/session`)).toBe(1);
-    expect(rejections).toBe(1);
-    expect(client.store.get()).toBeNull();
-  });
+    await expect(authenticatedFetch("https://elsewhere.example.test/x")).rejects.toThrow(TypeError);
+    await expect(authenticatedFetch(new URL("/v1/session", AUTH))).rejects.toThrow(TypeError);
 
-  it("rejects malformed successful JSON at the HTTP boundary", async () => {
-    const server = upstream({
-      [`GET ${API}/api/auth/session`]: () => new Response("not-json", { status: 200 }),
-    });
-    const client = session(server, { initial: tokens("access", Date.now() + 60_000) });
-
-    await expect(client.use((s) => s.workspace)).rejects.toMatchObject({
-      status: 502,
-      code: "INVALID_RESPONSE",
-    });
+    expect(test.sent).toEqual([]);
   });
 });

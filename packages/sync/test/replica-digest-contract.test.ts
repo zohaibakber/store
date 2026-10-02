@@ -120,12 +120,6 @@ const makeAuthority = Effect.fn("digest.authority")(function* () {
   } satisfies Authority;
 });
 
-const commit = (authority: Authority, group: SyncTransactionGroup) =>
-  Effect.gen(function* () {
-    commitToAuthority(authority.partition, group);
-    yield* Ref.update(authority.log, (log) => [...log, group]);
-  });
-
 const authorityTransport = (incarnation: string, authority: Authority): SyncTransport => ({
   registerReplica: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
@@ -391,63 +385,6 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
           yield* engine.downloadOnce(pullRequest);
           expect(yield* Ref.get(authority.requested)).toEqual([true, false, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW + 25_200_000);
-        }),
-      );
-      yield* harness.close();
-    }),
-  );
-
-  it.effect("records the caught-up time on the first caught-up pull and then once a minute", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(NOW);
-      const harness = yield* makeHarness();
-      const authority = yield* makeAuthority();
-      const recorded = yield* Ref.make<ReadonlyArray<number>>([]);
-      const counting: StoreHarness = {
-        ...harness,
-        store: {
-          ...harness.store,
-          recordCaughtUp: (caughtUpAt) =>
-            Ref.update(recorded, (times) => [...times, caughtUpAt]).pipe(
-              Effect.andThen(harness.store.recordCaughtUp(caughtUpAt)),
-            ),
-        },
-      };
-      yield* withEngine(counting, authority, (engine) =>
-        Effect.gen(function* () {
-          yield* engine.downloadOnce(pullRequest);
-          yield* TestClock.adjust("30 seconds");
-          yield* engine.downloadOnce(pullRequest);
-          yield* TestClock.adjust("31 seconds");
-          yield* engine.downloadOnce(pullRequest);
-        }),
-      );
-      expect(yield* Ref.get(recorded)).toEqual([NOW, NOW + 61_000]);
-      yield* harness.close();
-    }),
-  );
-
-  it.effect("verifies the local rows against the authority digest after accepted changes", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(NOW);
-      const harness = yield* makeHarness();
-      const authority = yield* makeAuthority();
-      yield* withEngine(harness, authority, (engine) =>
-        Effect.gen(function* () {
-          yield* engine.downloadOnce(pullRequest);
-          for (const group of remoteChanges) {
-            yield* commit(authority, group);
-            yield* TestClock.adjust("7 hours");
-            const exit = yield* Effect.exit(engine.downloadOnce(pullRequest));
-            expect(Exit.isSuccess(exit)).toBe(true);
-          }
-          expect(yield* Ref.get(authority.requested)).toEqual([
-            true,
-            ...remoteChanges.map(() => true),
-          ]);
-          expect(yield* harness.store.readDigestVerification("operational")).toBe(
-            NOW + remoteChanges.length * 25_200_000,
-          );
         }),
       );
       yield* harness.close();

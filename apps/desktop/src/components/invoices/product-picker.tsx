@@ -23,13 +23,9 @@ import { Kbd } from "@/components/ui/kbd";
 import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-products";
 import { formatNumber } from "@/lib/format";
 import { useSuspenseProductSearch } from "@/lib/inventory";
+import { isEditableTarget, isInListbox } from "@/lib/shortcuts";
 
 export const SALE_SEARCH_LIMIT = 20;
-
-const isEditableTarget = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    target.closest("input, textarea, select, [role=combobox], [role=listbox]") !== null);
 
 function InvoiceProductPicker() {
   const {
@@ -39,7 +35,9 @@ function InvoiceProductPicker() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      if (event.defaultPrevented) return;
+      if (event.target instanceof HTMLElement && isInListbox(event.target)) return;
+      if (isEditableTarget(event.target)) return;
       event.preventDefault();
       focusSearch();
     };

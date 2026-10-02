@@ -1,4 +1,4 @@
-import { decodeJsonWebKeyText, makeAccessTokenVerifier } from "@store/auth";
+import { decodeJwtKeyRingText, makeAccessTokenVerifier } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
   DEFAULT_MOBILE_PROTOCOL,
@@ -14,33 +14,20 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServer from "effect/unstable/http/HttpServer";
 
 import { Api, OrgHub } from "./api";
 import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
-import {
-  authenticateHeaders,
-  loadWorkspaceSnapshot,
-  type AuthVerificationConfig,
-} from "./src/auth/session";
-import {
-  buildOncePerIsolate,
-  recoverUnexpected,
-  ServerRoutes,
-  workerRuntimeServices,
-} from "./src/http/app";
-import { RATE_LIMITS, ServerRuntime } from "./src/http/runtime";
+import type { AuthVerificationConfig } from "./src/auth/session";
+import { makeWorkerFetch } from "./src/http/app";
+import { RATE_LIMITS } from "./src/http/runtime";
 import { InventoryAuthorityLive } from "./src/inventory/authority";
 import { InventoryCommands } from "./src/inventory/commands";
 import { InventoryImports } from "./src/inventory/imports";
 import { InventoryLive } from "./src/inventory/live-horizon";
 import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
 import { InventorySnapshots } from "./src/inventory/snapshots";
-import { makeInventorySyncAuthority, SyncAuthority } from "./src/inventory/sync-authority";
-import { LiveFanout, makeLiveFanout } from "./src/live/fanout";
+import { makeLiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
-import { LiveRoutes } from "./src/live/route";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -98,7 +85,6 @@ export const ApiLive = Api.make(
         Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
       ),
     );
-    const syncAuthority = makeInventorySyncAuthority(inventory);
     const hubs = yield* OrgHub;
     const execution = yield* Cloudflare.WorkerExecutionContext;
     const liveFanout = makeLiveFanout(hubs, (effect) => execution.waitUntil(effect));
@@ -171,44 +157,31 @@ export const ApiLive = Api.make(
         ),
       { discard: true },
     );
-    const publicJwk = yield* decodeJsonWebKeyText(authPublicJwkText).pipe(Effect.orDie);
+    const keys = yield* decodeJwtKeyRingText(authPublicJwkText).pipe(Effect.orDie);
     const jwtConfig: AuthVerificationConfig = {
       issuer: security.baseURL,
       audience: "tabaaq-api",
-      publicJwk,
+      keys,
     };
     const verifyAccessToken = yield* makeAccessTokenVerifier(jwtConfig);
-    const RuntimeLive = Layer.succeed(ServerRuntime, {
-      trustedOrigins: security.trustedOrigins,
-      getSession: (headers) => authenticateHeaders(headers, verifyAccessToken),
-      loadWorkspace: (headers) => loadWorkspaceSnapshot(headers, verifyAccessToken),
-      invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
-      limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
-      productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
-      limitProductScan: (key) => productScanRateLimit.limit({ key }),
+    const fetch = yield* makeWorkerFetch({
+      runtime: {
+        trustedOrigins: security.trustedOrigins,
+        verifyAccessToken,
+        invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
+        limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
+        productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
+        limitProductScan: (key) => productScanRateLimit.limit({ key }),
+      },
+      commands: inventory.commands,
+      snapshots: inventory.snapshots,
+      imports: inventory.imports,
+      readLiveHorizon: inventory.live.readLiveHorizon,
+      hubs,
+      liveFanout,
     });
-    const routes = Layer.mergeAll(
-      ServerRoutes,
-      LiveRoutes({
-        hubs,
-        getSession: (headers) => authenticateHeaders(headers, verifyAccessToken),
-        readLiveHorizon: inventory.live.readLiveHorizon,
-      }),
-    ).pipe(
-      Layer.provide(RuntimeLive),
-      Layer.provide(Layer.succeed(SyncAuthority, syncAuthority)),
-      Layer.provide(Layer.succeed(LiveFanout, liveFanout)),
-      Layer.provide(HttpServer.layerServices),
-    );
 
-    const serveRequest = yield* buildOncePerIsolate(
-      HttpRouter.toHttpEffect(routes),
-      yield* workerRuntimeServices,
-    );
-
-    return {
-      fetch: recoverUnexpected(serveRequest),
-    };
+    return { fetch };
   }).pipe(
     Effect.provide(OrgHubLive),
     Effect.provide(Cloudflare.Workers.CronEventSourceLive),

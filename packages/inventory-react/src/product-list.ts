@@ -1,8 +1,6 @@
 import {
   decodeProductSqliteRows,
-  type InventorySubsetSpec,
   type InventorySubsetSummary,
-  type InventorySubsetSummarySpec,
   type ProductRow,
   type ReplicaSubsetReader,
   type ReplicaSummaryReader,
@@ -11,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
+import { allOf, MAX_LIST_SEARCH_LENGTH, pageSpec, summarySpec, type ListPage } from "./list-page";
 import { containsToken, searchTokens } from "./search";
 
 export const PRODUCT_SORT_COLUMNS = [
@@ -33,10 +32,6 @@ export const PRODUCT_FACET_COLUMNS = [
 ] as const;
 export type ProductFacetColumn = (typeof PRODUCT_FACET_COLUMNS)[number];
 
-const MAX_PRODUCT_PAGE_SIZE = 100;
-
-const MAX_SEARCH_LENGTH = 120;
-
 export type ProductListFilters = {
   readonly search?: string;
   readonly categoryId?: string;
@@ -45,11 +40,8 @@ export type ProductListFilters = {
   readonly strength?: string;
 };
 
-export type ProductListRequest = {
+export type ProductListRequest = ListPage<ProductSortColumn> & {
   readonly filters: ProductListFilters;
-  readonly sort: { readonly column: ProductSortColumn; readonly direction: "asc" | "desc" };
-  readonly pageIndex: number;
-  readonly pageSize: number;
 };
 
 export type ProductFacets = Readonly<Record<ProductFacetColumn, ReadonlyArray<string>>>;
@@ -60,42 +52,16 @@ const exactly = (column: string, value: string): SubsetPredicate => ({
   pattern: value,
 });
 
-const productListWhere = (filters: ProductListFilters): SubsetPredicate | undefined => {
-  const predicates: Array<SubsetPredicate> = [
-    ...searchTokens((filters.search ?? "").slice(0, MAX_SEARCH_LENGTH)).map(containsToken),
+const productListWhere = (filters: ProductListFilters): SubsetPredicate | undefined =>
+  allOf([
+    ...searchTokens((filters.search ?? "").slice(0, MAX_LIST_SEARCH_LENGTH)).map(containsToken),
     ...(filters.categoryId
       ? [{ _tag: "compare", column: "categoryId", op: "eq", value: filters.categoryId } as const]
       : []),
     ...(filters.aisle ? [exactly("aisle", filters.aisle)] : []),
     ...(filters.composition ? [exactly("composition", filters.composition)] : []),
     ...(filters.strength ? [exactly("strength", filters.strength)] : []),
-  ];
-  if (predicates.length === 0) return undefined;
-  return predicates.length === 1 ? predicates[0] : { _tag: "and", predicates };
-};
-
-const productPageSpec = (request: ProductListRequest): InventorySubsetSpec => {
-  const pageSize = Math.min(MAX_PRODUCT_PAGE_SIZE, Math.max(1, Math.floor(request.pageSize)));
-  const where = productListWhere(request.filters);
-  const spec: InventorySubsetSpec = {
-    source: "products",
-    orderBy: [
-      { column: request.sort.column, direction: request.sort.direction },
-      { column: "id", direction: request.sort.direction },
-    ],
-    limit: pageSize,
-    offset: Math.max(0, Math.floor(request.pageIndex)) * pageSize,
-  };
-  return where ? { ...spec, where } : spec;
-};
-
-const productSummarySpec = (
-  filters: ProductListFilters,
-  distinct: ReadonlyArray<ProductFacetColumn>,
-): InventorySubsetSummarySpec => {
-  const where = productListWhere(filters);
-  return where ? { source: "products", where, distinct } : { source: "products", distinct };
-};
+  ]);
 
 const readFailure = () =>
   new WorkspaceReadFailure({ message: "Could not read products on this device." });
@@ -105,7 +71,7 @@ export const readProductPage = (
   request: ProductListRequest,
 ): Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadFailure> =>
   Effect.tryPromise({
-    try: () => reader.readSubset(productPageSpec(request)),
+    try: () => reader.readSubset(pageSpec("products", productListWhere(request.filters), request)),
     catch: readFailure,
   }).pipe(
     Effect.flatMap((read) => decodeProductSqliteRows(read.rows)),
@@ -119,7 +85,7 @@ export const summarizeProducts = (
   distinct: ReadonlyArray<ProductFacetColumn>,
 ): Effect.Effect<InventorySubsetSummary, WorkspaceReadFailure> =>
   Effect.tryPromise({
-    try: () => reader.summarizeSubset(productSummarySpec(filters, distinct)),
+    try: () => reader.summarizeSubset(summarySpec("products", productListWhere(filters), distinct)),
     catch: readFailure,
   }).pipe(
     Effect.map((read) => read.summary),

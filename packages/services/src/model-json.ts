@@ -1,4 +1,3 @@
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -15,7 +14,28 @@ interface ModelEnvelope {
   readonly response: string;
 }
 
-export type ModelOutput<Payload> = string | ModelEnvelope | Payload;
+type ModelOutput<Payload> = string | ModelEnvelope | Payload;
+
+export interface ModelPrompt {
+  readonly messages: ReadonlyArray<{
+    readonly role: "system" | "user";
+    readonly content: string;
+  }>;
+  readonly jsonSchema: object;
+}
+
+export class ModelRequestError extends Schema.TaggedError<ModelRequestError>()(
+  "ModelRequestError",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+export type GenerateModelJson<Payload> = (
+  prompt: ModelPrompt,
+) => Effect.Effect<ModelOutput<Payload>, ModelRequestError>;
+
+class ModelJsonMissing extends Schema.TaggedError<ModelJsonMissing>()("ModelJsonMissing", {
+  message: Schema.String,
+}) {}
 
 const decodeJsonText = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 const decodePlainObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown));
@@ -47,6 +67,6 @@ export const decodeModelJson = <S extends Schema.Constraint>(schema: S) => {
   return (raw: ModelOutput<S["Encoded"]>) =>
     Effect.fromOption(
       recoverModelJson(raw),
-      () => new Cause.NoSuchElementError("The model did not return JSON."),
+      () => new ModelJsonMissing({ message: "The model did not return JSON." }),
     ).pipe(Effect.flatMap(decode));
 };

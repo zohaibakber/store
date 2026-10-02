@@ -15,15 +15,8 @@ import {
   whatsAppLink,
   type WhatsAppLink,
 } from "@store/services/purchasing";
-import * as React from "react";
 import { createPortal } from "react-dom";
 
-import {
-  hasOpenPopup,
-  isEditableTarget,
-  isPlainKey,
-  useWindowKeydown,
-} from "@/components/products/shortcuts";
 import { ShortcutButton } from "@/components/shared/shortcut-button";
 import { Button } from "@/components/ui/button";
 import { Group, GroupSeparator } from "@/components/ui/group";
@@ -37,11 +30,13 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { useInventoryActions } from "@/lib/inventory";
+import { usePageShortcuts } from "@/lib/shortcuts";
 
 import {
   byProductName,
@@ -168,7 +163,7 @@ function OrderPrintView({
 export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActionProps) {
   const { sendOrder } = useInventoryActions();
   const { workspace } = useAuth();
-  const [pending, setPending] = React.useState(false);
+  const [pending, run] = useStoreCommand();
 
   const storeName = workspace._tag === "Organization" ? workspace.organization.name : null;
   const lines = [...order.items].sort(byProductName);
@@ -203,32 +198,23 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
     }
   };
 
-  const deliver = async (delivery: Delivery) => {
+  const deliver = (delivery: Delivery) => {
     if (!canDeliver) return;
-    setPending(true);
-    try {
+    void run(async () => {
       await hand(delivery);
-    } catch (error) {
-      toastStoreError(error, deliveryFailure(delivery));
-      setPending(false);
-      return;
-    }
-    if (draft) await markSent(deliveryDone(delivery), markedSent);
-    else toastManager.add({ title: deliveryDone(delivery), type: "success" });
-    setPending(false);
+      if (draft) await markSent(deliveryDone(delivery), markedSent);
+      else toastManager.add({ title: deliveryDone(delivery), type: "success" });
+    }, deliveryFailure(delivery));
   };
 
-  const markOnly = async () => {
+  const markOnly = () => {
     if (!canDeliver || !draft) return;
-    setPending(true);
-    await markSent(markedSent);
-    setPending(false);
+    void run(() => markSent(markedSent));
   };
 
-  const savePdf = async () => {
+  const savePdf = () => {
     if (!canShare) return;
-    setPending(true);
-    try {
+    void run(async () => {
       const outcome = await appHost().savePdf(`order-${formatInvoiceNumber(order.orderNumber)}`);
       switch (outcome._tag) {
         case "saved":
@@ -241,19 +227,10 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
         case "cancelled":
           break;
       }
-    } catch (error) {
-      toastStoreError(error, "Could not save the PDF.");
-    }
-    setPending(false);
+    }, "Could not save the PDF.");
   };
 
-  useWindowKeydown((event) => {
-    if (event.defaultPrevented || event.repeat) return;
-    if (isEditableTarget(event.target) || hasOpenPopup()) return;
-    if (!isPlainKey(event, "s")) return;
-    event.preventDefault();
-    void deliver(primary);
-  });
+  usePageShortcuts({ s: () => deliver(primary) });
 
   const variant = draft ? "default" : "outline";
   const primaryLabel = hasLines
@@ -267,7 +244,7 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
           disabled={!canDeliver}
           label={primaryLabel}
           loading={pending}
-          onClick={() => void deliver(primary)}
+          onClick={() => deliver(primary)}
           shortcut="S"
           variant={variant}
         >
@@ -296,16 +273,16 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
               {unavailable === null ? null : <MenuGroupLabel>{unavailable}</MenuGroupLabel>}
               <MenuItem
                 disabled={!canDeliver || link._tag !== "Ready"}
-                onClick={() => void deliver("whatsapp")}
+                onClick={() => deliver("whatsapp")}
               >
                 <HugeiconsIcon aria-hidden="true" icon={WhatsappIcon} />
                 Send on WhatsApp
               </MenuItem>
-              <MenuItem disabled={!canDeliver} onClick={() => void deliver("copy")}>
+              <MenuItem disabled={!canDeliver} onClick={() => deliver("copy")}>
                 <HugeiconsIcon aria-hidden="true" icon={Copy01Icon} />
                 Copy order text
               </MenuItem>
-              <MenuItem onClick={() => void savePdf()}>
+              <MenuItem onClick={savePdf}>
                 <HugeiconsIcon aria-hidden="true" icon={Pdf01Icon} />
                 Save as PDF
               </MenuItem>
@@ -313,7 +290,7 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
             {draft ? (
               <>
                 <MenuSeparator />
-                <MenuItem disabled={!canDeliver} onClick={() => void markOnly()}>
+                <MenuItem disabled={!canDeliver} onClick={markOnly}>
                   <HugeiconsIcon aria-hidden="true" icon={SentIcon} />
                   Mark as sent
                 </MenuItem>

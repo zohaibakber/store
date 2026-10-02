@@ -1,4 +1,4 @@
-import { Add01Icon, Alert02Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, InvoiceItem } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
@@ -6,16 +6,15 @@ import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 
+import { DetailLoadError } from "@/components/shared/detail-load-error";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
-  PageContent,
   PageDescription,
   PageHeader,
   PageHeading,
   PageLayout,
 } from "@/components/shared/page-layout";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -38,22 +37,12 @@ function NewSaleAction() {
 }
 
 function InvoiceDetailError({ error }: { error: unknown }) {
-  const message = error instanceof Error ? error.message : "The invoice could not be loaded.";
   return (
-    <PageLayout width="narrow">
-      <PageContent>
-        <Alert variant="error">
-          <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-          <AlertTitle>Could not load invoice</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-        <div>
-          <Button render={<Link to="/invoices" />} size="sm" variant="outline">
-            Back to invoices
-          </Button>
-        </div>
-      </PageContent>
-    </PageLayout>
+    <DetailLoadError error={error} subject="invoice">
+      <Button render={<Link to="/invoices" />} size="sm" variant="outline">
+        Back to invoices
+      </Button>
+    </DetailLoadError>
   );
 }
 

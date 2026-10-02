@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { useInventoryActions, useSuspenseProductCount } from "@/lib/inventory";
@@ -70,23 +71,19 @@ function NewCategoryRow({
 }) {
   const [name, setName] = useState("");
   const [tracksPacks, setTracksPacks] = useState(true);
-  const [pending, setPending] = useState(false);
+  const [pending, run] = useStoreCommand();
   const switchId = useId();
   const trimmed = name.trim();
   const duplicate = taken.has(normalized(name));
   const canSave = trimmed.length > 0 && trimmed.length <= MAX_NAME && !duplicate && !pending;
 
-  const save = async () => {
+  const save = () => {
     if (!canSave) return;
-    setPending(true);
-    try {
+    void run(async () => {
       const category = await createCategory({ name: trimmed, tracksPacks });
       toastManager.add({ title: `${category.name} added`, type: "success" });
       setName("");
-    } catch (error) {
-      toastStoreError(error, "Could not add the category.");
-    }
-    setPending(false);
+    }, "Could not add the category.");
   };
 
   return (
@@ -101,7 +98,7 @@ function NewCategoryRow({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              void save();
+              save();
             }
             if (event.key === "Escape" && name) {
               event.preventDefault();
@@ -123,7 +120,7 @@ function NewCategoryRow({
       <TableCell />
       <TableCell>
         <div className="flex justify-end">
-          <Button disabled={!canSave} onClick={() => void save()} size="sm" type="button">
+          <Button disabled={!canSave} onClick={save} size="sm" type="button">
             Add
           </Button>
         </div>

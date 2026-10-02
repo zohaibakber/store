@@ -1,4 +1,4 @@
-import type { AnalyticsStatus } from "@store/contracts";
+import type { AnalyticsStatus, StockStatusCounts } from "@store/contracts";
 import type { DemandForecast, OrderSuggestion, StockStatus } from "@store/services/insights";
 
 import { EMPTY, formatCount } from "@/lib/format";
@@ -17,6 +17,9 @@ export const STATUS_META = {
   StockStatus,
   { readonly label: string; readonly tone: Tone; readonly hint: string }
 >;
+
+export const restockActionCount = (counts: StockStatusCounts) =>
+  counts.out + counts.critical + counts.low;
 
 export const HEALTH_ORDER: ReadonlyArray<StockStatus> = [
   "out",

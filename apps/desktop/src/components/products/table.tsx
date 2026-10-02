@@ -1,69 +1,42 @@
 import type { ProductRow } from "@store/client-db";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
-import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  createColumnHelper,
-  functionalUpdate,
-  metaHelper,
-  rowPaginationFeature,
-  rowSortingFeature,
-  tableFeatures,
-  useTable,
-  type ColumnFiltersState,
-  type PaginationState,
-  type SortingState,
-  type Updater,
-} from "@tanstack/react-table";
-import * as Schema from "effect/Schema";
+import { createColumnHelper, type ReactTable } from "@tanstack/react-table";
 
 import {
   DataTableColumnHeader,
   DataTableFilterMenu,
   DataTableFilterOption,
-  type DataTableColumnMeta,
 } from "@/components/shared/data-table";
+import {
+  listView,
+  useListTable,
+  type ListTableFeatures,
+  type ListView,
+} from "@/components/shared/list-view";
 import { EMPTY, formatDate, formatNumber } from "@/lib/format";
-import type { ProductFacets, ProductSortColumn } from "@/lib/inventory";
+import { PRODUCT_SORT_COLUMNS, type ProductFacets, type ProductSortColumn } from "@/lib/inventory";
 
 import { ProductStatusCell, ProductStockCell } from "./insight-cells";
 
-const features = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSortingFeature,
-  columnMeta: metaHelper<DataTableColumnMeta>(),
-});
-
 export type ProductListRow = ProductRow & { readonly categoryName: string };
 
-export const PRODUCT_PAGE_SIZES = [25, 50, 100] as const;
-export type ProductPageSize = (typeof PRODUCT_PAGE_SIZES)[number];
+export const productList = listView({
+  sortColumns: PRODUCT_SORT_COLUMNS,
+  sort: "name",
+  desc: false,
+});
 
-export type ProductListView = {
-  readonly q?: string;
+export type ProductListView = ListView<ProductSortColumn> & {
   readonly category?: string;
   readonly aisle?: string;
   readonly composition?: string;
   readonly strength?: string;
-  readonly sort: ProductSortColumn;
-  readonly desc: boolean;
-  readonly page: number;
-  readonly size: ProductPageSize;
-};
-
-export const DEFAULT_PRODUCT_LIST_VIEW: ProductListView = {
-  sort: "name",
-  desc: false,
-  page: 0,
-  size: 50,
 };
 
 type CategoryOption = { readonly id: string; readonly name: string };
 
-const columnHelper = createColumnHelper<typeof features, ProductListRow>();
+const columnHelper = createColumnHelper<ListTableFeatures, ProductListRow>();
 
 const priceCell = ({ getValue }: { getValue: () => number | null }) => {
   const value = getValue();
@@ -159,75 +132,6 @@ const columns = columnHelper.columns([
     meta: { label: "Updated", align: "end" },
   }),
 ]);
-const SORTABLE: ReadonlySet<string> = new Set<ProductSortColumn>([
-  "name",
-  "aisle",
-  "unitsPerPack",
-  "purchasePrice",
-  "retailPrice",
-  "unitPrice",
-  "updatedAt",
-]);
-
-const isSortColumn = (id: string): id is ProductSortColumn => SORTABLE.has(id);
-
-const isText = Schema.is(Schema.String);
-
-const textFilter = (filters: ColumnFiltersState, id: string) => {
-  const value = filters.find((filter) => filter.id === id)?.value;
-  return isText(value) && value.trim() !== "" ? value : undefined;
-};
-
-const productTableFilters = (
-  view: ProductListView,
-  categories: ReadonlyArray<CategoryOption>,
-): ColumnFiltersState => {
-  const categoryName = categories.find((category) => category.id === view.category)?.name;
-  return [
-    ...(view.q ? [{ id: "name", value: view.q }] : []),
-    ...(categoryName ? [{ id: "category", value: categoryName }] : []),
-    ...(view.aisle ? [{ id: "aisle", value: view.aisle }] : []),
-    ...(view.composition ? [{ id: "composition", value: view.composition }] : []),
-    ...(view.strength ? [{ id: "strength", value: view.strength }] : []),
-  ];
-};
-
-const viewWithFilters = (
-  view: ProductListView,
-  filters: ColumnFiltersState,
-  categories: ReadonlyArray<CategoryOption>,
-): ProductListView => {
-  const categoryName = textFilter(filters, "category");
-  return {
-    sort: view.sort,
-    desc: view.desc,
-    size: view.size,
-    page: 0,
-    q: textFilter(filters, "name"),
-    category: categories.find((category) => category.name === categoryName)?.id,
-    aisle: textFilter(filters, "aisle"),
-    composition: textFilter(filters, "composition"),
-    strength: textFilter(filters, "strength"),
-  };
-};
-
-const viewWithSorting = (view: ProductListView, sorting: SortingState): ProductListView => {
-  const [first] = sorting;
-  return first && isSortColumn(first.id)
-    ? { ...view, sort: first.id, desc: first.desc, page: 0 }
-    : { ...view, sort: DEFAULT_PRODUCT_LIST_VIEW.sort, desc: false, page: 0 };
-};
-
-const pageSizeFrom = (size: number): ProductPageSize =>
-  PRODUCT_PAGE_SIZES.find((candidate) => candidate === size) ?? DEFAULT_PRODUCT_LIST_VIEW.size;
-
-const viewWithPagination = (
-  view: ProductListView,
-  pagination: PaginationState,
-): ProductListView => {
-  const size = pageSizeFrom(pagination.pageSize);
-  return { ...view, size, page: size === view.size ? Math.max(0, pagination.pageIndex) : 0 };
-};
 
 export function useProductsTable(input: {
   readonly rows: ReadonlyArray<ProductListRow>;
@@ -235,27 +139,33 @@ export function useProductsTable(input: {
   readonly view: ProductListView;
   readonly categories: ReadonlyArray<CategoryOption>;
   readonly onViewChange: (view: ProductListView) => void;
-}) {
-  const { view, categories, onViewChange } = input;
-  const pagination: PaginationState = { pageIndex: view.page, pageSize: view.size };
-  const sorting: SortingState = [{ id: view.sort, desc: view.desc }];
-  const columnFilters = productTableFilters(view, categories);
-  return useTable({
-    features,
+  readonly loading: boolean;
+}): ReactTable<ListTableFeatures, ProductListRow> {
+  const { view, categories } = input;
+  return useListTable({
+    list: productList,
     columns,
-    data: input.rows,
+    rows: input.rows,
+    total: input.total,
     getRowId: (product) => product.id,
-    manualPagination: true,
-    manualSorting: true,
-    manualFiltering: true,
-    rowCount: input.total,
-    state: { pagination, sorting, columnFilters },
-    onPaginationChange: (updater: Updater<PaginationState>) =>
-      onViewChange(viewWithPagination(view, functionalUpdate(updater, pagination))),
-    onSortingChange: (updater: Updater<SortingState>) =>
-      onViewChange(viewWithSorting(view, functionalUpdate(updater, sorting))),
-    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
-      onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters), categories)),
+    view,
+    onViewChange: input.onViewChange,
+    loading: input.loading,
+    filters: {
+      name: view.q,
+      category: categories.find((category) => category.id === view.category)?.name,
+      aisle: view.aisle,
+      composition: view.composition,
+      strength: view.strength,
+    },
+    viewWithFilters: (filters) => ({
+      ...view,
+      q: filters.name,
+      category: categories.find((category) => category.name === filters.category)?.id,
+      aisle: filters.aisle,
+      composition: filters.composition,
+      strength: filters.strength,
+    }),
     initialState: {
       columnVisibility: {
         purchasePrice: false,

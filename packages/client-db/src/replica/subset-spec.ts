@@ -100,7 +100,7 @@ export const InventorySubsetBatch = Schema.Array(
 ).check(Schema.isMinLength(1), Schema.isMaxLength(MAX_BATCH_SPECS));
 export type InventorySubsetBatch = typeof InventorySubsetBatch.Type;
 
-export type ResolvedSubsetOrderClause = Required<SubsetOrderClause>;
+type ResolvedSubsetOrderClause = Required<SubsetOrderClause>;
 
 export const resolveSubsetOrder = (
   spec: Pick<InventorySubsetSpec, "source" | "orderBy">,

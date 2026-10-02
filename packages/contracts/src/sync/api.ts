@@ -3,6 +3,7 @@ import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
+import { PositiveIntFromString } from "../internal/primitives";
 import { SyncIdentifier } from "../schema-primitives";
 import {
   SyncBadRequest,
@@ -84,9 +85,7 @@ export const syncGroup = HttpApiGroup.make("sync")
     HttpApiEndpoint.get("readSnapshotPart", "/api/sync/snapshots/:snapshotId/parts/:partNumber", {
       params: Schema.Struct({
         snapshotId: SnapshotId,
-        partNumber: Schema.NumberFromString.pipe(
-          Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-        ),
+        partNumber: PositiveIntFromString,
       }),
       success: SnapshotPartPayload,
       error: SyncHttpErrors,

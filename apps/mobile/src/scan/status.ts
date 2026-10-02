@@ -1,6 +1,6 @@
 import { formatExpiry, parseExpiry } from "./expiry";
 import {
-  type CommitPlan,
+  type ExecutablePlan,
   type MatchedProduct,
   deriveFieldFlags,
   needsCheck,
@@ -49,6 +49,9 @@ export const draftTitle = (draft: ScanDraft): string => {
   return draft.lines[0] ?? "Typed entry";
 };
 
+export const countdownSeconds = (until: number | null, now: number): number =>
+  until === null ? 0 : Math.max(0, Math.ceil((until - now) / 1000));
+
 export const draftSubtitle = (draft: ScanDraft, now: number): string => {
   const { parse } = draft;
   switch (parse._tag) {
@@ -57,7 +60,7 @@ export const draftSubtitle = (draft: ScanDraft, now: number): string => {
     case "Deferred":
       return "Auto-fills when you're back online";
     case "RateLimited": {
-      const seconds = Math.max(0, Math.ceil((parse.retryAt - now) / 1000));
+      const seconds = countdownSeconds(parse.retryAt, now);
       return seconds > 0 ? `Auto-fill paused · ${seconds} s` : "Auto-fill resumes shortly";
     }
     case "Failed":
@@ -78,12 +81,9 @@ export const draftSubtitle = (draft: ScanDraft, now: number): string => {
   }
 };
 
-export const countdownSeconds = (until: number | null, now: number): number =>
-  until === null ? 0 : Math.max(0, Math.ceil((until - now) / 1000));
-
 export type BatchRow = {
   readonly status: DraftStatus;
-  readonly plan: Exclude<CommitPlan, { readonly _tag: "Invalid" }> | null;
+  readonly plan: ExecutablePlan | null;
 };
 
 export const batchRow = (

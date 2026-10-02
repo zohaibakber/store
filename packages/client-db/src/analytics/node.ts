@@ -1,4 +1,4 @@
-export { analyticsDatabasePath, openAnalyticsDatabase, type AnalyticsDatabase } from "./database";
+export { analyticsDatabasePath, openAnalyticsDatabase } from "./database";
 export { AnalyticsFailure, analyticsFailure } from "./errors";
 export {
   openInventorySource,

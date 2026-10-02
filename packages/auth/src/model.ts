@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const Identifier = NonEmptyString.check(Schema.isMaxLength(128));
@@ -60,13 +61,6 @@ export const OrganizationName = Schema.String.check(
 ).pipe(Schema.brand("OrganizationName"));
 export type OrganizationName = typeof OrganizationName.Type;
 
-export const OrganizationSlug = Schema.String.check(
-  Schema.isMinLength(2),
-  Schema.isMaxLength(40),
-  Schema.isPattern(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
-).pipe(Schema.brand("OrganizationSlug"));
-export type OrganizationSlug = typeof OrganizationSlug.Type;
-
 export const InvitationId = Identifier.pipe(Schema.brand("AuthInvitationId"));
 export type InvitationId = typeof InvitationId.Type;
 
@@ -114,26 +108,32 @@ export const LoginRoute = Schema.Union([
 ]);
 export type LoginRoute = typeof LoginRoute.Type;
 
+export const PasswordLoginCommand = Schema.Struct({
+  _tag: Schema.Literal("Password"),
+  email: EmailAddress,
+  password: Password,
+  client: AuthClientKind,
+});
+
+export const OtpLoginCommand = Schema.Struct({
+  _tag: Schema.Literal("Otp"),
+  challengeId: OtpChallengeId,
+  code: OtpCode,
+  client: AuthClientKind,
+});
+
+export const RegisterPasswordCommand = Schema.Struct({
+  _tag: Schema.Literal("RegisterPassword"),
+  email: EmailAddress,
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  password: Password,
+  client: AuthClientKind,
+});
+
 export const LoginCommand = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Password"),
-    email: EmailAddress,
-    password: Password,
-    client: AuthClientKind,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Otp"),
-    challengeId: OtpChallengeId,
-    code: OtpCode,
-    client: AuthClientKind,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("RegisterPassword"),
-    email: EmailAddress,
-    name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-    password: Password,
-    client: AuthClientKind,
-  }),
+  PasswordLoginCommand,
+  OtpLoginCommand,
+  RegisterPasswordCommand,
 ]);
 export type LoginCommand = typeof LoginCommand.Type;
 
@@ -150,7 +150,6 @@ export const AccessClaims = Schema.Struct({
   sessionId: SessionId,
   activeOrganizationId: OrganizationId,
   organizationName: Schema.String,
-  organizationSlug: Schema.NullOr(Schema.String),
   role: OrganizationRole,
   email: EmailAddress,
   name: Schema.String,
@@ -209,12 +208,26 @@ const AuthUser = Schema.Struct({
 });
 interface AuthUser extends Schema.Schema.Type<typeof AuthUser> {}
 
-export const AuthOrganizationMembership = Schema.Struct({
-  id: OrganizationId,
+const MembershipWithLegacySlug = Schema.Struct({
+  id: Schema.String,
   name: Schema.String,
-  slug: Schema.NullOr(Schema.String),
+  slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: OrganizationRole,
 });
+
+export const AuthOrganizationMembership = MembershipWithLegacySlug.pipe(
+  Schema.decodeTo(
+    Schema.Struct({
+      id: OrganizationId,
+      name: Schema.String,
+      role: OrganizationRole,
+    }),
+    SchemaTransformation.transform({
+      decode: ({ id, name, role }) => ({ id, name, role }),
+      encode: ({ id, name, role }) => ({ id, name, slug: null, role }),
+    }),
+  ),
+);
 export interface AuthOrganizationMembership extends Schema.Schema.Type<
   typeof AuthOrganizationMembership
 > {}
@@ -249,7 +262,6 @@ export const sessionWorkspaceFromClaims = (
   const organization: AuthOrganizationMembership = {
     id: claims.activeOrganizationId,
     name: claims.organizationName,
-    slug: claims.organizationSlug,
     role: claims.role,
   };
   return {
@@ -302,7 +314,6 @@ export const OrganizationCommand = Schema.Union([
     _tag: Schema.Literal("UpdateOrganization"),
     organizationId: OrganizationId,
     name: OrganizationName,
-    slug: Schema.NullOr(OrganizationSlug),
   }),
   Schema.Struct({
     _tag: Schema.Literal("InviteMember"),

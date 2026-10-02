@@ -1,185 +1,156 @@
-import type {
-  IssuedSession,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
-} from "@store/auth";
+import { AuthClient, authClientLayer, type IssuedSession } from "@store/auth";
 import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts/workspace";
 import {
-  MemoryTokenStore,
   SessionHttp,
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
   layerSessionHttp,
   renewSessionSnapshot,
-  sessionFetch,
-  type SessionHttpApi,
+  type RequestError,
   type SessionSnapshotHooks,
-  type WorkspaceAuthAdapter,
 } from "@store/workspace";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as MutableRef from "effect/MutableRef";
+import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-import { analyseInvoiceUpload, type InvoiceUploadFile } from "@/lib/invoice-upload";
+import { browserStore, type KeyValueStorage } from "@/lib/first-party-auth";
 
 const SESSION_EXPECTED_KEY = "tabaaq-web-session-expected";
-
-export type SessionHintStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+const REFRESH_LOCK = "tabaaq-web-session-refresh";
 
 export type WebAuthBrokerOptions = {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
   readonly fetch?: typeof fetch;
-  readonly storage?: SessionHintStore;
+  readonly storage?: KeyValueStorage;
   readonly isOnline?: () => boolean;
 };
 
-const browserStorage: SessionHintStore = {
-  getItem: (key) => globalThis.localStorage.getItem(key),
-  setItem: (key, value) => globalThis.localStorage.setItem(key, value),
-  removeItem: (key) => globalThis.localStorage.removeItem(key),
-};
+const webLocks = Effect.try(() => globalThis.navigator?.locks).pipe(
+  Effect.orElseSucceed(() => undefined),
+);
 
-const signedInOriginHint = (store: SessionHintStore) => ({
-  expected: () => {
-    try {
-      return store.getItem(SESSION_EXPECTED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  },
-  mark: () => {
-    try {
-      store.setItem(SESSION_EXPECTED_KEY, "1");
-    } catch {
-      return;
-    }
-  },
-  clear: () => {
-    try {
-      store.removeItem(SESSION_EXPECTED_KEY);
-    } catch {
-      return;
-    }
-  },
-});
+const holdRefreshLock = (locks: LockManager) =>
+  Effect.acquireRelease(
+    Effect.callback<() => void>((resume, signal) => {
+      locks
+        .request(REFRESH_LOCK, { signal }, () =>
+          signal.aborted
+            ? Promise.resolve()
+            : new Promise<void>((release) => resume(Effect.succeed(release))),
+        )
+        .catch(() => {
+          if (!signal.aborted) resume(Effect.succeed(() => undefined));
+        });
+    }),
+    (release) => Effect.sync(release),
+    { interruptible: true },
+  );
 
-const failureMessage = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Could not refresh the session.";
+const oneTabAtATime = <A, E>(refresh: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+  Effect.flatMap(webLocks, (locks) =>
+    locks === undefined
+      ? refresh
+      : holdRefreshLock(locks).pipe(Effect.andThen(refresh), Effect.scoped),
+  );
 
-export class WebAuthBroker implements WorkspaceAuthAdapter {
-  readonly #tokens = new MemoryTokenStore();
-  readonly #hint: ReturnType<typeof signedInOriginHint>;
-  readonly #isOnline: () => boolean;
-  readonly #hooks: SessionSnapshotHooks;
-  readonly #runtime: ManagedRuntime.ManagedRuntime<SessionHttp, never>;
-  readonly apiFetch: typeof fetch;
-  #snapshot: WorkspaceSnapshot = unauthenticatedWorkspace({ isOnline: false });
+export interface WebAuthApi {
+  readonly snapshot: Effect.Effect<WorkspaceSnapshot>;
+  readonly initialize: Effect.Effect<WorkspaceSnapshot>;
+  readonly adopt: (issued: IssuedSession) => Effect.Effect<WorkspaceSnapshot>;
+  readonly renewSession: Effect.Effect<WorkspaceSnapshot, RequestError>;
+  readonly signOut: Effect.Effect<void>;
+}
 
-  constructor(
-    options: WebAuthBrokerOptions,
-    publishSession: (snapshot: WorkspaceSnapshot) => void,
-  ) {
-    const send: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-    this.#hint = signedInOriginHint(options.storage ?? browserStorage);
-    this.#isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine ?? true);
-    const forget = Effect.sync(() => {
-      this.#hint.clear();
-      this.#hooks.publish(this.#signedOut());
-    });
-    this.#hooks = {
-      getLocalSnapshot: () => this.#snapshot,
-      publish: (snapshot) => {
-        this.#snapshot = snapshot;
-        publishSession(snapshot);
-        return snapshot;
-      },
-      clearAuthenticated: forget,
-    };
-    this.#runtime = ManagedRuntime.make(
+export class WebAuth extends Context.Service<WebAuth, WebAuthApi>()("@store/desktop/WebAuth") {}
+
+export const layerWebAuth = (
+  options: WebAuthBrokerOptions,
+  publishSession: (snapshot: WorkspaceSnapshot) => void,
+): Layer.Layer<WebAuth | SessionHttp | AuthClient> => {
+  const send: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const hint = browserStore(() => options.storage ?? globalThis.localStorage);
+  const isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine ?? true);
+  const snapshot = MutableRef.make<WorkspaceSnapshot>(
+    unauthenticatedWorkspace({ isOnline: false }),
+  );
+  const signedOut = (workspaceError: string | null = null) =>
+    unauthenticatedWorkspace({ isOnline: isOnline(), workspaceError });
+  const publish = (next: WorkspaceSnapshot) => {
+    MutableRef.set(snapshot, next);
+    publishSession(next);
+    return next;
+  };
+  const expectSession = Effect.ignore(hint.set(SESSION_EXPECTED_KEY, "1"));
+  const sessionExpected = hint.get(SESSION_EXPECTED_KEY).pipe(
+    Effect.map(Option.contains("1")),
+    Effect.orElseSucceed(() => false),
+  );
+  const forget = Effect.ignore(hint.remove(SESSION_EXPECTED_KEY)).pipe(
+    Effect.andThen(Effect.sync(() => publish(signedOut()))),
+    Effect.asVoid,
+  );
+  const hooks: SessionSnapshotHooks = {
+    getLocalSnapshot: () => MutableRef.get(snapshot),
+    publish,
+    clearAuthenticated: forget,
+  };
+
+  const auth = Layer.effect(
+    WebAuth,
+    Effect.gen(function* () {
+      const session = yield* SessionHttp;
+      const transitions = yield* Semaphore.make(1);
+      const transition = <A, E>(effect: Effect.Effect<A, E, SessionHttp>) =>
+        transitions.withPermit(Effect.provideService(effect, SessionHttp, session));
+      return WebAuth.of({
+        snapshot: Effect.sync(() => MutableRef.get(snapshot)),
+        initialize: Effect.flatMap(sessionExpected, (expected) =>
+          expected
+            ? session.ensureFreshAccess(true).pipe(
+                Effect.match({
+                  onFailure: (error) => publish(signedOut(error.message)),
+                  onSuccess: () => MutableRef.get(snapshot),
+                }),
+              )
+            : Effect.sync(() => publish(signedOut())),
+        ),
+        adopt: (issued) =>
+          transition(Effect.andThen(expectSession, adoptSessionTokens(hooks, issued))),
+        renewSession: transition(renewSessionSnapshot(hooks)),
+        signOut: transition(
+          Effect.gen(function* () {
+            yield* session.settled;
+            yield* session.setTokens(null);
+            yield* forget;
+            yield* session.logout(null).pipe(Effect.ignore);
+          }),
+        ),
+      });
+    }),
+  );
+
+  return auth.pipe(
+    Layer.provideMerge(
       layerSessionHttp({
         apiBaseUrl: options.apiBaseUrl,
         authBaseUrl: options.authBaseUrl,
-        tokens: this.#tokens,
         credential: "cookie",
-        onRefreshed: (refreshed) =>
-          Effect.sync(() => this.#hint.mark()).pipe(
-            Effect.andThen(adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace)),
+        onRefreshed: (refreshed, tokens) =>
+          expectSession.pipe(
+            Effect.andThen(adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens)),
             Effect.asVoid,
           ),
         onRejected: forget,
-      }).pipe(
-        Layer.provide(FetchHttpClient.layer),
-        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
-      ),
-    );
-    this.apiFetch = sessionFetch((effect, runOptions) =>
-      this.#runtime.runPromise(effect, runOptions),
-    );
-  }
-
-  get snapshot() {
-    return this.#snapshot;
-  }
-
-  #use<A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E, SessionHttp>) {
-    return this.#runtime.runPromise(SessionHttp.use(f));
-  }
-
-  async initialize(): Promise<WorkspaceSnapshot> {
-    if (!this.#hint.expected()) return this.#hooks.publish(this.#signedOut());
-    try {
-      await this.#use((session) => session.ensureFreshAccess(true));
-      return this.#snapshot;
-    } catch (cause) {
-      return this.#hooks.publish(this.#signedOut(failureMessage(cause)));
-    }
-  }
-
-  adoptSession(issued: IssuedSession | null) {
-    if (issued) this.#hint.mark();
-    else this.#hint.clear();
-    return this.#runtime.runPromise(
-      adoptSessionTokens(this.#hooks, issued, { onCleared: this.#hooks.clearAuthenticated }),
-    );
-  }
-
-  renewSession() {
-    return this.#runtime.runPromise(renewSessionSnapshot(this.#hooks));
-  }
-
-  signOut() {
-    const hooks = this.#hooks;
-    return this.#use((session) =>
-      Effect.gen(function* () {
-        yield* session.settled;
-        yield* session.setTokens(null);
-        if (hooks.clearAuthenticated !== undefined) yield* hooks.clearAuthenticated;
-        yield* session.logout(null).pipe(Effect.ignore);
+        exclusive: oneTabAtATime,
       }),
-    );
-  }
-
-  async liveAccessToken(force: boolean) {
-    const access = await this.#use((session) => session.ensureFreshAccess(force));
-    return access?.accessToken ?? null;
-  }
-
-  organizationRoster(): Promise<OrganizationRoster> {
-    return this.#use((session) => session.organizationRoster);
-  }
-
-  organize(command: OrganizationCommand): Promise<OrganizationCommandResult> {
-    return this.#use((session) => session.organize(command));
-  }
-
-  analyseInvoices(files: ReadonlyArray<InvoiceUploadFile>) {
-    return this.#runtime.runPromise(analyseInvoiceUpload(files));
-  }
-
-  #signedOut(workspaceError: string | null = null) {
-    return unauthenticatedWorkspace({ isOnline: this.#isOnline(), workspaceError });
-  }
-}
+    ),
+    Layer.merge(authClientLayer({ baseUrl: options.authBaseUrl })),
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
+  );
+};

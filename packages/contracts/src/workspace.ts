@@ -14,7 +14,6 @@ interface WorkspaceUser extends Schema.Schema.Type<typeof WorkspaceUser> {}
 const WorkspaceOrganization = Schema.Struct({
   id: OrganizationId,
   name: Schema.String,
-  slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: Schema.String,
 });
 

@@ -30,8 +30,8 @@ import { forecastDemand, type DemandTrend } from "./demand";
 import { serviceLevelFor, type AbcClass, type StockPolicy } from "./policy";
 import { inverseNormal } from "./statistics";
 
-export const DEMAND_HISTORY_DAYS = 90;
-export const INSIGHTS_HISTORY_DAYS = 2 * DEMAND_HISTORY_DAYS;
+const DEMAND_HISTORY_DAYS = 90;
+const INSIGHTS_HISTORY_DAYS = 2 * DEMAND_HISTORY_DAYS;
 export const SALES_RANGES = SALES_RANGE_DAYS;
 export type {
   ExpiringBatch,

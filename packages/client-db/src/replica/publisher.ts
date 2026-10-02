@@ -13,13 +13,13 @@ export type ReplicaCommitPublisher = ReplicaChangeFeed & {
 };
 
 export const createReplicaCommitPublisher = (): ReplicaCommitPublisher => {
-  const lifetime = Effect.runSync(Scope.make());
+  const lifetime = Scope.makeUnsafe();
   const closing = Effect.runSync(Effect.cached(Scope.close(lifetime, Exit.void)));
   const buffers = new Set<Queue.Queue<ReplicaCommitNotice>>();
 
   return {
     subscribe: (listener: (notice: ReplicaCommitNotice) => void): ReplicaChangeUnsubscribe => {
-      const scope = Effect.runSync(Scope.fork(lifetime));
+      const scope = Scope.forkUnsafe(lifetime);
       const buffer = Effect.runSync(Queue.bounded<ReplicaCommitNotice>(NOTICE_BUFFER_CAPACITY));
       buffers.add(buffer);
       Effect.runSync(

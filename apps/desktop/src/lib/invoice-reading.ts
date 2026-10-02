@@ -12,9 +12,7 @@ const decodeExtraction = Schema.decodeUnknownSync(InvoiceExtraction);
 
 const isCsv = (file: InvoiceUploadFile) => file.name.toLowerCase().endsWith(".csv");
 
-export const readCsvInvoices = (
-  files: ReadonlyArray<InvoiceUploadFile>,
-): InvoiceExtraction | null => {
+const readCsvInvoices = (files: ReadonlyArray<InvoiceUploadFile>): InvoiceExtraction | null => {
   const csvFiles = files.filter(isCsv);
   const lines = csvFiles.flatMap((file) =>
     receivedStockFromCsv(new TextDecoder().decode(file.bytes)),

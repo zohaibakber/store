@@ -2,14 +2,13 @@ import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
 import { Authorization } from "./http-authorization";
-import { AuthHttpErrors } from "./http-errors";
+import { AuthBadRequest, AuthHttpErrors } from "./http-errors";
 import { AuthJwks } from "./jwt";
 import {
-  AuthClientKind,
   BeginGoogleInput,
-  EmailAddress,
   ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   GoogleAuthorization,
@@ -19,37 +18,20 @@ import {
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
-  OtpChallengeId,
-  OtpCode,
-  Password,
+  OtpLoginCommand,
+  PasswordLoginCommand,
   RefreshedSession,
   RefreshInput,
+  RegisterPasswordCommand,
   SignOutInput,
 } from "./model";
 
+export class MalformedRequest extends HttpApiMiddleware.Service<MalformedRequest>()(
+  "@store/auth/MalformedRequest",
+  { error: AuthBadRequest },
+) {}
+
 const Health = Schema.Struct({ ok: Schema.Literal(true) });
-
-const PasswordSignIn = Schema.Struct({
-  _tag: Schema.Literal("Password"),
-  email: EmailAddress,
-  password: Password,
-  client: AuthClientKind,
-});
-
-const OtpSignIn = Schema.Struct({
-  _tag: Schema.Literal("Otp"),
-  challengeId: OtpChallengeId,
-  code: OtpCode,
-  client: AuthClientKind,
-});
-
-const RegisterPassword = Schema.Struct({
-  _tag: Schema.Literal("RegisterPassword"),
-  email: EmailAddress,
-  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  password: Password,
-  client: AuthClientKind,
-});
 
 const authSystemGroup = HttpApiGroup.make("system")
   .add(HttpApiEndpoint.get("landing", "/", { success: Health }))
@@ -66,21 +48,21 @@ const authSessionGroup = HttpApiGroup.make("session")
   )
   .add(
     HttpApiEndpoint.post("signInPassword", "/v1/sign-in/password", {
-      payload: PasswordSignIn,
+      payload: PasswordLoginCommand,
       success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
   .add(
     HttpApiEndpoint.post("signInOtp", "/v1/sign-in/otp", {
-      payload: OtpSignIn,
+      payload: OtpLoginCommand,
       success: IssuedSession,
       error: AuthHttpErrors,
     }),
   )
   .add(
     HttpApiEndpoint.post("signUpPassword", "/v1/sign-up/password", {
-      payload: RegisterPassword,
+      payload: RegisterPasswordCommand,
       success: IssuedSession,
       error: AuthHttpErrors,
     }),
@@ -137,8 +119,6 @@ const authOrganizationGroup = HttpApiGroup.make("organization")
   )
   .middleware(Authorization);
 
-export const AuthHttpApi = HttpApi.make("AuthHttpApi").add(
-  authSystemGroup,
-  authSessionGroup,
-  authOrganizationGroup,
-);
+export const AuthHttpApi = HttpApi.make("AuthHttpApi")
+  .add(authSystemGroup, authSessionGroup, authOrganizationGroup)
+  .middleware(MalformedRequest);

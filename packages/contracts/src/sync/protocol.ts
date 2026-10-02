@@ -20,8 +20,7 @@ export type SyncSubscription = typeof SyncSubscription.Type;
 
 export const OPERATIONAL_SUBSCRIPTION: SyncSubscription = "operational";
 
-export const DecimalSequence = Schema.String.check(Schema.isPattern(/^[0-9]+$/u));
-export type DecimalSequence = typeof DecimalSequence.Type;
+const DecimalSequence = Schema.String.check(Schema.isPattern(/^[0-9]+$/u));
 
 const withoutLeadingZeros = (value: string): string => value.replace(/^0+(?=\d)/u, "");
 
@@ -55,8 +54,7 @@ export const PARTITION_DIGEST_VERSION = 4 as const;
 
 export const PARTITION_DIGEST_VERSION_V3 = 3 as const;
 
-export const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
-export type PartitionDigestVersion = typeof PartitionDigestVersion.Type;
+const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
 
 export const RequestedPartitionDigestVersion = Schema.Literals([
   PARTITION_DIGEST_VERSION_V3,
@@ -90,7 +88,6 @@ export const MAX_TRANSPORT_PAYLOAD_BYTES = 900_000;
 export const MIN_PULL_BYTE_BUDGET = 65_536;
 
 const PullByteBudget = PositiveInt;
-type PullByteBudget = typeof PullByteBudget.Type;
 
 export const SyncProtocolCode = Schema.Literals([
   "ORGANIZATION_MISMATCH",
@@ -134,17 +131,10 @@ export class SyncProtocolError extends Schema.TaggedError<SyncProtocolError>()(
 export const syncProtocolError = (code: SyncProtocolCode, message: string): SyncProtocolError =>
   SyncProtocolError.make({ code, message });
 
-const IssueInvoiceSyncCommand = Schema.Struct({
-  _tag: Schema.Literal("issueInvoice"),
-  payload: IssueInvoiceCommand,
+export const SyncCommand = Schema.TaggedUnion({
+  issueInvoice: { payload: IssueInvoiceCommand },
+  catalogWrite: { payload: CatalogWriteCommand },
 });
-
-const CatalogWriteSyncCommand = Schema.Struct({
-  _tag: Schema.Literal("catalogWrite"),
-  payload: CatalogWriteCommand,
-});
-
-export const SyncCommand = Schema.Union([IssueInvoiceSyncCommand, CatalogWriteSyncCommand]);
 export type SyncCommand = typeof SyncCommand.Type;
 
 export const SyncCommandEnvelope = Schema.Struct({
@@ -175,25 +165,11 @@ export type SyncSubmitCommandRequest = typeof SyncSubmitCommandRequest.Type;
 
 const CommandDecision = Schema.Literals(["accepted", "rejected"]);
 
-const AcceptedInvoiceResult = Schema.Struct({
-  _tag: Schema.Literal("issueInvoice"),
-  invoiceId: InvoiceId,
-  invoiceNumber: PositiveInt,
+const CommandResult = Schema.TaggedUnion({
+  issueInvoice: { invoiceId: InvoiceId, invoiceNumber: PositiveInt },
+  catalogWrite: { rowsWritten: Schema.Natural },
+  rejected: { code: SyncProtocolCode, message: Schema.String },
 });
-type AcceptedInvoiceResult = typeof AcceptedInvoiceResult.Type;
-
-const AcceptedCatalogWriteResult = Schema.Struct({
-  _tag: Schema.Literal("catalogWrite"),
-  rowsWritten: Schema.Natural,
-});
-type AcceptedCatalogWriteResult = typeof AcceptedCatalogWriteResult.Type;
-
-const RejectedCommandResult = Schema.Struct({
-  _tag: Schema.Literal("rejected"),
-  code: SyncProtocolCode,
-  message: Schema.String,
-});
-type RejectedCommandResult = typeof RejectedCommandResult.Type;
 
 export const CommandReceipt = Schema.Struct({
   operationId: SyncIdentifier,
@@ -202,11 +178,11 @@ export const CommandReceipt = Schema.Struct({
   payloadHash: PayloadHash,
   decision: CommandDecision,
   commitSequence: OrgCommitSequence,
-  result: Schema.Union([AcceptedInvoiceResult, AcceptedCatalogWriteResult, RejectedCommandResult]),
+  result: CommandResult,
 });
 export type CommandReceipt = typeof CommandReceipt.Type;
 
-export const MAX_DEVICE_LABEL_LENGTH = 64;
+const MAX_DEVICE_LABEL_LENGTH = 64;
 
 export const DeviceLabel = Schema.String.check(
   Schema.isMinLength(1),

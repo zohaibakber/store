@@ -1,10 +1,10 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent } from "react";
 
-import { hasOpenModal } from "@/components/products/shortcuts";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useSaleDraftStore } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
+import { hasOpenModal } from "@/lib/shortcuts";
 
 const NEW_SALE_PATH = "/invoices/new";
 

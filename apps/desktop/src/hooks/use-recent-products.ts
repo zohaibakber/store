@@ -15,11 +15,11 @@ export type RecentProductSource = {
   readonly category: { readonly name: string };
 };
 
-export const useRecentProductsIn = (workspace: string): ReadonlyArray<RecentProduct> =>
-  useAtomValue(recentProductsAtom(workspace));
+export const useRecentProducts = (): ReadonlyArray<RecentProduct> =>
+  useAtomValue(recentProductsAtom(useWorkspaceStorageKey()));
 
-export const useRememberRecentProductIn = (workspace: string) => {
-  const setRecents = useAtomSet(recentProductsAtom(workspace));
+export const useRememberRecentProduct = () => {
+  const setRecents = useAtomSet(recentProductsAtom(useWorkspaceStorageKey()));
   return useCallback(
     (product: RecentProductSource) => {
       const entry: RecentProduct = {
@@ -35,8 +35,3 @@ export const useRememberRecentProductIn = (workspace: string) => {
     [setRecents],
   );
 };
-
-export const useRecentProducts = (): ReadonlyArray<RecentProduct> =>
-  useRecentProductsIn(useWorkspaceStorageKey());
-
-export const useRememberRecentProduct = () => useRememberRecentProductIn(useWorkspaceStorageKey());

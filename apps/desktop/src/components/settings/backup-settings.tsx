@@ -78,9 +78,19 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
   const [confirming, setConfirming] = useState(false);
   const busy = activity !== "idle";
 
-  const backUp = async () => {
-    setActivity("backingUp");
+  const during = async (next: Activity, failed: string, task: () => Promise<void>) => {
+    setActivity(next);
     try {
+      await task();
+    } catch (cause) {
+      failure(failed, cause);
+    } finally {
+      setActivity("idle");
+    }
+  };
+
+  const backUp = () =>
+    during("backingUp", "Backup not saved", async () => {
       const outcome = await bridge.backUp();
       switch (outcome._tag) {
         case "saved":
@@ -100,16 +110,10 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
         case "cancelled":
           break;
       }
-    } catch (cause) {
-      failure("Backup not saved", cause);
-    } finally {
-      setActivity("idle");
-    }
-  };
+    });
 
-  const chooseRestore = async () => {
-    setActivity("choosing");
-    try {
+  const chooseRestore = () =>
+    during("choosing", "This file cannot be restored", async () => {
       const choice = await bridge.chooseRestore();
       switch (choice._tag) {
         case "staged":
@@ -126,22 +130,16 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
         case "cancelled":
           break;
       }
-    } catch (cause) {
-      failure("This file cannot be restored", cause);
-    } finally {
-      setActivity("idle");
-    }
-  };
+    });
 
   const dismissRestore = () => {
     setConfirming(false);
     void bridge.discardRestore().catch(() => undefined);
   };
 
-  const applyRestore = async (fileName: string) => {
+  const applyRestore = (fileName: string) => {
     setConfirming(false);
-    setActivity("restoring");
-    try {
+    return during("restoring", "Not restored", async () => {
       const outcome = await bridge.applyRestore();
       switch (outcome._tag) {
         case "restored":
@@ -156,11 +154,7 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
           toastManager.add({ title: "Not restored", description: outcome.message, type: "error" });
           break;
       }
-    } catch (cause) {
-      failure("Not restored", cause);
-    } finally {
-      setActivity("idle");
-    }
+    });
   };
 
   return (

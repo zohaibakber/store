@@ -14,7 +14,7 @@ const AUTO_CAPTURE: StabilityConfig = {
   sameItemSimilarity: 0.5,
 };
 
-export type StabilityState = {
+type StabilityState = {
   readonly tokens: ReadonlyArray<string>;
   readonly steadySince: number | null;
   readonly lastCaptured: ReadonlyArray<string> | null;

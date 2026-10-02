@@ -108,8 +108,6 @@ export const useSaleDraftsIn = (workspace: string): SaleDrafts =>
 export const useSaleDraftStoreIn = (workspace: string): SaleDraftStore =>
   saleDraftStore(useContext(RegistryContext), workspace);
 
-export const useSaleDrafts = (): SaleDrafts => useSaleDraftsIn(useWorkspaceStorageKey());
-
 export const useSaleDraftStore = (): SaleDraftStore =>
   useSaleDraftStoreIn(useWorkspaceStorageKey());
 

@@ -2,7 +2,6 @@ import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import {
   incrementDecimalSequence,
-  SyncCommandEnvelope,
   syncProtocolError,
   type CommandReceipt,
   type EnqueueCommandRequest,
@@ -16,7 +15,6 @@ import {
   type SyncSubscription,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import type {
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
@@ -32,7 +30,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
@@ -42,10 +39,9 @@ import {
   MAX_REJECTED_ACTIVITY_ROWS,
   type ReplicaOutboxActivity,
 } from "../activity";
+import { admitCommand } from "../admission";
 import {
   decodeEntity,
-  decodeNamedRow,
-  decodeNumberedRow,
   decodeOutboxEnvelope,
   encodeEnvelopeJson,
   encodeReceiptJson,
@@ -57,20 +53,14 @@ import {
   noticeFromState,
   stampOf,
   touchedOfChange,
-  touchedOfKey,
-  withStockTouched,
   type TouchedSet,
 } from "../commit-hub";
 import {
   awaitingSnapshotCoverage,
-  checkAuthorityHead,
   checkIncarnation,
   decideCoverageAfterPull,
-  decideEnqueueReplay,
-  decideOverlays,
   decideReceipt,
   isStaleClaim,
-  nextUploadClaim,
   OUTSTANDING_COMMAND_STATUSES,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
@@ -86,11 +76,17 @@ import {
   ReplicaStorageError,
 } from "../errors";
 import { generationResetNotice } from "../generation-reset";
-import { checkEnqueueAllowed, type PendingRestoreResult } from "../projection";
+import {
+  integrateGroupOverPending,
+  projectLocalCommand,
+  restorePendingProjection,
+  undoLocalEffects,
+  type PendingRowStore,
+} from "../pending";
 import {
   announcementFields,
-  announcementOf,
   decideRegistration,
+  syncCursorOf,
   UNRECEIPTED_COMMAND_STATUSES,
   type ReplicaRegistrationOutcome,
 } from "../registration";
@@ -101,20 +97,14 @@ import {
   type ReplicaStoreContract,
   type ReplicaStoreError,
   type SnapshotActivation,
-  type VerifyAuthorityInput,
 } from "../store";
 import { indexedDbPartitionDigest } from "./digest";
 import { readIndexedDbInsights } from "./insights";
 import {
-  readIndexedDbCommandContext,
+  indexedDbCatalogReads,
+  indexedDbPendingRows,
   removeEntityRow,
-  renameIndexedDbCollidingShadow,
-  renumberIndexedDbCollidingShadow,
-  resolveIndexedDbRemoteRow,
-  restoreIndexedDbPendingProjection,
-  writeEntityRow,
   writeEntityRows,
-  writeIndexedDbPendingProjection,
 } from "./pending";
 import {
   executeIndexedDbSubset,
@@ -186,8 +176,6 @@ const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   return mapReplicaStoreFailure(cause);
 };
 
-const decodeEnvelope = Schema.decodeUnknownEffect(SyncCommandEnvelope);
-
 const missingState = () => ReplicaStorageError.make({ message: "Replica state is missing." });
 
 const decodeOutboxRow = (row: OutboxRow) =>
@@ -249,55 +237,6 @@ const firstRow = <A>(rows: ReadonlyArray<A>): A | undefined => rows[0];
 
 const outboxRow = (api: ReplicaQueryBuilder, operationId: string) =>
   api.from("command_outbox").select().equals(operationId).pipe(Effect.map(firstRow));
-
-const undoLocalEffects = (
-  api: ReplicaQueryBuilder,
-  generation: number,
-  operationId: string,
-): Effect.Effect<PendingRestoreResult, unknown> =>
-  Effect.gen(function* () {
-    const overlays = yield* api.from("stock_overlays").select("byCommand").equals(operationId);
-    yield* api.from("stock_overlays").delete("byCommand").equals(operationId);
-    const restored = yield* restoreIndexedDbPendingProjection(api, generation, operationId);
-    return withStockTouched(
-      restored,
-      overlays.map((overlay) => overlay.batchId),
-    );
-  });
-
-const displaceCollidingShadow = (
-  api: ReplicaQueryBuilder,
-  generation: number,
-  change: SyncEntityChange,
-  operationId: string,
-): Effect.Effect<string | undefined, unknown> => {
-  switch (change.entity) {
-    case "invoice":
-    case "purchaseOrder":
-      return renumberIndexedDbCollidingShadow(
-        api,
-        generation,
-        change.entity,
-        decodeNumberedRow(change.entity, change.row),
-        operationId,
-      );
-    case "category":
-    case "supplier":
-      return renameIndexedDbCollidingShadow(
-        api,
-        generation,
-        change.entity,
-        decodeNamedRow(change.entity, change.row),
-        operationId,
-      );
-    case "product":
-    case "batch":
-    case "invoiceItem":
-    case "stockMovement":
-    case "purchaseOrderItem":
-      return Effect.succeed(undefined);
-  }
-};
 
 const subsetTables = (plan: IndexedDbSubsetPlan): ReadonlyArray<IndexedDbTableName> =>
   plan.table === "batches"
@@ -457,58 +396,30 @@ const makeScopedIndexedDbReplicaStore = (
         Effect.gen(function* () {
           const state = yield* requireState(api);
           const existing = yield* outboxRow(api, request.operationId);
-          const payloadHash = canonicalPayloadHash(request.command);
-          const replay = yield* Effect.fromResult(
-            decideEnqueueReplay(
-              existing
-                ? { status: existing.status, envelope: yield* decodeOutboxRow(existing) }
-                : undefined,
-              payloadHash,
-            ),
+          const admission = yield* admitCommand(
+            state,
+            existing
+              ? { status: existing.status, envelope: yield* decodeOutboxRow(existing) }
+              : undefined,
+            request,
+            indexedDbCatalogReads(api, state.activeGeneration),
           );
-          if (replay !== undefined) {
+          if (admission._tag === "replayed") {
             return {
               value: {
                 operationId: request.operationId,
-                status: replay,
+                status: admission.status,
                 stamp: stampOf(state),
               },
               notice: undefined,
             };
           }
-          const envelope = yield* decodeEnvelope({
-            organizationId: state.organizationId,
-            epoch: state.epoch,
-            replicaId: state.replicaId,
-            clientSequence: state.nextClientSequence,
-            operationId: request.operationId,
-            payloadHash,
-            command: request.command,
-          }).pipe(
-            Effect.mapError((error) => syncProtocolError("INVALID_OPERATION", error.message)),
-          );
-          const context = yield* readIndexedDbCommandContext(
-            api,
-            state.activeGeneration,
-            envelope.command,
-            { checkRules: true, withStock: true },
-          );
-          yield* checkEnqueueAllowed(
+          const { envelope } = admission;
+          const touched = yield* projectLocalCommand(
+            indexedDbPendingRows(api, state.activeGeneration),
             envelope,
-            context.lookup,
-            context.unitsPerPackFor,
-            context.stockFor,
-          );
-          const overlays = decideOverlays(envelope, context.unitsPerPackFor);
-          for (const overlay of overlays) {
-            yield* api.from("stock_overlays").insert(overlay);
-          }
-          const projection = yield* writeIndexedDbPendingProjection(
-            api,
-            state.activeGeneration,
             { organizationId: state.organizationId, userId: state.userId },
-            context.lookup,
-            envelope,
+            admission.context,
           );
           yield* api.from("command_outbox").insert({
             operationId: envelope.operationId,
@@ -529,10 +440,6 @@ const makeScopedIndexedDbReplicaStore = (
             ...state,
             nextClientSequence: incrementDecimalSequence(state.nextClientSequence),
           });
-          const touched = withStockTouched(
-            projection,
-            overlays.map((overlay) => overlay.batchId),
-          );
           return {
             value: { operationId: request.operationId, status: "pending", stamp: after },
             notice: notice(after, touched.touchedEntities, touched.touchedKeys),
@@ -546,7 +453,7 @@ const makeScopedIndexedDbReplicaStore = (
           const sending = yield* outboxWithStatus(api, "sending").limit(1);
           if (sending.length > 0) return { value: undefined, notice: undefined };
           const state = yield* requireState(api);
-          const next = nextUploadClaim(yield* outboxWithStatus(api, "pending").limit(1));
+          const [next] = yield* outboxWithStatus(api, "pending").limit(1);
           if (!next) return { value: undefined, notice: undefined };
           const envelope = yield* decodeOutboxRow(next);
           const attempts = next.attempts + 1;
@@ -591,7 +498,10 @@ const makeScopedIndexedDbReplicaStore = (
           const state = yield* requireState(api);
           const restored =
             decision._tag === "rejected"
-              ? yield* undoLocalEffects(api, state.activeGeneration, receipt.operationId)
+              ? yield* undoLocalEffects(
+                  indexedDbPendingRows(api, state.activeGeneration),
+                  receipt.operationId,
+                )
               : undefined;
           yield* api.from("command_outbox").upsert({ ...row, ...settled, status: decision.status });
           const after = yield* bumpCommitVersion(api, state);
@@ -633,43 +543,16 @@ const makeScopedIndexedDbReplicaStore = (
 
     const applyGroupWithin = (
       api: ReplicaQueryBuilder,
-      generation: number,
+      rows: PendingRowStore<unknown>,
       group: SyncTransactionGroup,
     ) =>
       Effect.gen(function* () {
-        const touched: Array<TouchedSet> = [];
-        for (const change of group.changes) {
-          touched.push(touchedOfChange(change.entity, change.entityId));
-          if (change.action === "delete") {
-            yield* removeEntityRow(api, generation, change.entity, change.entityId);
-          } else {
-            const displaced = yield* displaceCollidingShadow(
-              api,
-              generation,
-              change,
-              group.operationId,
-            );
-            if (displaced) touched.push(touchedOfKey(displaced));
-            yield* writeEntityRow(api, generation, change.entity, change.row);
-          }
-          yield* resolveIndexedDbRemoteRow(api, change.entity, change.entityId);
-        }
-        touched.push(yield* restoreIndexedDbPendingProjection(api, generation, group.operationId));
-        const overlays = yield* api
-          .from("stock_overlays")
-          .select("byCommand")
-          .equals(group.operationId);
-        if (overlays.length > 0) {
-          yield* api.from("stock_overlays").delete("byCommand").equals(group.operationId);
-        }
+        const touched = yield* integrateGroupOverPending(rows, group);
         const outbox = yield* outboxRow(api, group.operationId);
         if (outbox && outbox.status !== "rejected") {
           yield* api.from("command_outbox").upsert({ ...outbox, status: "integrated" });
         }
-        return withStockTouched(
-          mergeTouched(...touched),
-          overlays.map((overlay) => overlay.batchId),
-        );
+        return touched;
       });
 
     const hasPendingProjection = (api: ReplicaQueryBuilder) =>
@@ -682,6 +565,7 @@ const makeScopedIndexedDbReplicaStore = (
     const applySettledGroups = (
       api: ReplicaQueryBuilder,
       generation: number,
+      rows: PendingRowStore<unknown>,
       groups: ReadonlyArray<SyncTransactionGroup>,
     ) =>
       Effect.gen(function* () {
@@ -720,9 +604,7 @@ const makeScopedIndexedDbReplicaStore = (
         }
         for (const group of groups) {
           if (group.decision === "rejected") {
-            touched.push(
-              yield* restoreIndexedDbPendingProjection(api, generation, group.operationId),
-            );
+            touched.push(yield* restorePendingProjection(rows, group.operationId));
           }
         }
         return mergeTouched(...touched);
@@ -746,13 +628,12 @@ const makeScopedIndexedDbReplicaStore = (
             }
             if (due.length === 0) return { value: appliedThrough, notice: undefined };
             const generation = state.activeGeneration;
+            const rows = indexedDbPendingRows(api, generation);
             const applied = (yield* hasPendingProjection(api))
               ? mergeTouched(
-                  ...(yield* Effect.forEach(due, (group) =>
-                    applyGroupWithin(api, generation, group),
-                  )),
+                  ...(yield* Effect.forEach(due, (group) => applyGroupWithin(api, rows, group))),
                 )
-              : yield* applySettledGroups(api, generation, due);
+              : yield* applySettledGroups(api, generation, rows, due);
             const after = yield* bumpCommitVersion(api, {
               ...state,
               appliedCommitSequence: appliedThrough,
@@ -1000,14 +881,7 @@ const makeScopedIndexedDbReplicaStore = (
       );
 
     return {
-      readSyncCursor: () =>
-        readStateWith((state) => ({
-          epoch: state.epoch,
-          appliedCommitSequence: state.appliedCommitSequence,
-          replicaId: state.replicaId,
-          bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
-          ...announcementOf(state),
-        })),
+      readSyncCursor: () => readStateWith(syncCursorOf),
       adoptRegistration,
       enqueueCommand,
       claimNextUpload,
@@ -1063,20 +937,6 @@ const makeScopedIndexedDbReplicaStore = (
             ),
           ),
           Effect.tap(() => requestSweep),
-        ),
-      verifyAuthority: (authority: VerifyAuthorityInput) =>
-        withQuery((api) =>
-          requireState(api).pipe(
-            Effect.flatMap((state) =>
-              Effect.fromResult(checkIncarnation(state.incarnation, authority.incarnation)).pipe(
-                Effect.andThen(
-                  Effect.fromResult(
-                    checkAuthorityHead(state.appliedCommitSequence, authority.horizon),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ),
       markCoverageRepair,
       readDigestVerification: (subscription: SyncSubscription) =>

@@ -5,7 +5,6 @@ import * as Schema from "effect/Schema";
 export const AccountOrganization = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  slug: Schema.NullOr(Schema.String),
   role: Schema.String,
 });
 export interface AccountOrganization extends Schema.Schema.Type<typeof AccountOrganization> {}
@@ -32,6 +31,8 @@ export const LastOrganization = Schema.Struct({
 export interface LastOrganization extends Schema.Schema.Type<typeof LastOrganization> {}
 
 export const SESSION_ENDED_NOTICE = "Your session ended. Sign in again.";
+
+export const canRenameOrganization = (role: string) => role === "owner" || role === "admin";
 
 export type AuthState =
   | { readonly _tag: "Loading" }
@@ -68,7 +69,6 @@ const sameOrganization = (left: AccountOrganization | null, right: AccountOrgani
     right !== null &&
     left.id === right.id &&
     left.name === right.name &&
-    left.slug === right.slug &&
     left.role === right.role);
 
 const sameAccount = (left: Account, right: Account) =>
@@ -139,7 +139,6 @@ export const accountFromWorkspace = (snapshot: AuthenticatedWorkspaceSnapshot): 
       : {
           id: snapshot.activeOrganization.id,
           name: snapshot.activeOrganization.name,
-          slug: snapshot.activeOrganization.slug ?? null,
           role: snapshot.activeOrganization.role,
         },
 });

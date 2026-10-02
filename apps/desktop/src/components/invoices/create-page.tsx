@@ -5,10 +5,10 @@ import { InvoiceCreateProvider, useInvoiceCreate } from "@/components/invoices/c
 import { InvoiceItems } from "@/components/invoices/create-items";
 import { SaleDiscardDialog, SaleDraftTabs } from "@/components/invoices/draft-tabs";
 import { ProductResolver } from "@/components/invoices/resolve-product";
-import { hasOpenModal, isEditableTarget, isInListbox } from "@/components/products/shortcuts";
 import { PageLayout } from "@/components/shared/page-layout";
 import { toastManager } from "@/components/ui/toast";
 import { saleDraftShortcut, type ShortcutFocus } from "@/lib/sale-draft-shortcut";
+import { hasOpenModal, isEditableTarget, isInListbox, isSubmitChord } from "@/lib/shortcuts";
 
 const isBehindPopup = (event: KeyboardEvent) => hasOpenModal() || isInListbox(event.target);
 
@@ -29,8 +29,7 @@ function CompleteSaleShortcut() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
-      if (isBehindPopup(event)) return;
+      if (!isSubmitChord(event) || isBehindPopup(event)) return;
       event.preventDefault();
       event.stopPropagation();
       complete();

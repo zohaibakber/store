@@ -1,34 +1,30 @@
 import {
   CommandReceipt,
   incrementDecimalSequence,
-  SyncCommandEnvelope,
-  syncProtocolError,
   type EnqueueCommandRequest,
   type RegisterReplicaResult,
+  type SyncCommandEnvelope,
 } from "@store/contracts";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import type { CommandStatus, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
-import { commandOutbox, replicaState, stockOverlays } from "@store/db/replica.schema";
+import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
+import { admitCommand } from "./admission";
 import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
-import { EMPTY_TOUCHED, stampOf, withStockTouched, type TouchedSet } from "./commit-hub";
+import { stampOf } from "./commit-hub";
 import {
-  checkAuthorityHead,
   checkIncarnation,
-  decideEnqueueReplay,
-  decideOverlays,
   decideReceipt,
   isStaleClaim,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
 } from "./decisions";
 import { ReplicaStorageError } from "./errors";
-import { readCommandContext, readVisibleBatchStock } from "./lookup";
-import { restorePendingProjection, writePendingProjection } from "./pending";
-import { checkEnqueueAllowed, type PendingRestoreResult } from "./projection";
+import type { CommandContext } from "./footprint";
+import { sqliteCatalogReads } from "./lookup";
+import { projectLocalCommand, undoLocalEffects } from "./pending";
+import type { PendingRestoreResult } from "./projection";
 import {
   announcementFields,
   decideRegistration,
@@ -36,6 +32,7 @@ import {
   type ReplicaRegistrationOutcome,
 } from "./registration";
 import type { ReplicaDb } from "./sql-client/drizzle";
+import { sqlitePendingRows } from "./sqlite/pending-rows";
 
 type CommandOutboxStatus = (typeof commandOutbox.$inferSelect)["status"];
 
@@ -94,14 +91,6 @@ const updateOutbox = (tx: ReplicaDb, operationId: string, fields: Partial<Outbox
 const selectOutboxRow = (tx: ReplicaDb, operationId: string) =>
   tx.select().from(commandOutbox).where(eq(commandOutbox.operationId, operationId)).get();
 
-export const visibleBatchStock = Effect.fn("ReplicaCommands.visibleBatchStock")(function* (
-  tx: ReplicaDb,
-  batchId: string,
-) {
-  const { organizationId } = yield* loadReplicaState(tx);
-  return yield* readVisibleBatchStock(tx, organizationId, batchId);
-});
-
 export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function* (
   tx: ReplicaDb,
   operationId: string,
@@ -110,19 +99,15 @@ export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function
   return row?.status;
 });
 
-export const parseStoredEnvelope = (row: OutboxRow) => decodeStoredEnvelope(row);
-
 type AdmittedCommand = {
   readonly envelope: SyncCommandEnvelope;
   readonly state: typeof replicaState.$inferSelect;
-  readonly context: Effect.Success<ReturnType<typeof readCommandContext>>;
+  readonly context: CommandContext;
 };
 
-type CommandAdmission =
+type LocalAdmission =
   | { readonly _tag: "replayed"; readonly status: CommandStatus; readonly stamp: ReplicaReadStamp }
   | ({ readonly _tag: "admitted" } & AdmittedCommand);
-
-const decodeEnvelope = Schema.decodeUnknownEffect(SyncCommandEnvelope);
 
 export const admitLocalCommand = Effect.fn("ReplicaCommands.admitLocalCommand")(function* (
   tx: ReplicaDb,
@@ -130,53 +115,29 @@ export const admitLocalCommand = Effect.fn("ReplicaCommands.admitLocalCommand")(
 ) {
   const existing = yield* selectOutboxRow(tx, request.operationId);
   const state = yield* loadReplicaState(tx);
-  const payloadHash = canonicalPayloadHash(request.command);
-  const replay = yield* Effect.fromResult(
-    decideEnqueueReplay(
-      existing
-        ? { status: existing.status, envelope: yield* parseStoredEnvelope(existing) }
-        : undefined,
-      payloadHash,
-    ),
+  const admission = yield* admitCommand(
+    state,
+    existing
+      ? { status: existing.status, envelope: yield* decodeStoredEnvelope(existing) }
+      : undefined,
+    request,
+    sqliteCatalogReads(tx, state.organizationId),
   );
-  if (replay !== undefined) {
-    return { _tag: "replayed", status: replay, stamp: stampOf(state) } satisfies CommandAdmission;
-  }
-  const envelope = yield* decodeEnvelope({
-    organizationId: state.organizationId,
-    epoch: state.epoch,
-    replicaId: state.replicaId,
-    clientSequence: state.nextClientSequence,
-    operationId: request.operationId,
-    payloadHash,
-    command: request.command,
-  }).pipe(Effect.mapError((error) => syncProtocolError("INVALID_OPERATION", error.message)));
-  const context = yield* readCommandContext(tx, state.organizationId, envelope.command, {
-    checkRules: true,
-    withStock: true,
-  });
-  yield* checkEnqueueAllowed(envelope, context.lookup, context.unitsPerPackFor, context.stockFor);
-  return { _tag: "admitted", envelope, state, context } satisfies CommandAdmission;
+  return admission._tag === "replayed"
+    ? ({ ...admission, stamp: stampOf(state) } satisfies LocalAdmission)
+    : ({ ...admission, state } satisfies LocalAdmission);
 });
 
-export const projectAdmittedCommand = Effect.fn("ReplicaCommands.projectAdmittedCommand")(
-  function* (tx: ReplicaDb, { envelope, state, context }: AdmittedCommand) {
-    const overlays = decideOverlays(envelope, context.unitsPerPackFor);
-    for (const overlay of overlays) {
-      yield* tx.insert(stockOverlays).values(overlay);
-    }
-    const projection = yield* writePendingProjection(
-      tx,
-      envelope,
-      { organizationId: state.organizationId, userId: state.userId },
-      context.lookup,
-    );
-    return withStockTouched(
-      projection,
-      overlays.map((overlay) => overlay.batchId),
-    );
-  },
-);
+export const projectAdmittedCommand = (
+  tx: ReplicaDb,
+  { envelope, state, context }: AdmittedCommand,
+) =>
+  projectLocalCommand(
+    sqlitePendingRows(tx, state.organizationId),
+    envelope,
+    { organizationId: state.organizationId, userId: state.userId },
+    context,
+  );
 
 export const queueAdmittedCommand = Effect.fn("ReplicaCommands.queueAdmittedCommand")(function* (
   tx: ReplicaDb,
@@ -218,52 +179,6 @@ export const pruneIntegratedCommands = Effect.fn("ReplicaCommands.pruneIntegrate
   },
 );
 
-type SavedLocalCommand = {
-  readonly status: CommandStatus;
-  readonly stamp: ReplicaReadStamp;
-  readonly changed: boolean;
-  readonly touched: TouchedSet;
-};
-
-export const saveLocalCommand = Effect.fn("ReplicaCommands.saveLocalCommand")(function* (
-  tx: ReplicaDb,
-  request: EnqueueCommandRequest,
-) {
-  const admission = yield* admitLocalCommand(tx, request);
-  if (admission._tag === "replayed") {
-    return {
-      status: admission.status,
-      stamp: admission.stamp,
-      changed: false,
-      touched: EMPTY_TOUCHED,
-    } satisfies SavedLocalCommand;
-  }
-  const touched = yield* projectAdmittedCommand(tx, admission);
-  return {
-    status: "pending",
-    stamp: yield* queueAdmittedCommand(tx, admission, request.occurredAt),
-    changed: true,
-    touched,
-  } satisfies SavedLocalCommand;
-});
-
-const undoLocalEffects = Effect.fn("ReplicaCommands.undoLocalEffects")(function* (
-  tx: ReplicaDb,
-  operationId: string,
-) {
-  const overlays = yield* tx
-    .select({ batchId: stockOverlays.batchId })
-    .from(stockOverlays)
-    .where(eq(stockOverlays.commandId, operationId))
-    .all();
-  yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, operationId));
-  const restored = yield* restorePendingProjection(tx, operationId);
-  return withStockTouched(
-    restored,
-    overlays.map((overlay) => overlay.batchId),
-  );
-});
-
 export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(function* (
   tx: ReplicaDb,
   input: ClaimNextUploadInput,
@@ -282,7 +197,7 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
     .limit(1)
     .get();
   if (!row) return undefined;
-  const envelope = yield* parseStoredEnvelope(row);
+  const envelope = yield* decodeStoredEnvelope(row);
   const attempts = row.attempts + 1;
   yield* updateOutbox(tx, row.operationId, {
     status: "sending",
@@ -313,7 +228,7 @@ const settleCommandReceipt = Effect.fn("ReplicaCommands.settleCommandReceipt")(f
 ) {
   const row = yield* selectOutboxRow(tx, receipt.operationId);
   if (!row) return undefined;
-  const envelope = yield* parseStoredEnvelope(row);
+  const envelope = yield* decodeStoredEnvelope(row);
   const claimMatches =
     claimId === undefined || (row.status === "sending" && row.claimId === claimId);
   const decision = yield* Effect.fromResult(
@@ -328,7 +243,12 @@ const settleCommandReceipt = Effect.fn("ReplicaCommands.settleCommandReceipt")(f
     return { status: decision.status, restored: undefined } satisfies SettledCommand;
   }
   const restored =
-    decision._tag === "rejected" ? yield* undoLocalEffects(tx, receipt.operationId) : undefined;
+    decision._tag === "rejected"
+      ? yield* undoLocalEffects(
+          sqlitePendingRows(tx, (yield* loadReplicaState(tx)).organizationId),
+          receipt.operationId,
+        )
+      : undefined;
   yield* updateOutbox(tx, receipt.operationId, { ...settled, status: decision.status });
   yield* bumpLocalCommitVersion(tx);
   return { status: decision.status, restored } satisfies SettledCommand;
@@ -359,13 +279,6 @@ export const verifyReplicaIncarnation = Effect.fn("ReplicaCommands.verifyReplica
   },
 );
 
-export const verifyAuthorityHeadNotBehind = Effect.fn(
-  "ReplicaCommands.verifyAuthorityHeadNotBehind",
-)(function* (tx: ReplicaDb, authorityHorizon: string) {
-  const state = yield* loadReplicaState(tx);
-  yield* Effect.fromResult(checkAuthorityHead(state.appliedCommitSequence, authorityHorizon));
-});
-
 export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaRegistration")(
   function* (tx: ReplicaDb, authority: RegisterReplicaResult, registeredAt: number) {
     const state = yield* loadReplicaState(tx);
@@ -375,7 +288,7 @@ export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaR
       .where(inArray(commandOutbox.status, [...UNRECEIPTED_COMMAND_STATUSES]))
       .all();
     const outbox = yield* Effect.forEach(rows, (row) =>
-      parseStoredEnvelope(row).pipe(Effect.map((envelope) => ({ ...row, envelope }))),
+      decodeStoredEnvelope(row).pipe(Effect.map((envelope) => ({ ...row, envelope }))),
     );
     const decision = decideRegistration(state, outbox, authority);
     if (decision._tag === "refuse") {

@@ -4,29 +4,21 @@ import {
 } from "@store/client-db/sql-client";
 import type { InventoryHost, ReplicaOpenIdentity } from "@store/inventory-react";
 import type { LiveNetworkSignal } from "@store/sync/browser";
+import * as Effect from "effect/Effect";
+import * as Semaphore from "effect/Semaphore";
+import { randomUUID } from "expo-crypto";
 
 import type { LiveAccessToken } from "@/auth/session";
 
-import { mintReplicaIdCandidate } from "./device-id";
 import { replicaDatabaseName } from "./policy";
 import { replicaSqlClient } from "./sqlite";
 
-const disposals = new Map<string, Promise<void>>();
+const databaseLocks = new Map<string, Semaphore.Semaphore>();
 
-const settled = (work: Promise<unknown>): Promise<void> =>
-  work.then(
-    () => undefined,
-    () => undefined,
-  );
-
-const retire = (databaseName: string, handle: SqlClientReplicaHandle): Promise<void> => {
-  const previous = disposals.get(databaseName) ?? Promise.resolve();
-  const done = previous.then(() => settled(handle.close()));
-  disposals.set(databaseName, done);
-  void done.then(() => {
-    if (disposals.get(databaseName) === done) disposals.delete(databaseName);
-  });
-  return done;
+const exclusive = <A, E>(databaseName: string, work: Effect.Effect<A, E>): Promise<A> => {
+  const lock = databaseLocks.get(databaseName) ?? Semaphore.makeUnsafe(1);
+  databaseLocks.set(databaseName, lock);
+  return Effect.runPromise(lock.withPermit(work));
 };
 
 export type MobileReplicaListener = {
@@ -42,32 +34,38 @@ export const createMobileInventoryHost = (input: {
   readonly listener: MobileReplicaListener;
 }): InventoryHost => ({
   apiBaseUrl: input.apiBaseUrl,
-  deviceId: mintReplicaIdCandidate(),
+  deviceId: randomUUID(),
   openReplica: async (identity: ReplicaOpenIdentity) => {
     const databaseName = replicaDatabaseName(
       input.apiBaseUrl,
       identity.organizationId,
       identity.userId,
     );
-    await disposals.get(databaseName);
-    const handle = await openSqlClientReplicaHandle({
-      sqlClient: replicaSqlClient(databaseName),
+    const handle = await exclusive(
       databaseName,
-      identity: { ...identity, replicaId: mintReplicaIdCandidate() },
-      sync: {
-        apiBaseUrl: input.apiBaseUrl,
-        authenticatedFetch: input.authenticatedFetch,
-        accessToken: input.liveAccessToken,
-        network: input.network,
-      },
-    });
+      Effect.tryPromise({
+        try: () =>
+          openSqlClientReplicaHandle({
+            sqlClient: replicaSqlClient(databaseName),
+            databaseName,
+            identity: { ...identity, replicaId: randomUUID() },
+            sync: {
+              apiBaseUrl: input.apiBaseUrl,
+              authenticatedFetch: input.authenticatedFetch,
+              accessToken: input.liveAccessToken,
+              network: input.network,
+            },
+          }),
+        catch: (cause) => cause,
+      }),
+    );
     let retired: Promise<void> | undefined;
     const replica: SqlClientReplicaHandle = {
       ...handle,
       close: () => {
         if (retired === undefined) {
           input.listener.closed(replica);
-          retired = retire(databaseName, handle);
+          retired = exclusive(databaseName, Effect.ignore(Effect.tryPromise(() => handle.close())));
         }
         return retired;
       },

@@ -14,6 +14,7 @@ import {
   LOCAL_ORGANIZATION_ID,
   LOCAL_USER_ID,
   PartitionDigest,
+  PositiveInt,
   ReplicaInsightsFacts,
   ReplicaInsightsWindow,
 } from "@store/contracts";
@@ -22,8 +23,6 @@ import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
-const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
 
 export const ReplicaWorkspaceToken = NonEmptyString;
 
@@ -84,27 +83,27 @@ export const ReplicaCommandStatusInput = Schema.Struct({
 
 const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_096));
 
-export const ReplicaCatalogCounts = Schema.Struct({
-  products: NonNegativeInteger,
-  sales: NonNegativeInteger,
-  purchaseOrders: NonNegativeInteger,
+const ReplicaCatalogCounts = Schema.Struct({
+  products: Schema.Natural,
+  sales: Schema.Natural,
+  purchaseOrders: Schema.Natural,
 });
 
 export const ReplicaPublishSummary = Schema.Struct({
   importId: ImportId,
   ...ReplicaCatalogCounts.fields,
-  rows: NonNegativeInteger,
-  outstanding: NonNegativeInteger,
+  rows: Schema.Natural,
+  outstanding: Schema.Natural,
 });
 
 export const ReplicaPublishSeal = Schema.Struct({
   partCount: ImportPartNumber,
   digest: PartitionDigest,
-  digestVersion: PositiveInteger,
+  digestVersion: PositiveInt,
 });
 
 const ReplicaPublishProgress = Schema.Union([
-  Schema.TaggedStruct("staged", { partNumber: ImportPartNumber, rowCount: NonNegativeInteger }),
+  Schema.TaggedStruct("staged", { partNumber: ImportPartNumber, rowCount: Schema.Natural }),
   Schema.TaggedStruct("sealed", ReplicaPublishSeal.fields),
 ]);
 
@@ -128,7 +127,12 @@ export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
 const ReplicaCommitStamp = Schema.Struct({
   generationId: NonEmptyString,
-  localCommitVersion: NonNegativeInteger,
+  localCommitVersion: Schema.Natural,
+});
+
+export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) => ({
+  generationId: stamp.generationId,
+  localCommitVersion: stamp.localCommitVersion,
 });
 
 export const ReplicaCommitNotice = Schema.Struct({
@@ -171,16 +175,12 @@ export const ProxyFetchRequest = Schema.Struct({
   method: Schema.Literals(["GET", "POST"]),
   pathname: Schema.String,
   bodyText: Schema.NullOr(Schema.String),
-  timeoutMillis: Schema.Number.check(
-    Schema.isInt(),
-    Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(MAX_PROXY_TIMEOUT_MILLIS),
-  ),
+  timeoutMillis: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_PROXY_TIMEOUT_MILLIS)),
 });
 
 export const ProxyFetchResult = Schema.Struct({
   ok: Schema.Boolean,
-  status: NonNegativeInteger,
+  status: Schema.Natural,
   bodyText: Schema.String,
   retryAfter: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
 });
@@ -252,12 +252,12 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("WakeSyncUpload", {
-    success: Schema.Struct({ drained: Schema.Boolean, drainCount: NonNegativeInteger }),
+    success: Schema.Struct({ drained: Schema.Boolean, drainCount: Schema.Natural }),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("BackUp", {
     payload: { destinationPath: FilePath },
-    success: Schema.Struct({ bytes: NonNegativeInteger }),
+    success: Schema.Struct({ bytes: Schema.Natural }),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("StageRestore", {

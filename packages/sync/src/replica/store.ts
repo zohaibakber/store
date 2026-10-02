@@ -52,11 +52,6 @@ type ReplicaSyncCursor = ReplicaAnnouncement & {
   readonly bootstrapped: boolean;
 };
 
-export type VerifyAuthorityInput = {
-  readonly incarnation: string;
-  readonly horizon: string;
-};
-
 interface ReplicaRegistrationStore {
   readonly readSyncCursor: () => Effect.Effect<ReplicaSyncCursor, ReplicaStoreError>;
 
@@ -110,8 +105,6 @@ interface ReplicaRemoteApplyStore {
   readonly applyTransactionGroup: (
     group: SyncTransactionGroup,
   ) => Effect.Effect<Committed<string>, ReplicaStoreError>;
-
-  readonly verifyAuthority: (input: VerifyAuthorityInput) => Effect.Effect<void, ReplicaStoreError>;
 }
 
 type SnapshotImportProgress = {

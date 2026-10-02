@@ -4,20 +4,11 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
+import type * as HttpClientError from "effect/unstable/http/HttpClientError";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import { AuthHttpApi } from "./http-api";
-import {
-  AuthBadRequest,
-  AuthConflict,
-  AuthForbidden,
-  AuthNotFound,
-  AuthServiceUnavailable,
-  AuthTooManyRequests,
-  AuthUnauthenticated,
-  AuthUnsupportedMediaType,
-  authHttpErrorStatus,
-} from "./http-errors";
+import { authHttpErrorStatus, type AuthHttpError } from "./http-errors";
 import {
   BeginGoogleInput,
   ExchangeGoogleIdTokenInput,
@@ -39,17 +30,31 @@ import {
   type SignOutInput as SignOutInputType,
 } from "./model";
 
+const AuthClientOperation = Schema.Literals([
+  "identify",
+  "authenticate",
+  "authenticate.password",
+  "authenticate.otp",
+  "authenticate.register",
+  "google.begin",
+  "google.exchange",
+  "google.native",
+  "session.refresh",
+  "session.logout",
+]);
+type AuthClientOperation = typeof AuthClientOperation.Type;
+
+const AuthClientFailure = Schema.Union([
+  Schema.TaggedStruct("InvalidInput", {}),
+  Schema.TaggedStruct("Unreachable", {}),
+  Schema.TaggedStruct("Rejected", { status: Schema.Number, code: Schema.String }),
+]);
+
 export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth.AuthClientError", {
-  operation: Schema.String,
-  status: Schema.Number,
-  code: Schema.String,
+  operation: AuthClientOperation,
+  reason: AuthClientFailure,
   message: Schema.String,
 }) {}
-
-export interface AuthClientConfiguration {
-  readonly baseUrl: string;
-  readonly fetch?: typeof globalThis.fetch;
-}
 
 export interface AuthClientApi {
   readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
@@ -75,42 +80,51 @@ export class AuthClient extends Context.Service<AuthClient, AuthClientApi>()(
   "@store/auth/AuthClient",
 ) {}
 
-const failure = (operation: string, status: number, code: string, message: string) =>
-  new AuthClientError({ operation, status, code, message });
+type TransportFailure = HttpClientError.HttpClientError | Schema.SchemaError;
 
-const AuthHttpErrorSchema = Schema.Union([
-  AuthBadRequest,
-  AuthUnauthenticated,
-  AuthForbidden,
-  AuthNotFound,
-  AuthConflict,
-  AuthUnsupportedMediaType,
-  AuthTooManyRequests,
-  AuthServiceUnavailable,
-]);
+const invalidInput = (operation: AuthClientOperation, message: string) =>
+  new AuthClientError({ operation, reason: { _tag: "InvalidInput" }, message });
 
-const invalidInput = (operation: string, message: string) =>
-  failure(operation, 0, "INVALID_INPUT", message);
-
-const asClientError = (operation: string) =>
-  Effect.mapError((cause: AuthClientError | typeof AuthHttpErrorSchema.Type | Error) => {
-    if (cause instanceof AuthClientError) return cause;
-    const decoded = Schema.decodeUnknownOption(AuthHttpErrorSchema)(cause);
-    if (decoded._tag === "Some") {
-      return failure(
-        operation,
-        authHttpErrorStatus(decoded.value._tag),
-        decoded.value.error.code,
-        decoded.value.error.message,
-      );
+const clientError =
+  (operation: AuthClientOperation) =>
+  (cause: AuthHttpError | TransportFailure): AuthClientError => {
+    switch (cause._tag) {
+      case "HttpClientError":
+      case "SchemaError":
+        return new AuthClientError({
+          operation,
+          reason: { _tag: "Unreachable" },
+          message: cause.message,
+        });
+      default:
+        return new AuthClientError({
+          operation,
+          reason: {
+            _tag: "Rejected",
+            status: authHttpErrorStatus(cause._tag),
+            code: cause.error.code,
+          },
+          message: cause.error.message,
+        });
     }
-    const message = cause instanceof Error ? cause.message : "Network request failed.";
-    return failure(operation, 0, "NETWORK_ERROR", message);
-  });
+  };
+
+const request = <Payload, A>(
+  operation: AuthClientOperation,
+  invalidMessage: string,
+  schema: Schema.Codec<Payload, unknown>,
+  input: Payload,
+  send: (payload: Payload) => Effect.Effect<A, AuthHttpError | TransportFailure>,
+) =>
+  Schema.decodeUnknownEffect(schema)(input).pipe(
+    Effect.mapError(() => invalidInput(operation, invalidMessage)),
+    Effect.flatMap((payload) => Effect.mapError(send(payload), clientError(operation))),
+  );
 
 const make = Effect.fnUntraced(function* (baseUrl: string) {
   const httpClient = yield* HttpClient.HttpClient;
-  const apiClient = yield* HttpApiClient.makeWith(AuthHttpApi, {
+  const session = yield* HttpApiClient.group(AuthHttpApi, {
+    group: "session",
     httpClient: HttpClient.transformResponse(
       httpClient,
       Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
@@ -118,31 +132,23 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
     baseUrl: baseUrl.replace(/\/+$/u, ""),
   });
 
-  const identify = Effect.fn("AuthClient.identify")((input: IdentifyInputType) =>
-    Schema.decodeUnknownEffect(IdentifyInput)(input).pipe(
-      Effect.mapError(() => invalidInput("identify", "Enter a valid email.")),
-      Effect.flatMap((valid) => apiClient.session.identify({ payload: valid })),
-      asClientError("identify"),
-    ),
-  );
-
   const authenticate = Effect.fn("AuthClient.authenticate")((command: LoginCommandType) =>
     Schema.decodeUnknownEffect(LoginCommand)(command).pipe(
       Effect.mapError(() => invalidInput("authenticate", "The sign-in details are invalid.")),
       Effect.flatMap((valid) => {
         switch (valid._tag) {
           case "Password":
-            return apiClient.session
+            return session
               .signInPassword({ payload: valid })
-              .pipe(asClientError("authenticate.password"));
+              .pipe(Effect.mapError(clientError("authenticate.password")));
           case "Otp":
-            return apiClient.session
+            return session
               .signInOtp({ payload: valid })
-              .pipe(asClientError("authenticate.otp"));
+              .pipe(Effect.mapError(clientError("authenticate.otp")));
           case "RegisterPassword":
-            return apiClient.session
+            return session
               .signUpPassword({ payload: valid })
-              .pipe(asClientError("authenticate.register"));
+              .pipe(Effect.mapError(clientError("authenticate.register")));
           default: {
             const _exhaustive: never = valid;
             return _exhaustive;
@@ -153,55 +159,60 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
   );
 
   return AuthClient.of({
-    identify,
+    identify: Effect.fn("AuthClient.identify")((input: IdentifyInputType) =>
+      request("identify", "Enter a valid email.", IdentifyInput, input, (payload) =>
+        session.identify({ payload }),
+      ),
+    ),
     authenticate,
     beginGoogle: Effect.fn("AuthClient.beginGoogle")((input: BeginGoogleInputType) =>
-      Schema.decodeUnknownEffect(BeginGoogleInput)(input).pipe(
-        Effect.mapError(() => invalidInput("google.begin", "The Google redirect is invalid.")),
-        Effect.flatMap((valid) => apiClient.session.googleStart({ payload: valid })),
-        asClientError("google.begin"),
+      request(
+        "google.begin",
+        "The Google redirect is invalid.",
+        BeginGoogleInput,
+        input,
+        (payload) => session.googleStart({ payload }),
       ),
     ),
     exchangeGoogle: Effect.fn("AuthClient.exchangeGoogle")((input: ExchangeGoogleInputType) =>
-      Schema.decodeUnknownEffect(ExchangeGoogleInput)(input).pipe(
-        Effect.mapError(() => invalidInput("google.exchange", "The Google callback is invalid.")),
-        Effect.flatMap((valid) => apiClient.session.googleExchange({ payload: valid })),
-        asClientError("google.exchange"),
+      request(
+        "google.exchange",
+        "The Google callback is invalid.",
+        ExchangeGoogleInput,
+        input,
+        (payload) => session.googleExchange({ payload }),
       ),
     ),
     exchangeGoogleIdToken: Effect.fn("AuthClient.exchangeGoogleIdToken")(
       (input: ExchangeGoogleIdTokenInputType) =>
-        Schema.decodeUnknownEffect(ExchangeGoogleIdTokenInput)(input).pipe(
-          Effect.mapError(() => invalidInput("google.native", "The Google sign-in is invalid.")),
-          Effect.flatMap((valid) => apiClient.session.googleNative({ payload: valid })),
-          asClientError("google.native"),
+        request(
+          "google.native",
+          "The Google sign-in is invalid.",
+          ExchangeGoogleIdTokenInput,
+          input,
+          (payload) => session.googleNative({ payload }),
         ),
     ),
     refresh: Effect.fn("AuthClient.refresh")((input: RefreshInputType = {}) =>
-      Schema.decodeUnknownEffect(RefreshInput)(input).pipe(
-        Effect.mapError(() => invalidInput("session.refresh", "The refresh request is invalid.")),
-        Effect.flatMap((valid) => apiClient.session.refresh({ payload: valid })),
-        asClientError("session.refresh"),
+      request(
+        "session.refresh",
+        "The refresh request is invalid.",
+        RefreshInput,
+        input,
+        (payload) => session.refresh({ payload }),
       ),
     ),
     signOut: Effect.fn("AuthClient.signOut")((input: SignOutInputType = {}) =>
-      Schema.decodeUnknownEffect(SignOutInput)(input).pipe(
-        Effect.mapError(() => invalidInput("session.logout", "The sign-out request is invalid.")),
-        Effect.flatMap((valid) => apiClient.session.logout({ payload: valid })),
-        asClientError("session.logout"),
-        Effect.asVoid,
-      ),
+      request(
+        "session.logout",
+        "The sign-out request is invalid.",
+        SignOutInput,
+        input,
+        (payload) => session.logout({ payload }),
+      ).pipe(Effect.asVoid),
     ),
   });
 });
 
 export const authClientLayer = (configuration: { readonly baseUrl: string }) =>
   Layer.effect(AuthClient, make(configuration.baseUrl));
-
-export const makeAuthClient = (configuration: AuthClientConfiguration): AuthClientApi =>
-  Effect.runSync(
-    make(configuration.baseUrl).pipe(
-      Effect.provide(FetchHttpClient.layer),
-      Effect.provideService(FetchHttpClient.Fetch, configuration.fetch ?? globalThis.fetch),
-    ),
-  );

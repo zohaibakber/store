@@ -1,9 +1,6 @@
 import {
   Add01Icon,
-  ArrowDown01Icon,
   ArrowLeft01Icon,
-  ArrowUp01Icon,
-  CornerDownLeftIcon,
   PackageIcon,
   FileImportIcon,
   HomeIcon,
@@ -20,23 +17,17 @@ import {
   UserMultipleIcon,
   ViewIcon,
 } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import type { Invoice, Product } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
-import { useInventoryInvoices } from "@store/inventory-react";
-import { formatPrice } from "@store/services/format";
-import type { StockStatus } from "@store/services/insights";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { Invoice } from "@store/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Activity,
   Fragment,
-  Suspense,
   useDeferredValue,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactNode,
 } from "react";
 
 import { useTheme } from "@/components/theme/provider";
@@ -53,117 +44,38 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandShortcut,
 } from "@/components/ui/command";
 import { FrameFooter, FramePanel } from "@/components/ui/frame";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Kbd } from "@/components/ui/kbd";
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
-import {
-  useRecentProducts,
-  useRememberRecentProduct,
-  type RecentProduct,
-} from "@/hooks/use-recent-products";
+import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
-import { EMPTY, formatCount, formatDate } from "@/lib/format";
-import {
-  useCatalogIsReady,
-  useProductInsight,
-  useSuspenseCatalogProduct,
-  useProductSearch,
-} from "@/lib/inventory";
-import { cn } from "@/lib/utils";
+import { useCatalogIsReady, useInventoryInvoices, useProductSearch } from "@/lib/inventory";
+import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
 
-const PRODUCT_LIMIT = 30;
-const ALL_PRODUCT_LIMIT = 8;
-const ALL_INVOICE_LIMIT = 5;
-const INVOICE_LIMIT = 30;
-const INVOICE_WINDOW = 200;
-const SUGGESTED_ACTION_IDS = ["new-sale", "add-product", "go-products", "go-invoices"];
-
-type Scope = "all" | "products" | "invoices" | "actions";
-
-const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string }> = [
-  { value: "all", label: "All" },
-  { value: "products", label: "Products" },
-  { value: "invoices", label: "Invoices" },
-  { value: "actions", label: "Actions" },
-];
-
-const PLACEHOLDERS = {
-  all: "Search products, invoices, and actions…",
-  products: "Search products…",
-  invoices: "Search invoices by number or customer…",
-  actions: "Search actions…",
-} satisfies Record<Scope, string>;
-
-type ProductTarget = {
-  readonly id: string;
-  readonly name: string;
-  readonly strength: string | null;
-  readonly category: { readonly name: string };
-};
-
-type ActionEntry = {
-  readonly kind: "action";
-  readonly id: string;
-  readonly label: string;
-  readonly keywords: string;
-  readonly icon: IconSvgElement;
-  readonly shortcut?: string;
-  readonly run: () => void;
-};
-
-type Entry =
-  | { readonly kind: "product"; readonly id: string; readonly product: Product }
-  | { readonly kind: "recent"; readonly id: string; readonly recent: RecentProduct }
-  | { readonly kind: "invoice"; readonly id: string; readonly invoice: Invoice }
-  | ActionEntry;
-
-type EntryGroup = { readonly value: string; readonly items: ReadonlyArray<Entry> };
-
-type Page =
-  | { readonly kind: "root" }
-  | { readonly kind: "product"; readonly target: ProductTarget };
-
-const ROOT_PAGE: Page = { kind: "root" };
-
-const recentTarget = (recent: RecentProduct): ProductTarget => ({
-  id: recent.id,
-  name: recent.name,
-  strength: recent.strength,
-  category: { name: recent.categoryName },
-});
-
-const entryTarget = (entry: Entry | undefined): ProductTarget | undefined => {
-  if (entry?.kind === "product") return entry.product;
-  if (entry?.kind === "recent") return recentTarget(entry.recent);
-  return undefined;
-};
-
-const productLabel = (target: ProductTarget) =>
-  target.strength ? `${target.name} ${target.strength}` : target.name;
-
-const tokensOf = (query: string) => query.toLowerCase().split(/\s+/u).filter(Boolean);
-
-const matchesAction = (action: ActionEntry, tokens: ReadonlyArray<string>) => {
-  const haystack = `${action.label} ${action.keywords}`.toLowerCase();
-  return tokens.every((token) => haystack.includes(token));
-};
-
-const matchInvoices = (invoices: ReadonlyArray<Invoice>, query: string, limit: number) => {
-  const trimmed = query.trim().toLowerCase();
-  if (trimmed === "") return invoices.slice(0, limit);
-  const number = trimmed.replace(/^#/u, "");
-  const numeric = /^\d+$/u.test(number);
-  const matches = invoices.filter((invoice) =>
-    numeric
-      ? String(invoice.invoiceNumber).startsWith(number)
-      : (invoice.customerName ?? "").toLowerCase().includes(trimmed),
-  );
-  return matches.slice(0, limit);
-};
+import {
+  emptyMessage,
+  entryTarget,
+  INVOICE_WINDOW,
+  pageGroups,
+  PLACEHOLDERS,
+  PRODUCT_LIMIT,
+  productLabel,
+  recentTarget,
+  ROOT_PAGE,
+  rootGroups,
+  SCOPES,
+  searchesInvoices,
+  type ActionEntry,
+  type Entry,
+  type EntryGroup,
+  type Page,
+  type ProductTarget,
+  type Scope,
+} from "./command-menu-entries";
+import { EntryRow, FooterHints, Hint } from "./command-menu-rows";
 
 const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || event.altKey;
 
@@ -391,7 +303,51 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
   }, [close, navigate, newSaleLabel, setTheme, startSale, theme]);
 }
 
-function useProductActions(close: () => void) {
+type ProductActions = Readonly<
+  Record<"open" | "addToSale" | "addStock" | "edit", (target: ProductTarget) => void>
+>;
+
+const productPageActions = (
+  target: ProductTarget,
+  productActions: ProductActions,
+): ReadonlyArray<ActionEntry> => [
+  {
+    kind: "action",
+    id: "product-open",
+    label: "Open product",
+    keywords: "view details",
+    icon: ViewIcon,
+    shortcut: "Enter",
+    run: () => productActions.open(target),
+  },
+  {
+    kind: "action",
+    id: "product-add-to-sale",
+    label: "Add to sale",
+    keywords: "sell invoice cart",
+    icon: ShoppingCartAdd01Icon,
+    shortcut: "Ctrl+Enter",
+    run: () => productActions.addToSale(target),
+  },
+  {
+    kind: "action",
+    id: "product-add-stock",
+    label: "Add stock",
+    keywords: "batch receive restock",
+    icon: PackageAddIcon,
+    run: () => productActions.addStock(target),
+  },
+  {
+    kind: "action",
+    id: "product-edit",
+    label: "Edit product",
+    keywords: "change update price",
+    icon: PencilEdit02Icon,
+    run: () => productActions.edit(target),
+  },
+];
+
+function useProductActions(close: () => void): ProductActions {
   const navigate = useNavigate();
   const rememberRecentProduct = useRememberRecentProduct();
   return useMemo(() => {
@@ -454,9 +410,10 @@ function PaletteResults({
   const recents = useRecentProducts();
   const trimmed = searchQuery.trim();
   const products = useProductSearch(trimmed, PRODUCT_LIMIT);
-  const searchesInvoices =
-    page.kind === "root" && (scope === "invoices" || (scope === "all" && trimmed !== ""));
-  const invoices = useInventoryInvoices(INVOICE_WINDOW, searchesInvoices).data;
+  const invoices = useInventoryInvoices(
+    INVOICE_WINDOW,
+    searchesInvoices(page, scope, trimmed),
+  ).data;
 
   const highlight = (entry: Entry | undefined) => {
     setHighlighted(entry);
@@ -476,107 +433,13 @@ function PaletteResults({
     void navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
   };
 
-  const groups = useMemo((): ReadonlyArray<EntryGroup> => {
-    if (page.kind === "product") {
-      const target = page.target;
-      const pageActions: ReadonlyArray<ActionEntry> = [
-        {
-          kind: "action",
-          id: "product-open",
-          label: "Open product",
-          keywords: "view details",
-          icon: ViewIcon,
-          shortcut: "Enter",
-          run: () => productActions.open(target),
-        },
-        {
-          kind: "action",
-          id: "product-add-to-sale",
-          label: "Add to sale",
-          keywords: "sell invoice cart",
-          icon: ShoppingCartAdd01Icon,
-          shortcut: "Ctrl+Enter",
-          run: () => productActions.addToSale(target),
-        },
-        {
-          kind: "action",
-          id: "product-add-stock",
-          label: "Add stock",
-          keywords: "batch receive restock",
-          icon: PackageAddIcon,
-          run: () => productActions.addStock(target),
-        },
-        {
-          kind: "action",
-          id: "product-edit",
-          label: "Edit product",
-          keywords: "change update price",
-          icon: PencilEdit02Icon,
-          run: () => productActions.edit(target),
-        },
-      ];
-      const tokens = tokensOf(query);
-      return [
-        {
-          value: "Actions",
-          items: pageActions.filter((action) => matchesAction(action, tokens)),
-        },
-      ];
-    }
-
-    const tokens = tokensOf(trimmed);
-    const productEntries = (limit: number): ReadonlyArray<Entry> =>
-      products.slice(0, limit).map((product) => ({ kind: "product", id: product.id, product }));
-    const recentEntries: ReadonlyArray<Entry> = recents.map((recent) => ({
-      kind: "recent",
-      id: recent.id,
-      recent,
-    }));
-    const invoiceEntries = (limit: number): ReadonlyArray<Entry> =>
-      matchInvoices(invoices, trimmed, limit).map((invoice) => ({
-        kind: "invoice",
-        id: invoice.id,
-        invoice,
-      }));
-    const actionEntries = actions.filter((action) => matchesAction(action, tokens));
-
-    const all: ReadonlyArray<EntryGroup> =
-      scope === "all"
-        ? trimmed === ""
-          ? [
-              { value: "Recent", items: recentEntries },
-              {
-                value: "Suggested",
-                items: actions.filter((action) => SUGGESTED_ACTION_IDS.includes(action.id)),
-              },
-            ]
-          : [
-              { value: "Products", items: productEntries(ALL_PRODUCT_LIMIT) },
-              { value: "Invoices", items: invoiceEntries(ALL_INVOICE_LIMIT) },
-              { value: "Actions", items: actionEntries },
-            ]
-        : scope === "products"
-          ? trimmed === ""
-            ? [
-                { value: "Recent", items: recentEntries },
-                {
-                  value: "Products",
-                  items: productEntries(PRODUCT_LIMIT).filter(
-                    (entry) => !recents.some((recent) => recent.id === entry.id),
-                  ),
-                },
-              ]
-            : [{ value: "Products", items: productEntries(PRODUCT_LIMIT) }]
-          : scope === "invoices"
-            ? [
-                {
-                  value: trimmed === "" ? "Latest invoices" : "Invoices",
-                  items: invoiceEntries(INVOICE_LIMIT),
-                },
-              ]
-            : [{ value: "Actions", items: actionEntries }];
-    return all.filter((group) => group.items.length > 0);
-  }, [actions, invoices, page, productActions, products, query, recents, scope, trimmed]);
+  const groups = useMemo(
+    (): ReadonlyArray<EntryGroup> =>
+      page.kind === "product"
+        ? pageGroups(productPageActions(page.target, productActions), query)
+        : rootGroups({ scope, trimmed, products, recents, invoices, actions }),
+    [actions, invoices, page, productActions, products, query, recents, scope, trimmed],
+  );
 
   const shownGroups = useDeferredValue(groups);
 
@@ -628,7 +491,7 @@ function PaletteResults({
       return;
     }
     if (!highlightedTarget) return;
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.altKey) {
+    if (isSubmitChord(event)) {
       event.preventDefault();
       productActions.addToSale(highlightedTarget);
       return;
@@ -645,19 +508,6 @@ function PaletteResults({
       openPage(highlightedTarget);
     }
   };
-
-  const emptyMessage =
-    page.kind === "product"
-      ? "No matching actions."
-      : trimmed === ""
-        ? scope === "invoices"
-          ? "No invoices yet."
-          : "Type to search products."
-        : scope === "invoices"
-          ? "No invoices found."
-          : scope === "actions"
-            ? "No actions found."
-            : "No results found.";
 
   return (
     <Command
@@ -727,7 +577,9 @@ function PaletteResults({
                 ))}
               </div>
             )}
-            {shownGroups === groups ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
+            {shownGroups === groups ? (
+              <CommandEmpty>{emptyMessage(page, scope, trimmed)}</CommandEmpty>
+            ) : null}
             <CommandList>
               {(group: EntryGroup) => (
                 <Fragment key={group.value}>
@@ -764,255 +616,5 @@ function PaletteResults({
         </div>
       </FrameFooter>
     </Command>
-  );
-}
-
-function Hint({ keys, label }: { readonly keys: ReactNode; readonly label: string }) {
-  return (
-    <span className="flex items-center gap-1.5 whitespace-nowrap">
-      {keys}
-      <span>{label}</span>
-    </span>
-  );
-}
-
-const enterKey = (
-  <Kbd>
-    <HugeiconsIcon aria-hidden="true" icon={CornerDownLeftIcon} />
-  </Kbd>
-);
-
-function FooterHints({
-  entry,
-  onOpenActions,
-  page,
-}: {
-  readonly entry: Entry | undefined;
-  readonly onOpenActions: () => void;
-  readonly page: Page;
-}) {
-  if (!entry && page.kind === "root") return <span />;
-
-  const navigate = (
-    <Hint
-      keys={
-        <KbdGroup>
-          <Kbd>
-            <HugeiconsIcon aria-hidden="true" icon={ArrowUp01Icon} />
-          </Kbd>
-          <Kbd>
-            <HugeiconsIcon aria-hidden="true" icon={ArrowDown01Icon} />
-          </Kbd>
-        </KbdGroup>
-      }
-      label="Navigate"
-    />
-  );
-
-  if (page.kind === "product") {
-    return (
-      <div className="flex items-center gap-4">
-        {navigate}
-        <Hint keys={enterKey} label="Run" />
-      </div>
-    );
-  }
-
-  if (entry?.kind === "product" || entry?.kind === "recent") {
-    return (
-      <div className="flex items-center gap-4">
-        <Hint keys={enterKey} label="Open" />
-        <Hint
-          keys={
-            <KbdGroup>
-              <Kbd>Ctrl</Kbd>
-              {enterKey}
-            </KbdGroup>
-          }
-          label="Add to sale"
-        />
-        <Button
-          onClick={onOpenActions}
-          onMouseDown={(event) => event.preventDefault()}
-          size="xs"
-          variant="ghost"
-        >
-          <Hint
-            keys={
-              <KbdGroup>
-                <Kbd>Ctrl</Kbd>
-                <Kbd>.</Kbd>
-              </KbdGroup>
-            }
-            label="Actions"
-          />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-4">
-      {navigate}
-      <Hint
-        keys={enterKey}
-        label={
-          entry?.kind === "invoice" ? "Open invoice" : entry?.kind === "action" ? "Run" : "Open"
-        }
-      />
-    </div>
-  );
-}
-
-function EntryRow({ entry }: { readonly entry: Entry }) {
-  switch (entry.kind) {
-    case "product":
-      return <ProductRow product={entry.product} />;
-    case "recent":
-      return (
-        <Suspense fallback={<RecentSnapshotRow recent={entry.recent} />}>
-          <LiveRecentRow recent={entry.recent} />
-        </Suspense>
-      );
-    case "invoice":
-      return <InvoiceRow invoice={entry.invoice} />;
-    case "action":
-      return (
-        <span className="flex min-w-0 flex-1 items-center gap-2.5">
-          <HugeiconsIcon
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
-            icon={entry.icon}
-          />
-          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
-          {entry.shortcut ? <CommandShortcut>{entry.shortcut}</CommandShortcut> : null}
-        </span>
-      );
-  }
-}
-
-function ProductName({
-  name,
-  strength,
-  categoryName,
-}: {
-  readonly name: string;
-  readonly strength: string | null;
-  readonly categoryName: string;
-}) {
-  return (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      <span className="min-w-0 truncate capitalize">
-        {name}
-        {strength ? <span className="text-muted-foreground"> {strength}</span> : null}
-      </span>
-      <span className="max-w-40 shrink-0 truncate text-xs text-muted-foreground">
-        {categoryName}
-      </span>
-    </span>
-  );
-}
-
-function LiveRecentRow({ recent }: { readonly recent: RecentProduct }) {
-  const product = useSuspenseCatalogProduct(recent.id);
-  return product ? <ProductRow product={product} /> : <RecentSnapshotRow recent={recent} />;
-}
-
-function RecentSnapshotRow({ recent }: { readonly recent: RecentProduct }) {
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-4">
-      <ProductName
-        categoryName={recent.categoryName}
-        name={recent.name}
-        strength={recent.strength}
-      />
-    </span>
-  );
-}
-
-function ProductRow({ product }: { readonly product: Product }) {
-  const stock = productStock(product);
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-4">
-      <ProductName
-        categoryName={product.category.name}
-        name={product.name}
-        strength={product.strength}
-      />
-      <Suspense fallback={<StockLabel status={null} stock={stock} />}>
-        <LiveStockLabel productId={product.id} stock={stock} />
-      </Suspense>
-      <span className="w-20 shrink-0 text-right tabular-nums">
-        {product.unitPrice === null ? EMPTY : formatPrice(product.unitPrice)}
-      </span>
-    </span>
-  );
-}
-
-function LiveStockLabel({
-  productId,
-  stock,
-}: {
-  readonly productId: string;
-  readonly stock: number;
-}) {
-  const insight = useProductInsight(productId);
-  return <StockLabel status={insight?.status ?? null} stock={stock} />;
-}
-
-type StockTone = { readonly label: string; readonly className: string };
-
-const STATUS_TONE = {
-  out: { label: "Out of stock", className: "text-destructive-foreground" },
-  critical: { label: "Running out", className: "text-destructive-foreground" },
-  low: { label: "Reorder", className: "text-warning-foreground" },
-} satisfies Partial<Record<StockStatus, StockTone>>;
-
-const stockTone = (status: StockStatus | null, stock: number): StockTone | undefined => {
-  if (stock <= 0 || status === "out") return STATUS_TONE.out;
-  if (status === "critical") return STATUS_TONE.critical;
-  if (status === "low") return STATUS_TONE.low;
-  return undefined;
-};
-
-function StockLabel({
-  status,
-  stock,
-}: {
-  readonly status: StockStatus | null;
-  readonly stock: number;
-}) {
-  const tone = stockTone(status, stock);
-  return (
-    <span
-      className={cn(
-        "flex w-28 shrink-0 items-center justify-end gap-1.5 text-xs tabular-nums",
-        tone ? tone.className : "text-muted-foreground",
-      )}
-      title={tone?.label}
-    >
-      {tone && stock > 0 ? (
-        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current" />
-      ) : null}
-      {stock <= 0 ? "Out of stock" : formatCount(stock, "unit")}
-      {tone && stock > 0 ? <span className="sr-only">, {tone.label}</span> : null}
-    </span>
-  );
-}
-
-function InvoiceRow({ invoice }: { readonly invoice: Invoice }) {
-  return (
-    <span className="flex min-w-0 flex-1 items-center gap-4">
-      <span className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="shrink-0 tabular-nums">#{invoice.invoiceNumber}</span>
-        <span className="min-w-0 truncate text-muted-foreground">
-          {invoice.customerName || EMPTY}
-        </span>
-      </span>
-      <span className="w-28 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
-        {formatDate(invoice.createdAt)}
-      </span>
-      <span className="w-20 shrink-0 text-right tabular-nums">{formatPrice(invoice.total)}</span>
-    </span>
   );
 }

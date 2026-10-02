@@ -1,77 +1,97 @@
 import {
+  AuthClient,
   AuthorizationCode,
-  makeAuthClient,
   type AuthClientKind,
   type IdentifyInput,
   type IssuedSession,
-  type LoginCommand,
-  type LoginRoute,
 } from "@store/auth";
+import type { WorkspaceSnapshot } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { appHost } from "@/host";
-import { authSession } from "@/lib/auth";
+import type { SignInCredentials } from "@/host";
 
 const PKCE_KEY = "tabaaq-oauth-pkce";
 const configuredAuthUrl = import.meta.env.VITE_AUTH_URL?.trim();
 
 export const authBaseUrl = (configuredAuthUrl || "http://localhost:8788").replace(/\/+$/u, "");
 
-const client = makeAuthClient({ baseUrl: authBaseUrl });
+const browserClient: AuthClientKind = { _tag: "Browser" };
 
-const currentClient = (): AuthClientKind => appHost().signIn.client;
+class BrowserStorageBlocked extends Schema.TaggedError<BrowserStorageBlocked>()(
+  "BrowserStorageBlocked",
+  { message: Schema.String },
+) {}
 
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+const storageBlocked = (cause: unknown) =>
+  new BrowserStorageBlocked({
+    message: cause instanceof Error ? cause.message : "Browser storage is unavailable.",
+  });
 
-export const identify = (input: IdentifyInput): Promise<LoginRoute> => run(client.identify(input));
+export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export const authenticate = async (command: LoginCommand): Promise<IssuedSession> => {
-  const issued = await run(client.authenticate(command));
-  await authSession().adoptSession(issued);
-  return issued;
-};
+export const browserStore = (storage: () => KeyValueStorage) => ({
+  get: (key: string) =>
+    Effect.try({
+      try: () => Option.fromNullishOr(storage().getItem(key)),
+      catch: storageBlocked,
+    }),
+  set: (key: string, value: string) =>
+    Effect.try({ try: () => storage().setItem(key, value), catch: storageBlocked }),
+  remove: (key: string) =>
+    Effect.try({ try: () => storage().removeItem(key), catch: storageBlocked }),
+});
 
-const pkce = async () => {
+export type BrowserStore = ReturnType<typeof browserStore>;
+
+const proofKey = Effect.promise(async () => {
   const verifier = Encoding.encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = Encoding.encodeBase64Url(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
   );
   return { verifier, challenge };
+});
+
+type BrowserSignInOptions<E, R> = {
+  readonly redirectUri: string;
+  readonly storage: BrowserStore;
+  readonly openAuthorization: (url: string) => Effect.Effect<void, E>;
+  readonly adopt: (issued: IssuedSession) => Effect.Effect<WorkspaceSnapshot, never, R>;
 };
 
-export const beginGoogle = async () => {
-  const { verifier, challenge } = await pkce();
-  sessionStorage.setItem(PKCE_KEY, verifier);
-  const signIn = appHost().signIn;
-  const redirectUri = await signIn.oauthRedirectUri();
-  const authorization = await run(
-    client.beginGoogle({
-      redirectUri,
+export const browserSignIn = <E, R>(options: BrowserSignInOptions<E, R>) => ({
+  identify: (input: IdentifyInput) => AuthClient.use((client) => client.identify(input)),
+  authenticate: (credentials: SignInCredentials) =>
+    AuthClient.use((client) => client.authenticate({ ...credentials, client: browserClient })).pipe(
+      Effect.flatMap(options.adopt),
+    ),
+  beginGoogle: Effect.gen(function* () {
+    const client = yield* AuthClient;
+    const { verifier, challenge } = yield* proofKey;
+    yield* options.storage.set(PKCE_KEY, verifier);
+    const authorization = yield* client.beginGoogle({
+      redirectUri: options.redirectUri,
       codeChallenge: challenge,
-      client: signIn.client,
-    }),
-  );
-  await signIn.openAuthorization(authorization.url);
-};
-
-export const completeGoogle = async (callbackUrl: string) => {
-  const url = new URL(callbackUrl);
-  const code = url.searchParams.get("code");
-  const verifier = sessionStorage.getItem(PKCE_KEY);
-  if (!code || !verifier) return false;
-  sessionStorage.removeItem(PKCE_KEY);
-  const authorizationCode = await run(Schema.decodeUnknownEffect(AuthorizationCode)(code));
-  const issued = await run(
-    client.exchangeGoogle({
+      client: browserClient,
+    });
+    yield* options.openAuthorization(authorization.url);
+  }),
+  completeGoogle: Effect.fnUntraced(function* (callbackUrl: string) {
+    const code = URL.parse(callbackUrl)?.searchParams.get("code");
+    const verifier = yield* options.storage
+      .get(PKCE_KEY)
+      .pipe(Effect.orElseSucceed(() => Option.none<string>()));
+    if (!code || Option.isNone(verifier) || verifier.value === "") return null;
+    yield* Effect.ignore(options.storage.remove(PKCE_KEY));
+    const authorizationCode = yield* Schema.decodeUnknownEffect(AuthorizationCode)(code);
+    const client = yield* AuthClient;
+    const issued = yield* client.exchangeGoogle({
       code: authorizationCode,
-      codeVerifier: verifier,
-      client: currentClient(),
-    }),
-  );
-  await authSession().adoptSession(issued);
-  return true;
-};
-
-export const currentAuthClient = currentClient;
+      codeVerifier: verifier.value,
+      client: browserClient,
+    });
+    return yield* options.adopt(issued);
+  }),
+});

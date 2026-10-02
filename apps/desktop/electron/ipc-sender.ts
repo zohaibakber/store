@@ -30,3 +30,17 @@ export const assertTrustedIpcSender = (
     throw new Error("Rejected IPC from an untrusted renderer.");
   }
 };
+
+export const trustedIpcListener =
+  <
+    Event extends { readonly senderFrame: TrustedIpcSenderFrame | null },
+    Input extends ReadonlyArray<unknown>,
+    Result,
+  >(
+    allowedOrigins: () => ReadonlyArray<string>,
+    listener: (event: Event, ...input: Input) => Result,
+  ) =>
+  (event: Event, ...input: Input): Result => {
+    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
+    return listener(event, ...input);
+  };

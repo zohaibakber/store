@@ -11,8 +11,7 @@ import {
 } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-
-import { hasOpenModal, hasOpenPopup, useWindowKeydown } from "./shortcuts";
+import { hasOpenModal, hasOpenPopup, useWindowKeydown } from "@/lib/shortcuts";
 
 export function ProductFormPage({
   categories,

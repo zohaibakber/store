@@ -34,10 +34,28 @@ const JsonWebKeySchema = Schema.Struct({
   kid: Schema.optionalKey(Schema.String),
 });
 
+const JsonWebKeySetSchema = Schema.Struct({
+  keys: Schema.NonEmptyArray(
+    Schema.Struct({ ...JsonWebKeySchema.fields, kid: Schema.String.check(Schema.isMinLength(1)) }),
+  ).check(
+    Schema.makeFilter((keys) => new Set(keys.map((key) => key.kid)).size === keys.length, {
+      title: "Key ring with distinct key ids",
+    }),
+  ),
+});
+
+export interface JwtKey {
+  readonly kid: string;
+  readonly jwk: JsonWebKey;
+}
+
+export type JwtKeyRing = ReadonlyArray<JwtKey>;
+
 export interface JwtConfiguration {
   readonly issuer: string;
   readonly audience: string;
-  readonly publicJwk: JsonWebKey;
+  readonly keys: JwtKeyRing;
+  readonly activeKeyId?: string | undefined;
   readonly privateJwk?: JsonWebKey;
   readonly accessTokenTtlSeconds?: number;
 }
@@ -49,7 +67,7 @@ const JwtPayload = Schema.Struct({
   sid: SessionId,
   org: OrganizationId,
   org_name: Schema.String,
-  org_slug: Schema.NullOr(Schema.String),
+  org_slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: OrganizationRole,
   email: EmailAddress,
   name: Schema.String,
@@ -59,14 +77,23 @@ const JwtPayload = Schema.Struct({
   jti: Schema.String,
 });
 
+const LEGACY_ORG_SLUG_CLAIM = { org_slug: null } as const;
+
 const JwtHeader = Schema.Struct({
   alg: Schema.Literal("ES256"),
   typ: Schema.Literal("JWT"),
-  kid: Schema.Literal(AUTH_JWT_KEY_ID),
+  kid: Schema.String,
 });
 
 export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
-  reason: Schema.Literals(["Malformed", "InvalidSignature", "Expired", "InvalidClaims", "NoKey"]),
+  reason: Schema.Literals([
+    "Malformed",
+    "InvalidSignature",
+    "Expired",
+    "InvalidClaims",
+    "NoKey",
+    "UnknownKey",
+  ]),
   message: Schema.String,
   cause: Schema.optionalKey(Schema.Defect()),
 }) {}
@@ -121,12 +148,55 @@ const importVerificationKey = (jwk: JsonWebKey) =>
       }),
   });
 
+type ImportedKeyRing = ReadonlyMap<string, Exit.Exit<CryptoKey, JwtError>>;
+
+const importRingKey = (keys: JwtKeyRing, kid: string): Effect.Effect<CryptoKey, JwtError> => {
+  const key = keys.find((candidate) => candidate.kid === kid);
+  return key === undefined
+    ? Effect.fail(
+        new JwtError({
+          reason: "UnknownKey",
+          message: "The access token key id is not in the key ring.",
+        }),
+      )
+    : importVerificationKey(key.jwk);
+};
+
+const importKeyRing = (keys: JwtKeyRing): Effect.Effect<ImportedKeyRing> =>
+  Effect.forEach(new Set(keys.map((key) => key.kid)), (kid) =>
+    Effect.map(Effect.exit(importRingKey(keys, kid)), (imported) => [kid, imported] as const),
+  ).pipe(Effect.map((entries) => new Map(entries)));
+
+interface AccessTokenSigner {
+  readonly kid: string;
+  readonly key: CryptoKey;
+}
+
+const importSigner = (
+  configuration: JwtConfiguration,
+): Effect.Effect<AccessTokenSigner, JwtError> =>
+  Effect.gen(function* () {
+    const { activeKeyId, privateJwk } = configuration;
+    if (!privateJwk || activeKeyId === undefined) {
+      return yield* new JwtError({
+        reason: "NoKey",
+        message: "The JWT signing key is not configured.",
+      });
+    }
+    if (!configuration.keys.some((key) => key.kid === activeKeyId)) {
+      return yield* new JwtError({
+        reason: "NoKey",
+        message: "The active JWT key id is not in the key ring.",
+      });
+    }
+    return { kid: activeKeyId, key: yield* importSigningKey(privateJwk) };
+  });
+
 export interface IssueAccessTokenInput {
   readonly subject: UserId;
   readonly sessionId: SessionId;
   readonly activeOrganizationId: OrganizationId;
   readonly organizationName: string;
-  readonly organizationSlug: string | null;
   readonly role: typeof OrganizationRole.Type;
   readonly email: EmailAddress;
   readonly name: string;
@@ -142,14 +212,9 @@ export interface IssuedAccessToken {
 export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   input: IssueAccessTokenInput,
   configuration: JwtConfiguration,
-  importedKey?: CryptoKey,
+  importedSigner?: AccessTokenSigner,
 ) {
-  if (!configuration.privateJwk) {
-    return yield* new JwtError({
-      reason: "NoKey",
-      message: "The JWT signing key is not configured.",
-    });
-  }
+  const signer = importedSigner ?? (yield* importSigner(configuration));
   const now = Math.floor((input.now ?? (yield* Clock.currentTimeMillis)) / 1_000);
   const expiresAt = now + (configuration.accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS);
   const payload = {
@@ -159,7 +224,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     sid: input.sessionId,
     org: input.activeOrganizationId,
     org_name: input.organizationName,
-    org_slug: input.organizationSlug,
+    ...LEGACY_ORG_SLUG_CLAIM,
     role: input.role,
     email: input.email,
     name: input.name,
@@ -171,7 +236,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   const header = {
     alg: "ES256",
     typ: "JWT",
-    kid: AUTH_JWT_KEY_ID,
+    kid: signer.kid,
   } satisfies typeof JwtHeader.Type;
   const encodedHeader = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader))(
     header,
@@ -200,10 +265,13 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     Effect.map(Encoding.encodeBase64Url),
   );
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const key = importedKey ?? (yield* importSigningKey(configuration.privateJwk));
   const signature = yield* Effect.tryPromise({
     try: () =>
-      crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, textEncoder.encode(signingInput)),
+      crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        signer.key,
+        textEncoder.encode(signingInput),
+      ),
     catch: (cause) =>
       new JwtError({
         reason: "NoKey",
@@ -223,7 +291,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   token: string,
   configuration: JwtConfiguration,
   now?: number,
-  importedKey?: CryptoKey,
+  importedKeys?: ImportedKeyRing,
 ) {
   const segments = token.split(".");
   if (segments.length !== 3 || !segments[0] || !segments[1] || !segments[2]) {
@@ -240,7 +308,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
       message: "The access token algorithm is not accepted.",
     });
   }
-  const key = importedKey ?? (yield* importVerificationKey(configuration.publicJwk));
+  const key = yield* importedKeys?.get(header.kid) ?? importRingKey(configuration.keys, header.kid);
   const signature = new Uint8Array(yield* decodeBase64Url(encodedSignature));
   const valid = yield* Effect.tryPromise({
     try: () =>
@@ -281,7 +349,6 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
     sessionId: payload.sid,
     activeOrganizationId: payload.org,
     organizationName: payload.org_name,
-    organizationSlug: payload.org_slug,
     role: payload.role,
     email: payload.email,
     name: payload.name,
@@ -298,10 +365,10 @@ export type AccessTokenVerifier = (
 export const makeAccessTokenVerifier = (
   configuration: JwtConfiguration,
 ): Effect.Effect<AccessTokenVerifier> =>
-  Effect.map(Effect.exit(importVerificationKey(configuration.publicJwk)), (imported) => {
-    const key = Exit.isSuccess(imported) ? imported.value : undefined;
-    return (token, now) => verifyAccessToken(token, configuration, now, key);
-  });
+  Effect.map(
+    importKeyRing(configuration.keys),
+    (keys) => (token, now) => verifyAccessToken(token, configuration, now, keys),
+  );
 
 export interface AccessTokenServiceApi {
   readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;
@@ -317,21 +384,39 @@ export const accessTokenLayer = (configuration: JwtConfiguration) =>
   Layer.effect(
     AccessTokenService,
     Effect.gen(function* () {
-      const verificationKey = yield* importVerificationKey(configuration.publicJwk);
-      const signingKey = configuration.privateJwk
-        ? yield* importSigningKey(configuration.privateJwk)
-        : undefined;
+      const verificationKeys = yield* importKeyRing(configuration.keys);
+      yield* Effect.all(verificationKeys.values(), { discard: true });
+      const signer = configuration.privateJwk ? yield* importSigner(configuration) : undefined;
       return AccessTokenService.of({
-        issue: (input) => issueAccessToken(input, configuration, signingKey),
-        verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKey),
+        issue: (input) => issueAccessToken(input, configuration, signer),
+        verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKeys),
       });
     }),
   );
 
-export const decodeJsonWebKey = Schema.decodeUnknownEffect(JsonWebKeySchema);
 export const decodeJsonWebKeyText = Schema.decodeUnknownEffect(
   Schema.fromJsonString(JsonWebKeySchema),
 );
+
+export const decodeJwtKeyRingText = (text: string) =>
+  Schema.decodeUnknownEffect(
+    Schema.fromJsonString(Schema.Union([JsonWebKeySetSchema, JsonWebKeySchema])),
+  )(text).pipe(
+    Effect.map((source): JwtKeyRing =>
+      "keys" in source
+        ? source.keys.map((jwk) => ({ kid: jwk.kid, jwk }))
+        : [{ kid: AUTH_JWT_KEY_ID, jwk: source }],
+    ),
+  );
+
+export const activeJwtKeyId = (keys: JwtKeyRing, privateJwk: JsonWebKey): string | undefined => {
+  const [first, ...rest] = keys;
+  if (rest.length === 0) return first?.kid;
+  const { x, y } = privateJwk;
+  return x === undefined || y === undefined
+    ? undefined
+    : keys.find(({ jwk }) => jwk.x === x && jwk.y === y)?.kid;
+};
 
 export const AuthJwks = Schema.Struct({
   keys: Schema.Array(
@@ -348,17 +433,15 @@ export const AuthJwks = Schema.Struct({
 });
 export type AuthJwks = typeof AuthJwks.Type;
 
-export const publicJwks = (publicJwk: JsonWebKey): AuthJwks =>
+export const publicJwks = (keys: JwtKeyRing): AuthJwks =>
   AuthJwks.make({
-    keys: [
-      {
-        kty: publicJwk.kty ?? "EC",
-        crv: publicJwk.crv,
-        x: publicJwk.x,
-        y: publicJwk.y,
-        alg: "ES256",
-        use: "sig",
-        kid: AUTH_JWT_KEY_ID,
-      },
-    ],
+    keys: keys.map(({ kid, jwk }) => ({
+      kty: jwk.kty ?? "EC",
+      crv: jwk.crv,
+      x: jwk.x,
+      y: jwk.y,
+      alg: "ES256",
+      use: "sig",
+      kid,
+    })),
   });

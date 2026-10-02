@@ -5,13 +5,15 @@ import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { CurrentOrganization, type CurrentOrganizationContext } from "../auth/organization";
+import { CurrentOrganization } from "../auth/organization";
 import { StoreApi } from "../http/api";
 import { publicError } from "../http/errors";
-import { mapSyncError } from "../http/sync-errors";
-import { MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
+import { failWithSyncHttpError } from "../http/sync-errors";
+import { InventoryCommands, MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
+import type { InventoryError } from "../inventory/errors";
+import { InventoryImports } from "../inventory/imports";
 import type { EncodedSnapshotPart, InventoryActor } from "../inventory/model";
-import { SyncAuthority, type SyncAuthorityError } from "../inventory/sync-authority";
+import { InventorySnapshots } from "../inventory/snapshots";
 import { LiveFanout } from "../live/fanout";
 
 const SNAPSHOT_PART_CACHE_CONTROL = "private, max-age=31536000, immutable";
@@ -65,18 +67,13 @@ const boundedBodyText = (request: HttpServerRequest.HttpServerRequest, maxBytes:
         Effect.map((buffer) => (buffer.byteLength > maxBytes ? undefined : utf8.decode(buffer))),
       );
 
-const syncActor = (identity: CurrentOrganizationContext): InventoryActor => ({
-  organizationId: identity.organizationId,
-  userId: identity.user.id,
-});
-
 const asActor = <A, R>(
   span: string,
-  run: (actor: InventoryActor) => Effect.Effect<A, SyncAuthorityError, R>,
+  run: (actor: InventoryActor) => Effect.Effect<A, InventoryError, R>,
 ) =>
   CurrentOrganization.pipe(
-    Effect.flatMap((identity) => run(syncActor(identity))),
-    Effect.mapError(mapSyncError),
+    Effect.flatMap(run),
+    Effect.catch(failWithSyncHttpError),
     Effect.withSpan(`SyncHandlers.${span}`),
   );
 
@@ -86,12 +83,12 @@ const ownerRequired = SyncForbidden.make(
 
 const asOwner = <A, R>(
   span: string,
-  run: (actor: InventoryActor) => Effect.Effect<A, SyncAuthorityError, R>,
+  run: (actor: InventoryActor) => Effect.Effect<A, InventoryError, R>,
 ) =>
   CurrentOrganization.pipe(
     Effect.flatMap((identity) =>
       identity.role === "owner"
-        ? Effect.mapError(run(syncActor(identity)), mapSyncError)
+        ? Effect.catch(run(identity), failWithSyncHttpError)
         : Effect.fail(ownerRequired),
     ),
     Effect.withSpan(`SyncHandlers.${span}`),
@@ -101,19 +98,21 @@ export const SyncHandlers = HttpApiBuilder.group(
   StoreApi,
   "sync",
   Effect.fn("SyncHandlers.make")(function* (handlers) {
-    const authority = yield* SyncAuthority;
+    const commands = yield* InventoryCommands;
+    const snapshots = yield* InventorySnapshots;
+    const imports = yield* InventoryImports;
     const fanout = yield* LiveFanout;
 
     return handlers
       .handle("registerReplica", ({ payload }) =>
-        asActor("registerReplica", (actor) => authority.registerReplica(actor, payload)),
+        asActor("registerReplica", (actor) => commands.register(actor, payload)),
       )
       .handleRaw("submitCommand", ({ request }) =>
         asActor("submitCommand", (actor) =>
           Effect.gen(function* () {
             const bodyText = yield* boundedBodyText(request, MAX_SUBMIT_BODY_BYTES);
             if (bodyText === undefined) return commandTooLargeResponse();
-            const submitted = yield* authority.submitCommand(actor, bodyText);
+            const submitted = yield* commands.submitRaw(actor, bodyText);
             if (submitted.fanout !== null) {
               yield* fanout.publish(actor.organizationId, submitted.fanout);
             }
@@ -124,7 +123,7 @@ export const SyncHandlers = HttpApiBuilder.group(
         ),
       )
       .handle("getReceipt", ({ params }) =>
-        asActor("getReceipt", (actor) => authority.getReceipt(actor, params.operationId)).pipe(
+        asActor("getReceipt", (actor) => commands.receipt(actor, params.operationId)).pipe(
           Effect.flatMap((receipt) =>
             receipt
               ? Effect.succeed(receipt)
@@ -137,16 +136,16 @@ export const SyncHandlers = HttpApiBuilder.group(
         ),
       )
       .handle("pull", ({ payload }) =>
-        asActor("pull", (actor) => authority.pull(actor, payload)).pipe(
+        asActor("pull", (actor) => commands.pullEncoded(actor, payload)).pipe(
           Effect.map((body) => encodedJsonResponse(body.json)),
         ),
       )
       .handle("acquireSnapshot", ({ payload }) =>
-        asActor("acquireSnapshot", (actor) => authority.acquireSnapshot(actor, payload)),
+        asActor("acquireSnapshot", (actor) => snapshots.acquireSnapshot(actor, payload)),
       )
       .handle("readSnapshotPart", ({ params, request }) =>
         asActor("readSnapshotPart", (actor) =>
-          authority.readSnapshotPart(actor, params.snapshotId, params.partNumber),
+          snapshots.readSnapshotPartEncoded(actor, params.snapshotId, params.partNumber),
         ).pipe(Effect.map((part) => snapshotPartResponse(part, request.headers["if-none-match"]))),
       )
       .handleRaw("stageImportPart", ({ params, request }) =>
@@ -154,7 +153,7 @@ export const SyncHandlers = HttpApiBuilder.group(
           Effect.gen(function* () {
             const bodyText = yield* boundedBodyText(request, MAX_IMPORT_PART_BYTES);
             if (bodyText === undefined) return importPartTooLargeResponse();
-            const staged = yield* authority.stageImportPart(
+            const staged = yield* imports.stagePart(
               actor,
               params.importId,
               params.partNumber,
@@ -166,8 +165,8 @@ export const SyncHandlers = HttpApiBuilder.group(
       )
       .handle("commitImport", ({ params, payload }) =>
         asOwner("commitImport", (actor) =>
-          authority
-            .commitImport(actor, params.importId, payload)
+          imports
+            .commit(actor, params.importId, payload)
             .pipe(
               Effect.tap((committed) =>
                 committed.fanout === null

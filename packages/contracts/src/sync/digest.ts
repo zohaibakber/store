@@ -58,8 +58,11 @@ export type PartitionLeafSource = {
   readonly rowVersion: number;
 };
 
+export const partitionLeafOf = (entity: PartitionEntity, entityId: string, version: string) =>
+  `${entity}:${entityId}:${version}`;
+
 const partitionLeaf = (source: PartitionLeafSource): string =>
-  `${source.entity}:${source.entityId}:${source.rowVersion}`;
+  partitionLeafOf(source.entity, source.entityId, String(source.rowVersion));
 
 const codePointRank = (unit: number): number => {
   if (unit >= 0xd800 && unit <= 0xdfff) return unit + 0x2000;
@@ -160,9 +163,6 @@ export const makePartitionLeafOrderer = (emit: (leaf: string) => void): Partitio
     },
   };
 };
-
-export const partitionLeafOf = (entity: PartitionEntity, entityId: string, version: string) =>
-  `${entity}:${entityId}:${version}`;
 
 export const finishPartitionDigestReport = Effect.fn("PartitionDigest.finish")(function* (
   entities: Readonly<Record<PartitionEntity, PartitionEntityDigest>>,

@@ -3,14 +3,21 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
+import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
 
-import { assertTrustedIpcSender } from "./ipc-sender";
+import { isTrustedIpcSenderFrame, trustedIpcListener } from "./ipc-sender";
+import {
+  UPDATER_CHECK_CHANNEL,
+  UPDATER_DOWNLOAD_CHANNEL,
+  UPDATER_EVENT_CHANNEL,
+  UPDATER_INSTALL_CHANNEL,
+} from "./updater-channels";
 import {
   makeUpdaterWorkflow,
   sampleDownloadProgress,
@@ -99,15 +106,6 @@ const updaterEvents = Stream.callback<UpdaterProviderEvent>((queue) => {
   );
 }).pipe(sampleDownloadProgress(PROGRESS_EVENT_INTERVAL));
 
-const subscribe = (listener: (event: UpdaterProviderEvent) => void) => {
-  const fiber = Effect.runFork(
-    Stream.runForEach(updaterEvents, (event) => Effect.sync(() => listener(event))),
-  );
-  return () => {
-    Effect.runFork(Fiber.interrupt(fiber));
-  };
-};
-
 export async function setupUpdater(
   getWindow: () => BrowserWindow | null,
   allowedOrigins: () => ReadonlyArray<string>,
@@ -132,12 +130,13 @@ export async function setupUpdater(
       catch: providerError,
     }),
     quitAndInstall: () => autoUpdater.quitAndInstall(),
-    subscribe,
+    events: updaterEvents,
   };
+  const scope = Scope.makeUnsafe();
   const workflow = await Effect.runPromise(
     makeUpdaterWorkflow(
       provider,
-      (event) => getWindow()?.webContents.send("updater:event", event),
+      (event) => getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
       {
         checkInterval: CHECK_INTERVAL_MS,
         initialCheckDelay: INITIAL_CHECK_DELAY_MS,
@@ -145,28 +144,28 @@ export async function setupUpdater(
         pendingReleaseRetryDelay: RETRY_CHECK_DELAY_MS,
         periodicChecks: app.isPackaged,
       },
-    ),
+    ).pipe(Scope.provide(scope)),
   );
 
   const skipCheckThrottle = true;
-  ipcMain.handle("updater:check", (event) => {
-    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    return Effect.runPromise(workflow.check(skipCheckThrottle));
-  });
-  ipcMain.handle("updater:download", (event) => {
-    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
-    return Effect.runPromise(workflow.download);
-  });
+  ipcMain.handle(
+    UPDATER_CHECK_CHANNEL,
+    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.check(skipCheckThrottle))),
+  );
+  ipcMain.handle(
+    UPDATER_DOWNLOAD_CHANNEL,
+    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.download)),
+  );
   const install = (event: IpcMainEvent) => {
-    assertTrustedIpcSender(event.senderFrame, allowedOrigins());
+    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedOrigins())) return;
     Effect.runSync(workflow.install);
   };
-  ipcMain.on("updater:install", install);
+  ipcMain.on(UPDATER_INSTALL_CHANNEL, install);
 
   return async () => {
-    ipcMain.removeHandler("updater:check");
-    ipcMain.removeHandler("updater:download");
-    ipcMain.off("updater:install", install);
-    await Effect.runPromise(workflow.dispose);
+    ipcMain.removeHandler(UPDATER_CHECK_CHANNEL);
+    ipcMain.removeHandler(UPDATER_DOWNLOAD_CHANNEL);
+    ipcMain.off(UPDATER_INSTALL_CHANNEL, install);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
   };
 }

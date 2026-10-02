@@ -3,6 +3,7 @@ import * as Queue from "effect/Queue";
 
 import {
   accumulateNotice,
+  commitNotice,
   invalidatedEntities,
   type NoticeAccumulator,
 } from "./collection-notices";
@@ -11,19 +12,15 @@ import type { ReplicaCommitNotice } from "./types";
 export const NOTICE_BUFFER_CAPACITY = 64;
 
 const noticeFromAccumulator = (accumulator: NoticeAccumulator): ReplicaCommitNotice =>
-  Object.assign(
-    {
-      workspaceToken: accumulator.workspaceToken,
-      generationId: accumulator.generationId,
-      localCommitVersion: accumulator.version,
-      touchedEntities: invalidatedEntities(accumulator),
-      touchedKeys: [...accumulator.keys.values()].flatMap((held) => [...held]),
-    },
-    accumulator.full ? { fullInvalidation: true } : undefined,
-    accumulator.overflowed.size > 0
-      ? { overflowedEntities: [...accumulator.overflowed] }
-      : undefined,
-  );
+  commitNotice({
+    workspaceToken: accumulator.workspaceToken,
+    generationId: accumulator.generationId,
+    localCommitVersion: accumulator.version,
+    touchedEntities: invalidatedEntities(accumulator),
+    touchedKeys: [...accumulator.keys.values()].flatMap((held) => [...held]),
+    fullInvalidation: accumulator.full ? true : undefined,
+    overflowedEntities: accumulator.overflowed.size > 0 ? [...accumulator.overflowed] : undefined,
+  });
 
 const coalesceNotices = (
   notices: ReadonlyArray<ReplicaCommitNotice>,

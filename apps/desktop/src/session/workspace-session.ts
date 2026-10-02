@@ -38,10 +38,7 @@ export type WorkspaceScope =
 
 const NO_SCOPE: WorkspaceScope = { _tag: "None" };
 
-export const workspaceScope = (
-  snapshot: WorkspaceSnapshot,
-  access: HostAccessPolicy,
-): WorkspaceScope => {
+const workspaceScope = (snapshot: WorkspaceSnapshot, access: HostAccessPolicy): WorkspaceScope => {
   const workspace = access.workspace(snapshot);
   switch (workspace._tag) {
     case "None":

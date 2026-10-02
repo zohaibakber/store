@@ -1,6 +1,7 @@
 import type {
-  AuthClientKind,
-  IssuedSession,
+  IdentifyInput,
+  LoginCommand,
+  LoginRoute,
   OrganizationCommand,
   OrganizationCommandResult,
   OrganizationRoster,
@@ -17,7 +18,6 @@ import type { WorkspacePublishBridge } from "@/lib/workspace-publish";
 
 export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly adoptSession: (issued: IssuedSession | null) => Promise<WorkspaceSnapshot>;
   readonly renewSession: () => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
@@ -25,10 +25,15 @@ export type AuthSessionBridge = {
   readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
 };
 
+type WithoutClient<Command> = Command extends unknown ? Omit<Command, "client"> : never;
+
+export type SignInCredentials = WithoutClient<LoginCommand>;
+
 export type SignInBridge = {
-  readonly client: AuthClientKind;
-  readonly oauthRedirectUri: () => Promise<string>;
-  readonly openAuthorization: (url: string) => Promise<void>;
+  readonly identify: (input: IdentifyInput) => Promise<LoginRoute>;
+  readonly authenticate: (credentials: SignInCredentials) => Promise<WorkspaceSnapshot>;
+  readonly beginGoogle: () => Promise<void>;
+  readonly completeGoogle: (callbackUrl: string) => Promise<WorkspaceSnapshot | null>;
   readonly onOAuthCallback?: (listener: (url: string) => void) => () => void;
   readonly hasPendingOAuthCallback?: () => boolean;
 };
@@ -42,14 +47,20 @@ export type AppUpdaterBridge = {
 
 export type ThemeSource = "dark" | "light" | "system";
 
+export type ThemeBridge = { readonly setSource: (source: ThemeSource) => void };
+
+export type DesktopShellBridge = {
+  readonly onNewSale: (listener: () => void) => () => void;
+};
+
 export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
   readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
   readonly newSaleShortcut: NewSaleShortcut;
-  readonly shell?: { readonly onNewSale: (listener: () => void) => () => void };
+  readonly shell?: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;
-  readonly theme?: { readonly setSource: (source: ThemeSource) => void };
+  readonly theme?: ThemeBridge;
   readonly backup?: WorkspaceBackupBridge;
   readonly openExternal: (url: string) => Promise<void>;
   readonly copyText: (text: string) => Promise<void>;

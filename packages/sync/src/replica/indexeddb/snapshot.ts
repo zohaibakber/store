@@ -9,7 +9,7 @@ import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import { decodeEntity, decodeRowJson, decodeStoredEnvelope } from "../codecs";
-import { byClientSequence, decideOverlays } from "../decisions";
+import { byClientSequence, decideOverlays, decidePartAdmission } from "../decisions";
 import {
   reapplyIndexedDbPendingProjections,
   readIndexedDbUnitsPerPack,
@@ -157,31 +157,9 @@ export const importIndexedDbSnapshotPart = (
 ) =>
   Effect.gen(function* () {
     const importRows = yield* api.from("snapshot_imports").select().equals(manifest.snapshotId);
-    const importRow = importRows[0];
-    if (!importRow || importRow.stage === "activated" || importRow.stage === "failed") {
-      return yield* Effect.fail(
-        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot import is not active."),
-      );
-    }
-    const manifestPart = manifest.parts.find((entry) => entry.partNumber === part.partNumber);
-    if (!manifestPart) {
-      return yield* Effect.fail(
-        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part is not in the manifest."),
-      );
-    }
-    if (part.snapshotId !== manifest.snapshotId) {
-      return yield* Effect.fail(
-        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part identity does not match."),
-      );
-    }
-    if (part.partNumber <= importRow.partsImported) {
-      return;
-    }
-    if (part.partNumber !== importRow.partsImported + 1) {
-      return yield* Effect.fail(
-        syncProtocolError("SNAPSHOT_UNAVAILABLE", "The snapshot part arrived out of order."),
-      );
-    }
+    const admission = yield* Effect.fromResult(decidePartAdmission(importRows[0], manifest, part));
+    if (admission._tag === "imported") return;
+    const { importRow } = admission;
     const byEntity = Array.groupBy(part.rows, (row) => decodeEntity(row.entity));
     for (const [entity, rows] of Object.entries(byEntity)) {
       yield* writeEntityRows(

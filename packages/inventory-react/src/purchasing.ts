@@ -24,9 +24,7 @@ import { allOf, countRows, readPageIds, type ListPage } from "./list-page";
 export const PURCHASE_ORDER_TABS = ["open", "drafts", "closed"] as const;
 export type PurchaseOrderTab = (typeof PURCHASE_ORDER_TABS)[number];
 
-export const purchaseOrderTabStatuses = (
-  tab: PurchaseOrderTab,
-): ReadonlyArray<PurchaseOrderStatus> => {
+const purchaseOrderTabStatuses = (tab: PurchaseOrderTab): ReadonlyArray<PurchaseOrderStatus> => {
   switch (tab) {
     case "open":
       return ["sent"];
@@ -37,7 +35,7 @@ export const purchaseOrderTabStatuses = (
   }
 };
 
-export type ProductOrderLine = {
+type ProductOrderLine = {
   readonly orderId: PurchaseOrderRow["id"];
   readonly orderNumber: number;
   readonly supplierId: SupplierId;
@@ -108,8 +106,8 @@ export const readProductsOnOrder = (
   reader: ReplicaSubsetReader,
   productIds: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyMap<string, ProductOnOrder>, WorkspaceReadFailure> =>
-  Effect.tryPromise({ try: () => readOpenOrderLines(reader, productIds), catch: readFailure }).pipe(
-    Effect.map(productsOnOrder),
+  readOpenOrderLines(reader, productIds).pipe(
+    Effect.mapBoth({ onFailure: readFailure, onSuccess: productsOnOrder }),
     Effect.withSpan("Purchasing.readProductsOnOrder"),
   );
 
@@ -117,10 +115,10 @@ export const readLearnedSupplierIds = (
   reader: ReplicaSubsetReader,
   productIds: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyMap<string, SupplierId>, WorkspaceReadFailure> =>
-  Effect.tryPromise({
-    try: () => readLearnedSuppliers(reader, productIds),
-    catch: readFailure,
-  }).pipe(Effect.withSpan("Purchasing.readLearnedSuppliers"));
+  readLearnedSuppliers(reader, productIds).pipe(
+    Effect.mapError(readFailure),
+    Effect.withSpan("Purchasing.readLearnedSuppliers"),
+  );
 
 export const PURCHASE_ORDER_SORT_COLUMNS = ["createdAt", "orderNumber"] as const;
 export type PurchaseOrderSortColumn = (typeof PURCHASE_ORDER_SORT_COLUMNS)[number];

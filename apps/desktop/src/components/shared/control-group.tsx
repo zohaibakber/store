@@ -1,53 +1,25 @@
 import type * as React from "react";
 
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-  InputGroupText,
-} from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupText } from "@/components/ui/input-group";
 import { NumberField, NumberFieldInput } from "@/components/ui/number-field";
+import { isString } from "@/lib/predicates";
 
-function ControlGroup(props: React.ComponentProps<typeof InputGroup>): React.ReactElement {
-  return <InputGroup {...props} />;
-}
-
-function ControlGroupNumberInput({
-  children,
+export function NumberControl({
+  addon,
   inputProps,
   ...props
-}: React.ComponentProps<typeof NumberField> & {
-  inputProps?: React.ComponentProps<typeof NumberFieldInput>;
+}: Omit<React.ComponentProps<typeof NumberField>, "children"> & {
+  readonly addon: React.ReactNode;
+  readonly inputProps?: React.ComponentProps<typeof NumberFieldInput>;
 }): React.ReactElement {
   return (
-    <NumberField className="contents" {...props}>
-      <NumberFieldInput {...inputProps} />
-      {children}
-    </NumberField>
+    <InputGroup>
+      <NumberField className="contents" {...props}>
+        <NumberFieldInput {...inputProps} />
+      </NumberField>
+      <InputGroupAddon align="inline-end">
+        {isString(addon) ? <InputGroupText>{addon}</InputGroupText> : addon}
+      </InputGroupAddon>
+    </InputGroup>
   );
 }
-
-function ControlGroupInput(
-  props: React.ComponentProps<typeof InputGroupInput>,
-): React.ReactElement {
-  return <InputGroupInput {...props} />;
-}
-
-function ControlGroupAddon({
-  align = "inline-end",
-  ...props
-}: React.ComponentProps<typeof InputGroupAddon>): React.ReactElement {
-  return <InputGroupAddon align={align} {...props} />;
-}
-
-function ControlGroupText(props: React.ComponentProps<typeof InputGroupText>): React.ReactElement {
-  return <InputGroupText {...props} />;
-}
-
-export {
-  ControlGroup,
-  ControlGroupAddon,
-  ControlGroupInput,
-  ControlGroupNumberInput,
-  ControlGroupText,
-};

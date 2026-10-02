@@ -6,7 +6,7 @@ type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 export const PURCHASE_ORDER_QUANTITY_TYPES = ["unit", "pack"] as const;
 type PurchaseOrderQuantityType = (typeof PURCHASE_ORDER_QUANTITY_TYPES)[number];
 
-export const PURCHASING_SCHEMA_VERSION = 2;
+const PURCHASING_SCHEMA_VERSION = 2;
 
 export const ACTIVE_REPLICA_WINDOW_MILLIS = 14 * 24 * 60 * 60_000;
 
@@ -91,7 +91,7 @@ type PurchaseOrderLineReceipt = {
 export const purchaseOrderLineRemaining = (line: PurchaseOrderLineReceipt): number =>
   Math.max(0, line.baseUnitQuantity - line.receivedBaseUnits);
 
-export const PURCHASE_ORDER_PROGRESSES = [
+const PURCHASE_ORDER_PROGRESSES = [
   "draft",
   "sent",
   "partlyReceived",

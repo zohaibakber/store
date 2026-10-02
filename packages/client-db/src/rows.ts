@@ -1,3 +1,4 @@
+import { PositiveInt } from "@store/contracts";
 import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import {
   BatchId,
@@ -12,7 +13,6 @@ import * as Schema from "effect/Schema";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
 const SignedInteger = Schema.Number.check(Schema.isInt());
 
 const mutableEntityFields = {
@@ -22,7 +22,7 @@ const mutableEntityFields = {
   updatedByUserId: NonEmptyString,
   deviceId: NonEmptyString,
   operationId: NonEmptyString,
-  rowVersion: PositiveInteger,
+  rowVersion: PositiveInt,
   createdAt: NonNegativeInteger,
   updatedAt: NonNegativeInteger,
 };
@@ -43,7 +43,7 @@ export const ProductRow = Schema.Struct({
   aisle: Schema.NullOr(Schema.String),
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
-  unitsPerPack: PositiveInteger,
+  unitsPerPack: PositiveInt,
   purchasePrice: Schema.NullOr(NonNegativeInteger),
   retailPrice: Schema.NullOr(NonNegativeInteger),
   unitPrice: Schema.NullOr(NonNegativeInteger),
@@ -65,7 +65,7 @@ export type BatchRow = typeof BatchRow.Type;
 export const InvoiceRow = Schema.Struct({
   ...mutableEntityFields,
   id: InvoiceId,
-  invoiceNumber: PositiveInteger,
+  invoiceNumber: PositiveInt,
   customerName: Schema.NullOr(Schema.String),
   total: NonNegativeInteger,
 });
@@ -79,9 +79,9 @@ export const InvoiceItemRow = Schema.Struct({
   batchId: BatchId,
   productName: NonEmptyString,
   batchNumber: Schema.NullOr(Schema.String),
-  quantity: PositiveInteger,
+  quantity: PositiveInt,
   quantityType: Schema.Literals(["unit", "pack"]),
-  baseUnitQuantity: PositiveInteger,
+  baseUnitQuantity: PositiveInt,
   salePrice: NonNegativeInteger,
 });
 export type InvoiceItemRow = typeof InvoiceItemRow.Type;

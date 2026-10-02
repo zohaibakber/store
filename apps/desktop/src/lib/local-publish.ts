@@ -54,10 +54,7 @@ const movingAtom = Atom.make(false).pipe(Atom.keepAlive);
 
 const ANOTHER_ORGANIZATION = "another organization";
 
-export const moveLocalWorkspace = (
-  registry: AtomRegistry.AtomRegistry,
-  organization: PublishTarget,
-) => {
+const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
   const bridge = appHost().publish;
   const phase = phaseAtom(organization.id);
   if (!bridge || registry.get(movingAtom)) return;
@@ -93,10 +90,7 @@ export const moveLocalWorkspace = (
     });
 };
 
-export const cancelMoveElsewhere = (
-  registry: AtomRegistry.AtomRegistry,
-  organization: PublishTarget,
-) => {
+const cancelMoveElsewhere = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
   const bridge = appHost().publish;
   if (!bridge || registry.get(movingAtom)) return;
   void bridge

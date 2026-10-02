@@ -1,23 +1,19 @@
-import type { ReplicaCommitNotice } from "@store/client-db";
 import {
   makeAnalyticsStore,
   openAnalyticsDatabase,
   openInventorySource,
 } from "@store/client-db/node-analytics";
-import { SyncEntity } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import {
+  analyticsNoticeOf,
   AnalyticsWorkerFailure,
   AnalyticsWorkerRpcs,
   type AnalyticsWorkerBoot,
 } from "./analytics-rpc";
 import { makeAnalyticsScheduler, type AnalyticsScheduler } from "./analytics-scheduler";
-
-const isSyncEntity = Schema.is(SyncEntity);
 
 const failure = (cause: unknown) =>
   new AnalyticsWorkerFailure({
@@ -63,18 +59,7 @@ export const makeAnalyticsWorkerHandlers = <R>(
         Notify: ({ notice }) =>
           Option.match(opened, {
             onNone: () => Effect.void,
-            onSome: ({ scheduler }) => {
-              const converted: ReplicaCommitNotice = {
-                workspaceToken: "analytics",
-                generationId: notice.generationId,
-                localCommitVersion: notice.localCommitVersion,
-                touchedEntities: notice.touchedEntities.filter(isSyncEntity),
-                touchedKeys: notice.touchedKeys,
-                fullInvalidation: notice.fullInvalidation,
-                overflowedEntities: notice.overflowedEntities?.filter(isSyncEntity),
-              };
-              return scheduler.notify(converted);
-            },
+            onSome: ({ scheduler }) => scheduler.notify(analyticsNoticeOf(notice)),
           }),
         ReadSummary: ({ context }) =>
           read(({ store, scheduler }) =>

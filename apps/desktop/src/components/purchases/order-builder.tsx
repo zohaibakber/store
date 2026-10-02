@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { LoadingSpinner } from "@/components/app/loading-spinner";
 import {
   Sheet,
@@ -40,25 +40,22 @@ export function OrderBuilderSheet({
           </SheetDescription>
         </SheetHeader>
         {open ? (
-          <AppErrorBoundary
-            fallback={
+          <AsyncBoundary
+            failed={
               <SheetPanel>
                 <p className="text-sm text-destructive-foreground">
                   The order builder could not be loaded. Close it and try again.
                 </p>
               </SheetPanel>
             }
+            fallback={
+              <SheetPanel>
+                <LoadingSpinner className="h-48" />
+              </SheetPanel>
+            }
           >
-            <React.Suspense
-              fallback={
-                <SheetPanel>
-                  <LoadingSpinner className="h-48" />
-                </SheetPanel>
-              }
-            >
-              <OrderBuilderBody onOrdered={onOrdered} seed={seed} />
-            </React.Suspense>
-          </AppErrorBoundary>
+            <OrderBuilderBody onOrdered={onOrdered} seed={seed} />
+          </AsyncBoundary>
         ) : null}
       </SheetPopup>
     </Sheet>

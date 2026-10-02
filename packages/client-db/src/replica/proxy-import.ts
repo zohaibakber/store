@@ -22,7 +22,7 @@ export class ImportUnavailable extends Schema.TaggedError<ImportUnavailable>()(
 
 export type ImportFailure = ImportRefused | ImportUnavailable;
 
-export type ImportProxyFetch = (request: SyncProxyRequest) => Effect.Effect<SyncProxyResponse>;
+type ImportProxyFetch = (request: SyncProxyRequest) => Effect.Effect<SyncProxyResponse>;
 
 export type ImportClient = {
   readonly stagePart: (

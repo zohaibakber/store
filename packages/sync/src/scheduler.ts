@@ -50,9 +50,9 @@ export type SyncSchedulerPolicy = {
 
 const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;
 
-export const PULL_FLOOR_MILLIS = 60_000;
+const PULL_FLOOR_MILLIS = 60_000;
 
-export const LIVE_IDLE_PULL_MILLIS = 15 * 60_000;
+const LIVE_IDLE_PULL_MILLIS = 15 * 60_000;
 
 export const defaultHttpPollPolicy: SyncSchedulerPolicy = {
   activePollMillis: PULL_FLOOR_MILLIS,
@@ -144,7 +144,8 @@ const terminalStatus = (disposition: SyncFailureDisposition): SyncSchedulerStatu
       return { _tag: "storageError", message: disposition.message };
     case "recoveryRequired":
       return { _tag: "recoveryRequired", code: disposition.code, message: disposition.message };
-    default:
+    case "retry":
+    case "recover":
       return undefined;
   }
 };
@@ -167,11 +168,10 @@ const timerWake: SyncWake = { reason: "timer" };
 
 const cadenceChanged: QueuedWake = { reason: "cadenceChanged" };
 
-const makeScheduler = <R>(
+const makeScheduler = (
   handlers: SyncSchedulerHandlers,
   policy: SyncSchedulerPolicy,
-  fork: (loop: Effect.Effect<never>) => Effect.Effect<Fiber.Fiber<never>, never, R>,
-): Effect.Effect<SyncSchedulerContract, never, R> =>
+): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> =>
   Effect.gen(function* () {
     const wakes = yield* Queue.unbounded<QueuedWake>();
     const visibility = yield* Ref.make<SchedulerVisibility>({
@@ -303,7 +303,7 @@ const makeScheduler = <R>(
         Effect.flatMap((changed) => (changed ? Queue.offer(wakes, cadenceChanged) : Effect.void)),
         Effect.asVoid,
       );
-    const fiber = yield* fork(loop);
+    const fiber = yield* Effect.forkScoped(loop);
 
     return {
       status,
@@ -322,17 +322,11 @@ const makeScheduler = <R>(
     } satisfies SyncSchedulerContract;
   });
 
-export const makeSyncScheduler = (
-  handlers: SyncSchedulerHandlers,
-  policy: SyncSchedulerPolicy = defaultHttpPollPolicy,
-): Effect.Effect<SyncSchedulerContract> => makeScheduler(handlers, policy, Effect.forkChild);
-
 export class SyncScheduler extends Context.Service<SyncScheduler, SyncSchedulerContract>()(
   "@store/sync/SyncScheduler",
 ) {
   static readonly make = (
     handlers: SyncSchedulerHandlers,
     policy: SyncSchedulerPolicy = defaultHttpPollPolicy,
-  ): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> =>
-    makeScheduler(handlers, policy, Effect.forkScoped);
+  ): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> => makeScheduler(handlers, policy);
 }

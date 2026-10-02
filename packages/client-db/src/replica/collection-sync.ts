@@ -41,7 +41,7 @@ type SyncParams<Row extends InventoryCollectionRow> = Parameters<
 
 type Acquisition<Row extends InventoryCollectionRow> = {
   readonly key: string;
-  readonly read: (signal: AbortSignal) => Promise<PlannedRead<Row>>;
+  readonly read: Effect.Effect<PlannedRead<Row>, unknown>;
   published: boolean;
   refs: number;
   keys: Set<string>;
@@ -55,9 +55,9 @@ type CollectionSyncDescriptor<Row extends InventoryCollectionRow> = {
   readonly coherenceEntity?: InvoiceCoherenceEntity;
 };
 
-export type CollectionReaders<Row extends InventoryCollectionRow> = {
-  readonly subset: (options: LoadSubsetOptions, signal?: AbortSignal) => Promise<PlannedRead<Row>>;
-  readonly source: (signal?: AbortSignal) => Promise<PlannedRead<Row>>;
+type CollectionReaders<Row extends InventoryCollectionRow> = {
+  readonly subset: (options: LoadSubsetOptions) => Effect.Effect<PlannedRead<Row>, unknown>;
+  readonly source: Effect.Effect<PlannedRead<Row>, unknown>;
 };
 
 type StampAdoption = "stale" | "current" | "truncate";
@@ -71,7 +71,7 @@ const REFRESH_RETRY = Schedule.min([
   Schedule.spaced("5 seconds"),
 ]);
 
-const attempt = <A>(evaluate: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, unknown> =>
+const attempt = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
   Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
 
 export const startCollectionSync = <Row extends InventoryCollectionRow>(
@@ -81,7 +81,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
   params: SyncParams<Row>,
   entity: SyncEntity,
 ): SyncConfigRes & { readonly loadSubset: LoadSubsetFn; readonly unloadSubset: UnloadSubsetFn } => {
-  const lifetime = Effect.runSync(Scope.make());
+  const lifetime = Scope.makeUnsafe();
   const requests = Effect.runSync(
     FiberMap.make<number, void, unknown>().pipe(Scope.provide(lifetime)),
   );
@@ -240,7 +240,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
   ): Effect.Effect<void, unknown> =>
     Effect.gen(function* () {
       if (disposed || activeToken === undefined) return;
-      const window = yield* attempt(acquisition.read);
+      const window = yield* acquisition.read;
       const adoption = adopt(window.stamp);
       if (adoption === "stale") return;
       yield* publish(acquisition, window, touchedEntities, adoption);
@@ -287,7 +287,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
 
   const startListening = (): void => {
     if (listening !== undefined || disposed) return;
-    const scope = Effect.runSync(Scope.make());
+    const scope = Scope.makeUnsafe();
     const latch = Latch.makeUnsafe(false);
     listening = scope;
     refreshRequested = latch;
@@ -335,12 +335,12 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
 
   const acquire = (
     key: string,
-    read: (signal: AbortSignal) => Promise<PlannedRead<Row>>,
+    read: Effect.Effect<PlannedRead<Row>, unknown>,
     own: (acquisition: Acquisition<Row>) => void,
     forget: () => void,
   ): Effect.Effect<void, unknown> =>
     Effect.gen(function* () {
-      const current = yield* attempt(read);
+      const current = yield* read;
       const adoption = adopt(current.stamp);
       if (adoption === "stale") return;
       const acquisition: Acquisition<Row> = {
@@ -422,7 +422,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
         }
         return acquire(
           key,
-          (signal) => readers.subset(options, signal),
+          readers.subset(options),
           (acquisition) => owners.set(options, acquisition),
           () => owners.delete(options),
         );

@@ -23,15 +23,22 @@ import * as Semaphore from "effect/Semaphore";
 
 import { visibleBatches } from "../replica/compile";
 import {
+  BatchFactRow,
   batchFacts,
+  DayFactRow,
+  HourFactRow,
   inJsonList,
   invoiceDays,
   invoiceHours,
+  OnOrderFactRow,
   onOrderFacts,
   productDaySales,
+  ProductFactRow,
   productFacts,
   replicaQueryBuilder,
   replicaStampQuery,
+  SaleFactRow,
+  toProductFact,
   type InvoiceWindow,
 } from "../replica/replica-queries";
 import { analyticsFailure, type AnalyticsFailure } from "./errors";
@@ -42,12 +49,8 @@ const PREPARED_STATEMENTS = 64;
 
 export type InventoryStamp = { readonly generation: string; readonly version: number };
 
-type DayFact = { readonly day: number; readonly invoices: number; readonly revenue: number };
-type HourFact = {
-  readonly hour: number;
-  readonly invoices: number;
-  readonly revenue: number;
-};
+type DayFact = typeof DayFactRow.Type;
+type HourFact = typeof HourFactRow.Type;
 
 export type SalesDays = {
   readonly firstDay: number;
@@ -192,32 +195,12 @@ const statements = {
   ),
 };
 
-const ProductRow = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  categoryId: Schema.String,
-  categoryName: Schema.NullOr(Schema.String),
-  tracksPacks: Schema.Number,
-  unitsPerPack: Schema.Number,
-  purchasePrice: Schema.NullOr(Schema.Number),
-  retailPrice: Schema.NullOr(Schema.Number),
-  unitPrice: Schema.NullOr(Schema.Number),
-  visible: Schema.Number,
-  createdAt: Schema.Number,
-});
-const decodeProducts = Schema.decodeUnknownSync(Schema.Array(ProductRow));
-
-const BatchRow = Schema.Struct({
-  productId: Schema.String,
-  batchNumber: Schema.NullOr(Schema.String),
-  packQuantity: Schema.Number,
-  unitQuantity: Schema.Number,
-  expiresAt: Schema.NullOr(Schema.Number),
-});
-const decodeBatches = Schema.decodeUnknownSync(Schema.Array(BatchRow));
-
-const OnOrderRow = Schema.Struct({ productId: Schema.String, units: Schema.Number });
-const decodeOnOrder = Schema.decodeUnknownSync(Schema.Array(OnOrderRow));
+const decodeProducts = Schema.decodeUnknownSync(Schema.Array(ProductFactRow));
+const decodeBatches = Schema.decodeUnknownSync(Schema.Array(BatchFactRow));
+const decodeOnOrder = Schema.decodeUnknownSync(Schema.Array(OnOrderFactRow));
+const decodeSales = Schema.decodeUnknownSync(Schema.Array(SaleFactRow));
+const decodeDays = Schema.decodeUnknownSync(Schema.Array(DayFactRow));
+const decodeHours = Schema.decodeUnknownSync(Schema.Array(HourFactRow));
 
 const StateRow = Schema.Struct({
   organizationId: Schema.String,
@@ -225,27 +208,6 @@ const StateRow = Schema.Struct({
   version: Schema.Number,
 });
 const decodeState = Schema.decodeUnknownSync(StateRow);
-
-const SaleRow = Schema.Struct({
-  productId: Schema.String,
-  day: Schema.Number,
-  units: Schema.Number,
-  revenue: Schema.Number,
-});
-const decodeSales = Schema.decodeUnknownSync(Schema.Array(SaleRow));
-
-const DayRow = Schema.Struct({
-  day: Schema.Number,
-  invoices: Schema.Number,
-  revenue: Schema.Number,
-});
-const HourRow = Schema.Struct({
-  hour: Schema.Number,
-  invoices: Schema.Number,
-  revenue: Schema.Number,
-});
-const decodeDays = Schema.decodeUnknownSync(Schema.Array(DayRow));
-const decodeHours = Schema.decodeUnknownSync(Schema.Array(HourRow));
 
 const IdRow = Schema.Struct({ id: Schema.String });
 const decodeIds = Schema.decodeUnknownSync(Schema.Array(IdRow));
@@ -261,20 +223,6 @@ const keyParts = (key: string): { readonly entity: string; readonly id: string }
     ? undefined
     : { entity: key.slice(0, separator), id: key.slice(separator + 1) };
 };
-
-const toProductFact = (row: typeof ProductRow.Type): InsightsProductFact => ({
-  id: row.id,
-  name: row.name,
-  categoryId: row.categoryId,
-  categoryName: row.categoryName,
-  tracksPacks: row.tracksPacks !== 0,
-  unitsPerPack: row.unitsPerPack,
-  purchasePrice: row.purchasePrice,
-  retailPrice: row.retailPrice,
-  unitPrice: row.unitPrice,
-  visible: row.visible !== 0,
-  createdAt: row.createdAt,
-});
 
 const makeSnapshot = (
   db: DatabaseSync,
@@ -421,7 +369,7 @@ export const openInventorySource = (
         },
         catch: analyticsFailure,
       }),
-      (opened) => Effect.sync(() => opened.close()).pipe(Effect.ignore),
+      (opened) => Effect.try(() => opened.close()).pipe(Effect.ignore),
     );
     const prepared = new Map<string, StatementSync>();
     const turn = yield* Semaphore.make(1);
@@ -442,7 +390,7 @@ export const openInventorySource = (
               catch: analyticsFailure,
             }),
             work,
-            () => Effect.sync(() => db.exec("ROLLBACK")).pipe(Effect.ignore),
+            () => Effect.try(() => db.exec("ROLLBACK")).pipe(Effect.ignore),
           ),
         ),
     } satisfies InventorySource;

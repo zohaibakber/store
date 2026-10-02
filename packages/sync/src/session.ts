@@ -24,18 +24,18 @@ import {
   type SyncSchedulerPolicy,
 } from "./scheduler";
 import { SyncTransportService, type SyncTransport } from "./transport";
-import { makeWebNetworkOwnership } from "./web-ownership";
+import { ownWebNetwork } from "./web-ownership";
 
 export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
 
-export type OwnedHttpSyncOptions = {
+type OwnedHttpSyncOptions = {
   readonly databaseIdentity: string;
   readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
   readonly deviceLabel?: DeviceLabel | undefined;
 };
 
-export const recoverFrom = (
+const recoverFrom = (
   store: ReplicaStoreContract,
   transport: SyncTransport,
   code: SyncProtocolCode,
@@ -85,10 +85,6 @@ const ownHttpSync = (
     const store = yield* ReplicaStore;
     const transport = yield* SyncTransportService;
     const engine = yield* SyncEngine;
-    const ownership = yield* Effect.acquireRelease(
-      makeWebNetworkOwnership(options.databaseIdentity),
-      (owned) => owned.dispose,
-    );
     const inner = yield* SyncScheduler.make(
       {
         register: () => engine.ensureRegistered(),
@@ -126,12 +122,11 @@ const ownHttpSync = (
       setNetworkOwner: (owned) =>
         inner.setNetworkOwner(owned).pipe(Effect.andThen(SubscriptionRef.set(owner, owned))),
     };
-    const acquired = yield* ownership.tryAcquire(() =>
+    yield* ownWebNetwork(
+      options.databaseIdentity,
       releaseAbandonedClaims(store).pipe(Effect.andThen(scheduler.setNetworkOwner(true))),
     );
-    yield* Effect.addFinalizer(() =>
-      scheduler.setNetworkOwner(false).pipe(Effect.andThen(acquired.release)),
-    );
+    yield* Effect.addFinalizer(() => scheduler.setNetworkOwner(false));
     yield* scheduler.wake("startup");
     const liveLoop = engine.awaitRegistered.pipe(
       Effect.andThen(live.run),

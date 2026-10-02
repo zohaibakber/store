@@ -4,10 +4,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 import type { CommitFanout } from "../inventory/model";
-import type { HubPublish } from "./hub-core";
 
 interface OrgHubStub {
-  readonly publish: (input: HubPublish) => Effect.Effect<number, unknown, RuntimeContext>;
+  readonly publish: (input: CommitFanout) => Effect.Effect<number, unknown, RuntimeContext>;
 }
 
 interface OrgHubNamespace {
@@ -41,14 +40,9 @@ export const makeLiveFanout = (
   LiveFanout.of({
     publish: (organizationId, fanout) =>
       runInBackground(
-        Effect.suspend(() =>
-          hubs.getByName(organizationId).publish({
-            epoch: fanout.epoch,
-            horizon: fanout.horizon,
-            group: fanout.group,
-            byteLength: fanout.byteLength,
-            originReplicaId: fanout.originReplicaId,
-          }),
-        ).pipe(Effect.asVoid, logFailure("live.publish_failed")),
+        Effect.suspend(() => hubs.getByName(organizationId).publish(fanout)).pipe(
+          Effect.asVoid,
+          logFailure("live.publish_failed"),
+        ),
       ),
   });

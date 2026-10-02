@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import { SOURCE_ENTITY } from "./sources";
 import type { ReplicaCommitNotice } from "./types";
 
-export const NOTICE_KEYS_PER_ENTITY = 128;
+const NOTICE_KEYS_PER_ENTITY = 128;
 
 const ALL_ENTITIES: ReadonlyArray<SyncEntity> = Object.values(SOURCE_ENTITY);
 
@@ -19,6 +19,31 @@ export type NoticeAccumulator = {
   readonly keys: ReadonlyMap<SyncEntity, ReadonlySet<string>>;
   readonly overflowed: ReadonlySet<SyncEntity>;
 };
+
+export const commitNotice = (fields: {
+  readonly workspaceToken: string;
+  readonly generationId: string;
+  readonly localCommitVersion: number;
+  readonly touchedEntities: ReadonlyArray<SyncEntity>;
+  readonly touchedKeys: ReadonlyArray<string>;
+  readonly fullInvalidation: boolean | undefined;
+  readonly overflowedEntities: ReadonlyArray<SyncEntity> | undefined;
+}): ReplicaCommitNotice =>
+  Object.assign(
+    {
+      workspaceToken: fields.workspaceToken,
+      generationId: fields.generationId,
+      localCommitVersion: fields.localCommitVersion,
+      touchedEntities: fields.touchedEntities,
+      touchedKeys: fields.touchedKeys,
+    },
+    fields.fullInvalidation === undefined
+      ? undefined
+      : { fullInvalidation: fields.fullInvalidation },
+    fields.overflowedEntities === undefined
+      ? undefined
+      : { overflowedEntities: fields.overflowedEntities },
+  );
 
 const overflowedEntitiesOf = (notice: ReplicaCommitNotice): ReadonlyArray<SyncEntity> =>
   notice.overflowedEntities ?? [];

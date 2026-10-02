@@ -1,10 +1,16 @@
-import { nativeClient } from "@store/auth";
-
 import type { AppHost } from "@/host";
+import { remoteFailureMessage } from "@/lib/errors";
 import { controlNewSaleShortcut } from "@/lib/new-sale-shortcut";
 import { decodedShareBridge } from "@/lib/share";
 import { decodedBackupBridge } from "@/lib/workspace-backup";
 import { decodedPublishBridge } from "@/lib/workspace-publish";
+
+const withServerMessage = <A>(reply: Promise<A>): Promise<A> =>
+  reply.catch((cause: unknown) => {
+    throw cause instanceof Error
+      ? new Error(remoteFailureMessage(cause.message), { cause })
+      : cause;
+  });
 
 type PreloadBridges = Pick<
   Window,
@@ -26,9 +32,10 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
     ...decodedShareBridge(sharing),
     auth,
     signIn: {
-      client: nativeClient("Tabaaq Desktop"),
-      oauthRedirectUri: () => auth.getOAuthRedirectUri(),
-      openAuthorization: (url) => auth.openExternal(url),
+      identify: (input) => withServerMessage(auth.identify(input)),
+      authenticate: (credentials) => withServerMessage(auth.authenticate(credentials)),
+      beginGoogle: () => withServerMessage(auth.beginGoogle()),
+      completeGoogle: (callbackUrl) => withServerMessage(auth.completeGoogle(callbackUrl)),
       onOAuthCallback: (listener) => auth.onOAuthCallback(listener),
     },
     analyseInvoices: (files) => serverApi.analyseInvoices({ files: [...files] }),

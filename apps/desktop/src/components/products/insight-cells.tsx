@@ -1,7 +1,7 @@
-import { createContext, Suspense, use } from "react";
+import { createContext, use } from "react";
 import type * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { StatusLabel } from "@/components/insights/status-badge";
 import { EMPTY } from "@/lib/format";
 import { useProductInsight } from "@/lib/inventory";
@@ -35,11 +35,7 @@ function LiveStatus({ productId }: { readonly productId: string }) {
 function InsightCell({ children }: { readonly children: React.ReactNode }) {
   const live = use(LiveInsightsContext);
   if (!live) return PLACEHOLDER;
-  return (
-    <AppErrorBoundary fallback={PLACEHOLDER}>
-      <Suspense fallback={PLACEHOLDER}>{children}</Suspense>
-    </AppErrorBoundary>
-  );
+  return <AsyncBoundary fallback={PLACEHOLDER}>{children}</AsyncBoundary>;
 }
 
 export function ProductStockCell({ productId }: { readonly productId: string }) {

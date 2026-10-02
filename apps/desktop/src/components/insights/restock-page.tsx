@@ -15,35 +15,27 @@ import { formatPrice } from "@store/services/format";
 import type { ProductInsight, StockStatus } from "@store/services/insights";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
   createColumnHelper,
   functionalUpdate,
-  metaHelper,
-  rowPaginationFeature,
-  rowSortingFeature,
-  tableFeatures,
   useTable,
   type ColumnFiltersState,
   type PaginationState,
   type Updater,
 } from "@tanstack/react-table";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import * as React from "react";
 
 import { PurchasingGateNotice } from "@/components/purchases/gate-notice";
 import { OrderBuilderSheet } from "@/components/purchases/order-builder";
 import type { DraftLine } from "@/components/purchases/presentation";
+import { DataTable, DataTableColumnHeader, DataTableFilter } from "@/components/shared/data-table";
 import {
-  DataTable,
-  DataTableColumnHeader,
-  DataTableContent,
-  DataTableFilter,
-  DataTableFooter,
-  DataTablePagination,
-  type DataTableColumnMeta,
-} from "@/components/shared/data-table";
+  ListTableContent,
+  listTableFeatures,
+  type ListTableFeatures,
+} from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +63,7 @@ import {
   formatRate,
   formatStockCover,
   HEALTH_ORDER,
+  restockActionCount,
 } from "./presentation";
 import { StatusBadge } from "./status-badge";
 
@@ -87,23 +80,13 @@ const VIEW_LABEL = {
   all: "All",
 } satisfies Record<RestockView, string>;
 
-const PAGE_SIZES = [25, 50, 100] as const;
-
 export const RESTOCK_PAGE_SIZE = 50;
 
 const STATUS_RANK = new Map<StockStatus, number>(
   [...HEALTH_ORDER, "inactive" as const].map((status, index) => [status, index]),
 );
 
-const features = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSortingFeature,
-  columnMeta: metaHelper<DataTableColumnMeta>(),
-});
-
-const columnHelper = createColumnHelper<typeof features, ProductInsight>();
+const columnHelper = createColumnHelper<ListTableFeatures, ProductInsight>();
 
 function TwoLine({
   primary,
@@ -260,26 +243,30 @@ function ExportButton() {
   const [exporting, setExporting] = React.useState(false);
   const runExport = React.useCallback(() => {
     setExporting(true);
-    const lines: Array<string> = [buyListHeader()];
-    void Effect.runPromise(
+    Effect.runFork(
       exportRestock({ view: "all" }).pipe(
-        Stream.runForEach((insight) =>
-          Effect.sync(() => {
-            const line = buyListLine(insight);
-            if (line !== null) lines.push(line);
-          }),
+        Stream.map(buyListLine),
+        Stream.filter(Predicate.isNotNull),
+        Stream.runCollect,
+        Effect.map((lines) =>
+          downloadText(
+            "buy-list.csv",
+            [buyListHeader(), ...lines].join("\r\n"),
+            "text/csv;charset=utf-8",
+          ),
         ),
+        Effect.catchCause(() =>
+          Effect.sync(() =>
+            toastManager.add({
+              title: "Couldn't export the buy list",
+              description: "The insights were recalculated. Try again in a moment.",
+              type: "error",
+            }),
+          ),
+        ),
+        Effect.ensuring(Effect.sync(() => setExporting(false))),
       ),
-    )
-      .then(() => downloadText("buy-list.csv", lines.join("\r\n"), "text/csv;charset=utf-8"))
-      .catch(() =>
-        toastManager.add({
-          title: "Couldn't export the buy list",
-          description: "The insights were recalculated. Try again in a moment.",
-          type: "error",
-        }),
-      )
-      .finally(() => setExporting(false));
+    );
   }, [exportRestock]);
   return (
     <Button
@@ -319,11 +306,9 @@ const viewCount = (summary: InsightsSummary, view: RestockView) => {
   const { counts } = summary;
   switch (view) {
     case "action":
-      return counts.out + counts.critical + counts.low;
+      return restockActionCount(counts);
     case "all":
-      return (
-        counts.out + counts.critical + counts.low + counts.dead + counts.overstock + counts.healthy
-      );
+      return restockActionCount(counts) + counts.dead + counts.overstock + counts.healthy;
     default:
       return counts[view];
   }
@@ -373,7 +358,7 @@ function RestockBody({
   if (page.cursorExpired && pageIndex > 0) setStored({ scope, cursors: [null], total: 0 });
 
   const table = useTable({
-    features,
+    features: listTableFeatures,
     columns,
     data: page.rows,
     getRowId: (insight) => insight.productId,
@@ -489,16 +474,7 @@ function RestockBody({
           </div>
           {summary === null ? null : <PolicyInfo summary={summary} />}
         </div>
-        <div
-          aria-busy={loading}
-          className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}
-        >
-          <DataTableContent>
-            <DataTableFooter>
-              <DataTablePagination pageSizes={PAGE_SIZES} />
-            </DataTableFooter>
-          </DataTableContent>
-        </div>
+        <ListTableContent loading={loading} />
         <OrderBuilderSheet
           onOpenChange={setBuilderOpen}
           onOrdered={deselect}

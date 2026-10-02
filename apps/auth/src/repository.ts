@@ -14,7 +14,6 @@ import {
   type InvitationId as InvitationIdType,
   type OrganizationId as OrganizationIdType,
   type OrganizationRole as OrganizationRoleType,
-  type OrganizationSlug as OrganizationSlugType,
   type PasswordHash as PasswordHashType,
   type SessionId as SessionIdType,
   type UserId as UserIdType,
@@ -30,7 +29,6 @@ import {
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   exists,
@@ -43,17 +41,18 @@ import {
   not,
   or,
   sql,
+  type Column,
 } from "drizzle-orm";
-import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { SqlError, UniqueViolation } from "effect/unstable/sql/SqlError";
 
+import { AuthCrypto } from "./crypto";
 import { runD1Batch, type AuthDrizzle, type CompilableQuery } from "./d1-batch";
+import { storageFailureMessage } from "./errors";
 
 const UserRecord = Schema.Struct({
   id: UserId,
@@ -68,7 +67,6 @@ export interface UserRecord extends Schema.Schema.Type<typeof UserRecord> {}
 const MembershipRecord = Schema.Struct({
   organizationId: OrganizationId,
   organizationName: Schema.String,
-  organizationSlug: Schema.NullOr(Schema.String),
   role: OrganizationRole,
 });
 export interface MembershipRecord extends Schema.Schema.Type<typeof MembershipRecord> {}
@@ -77,7 +75,6 @@ const InvitationRecord = Schema.Struct({
   id: InvitationId,
   organizationId: OrganizationId,
   organizationName: Schema.String,
-  organizationSlug: Schema.NullOr(Schema.String),
   email: EmailAddress,
   role: OrganizationRole,
   invitedByUserId: UserId,
@@ -102,7 +99,7 @@ const SessionRecord = Schema.Struct({
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
 
-export interface RefreshContext {
+interface RefreshContext {
   readonly session: SessionRecord;
   readonly user: UserRecord | null;
   readonly activeMembership: MembershipRecord | null;
@@ -173,16 +170,11 @@ export interface AuthRepositoryApi {
   readonly updateOrganization: (input: {
     readonly organizationId: OrganizationIdType;
     readonly name: string;
-    readonly slug: OrganizationSlugType | null;
     readonly role: OrganizationRoleType;
   }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
   readonly listMembers: (
     organizationId: OrganizationIdType,
   ) => Effect.Effect<ReadonlyArray<OrganizationMember>, RepositoryError>;
-  readonly countRole: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly role: OrganizationRoleType;
-  }) => Effect.Effect<number, RepositoryError>;
   readonly changeMemberRole: (input: {
     readonly organizationId: OrganizationIdType;
     readonly userId: UserIdType;
@@ -244,22 +236,21 @@ export class AuthRepository extends Context.Service<AuthRepository, AuthReposito
 ) {}
 
 const repositoryError = (operation: string, cause: unknown) =>
-  new RepositoryError({ operation, message: String(cause), cause });
-
-const makeId = <A>(schema: Schema.ConstraintDecoder<A>) =>
-  Schema.decodeUnknownSync(schema)(crypto.randomUUID());
+  new RepositoryError({ operation, message: storageFailureMessage(cause), cause });
 
 const at = (milliseconds: number) => new Date(milliseconds);
+
+type Stored<C extends Column> = C["_"]["notNull"] extends true
+  ? C["_"]["data"]
+  : C["_"]["data"] | null;
+
+const bound = <C extends Column>(column: C, value: Stored<C>) =>
+  sql<Stored<C>>`${sql.param(value, column)}`.as(column.name);
 const millis = (value: Date | null) => (value === null ? null : value.getTime());
 
 interface ReturnedId {
   readonly id: string;
 }
-
-const isHandleTaken = (cause: unknown) =>
-  cause instanceof EffectDrizzleQueryError &&
-  cause.cause instanceof SqlError &&
-  cause.cause.reason instanceof UniqueViolation;
 
 const userColumns = {
   id: user.id,
@@ -282,7 +273,6 @@ interface UserColumns {
 const membershipColumns = {
   organizationId: organizationMembership.organizationId,
   organizationName: organization.name,
-  organizationSlug: organization.slug,
   role: organizationMembership.role,
 };
 
@@ -290,7 +280,6 @@ const invitationColumns = {
   id: organizationInvitation.id,
   organizationId: organizationInvitation.organizationId,
   organizationName: organization.name,
-  organizationSlug: organization.slug,
   email: organizationInvitation.email,
   role: organizationInvitation.role,
   invitedByUserId: organizationInvitation.invitedByUserId,
@@ -304,7 +293,6 @@ interface InvitationColumns {
   readonly id: string;
   readonly organizationId: string;
   readonly organizationName: string;
-  readonly organizationSlug: string | null;
   readonly email: string;
   readonly role: string;
   readonly invitedByUserId: string;
@@ -361,6 +349,36 @@ const asInvitation = (row: InvitationColumns, operation: string) =>
     createdAt: row.createdAt.getTime(),
   });
 
+interface SessionColumns {
+  readonly id: string;
+  readonly familyId: string;
+  readonly userId: string;
+  readonly activeOrganizationId: string;
+  readonly refreshTokenHash: string;
+  readonly clientKind: string;
+  readonly deviceName: string | null;
+  readonly expiresAt: Date;
+  readonly revokedAt: Date | null;
+  readonly replacedBySessionId: string | null;
+}
+
+const asSession = (row: SessionColumns, operation: string) =>
+  decode(
+    SessionRecord,
+    operation,
+  )({
+    id: row.id,
+    familyId: row.familyId,
+    userId: row.userId,
+    activeOrganizationId: row.activeOrganizationId,
+    refreshTokenHash: row.refreshTokenHash,
+    clientKind: row.clientKind,
+    deviceName: row.deviceName,
+    expiresAt: row.expiresAt.getTime(),
+    revokedAt: millis(row.revokedAt),
+    replacedBySessionId: row.replacedBySessionId,
+  });
+
 const stillPending = (now: number) =>
   and(
     isNull(organizationInvitation.acceptedAt),
@@ -379,21 +397,14 @@ const sessionValues = (input: NewSession) => ({
   expiresAt: at(input.expiresAt),
 });
 
-const ownerMembership = (organizationId: OrganizationIdType, userId: UserIdType) => ({
-  id: crypto.randomUUID(),
-  organizationId,
-  userId,
-  role: "owner" as const,
-});
-
-const startingOrganization = (name: string) => ({
-  id: makeId(OrganizationId),
-  name: `${name || "My"}'s Store`,
-});
-
-const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
+const makeAuthRepository = (
+  database: AuthDrizzle,
+  crypto: AuthCrypto["Service"],
+): AuthRepositoryApi => {
   const fail = (operation: string) =>
     Effect.mapError((cause: unknown) => repositoryError(operation, cause));
+
+  const newId = crypto.randomId.pipe(fail("newId"));
 
   const atomicBatch = (operation: string, queries: ReadonlyArray<CompilableQuery>) =>
     runD1Batch<ReturnedId>(database, queries).pipe(fail(operation));
@@ -437,6 +448,43 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
   const leavesAnOwner = (organizationId: OrganizationIdType, userId: UserIdType) =>
     or(ne(organizationMembership.role, "owner"), anotherOwnerExists(organizationId, userId));
 
+  const newAccount = Effect.fnUntraced(function* (input: {
+    readonly email: EmailAddressType;
+    readonly name: string;
+    readonly image: string | null;
+    readonly passwordHash: PasswordHashType | null;
+    readonly verifiedAt: number | null;
+  }) {
+    const userId = UserId.make(yield* newId);
+    const name = input.name.trim();
+    const store = { id: OrganizationId.make(yield* newId), name: `${name || "My"}'s Store` };
+    const membershipId = yield* newId;
+    return {
+      record: UserRecord.make({
+        id: userId,
+        email: input.email,
+        name,
+        image: input.image,
+        passwordHash: input.passwordHash,
+        emailVerified: input.verifiedAt !== null,
+      }),
+      inserts: [
+        database.insert(user).values({
+          id: userId,
+          email: input.email,
+          name,
+          image: input.image,
+          passwordHash: input.passwordHash,
+          emailVerifiedAt: input.verifiedAt === null ? null : at(input.verifiedAt),
+        }),
+        database.insert(organization).values({ id: store.id, name: store.name }),
+        database
+          .insert(organizationMembership)
+          .values({ id: membershipId, organizationId: store.id, userId, role: "owner" }),
+      ],
+    };
+  });
+
   const findUserWhere = Effect.fn("AuthRepository.findUserWhere")(function* (
     operation: string,
     rows: Effect.Effect<ReadonlyArray<UserColumns>, unknown>,
@@ -471,67 +519,41 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
           ),
       ),
     createPasswordUser: Effect.fn("AuthRepository.createPasswordUser")(function* (input) {
-      const userId = makeId(UserId);
-      const name = input.name.trim();
-      const store = startingOrganization(name);
-      yield* atomicBatch("createPasswordUser", [
-        database.insert(user).values({
-          id: userId,
-          email: input.email,
-          name,
-          image: null,
-          passwordHash: input.passwordHash,
-          emailVerifiedAt: null,
-        }),
-        database.insert(organization).values({ id: store.id, name: store.name, slug: null }),
-        database.insert(organizationMembership).values(ownerMembership(store.id, userId)),
-      ]);
-      return UserRecord.make({
-        id: userId,
+      const account = yield* newAccount({
         email: input.email,
-        name,
+        name: input.name,
         image: null,
         passwordHash: input.passwordHash,
-        emailVerified: false,
+        verifiedAt: null,
       });
+      yield* atomicBatch("createPasswordUser", account.inserts);
+      return account.record;
     }),
     createGoogleUser: Effect.fn("AuthRepository.createGoogleUser")(function* (input) {
       const now = yield* Clock.currentTimeMillis;
-      const userId = makeId(UserId);
-      const name = input.name.trim();
-      const store = startingOrganization(name);
+      const account = yield* newAccount({
+        email: input.email,
+        name: input.name,
+        image: input.image,
+        passwordHash: null,
+        verifiedAt: now,
+      });
       yield* atomicBatch("createGoogleUser", [
-        database.insert(user).values({
-          id: userId,
-          email: input.email,
-          name,
-          image: input.image,
-          passwordHash: null,
-          emailVerifiedAt: at(now),
-        }),
-        database.insert(organization).values({ id: store.id, name: store.name, slug: null }),
-        database.insert(organizationMembership).values(ownerMembership(store.id, userId)),
+        ...account.inserts,
         database.insert(oauthAccount).values({
-          id: crypto.randomUUID(),
-          userId,
+          id: yield* newId,
+          userId: account.record.id,
           provider: "google",
           providerAccountId: input.providerAccountId,
         }),
       ]);
-      return UserRecord.make({
-        id: userId,
-        email: input.email,
-        name,
-        image: input.image,
-        passwordHash: null,
-        emailVerified: true,
-      });
+      return account.record;
     }),
     attachGoogleAccount: Effect.fn("AuthRepository.attachGoogleAccount")(function* (input) {
       const linked = yield* database
         .insert(oauthAccount)
         .values({
-          id: crypto.randomUUID(),
+          id: yield* newId,
           userId: input.userId,
           provider: "google",
           providerAccountId: input.providerAccountId,
@@ -561,7 +583,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
           database
             .insert(oauthAccount)
             .values({
-              id: crypto.randomUUID(),
+              id: yield* newId,
               userId: input.userId,
               provider: "google",
               providerAccountId: input.providerAccountId,
@@ -622,12 +644,11 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
     updateOrganization: Effect.fn("AuthRepository.updateOrganization")(function* (input) {
       const updated = yield* database
         .update(organization)
-        .set({ name: input.name, slug: input.slug })
+        .set({ name: input.name })
         .where(eq(organization.id, input.organizationId))
-        .returning({ id: organization.id, name: organization.name, slug: organization.slug })
+        .returning({ id: organization.id, name: organization.name })
         .pipe(
           Effect.map((rows) => rows[0]),
-          Effect.catchIf(isHandleTaken, () => Effect.succeed(undefined)),
           fail("updateOrganization"),
         );
       if (!updated) return null;
@@ -637,7 +658,6 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       )({
         organizationId: updated.id,
         organizationName: updated.name,
-        organizationSlug: updated.slug,
         role: input.role,
       });
     }),
@@ -660,19 +680,6 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         Schema.Array(OrganizationMember),
         "listMembers.decode",
       )(rows.map((row) => ({ ...row, joinedAt: row.joinedAt.getTime() })));
-    }),
-    countRole: Effect.fn("AuthRepository.countRole")(function* (input) {
-      const [row] = yield* database
-        .select({ total: count() })
-        .from(organizationMembership)
-        .where(
-          and(
-            eq(organizationMembership.organizationId, input.organizationId),
-            eq(organizationMembership.role, input.role),
-          ),
-        )
-        .pipe(fail("countRole"));
-      return row?.total ?? 0;
     }),
     changeMemberRole: Effect.fn("AuthRepository.changeMemberRole")(function* (input) {
       const changed = yield* database
@@ -730,7 +737,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       return returningMatchedOne(results[0]);
     }),
     createInvitation: Effect.fn("AuthRepository.createInvitation")(function* (input) {
-      const invitationId = makeId(InvitationId);
+      const invitationId = InvitationId.make(yield* newId);
       yield* atomicBatch("createInvitation", [
         database
           .update(organizationInvitation)
@@ -810,41 +817,36 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
       );
     }),
     acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
+      const pendingInvitation = and(
+        eq(organizationInvitation.id, input.invitation.id),
+        stillPending(input.now),
+      );
+      const membershipId = yield* newId;
       const results = yield* atomicBatch("acceptInvitation", [
+        database
+          .insert(organizationMembership)
+          .select((query) =>
+            query
+              .select({
+                id: bound(organizationMembership.id, membershipId),
+                organizationId: organizationInvitation.organizationId,
+                userId: bound(organizationMembership.userId, input.userId),
+                role: organizationInvitation.role,
+                createdAt: bound(organizationMembership.createdAt, at(input.now)),
+              })
+              .from(organizationInvitation)
+              .where(pendingInvitation),
+          )
+          .onConflictDoNothing({
+            target: [organizationMembership.organizationId, organizationMembership.userId],
+          }),
         database
           .update(organizationInvitation)
           .set({ acceptedAt: at(input.now) })
-          .where(and(eq(organizationInvitation.id, input.invitation.id), stillPending(input.now)))
+          .where(pendingInvitation)
           .returning({ id: organizationInvitation.id }),
-        database
-          .insert(organizationMembership)
-          .values({
-            id: crypto.randomUUID(),
-            organizationId: input.invitation.organizationId,
-            userId: input.userId,
-            role: input.invitation.role,
-            createdAt: at(input.now),
-          })
-          .onConflictDoNothing({
-            target: [organizationMembership.organizationId, organizationMembership.userId],
-          })
-          .returning({ id: organizationMembership.id }),
       ]);
-      const invitationClaimed = returningMatchedOne(results[0]);
-      if (invitationClaimed) return true;
-      const membershipInsertedAfterUnclaimedInvitation = returningMatchedOne(results[1]);
-      if (membershipInsertedAfterUnclaimedInvitation) {
-        yield* database
-          .delete(organizationMembership)
-          .where(
-            and(
-              eq(organizationMembership.organizationId, input.invitation.organizationId),
-              eq(organizationMembership.userId, input.userId),
-            ),
-          )
-          .pipe(fail("acceptInvitation.cleanup"));
-      }
-      return false;
+      return returningMatchedOne(results[1]);
     }),
     createSession: Effect.fn("AuthRepository.createSession")(function* (input) {
       yield* database.insert(session).values(sessionValues(input)).pipe(fail("createSession"));
@@ -856,14 +858,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         .where(eq(session.id, sessionId))
         .pipe(fail("findSession"));
       if (!row) return null;
-      return yield* decode(
-        SessionRecord,
-        "findSession.decode",
-      )({
-        ...row,
-        expiresAt: row.expiresAt.getTime(),
-        revokedAt: millis(row.revokedAt),
-      });
+      return yield* asSession(row, "findSession.decode");
     }),
     findRefreshContext: Effect.fn("AuthRepository.findRefreshContext")(function* (sessionId) {
       const [row] = yield* database
@@ -880,7 +875,6 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
           organizationName: sql<string | null>`${organization.name}`.as(
             "refresh_organization_name",
           ),
-          organizationSlug: organization.slug,
         })
         .from(session)
         .leftJoin(user, eq(user.id, session.userId))
@@ -895,21 +889,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         .where(eq(session.id, sessionId))
         .pipe(fail("findRefreshContext"));
       if (!row) return null;
-      const current = yield* decode(
-        SessionRecord,
-        "findRefreshContext.session",
-      )({
-        id: row.id,
-        familyId: row.familyId,
-        userId: row.userId,
-        activeOrganizationId: row.activeOrganizationId,
-        refreshTokenHash: row.refreshTokenHash,
-        clientKind: row.clientKind,
-        deviceName: row.deviceName,
-        expiresAt: row.expiresAt.getTime(),
-        revokedAt: millis(row.revokedAt),
-        replacedBySessionId: row.replacedBySessionId,
-      });
+      const current = yield* asSession(row, "findRefreshContext.session");
       const owner = yield* asUser(
         row.userFound === null || row.userEmail === null || row.userName === null
           ? undefined
@@ -934,7 +914,6 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
             )({
               organizationId: row.membershipOrganizationId,
               organizationName: row.organizationName,
-              organizationSlug: row.organizationSlug,
               role: row.membershipRole,
             });
       return { session: current, user: owner, activeMembership } satisfies RefreshContext;
@@ -964,6 +943,7 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
         .pipe(fail("moveSession"));
     }),
     rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
+      const successor = sessionValues(input.replacement);
       const results = yield* atomicBatch("rotateSession", [
         database
           .update(session)
@@ -980,15 +960,28 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
             ),
           )
           .returning({ id: session.id }),
-        database.insert(session).values(sessionValues(input.replacement)),
+        database.insert(session).select((query) =>
+          query
+            .select({
+              id: bound(session.id, successor.id),
+              familyId: bound(session.familyId, successor.familyId),
+              userId: bound(session.userId, successor.userId),
+              activeOrganizationId: bound(
+                session.activeOrganizationId,
+                successor.activeOrganizationId,
+              ),
+              refreshTokenHash: bound(session.refreshTokenHash, successor.refreshTokenHash),
+              clientKind: bound(session.clientKind, successor.clientKind),
+              deviceName: bound(session.deviceName, successor.deviceName),
+              expiresAt: bound(session.expiresAt, successor.expiresAt),
+            })
+            .from(session)
+            .where(
+              and(eq(session.id, input.currentId), eq(session.replacedBySessionId, successor.id)),
+            ),
+        ),
       ]);
-      const currentSessionRotated = returningMatchedOne(results[0]);
-      if (currentSessionRotated) return true;
-      yield* database
-        .delete(session)
-        .where(eq(session.id, input.replacement.id))
-        .pipe(fail("rotateSession.cleanup"));
-      return false;
+      return returningMatchedOne(results[0]);
     }),
     revokeSession: Effect.fn("AuthRepository.revokeSession")(function* (sessionId, now) {
       yield* database
@@ -1010,7 +1003,8 @@ const makeAuthRepository = (database: AuthDrizzle): AuthRepositoryApi => {
 export const authRepositoryLayer = (database: D1Database) =>
   Layer.effect(
     AuthRepository,
-    Effect.map(D1Drizzle.makeWithDefaults({}), (drizzle) =>
-      AuthRepository.of(makeAuthRepository(drizzle)),
-    ),
-  ).pipe(Layer.provide(D1Client.layer({ db: database })));
+    Effect.gen(function* () {
+      const drizzle = yield* D1Drizzle.makeWithDefaults({});
+      return AuthRepository.of(makeAuthRepository(drizzle, yield* AuthCrypto));
+    }),
+  ).pipe(Layer.provide(D1Client.layer({ db: database })), Layer.provide(AuthCrypto.layer));

@@ -13,7 +13,7 @@ import {
   ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { useInventoryActions } from "@/lib/inventory";
 
 type SupplierOption = {
@@ -41,7 +41,7 @@ export function SupplierPicker({
 }) {
   const { saveSupplier } = useInventoryActions();
   const [query, setQuery] = React.useState("");
-  const [pending, setPending] = React.useState(false);
+  const [pending, run] = useStoreCommand();
 
   const term = query.trim();
   const lowered = term.toLocaleLowerCase();
@@ -63,15 +63,11 @@ export function SupplierPicker({
       if (supplier) onChange(supplier.id);
       return;
     }
-    setPending(true);
-    try {
+    await run(async () => {
       const supplier = await saveSupplier({ name: option.name });
       onChange(supplier.id);
       toastManager.add({ title: `${supplier.name} added`, type: "success" });
-    } catch (error) {
-      toastStoreError(error, "Could not add the supplier.");
-    }
-    setPending(false);
+    }, "Could not add the supplier.");
   };
 
   return (

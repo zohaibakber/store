@@ -42,8 +42,6 @@ import {
 import type { SqliteParameter } from "./types";
 import { allowlisted, rejectColumn } from "./validate";
 
-export { validateSummarySpec } from "./validate";
-
 type SqliteSubsetStatement = {
   readonly sql: string;
   readonly parameters: ReadonlyArray<SqliteParameter>;

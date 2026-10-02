@@ -10,7 +10,12 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 
-import { ReplicaReaderRpcs, ReplicaWorkerFailure, type ReplicaReaderBoot } from "./replica-rpc";
+import {
+  commitStampOf,
+  ReplicaReaderRpcs,
+  ReplicaWorkerFailure,
+  type ReplicaReaderBoot,
+} from "./replica-rpc";
 
 const toIpcRows = (
   rows: ReadonlyArray<NodeSqliteRow>,
@@ -27,14 +32,6 @@ const toIpcRows = (
       ]),
     ),
   );
-
-const stampOf = (stamp: {
-  readonly generationId: string;
-  readonly localCommitVersion: number;
-}) => ({
-  generationId: stamp.generationId,
-  localCommitVersion: stamp.localCommitVersion,
-});
 
 const readFailure = (error: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: error.message });
@@ -69,21 +66,26 @@ export const makeReplicaReaderHandlers = <R>(
           withSnapshot((snapshot, workspaceToken) =>
             readSnapshotSubset(snapshot, workspaceToken, spec),
           ).pipe(
-            Effect.map((read) => ({ stamp: stampOf(read.stamp), rows: toIpcRows(read.rows) })),
+            Effect.map((read) => ({
+              stamp: commitStampOf(read.stamp),
+              rows: toIpcRows(read.rows),
+            })),
           ),
         ReadBatch: ({ specs }) =>
           withSnapshot((snapshot, workspaceToken) =>
             readSnapshotBatch(snapshot, workspaceToken, specs),
           ).pipe(
             Effect.map((read) => ({
-              stamp: stampOf(read.stamp),
+              stamp: commitStampOf(read.stamp),
               reads: read.reads.map(toIpcRows),
             })),
           ),
         SummarizeSubset: ({ spec }) =>
           withSnapshot((snapshot, workspaceToken) =>
             readSnapshotSummary(snapshot, workspaceToken, spec),
-          ).pipe(Effect.map((read) => ({ stamp: stampOf(read.stamp), summary: read.summary }))),
+          ).pipe(
+            Effect.map((read) => ({ stamp: commitStampOf(read.stamp), summary: read.summary })),
+          ),
       });
     }),
   );

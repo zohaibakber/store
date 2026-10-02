@@ -2,6 +2,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import { Directory, File, Paths } from "expo-file-system";
 
 import { type ScanDraft, ScanDraftJson } from "./model";
@@ -58,51 +59,62 @@ const readDraft = (directory: Directory) => {
   );
 };
 
-export const fileDraftStore = Layer.succeed(DraftStore, {
-  list: Effect.try({
-    try: () => {
-      const root = draftsRoot();
-      root.create({ intermediates: true, idempotent: true });
-      return root.list().flatMap((entry) => (entry instanceof Directory ? [entry] : []));
-    },
-    catch: storageError("Could not open the scan drafts folder."),
-  }).pipe(
-    Effect.flatMap((directories) => Effect.forEach(directories, readDraft)),
-    Effect.map((drafts) =>
-      drafts
-        .flatMap((draft) => (draft === null ? [] : [draft]))
-        .sort((left, right) => right.capturedAt - left.capturedAt),
-    ),
+const listDrafts = Effect.try({
+  try: () => {
+    const root = draftsRoot();
+    root.create({ intermediates: true, idempotent: true });
+    return root.list().flatMap((entry) => (entry instanceof Directory ? [entry] : []));
+  },
+  catch: storageError("Could not open the scan drafts folder."),
+}).pipe(
+  Effect.flatMap((directories) => Effect.forEach(directories, readDraft)),
+  Effect.map((drafts) =>
+    drafts
+      .flatMap((draft) => (draft === null ? [] : [draft]))
+      .sort((left, right) => right.capturedAt - left.capturedAt),
   ),
-  save: (draft) =>
-    Effect.try({
-      try: () => {
-        const directory = draftDirectory(draft.id);
-        directory.create({ intermediates: true, idempotent: true });
-        const pending = new File(directory, PENDING_FILE);
-        pending.create({ overwrite: true });
-        pending.writeSync(encodeDraft(draft));
-        pending.moveSync(new File(directory, DRAFT_FILE), { overwrite: true });
-      },
-      catch: storageError("Could not save the scan on this phone."),
-    }),
-  adoptPhoto: (draftId, capturedPath) =>
-    Effect.tryPromise({
-      try: async () => {
-        const directory = draftDirectory(draftId);
-        directory.create({ intermediates: true, idempotent: true });
-        const photo = new File(directory, PHOTO_FILE);
-        await new File(fileUri(capturedPath)).move(photo, { overwrite: true });
-        return photo.uri;
-      },
-      catch: storageError("Could not keep the scan photo on this phone."),
-    }),
-  remove: (draftId) =>
-    Effect.try({
-      try: () => {
-        const directory = draftDirectory(draftId);
-        if (directory.exists) directory.delete();
-      },
-      catch: storageError("Could not delete the scan draft."),
-    }),
-});
+);
+
+const saveDraft = (draft: ScanDraft) =>
+  Effect.try({
+    try: () => {
+      const directory = draftDirectory(draft.id);
+      directory.create({ intermediates: true, idempotent: true });
+      const pending = new File(directory, PENDING_FILE);
+      pending.create({ overwrite: true });
+      pending.writeSync(encodeDraft(draft));
+      pending.moveSync(new File(directory, DRAFT_FILE), { overwrite: true });
+    },
+    catch: storageError("Could not save the scan on this phone."),
+  });
+
+const adoptPhoto = (draftId: string, capturedPath: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const directory = draftDirectory(draftId);
+      directory.create({ intermediates: true, idempotent: true });
+      const photo = new File(directory, PHOTO_FILE);
+      await new File(fileUri(capturedPath)).move(photo, { overwrite: true });
+      return photo.uri;
+    },
+    catch: storageError("Could not keep the scan photo on this phone."),
+  });
+
+const removeDraft = (draftId: string) =>
+  Effect.try({
+    try: () => {
+      const directory = draftDirectory(draftId);
+      if (directory.exists) directory.delete();
+    },
+    catch: storageError("Could not delete the scan draft."),
+  });
+
+export const fileDraftStore = Layer.effect(
+  DraftStore,
+  Effect.map(Semaphore.make(1), (lock) => ({
+    list: lock.withPermit(listDrafts),
+    save: (draft) => lock.withPermit(saveDraft(draft)),
+    adoptPhoto: (draftId, capturedPath) => lock.withPermit(adoptPhoto(draftId, capturedPath)),
+    remove: (draftId) => lock.withPermit(removeDraft(draftId)),
+  })),
+);

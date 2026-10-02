@@ -33,7 +33,7 @@ export const preferenceStore = () => {
 
 const preferencesRuntime = Atom.runtime(() => preferenceStore());
 
-export const ThemePreferenceSchema = Schema.Literals(["dark", "light", "system"]);
+const ThemePreferenceSchema = Schema.Literals(["dark", "light", "system"]);
 export type ThemePreference = typeof ThemePreferenceSchema.Type;
 
 export const themePreferenceAtom = Atom.kvs({
@@ -50,7 +50,7 @@ export const sidebarOpenAtom = Atom.kvs({
   defaultValue: () => false,
 }).pipe(Atom.keepAlive);
 
-export const RecentProductSchema = Schema.Struct({
+const RecentProductSchema = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   strength: Schema.NullOr(Schema.String),

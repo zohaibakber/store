@@ -24,9 +24,9 @@ const BUSY_TIMEOUT_MILLIS = 5_000;
 const PREPARED_STATEMENTS = 64;
 const WAL_AUTOCHECKPOINT_PAGES = 30_000;
 
-export type AnalyticsOrm = NodeSQLiteDatabase;
+type AnalyticsOrm = NodeSQLiteDatabase;
 
-export type AnalyticsRow = Readonly<Record<string, SQLOutputValue>>;
+type AnalyticsRow = Readonly<Record<string, SQLOutputValue>>;
 
 export type AnalyticsDatabase = {
   readonly orm: AnalyticsOrm;
@@ -138,5 +138,5 @@ export const openAnalyticsDatabase = (
       },
       catch: analyticsFailure,
     }),
-    (database) => Effect.sync(() => database.close()).pipe(Effect.ignore),
+    (database) => Effect.try(() => database.close()).pipe(Effect.ignore),
   );

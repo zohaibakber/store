@@ -1,5 +1,7 @@
 import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
 import { invoiceUploadRejection } from "@store/contracts";
+import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import * as Result from "effect/Result";
 import { createContext, use, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
@@ -66,6 +68,24 @@ const fileDescription = (file: File) => {
 
 const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
 
+const proposedChanges = (
+  lines: InvoiceExtraction["lines"],
+  products: Parameters<typeof importProductMatch>[1],
+): Result.Result<Array<ProposedChange>, string> =>
+  Result.all(
+    lines.map((line): Result.Result<ProposedChange, string> => {
+      const match = importProductMatch(line, products);
+      switch (match._tag) {
+        case "many":
+          return Result.fail(ambiguousImportProductMessage(line.name, line.unitsPerPack));
+        case "one":
+          return Result.succeed({ ...line, type: "add_inventory", productId: match.id });
+        case "none":
+          return Result.succeed({ ...line, type: "create_product" });
+      }
+    }),
+  );
+
 function UploadProvider({
   children,
   categories,
@@ -125,6 +145,10 @@ function UploadProvider({
     }
     busyRef.current = true;
     setPhase("processing");
+    const failed = (title: string) => {
+      toastManager.add({ title, type: "error" });
+      setPhase("idle");
+    };
     try {
       const payload = await analyseInvoices(
         await Promise.all(
@@ -137,20 +161,18 @@ function UploadProvider({
       );
       const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
       if (stockLines.length === 0) {
-        throw new Error("No received stock was found in the attachments.");
+        failed("No received stock was found in the attachments.");
+        return;
       }
-      const products = await lookupProducts(stockLines.map((line) => line.name));
-      setChanges(
-        stockLines.map((line) => {
-          const match = importProductMatch(line, products);
-          if (match._tag === "many") {
-            throw new Error(ambiguousImportProductMessage(line.name, line.unitsPerPack));
-          }
-          return match._tag === "one"
-            ? { ...line, type: "add_inventory", productId: match.id }
-            : { ...line, type: "create_product" };
-        }),
+      const proposed = proposedChanges(
+        stockLines,
+        await lookupProducts(stockLines.map((line) => line.name)),
       );
+      if (Result.isFailure(proposed)) {
+        failed(proposed.failure);
+        return;
+      }
+      setChanges(proposed.success);
       setInvoice({ supplier: payload.supplier, invoiceNumber: payload.invoiceNumber });
       setPhase("ready");
       toastManager.add({
@@ -158,11 +180,7 @@ function UploadProvider({
         type: "success",
       });
     } catch (error) {
-      toastManager.add({
-        title: error instanceof Error ? error.message : "Could not analyse invoices.",
-        type: "error",
-      });
-      setPhase("idle");
+      failed(error instanceof Error ? error.message : "Could not analyse invoices.");
     } finally {
       busyRef.current = false;
     }
@@ -259,7 +277,6 @@ function useUpload() {
 export {
   UploadProvider,
   fileDescription,
-  isInvoice,
   useUpload,
   type ExtractedLine,
   type InvoiceReference,

@@ -2,6 +2,7 @@ import {
   INSIGHTS_DAY_MILLIS,
   INSIGHTS_HOUR_MILLIS,
   INSIGHTS_ON_ORDER_STATUSES,
+  type InsightsProductFact,
 } from "@store/contracts";
 import {
   categories,
@@ -28,6 +29,7 @@ import {
   type SQLWrapper,
 } from "drizzle-orm";
 import { QueryBuilder, type SQLiteColumn } from "drizzle-orm/sqlite-core";
+import * as Schema from "effect/Schema";
 
 import { visibleBatches } from "./compile";
 
@@ -97,6 +99,26 @@ export const productFacts = ({
     )
     .orderBy(products.id);
 
+export const ProductFactRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  categoryId: Schema.String,
+  categoryName: Schema.NullOr(Schema.String),
+  tracksPacks: Schema.Number,
+  unitsPerPack: Schema.Number,
+  purchasePrice: Schema.NullOr(Schema.Number),
+  retailPrice: Schema.NullOr(Schema.Number),
+  unitPrice: Schema.NullOr(Schema.Number),
+  visible: Schema.Number,
+  createdAt: Schema.Number,
+});
+
+export const toProductFact = (row: typeof ProductFactRow.Type): InsightsProductFact => ({
+  ...row,
+  tracksPacks: row.tracksPacks !== 0,
+  visible: row.visible !== 0,
+});
+
 export const batchFacts = ({ organization, where }: FactScope = {}) =>
   replicaQueryBuilder
     .with(visibleBatches)
@@ -116,6 +138,14 @@ export const batchFacts = ({ organization, where }: FactScope = {}) =>
       ),
     )
     .orderBy(visibleBatches.productId, visibleBatches.expiresAt);
+
+export const BatchFactRow = Schema.Struct({
+  productId: Schema.String,
+  batchNumber: Schema.NullOr(Schema.String),
+  packQuantity: Schema.Number,
+  unitQuantity: Schema.Number,
+  expiresAt: Schema.NullOr(Schema.Number),
+});
 
 export const onOrderFacts = ({ organization, where }: FactScope = {}) =>
   replicaQueryBuilder
@@ -140,6 +170,11 @@ export const onOrderFacts = ({ organization, where }: FactScope = {}) =>
     )
     .groupBy(purchaseOrderItems.productId)
     .orderBy(purchaseOrderItems.productId);
+
+export const OnOrderFactRow = Schema.Struct({
+  productId: Schema.String,
+  units: Schema.Number,
+});
 
 export type InvoiceWindow = {
   readonly organization: SQLWrapper;
@@ -171,6 +206,12 @@ export const invoiceDays = (window: InvoiceWindow) => {
     .orderBy(day);
 };
 
+export const DayFactRow = Schema.Struct({
+  day: Schema.Number,
+  invoices: Schema.Number,
+  revenue: Schema.Number,
+});
+
 export const invoiceHours = (window: InvoiceWindow) => {
   const hour =
     sql<number>`(${localTime(window.offset)} % ${sql.raw(String(INSIGHTS_DAY_MILLIS))}) / ${sql.raw(String(INSIGHTS_HOUR_MILLIS))}`.as(
@@ -183,6 +224,12 @@ export const invoiceHours = (window: InvoiceWindow) => {
     .groupBy(hour)
     .orderBy(hour);
 };
+
+export const HourFactRow = Schema.Struct({
+  hour: Schema.Number,
+  invoices: Schema.Number,
+  revenue: Schema.Number,
+});
 
 export const productDaySales = (
   window: InvoiceWindow & { readonly visibleOnly: boolean; readonly where?: SQL },
@@ -220,3 +267,10 @@ export const productDaySales = (
     )
     .groupBy(invoiceItems.productId, day);
 };
+
+export const SaleFactRow = Schema.Struct({
+  productId: Schema.String,
+  day: Schema.Number,
+  units: Schema.Number,
+  revenue: Schema.Number,
+});

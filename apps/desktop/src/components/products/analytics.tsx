@@ -2,9 +2,9 @@ import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
-import { Suspense, useState } from "react";
+import { useState } from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import type { RestockView } from "@/components/insights/restock-page";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -129,11 +129,9 @@ export function ProductAnalytics() {
       aria-live="polite"
       className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-6"
     >
-      <AppErrorBoundary fallback={PENDING_TILES}>
-        <Suspense fallback={PENDING_TILES}>
-          <StockTiles />
-        </Suspense>
-      </AppErrorBoundary>
+      <AsyncBoundary fallback={PENDING_TILES}>
+        <StockTiles />
+      </AsyncBoundary>
     </div>
   );
 }

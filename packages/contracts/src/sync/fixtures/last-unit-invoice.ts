@@ -68,7 +68,7 @@ export const lastUnitBuyerBCommand = issueInvoice({
   saleMovementId: "move-b",
 });
 
-export const lastUnitEnvelope = (input: {
+const lastUnitEnvelope = (input: {
   readonly replicaId: string;
   readonly clientSequence: string;
   readonly command: IssueInvoiceCommand;

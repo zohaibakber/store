@@ -11,13 +11,6 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { appHost } from "@/host";
-import {
-  authenticate,
-  beginGoogle,
-  completeGoogle,
-  currentAuthClient,
-  identify,
-} from "@/lib/first-party-auth";
 import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
 
@@ -318,19 +311,21 @@ export function useGoogleCallback(): GoogleCallback {
     () =>
       appHost().signIn.onOAuthCallback?.((url) => {
         setState({ completing: true, error: null });
-        completeGoogle(url).then(
-          (completed) => {
-            if (!completed) setState({ completing: false, error: null });
-          },
-          (cause: unknown) => {
-            reportError(cause, { op: "google-sign-in-callback" });
-            setState({
-              completing: false,
-              error:
-                cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
-            });
-          },
-        );
+        appHost()
+          .signIn.completeGoogle(url)
+          .then(
+            (completed) => {
+              if (!completed) setState({ completing: false, error: null });
+            },
+            (cause: unknown) => {
+              reportError(cause, { op: "google-sign-in-callback" });
+              setState({
+                completing: false,
+                error:
+                  cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
+              });
+            },
+          );
       }),
     [],
   );
@@ -379,11 +374,13 @@ export function AuthForm({
           googleBusy={busy === "google"}
           onContinue={(email) =>
             run("email", async () => {
-              const route = await identify({ email: EmailAddress.make(normalizeEmail(email)) });
+              const route = await appHost().signIn.identify({
+                email: EmailAddress.make(normalizeEmail(email)),
+              });
               setStep(route);
             })
           }
-          onGoogle={() => run("google", beginGoogle)}
+          onGoogle={() => run("google", () => appHost().signIn.beginGoogle())}
         />
       ) : null}
       {step._tag === "Password" ? (
@@ -393,11 +390,10 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(password) =>
             run("email", async () => {
-              await authenticate({
+              await appHost().signIn.authenticate({
                 _tag: "Password",
                 email: step.email,
                 password: Password.make(password),
-                client: currentAuthClient(),
               });
             })
           }
@@ -411,11 +407,10 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(code) =>
             run("email", async () => {
-              await authenticate({
+              await appHost().signIn.authenticate({
                 _tag: "Otp",
                 challengeId: step.challengeId,
                 code: OtpCode.make(code),
-                client: currentAuthClient(),
               });
             })
           }
@@ -428,12 +423,11 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(input) =>
             run("email", async () => {
-              await authenticate({
+              await appHost().signIn.authenticate({
                 _tag: "RegisterPassword",
                 email: step.email,
                 name: input.name.trim(),
                 password: Password.make(input.password),
-                client: currentAuthClient(),
               });
             })
           }

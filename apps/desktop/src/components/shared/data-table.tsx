@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/table";
 import { formatCount, formatNumber } from "@/lib/format";
 import { isString } from "@/lib/predicates";
+import { isEditableTarget } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 type DataTableFilterValue = string | undefined;
@@ -247,16 +248,6 @@ function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
   );
 }
 
-function DataTableHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      className={cn("flex flex-wrap items-center gap-2 py-2", className)}
-      data-slot="data-table-header"
-      {...props}
-    />
-  );
-}
-
 function DataTableFooter({ children, className, ...props }: React.ComponentProps<"footer">) {
   return (
     <FrameFooter className={className} data-slot="data-table-footer" {...props}>
@@ -364,10 +355,6 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
     </Popover>
   );
 }
-
-const isEditableTarget = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || target.closest("input, textarea, select, [role=combobox]") !== null);
 
 function DataTableFilter({ columnId, className, shortcut = true, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
@@ -600,13 +587,11 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
   );
 }
 
-const DEFAULT_PAGE_SIZES: ReadonlyArray<number> = [25, 50, 100];
-
 function DataTablePagination({
   className,
-  pageSizes = DEFAULT_PAGE_SIZES,
+  pageSizes,
   ...props
-}: React.ComponentProps<"div"> & { pageSizes?: ReadonlyArray<number> }) {
+}: React.ComponentProps<"div"> & { pageSizes: ReadonlyArray<number> }) {
   const { table } = useDataTable();
   const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 25 };
   const rowCount = table.getRowCount();
@@ -676,7 +661,7 @@ function DataTablePagination({
   );
 }
 
-export type { DataTableColumnAlign, DataTableColumnMeta };
+export type { DataTableColumnMeta };
 
 export {
   DataTable,
@@ -686,8 +671,6 @@ export {
   DataTableFilterOption,
   DataTableFooter,
   DataTableFilter,
-  DataTableHeader,
   DataTablePagination,
   DataTableViewOptions,
-  useDataTable,
 };

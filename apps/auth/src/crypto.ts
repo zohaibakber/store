@@ -1,13 +1,12 @@
-import { timingSafeEqual } from "node:crypto";
-
-import { OtpCode, SessionId } from "@store/auth";
+import { OtpCode, WebCrypto, type OtpChallengeId } from "@store/auth";
+import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
-import * as PlatformError from "effect/PlatformError";
-import * as Schema from "effect/Schema";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 
-import { AuthCryptoError, authError } from "./errors";
+import { AuthCryptoError } from "./errors";
 
 const textEncoder = new TextEncoder();
 
@@ -17,57 +16,50 @@ export const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
 export const AUTHORIZATION_TTL_MS = 5 * 60 * 1_000;
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-const platformCrypto = Crypto.make({
-  randomBytes: (size) => crypto.getRandomValues(new Uint8Array(size)),
-  digest: (algorithm, data) =>
-    Effect.tryPromise({
-      try: () => {
-        // SAFETY: copy onto a fresh ArrayBuffer so SubtleCrypto sees BufferSource.
-        const source = new Uint8Array(data);
-        return crypto.subtle.digest(algorithm, source).then((buffer) => new Uint8Array(buffer));
-      },
-      catch: (cause) =>
-        PlatformError.badArgument({
-          module: "Crypto",
-          method: "digest",
-          description: String(cause),
-          cause,
-        }),
-    }),
-});
+type Pepper = Redacted.Redacted<string>;
+type Secret = Redacted.Redacted<string>;
 
-export const randomSecret = (bytes: number) =>
-  platformCrypto.randomBytes(bytes).pipe(Effect.map(Encoding.encodeBase64Url), Effect.orDie);
+const failed = (operation: string) =>
+  Effect.mapError((cause: unknown) => new AuthCryptoError({ operation, cause }));
 
-export const sha256 = (value: string) =>
-  platformCrypto.digest("SHA-256", textEncoder.encode(value)).pipe(
-    Effect.mapError((cause) => new AuthCryptoError({ operation: "sha256", cause })),
-    Effect.map(Encoding.encodeBase64Url),
-  );
+export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worker/AuthCrypto", {
+  make: Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
 
-export const hashRefreshSecret = (pepper: string, secret: string) => sha256(`${pepper}:${secret}`);
+    const sha256 = (value: string) =>
+      crypto
+        .digest("SHA-256", textEncoder.encode(value))
+        .pipe(failed("sha256"), Effect.map(Encoding.encodeBase64Url));
 
-export const hashInvitationSecret = (pepper: string, secret: string) =>
-  sha256(`${pepper}:invite:${secret}`);
+    const peppered = (pepper: Pepper, value: string) =>
+      sha256(`${Redacted.value(pepper)}:${value}`);
 
-export const safeEqual = (left: string, right: string) => {
-  const leftBytes = textEncoder.encode(left);
-  const rightBytes = textEncoder.encode(right);
-  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
-};
+    const randomToken = (bytes: number) =>
+      crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Encoding.encodeBase64Url));
 
-export const generateOtp = platformCrypto
-  .randomIntBetween(0, 1_000_000, { halfOpen: true })
-  .pipe(Effect.map((value) => OtpCode.make(String(value).padStart(6, "0"))));
-
-export const parseRefreshToken = (token: string) =>
-  Effect.gen(function* () {
-    const separator = token.indexOf(".");
-    if (separator <= 0 || separator === token.length - 1) {
-      return yield* authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.");
-    }
-    const sessionId = yield* Schema.decodeUnknownEffect(SessionId)(token.slice(0, separator)).pipe(
-      Effect.mapError(() => authError(401, "INVALID_REFRESH_TOKEN", "The session has expired.")),
-    );
-    return { sessionId, secret: token.slice(separator + 1) };
-  });
+    return {
+      randomId: crypto.randomUUIDv4.pipe(failed("randomId")),
+      randomToken,
+      randomSecret: (bytes: number) => Effect.map(randomToken(bytes), Redacted.make),
+      otpCode: crypto
+        .randomIntBetween(0, 1_000_000, { halfOpen: true })
+        .pipe(Effect.map((value) => OtpCode.make(String(value).padStart(6, "0")))),
+      pkceChallenge: sha256,
+      refreshHash: (pepper: Pepper, secret: Secret) => peppered(pepper, Redacted.value(secret)),
+      invitationHash: (pepper: Pepper, secret: Secret) =>
+        peppered(pepper, `invite:${Redacted.value(secret)}`),
+      recordKey: (pepper: Pepper, kind: string, id: string) => peppered(pepper, `${kind}:${id}`),
+      otpVerifier: (pepper: Pepper, challengeId: OtpChallengeId, code: OtpCode) =>
+        WebCrypto.hmacSha256(
+          textEncoder.encode(Redacted.value(pepper)),
+          textEncoder.encode(`otp:${challengeId}:${code}`),
+        ).pipe(failed("otpVerifier"), Effect.map(Encoding.encodeBase64Url)),
+      matches: (left: string, right: string) =>
+        WebCrypto.constantTimeEqual(textEncoder.encode(left), textEncoder.encode(right)).pipe(
+          failed("matches"),
+        ),
+    };
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(WebCrypto.layer));
+}

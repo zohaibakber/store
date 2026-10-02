@@ -1,8 +1,8 @@
 import { Alert02Icon, CloudUploadIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Suspense, useEffect } from "react";
+import { useEffect } from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { PublishProgressBar } from "@/components/app/publish-progress";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -103,10 +103,8 @@ export function PublishOffer() {
   const organization = usePublishTarget();
   if (organization === null) return null;
   return (
-    <AppErrorBoundary fallback={null}>
-      <Suspense fallback={null}>
-        <PublishOfferFor organization={organization} />
-      </Suspense>
-    </AppErrorBoundary>
+    <AsyncBoundary fallback={null}>
+      <PublishOfferFor organization={organization} />
+    </AsyncBoundary>
   );
 }

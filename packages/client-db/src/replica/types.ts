@@ -36,16 +36,19 @@ import type {
   InventorySubsetSummarySpec,
 } from "./subset-spec";
 
-export type InventoryCollectionRow =
-  | CategoryRow
-  | ProductRow
-  | BatchRow
-  | InvoiceRow
-  | InvoiceItemRow
-  | StockMovementRow
-  | SupplierRow
-  | PurchaseOrderRow
-  | PurchaseOrderItemRow;
+export type CatalogRows = {
+  readonly categories: CategoryRow;
+  readonly products: ProductRow;
+  readonly batches: BatchRow;
+  readonly invoices: InvoiceRow;
+  readonly invoiceItems: InvoiceItemRow;
+  readonly stockMovements: StockMovementRow;
+  readonly suppliers: SupplierRow;
+  readonly purchaseOrders: PurchaseOrderRow;
+  readonly purchaseOrderItems: PurchaseOrderItemRow;
+};
+
+export type InventoryCollectionRow = CatalogRows[InventoryCollectionSource];
 
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
@@ -67,7 +70,7 @@ export interface ReplicaChangeFeed {
   readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => ReplicaChangeUnsubscribe;
 }
 
-export interface ReplicaSyncHealthFeed {
+interface ReplicaSyncHealthFeed {
   readonly subscribeSyncHealth?: (
     listener: (health: ReplicaSyncHealth) => void,
   ) => ReplicaChangeUnsubscribe;
@@ -122,7 +125,7 @@ export interface ReplicaInsightsReader {
   readonly readInsights: (window: ReplicaInsightsWindow) => Promise<ReplicaInsightsRead>;
 }
 
-export type ReplicaAnalyticsChange = {
+type ReplicaAnalyticsChange = {
   readonly revision: number;
   readonly state: "idle" | "building" | "refreshing";
   readonly progress: { readonly done: number; readonly total: number } | null;
@@ -164,9 +167,9 @@ type ReplicaMutationSurface = {
   readonly wakeSyncUpload?: () => void;
 };
 
-export type ReplicaActivitySurface = {
+type ReplicaActivitySurface = {
   readonly replicaId?: string;
-  readonly readSyncActivity?: () => Promise<ReplicaSyncActivity>;
+  readonly readSyncActivity: () => Promise<ReplicaSyncActivity>;
   readonly readPendingRowIds?: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
 };
 

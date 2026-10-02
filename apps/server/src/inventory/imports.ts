@@ -3,7 +3,6 @@ import {
   MAX_IMPORT_PART_BYTES,
   MAX_IMPORT_PART_ROWS,
   MAX_IMPORT_PARTS,
-  SyncProtocolCode,
   type ImportId,
 } from "@store/contracts";
 import { sql } from "drizzle-orm";
@@ -12,17 +11,22 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { actorJson, bodyOrProtocolError, decodedWith, decodeEncodedRows } from "./commands";
 import type { InventoryError } from "./errors";
 import type { EncodedJsonBody, ImportedCatalog, InventoryActor } from "./model";
 import {
   isDataException,
   protocol,
   randomHex,
-  runStatement,
   withSerializationRetry,
   type InventoryDrizzle,
 } from "./postgres";
+import {
+  actorJson,
+  answered,
+  syncFunctionJson,
+  syncFunctionReply,
+  syncFunctionRow,
+} from "./sync-function";
 
 export interface InventoryImportsContract {
   readonly stagePart: (
@@ -38,17 +42,13 @@ export interface InventoryImportsContract {
   ) => Effect.Effect<ImportedCatalog, InventoryError>;
 }
 
-const CommittedRows = Schema.Tuple([
+const committedRow = syncFunctionRow(
   Schema.Struct({
-    body: Schema.NullOr(Schema.String),
     fanout_epoch: Schema.NullOr(Schema.String),
     fanout_horizon: Schema.NullOr(Schema.String),
-    error_code: Schema.NullOr(SyncProtocolCode),
-    error_message: Schema.NullOr(Schema.String),
+    ...syncFunctionReply,
   }),
-]);
-
-const decodeCommittedRows = Schema.decodeUnknownEffect(CommittedRows);
+);
 
 const encodeRequest = Schema.encodeSync(Schema.fromJsonString(ImportCatalogRequest));
 
@@ -65,7 +65,7 @@ export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsCont
     stagePart: Effect.fn("InventoryImports.stagePart")(
       function* (actor, importId, partNumber, bodyText) {
         const now = yield* Clock.currentTimeMillis;
-        const [row] = yield* runStatement(
+        const json = yield* syncFunctionJson(
           db.execute(
             sql`select "body", "error_code", "error_message" from sync.stage_import_part(
               ${actorJson(actor)}::jsonb,
@@ -84,14 +84,13 @@ export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsCont
             (error) => error._tag === "InventoryDatabaseError" && isDataException(error),
             () => protocol("INVALID_OPERATION", "The import part is not valid JSON."),
           ),
-          Effect.flatMap(decodedWith(decodeEncodedRows)),
         );
-        return { json: yield* bodyOrProtocolError(row) } satisfies EncodedJsonBody;
+        return { json } satisfies EncodedJsonBody;
       },
     ),
     commit: Effect.fn("InventoryImports.commit")(function* (actor, importId, request) {
       const now = yield* Clock.currentTimeMillis;
-      const [row] = yield* runStatement(
+      const row = yield* committedRow(
         withSerializationRetry(
           db.execute(
             sql`select "body", "fanout_epoch", "fanout_horizon", "error_code", "error_message"
@@ -105,8 +104,8 @@ export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsCont
             "objects",
           ),
         ),
-      ).pipe(Effect.flatMap(decodedWith(decodeCommittedRows)));
-      const json = yield* bodyOrProtocolError(row);
+      );
+      const { body: json } = yield* answered(row);
       const fanout =
         row.fanout_epoch === null || row.fanout_horizon === null
           ? null

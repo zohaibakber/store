@@ -13,7 +13,7 @@ import {
   ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { useInventoryActions } from "@/lib/inventory";
 
 interface CategoryOption {
@@ -48,7 +48,7 @@ export function CategoryField({
     return [...byId.values()].sort(byName);
   }, [seed, createdOverSeed]);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState(false);
+  const [pending, run] = useStoreCommand();
 
   const term = query.trim();
   const selected = categories.find((category) => category.id === value) ?? null;
@@ -69,8 +69,7 @@ export function CategoryField({
       return;
     }
 
-    setPending(true);
-    try {
+    await run(async () => {
       const category = await createCategory({ name: option.name });
       setCreatedOverSeed((current) =>
         current.some((existing) => existing.id === category.id)
@@ -79,10 +78,7 @@ export function CategoryField({
       );
       onChange(category.id);
       toastManager.add({ title: `${category.name} added`, type: "success" });
-    } catch (error) {
-      toastStoreError(error);
-    }
-    setPending(false);
+    });
   };
 
   return (

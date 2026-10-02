@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
+import { authenticateRequest, workspaceSnapshotOf } from "../auth/session";
 import { StoreApi } from "./api";
 import { ServerRuntime } from "./runtime";
 
@@ -27,10 +28,10 @@ export const AuthHandlers = HttpApiBuilder.group(
   StoreApi,
   "auth",
   Effect.fn("AuthHandlers.make")(function* (handlers) {
-    const runtime = yield* ServerRuntime;
+    const { verifyAccessToken } = yield* ServerRuntime;
     const session = Effect.fn("AuthHandlers.session")(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      return yield* runtime.loadWorkspace(new Headers(request.headers)).pipe(Effect.orDie);
+      return workspaceSnapshotOf(yield* authenticateRequest(verifyAccessToken, request));
     });
     return handlers.handle("session", session);
   }),

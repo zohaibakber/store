@@ -12,8 +12,8 @@ import { Text } from "@/ui/text";
 
 import {
   type CategoryChoice,
-  type ExecutablePlan,
   type ScanMatch,
+  commitFailureMessage,
   identityOf,
   useCategoryChoices,
   useScanCommit,
@@ -22,6 +22,7 @@ import {
 import { useScanDraft, useScanDrafts } from "../drafts";
 import {
   type CommitChoice,
+  type ExecutablePlan,
   type ReviewValues,
   type ScanField,
   commitLabel,
@@ -86,9 +87,6 @@ const ALL_FIELDS: ReadonlyArray<ScanField> = [...PRODUCT_FIELDS, ...BATCH_FIELDS
 
 const FILLED_REASON = "Filled in from the label · tap to confirm";
 const EDIT_SAVE_DELAY_MILLIS = 700;
-
-const failureMessage = (cause: unknown) =>
-  cause instanceof Error && cause.message ? cause.message : "Could not save on this phone.";
 
 const firstWord = (text: string) => text.trim().split(/\s+/)[0] ?? "";
 
@@ -297,7 +295,7 @@ function ReviewBody({
     try {
       await catalog.commit(plan, selectedCategory);
     } catch (cause) {
-      setError(failureMessage(cause));
+      setError(commitFailureMessage(cause));
       form.setSaving(false);
       return;
     }

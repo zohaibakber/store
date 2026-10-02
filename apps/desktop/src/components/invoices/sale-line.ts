@@ -116,7 +116,7 @@ const lineSalePrice = (line: SaleLine) => {
   return Math.round(line.salePrice * 100);
 };
 
-export const discountedSalePrice = (line: SaleLine, bulkDiscount: number) => {
+const discountedSalePrice = (line: SaleLine, bulkDiscount: number) => {
   const price = lineSalePrice(line);
   return price == null ? null : Math.round(price * (1 - bulkDiscount / 100));
 };

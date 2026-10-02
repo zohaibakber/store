@@ -153,7 +153,6 @@ interface AccessClaims {
   readonly sessionId: SessionId;
   readonly activeOrganizationId: OrganizationId;
   readonly organizationName: string;
-  readonly organizationSlug: string | null;
   readonly role: OrganizationRole;
   readonly email: EmailAddress;
   readonly name: string;

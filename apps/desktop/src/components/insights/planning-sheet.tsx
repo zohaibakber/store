@@ -3,12 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { DEFAULT_STOCK_POLICY, type StockPolicy } from "@store/services/insights";
 import * as React from "react";
 
-import {
-  ControlGroup,
-  ControlGroupAddon,
-  ControlGroupNumberInput,
-  ControlGroupText,
-} from "@/components/shared/control-group";
+import { NumberControl } from "@/components/shared/control-group";
 import { FrameCard } from "@/components/shared/frame-card";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { Button } from "@/components/ui/button";
@@ -147,20 +142,16 @@ function PlanningForm({
   const wholeRow = (entry: WholeField) => (
     <SettingRow description={entry.description} key={entry.key} label={entry.label}>
       <div className="w-28">
-        <ControlGroup>
-          <ControlGroupNumberInput
-            aria-label={entry.label}
-            inputProps={{ "aria-label": entry.label, className: "text-end" }}
-            max={entry.max}
-            min={entry.min}
-            onValueChange={(value) => field(entry.key, value)}
-            step={1}
-            value={draft[entry.key]}
-          />
-          <ControlGroupAddon>
-            <ControlGroupText>{entry.unit}</ControlGroupText>
-          </ControlGroupAddon>
-        </ControlGroup>
+        <NumberControl
+          addon={entry.unit}
+          aria-label={entry.label}
+          inputProps={{ "aria-label": entry.label, className: "text-end" }}
+          max={entry.max}
+          min={entry.min}
+          onValueChange={(value) => field(entry.key, value)}
+          step={1}
+          value={draft[entry.key]}
+        />
       </div>
     </SettingRow>
   );

@@ -8,17 +8,17 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
-export class ScanOffline extends Schema.TaggedError<ScanOffline>()("ScanOffline", {}) {}
+class ScanOffline extends Schema.TaggedError<ScanOffline>()("ScanOffline", {}) {}
 
-export class ScanRateLimited extends Schema.TaggedError<ScanRateLimited>()("ScanRateLimited", {
+class ScanRateLimited extends Schema.TaggedError<ScanRateLimited>()("ScanRateLimited", {
   retryAt: Schema.Finite,
 }) {}
 
-export class ScanFailed extends Schema.TaggedError<ScanFailed>()("ScanFailed", {
+class ScanFailed extends Schema.TaggedError<ScanFailed>()("ScanFailed", {
   message: Schema.String,
 }) {}
 
-export class ScanRejected extends Schema.TaggedError<ScanRejected>()("ScanRejected", {
+class ScanRejected extends Schema.TaggedError<ScanRejected>()("ScanRejected", {
   status: Schema.Int,
   message: Schema.String,
 }) {}

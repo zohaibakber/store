@@ -2,13 +2,9 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { IssuedSession, OrganizationCommand } from "@store/auth";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
-import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import {
   app,
   BrowserWindow,
@@ -21,12 +17,14 @@ import {
   shell,
 } from "electron";
 
-import { AuthBroker } from "./auth";
+import { makeAuthBroker } from "./auth";
+import { AUTH_SESSION_CHANGED_CHANNEL } from "./auth-channels";
+import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
 import { hostDeviceLabel } from "./device-label";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
-import { assertTrustedIpcSender } from "./ipc-sender";
+import { isTrustedIpcSenderFrame } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import {
   isOAuthCallbackUrl,
@@ -39,12 +37,14 @@ import {
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
-import { registerReplicaWorkerIpc, type ReplicaBackupDialogs } from "./replica-ipc";
+import type { ReplicaBackupDialogs } from "./replica-backup";
+import { registerReplicaWorkerIpc } from "./replica-ipc";
 import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
+import { THEME_SET_SOURCE_CHANNEL } from "./theme-channels";
 import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
 import { setupUpdater } from "./updater";
 import { registerWebContentsSecurity } from "./web-contents-security";
@@ -133,11 +133,11 @@ registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
 const publishSession = (snapshot: WorkspaceSnapshot) => {
-  win?.webContents.send("auth:session-changed", snapshot);
+  win?.webContents.send(AUTH_SESSION_CHANGED_CHANNEL, snapshot);
   return snapshot;
 };
 
-const authBroker = new AuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
+const authBroker = makeAuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
 
 let pendingOAuthCallback: string | null = null;
 
@@ -156,7 +156,6 @@ const publishOAuthCallback = (url: string) => {
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
   apiOrigin: new URL(API_BASE_URL).origin,
-  authOrigin: new URL(AUTH_BASE_URL).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
 
@@ -164,9 +163,6 @@ const allowedRendererOrigins = () =>
   [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
     Boolean(value),
   );
-
-const assertRendererIpc = (frame: Electron.WebFrameMain | null | undefined) =>
-  assertTrustedIpcSender(frame, allowedRendererOrigins());
 
 function registerRendererCsp() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -179,114 +175,47 @@ function registerRendererCsp() {
   });
 }
 
-const authTransitions = Semaphore.makeUnsafe(1);
-
-const serializeAuthTransition = <A>(transition: () => Promise<A>): Promise<A> =>
-  Effect.runPromise(authTransitions.withPermit(Effect.promise(transition)));
-
-const AdoptedSession = Schema.NullOr(IssuedSession);
-const InvoiceUpload = Schema.Struct({
-  files: Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      type: Schema.String,
-      bytes: Schema.instanceOf(ArrayBuffer),
-    }),
-  ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
-});
-
-function registerAuthIpc() {
-  ipcMain.handle("auth:get-session", async (event) => {
-    assertRendererIpc(event.senderFrame);
-    await authBroker.restore();
-    return authBroker.snapshot;
-  });
-  ipcMain.handle("auth:get-oauth-redirect-uri", (event) => {
-    assertRendererIpc(event.senderFrame);
-    return oauthCallbackRedirectUri(ELECTRON_PROTOCOL);
-  });
-  ipcMain.handle("auth:adopt-session", async (event, input) => {
-    assertRendererIpc(event.senderFrame);
-    const issued = input === undefined ? null : Schema.decodeUnknownSync(AdoptedSession)(input);
-    return serializeAuthTransition(() => authBroker.adoptSession(issued));
-  });
-  ipcMain.handle("auth:renew-session", (event) => {
-    assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(() => authBroker.renewSession());
-  });
-  ipcMain.handle("auth:sign-out", (event) => {
-    assertRendererIpc(event.senderFrame);
-    return serializeAuthTransition(() => authBroker.signOut());
-  });
-  ipcMain.handle("auth:organization", (event) => {
-    assertRendererIpc(event.senderFrame);
-    return authBroker.organizationRoster();
-  });
-  ipcMain.handle("auth:organize", async (event, input) => {
-    assertRendererIpc(event.senderFrame);
-    return authBroker.organize(Schema.decodeUnknownSync(OrganizationCommand)(input));
-  });
-  ipcMain.handle("auth:open-external", async (event, input) => {
-    assertRendererIpc(event.senderFrame);
-    const url = Schema.decodeUnknownSync(Schema.String)(input);
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || parsed.hostname !== "accounts.google.com") {
-      throw new Error("Only Google authorization URLs can be opened.");
-    }
-    await shell.openExternal(parsed.href);
-  });
-}
-
-function registerServerIpc() {
-  ipcMain.handle("server:uploads", async (event, input) => {
-    assertRendererIpc(event.senderFrame);
-    const upload = Schema.decodeUnknownSync(InvoiceUpload)(input);
-    return authBroker.analyseInvoices(upload.files);
-  });
-}
-
 const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
 
-const backupDialogs: ReplicaBackupDialogs = {
-  chooseDestination: async (suggestedName) => {
-    const options = {
-      title: "Back up to file",
-      buttonLabel: "Back up",
-      defaultPath: path.join(app.getPath("documents"), suggestedName),
-      filters: BACKUP_FILE_FILTERS,
-    };
-    const chosen = win
-      ? await dialog.showSaveDialog(win, options)
-      : await dialog.showSaveDialog(options);
-    return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
-  },
-  chooseSource: async () => {
-    const options = {
-      title: "Restore from file",
-      buttonLabel: "Choose backup",
-      defaultPath: app.getPath("documents"),
-      filters: BACKUP_FILE_FILTERS,
-      properties: ["openFile" as const],
-    };
-    const chosen = win
-      ? await dialog.showOpenDialog(win, options)
-      : await dialog.showOpenDialog(options);
-    return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
-  },
-};
-
-const choosePdfDestination = async (suggestedName: string) => {
-  const options = {
-    title: "Save as PDF",
-    buttonLabel: "Save",
-    defaultPath: path.join(app.getPath("documents"), suggestedName),
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  };
+const chooseSavePath = async (options: Electron.SaveDialogOptions) => {
   const chosen = win
     ? await dialog.showSaveDialog(win, options)
     : await dialog.showSaveDialog(options);
   return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
 };
+
+const chooseOpenPath = async (options: Electron.OpenDialogOptions) => {
+  const chosen = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
+  return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
+};
+
+const backupDialogs: ReplicaBackupDialogs = {
+  chooseDestination: (suggestedName) =>
+    chooseSavePath({
+      title: "Back up to file",
+      buttonLabel: "Back up",
+      defaultPath: path.join(app.getPath("documents"), suggestedName),
+      filters: BACKUP_FILE_FILTERS,
+    }),
+  chooseSource: () =>
+    chooseOpenPath({
+      title: "Restore from file",
+      buttonLabel: "Choose backup",
+      defaultPath: app.getPath("documents"),
+      filters: BACKUP_FILE_FILTERS,
+      properties: ["openFile"],
+    }),
+};
+
+const choosePdfDestination = (suggestedName: string) =>
+  chooseSavePath({
+    title: "Save as PDF",
+    buttonLabel: "Save",
+    defaultPath: path.join(app.getPath("documents"), suggestedName),
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
 
 const publishReplicaForeground = (visible: boolean) => {
   replicaWorker
@@ -349,12 +278,8 @@ nativeTheme.on("updated", () => {
   if (process.platform !== "darwin") win.setTitleBarOverlay(titleBarOverlay());
 });
 
-ipcMain.on("theme:set-source", (event, input) => {
-  try {
-    assertRendererIpc(event.senderFrame);
-  } catch {
-    return;
-  }
+ipcMain.on(THEME_SET_SOURCE_CHANNEL, (event, input) => {
+  if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
   const source = Schema.decodeUnknownOption(ThemeSource)(input);
   if (source._tag === "None") return;
   nativeTheme.themeSource = source.value;
@@ -426,8 +351,13 @@ void app.whenReady().then(async () => {
   denyAllSessionPermissionRequests(session.defaultSession);
   registerWebContentsSecurity(allowedRendererOrigins);
   registerNewSaleAccelerator();
-  registerAuthIpc();
-  registerServerIpc();
+  registerAuthIpc({
+    ipcMain,
+    broker: authBroker,
+    allowedOrigins: allowedRendererOrigins,
+    oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
+    openExternal: (url) => shell.openExternal(url),
+  });
   registerShareIpc({
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
@@ -455,7 +385,6 @@ void app.whenReady().then(async () => {
     allowedOrigins: allowedRendererOrigins,
     backupDialogs,
   });
-  await authBroker.initialize();
-  publishSession(authBroker.snapshot);
+  publishSession(await authBroker.initialize());
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
 });

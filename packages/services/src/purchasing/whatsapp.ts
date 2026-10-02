@@ -1,15 +1,15 @@
-export const WHATSAPP_URL_PREFIX = "https://wa.me/";
+const WHATSAPP_URL_PREFIX = "https://wa.me/";
 
-export const WHATSAPP_URL_MAX_LENGTH = 2000;
+const WHATSAPP_URL_MAX_LENGTH = 2000;
 
 const WHATSAPP_PHONE_PATH = /^\/[0-9]{1,20}$/u;
 
-export const whatsAppPhone = (phone: string | null | undefined): string | null => {
+const whatsAppPhone = (phone: string | null | undefined): string | null => {
   const digits = (phone ?? "").replace(/[^0-9]/gu, "");
   return digits.length > 0 && digits.length <= 20 ? digits : null;
 };
 
-export const whatsAppOrderUrl = (phone: string, text: string): string =>
+const whatsAppOrderUrl = (phone: string, text: string): string =>
   `${WHATSAPP_URL_PREFIX}${phone}?text=${encodeURIComponent(text)}`;
 
 export const isWhatsAppUrl = (candidate: string): boolean => {

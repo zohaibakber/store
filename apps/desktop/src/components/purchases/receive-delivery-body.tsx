@@ -8,7 +8,6 @@ import {
 import { formatPrice } from "@store/services/format";
 import * as React from "react";
 
-import { useWindowKeydown } from "@/components/products/shortcuts";
 import { ExpiryPicker } from "@/components/shared/expiry-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -34,6 +33,7 @@ import {
   useSuspenseCatalogProductsById,
   type ReceiveDeliveryLineInput,
 } from "@/lib/inventory";
+import { useSubmitShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 import { PurchasingGateNotice } from "./gate-notice";
@@ -326,12 +326,7 @@ export function ReceiveDeliveryBody({
     }
   };
 
-  useWindowKeydown((event) => {
-    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    event.preventDefault();
-    void receive();
-  });
+  useSubmitShortcut(() => void receive());
 
   const firstRowOfItem = new Map<string, string>();
   for (const row of rows) {

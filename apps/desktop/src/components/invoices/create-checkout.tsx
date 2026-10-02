@@ -1,12 +1,7 @@
 import { formatPrice } from "@store/services/format";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
-import {
-  ControlGroup,
-  ControlGroupAddon,
-  ControlGroupNumberInput,
-  ControlGroupText,
-} from "@/components/shared/control-group";
+import { NumberControl } from "@/components/shared/control-group";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
@@ -45,19 +40,15 @@ function InvoiceCheckout() {
         </Field>
         <Field data-invalid={!validBulkDiscount || undefined}>
           <FieldLabel htmlFor="bulk-discount">Bulk discount</FieldLabel>
-          <ControlGroup>
-            <ControlGroupNumberInput
-              id="bulk-discount"
-              inputProps={{ "aria-label": "Bulk discount percentage" }}
-              max={100}
-              min={0}
-              onValueChange={setBulkDiscount}
-              value={bulkDiscount}
-            />
-            <ControlGroupAddon>
-              <ControlGroupText>%</ControlGroupText>
-            </ControlGroupAddon>
-          </ControlGroup>
+          <NumberControl
+            addon="%"
+            id="bulk-discount"
+            inputProps={{ "aria-label": "Bulk discount percentage" }}
+            max={100}
+            min={0}
+            onValueChange={setBulkDiscount}
+            value={bulkDiscount}
+          />
           {!validBulkDiscount && (
             <FieldError match>Enter a discount between 0% and 100%.</FieldError>
           )}

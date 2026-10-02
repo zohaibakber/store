@@ -37,7 +37,7 @@ const MIGRATION_KEY = /^(\d+)_/u;
 
 const migrationId = (key: string): number => Number(MIGRATION_KEY.exec(key)?.[1] ?? Number.NaN);
 
-export type MigrationLedgerVerdict = "openable" | "newer" | "unknown";
+type MigrationLedgerVerdict = "openable" | "newer" | "unknown";
 
 export const judgeMigrationLedger = (
   applied: ReadonlyArray<string>,

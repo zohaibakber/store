@@ -3,17 +3,17 @@ import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 
 import { formatPrice } from "../format";
 
-export type PurchaseOrderTextLine = Pick<
+type PurchaseOrderTextLine = Pick<
   PurchaseOrderItem,
   "productName" | "quantity" | "quantityType" | "packCost"
 >;
 
-export type PurchaseOrderTextFormat = {
+type PurchaseOrderTextFormat = {
   readonly date: (value: number) => string;
   readonly quantity: (line: Pick<PurchaseOrderItem, "quantity" | "quantityType">) => string;
 };
 
-export type PurchaseOrderTextInput = {
+type PurchaseOrderTextInput = {
   readonly storeName: string | null;
   readonly order: Pick<
     PurchaseOrder,

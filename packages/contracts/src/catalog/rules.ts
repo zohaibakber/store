@@ -20,7 +20,7 @@ const batchHasRemainingStock = (batch: {
   readonly unitQuantity: number;
 }) => batch.packQuantity > 0 || batch.unitQuantity > 0;
 
-export const productHasRemainingStock = (batches: Iterable<CatalogStockBatch>, productId: string) =>
+const productHasRemainingStock = (batches: Iterable<CatalogStockBatch>, productId: string) =>
   [...batches].some((batch) => batch.productId === productId && batchHasRemainingStock(batch));
 
 const categoryHasActiveProducts = (

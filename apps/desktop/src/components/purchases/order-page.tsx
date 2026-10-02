@@ -1,4 +1,4 @@
-import { Alert02Icon, PackageReceiveIcon } from "@hugeicons/core-free-icons";
+import { PackageReceiveIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   canMovePurchaseOrder,
@@ -13,13 +13,8 @@ import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
-import {
-  hasOpenPopup,
-  isEditableTarget,
-  isPlainKey,
-  useWindowKeydown,
-} from "@/components/products/shortcuts";
 import { formatDelta } from "@/components/products/stock";
+import { DetailLoadError } from "@/components/shared/detail-load-error";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -29,7 +24,6 @@ import {
   PageLayout,
 } from "@/components/shared/page-layout";
 import { ShortcutButton } from "@/components/shared/shortcut-button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -52,9 +46,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { EMPTY, formatCount, formatDate, formatDateTime } from "@/lib/format";
 import { useInventoryActions, usePurchasingGate } from "@/lib/inventory";
+import { usePageShortcuts } from "@/lib/shortcuts";
 
 import { PurchasingGateNotice } from "./gate-notice";
 import {
@@ -74,22 +69,12 @@ type Closing = "close" | "cancel";
 const muted = <span className="text-muted-foreground">{EMPTY}</span>;
 
 export function PurchaseOrderError({ error }: { readonly error: unknown }) {
-  const message = error instanceof Error ? error.message : "The order could not be loaded.";
   return (
-    <PageLayout width="narrow">
-      <PageContent>
-        <Alert variant="error">
-          <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-          <AlertTitle>Could not load order</AlertTitle>
-          <AlertDescription>{message}</AlertDescription>
-        </Alert>
-        <div>
-          <Button render={<Link to="/purchases" />} size="sm" variant="outline">
-            Back to purchases
-          </Button>
-        </div>
-      </PageContent>
-    </PageLayout>
+    <DetailLoadError error={error} subject="order">
+      <Button render={<Link to="/purchases" />} size="sm" variant="outline">
+        Back to purchases
+      </Button>
+    </DetailLoadError>
   );
 }
 
@@ -277,7 +262,7 @@ export function PurchaseOrderPage({
   const { cancelOrder, closeOrder } = useInventoryActions();
   const gate = usePurchasingGate();
   const [confirming, setConfirming] = React.useState(false);
-  const [pending, setPending] = React.useState(false);
+  const [pending, run] = useStoreCommand();
 
   const open = isPurchaseOrderOpen(order.status);
   const canMove = (to: PurchaseOrder["status"]) =>
@@ -289,9 +274,8 @@ export function PurchaseOrderPage({
   const closing: Closing = units.received > 0 ? "close" : "cancel";
   const canClose = canMove(closing === "close" ? "closed" : "cancelled");
 
-  const run = async (kind: Closing) => {
-    setPending(true);
-    try {
+  const finish = (kind: Closing) =>
+    run(async () => {
       switch (kind) {
         case "close":
           await closeOrder(order.id);
@@ -302,19 +286,9 @@ export function PurchaseOrderPage({
           toastManager.add({ title: `Order ${number} cancelled`, type: "success" });
           break;
       }
-    } catch (error) {
-      toastStoreError(error, "Could not update the order.");
-    }
-    setPending(false);
-  };
+    }, "Could not update the order.");
 
-  useWindowKeydown((event) => {
-    if (event.defaultPrevented || event.repeat) return;
-    if (isEditableTarget(event.target) || hasOpenPopup()) return;
-    if (!isPlainKey(event, "r") || !canReceive) return;
-    event.preventDefault();
-    onReceiveOpenChange(true);
-  });
+  usePageShortcuts({ r: canReceive ? () => onReceiveOpenChange(true) : undefined });
 
   const summary = [
     supplier?.name ?? UNKNOWN_SUPPLIER,
@@ -375,7 +349,7 @@ export function PurchaseOrderPage({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="ghost" />}>Keep order</AlertDialogClose>
-            <AlertDialogClose onClick={() => void run(closing)} render={<Button />}>
+            <AlertDialogClose onClick={() => void finish(closing)} render={<Button />}>
               Close order
             </AlertDialogClose>
           </AlertDialogFooter>

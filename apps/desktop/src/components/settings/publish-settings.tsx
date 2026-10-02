@@ -1,8 +1,7 @@
 import { CloudUploadIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Suspense } from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { PublishProgressBar } from "@/components/app/publish-progress";
 import { Button } from "@/components/ui/button";
 import { catalogContents } from "@/lib/catalog-counts";
@@ -73,10 +72,8 @@ export function PublishSettings() {
   const organization = usePublishTarget();
   if (organization === null) return null;
   return (
-    <AppErrorBoundary fallback={null}>
-      <Suspense fallback={null}>
-        <PublishSettingsFor organization={organization} />
-      </Suspense>
-    </AppErrorBoundary>
+    <AsyncBoundary fallback={null}>
+      <PublishSettingsFor organization={organization} />
+    </AsyncBoundary>
   );
 }

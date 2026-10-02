@@ -187,6 +187,8 @@ export type CommitPlan =
     }
   | { readonly _tag: "Invalid"; readonly message: string };
 
+export type ExecutablePlan = Exclude<CommitPlan, { readonly _tag: "Invalid" }>;
+
 const optionalText = (value: string): string | null => value.trim() || null;
 
 const positiveInteger = (value: string): number | null => {

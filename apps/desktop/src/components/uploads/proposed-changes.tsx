@@ -1,8 +1,7 @@
 import { CheckmarkCircle02Icon, FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Frame, FrameHeader } from "@/components/ui/frame";
@@ -45,11 +44,9 @@ function UploadProposedChanges() {
         <UploadImportCategoryField />
       ) : null}
 
-      <AppErrorBoundary fallback={null}>
-        <React.Suspense fallback={null}>
-          <UploadOrderMatch />
-        </React.Suspense>
-      </AppErrorBoundary>
+      <AsyncBoundary fallback={null}>
+        <UploadOrderMatch />
+      </AsyncBoundary>
 
       <div className="flex flex-col gap-2">
         {changes.map((change, index) => {

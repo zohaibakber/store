@@ -1,4 +1,4 @@
-import type { DeviceLabel, EnqueueCommandRequest, ReplicaInsightsWindow } from "@store/contracts";
+import type { DeviceLabel, ReplicaInsightsWindow } from "@store/contracts";
 import {
   layerOwnedHttpSync,
   SyncScheduler,
@@ -13,14 +13,11 @@ import {
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import { replicaSyncActivityOf } from "./activity";
-import { layerCommitForwarding } from "./commit-forwarding";
 import { planIndexedDbSubset } from "./indexeddb-plan";
-import { makeReplicaLifetime } from "./lifetime";
-import { createReplicaCommitPublisher } from "./publisher";
+import { enqueuedCommand, openReplicaRuntime } from "./replica-runtime";
 import { MAX_DISTINCT_VALUES } from "./sources";
 import type { OutboxCommandStatus } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
@@ -35,9 +32,8 @@ import type {
   ReplicaSummaryRead,
 } from "./types";
 import { validateBatchSpecs, validateSummarySpec } from "./validate";
-import { bootWorkspaceRuntime } from "./workspace-runtime";
 
-export type OpenIndexedDbReplicaInput = {
+type OpenIndexedDbReplicaInput = {
   readonly databaseName: string;
   readonly identity: IndexedDbReplicaIdentity;
   readonly sync?: {
@@ -70,20 +66,18 @@ const layerWebSync = (input: OpenIndexedDbReplicaInput) =>
 export const openIndexedDbReplicaHandle = async (
   input: OpenIndexedDbReplicaInput,
 ): Promise<ReplicaHandle> => {
-  const publisher = createReplicaCommitPublisher();
-  const runtime = ManagedRuntime.make(
-    Layer.mergeAll(layerWebSync(input), layerCommitForwarding(input.databaseName, publisher)).pipe(
-      Layer.provideMerge(
-        layerIndexedDbReplicaStore({
-          databaseName: input.databaseName,
-          databaseIdentity: input.databaseName,
-          identity: input.identity,
-        }),
+  const { booted, run, subscribe, scope, close } = await openReplicaRuntime(
+    input.databaseName,
+    (commitForwarding) =>
+      Layer.mergeAll(layerWebSync(input), commitForwarding).pipe(
+        Layer.provideMerge(
+          layerIndexedDbReplicaStore({
+            databaseName: input.databaseName,
+            databaseIdentity: input.databaseName,
+            identity: input.identity,
+          }),
+        ),
       ),
-    ),
-  );
-  const { store, scheduler, replicaId } = await bootWorkspaceRuntime(
-    runtime,
     Effect.gen(function* () {
       const store = yield* IndexedDbReplicaStore;
       return {
@@ -93,17 +87,7 @@ export const openIndexedDbReplicaHandle = async (
       };
     }),
   );
-  const lifetime = makeReplicaLifetime();
-  lifetime.onClose(Effect.promise(() => runtime.dispose()));
-  lifetime.onClose(Effect.promise(() => publisher.dispose()));
-
-  type RuntimeServices = ManagedRuntime.ManagedRuntime.Services<typeof runtime>;
-
-  const run = <A, E>(effect: Effect.Effect<A, E, RuntimeServices>, options?: ReplicaReadOptions) =>
-    runtime.runPromise(
-      lifetime.supervise(effect),
-      options?.signal === undefined ? undefined : { signal: options.signal },
-    );
+  const { store, scheduler, replicaId } = booted;
 
   const stamped = (stamp: {
     readonly generationId: string;
@@ -173,24 +157,16 @@ export const openIndexedDbReplicaHandle = async (
     readPendingRowIds: (entity) => run(store.readPendingRowIds(entity)),
     readOutboxStatuses: async (): Promise<ReadonlyArray<OutboxCommandStatus>> =>
       run(store.listOutboxStatuses()),
-    enqueueCommand: async (request: EnqueueCommandRequest) => {
-      const queued = await run(store.enqueueCommand(request));
-      return {
-        operationId: queued.value.operationId,
-        status: queued.value.status,
-        stamp: { workspaceToken: input.databaseName, ...queued.value.stamp },
-      };
-    },
+    enqueueCommand: async (request) =>
+      enqueuedCommand(input.databaseName, (await run(store.enqueueCommand(request))).value),
     readCommandStatus: (operationId: string) => run(store.readCommandStatus(operationId)),
     wakeSyncUpload: scheduler
       ? () => {
           void run(scheduler.wake("localWrite")).catch(() => undefined);
         }
       : undefined,
-    subscribe: publisher.subscribe,
-    subscribeSyncHealth: scheduler
-      ? subscribeSchedulerHealth(scheduler, lifetime.scope)
-      : undefined,
-    close: lifetime.close,
+    subscribe,
+    subscribeSyncHealth: scheduler ? subscribeSchedulerHealth(scheduler, scope) : undefined,
+    close,
   };
 };

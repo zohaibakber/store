@@ -1,11 +1,9 @@
 import * as Schema from "effect/Schema";
 
-const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-
 export const CatalogCounts = Schema.Struct({
-  products: Count,
-  sales: Count,
-  purchaseOrders: Count,
+  products: Schema.Natural,
+  sales: Schema.Natural,
+  purchaseOrders: Schema.Natural,
 });
 export type CatalogCounts = typeof CatalogCounts.Type;
 
@@ -13,7 +11,7 @@ const Cancelled = Schema.TaggedStruct("cancelled", {});
 const Failed = Schema.TaggedStruct("failed", { message: Schema.String });
 
 export const BackupOutcome = Schema.Union([
-  Schema.TaggedStruct("saved", { fileName: Schema.String, bytes: Count }),
+  Schema.TaggedStruct("saved", { fileName: Schema.String, bytes: Schema.Natural }),
   Cancelled,
   Failed,
 ]);

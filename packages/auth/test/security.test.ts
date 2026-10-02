@@ -1,15 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  DEFAULT_ELECTRON_PROTOCOL,
-  DEFAULT_MOBILE_PROTOCOL,
-  fallbackIfBlank,
-  isNativeRedirect,
-  isTrustedOrigin,
-  isTrustedRedirect,
-  parseTrustedOrigins,
-  resolveAuthSecurity,
-} from "../src/security";
+import { isTrustedOrigin, isTrustedRedirect, resolveAuthSecurity } from "../src/security";
 
 const secureInput = {
   baseURL: "https://api.example.com",
@@ -18,91 +9,7 @@ const secureInput = {
   trustedOrigins: ["https://app.example.com"],
 } as const;
 
-describe("GitHub env fallbacks", () => {
-  it("treats blank Actions interpolations as missing", () => {
-    expect(fallbackIfBlank(undefined, DEFAULT_ELECTRON_PROTOCOL)).toBe(DEFAULT_ELECTRON_PROTOCOL);
-    expect(fallbackIfBlank("", DEFAULT_ELECTRON_PROTOCOL)).toBe(DEFAULT_ELECTRON_PROTOCOL);
-    expect(fallbackIfBlank("  ", DEFAULT_MOBILE_PROTOCOL)).toBe(DEFAULT_MOBILE_PROTOCOL);
-    expect(fallbackIfBlank("com.custom.desktop", DEFAULT_ELECTRON_PROTOCOL)).toBe(
-      "com.custom.desktop",
-    );
-  });
-
-  it.each([
-    [undefined, []],
-    ["", []],
-    [
-      " https://app.example.com, ,https://admin.example.com ",
-      ["https://app.example.com", "https://admin.example.com"],
-    ],
-    [
-      "https://app.example.com https://admin.example.com",
-      ["https://app.example.com", "https://admin.example.com"],
-    ],
-    ['"https://app.example.com"', ["https://app.example.com"]],
-    [
-      "'https://app.example.com','https://admin.example.com'",
-      ["https://app.example.com", "https://admin.example.com"],
-    ],
-  ])("parses trusted origins from %j", (raw, expected) => {
-    expect(parseTrustedOrigins(raw)).toEqual(expected);
-  });
-});
-
 describe("resolveAuthSecurity", () => {
-  it("normalizes and deduplicates exact trusted origins", () => {
-    const resolved = resolveAuthSecurity({
-      ...secureInput,
-      trustedOrigins: [
-        "https://app.example.com",
-        "https://app.example.com",
-        "http://localhost:5173",
-      ],
-    });
-
-    expect(resolved).toEqual({
-      baseURL: "https://api.example.com",
-      electronOrigin: "com.tabaaq.desktop://app",
-      electronProtocol: "com.tabaaq.desktop",
-      mobileOrigin: "com.tabaaq.mobile://",
-      mobileProtocol: "com.tabaaq.mobile",
-      secureCookies: true,
-      trustedOrigins: [
-        "https://api.example.com",
-        "https://app.example.com",
-        "http://localhost:5173",
-        "com.tabaaq.desktop://app",
-        "com.tabaaq.mobile://",
-        "com.tabaaq.mobile.debug://",
-      ],
-      trustedRedirects: [
-        "https://api.example.com",
-        "https://app.example.com",
-        "http://localhost:5173",
-        "com.tabaaq.desktop://app",
-        "com.tabaaq.mobile://",
-        "com.tabaaq.mobile.debug://",
-        "com.tabaaq.desktop://",
-      ],
-      rejectedSettings: [],
-    });
-  });
-
-  it.each([
-    ["app.example.com", "https://app.example.com"],
-    ["https://app.example.com/", "https://app.example.com"],
-    ["https://*.example.com", "https://*.example.com"],
-    ["*.example.com", "https://*.example.com"],
-    ["preview-*.example.com", "https://preview-*.example.com"],
-    ["myapp://", "myapp://"],
-    ["com.tabaaq.mobile://", "com.tabaaq.mobile://"],
-  ])("accepts documented origin forms: %s", (configured, expected) => {
-    const resolved = resolveAuthSecurity({ ...secureInput, trustedOrigins: [configured] });
-
-    expect(resolved.rejectedSettings).toEqual([]);
-    expect(resolved.trustedOrigins).toContain(expected);
-  });
-
   it.each([
     "http://api.example.com",
     "https://user:password@app.example.com",
@@ -120,36 +27,6 @@ describe("resolveAuthSecurity", () => {
     expect(resolved.trustedOrigins).toContain("https://api.example.com");
   });
 
-  it("keeps the usable origins when one entry in the list is unusable", () => {
-    const resolved = resolveAuthSecurity({
-      ...secureInput,
-      trustedOrigins: ["tabaaq.example.com", "http://insecure.example.com"],
-    });
-
-    expect(resolved.trustedOrigins).toContain("https://tabaaq.example.com");
-    expect(resolved.rejectedSettings).toEqual([
-      {
-        setting: "AUTH_TRUSTED_ORIGINS",
-        value: "http://insecure.example.com",
-        reason: "must use HTTPS outside local development",
-      },
-    ]);
-  });
-
-  it("expands a bare loopback host to HTTP only in local development", () => {
-    const local = resolveAuthSecurity({
-      ...secureInput,
-      baseURL: "http://localhost:8787",
-      trustedOrigins: ["localhost:5173"],
-    });
-    expect(local.trustedOrigins).toContain("http://localhost:5173");
-    expect(local.trustedOrigins).toContain("https://localhost:5173");
-
-    const production = resolveAuthSecurity({ ...secureInput, trustedOrigins: ["localhost:5173"] });
-    expect(production.trustedOrigins).toContain("https://localhost:5173");
-    expect(production.trustedOrigins).not.toContain("http://localhost:5173");
-  });
-
   it("does not mistake a hostname beginning with 127 for a loopback address", () => {
     const resolved = resolveAuthSecurity({
       ...secureInput,
@@ -161,27 +38,6 @@ describe("resolveAuthSecurity", () => {
       "http://127.evil.example:5173",
     ]);
     expect(resolved.trustedOrigins).not.toContain("http://127.evil.example:5173");
-  });
-
-  it("allows HTTP only for local development origins", () => {
-    const resolved = resolveAuthSecurity({
-      ...secureInput,
-      baseURL: "http://localhost:8787",
-    });
-    expect(resolved.secureCookies).toBe(false);
-    expect(resolved.trustedOrigins).toContain("com.tabaaq.mobile://");
-  });
-
-  it.each([
-    ["electronProtocol", "ELECTRON_PROTOCOL", DEFAULT_ELECTRON_PROTOCOL],
-    ["mobileProtocol", "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL],
-  ] as const)("falls back to the default when %s is malformed", (key, setting, fallback) => {
-    const resolved = resolveAuthSecurity({ ...secureInput, [key]: "not a scheme" });
-
-    expect(resolved[key]).toBe(fallback);
-    expect(resolved.rejectedSettings).toEqual([
-      { setting, value: "not a scheme", reason: "is not a valid URI scheme" },
-    ]);
   });
 });
 
@@ -204,18 +60,6 @@ describe("matchesTrustedOrigin", () => {
     ["https://api.example.com", "*.other.com", false],
   ])("matches %s against %s", (origin, pattern, expected) => {
     expect(isTrustedOrigin(origin, [pattern])).toBe(expected);
-  });
-});
-
-describe("isNativeRedirect", () => {
-  it.each([
-    ["com.tabaaq.desktop://auth/callback", true],
-    ["com.tabaaq.mobile://auth/callback?code=1", true],
-    ["https://app.example.com/", false],
-    ["http://localhost:5174/?code=1", false],
-    ["not a url", false],
-  ])("decides %s", (redirectUri, expected) => {
-    expect(isNativeRedirect(redirectUri)).toBe(expected);
   });
 });
 

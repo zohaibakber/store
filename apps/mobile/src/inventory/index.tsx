@@ -1,14 +1,13 @@
 import type { SqlClientReplicaHandle } from "@store/client-db/sql-client";
 import { InventoryProvider, type InventoryHost } from "@store/inventory-react";
-import * as Option from "effect/Option";
-import Constants from "expo-constants";
+import * as Result from "effect/Result";
 import * as React from "react";
 import { AppState } from "react-native";
 
 import { useSession, type SignedInSession } from "@/auth";
+import { mobileConfig } from "@/config";
 
 import { createMobileInventoryHost, unavailableInventoryHost } from "./host";
-import { decodeMobileExtra } from "./policy";
 import {
   applyAppState,
   applyPullMaxBytes,
@@ -16,9 +15,7 @@ import {
   useReplicaScheduling,
 } from "./scheduling";
 
-const apiBaseUrl = decodeMobileExtra(Constants.expoConfig?.extra).pipe(
-  Option.map((extra) => extra.apiBaseUrl),
-);
+const apiBaseUrl = Result.getOrNull(mobileConfig)?.apiBaseUrl ?? null;
 
 const idleSync = () => Promise.resolve();
 
@@ -51,14 +48,14 @@ function InventoryRoot({
   const pullMaxBytes = useReplicaScheduling(active);
 
   const host = React.useMemo((): InventoryHost => {
-    if (Option.isNone(apiBaseUrl)) {
+    if (apiBaseUrl === null) {
       return unavailableInventoryHost({
         apiBaseUrl: "",
         message: "The inventory server address is not configured.",
       });
     }
     return createMobileInventoryHost({
-      apiBaseUrl: apiBaseUrl.value,
+      apiBaseUrl,
       authenticatedFetch: (input, init) => latestFetch.current(input, init),
       liveAccessToken: (options) => latestAccessToken.current(options),
       network: expoNetworkSignal,

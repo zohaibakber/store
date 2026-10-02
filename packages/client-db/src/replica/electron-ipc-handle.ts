@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { ReplicaSyncActivity } from "./activity";
+import { commitNotice } from "./collection-notices";
 import { makeReplicaLifetime } from "./lifetime";
 import { createReplicaCommitPublisher } from "./publisher";
 import type { ReplicaSyncHealth } from "./status";
@@ -32,7 +33,7 @@ import type {
 
 type ElectronReplicaAuthority = "local" | "remote";
 
-export type ElectronReplicaOpenIdentity = {
+type ElectronReplicaOpenIdentity = {
   readonly organizationId: string;
   readonly userId: string;
   readonly replicaId: string;
@@ -181,27 +182,24 @@ export const openElectronIpcReplicaHandle = async (
 
   const publisher = createReplicaCommitPublisher();
   const lifetime = makeReplicaLifetime();
-  lifetime.onClose(Effect.promise(() => bridge.close(workspaceToken).catch(() => undefined)));
+  lifetime.onClose(Effect.ignore(Effect.tryPromise(() => bridge.close(workspaceToken))));
   lifetime.onClose(Effect.promise(() => publisher.dispose()));
 
   const unsubscribeCommits = bridge.onCommit((event) => {
     if (event.workspaceToken !== workspaceToken) return;
     publisher.publish(
-      Object.assign(
-        {
-          workspaceToken,
-          generationId: event.generationId,
-          localCommitVersion: event.localCommitVersion,
-          touchedEntities: decodedSome(event.touchedEntities, decodeSyncEntity),
-          touchedKeys: event.touchedKeys,
-        },
-        event.fullInvalidation === undefined
-          ? undefined
-          : { fullInvalidation: event.fullInvalidation },
-        event.overflowedEntities === undefined
-          ? undefined
-          : { overflowedEntities: decodedSome(event.overflowedEntities, decodeSyncEntity) },
-      ),
+      commitNotice({
+        workspaceToken,
+        generationId: event.generationId,
+        localCommitVersion: event.localCommitVersion,
+        touchedEntities: decodedSome(event.touchedEntities, decodeSyncEntity),
+        touchedKeys: event.touchedKeys,
+        fullInvalidation: event.fullInvalidation,
+        overflowedEntities:
+          event.overflowedEntities === undefined
+            ? undefined
+            : decodedSome(event.overflowedEntities, decodeSyncEntity),
+      }),
     );
   });
   lifetime.onClose(Effect.sync(unsubscribeCommits));
@@ -259,9 +257,10 @@ export const openElectronIpcReplicaHandle = async (
         const requestId = crypto.randomUUID();
         return Effect.tryPromise({ try: () => start(requestId), catch: (cause) => cause }).pipe(
           Effect.onInterrupt(() =>
-            Effect.sync(() => {
-              void bridge.cancelRead({ workspaceToken, requestId }).catch(() => undefined);
-            }),
+            Effect.tryPromise(() => bridge.cancelRead({ workspaceToken, requestId })).pipe(
+              Effect.ignore,
+              Effect.forkDetach({ startImmediately: true }),
+            ),
           ),
         );
       }),

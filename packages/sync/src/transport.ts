@@ -50,7 +50,7 @@ export class SyncTransportOffline extends Schema.TaggedError<SyncTransportOfflin
   },
 ) {}
 
-export class SyncTransportAuthRequired extends Schema.TaggedError<SyncTransportAuthRequired>()(
+class SyncTransportAuthRequired extends Schema.TaggedError<SyncTransportAuthRequired>()(
   "SyncTransportAuthRequired",
   {
     message: Schema.String,
@@ -58,7 +58,7 @@ export class SyncTransportAuthRequired extends Schema.TaggedError<SyncTransportA
   },
 ) {}
 
-export class SyncTransportInvalid extends Schema.TaggedError<SyncTransportInvalid>()(
+class SyncTransportInvalid extends Schema.TaggedError<SyncTransportInvalid>()(
   "SyncTransportInvalid",
   {
     message: Schema.String,
@@ -222,38 +222,43 @@ export const classifySyncFailure = (error: SyncFailureCause, now: number): SyncC
     ? error
     : mapSyncFailure(error, now);
 
-export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition => {
-  if (isReplicaStorageFailure(error)) return { _tag: "storageError", message: error.message };
-  if (error instanceof ReplicaCoverageRepairRequired) {
-    return { _tag: "recover", code: "SNAPSHOT_REQUIRED" };
-  }
-  if (error instanceof SyncRecoveryRequired) {
+const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition => {
+  if (error.code === "REPLICA_SEQUENCE_GAP") {
     return { _tag: "recoveryRequired", code: error.code, message: error.message };
   }
-  if (error instanceof SyncProtocolError) {
-    if (error.code === "REPLICA_SEQUENCE_GAP") {
-      return { _tag: "recoveryRequired", code: error.code, message: error.message };
-    }
-    if (error.code === "SCHEMA_VERSION_UNSUPPORTED") {
-      return { _tag: "updateRequired", message: error.message };
-    }
-    return RECOVERABLE_PROTOCOL_CODES.has(error.code)
-      ? { _tag: "recover", code: error.code }
-      : { _tag: "stop", status: undefined, message: error.message };
-  }
-  if (error instanceof SyncTransportAuthRequired) {
-    return { _tag: "pauseForAuth", status: error.status };
-  }
-  if (error instanceof SyncTransportInvalid) {
-    return { _tag: "stop", status: error.status, message: error.message };
-  }
-  if (error instanceof SyncTransportUndecodable) {
+  if (error.code === "SCHEMA_VERSION_UNSUPPORTED") {
     return { _tag: "updateRequired", message: error.message };
   }
-  if (error instanceof SyncTransportUnavailable) {
-    return { _tag: "retry", delayMillis: error.retryAfterMillis };
+  return RECOVERABLE_PROTOCOL_CODES.has(error.code)
+    ? { _tag: "recover", code: error.code }
+    : { _tag: "stop", status: undefined, message: error.message };
+};
+
+export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition => {
+  switch (error._tag) {
+    case "ReplicaStorageError":
+    case "IndexedDbUnavailable":
+    case "IndexedDbQuotaExceeded":
+    case "IndexedDbCorruptRecord":
+    case "IndexedDbIdentityMismatch":
+      return { _tag: "storageError", message: error.message };
+    case "ReplicaCoverageRepairRequired":
+      return { _tag: "recover", code: "SNAPSHOT_REQUIRED" };
+    case "SyncRecoveryRequired":
+      return { _tag: "recoveryRequired", code: error.code, message: error.message };
+    case "SyncProtocolError":
+      return protocolDisposition(error);
+    case "SyncTransportAuthRequired":
+      return { _tag: "pauseForAuth", status: error.status };
+    case "SyncTransportInvalid":
+      return { _tag: "stop", status: error.status, message: error.message };
+    case "SyncTransportUndecodable":
+      return { _tag: "updateRequired", message: error.message };
+    case "SyncTransportUnavailable":
+      return { _tag: "retry", delayMillis: error.retryAfterMillis };
+    case "SyncTransportOffline":
+      return { _tag: "retry", delayMillis: undefined };
   }
-  return { _tag: "retry", delayMillis: undefined };
 };
 
 const mapTransportFailure = <A, E extends SyncFailureCause, R>(

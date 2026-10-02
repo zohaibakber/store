@@ -1,10 +1,8 @@
-import type { SyncCommand, SyncEntity } from "@store/contracts";
+import type { SyncEntity } from "@store/contracts";
 import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import {
   batches,
-  categories,
   commandOutbox,
-  invoices,
   pendingRowMarks,
   products,
   purchaseOrderItems,
@@ -12,15 +10,14 @@ import {
   stockOverlays,
   suppliers,
 } from "@store/db/replica.schema";
-import { and, desc, eq, gt, inArray, max, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, or } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { NamedEntity, NumberedEntity } from "./codecs";
-import { EMPTY_STOCK, withPendingOverlays, type VisibleStock } from "./decisions";
-import { loadCatalog, type CatalogReads } from "./footprint";
-import type { CatalogEntity, ReplicaCatalogLookup } from "./projection";
+import { withPendingOverlays, type VisibleStock } from "./decisions";
+import type { CatalogReads } from "./footprint";
+import type { CatalogEntity } from "./projection";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
 const decodeBatch = Schema.decodeUnknownSync(syncEntityRows.batch.schema);
@@ -28,75 +25,6 @@ const decodeBatch = Schema.decodeUnknownSync(syncEntityRows.batch.schema);
 const IDS_PER_QUERY = 400;
 
 const chunked = (ids: ReadonlyArray<string>) => Array.chunksOf(ids, IDS_PER_QUERY);
-
-const numberedTables = {
-  invoice: { table: invoices, number: invoices.invoiceNumber },
-  purchaseOrder: { table: purchaseOrders, number: purchaseOrders.orderNumber },
-} as const;
-
-export const readNumberHolder = (
-  tx: ReplicaDb,
-  organizationId: string,
-  entity: NumberedEntity,
-  number: number,
-  excludedId: string,
-) => {
-  const numbered = numberedTables[entity];
-  return tx
-    .select({ id: numbered.table.id })
-    .from(numbered.table)
-    .where(
-      and(
-        eq(numbered.table.organizationId, organizationId),
-        eq(numbered.number, number),
-        ne(numbered.table.id, excludedId),
-      ),
-    )
-    .limit(1)
-    .get();
-};
-
-export const readHighestNumber = (
-  tx: ReplicaDb,
-  organizationId: string,
-  entity: NumberedEntity,
-  excludedId?: string,
-) => {
-  const numbered = numberedTables[entity];
-  return tx
-    .select({ highest: max(numbered.number) })
-    .from(numbered.table)
-    .where(
-      excludedId === undefined
-        ? eq(numbered.table.organizationId, organizationId)
-        : and(eq(numbered.table.organizationId, organizationId), ne(numbered.table.id, excludedId)),
-    )
-    .get()
-    .pipe(Effect.map((row) => row?.highest ?? 0));
-};
-
-const namedTables = {
-  category: categories,
-  supplier: suppliers,
-} as const;
-
-export const readNameHolder = (
-  tx: ReplicaDb,
-  organizationId: string,
-  entity: NamedEntity,
-  name: string,
-  excludedId: string,
-) => {
-  const table = namedTables[entity];
-  return tx
-    .select({ id: table.id, name: table.name })
-    .from(table)
-    .where(
-      and(eq(table.organizationId, organizationId), eq(table.name, name), ne(table.id, excludedId)),
-    )
-    .limit(1)
-    .get();
-};
 
 const selectRowsById = Effect.fn("ReplicaLookup.selectRowsById")(function* (
   tx: ReplicaDb,
@@ -127,7 +55,7 @@ const readRowsById = <Entity extends CatalogEntity>(
   );
 };
 
-const sqliteCatalogReads = (
+export const sqliteCatalogReads = (
   tx: ReplicaDb,
   organizationId: string,
 ): CatalogReads<unknown, never> => ({
@@ -217,9 +145,10 @@ const sqliteCatalogReads = (
       .orderBy(desc(purchaseOrders.orderNumber))
       .limit(limit)
       .all(),
+  visibleStock: (batchRows) => readVisibleStock(tx, batchRows),
 });
 
-export const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(function* (
+const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(function* (
   tx: ReplicaDb,
   batchRows: ReadonlyArray<VisibleStock & { readonly id: string }>,
 ) {
@@ -271,31 +200,6 @@ export const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(func
   );
 });
 
-type CommandContext = {
-  readonly lookup: ReplicaCatalogLookup;
-  readonly unitsPerPackFor: (productId: string) => number;
-  readonly stockFor: (batchId: string) => VisibleStock;
-};
-
-export const readCommandContext = Effect.fn("ReplicaLookup.readCommandContext")(function* (
-  tx: ReplicaDb,
-  organizationId: string,
-  command: SyncCommand,
-  options: { readonly checkRules: boolean; readonly withStock: boolean },
-) {
-  const { rows, lookup } = yield* loadCatalog(command, sqliteCatalogReads(tx, organizationId), {
-    checkRules: options.checkRules,
-  });
-  const stock = options.withStock
-    ? yield* readVisibleStock(tx, rows.batch)
-    : new Map<string, VisibleStock>();
-  return {
-    lookup,
-    unitsPerPackFor: (productId) => lookup.product(productId)?.unitsPerPack ?? 1,
-    stockFor: (batchId) => stock.get(batchId) ?? EMPTY_STOCK,
-  } satisfies CommandContext;
-});
-
 export const readUnitsPerPack = Effect.fn("ReplicaLookup.readUnitsPerPack")(function* (
   tx: ReplicaDb,
   organizationId: string,
@@ -304,13 +208,4 @@ export const readUnitsPerPack = Effect.fn("ReplicaLookup.readUnitsPerPack")(func
   const rows = yield* readRowsById(tx, organizationId, "product", [...new Set(productIds)]);
   const unitsPerPack = new Map<string, number>(rows.map((row) => [row.id, row.unitsPerPack]));
   return (productId: string) => unitsPerPack.get(productId) ?? 1;
-});
-
-export const readVisibleBatchStock = Effect.fn("ReplicaLookup.readVisibleBatchStock")(function* (
-  tx: ReplicaDb,
-  organizationId: string,
-  batchId: string,
-) {
-  const rows = yield* readRowsById(tx, organizationId, "batch", [batchId]);
-  return (yield* readVisibleStock(tx, rows)).get(batchId);
 });

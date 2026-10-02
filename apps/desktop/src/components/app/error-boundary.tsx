@@ -25,3 +25,19 @@ export class AppErrorBoundary extends React.Component<
     return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
+
+export function AsyncBoundary({
+  children,
+  failed,
+  fallback,
+}: {
+  readonly children: React.ReactNode;
+  readonly failed?: React.ReactNode;
+  readonly fallback: React.ReactNode;
+}) {
+  return (
+    <AppErrorBoundary fallback={failed === undefined ? fallback : failed}>
+      <React.Suspense fallback={fallback}>{children}</React.Suspense>
+    </AppErrorBoundary>
+  );
+}

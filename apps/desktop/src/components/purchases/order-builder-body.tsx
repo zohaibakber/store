@@ -6,7 +6,6 @@ import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 
 import { LoadingSpinner } from "@/components/app/loading-spinner";
-import { useWindowKeydown } from "@/components/products/shortcuts";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   Autocomplete,
@@ -46,6 +45,7 @@ import {
   useSuspenseProductSearch,
   useSuspenseSuppliers,
 } from "@/lib/inventory";
+import { useSubmitShortcut } from "@/lib/shortcuts";
 
 import { PurchasingGateNotice } from "./gate-notice";
 import { draftLineCost, quantityNoun, type DraftLine } from "./presentation";
@@ -390,12 +390,7 @@ export function OrderBuilderBody({
     }
   };
 
-  useWindowKeydown((event) => {
-    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
-    if (event.defaultPrevented || event.repeat) return;
-    event.preventDefault();
-    void create();
-  });
+  useSubmitShortcut(() => void create());
 
   const summary =
     lines.length === 0

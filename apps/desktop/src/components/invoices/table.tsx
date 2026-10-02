@@ -2,64 +2,29 @@ import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
-import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  createColumnHelper,
-  functionalUpdate,
-  metaHelper,
-  rowPaginationFeature,
-  rowSortingFeature,
-  tableFeatures,
-  useTable,
-  type ColumnFiltersState,
-  type PaginationState,
-  type SortingState,
-  type Updater,
-} from "@tanstack/react-table";
-import * as Schema from "effect/Schema";
+import { createColumnHelper, type ReactTable } from "@tanstack/react-table";
 
 import { formatInvoiceTime } from "@/components/invoices/invoice-time";
+import { DataTableColumnHeader } from "@/components/shared/data-table";
 import {
-  DataTableColumnHeader,
-  DataTableContent,
-  DataTableFooter,
-  DataTablePagination,
-  type DataTableColumnMeta,
-} from "@/components/shared/data-table";
+  listView,
+  useListTable,
+  type ListTableFeatures,
+  type ListView,
+} from "@/components/shared/list-view";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { INVOICE_SORT_COLUMNS, type InvoiceSortColumn } from "@/lib/inventory";
 
-const features = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSortingFeature,
-  columnMeta: metaHelper<DataTableColumnMeta>(),
-});
-
-export const INVOICE_PAGE_SIZES = [25, 50, 100] as const;
-export type InvoicePageSize = (typeof INVOICE_PAGE_SIZES)[number];
-
-export type InvoiceListView = {
-  readonly q?: string;
-  readonly sort: InvoiceSortColumn;
-  readonly desc: boolean;
-  readonly page: number;
-  readonly size: InvoicePageSize;
-};
-
-export const DEFAULT_INVOICE_LIST_VIEW: InvoiceListView = {
+export const invoiceList = listView({
+  sortColumns: INVOICE_SORT_COLUMNS,
   sort: "createdAt",
   desc: true,
-  page: 0,
-  size: 50,
-};
+});
 
-const columnHelper = createColumnHelper<typeof features, Invoice>();
+export type InvoiceListView = ListView<InvoiceSortColumn>;
 
-const CUSTOMER_COLUMN = "customer";
+const columnHelper = createColumnHelper<ListTableFeatures, Invoice>();
 
 const columns = columnHelper.columns([
   columnHelper.accessor("invoiceNumber", {
@@ -78,7 +43,7 @@ const columns = columnHelper.columns([
     meta: { label: "Invoice" },
   }),
   columnHelper.accessor((invoice) => invoice.customerName ?? "Walk-in customer", {
-    id: CUSTOMER_COLUMN,
+    id: "customer",
     header: "Customer",
     cell: ({ row, getValue }) => (
       <span className={row.original.customerName ? undefined : "text-muted-foreground"}>
@@ -115,73 +80,24 @@ const columns = columnHelper.columns([
   }),
 ]);
 
-const isSortColumn = Schema.is(Schema.Literals(INVOICE_SORT_COLUMNS));
-
-const isText = Schema.is(Schema.String);
-
-const viewWithFilters = (view: InvoiceListView, filters: ColumnFiltersState): InvoiceListView => {
-  const value = filters.find((filter) => filter.id === CUSTOMER_COLUMN)?.value;
-  return { ...view, page: 0, q: isText(value) && value.trim() !== "" ? value : undefined };
-};
-
-const viewWithSorting = (view: InvoiceListView, sorting: SortingState): InvoiceListView => {
-  const [first] = sorting;
-  return first && isSortColumn(first.id)
-    ? { ...view, sort: first.id, desc: first.desc, page: 0 }
-    : {
-        ...view,
-        sort: DEFAULT_INVOICE_LIST_VIEW.sort,
-        desc: DEFAULT_INVOICE_LIST_VIEW.desc,
-        page: 0,
-      };
-};
-
-const pageSizeFrom = (size: number): InvoicePageSize =>
-  INVOICE_PAGE_SIZES.find((candidate) => candidate === size) ?? DEFAULT_INVOICE_LIST_VIEW.size;
-
-const viewWithPagination = (
-  view: InvoiceListView,
-  pagination: PaginationState,
-): InvoiceListView => {
-  const size = pageSizeFrom(pagination.pageSize);
-  return { ...view, size, page: size === view.size ? Math.max(0, pagination.pageIndex) : 0 };
-};
-
 export function useInvoicesTable(input: {
   readonly rows: ReadonlyArray<Invoice>;
   readonly total: number;
   readonly view: InvoiceListView;
   readonly onViewChange: (view: InvoiceListView) => void;
-}) {
-  const { view, onViewChange } = input;
-  const pagination: PaginationState = { pageIndex: view.page, pageSize: view.size };
-  const sorting: SortingState = [{ id: view.sort, desc: view.desc }];
-  const columnFilters: ColumnFiltersState = view.q ? [{ id: CUSTOMER_COLUMN, value: view.q }] : [];
-  return useTable({
-    features,
+  readonly loading: boolean;
+}): ReactTable<ListTableFeatures, Invoice> {
+  const { view } = input;
+  return useListTable({
+    list: invoiceList,
     columns,
-    data: input.rows,
+    rows: input.rows,
+    total: input.total,
     getRowId: (invoice) => invoice.id,
-    manualPagination: true,
-    manualSorting: true,
-    manualFiltering: true,
-    rowCount: input.total,
-    state: { pagination, sorting, columnFilters },
-    onPaginationChange: (updater: Updater<PaginationState>) =>
-      onViewChange(viewWithPagination(view, functionalUpdate(updater, pagination))),
-    onSortingChange: (updater: Updater<SortingState>) =>
-      onViewChange(viewWithSorting(view, functionalUpdate(updater, sorting))),
-    onColumnFiltersChange: (updater: Updater<ColumnFiltersState>) =>
-      onViewChange(viewWithFilters(view, functionalUpdate(updater, columnFilters))),
+    view,
+    onViewChange: input.onViewChange,
+    loading: input.loading,
+    filters: { customer: view.q },
+    viewWithFilters: (filters) => ({ ...view, q: filters.customer }),
   });
-}
-
-export function InvoicesTable() {
-  return (
-    <DataTableContent>
-      <DataTableFooter>
-        <DataTablePagination pageSizes={INVOICE_PAGE_SIZES} />
-      </DataTableFooter>
-    </DataTableContent>
-  );
 }

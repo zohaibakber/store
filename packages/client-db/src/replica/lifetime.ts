@@ -3,7 +3,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
 
-export type ReplicaLifetime = {
+type ReplicaLifetime = {
   readonly scope: Scope.Scope;
   readonly onClose: (finalizer: Effect.Effect<void>) => void;
   readonly supervise: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
@@ -11,7 +11,7 @@ export type ReplicaLifetime = {
 };
 
 export const makeReplicaLifetime = (): ReplicaLifetime => {
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const closing = Effect.runSync(Effect.cached(Scope.close(scope, Exit.void)));
   return {
     scope,

@@ -3,7 +3,6 @@ import {
   offerCoalescing,
   type ReplicaCommitNotice as ClientCommitNotice,
 } from "@store/client-db";
-import { SyncEntity } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -19,6 +18,7 @@ import type * as RpcClient from "effect/unstable/rpc/RpcClient";
 import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 
 import {
+  analyticsNoticeOf,
   AnalyticsWorkerFailure,
   type AnalyticsEvent,
   type AnalyticsWorkerBoot,
@@ -63,10 +63,6 @@ export type AnalyticsController = {
 class AnalyticsWorkerLost extends Schema.TaggedError<AnalyticsWorkerLost>()("AnalyticsWorkerLost", {
   message: Schema.String,
 }) {}
-
-const ANALYTICS_NOTICE_TOKEN = "analytics";
-
-const isSyncEntity = Schema.is(SyncEntity);
 
 const unavailable = (message: string) => new AnalyticsWorkerFailure({ message });
 
@@ -184,21 +180,6 @@ export const makeAnalyticsController = (options: {
               : error,
           ),
         ),
-      notify: ({ overflowedEntities, ...notice }) =>
-        Effect.sync(() =>
-          offerCoalescing(
-            notices,
-            Object.assign(
-              {
-                ...notice,
-                workspaceToken: ANALYTICS_NOTICE_TOKEN,
-                touchedEntities: notice.touchedEntities.filter(isSyncEntity),
-              },
-              overflowedEntities === undefined
-                ? undefined
-                : { overflowedEntities: overflowedEntities.filter(isSyncEntity) },
-            ),
-          ),
-        ),
+      notify: (notice) => Effect.sync(() => offerCoalescing(notices, analyticsNoticeOf(notice))),
     } satisfies AnalyticsController;
   });

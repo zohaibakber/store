@@ -4,11 +4,10 @@ import {
   type RejectedCommand,
 } from "@store/inventory-react";
 
-import { formatCount, formatDateTime } from "../format";
+import { DAY_MS, formatCount, formatDateTime } from "../format";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 
 export type RejectedRowView = {
   readonly key: string;
@@ -24,9 +23,7 @@ export type SyncActivityView = {
   readonly hiddenRejected: number;
 };
 
-export { rejectionReason } from "@store/inventory-react";
-
-export const lastSyncedLabel = (lastCaughtUpAt: number | null, now: number): string => {
+const lastSyncedLabel = (lastCaughtUpAt: number | null, now: number): string => {
   if (lastCaughtUpAt === null) return "Not synced on this phone yet";
   const elapsed = Math.max(0, now - lastCaughtUpAt);
   if (elapsed < MINUTE_MS) return "Synced just now";

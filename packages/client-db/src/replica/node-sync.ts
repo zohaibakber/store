@@ -10,7 +10,7 @@ import {
   type SqliteReplicaSyncSession,
 } from "./sql-client-session";
 
-export type NodeReplicaSyncIdentity = SqliteReplicaIdentity;
+type NodeReplicaSyncIdentity = SqliteReplicaIdentity;
 
 export type NodeReplicaSyncSession = SqliteReplicaSyncSession;
 

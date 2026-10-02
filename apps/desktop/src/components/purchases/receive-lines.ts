@@ -41,7 +41,7 @@ export const receiveProductsOf = (products: ReadonlyArray<Product>): ReceiveProd
     ]),
   );
 
-export const splitBaseUnits = (baseUnits: number, product: ReceiveProduct) =>
+const splitBaseUnits = (baseUnits: number, product: ReceiveProduct) =>
   product.tracksPacks
     ? {
         packs: Math.floor(baseUnits / product.unitsPerPack),
@@ -51,13 +51,13 @@ export const splitBaseUnits = (baseUnits: number, product: ReceiveProduct) =>
 
 const isCount = (value: number | null) => value === null || (Number.isInteger(value) && value >= 0);
 
-export const rowBaseUnits = (row: Pick<ReceiveRow, "packs" | "units">, product: ReceiveProduct) =>
+const rowBaseUnits = (row: Pick<ReceiveRow, "packs" | "units">, product: ReceiveProduct) =>
   receivedBaseUnitsOf(
     { packQuantity: row.packs ?? 0, unitQuantity: row.units ?? 0 },
     product.unitsPerPack,
   );
 
-export const rowCost = (row: ReceiveRow, product: ReceiveProduct): number | null =>
+const rowCost = (row: ReceiveRow, product: ReceiveProduct): number | null =>
   row.cost === null
     ? null
     : Math.round((rowBaseUnits(row, product) * row.cost) / product.unitsPerPack);

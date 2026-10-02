@@ -2,13 +2,14 @@ import type { CatalogRowWrite, SyncCommand } from "@store/contracts";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
 
+import { EMPTY_STOCK, type VisibleStock } from "./decisions";
 import type { CatalogEntity, ReplicaCatalogLookup } from "./projection";
 
-export type CommandFootprint = {
+type CommandFootprint = {
   readonly [Entity in CatalogEntity]: ReadonlyArray<string>;
 };
 
-export type CatalogRows = {
+type CatalogRows = {
   readonly [Entity in CatalogEntity]: ReadonlyArray<SyncEntityRow<Entity>>;
 };
 
@@ -214,6 +215,9 @@ export type CatalogReads<E, R> = {
   readonly highestPurchaseOrders: (
     limit: number,
   ) => Effect.Effect<ReadonlyArray<NumberedOrderReference>, E, R>;
+  readonly visibleStock: (
+    batches: ReadonlyArray<SyncEntityRow<"batch">>,
+  ) => Effect.Effect<ReadonlyMap<string, VisibleStock>, E, R>;
 };
 
 type LoadedCatalog = {
@@ -242,7 +246,7 @@ const loadRows = <E, R>(command: SyncCommand, reads: CatalogReads<E, R>) =>
     } satisfies CatalogRows;
   });
 
-export const loadCatalog = <E, R>(
+const loadCatalog = <E, R>(
   command: SyncCommand,
   reads: CatalogReads<E, R>,
   options: { readonly checkRules: boolean },
@@ -315,5 +319,28 @@ export const loadCatalog = <E, R>(
         purchaseOrderNumbered: (orderNumber) => purchaseOrderNumbered.get(orderNumber),
         highestPurchaseOrders,
       } satisfies ReplicaCatalogLookup,
+    };
+  });
+
+export type CommandContext = {
+  readonly lookup: ReplicaCatalogLookup;
+  readonly unitsPerPackFor: (productId: string) => number;
+  readonly stockFor: (batchId: string) => VisibleStock;
+};
+
+const NO_STOCK: ReadonlyMap<string, VisibleStock> = new Map();
+
+export const loadCommandContext = <E, R>(
+  command: SyncCommand,
+  reads: CatalogReads<E, R>,
+  options: { readonly checkRules: boolean; readonly withStock: boolean },
+): Effect.Effect<CommandContext, E, R> =>
+  Effect.gen(function* () {
+    const { rows, lookup } = yield* loadCatalog(command, reads, options);
+    const stock = options.withStock ? yield* reads.visibleStock(rows.batch) : NO_STOCK;
+    return {
+      lookup,
+      unitsPerPackFor: (productId) => lookup.product(productId)?.unitsPerPack ?? 1,
+      stockFor: (batchId) => stock.get(batchId) ?? EMPTY_STOCK,
     };
   });

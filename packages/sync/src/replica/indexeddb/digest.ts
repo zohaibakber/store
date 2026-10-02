@@ -5,6 +5,7 @@ import {
   makePartitionLeafOrderer,
   partitionLeafOf,
   STOCK_MOVEMENT_ROW_VERSION,
+  type PartitionDigestReport,
   type PartitionEntity,
   type PartitionEntityDigest,
 } from "@store/contracts";
@@ -18,7 +19,7 @@ import { generationBounds } from "./query";
 import { entityStore, type ReplicaQueryBuilder } from "./schema";
 
 const CHUNK_ROWS = 1_000;
-const MAX_ATTEMPTS = 3;
+const SCAN_ATTEMPTS = 3;
 const FIRST_SURROGATE_UNIT = 0xd800;
 
 type DigestRow = { readonly id: string; readonly version: string };
@@ -151,17 +152,29 @@ const stateStamp = (api: ReplicaQueryBuilder) =>
       }),
     );
 
-export const indexedDbPartitionDigest = Effect.fn("IndexedDbDigest.partitionDigest")(function* (
-  api: ReplicaQueryBuilder,
-) {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+type DigestScan =
+  | { readonly _tag: "settled"; readonly report: PartitionDigestReport | undefined }
+  | { readonly _tag: "moved" };
+
+export const indexedDbPartitionDigest = Effect.fn("IndexedDbDigest.partitionDigest")(
+  function* (api: ReplicaQueryBuilder) {
     const before = yield* stateStamp(api);
-    if ((yield* api.from("pending_row_marks").count()) > 0) return undefined;
+    if ((yield* api.from("pending_row_marks").count()) > 0) {
+      return { _tag: "settled", report: undefined } satisfies DigestScan;
+    }
     const report = yield* finishPartitionDigestReport(
       yield* partitionEntityDigests((entity) => entityDigest(api, entity, before.generation)),
     );
     const after = yield* stateStamp(api);
-    if (after.generation === before.generation && after.version === before.version) return report;
-  }
-  return undefined;
-});
+    return (
+      after.generation === before.generation && after.version === before.version
+        ? { _tag: "settled", report }
+        : { _tag: "moved" }
+    ) satisfies DigestScan;
+  },
+  Effect.repeat({
+    until: (scan: DigestScan) => scan._tag === "settled",
+    times: SCAN_ATTEMPTS - 1,
+  }),
+  Effect.map((scan) => (scan._tag === "settled" ? scan.report : undefined)),
+);

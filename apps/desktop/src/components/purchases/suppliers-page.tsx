@@ -53,6 +53,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useStoreCommand } from "@/hooks/use-store-command";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY } from "@/lib/format";
 import { useInventoryActions, usePurchasingGate } from "@/lib/inventory";
@@ -82,16 +83,15 @@ function SupplierForm({
   const [name, setName] = React.useState(supplier?.name ?? "");
   const [phone, setPhone] = React.useState(supplier?.phone ?? "");
   const [note, setNote] = React.useState(supplier?.note ?? "");
-  const [pending, setPending] = React.useState(false);
+  const [pending, run] = useStoreCommand();
   const trimmed = name.trim();
   const duplicate =
     taken.has(normalized(name)) && normalized(name) !== normalized(supplier?.name ?? "");
   const canSave = trimmed.length > 0 && !duplicate && !pending;
 
-  const save = async () => {
+  const save = () => {
     if (!canSave) return;
-    setPending(true);
-    try {
+    void run(async () => {
       const fields = { name: trimmed, phone, note };
       const saved = await saveSupplier(supplier === null ? fields : { ...fields, id: supplier.id });
       toastManager.add({
@@ -99,10 +99,7 @@ function SupplierForm({
         type: "success",
       });
       onSaved();
-    } catch (error) {
-      toastStoreError(error, "Could not save the supplier.");
-    }
-    setPending(false);
+    }, "Could not save the supplier.");
   };
 
   return (
@@ -113,7 +110,7 @@ function SupplierForm({
           id={FORM_ID}
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            save();
           }}
         >
           <Field className="w-full">

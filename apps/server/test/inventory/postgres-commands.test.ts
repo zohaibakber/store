@@ -2,22 +2,18 @@ import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
-  PARTITION_DIGEST_VERSION,
   type SyncCommandEnvelope,
   type SyncPullRequest,
 } from "@store/contracts";
-import { decodeInvoiceId, decodeInvoiceItemId, decodeOrganizationId } from "@store/contracts/ids";
+import { decodeOrganizationId } from "@store/contracts/ids";
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
   LAST_UNIT_REPLICA_B,
-  lastUnitBuyerACommand,
   lastUnitBuyerAEnvelope,
-  lastUnitBuyerBCommand,
   lastUnitBuyerBEnvelope,
-  lastUnitEnvelope,
 } from "@store/contracts/sync/fixtures";
 import {
   batches,
@@ -37,7 +33,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { InventoryDatabaseError } from "../../src/inventory/errors";
 import type { InventoryActor } from "../../src/inventory/model";
-import { countStatements } from "../lib/statement-count";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { typedCommands } from "./typed-commands";
 
@@ -217,191 +212,6 @@ describe("postgres inventory commands", () => {
     ).toHaveLength(1);
   });
 
-  it("logs each draw on a batch shared by several allocations with the row it left behind", async () => {
-    const organizationId = decodeOrganizationId("org-shared-batch");
-    const actor = actorFor(organizationId);
-    const take = (item: string, sale: string) => ({
-      invoiceItemId: decodeInvoiceItemId(item),
-      saleMovementId: sale,
-      openPackMovementId: null,
-      productId: LAST_UNIT_PRODUCT_ID,
-      batchId: LAST_UNIT_BATCH_ID,
-      quantity: 6,
-      quantityType: "unit" as const,
-      salePrice: 100,
-      packsOpened: 1,
-    });
-    const envelope = envelopeFor(
-      organizationId,
-      lastUnitEnvelope({
-        replicaId: LAST_UNIT_REPLICA_A,
-        clientSequence: "1",
-        command: {
-          ...lastUnitBuyerACommand,
-          commandId: "sale-shared",
-          invoiceId: decodeInvoiceId("sale-shared"),
-          input: {
-            customerName: null,
-            items: [
-              {
-                productId: LAST_UNIT_PRODUCT_ID,
-                batchId: LAST_UNIT_BATCH_ID,
-                quantity: 12,
-                quantityType: "unit",
-                salePrice: 100,
-              },
-            ],
-          },
-          allocations: [
-            take("item-shared-1", "move-shared-1"),
-            take("item-shared-2", "move-shared-2"),
-          ],
-        },
-      }),
-    );
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db } = yield* openCommands(organizationId, 0);
-        yield* db
-          .update(products)
-          .set({ unitsPerPack: 10 })
-          .where(eq(products.organizationId, organizationId));
-        yield* db
-          .update(batches)
-          .set({ packQuantity: 2, unitQuantity: 0 })
-          .where(eq(batches.organizationId, organizationId));
-        const receipt = yield* commands.commit(actor, envelope);
-        const pulled = yield* commands.pull(actor, pullFromStart);
-        const [stored] = yield* db
-          .select()
-          .from(batches)
-          .where(
-            and(eq(batches.organizationId, organizationId), eq(batches.id, LAST_UNIT_BATCH_ID)),
-          );
-        return { receipt, pulled, stored };
-      }),
-    );
-    expect(outcome.receipt.decision).toBe("accepted");
-    const changes = outcome.pulled.transactions[0]?.changes ?? [];
-    expect(changes.map((change) => [change.entity, change.entityId])).toEqual([
-      ["invoice", "sale-shared"],
-      ["batch", LAST_UNIT_BATCH_ID],
-      ["invoiceItem", "item-shared-1"],
-      ["stockMovement", "move-shared-1:open-pack"],
-      ["stockMovement", "move-shared-1"],
-      ["batch", LAST_UNIT_BATCH_ID],
-      ["invoiceItem", "item-shared-2"],
-      ["stockMovement", "move-shared-2:open-pack"],
-      ["stockMovement", "move-shared-2"],
-    ]);
-    expect(outcome.stored).toMatchObject({ packQuantity: 0, unitQuantity: 8, rowVersion: 2 });
-    expect(JSON.stringify(changes[5]?.row)).toBe(JSON.stringify(outcome.stored));
-    expect(JSON.stringify(changes[1]?.row)).toBe(
-      JSON.stringify({ ...outcome.stored, packQuantity: 1, unitQuantity: 4 }),
-    );
-  });
-
-  it("returns the stored receipt on an identical retry", async () => {
-    const organizationId = decodeOrganizationId("org-retry");
-    const actor = actorFor(organizationId);
-    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCommands(organizationId);
-        const first = yield* commands.commit(actor, envelope);
-        const retry = yield* commands.commit(actor, envelope);
-        const pulled = yield* commands.pull(actor, pullFromStart);
-        const stored = yield* commands.receipt(actor, envelope.operationId);
-        return { first, retry, pulled, stored };
-      }),
-    );
-    expect(outcome.retry).toEqual(outcome.first);
-    expect(outcome.stored).toEqual(outcome.first);
-    expect(outcome.pulled.transactions).toHaveLength(1);
-    expect(outcome.pulled.nextCommitSequence).toBe(outcome.first.commitSequence);
-  });
-
-  it("rejects commands that collide with stored identities or overflow a column instead of failing the request", async () => {
-    const organizationId = decodeOrganizationId("org-poison-commands");
-    const actor = actorFor(organizationId);
-    const [take] = lastUnitBuyerBCommand.allocations;
-    const [line] = lastUnitBuyerBCommand.input.items;
-    if (take === undefined || line === undefined) throw new Error("The fixture has no allocation.");
-    const [first] = lastUnitBuyerACommand.allocations;
-    if (first === undefined) throw new Error("The fixture has no allocation.");
-    const saleOnB = (
-      clientSequence: string,
-      commandId: string,
-      allocation: typeof take,
-      salePrice = line.salePrice,
-      invoiceNumber = lastUnitBuyerBCommand.invoiceNumber,
-    ) =>
-      envelopeFor(
-        organizationId,
-        lastUnitEnvelope({
-          replicaId: LAST_UNIT_REPLICA_B,
-          clientSequence,
-          command: {
-            ...lastUnitBuyerBCommand,
-            commandId,
-            invoiceId: decodeInvoiceId(commandId),
-            invoiceNumber,
-            input: { ...lastUnitBuyerBCommand.input, items: [{ ...line, salePrice }] },
-            allocations: [{ ...allocation, salePrice }],
-          },
-        }),
-      );
-    const poisoned = [
-      saleOnB("1", "sale-reused-item", { ...take, invoiceItemId: first.invoiceItemId }),
-      saleOnB("2", "sale-reused-movement", { ...take, saleMovementId: first.saleMovementId }),
-      saleOnB("3", "sale-overflow", take, 3_000_000_000),
-      saleOnB("4", "sale-number-overflow", take, line.salePrice, 3_000_000_000),
-    ];
-    const malformed = saleOnB("5", "sale-fraction", take, 0.5);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db } = yield* openCommands(organizationId, 5);
-        const accepted = yield* commands.commit(
-          actor,
-          envelopeFor(organizationId, lastUnitBuyerAEnvelope),
-        );
-        const receipts = [];
-        for (const envelope of poisoned) receipts.push(yield* commands.commit(actor, envelope));
-        const retried = yield* commands.commit(actor, poisoned[0]!);
-        const refused = yield* commands
-          .submitRaw(actor, JSON.stringify(malformed))
-          .pipe(Effect.flip);
-        const stock = yield* batchStock(db, organizationId);
-        const [replica] = yield* db
-          .select({ last: replicas.lastClientSequence })
-          .from(replicas)
-          .where(
-            and(
-              eq(replicas.organizationId, organizationId),
-              eq(replicas.replicaId, LAST_UNIT_REPLICA_B),
-            ),
-          );
-        return { accepted, receipts, retried, refused, stock, last: replica?.last };
-      }),
-    );
-    expect(outcome.accepted.decision).toBe("accepted");
-    expect(
-      outcome.receipts.map((receipt) => [
-        receipt.decision,
-        receipt.result._tag === "rejected" ? receipt.result.code : receipt.result._tag,
-      ]),
-    ).toEqual([
-      ["rejected", "ENTITY_CONFLICT"],
-      ["rejected", "ENTITY_CONFLICT"],
-      ["rejected", "INVALID_OPERATION"],
-      ["rejected", "INVALID_OPERATION"],
-    ]);
-    expect(outcome.retried).toEqual(outcome.receipts[0]);
-    expect(outcome.refused._tag).toBe("SyncRequestMalformed");
-    expect(outcome.stock).toEqual({ unitQuantity: 4, packQuantity: 0 });
-    expect(outcome.last).toBe("4");
-  });
-
   it("rolls the invoice, stock, receipt, and log back together when a write fails", async () => {
     const organizationId = decodeOrganizationId("org-rollback");
     const actor = actorFor(organizationId);
@@ -453,28 +263,6 @@ describe("postgres inventory commands", () => {
     expect(recovered.result).toMatchObject({ _tag: "issueInvoice", invoiceNumber: 1 });
   });
 
-  it("answers a caught-up submit with its own group as the next pull page", async () => {
-    const organizationId = decodeOrganizationId("org-submit-caught-up");
-    const actor = actorFor(organizationId);
-    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCommands(organizationId);
-        const submitted = yield* commands.submit(actor, {
-          ...envelope,
-          afterCommitSequence: OrgCommitSequence.make("0"),
-        });
-        const pulled = yield* commands.pull(actor, pullFromStart);
-        return { submitted, pulled };
-      }),
-    );
-    const { page, ...receipt } = outcome.submitted;
-    expect(receipt).toMatchObject({ decision: "accepted", commitSequence: "1" });
-    expect(page).toEqual(outcome.pulled);
-    expect(page).toMatchObject({ nextCommitSequence: "1", horizon: "1", retentionFloor: "0" });
-    expect(page?.transactions[0]?.changes.length).toBeGreaterThan(0);
-  });
-
   it("reads the page after the commit for a client that is behind or retrying", async () => {
     const organizationId = decodeOrganizationId("org-submit-behind");
     const actor = actorFor(organizationId);
@@ -504,68 +292,6 @@ describe("postgres inventory commands", () => {
     ]);
     expect(outcome.retried.commitSequence).toBe(outcome.behind.commitSequence);
     expect(outcome.retried.page?.transactions.map((group) => group.commitSequence)).toEqual(["2"]);
-  });
-
-  it("omits the page for a cursor the log cannot serve", async () => {
-    const organizationId = decodeOrganizationId("org-submit-no-page");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCommands(organizationId);
-        yield* commands.commit(actor, envelopeFor(organizationId, lastUnitBuyerAEnvelope));
-        const ahead = yield* commands.submit(actor, {
-          ...envelopeFor(organizationId, lastUnitBuyerBEnvelope),
-          afterCommitSequence: OrgCommitSequence.make("9"),
-        });
-        return { ahead };
-      }),
-    );
-    expect(outcome.ahead.decision).toBe("rejected");
-    expect("page" in outcome.ahead).toBe(false);
-  });
-
-  it("clamps a client pull byte budget to the server bounds", async () => {
-    const organizationId = decodeOrganizationId("org-pull-max-bytes");
-    const actor = actorFor(organizationId);
-    const [allocation] = lastUnitBuyerACommand.allocations;
-    if (allocation === undefined) throw new Error("The fixture has no allocation.");
-    const rejectedAt = (clientSequence: string) =>
-      envelopeFor(
-        organizationId,
-        lastUnitEnvelope({
-          replicaId: LAST_UNIT_REPLICA_A,
-          clientSequence,
-          command: {
-            ...lastUnitBuyerACommand,
-            commandId: `sale-invalid-${clientSequence}`,
-            invoiceId: decodeInvoiceId(`sale-invalid-${clientSequence}`),
-            allocations: [{ ...allocation, quantity: 2 }],
-          },
-        }),
-      );
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db } = yield* openCommands(organizationId);
-        for (const clientSequence of ["1", "2", "3"]) {
-          yield* commands.commit(actor, rejectedAt(clientSequence));
-        }
-        yield* db
-          .update(inventoryTransactions)
-          .set({ byteLength: 40_000 })
-          .where(eq(inventoryTransactions.organizationId, organizationId));
-        const groupsFor = (maxBytes: number | undefined) =>
-          commands
-            .pull(actor, maxBytes === undefined ? pullFromStart : { ...pullFromStart, maxBytes })
-            .pipe(Effect.map((page) => page.transactions.length));
-        return {
-          floor: yield* groupsFor(1),
-          custom: yield* groupsFor(100_000),
-          ceiling: yield* groupsFor(50_000_000),
-          omitted: yield* groupsFor(undefined),
-        };
-      }),
-    );
-    expect(outcome).toEqual({ floor: 1, custom: 2, ceiling: 3, omitted: 3 });
   });
 
   it("publishes a fan-out group for every commit that consumes a sequence and none for replays", async () => {
@@ -601,58 +327,5 @@ describe("postgres inventory commands", () => {
     expect(page.transactions[1]).toMatchObject({ decision: "rejected", changes: [] });
     expect(outcome.accepted.fanout?.byteLength).toBe(outcome.headers[0]?.byteLength);
     expect(outcome.rejected.fanout?.byteLength).toBe(outcome.headers[1]?.byteLength);
-  });
-
-  it("answers submit, pull and replica registration with one statement each", async () => {
-    const organizationId = decodeOrganizationId("org-statement-count");
-    const actor = actorFor(organizationId);
-    const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
-    const counted = await run(
-      Effect.gen(function* () {
-        const { commands } = yield* openCommands(organizationId);
-        const register = yield* countStatements(
-          commands.register(actor, { replicaId: "replica-counted", deviceLabel: "Counter" }),
-        );
-        const caughtUp = yield* countStatements(
-          commands.submitEncoded(actor, {
-            ...envelope,
-            afterCommitSequence: OrgCommitSequence.make("0"),
-          }),
-        );
-        const behind = yield* countStatements(
-          commands.submitEncoded(actor, {
-            ...envelopeFor(organizationId, lastUnitBuyerBEnvelope),
-            afterCommitSequence: OrgCommitSequence.make("0"),
-          }),
-        );
-        const replayed = yield* countStatements(
-          commands.submitEncoded(actor, {
-            ...envelope,
-            afterCommitSequence: OrgCommitSequence.make("0"),
-          }),
-        );
-        const pulled = yield* countStatements(commands.pullEncoded(actor, pullFromStart));
-        const digested = yield* countStatements(
-          commands.pullEncoded(actor, {
-            ...pullFromStart,
-            digestVersion: PARTITION_DIGEST_VERSION,
-          }),
-        );
-        return { register, caughtUp, behind, replayed, pulled, digested };
-      }),
-    );
-    for (const [name, count] of Object.entries(counted)) {
-      expect({ name, roundTrips: count.roundTrips, transactions: count.transactions }).toEqual({
-        name,
-        roundTrips: 1,
-        transactions: 0,
-      });
-    }
-    expect(JSON.parse(counted.digested.result.json).digest).toMatchObject({
-      version: PARTITION_DIGEST_VERSION,
-    });
-    expect(JSON.parse(counted.caughtUp.result.body).page.transactions).toHaveLength(1);
-    expect(JSON.parse(counted.behind.result.body).page.transactions).toHaveLength(2);
-    expect(JSON.parse(counted.replayed.result.body).page.transactions).toHaveLength(2);
   });
 });

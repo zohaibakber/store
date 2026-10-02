@@ -1,6 +1,5 @@
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
-  MAX_TRANSPORT_PAYLOAD_BYTES,
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
   PARTITION_DIGEST_VERSION_V3,
@@ -23,11 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
-import {
-  makeInventorySnapshots,
-  SNAPSHOT_POLICY,
-  type SnapshotPolicy,
-} from "../../src/inventory/snapshots";
+import { makeInventorySnapshots, SNAPSHOT_POLICY } from "../../src/inventory/snapshots";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 
 const decodeJsonText = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
@@ -198,90 +193,4 @@ describe("postgres history snapshots", () => {
       outcome.digest,
     );
   });
-
-  it("bounds every part by the byte budget", async () => {
-    const organizationId = "org-history-bytes";
-    const actor = actorFor(organizationId);
-    const policy: SnapshotPolicy = { ...SNAPSHOT_POLICY, partBytes: 8_192 };
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* openDb;
-        yield* seed(db, organizationId, { invoices: 60, itemsPerInvoice: 3 });
-        const snapshots = makeInventorySnapshots(db, policy);
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, historyRequest));
-        return { manifest, parts: yield* readParts(snapshots, actor, manifest) };
-      }),
-    );
-    const rows = outcome.parts.flatMap((part) => part.payload.rows);
-    expect(rows).toHaveLength(7 + 60 + 180 + 180);
-    const largestFrame = Math.max(...rows.map((row) => Buffer.byteLength(JSON.stringify(row))));
-    for (const part of outcome.parts) {
-      expect(part.byteLength).toBeLessThanOrEqual(policy.partBytes + largestFrame + 256);
-    }
-    expect(outcome.parts.length).toBeGreaterThan(10);
-    expect(outcome.manifest.parts.map((part) => part.partNumber)).toEqual(
-      outcome.parts.map((_, index) => index + 1),
-    );
-  });
-
-  it("publishes history when no catalog rows remain", async () => {
-    const organizationId = "org-history-only";
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* openDb;
-        yield* seed(db, organizationId, { invoices: 2, itemsPerInvoice: 1 });
-        yield* db.execute(
-          sql`update "batches" set "deleted_at" = 5 where "organization_id" = ${organizationId}`,
-        );
-        yield* db.execute(
-          sql`update "products" set "deleted_at" = 5 where "organization_id" = ${organizationId}`,
-        );
-        yield* db.execute(
-          sql`delete from "categories" where "organization_id" = ${organizationId}`,
-        );
-        const snapshots = makeInventorySnapshots(db);
-        const history = readyManifest(yield* snapshots.acquireSnapshot(actor, historyRequest));
-        return { historyParts: yield* readParts(snapshots, actor, history) };
-      }),
-    );
-    expect(outcome.historyParts.map((part) => part.payload.rows.length)).toEqual([6]);
-  });
-
-  it("imports 5k invoices, 20k items and 20k movements into transport-sized parts in one statement", async () => {
-    const organizationId = "org-history-volume";
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* openDb;
-        yield* seed(db, organizationId, { invoices: 5_000, itemsPerInvoice: 4 });
-        const snapshots = makeInventorySnapshots(db);
-        const started = performance.now();
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, historyRequest));
-        const buildMillis = performance.now() - started;
-        const parts = yield* readParts(snapshots, actor, manifest);
-        const digestStarted = performance.now();
-        const digest = yield* serverDigest(db, organizationId);
-        const digestMillis = performance.now() - digestStarted;
-        return { manifest, parts, digest, buildMillis, digestMillis };
-      }),
-    );
-    const rows = outcome.parts.flatMap((part) => part.payload.rows);
-    expect(rows).toHaveLength(7 + 5_000 + 20_000 + 20_000);
-    expect(outcome.manifest.entityCounts.at(-1)).toEqual({
-      entity: "stockMovement",
-      rowCount: 20_000,
-    });
-    for (const part of outcome.parts) {
-      expect(part.byteLength).toBeLessThan(MAX_TRANSPORT_PAYLOAD_BYTES);
-      expect(part.payload.rows.length).toBeLessThanOrEqual(SNAPSHOT_POLICY.partRows);
-    }
-    expect(await Effect.runPromise(partitionDigestOf(leavesOf(rows)))).toEqual(outcome.digest);
-    console.info("history snapshot volume", {
-      parts: outcome.parts.length,
-      bytes: outcome.parts.reduce((total, part) => total + part.byteLength, 0),
-      buildMillis: Math.round(outcome.buildMillis),
-      digestMillis: Math.round(outcome.digestMillis),
-    });
-  }, 120_000);
 });

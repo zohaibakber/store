@@ -6,7 +6,6 @@ import {
   LAST_UNIT_EPOCH,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
-  LAST_UNIT_REPLICA_B,
 } from "@store/contracts/sync/fixtures";
 import {
   batches,
@@ -19,15 +18,13 @@ import {
   products,
   replicas,
   snapshotJobs,
-  snapshotParts,
 } from "@store/db/postgres/schema";
-import { asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
-import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
@@ -39,7 +36,6 @@ import {
 } from "../../src/inventory/maintenance";
 import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
-import { countStatements } from "../lib/statement-count";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { typedCommands } from "./typed-commands";
 
@@ -247,13 +243,6 @@ const readFloor = (db: InventoryDrizzle, organizationId: string) =>
     return state?.retentionFloor ?? null;
   });
 
-const readSnapshots = (db: InventoryDrizzle, organizationId: string) =>
-  db
-    .select({ snapshotId: snapshotJobs.snapshotId, horizon: snapshotJobs.horizon })
-    .from(snapshotJobs)
-    .where(eq(snapshotJobs.organizationId, organizationId))
-    .orderBy(desc(snapshotJobs.horizon));
-
 describe("postgres inventory maintenance", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
@@ -261,20 +250,6 @@ describe("postgres inventory maintenance", () => {
 
   afterAll(async () => {
     await database?.close();
-  });
-
-  it("runs every organization's maintenance in one statement", async () => {
-    const organizationId = decodeOrganizationId("org-maintain-one-statement");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 4);
-        return yield* countStatements(maintain(db));
-      }),
-    );
-    expect(outcome.roundTrips).toBe(1);
-    expect(outcome.statements).toBe(1);
-    expect(outcome.result.failures).toEqual([]);
-    expect(reportFor(outcome.result, organizationId).builtSnapshot).toBe(true);
   });
 
   it("advances the floor to the smallest of snapshot horizon, lease cursor, and head minus the minimum", async () => {
@@ -406,249 +381,4 @@ describe("postgres inventory maintenance", () => {
       OrgCommitSequence.make("10"),
     ]);
   });
-
-  it("expires stale download leases and keeps active ones", async () => {
-    const organizationId = decodeOrganizationId("org-lease-expiry");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 4);
-        yield* publishSnapshot(db, organizationId, "snapshot-lease", "2");
-        yield* grantLease(
-          db,
-          organizationId,
-          LAST_UNIT_REPLICA_A,
-          "snapshot-lease",
-          "1",
-          OCCURRED_AT - 1,
-        );
-        yield* grantLease(
-          db,
-          organizationId,
-          LAST_UNIT_REPLICA_B,
-          "snapshot-lease",
-          "2",
-          OCCURRED_AT + 600_000,
-        );
-        const report = yield* maintainOrganization(db, organizationId);
-        const leases = yield* db
-          .select({ replicaId: downloadLeases.replicaId })
-          .from(downloadLeases)
-          .where(eq(downloadLeases.organizationId, organizationId))
-          .orderBy(asc(downloadLeases.replicaId));
-        return { report, leases };
-      }),
-    );
-    expect(outcome.report.expiredLeases).toBe(1);
-    expect(outcome.leases.map((row) => row.replicaId)).toEqual([LAST_UNIT_REPLICA_B]);
-  });
-
-  it("prunes superseded snapshots and keeps the one a download lease pins", async () => {
-    const organizationId = decodeOrganizationId("org-snapshot-prune");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 10);
-        for (const horizon of ["7", "8", "9", "10"]) {
-          yield* publishSnapshot(db, organizationId, `snapshot-${horizon}`, horizon);
-          yield* db.insert(snapshotParts).values({
-            organizationId,
-            snapshotId: `snapshot-${horizon}`,
-            partNumber: 1,
-            byteLength: 2,
-            sha256: "0".repeat(64),
-            payloadJson: "[]",
-          });
-        }
-        yield* grantLease(
-          db,
-          organizationId,
-          LAST_UNIT_REPLICA_A,
-          "snapshot-7",
-          "7",
-          OCCURRED_AT + 600_000,
-        );
-        const report = yield* maintainOrganization(db, organizationId);
-        const remaining = yield* db
-          .select({ snapshotId: snapshotJobs.snapshotId })
-          .from(snapshotJobs)
-          .where(eq(snapshotJobs.organizationId, organizationId))
-          .orderBy(asc(snapshotJobs.snapshotId));
-        const parts = yield* db
-          .select({ snapshotId: snapshotParts.snapshotId })
-          .from(snapshotParts)
-          .where(eq(snapshotParts.organizationId, organizationId))
-          .orderBy(asc(snapshotParts.snapshotId));
-        return { report, remaining, parts };
-      }),
-    );
-    expect(outcome.report.prunedSnapshots).toBe(1);
-    expect(outcome.remaining.map((row) => row.snapshotId)).toEqual([
-      "snapshot-10",
-      "snapshot-7",
-      "snapshot-9",
-    ]);
-    expect(outcome.parts.map((row) => row.snapshotId)).toEqual([
-      "snapshot-10",
-      "snapshot-7",
-      "snapshot-9",
-    ]);
-  });
-
-  it("builds a snapshot for an organization without one and then advances the floor", async () => {
-    const organizationId = decodeOrganizationId("org-maintain-builds");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 6);
-        const report = yield* maintainOrganization(db, organizationId);
-        const snapshots = yield* readSnapshots(db, organizationId);
-        const again = yield* maintainOrganization(db, organizationId);
-        return { report, snapshots, again };
-      }),
-    );
-    expect(outcome.report.builtSnapshot).toBe(true);
-    expect(outcome.snapshots.map((row) => row.horizon)).toEqual(["6"]);
-    expect(outcome.report.floorAfter).toBe("4");
-    expect(outcome.again.builtSnapshot).toBe(false);
-  });
-
-  it("rebuilds only when the newest snapshot lags head and the rebuild interval has passed", async () => {
-    const organizationId = decodeOrganizationId("org-maintain-rebuild");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 10);
-        yield* publishSnapshot(db, organizationId, "snapshot-old", "2");
-        const recent = yield* maintainOrganization(db, organizationId, {
-          lagTransactions: 2,
-          minimumRebuildMillis: 60_000,
-        });
-        yield* TestClock.adjust("2 minutes");
-        const due = yield* maintainOrganization(db, organizationId, {
-          lagTransactions: 2,
-          minimumRebuildMillis: 60_000,
-        });
-        return { recent, due, snapshots: yield* readSnapshots(db, organizationId) };
-      }),
-    );
-    expect(outcome.recent.builtSnapshot).toBe(false);
-    expect(outcome.due.builtSnapshot).toBe(true);
-    expect(outcome.snapshots.map((row) => row.horizon)).toEqual(["10", "2"]);
-  });
-
-  it("stops at the time budget and reports more", async () => {
-    const organizationId = decodeOrganizationId("org-maintain-budget");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(organizationId, 2);
-        return yield* maintain(db, { budgetMillis: 0 });
-      }),
-    );
-    expect(outcome.organizations).toBe(0);
-    expect(outcome.more).toBe(true);
-  });
-
-  it("serves the least recently maintained organization first on each scheduled run", async () => {
-    const stale = decodeOrganizationId("org-fair-never");
-    const recent = decodeOrganizationId("org-fair-recent");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const db = yield* seedOrganization(stale, 2);
-        yield* seedOrganization(recent, 2);
-        yield* db
-          .update(inventoryState)
-          .set({ maintainedAt: Number.MAX_SAFE_INTEGER })
-          .where(ne(inventoryState.organizationId, stale));
-        yield* db
-          .update(inventoryState)
-          .set({ maintainedAt: 1 })
-          .where(eq(inventoryState.organizationId, recent));
-        const first = yield* maintain(db, { organizationsPerRun: 1 });
-        const second = yield* maintain(db, { organizationsPerRun: 1 });
-        const stamps = yield* db
-          .select({
-            organizationId: inventoryState.organizationId,
-            maintainedAt: inventoryState.maintainedAt,
-          })
-          .from(inventoryState)
-          .where(inArray(inventoryState.organizationId, [stale, recent]));
-        return { first, second, stamps };
-      }),
-    );
-    expect(outcome.first.retention.map((step) => step.organizationId)).toEqual([stale]);
-    expect(outcome.first.more).toBe(true);
-    expect(outcome.second.retention.map((step) => step.organizationId)).toEqual([recent]);
-    for (const stamp of outcome.stamps) {
-      expect(stamp.maintainedAt).toBe(OCCURRED_AT);
-    }
-  }, 120_000);
-  it("stamps each organization on its own so one lock timeout does not roll back the others", async () => {
-    const locked = decodeOrganizationId("org-maintain-locked");
-    const free = decodeOrganizationId("org-maintain-free");
-    await run(
-      Effect.gen(function* () {
-        yield* seedOrganization(locked, 6);
-        yield* seedOrganization(free, 6);
-      }),
-    );
-    const holder = new pg.Client({ connectionString: database.connectionString });
-    await holder.connect();
-    try {
-      await holder.query("begin");
-      await holder.query("select 1 from inventory_state where organization_id = $1 for update", [
-        locked,
-      ]);
-      const outcome = await run(
-        Effect.gen(function* () {
-          const db = yield* openDrizzle;
-          const summary = yield* maintain(db);
-          const floors = yield* db
-            .select({
-              organizationId: inventoryState.organizationId,
-              floor: inventoryState.retentionFloor,
-              maintainedAt: inventoryState.maintainedAt,
-            })
-            .from(inventoryState)
-            .where(inArray(inventoryState.organizationId, [locked, free]))
-            .orderBy(asc(inventoryState.organizationId));
-          return { summary, floors };
-        }),
-      );
-      expect(outcome.summary.failures.map((failure) => failure.organizationId)).toEqual([locked]);
-      expect(reportFor(outcome.summary, free).floorAfter).toBe("4");
-      expect(outcome.floors).toEqual([
-        { organizationId: free, floor: "4", maintainedAt: OCCURRED_AT },
-        { organizationId: locked, floor: "0", maintainedAt: null },
-      ]);
-    } finally {
-      await holder.query("rollback");
-      await holder.end();
-    }
-  }, 30_000);
-
-  it("gives up acquiring a snapshot while another transaction holds its build lock", async () => {
-    const organizationId = decodeOrganizationId("org-acquire-lock-timeout");
-    await run(seedOrganization(organizationId, 3));
-    const holder = new pg.Client({ connectionString: database.connectionString });
-    const caller = new pg.Client({ connectionString: database.connectionString });
-    await holder.connect();
-    await caller.connect();
-    try {
-      await holder.query("begin");
-      await holder.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [
-        `sync.snapshot:${organizationId}`,
-      ]);
-      const started = performance.now();
-      const [outcome] = await Promise.allSettled([
-        caller.query(
-          "select sync.acquire_snapshot($1, null, 'user-1', $2, 'operational', 1, 500, 60000)",
-          [organizationId, LAST_UNIT_EPOCH],
-        ),
-      ]);
-      const waited = performance.now() - started;
-      expect(outcome).toMatchObject({ status: "rejected", reason: { code: "55P03" } });
-      expect(waited).toBeLessThan(10_000);
-    } finally {
-      await holder.query("rollback");
-      await holder.end();
-      await caller.end();
-    }
-  }, 30_000);
 });

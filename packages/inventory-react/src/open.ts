@@ -1,23 +1,10 @@
 import {
-  DEFAULT_COLLECTION_MAXIMUM_ROWS,
+  catalogCollectionOptions,
   EMPTY_SYNC_ACTIVITY,
-  decodeBatchSqliteRows,
-  decodeCategorySqliteRows,
-  decodeInvoiceItemSqliteRows,
-  decodeInvoiceSqliteRows,
-  decodeProductSqliteRows,
-  decodePurchaseOrderItemSqliteRows,
-  decodePurchaseOrderSqliteRows,
-  decodeStockMovementSqliteRows,
-  decodeSupplierSqliteRows,
   inventoryReplicaScope,
-  sqliteCollectionOptions,
-  syncActivityFromStatuses,
+  makeCatalogCommands,
   syncStatusFromOutbox,
   syncStatusWithHealth,
-  createInvoiceCoherenceGate,
-  type InventoryCollectionDescriptor,
-  type InventoryCollectionRow,
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ReplicaHandle,
@@ -32,7 +19,6 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Atom from "effect/unstable/reactivity/Atom";
 
-import { makeInventoryActions } from "./actions";
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
 import { replicaAuthorityOf, type InventoryHost, type InventoryScope } from "./host";
@@ -47,7 +33,7 @@ import {
   readPurchaseOrderPageIds,
 } from "./purchasing";
 import { searchCatalogProducts } from "./search";
-import type { Inventory, InventoryActor } from "./types";
+import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
 export const inventoryScopeId = (host: InventoryHost, scope: InventoryScope) =>
   inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
@@ -62,20 +48,6 @@ const actorFor = (
   deviceId: replica.replicaId ?? host.deviceId,
 });
 
-const replicaDescriptor = <Row extends InventoryCollectionRow>(
-  id: string,
-  source: InventoryCollectionDescriptor<Row>["source"],
-  syncMode: InventoryCollectionDescriptor<Row>["syncMode"],
-  decodeRows: InventoryCollectionDescriptor<Row>["decodeRows"],
-): InventoryCollectionDescriptor<Row> => ({
-  id,
-  source,
-  syncMode,
-  maximumRows: DEFAULT_COLLECTION_MAXIMUM_ROWS,
-  getKey: (row) => row.id,
-  decodeRows,
-});
-
 type OutboxSnapshot = {
   readonly status: InventorySyncStatus;
   readonly activity: InventorySyncActivity | undefined;
@@ -83,23 +55,13 @@ type OutboxSnapshot = {
 
 const STORAGE_FAILED = "Local replica storage failed.";
 
-const readOutboxSnapshot = (replica: ReplicaHandle) => {
-  const readActivity = replica.readSyncActivity;
-  if (readActivity !== undefined) {
-    return Effect.tryPromise(() => readActivity()).pipe(
-      Effect.map((read): OutboxSnapshot => ({
-        status: syncStatusFromOutbox(read.statuses),
-        activity: read.activity,
-      })),
-    );
-  }
-  return Effect.tryPromise(() => replica.readOutboxStatuses()).pipe(
-    Effect.map((statuses): OutboxSnapshot => ({
-      status: syncStatusFromOutbox(statuses),
-      activity: syncActivityFromStatuses(statuses),
+const readOutboxSnapshot = (replica: ReplicaHandle) =>
+  Effect.tryPromise(() => replica.readSyncActivity()).pipe(
+    Effect.map((read): OutboxSnapshot => ({
+      status: syncStatusFromOutbox(read.statuses),
+      activity: read.activity,
     })),
   );
-};
 
 const readSyncSnapshot = (replica: ReplicaHandle): Effect.Effect<OutboxSnapshot> =>
   readOutboxSnapshot(replica).pipe(
@@ -140,100 +102,20 @@ const workspaceSources = (
   insights,
 });
 
-type CollectionDeps = {
-  readonly executor: ReplicaHandle;
-  readonly changeFeed: ReplicaHandle;
-  readonly coherence: ReturnType<typeof createInvoiceCoherenceGate>;
+const openCollections = (dbClient: DbClient, scopeId: string, replica: ReplicaHandle) => {
+  const options = catalogCollectionOptions(scopeId, replica);
+  return {
+    categories: dbClient.collection(collectionOptions(options.categories)),
+    products: dbClient.collection(collectionOptions(options.products)),
+    batches: dbClient.collection(collectionOptions(options.batches)),
+    invoices: dbClient.collection(collectionOptions(options.invoices)),
+    invoiceItems: dbClient.collection(collectionOptions(options.invoiceItems)),
+    stockMovements: dbClient.collection(collectionOptions(options.stockMovements)),
+    suppliers: dbClient.collection(collectionOptions(options.suppliers)),
+    purchaseOrders: dbClient.collection(collectionOptions(options.purchaseOrders)),
+    purchaseOrderItems: dbClient.collection(collectionOptions(options.purchaseOrderItems)),
+  };
 };
-
-const mountCollection = <Row extends InventoryCollectionRow>(
-  dbClient: DbClient,
-  deps: CollectionDeps,
-  id: string,
-  source: InventoryCollectionDescriptor<Row>["source"],
-  syncMode: InventoryCollectionDescriptor<Row>["syncMode"],
-  decodeRows: InventoryCollectionDescriptor<Row>["decodeRows"],
-) =>
-  dbClient.collection(
-    collectionOptions(
-      sqliteCollectionOptions(replicaDescriptor(id, source, syncMode, decodeRows), deps),
-    ),
-  );
-
-const openCollections = (dbClient: DbClient, scopeId: string, deps: CollectionDeps) => ({
-  categories: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:categories`,
-    "categories",
-    "eager",
-    decodeCategorySqliteRows,
-  ),
-  products: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:products`,
-    "products",
-    "on-demand",
-    decodeProductSqliteRows,
-  ),
-  batches: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:batches`,
-    "batches",
-    "on-demand",
-    decodeBatchSqliteRows,
-  ),
-  invoices: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:invoices`,
-    "invoices",
-    "on-demand",
-    decodeInvoiceSqliteRows,
-  ),
-  invoiceItems: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:invoice-items`,
-    "invoiceItems",
-    "on-demand",
-    decodeInvoiceItemSqliteRows,
-  ),
-  stockMovements: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:stock-movements`,
-    "stockMovements",
-    "on-demand",
-    decodeStockMovementSqliteRows,
-  ),
-  suppliers: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:suppliers`,
-    "suppliers",
-    "eager",
-    decodeSupplierSqliteRows,
-  ),
-  purchaseOrders: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:purchase-orders`,
-    "purchaseOrders",
-    "on-demand",
-    decodePurchaseOrderSqliteRows,
-  ),
-  purchaseOrderItems: mountCollection(
-    dbClient,
-    deps,
-    `${scopeId}:purchase-order-items`,
-    "purchaseOrderItems",
-    "on-demand",
-    decodePurchaseOrderItemSqliteRows,
-  ),
-});
 
 const commitWakes = (replica: ReplicaHandle) =>
   Stream.callback<void>(
@@ -319,11 +201,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
   Effect.gen(function* () {
     const replica = yield* acquireReplica(host, scope);
     const dbClient = yield* acquireDbClient;
-    const collections = openCollections(dbClient, inventoryScopeId(host, scope), {
-      executor: replica,
-      changeFeed: replica,
-      coherence: createInvoiceCoherenceGate(),
-    });
+    const collections = openCollections(dbClient, inventoryScopeId(host, scope), replica);
     const outbox = yield* readOutboxSnapshot(replica).pipe(Effect.mapError(catalogOpenFailure));
     const insights = yield* makeInsightsSource(replica);
     const atoms = yield* Effect.acquireRelease(
@@ -335,14 +213,21 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     yield* followSyncStatus(replica, atoms);
     const tables = { dbClient, ...collections };
     const actor = actorFor(host, scope, replica);
-    const actions = makeInventoryActions(
-      actor,
-      replica,
-      () => {
-        replica.wakeSyncUpload?.();
+    const wakeSyncUpload = () => {
+      replica.wakeSyncUpload?.();
+    };
+    const actions: InventoryActions = {
+      ...makeCatalogCommands({
+        actor,
+        replica,
+        wakeSyncUpload,
+        onExecution: (execution) => atoms.registry.set(atoms.commandExecution, execution),
+      }),
+      retrySync: async () => {
+        await replica.retryRecovery?.();
       },
-      atoms,
-    );
+      syncNow: wakeSyncUpload,
+    };
     return { ...tables, atoms, actions, authority: replicaAuthorityOf(scope) };
   });
 

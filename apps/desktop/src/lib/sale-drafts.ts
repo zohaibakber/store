@@ -72,7 +72,7 @@ export const initialSaleDrafts = (id: InvoiceId): SaleDrafts => ({
   drafts: [emptyDraft(id, 1)],
 });
 
-export const draftHasLines = (draft: SaleDraft) => draft.lines.length > 0;
+const draftHasLines = (draft: SaleDraft) => draft.lines.length > 0;
 
 export const isBlankDraft = (draft: SaleDraft) =>
   !draftHasLines(draft) && draft.customerName.trim() === "";

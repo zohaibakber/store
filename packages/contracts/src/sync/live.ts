@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 
+import { PositiveIntFromString } from "../internal/primitives";
 import { SyncIdentifier } from "../schema-primitives";
 import {
   OrgCommitSequence,
@@ -32,13 +33,9 @@ export const SyncLiveWakeHint = Schema.Struct({
 });
 export type SyncLiveWakeHint = typeof SyncLiveWakeHint.Type;
 
-const LiveMaxBytes = Schema.NumberFromString.pipe(
-  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
-);
-
 export const LiveSocketQuery = Schema.Struct({
   replicaId: SyncIdentifier,
-  maxBytes: Schema.optionalKey(LiveMaxBytes),
+  maxBytes: Schema.optionalKey(PositiveIntFromString),
 });
 export type LiveSocketQuery = typeof LiveSocketQuery.Type;
 

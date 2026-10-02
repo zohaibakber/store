@@ -1,5 +1,8 @@
 import * as Schema from "effect/Schema";
 
+import { EpochMillis, UtcOffsetMinutes } from "../internal/primitives";
+import { PositiveInt, SyncIdentifier } from "../schema-primitives";
+
 export const MAX_PRODUCT_INSIGHT_IDS = 200;
 export const MAX_RESTOCK_PAGE_ROWS = 100;
 const MAX_RESTOCK_SEARCH_LENGTH = 100;
@@ -7,13 +10,6 @@ export const ANALYTICS_ALGORITHM_VERSION = 2;
 export const SUMMARY_ATTENTION_LIMIT = 8;
 export const SUMMARY_EXPIRING_LIMIT = 50;
 export const ANALYTICS_HISTORY_DAYS = 180;
-
-const Integer = Schema.Number.check(Schema.isInt());
-const NonNegativeInteger = Integer.check(Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Integer.check(Schema.isGreaterThanOrEqualTo(1));
-const EpochMillis = NonNegativeInteger;
-const UtcOffsetMinutes = Integer.check(Schema.isBetween({ minimum: -840, maximum: 840 }));
-const NonEmptyId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 
 const between = (minimum: number, maximum: number) =>
   Schema.Number.check(Schema.isBetween({ minimum, maximum }));
@@ -64,8 +60,8 @@ export const DemandForecast = Schema.Struct({
   confidence: Schema.Literals(["high", "medium", "low"]),
   trend: Schema.Literals(["rising", "falling", "steady", "unknown"]),
   trendRatio: Schema.NullOr(Schema.Number),
-  observedDays: NonNegativeInteger,
-  sellingDays: NonNegativeInteger,
+  observedDays: Schema.Natural,
+  sellingDays: Schema.Natural,
   meanAbsoluteError: Schema.NullOr(Schema.Number),
 });
 export type DemandForecast = typeof DemandForecast.Type;
@@ -158,10 +154,10 @@ export const SalesRange = Schema.Literals(SALES_RANGE_DAYS);
 export type SalesRange = typeof SalesRange.Type;
 
 export const SalesDay = Schema.Struct({
-  day: Integer,
+  day: Schema.Int,
   date: Schema.Number,
   revenue: Schema.Number,
-  invoices: NonNegativeInteger,
+  invoices: Schema.Natural,
   previousRevenue: Schema.Number,
 });
 export type SalesDay = typeof SalesDay.Type;
@@ -179,13 +175,13 @@ export type TopProduct = typeof TopProduct.Type;
 export const SalesPeriod = Schema.Struct({
   days: SalesRange,
   revenue: Schema.Number,
-  invoices: NonNegativeInteger,
+  invoices: Schema.Natural,
   averageBasket: Schema.NullOr(Schema.Number),
   grossProfit: Schema.NullOr(Schema.Number),
   margin: Schema.NullOr(Schema.Number),
   costCoverage: Schema.Number,
   previousRevenue: Schema.Number,
-  previousInvoices: NonNegativeInteger,
+  previousInvoices: Schema.Natural,
   revenueChange: Schema.NullOr(Schema.Number),
   invoicesChange: Schema.NullOr(Schema.Number),
   series: Schema.Array(SalesDay),
@@ -200,50 +196,50 @@ export const InsightsInventoryTotals = Schema.Struct({
   expiryRiskValue: Schema.Number,
   expiredValue: Schema.Number,
   reorderCost: Schema.Number,
-  reorderCount: NonNegativeInteger,
-  missingCostCount: NonNegativeInteger,
+  reorderCount: Schema.Natural,
+  missingCostCount: Schema.Natural,
 });
 export type InsightsInventoryTotals = typeof InsightsInventoryTotals.Type;
 
 export const InsightsSalesSummary = Schema.Struct({
-  today: Schema.Struct({ revenue: Schema.Number, invoices: NonNegativeInteger }),
+  today: Schema.Struct({ revenue: Schema.Number, invoices: Schema.Natural }),
   periods: Schema.Struct({ 7: SalesPeriod, 30: SalesPeriod, 90: SalesPeriod }),
-  weekdays: Schema.Array(Schema.Struct({ weekday: Integer, revenue: Schema.Number })),
-  hours: Schema.Array(Schema.Struct({ hour: Integer, invoices: NonNegativeInteger })),
-  peakHour: Schema.NullOr(Integer),
+  weekdays: Schema.Array(Schema.Struct({ weekday: Schema.Int, revenue: Schema.Number })),
+  hours: Schema.Array(Schema.Struct({ hour: Schema.Int, invoices: Schema.Natural })),
+  peakHour: Schema.NullOr(Schema.Int),
 });
 export type InsightsSalesSummary = typeof InsightsSalesSummary.Type;
 
 export const StockStatusCounts = Schema.Struct({
-  out: NonNegativeInteger,
-  critical: NonNegativeInteger,
-  low: NonNegativeInteger,
-  dead: NonNegativeInteger,
-  overstock: NonNegativeInteger,
-  healthy: NonNegativeInteger,
-  inactive: NonNegativeInteger,
+  out: Schema.Natural,
+  critical: Schema.Natural,
+  low: Schema.Natural,
+  dead: Schema.Natural,
+  overstock: Schema.Natural,
+  healthy: Schema.Natural,
+  inactive: Schema.Natural,
 });
 export type StockStatusCounts = typeof StockStatusCounts.Type;
 
 export const AnalyticsRun = Schema.Struct({
-  runId: PositiveInteger,
-  revision: PositiveInteger,
+  runId: PositiveInt,
+  revision: PositiveInt,
   kind: Schema.Literals(["full", "incremental"]),
   completedAt: EpochMillis,
   generatedAt: EpochMillis,
   sourceGeneration: Schema.String,
-  sourceVersion: NonNegativeInteger,
+  sourceVersion: Schema.Natural,
   policyVersion: Schema.String,
-  algorithmVersion: PositiveInteger,
-  today: Integer,
+  algorithmVersion: PositiveInt,
+  today: Schema.Int,
   utcOffsetMinutes: UtcOffsetMinutes,
-  productCount: NonNegativeInteger,
+  productCount: Schema.Natural,
 });
 export type AnalyticsRun = typeof AnalyticsRun.Type;
 
 export const AnalyticsStatus = Schema.Struct({
   state: Schema.Literals(["idle", "building", "refreshing"]),
-  progress: Schema.NullOr(Schema.Struct({ done: NonNegativeInteger, total: NonNegativeInteger })),
+  progress: Schema.NullOr(Schema.Struct({ done: Schema.Natural, total: Schema.Natural })),
   policyCurrent: Schema.Boolean,
   dateCurrent: Schema.Boolean,
   failure: Schema.NullOr(Schema.String),
@@ -259,16 +255,16 @@ export type InsightsContext = typeof InsightsContext.Type;
 export const InsightsSummary = Schema.Struct({
   run: AnalyticsRun,
   generatedAt: EpochMillis,
-  today: Integer,
+  today: Schema.Int,
   utcOffsetMinutes: UtcOffsetMinutes,
   policy: StockPolicy,
-  productCount: NonNegativeInteger,
+  productCount: Schema.Natural,
   counts: StockStatusCounts,
   alerts: Schema.Array(InsightAlert),
   attention: Schema.Array(ProductInsight),
-  attentionCount: NonNegativeInteger,
+  attentionCount: Schema.Natural,
   expiring: Schema.Array(ExpiringBatch),
-  expiringCount: NonNegativeInteger,
+  expiringCount: Schema.Natural,
   inventory: InsightsInventoryTotals,
   sales: InsightsSalesSummary,
 });
@@ -280,7 +276,7 @@ export const InsightsSummaryRead = Schema.Struct({
 });
 export type InsightsSummaryRead = typeof InsightsSummaryRead.Type;
 
-export const ProductInsightIds = Schema.Array(NonEmptyId).check(
+export const ProductInsightIds = Schema.Array(SyncIdentifier).check(
   Schema.isMaxLength(MAX_PRODUCT_INSIGHT_IDS),
 );
 
@@ -321,8 +317,8 @@ export const RestockFilters = Schema.Struct({
 export type RestockFilters = typeof RestockFilters.Type;
 
 export const RestockCursor = Schema.Struct({
-  runId: PositiveInteger,
-  revision: PositiveInteger,
+  runId: PositiveInt,
+  revision: PositiveInt,
   priority: Schema.Number,
   nameKey: Schema.String,
   productId: Schema.String,
@@ -332,7 +328,7 @@ export type RestockCursor = typeof RestockCursor.Type;
 export const RestockPageRequest = Schema.Struct({
   filters: RestockFilters,
   cursor: Schema.NullOr(RestockCursor),
-  limit: Integer.check(Schema.isBetween({ minimum: 1, maximum: MAX_RESTOCK_PAGE_ROWS })),
+  limit: wholeBetween(1, MAX_RESTOCK_PAGE_ROWS),
 });
 export type RestockPageRequest = typeof RestockPageRequest.Type;
 
@@ -340,7 +336,7 @@ export const RestockPageRead = Schema.Struct({
   run: Schema.NullOr(AnalyticsRun),
   rows: Schema.Array(ProductInsight),
   nextCursor: Schema.NullOr(RestockCursor),
-  total: Schema.NullOr(NonNegativeInteger),
+  total: Schema.NullOr(Schema.Natural),
   cursorExpired: Schema.Boolean,
   status: AnalyticsStatus,
 });

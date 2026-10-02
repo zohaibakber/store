@@ -1,5 +1,6 @@
 export {
   INVOICE_SORT_COLUMNS,
+  MAX_LIST_SEARCH_LENGTH,
   PRODUCT_SORT_COLUMNS,
   PURCHASE_ORDER_SORT_COLUMNS,
   PURCHASE_ORDER_TABS,
@@ -24,6 +25,7 @@ export {
   useCatalogIsReady,
   useCatalogProductLookup,
   useInventoryActions,
+  useInventoryInvoices,
   useInventoryInsights,
   useIssuedInvoices,
   useLearnedSuppliers,
@@ -61,6 +63,7 @@ export {
   type InventoryActions,
   type InvoiceListRequest,
   type InvoiceSortColumn,
+  type ListPage,
   type ProductOnOrder,
   type ProductFacets,
   type ProductListFilters,

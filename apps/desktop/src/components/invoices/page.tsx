@@ -2,18 +2,17 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 
-import { InvoicesTable, useInvoicesTable, type InvoiceListView } from "@/components/invoices/table";
+import { useInvoicesTable, type InvoiceListView } from "@/components/invoices/table";
 import { DataTable, DataTableFilter } from "@/components/shared/data-table";
+import { ListTableContent } from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
-import { usePageInRange } from "@/hooks/use-page-in-range";
 import {
   useSuspenseInvoiceCount,
   useSuspenseInvoicePage,
   type InvoiceListRequest,
 } from "@/lib/inventory";
-import { cn } from "@/lib/utils";
 
 function InvoicesPage({
   loading,
@@ -30,14 +29,7 @@ function InvoicesPage({
   const router = useRouter();
   const rows = useSuspenseInvoicePage(request);
   const total = useSuspenseInvoiceCount(request.filters);
-  usePageInRange({
-    page: view.page,
-    pageSize: view.size,
-    total,
-    settled: !loading,
-    onPageChange: (page) => onViewChange({ ...view, page }),
-  });
-  const table = useInvoicesTable({ rows, total, view, onViewChange });
+  const table = useInvoicesTable({ rows, total, view, onViewChange, loading });
 
   return (
     <DataTable
@@ -55,9 +47,7 @@ function InvoicesPage({
         </Button>
       </PageActions>
       <PageLayout>
-        <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
-          <InvoicesTable />
-        </div>
+        <ListTableContent loading={loading} />
       </PageLayout>
     </DataTable>
   );

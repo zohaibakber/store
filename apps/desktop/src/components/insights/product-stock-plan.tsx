@@ -4,7 +4,7 @@ import { serviceLevelFor, type StockPolicy } from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AppErrorBoundary, AsyncBoundary } from "@/components/app/error-boundary";
 import {
   formatOrderNumber,
   PROGRESS_META,
@@ -178,11 +178,9 @@ export function ProductStockPlan({ productId }: { readonly productId: string }) 
             <PlanBody productId={productId} />
           </React.Suspense>
         </div>
-        <AppErrorBoundary fallback={null}>
-          <React.Suspense fallback={null}>
-            <OnOrder productId={productId} />
-          </React.Suspense>
-        </AppErrorBoundary>
+        <AsyncBoundary fallback={null}>
+          <OnOrder productId={productId} />
+        </AsyncBoundary>
       </FrameCard>
     </AppErrorBoundary>
   );

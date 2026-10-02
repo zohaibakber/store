@@ -1,7 +1,7 @@
 import type { PurchaseOrder, Supplier } from "@store/contracts";
 import * as React from "react";
 
-import { AppErrorBoundary } from "@/components/app/error-boundary";
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { Kbd } from "@/components/ui/kbd";
 import {
@@ -62,31 +62,28 @@ export function ReceiveDeliverySheet({
           </SheetDescription>
         </SheetHeader>
         {open ? (
-          <AppErrorBoundary
-            fallback={
+          <AsyncBoundary
+            failed={
               <SheetPanel>
                 <p className="text-sm text-destructive-foreground">
                   The delivery form could not be loaded. Close it and try again.
                 </p>
               </SheetPanel>
             }
+            fallback={
+              <SheetPanel>
+                <LoadingSpinner className="h-48" />
+              </SheetPanel>
+            }
           >
-            <React.Suspense
-              fallback={
-                <SheetPanel>
-                  <LoadingSpinner className="h-48" />
-                </SheetPanel>
-              }
-            >
-              <ReceiveDeliveryBody
-                note={note}
-                onDone={() => onOpenChange(false)}
-                onReceived={onReceived}
-                order={order}
-                prefill={prefill}
-              />
-            </React.Suspense>
-          </AppErrorBoundary>
+            <ReceiveDeliveryBody
+              note={note}
+              onDone={() => onOpenChange(false)}
+              onReceived={onReceived}
+              order={order}
+              prefill={prefill}
+            />
+          </AsyncBoundary>
         ) : null}
       </SheetPopup>
     </Sheet>

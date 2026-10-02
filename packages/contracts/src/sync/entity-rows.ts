@@ -25,6 +25,7 @@ import {
   SupplierId,
 } from "../ids";
 import { PositiveInt } from "../schema-primitives";
+import { InvoiceItem, StockMovement } from "../store/schema";
 import type { SyncEntity } from "./schema";
 
 const NullableNatural = Schema.NullOr(Schema.Natural);
@@ -66,7 +67,7 @@ export const InvoiceItemRow = createSelectSchema(invoiceItems, {
   batchId: BatchId,
   productName: Schema.NonEmptyString,
   quantity: PositiveInt,
-  quantityType: Schema.Literals(["unit", "pack"]),
+  quantityType: InvoiceItem.fields.quantityType,
   baseUnitQuantity: PositiveInt,
   salePrice: Schema.Natural,
 });
@@ -77,7 +78,7 @@ export const StockMovementRow = createSelectSchema(stockMovements, {
   purchaseOrderId: Schema.NullOr(PurchaseOrderId).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),
   ),
-  type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
+  type: StockMovement.fields.type,
   packDelta: Schema.Int,
   unitDelta: Schema.Int,
   createdAt: Schema.Natural,

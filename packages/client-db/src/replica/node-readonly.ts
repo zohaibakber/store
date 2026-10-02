@@ -1,28 +1,19 @@
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 
-import { SqliteReplica } from "@store/sync/sql-client";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
 import * as Semaphore from "effect/Semaphore";
 
 import { ReplicaSnapshotFailure } from "./errors";
-import {
-  ReplicaSnapshotReader,
-  snapshotRunnerFromHandle,
-  type ReplicaSnapshotRunner,
-  type SnapshotQuery,
-} from "./snapshot-read";
+import type { ReplicaSnapshotRunner, SnapshotQuery } from "./snapshot-read";
 
 export type NodeSqliteRow = Record<string, SQLOutputValue>;
 
 const READ_BUSY_TIMEOUT_MILLIS = 5_000;
 
 const PREPARED_STATEMENTS = 128;
-
-const isMemoryPath = (path: string) => path === "" || path.includes(":memory:");
 
 const snapshotFailure = (cause: unknown) =>
   new ReplicaSnapshotFailure({
@@ -61,21 +52,8 @@ export const openReadonlySnapshotRunner = (path: string) =>
         Effect.acquireUseRelease(
           Effect.try({ try: () => db.exec("BEGIN"), catch: snapshotFailure }),
           () => work(query),
-          () => Effect.sync(() => db.exec("ROLLBACK")).pipe(Effect.ignore),
+          () => Effect.try(() => db.exec("ROLLBACK")).pipe(Effect.ignore),
         ),
       );
     return runner;
   });
-
-export const layerReadonlySnapshotReader = (
-  path: string,
-): Layer.Layer<ReplicaSnapshotReader, never, SqliteReplica> =>
-  Layer.effect(ReplicaSnapshotReader)(
-    SqliteReplica.use((handle) =>
-      isMemoryPath(path)
-        ? Effect.succeed(snapshotRunnerFromHandle(handle))
-        : openReadonlySnapshotRunner(path).pipe(
-            Effect.orElseSucceed(() => snapshotRunnerFromHandle(handle)),
-          ),
-    ),
-  );

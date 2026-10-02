@@ -1,16 +1,22 @@
 import "@sentry/electron/preload";
-import type {
-  IssuedSession,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
-} from "@store/auth";
-import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { ipcRenderer, contextBridge } from "electron";
 
 import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
+import {
+  AUTH_AUTHENTICATE_CHANNEL,
+  AUTH_BEGIN_GOOGLE_CHANNEL,
+  AUTH_COMPLETE_GOOGLE_CHANNEL,
+  AUTH_GET_SESSION_CHANNEL,
+  AUTH_IDENTIFY_CHANNEL,
+  AUTH_ORGANIZATION_CHANNEL,
+  AUTH_ORGANIZE_CHANNEL,
+  AUTH_RENEW_SESSION_CHANNEL,
+  AUTH_SESSION_CHANGED_CHANNEL,
+  AUTH_SIGN_OUT_CHANNEL,
+  type AuthIpcBridge,
+} from "./auth-channels";
 import {
   BACKUP_SAVE_CHANNEL,
   RESTORE_APPLY_CHANNEL,
@@ -19,7 +25,7 @@ import {
   type WorkspaceBackupIpcBridge,
 } from "./backup-channels";
 import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
-import { NEW_SALE_CHANNEL } from "./new-sale-channels";
+import { NEW_SALE_CHANNEL, type DesktopShellIpcBridge } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
   PUBLISH_DISCARD_CHANNEL,
@@ -55,17 +61,21 @@ import {
   type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
+import { SERVER_UPLOADS_CHANNEL, type ServerApiIpcBridge } from "./server-api-channels";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
   type ShareIpcBridge,
 } from "./share-channels";
-
-const invoke = <Result, Arguments extends ReadonlyArray<unknown> = []>(
-  channel: string,
-  ...args: Arguments
-): Promise<Result> => ipcRenderer.invoke(channel, ...args);
+import { THEME_SET_SOURCE_CHANNEL, type ThemeIpcBridge } from "./theme-channels";
+import {
+  UPDATER_CHECK_CHANNEL,
+  UPDATER_DOWNLOAD_CHANNEL,
+  UPDATER_EVENT_CHANNEL,
+  UPDATER_INSTALL_CHANNEL,
+  type UpdaterIpcBridge,
+} from "./updater-channels";
 
 const inventoryHttp: InventoryHttpBridge = {
   getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),
@@ -162,7 +172,7 @@ const workspacePublish: WorkspacePublishIpcBridge = {
 contextBridge.exposeInMainWorld("workspacePublish", workspacePublish);
 
 const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
-ipcRenderer.on("auth:session-changed", (_event, snapshot: WorkspaceSnapshot) => {
+ipcRenderer.on(AUTH_SESSION_CHANGED_CHANNEL, (_event, snapshot: WorkspaceSnapshot) => {
   sessionReplay.publish(snapshot);
 });
 
@@ -179,32 +189,31 @@ ipcRenderer.on(OAUTH_CALLBACK_CHANNEL, (_event, url: string) => {
   for (const listener of oauthCallbackListeners) listener(url);
 });
 
-contextBridge.exposeInMainWorld("auth", {
-  getSession: async () => {
-    const snapshot = await invoke<WorkspaceSnapshot>("auth:get-session");
-    sessionReplay.publish(snapshot);
-    return snapshot;
-  },
-  adoptSession: async (issued: IssuedSession | null) => {
-    const snapshot = await invoke<WorkspaceSnapshot, [IssuedSession | null]>(
-      "auth:adopt-session",
-      issued,
+const publishedSession = async (snapshot: Promise<WorkspaceSnapshot>) => {
+  const settled = await snapshot;
+  sessionReplay.publish(settled);
+  return settled;
+};
+
+const auth: AuthIpcBridge = {
+  getSession: () => publishedSession(ipcRenderer.invoke(AUTH_GET_SESSION_CHANNEL)),
+  identify: (input) => ipcRenderer.invoke(AUTH_IDENTIFY_CHANNEL, input),
+  authenticate: (credentials) =>
+    publishedSession(ipcRenderer.invoke(AUTH_AUTHENTICATE_CHANNEL, credentials)),
+  beginGoogle: () => ipcRenderer.invoke(AUTH_BEGIN_GOOGLE_CHANNEL),
+  completeGoogle: async (callbackUrl) => {
+    const snapshot: WorkspaceSnapshot | null = await ipcRenderer.invoke(
+      AUTH_COMPLETE_GOOGLE_CHANNEL,
+      callbackUrl,
     );
-    sessionReplay.publish(snapshot);
+    if (snapshot !== null) sessionReplay.publish(snapshot);
     return snapshot;
   },
-  renewSession: async () => {
-    const snapshot = await invoke<WorkspaceSnapshot>("auth:renew-session");
-    sessionReplay.publish(snapshot);
-    return snapshot;
-  },
-  signOut: () => invoke<void>("auth:sign-out"),
-  organizationRoster: () => invoke<OrganizationRoster>("auth:organization"),
-  organize: (command: OrganizationCommand) =>
-    invoke<OrganizationCommandResult, [OrganizationCommand]>("auth:organize", command),
-  openExternal: (url: string) => invoke<void, [string]>("auth:open-external", url),
-  getOAuthRedirectUri: () => invoke<string>("auth:get-oauth-redirect-uri"),
-  onOAuthCallback(callback: (url: string) => void) {
+  renewSession: () => publishedSession(ipcRenderer.invoke(AUTH_RENEW_SESSION_CHANNEL)),
+  signOut: () => ipcRenderer.invoke(AUTH_SIGN_OUT_CHANNEL),
+  organizationRoster: () => ipcRenderer.invoke(AUTH_ORGANIZATION_CHANNEL),
+  organize: (command) => ipcRenderer.invoke(AUTH_ORGANIZE_CHANNEL, command),
+  onOAuthCallback(callback) {
     oauthCallbackListeners.add(callback);
     const unclaimed = unclaimedOAuthCallback;
     unclaimedOAuthCallback = null;
@@ -213,43 +222,49 @@ contextBridge.exposeInMainWorld("auth", {
       oauthCallbackListeners.delete(callback);
     };
   },
-  onSessionChange(callback: (snapshot: WorkspaceSnapshot) => void) {
-    return sessionReplay.subscribe(callback);
+  onSessionChange: (callback) => sessionReplay.subscribe(callback),
+};
+
+contextBridge.exposeInMainWorld("auth", auth);
+
+const serverApi: ServerApiIpcBridge = {
+  analyseInvoices: (input) => ipcRenderer.invoke(SERVER_UPLOADS_CHANNEL, input),
+};
+
+contextBridge.exposeInMainWorld("serverApi", serverApi);
+
+const electronTheme: ThemeIpcBridge = {
+  setSource(source) {
+    ipcRenderer.send(THEME_SET_SOURCE_CHANNEL, source);
   },
-});
+};
 
-contextBridge.exposeInMainWorld("serverApi", {
-  analyseInvoices: (input: {
-    files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
-  }): Promise<InvoiceExtraction> => ipcRenderer.invoke("server:uploads", input),
-});
+contextBridge.exposeInMainWorld("electronTheme", electronTheme);
 
-contextBridge.exposeInMainWorld("electronTheme", {
-  setSource(source: "dark" | "light" | "system") {
-    ipcRenderer.send("theme:set-source", source);
-  },
-});
-
-contextBridge.exposeInMainWorld("desktopShell", {
-  onNewSale(callback: () => void) {
+const desktopShell: DesktopShellIpcBridge = {
+  onNewSale(callback) {
     const listener = () => callback();
     ipcRenderer.on(NEW_SALE_CHANNEL, listener);
     return () => ipcRenderer.off(NEW_SALE_CHANNEL, listener);
   },
-});
+};
+
+contextBridge.exposeInMainWorld("desktopShell", desktopShell);
 
 if (import.meta.env.PROD) {
-  contextBridge.exposeInMainWorld("updater", {
-    check: () => invoke<void>("updater:check"),
-    download: () => invoke<void>("updater:download"),
+  const updater: UpdaterIpcBridge = {
+    check: () => ipcRenderer.invoke(UPDATER_CHECK_CHANNEL),
+    download: () => ipcRenderer.invoke(UPDATER_DOWNLOAD_CHANNEL),
     install() {
-      ipcRenderer.send("updater:install");
+      ipcRenderer.send(UPDATER_INSTALL_CHANNEL);
     },
-    onEvent(callback: (event: UpdaterEvent) => void) {
+    onEvent(callback) {
       const listener = (_event: Electron.IpcRendererEvent, updaterEvent: UpdaterEvent) =>
         callback(updaterEvent);
-      ipcRenderer.on("updater:event", listener);
-      return () => ipcRenderer.off("updater:event", listener);
+      ipcRenderer.on(UPDATER_EVENT_CHANNEL, listener);
+      return () => ipcRenderer.off(UPDATER_EVENT_CHANNEL, listener);
     },
-  });
+  };
+
+  contextBridge.exposeInMainWorld("updater", updater);
 }

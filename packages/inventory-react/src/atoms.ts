@@ -1,5 +1,6 @@
 import {
   EMPTY_SYNC_ACTIVITY,
+  type CommandExecution,
   type InventorySubsetSummary,
   type InventorySyncActivity,
   type InventorySyncStatus,
@@ -78,11 +79,7 @@ export const stockPolicyAtom = Atom.kvs({
 
 export const minuteClockAtom = Atom.make(() => Date.now()).pipe(Atom.withRefresh("1 minute"));
 
-export type CommandExecutionState =
-  | { readonly _tag: "idle" }
-  | { readonly _tag: "accepting"; readonly operationId: string }
-  | { readonly _tag: "pending"; readonly operationId: string; readonly status: string }
-  | { readonly _tag: "failed"; readonly operationId: string; readonly message: string };
+export type CommandExecutionState = { readonly _tag: "idle" } | CommandExecution;
 
 type WorkspaceReadError = WorkspaceReadFailure;
 

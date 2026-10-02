@@ -3,8 +3,6 @@ import * as Schema from "effect/Schema";
 import { LocalCatalogReport } from "./local-catalog-standing";
 import { CatalogCounts } from "./workspace-backup";
 
-const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-
 export const PublishOffer = Schema.Union([
   Schema.TaggedStruct("none", {}),
   Schema.TaggedStruct("available", { counts: CatalogCounts, resuming: Schema.Boolean }),
@@ -12,7 +10,7 @@ export const PublishOffer = Schema.Union([
 ]);
 export type PublishOffer = typeof PublishOffer.Type;
 
-export const PublishProgress = Schema.Struct({ sent: Count, total: Count });
+export const PublishProgress = Schema.Struct({ sent: Schema.Natural, total: Schema.Natural });
 export type PublishProgress = typeof PublishProgress.Type;
 
 export const PublishOutcome = Schema.Union([

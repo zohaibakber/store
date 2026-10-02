@@ -1,13 +1,15 @@
 import * as Context from "effect/Context";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 import * as HttpApiSecurity from "effect/unstable/httpapi/HttpApiSecurity";
 
 import { AuthUnauthenticated } from "./http-errors";
 
-export class CurrentAccessToken extends Context.Service<CurrentAccessToken, string>()(
-  "@store/auth/CurrentAccessToken",
-) {}
+export class CurrentAccessToken extends Context.Service<
+  CurrentAccessToken,
+  Redacted.Redacted<string>
+>()("@store/auth/CurrentAccessToken") {}
 
 export class Authorization extends HttpApiMiddleware.Service<
   Authorization,
@@ -36,7 +38,5 @@ export const refreshCookieOptions = (secureCookies: boolean) =>
     path: "/",
   }) as const;
 
-export const optionalRedactedValue = (credential: Redacted.Redacted<string>) => {
-  const value = Redacted.value(credential);
-  return value.length > 0 ? value : undefined;
-};
+export const presentedCredential = (credential: Redacted.Redacted<string>) =>
+  Redacted.value(credential).length > 0 ? Option.some(credential) : Option.none();

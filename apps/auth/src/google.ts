@@ -1,43 +1,81 @@
-import { EmailAddress, type EmailAddress as EmailAddressType } from "@store/auth";
+import { EmailAddress, WebCrypto, type EmailAddress as EmailAddressType } from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
+import { constTrue } from "effect/Function";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import * as UrlParams from "effect/unstable/http/UrlParams";
 
+const GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_KEYS_URL = "https://www.googleapis.com/oauth2/v3/certs";
+const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
+
+const KEY_SET_DEFAULT_TTL_MS = 60 * 60 * 1_000;
+const KEY_SET_MAX_TTL_MS = 24 * 60 * 60 * 1_000;
+const KEY_SET_REFETCH_COOLDOWN_MS = 60 * 1_000;
+
+const textEncoder = new TextEncoder();
+
 const GoogleTokenResponse = Schema.Struct({
-  access_token: Schema.String,
+  id_token: Schema.String,
 });
 
-const GoogleUserInfo = Schema.Struct({
-  sub: Schema.String,
-  email: EmailAddress,
-  email_verified: Schema.Boolean,
-  name: Schema.String,
-  picture: Schema.optionalKey(Schema.String),
+const GoogleKeySet = Schema.Struct({
+  keys: Schema.Array(
+    Schema.Struct({
+      kid: Schema.optionalKey(Schema.String),
+      kty: Schema.String,
+      alg: Schema.optionalKey(Schema.String),
+      use: Schema.optionalKey(Schema.String),
+      n: Schema.optionalKey(Schema.String),
+      e: Schema.optionalKey(Schema.String),
+    }),
+  ),
 });
 
-const TokenInfoNumericClaim = Schema.Union([Schema.Finite, Schema.FiniteFromString]);
-const TokenInfoBooleanClaim = Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])]);
+const IdTokenHeader = Schema.Struct({
+  alg: Schema.Literal("RS256"),
+  kid: Schema.String,
+});
 
-const GoogleTokenInfo = Schema.Struct({
+const IdTokenClaims = Schema.Struct({
   iss: Schema.String,
   aud: Schema.String,
   sub: Schema.String,
-  exp: TokenInfoNumericClaim,
+  exp: Schema.Finite,
   email: EmailAddress,
-  email_verified: TokenInfoBooleanClaim,
+  email_verified: Schema.Union([Schema.Boolean, Schema.Literals(["true", "false"])]),
   name: Schema.optionalKey(Schema.String),
   picture: Schema.optionalKey(Schema.String),
+  nonce: Schema.optionalKey(Schema.String),
 });
 
-const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
-
 const isTrue = (value: boolean | "true" | "false") => value === true || value === "true";
+
+interface SigningKey {
+  readonly n: string;
+  readonly e: string;
+}
+
+interface KeySet {
+  readonly keys: ReadonlyMap<string, SigningKey>;
+  readonly fetchedAt: number;
+  readonly expiresAt: number;
+}
+
+interface IdTokenExpectation {
+  readonly audiences: ReadonlySet<string>;
+  readonly nonce: string | undefined;
+}
 
 export interface GoogleProfile {
   readonly providerAccountId: string;
@@ -55,10 +93,37 @@ export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()(
   },
 ) {}
 
+export class GoogleIdentityRejected extends Schema.TaggedError<GoogleIdentityRejected>()(
+  "Auth.GoogleIdentityRejected",
+  {
+    reason: Schema.Literals([
+      "Malformed",
+      "UnknownKey",
+      "Signature",
+      "Issuer",
+      "Audience",
+      "Expired",
+      "EmailUnverified",
+      "Nonce",
+    ]),
+    message: Schema.String,
+  },
+) {}
+
 export interface GoogleOAuthApi {
-  readonly authorizationUrl: (state: string) => URL;
-  readonly exchangeCode: (code: string) => Effect.Effect<GoogleProfile, GoogleOAuthError>;
-  readonly verifyIdToken: (idToken: string) => Effect.Effect<GoogleProfile, GoogleOAuthError>;
+  readonly authorizationUrl: (input: {
+    readonly state: string;
+    readonly codeChallenge: string;
+    readonly nonce: string;
+  }) => URL;
+  readonly exchangeCode: (input: {
+    readonly code: string;
+    readonly codeVerifier: string | undefined;
+    readonly nonce: string | undefined;
+  }) => Effect.Effect<GoogleProfile, GoogleOAuthError | GoogleIdentityRejected>;
+  readonly verifyIdToken: (
+    idToken: string,
+  ) => Effect.Effect<GoogleProfile, GoogleOAuthError | GoogleIdentityRejected>;
 }
 
 export class GoogleOAuth extends Context.Service<GoogleOAuth, GoogleOAuthApi>()(
@@ -67,7 +132,7 @@ export class GoogleOAuth extends Context.Service<GoogleOAuth, GoogleOAuthApi>()(
 
 interface GoogleOAuthConfiguration {
   readonly clientId: string;
-  readonly clientSecret: string;
+  readonly clientSecret: Redacted.Redacted<string>;
   readonly callbackUrl: string;
   readonly nativeClientIds?: ReadonlyArray<string>;
 }
@@ -75,20 +140,57 @@ interface GoogleOAuthConfiguration {
 const oauthError = (operation: string, cause: unknown) =>
   new GoogleOAuthError({ operation, message: String(cause), cause });
 
+const rejected = (reason: GoogleIdentityRejected["reason"], message: string) =>
+  new GoogleIdentityRejected({ reason, message });
+
+const malformed = () => rejected("Malformed", "The identity token is malformed.");
+
 const decodeOkJson = <A>(
   operation: string,
   schema: Schema.ConstraintDecoder<A>,
   response: HttpClientResponse.HttpClientResponse,
 ) =>
-  HttpClientResponse.filterStatusOk(response).pipe(
-    Effect.mapError((cause) =>
-      oauthError(
-        operation,
-        `Google request failed (${"response" in cause && cause.response ? cause.response.status : "transport"}).`,
-      ),
+  response.status >= 200 && response.status < 300
+    ? HttpClientResponse.schemaBodyJson(schema)(response).pipe(
+        Effect.mapError((cause) => oauthError(`${operation}.decode`, cause)),
+      )
+    : Effect.fail(oauthError(operation, `Google request failed (${response.status}).`));
+
+const decodeSegment = <A>(schema: Schema.Top & Schema.ConstraintDecoder<A>, segment: string) =>
+  Effect.fromResult(Encoding.decodeBase64UrlString(segment)).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
+    Effect.mapError(malformed),
+  );
+
+const keySetTtlMs = (cacheControl: string | undefined) => {
+  const seconds = Number(/max-age=(\d+)/.exec(cacheControl ?? "")?.[1]);
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.min(seconds * 1_000, KEY_SET_MAX_TTL_MS)
+    : KEY_SET_DEFAULT_TTL_MS;
+};
+
+const signingKeys = (keySet: typeof GoogleKeySet.Type): ReadonlyMap<string, SigningKey> =>
+  new Map(
+    keySet.keys.flatMap((key) =>
+      key.kty === "RSA" &&
+      key.kid !== undefined &&
+      key.n !== undefined &&
+      key.e !== undefined &&
+      (key.alg === undefined || key.alg === "RS256") &&
+      (key.use === undefined || key.use === "sig")
+        ? [[key.kid, { n: key.n, e: key.e }] as const]
+        : [],
     ),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(schema)),
-    Effect.mapError((cause) => oauthError(`${operation}.decode`, cause)),
+  );
+
+const verifySignature = (key: SigningKey, signature: Uint8Array, signingInput: string) =>
+  WebCrypto.verifyRs256(key, signature, textEncoder.encode(signingInput)).pipe(
+    Effect.mapError((failure) => oauthError("verifyIdToken.verify", failure.cause)),
+  );
+
+const sameNonce = (presented: string, expected: string) =>
+  WebCrypto.constantTimeEqual(textEncoder.encode(presented), textEncoder.encode(expected)).pipe(
+    Effect.mapError((failure) => oauthError("verifyIdToken.nonce", failure.cause)),
   );
 
 export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
@@ -96,110 +198,131 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
     GoogleOAuth,
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
+      const keySetCache = yield* Ref.make(Option.none<KeySet>());
+      const webAudience = new Set([configuration.clientId]);
       const audiences = new Set(
         [configuration.clientId, ...(configuration.nativeClientIds ?? [])].filter(
           (value) => value.trim().length > 0,
         ),
       );
-      const send = <A>(
-        operation: string,
-        decodeOperation: string,
-        schema: Schema.ConstraintDecoder<A>,
-        request: HttpClientRequest.HttpClientRequest,
-      ) =>
+
+      const execute = (operation: string, request: HttpClientRequest.HttpClientRequest) =>
         client.execute(request).pipe(
+          Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
           Effect.mapError((cause) => oauthError(operation, cause)),
-          Effect.flatMap((response) => decodeOkJson(decodeOperation, schema, response)),
         );
+
+      const fetchKeySet = Effect.fnUntraced(function* (now: number) {
+        const response = yield* execute("keys.request", HttpClientRequest.get(GOOGLE_KEYS_URL));
+        const keys = signingKeys(yield* decodeOkJson("keys", GoogleKeySet, response));
+        const keySet: KeySet = {
+          keys,
+          fetchedAt: now,
+          expiresAt: now + keySetTtlMs(response.headers["cache-control"]),
+        };
+        yield* Ref.set(keySetCache, Option.some(keySet));
+        return keySet;
+      });
+
+      const currentKeySet = (now: number) =>
+        Ref.get(keySetCache).pipe(
+          Effect.map(Option.filter((keySet) => keySet.expiresAt > now)),
+          Effect.flatMap(
+            Option.match({
+              onNone: () => fetchKeySet(now),
+              onSome: Effect.succeed,
+            }),
+          ),
+        );
+
+      const signingKey = Effect.fnUntraced(function* (kid: string, now: number) {
+        const cached = yield* currentKeySet(now);
+        const known = cached.keys.get(kid);
+        if (known) return known;
+        const refreshed =
+          now - cached.fetchedAt < KEY_SET_REFETCH_COOLDOWN_MS ? cached : yield* fetchKeySet(now);
+        const rotated = refreshed.keys.get(kid);
+        if (rotated) return rotated;
+        return yield* rejected("UnknownKey", "The identity token was not signed by Google.");
+      });
+
+      const verify = Effect.fnUntraced(function* (idToken: string, expected: IdTokenExpectation) {
+        const now = yield* Clock.currentTimeMillis;
+        const [encodedHeader, encodedClaims, encodedSignature, ...rest] = idToken.split(".");
+        if (!encodedHeader || !encodedClaims || !encodedSignature || rest.length > 0) {
+          return yield* malformed();
+        }
+        const header = yield* decodeSegment(IdTokenHeader, encodedHeader);
+        const claims = yield* decodeSegment(IdTokenClaims, encodedClaims);
+        const signature = yield* Effect.fromResult(Encoding.decodeBase64Url(encodedSignature)).pipe(
+          Effect.mapError(malformed),
+        );
+        const key = yield* signingKey(header.kid, now);
+        if (!(yield* verifySignature(key, signature, `${encodedHeader}.${encodedClaims}`))) {
+          return yield* rejected("Signature", "The identity token signature is invalid.");
+        }
+        if (!GOOGLE_ISSUERS.includes(claims.iss)) {
+          return yield* rejected("Issuer", "The identity token is not from Google.");
+        }
+        if (!expected.audiences.has(claims.aud)) {
+          return yield* rejected(
+            "Audience",
+            "The identity token was issued for another application.",
+          );
+        }
+        if (claims.exp * 1_000 <= now) {
+          return yield* rejected("Expired", "The identity token has expired.");
+        }
+        if (!isTrue(claims.email_verified)) {
+          return yield* rejected("EmailUnverified", "Google did not verify this email address.");
+        }
+        if (
+          expected.nonce !== undefined &&
+          (claims.nonce === undefined || !(yield* sameNonce(claims.nonce, expected.nonce)))
+        ) {
+          return yield* rejected("Nonce", "The identity token belongs to another sign-in.");
+        }
+        return {
+          providerAccountId: claims.sub,
+          email: claims.email,
+          name: claims.name ?? claims.email.split("@")[0] ?? claims.email,
+          image: claims.picture ?? null,
+        } satisfies GoogleProfile;
+      });
+
       return GoogleOAuth.of({
-        authorizationUrl: (state) => {
-          const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+        authorizationUrl: ({ state, codeChallenge, nonce }) => {
+          const url = new URL(GOOGLE_AUTHORIZATION_URL);
           url.search = UrlParams.toString({
             client_id: configuration.clientId,
             redirect_uri: configuration.callbackUrl,
             response_type: "code",
             scope: "openid email profile",
             state,
+            nonce,
+            code_challenge: codeChallenge,
+            code_challenge_method: "S256",
             prompt: "select_account",
           });
           return url;
         },
-        exchangeCode: Effect.fn("GoogleOAuth.exchangeCode")(function* (code) {
-          const tokenRequest = HttpClientRequest.post("https://oauth2.googleapis.com/token").pipe(
+        exchangeCode: Effect.fn("GoogleOAuth.exchangeCode")(function* (input) {
+          const request = HttpClientRequest.post(GOOGLE_TOKEN_URL).pipe(
             HttpClientRequest.bodyUrlParams({
               client_id: configuration.clientId,
-              client_secret: configuration.clientSecret,
-              code,
+              client_secret: Redacted.value(configuration.clientSecret),
+              code: input.code,
+              code_verifier: input.codeVerifier,
               grant_type: "authorization_code",
               redirect_uri: configuration.callbackUrl,
             }),
           );
-          const tokenPayload = yield* send(
-            "exchangeCode.request",
-            "exchangeCode.token",
-            GoogleTokenResponse,
-            tokenRequest,
-          );
-          const profileRequest = HttpClientRequest.get(
-            "https://openidconnect.googleapis.com/v1/userinfo",
-          ).pipe(HttpClientRequest.bearerToken(tokenPayload.access_token));
-          const profile = yield* send(
-            "exchangeCode.profileRequest",
-            "exchangeCode.profile",
-            GoogleUserInfo,
-            profileRequest,
-          );
-          if (!profile.email_verified) {
-            return yield* oauthError(
-              "exchangeCode.profile",
-              "Google did not verify this email address.",
-            );
-          }
-          return {
-            providerAccountId: profile.sub,
-            email: profile.email,
-            name: profile.name,
-            image: profile.picture ?? null,
-          } satisfies GoogleProfile;
+          const response = yield* execute("exchangeCode.request", request);
+          const tokens = yield* decodeOkJson("exchangeCode.token", GoogleTokenResponse, response);
+          return yield* verify(tokens.id_token, { audiences: webAudience, nonce: input.nonce });
         }),
         verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
-          const now = yield* Clock.currentTimeMillis;
-          const request = HttpClientRequest.get("https://oauth2.googleapis.com/tokeninfo").pipe(
-            HttpClientRequest.setUrlParams({ id_token: idToken }),
-          );
-          const info = yield* send(
-            "verifyIdToken.request",
-            "verifyIdToken",
-            GoogleTokenInfo,
-            request,
-          );
-          if (!GOOGLE_ISSUERS.includes(info.iss)) {
-            return yield* oauthError(
-              "verifyIdToken.issuer",
-              "The identity token is not from Google.",
-            );
-          }
-          if (!audiences.has(info.aud)) {
-            return yield* oauthError(
-              "verifyIdToken.audience",
-              "The identity token was issued for another application.",
-            );
-          }
-          if (info.exp * 1_000 <= now) {
-            return yield* oauthError("verifyIdToken.expiry", "The identity token has expired.");
-          }
-          if (!isTrue(info.email_verified)) {
-            return yield* oauthError(
-              "verifyIdToken.email",
-              "Google did not verify this email address.",
-            );
-          }
-          return {
-            providerAccountId: info.sub,
-            email: info.email,
-            name: info.name ?? info.email.split("@")[0] ?? info.email,
-            image: info.picture ?? null,
-          } satisfies GoogleProfile;
+          return yield* verify(idToken, { audiences, nonce: undefined });
         }),
       });
     }),

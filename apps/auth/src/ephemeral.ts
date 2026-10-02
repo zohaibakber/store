@@ -13,25 +13,35 @@ import {
   type UserId as UserIdType,
 } from "@store/auth";
 import { ephemeralRecord } from "@store/db/auth.schema";
-import { and, eq, gt, inArray, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { sha256 } from "./crypto";
+import { AuthCrypto } from "./crypto";
 import { runD1Batch, type AuthDrizzle } from "./d1-batch";
+import { storageFailureMessage } from "./errors";
+
+const OTP_FAILURE_BUDGET = 5;
 
 const OtpPayload = Schema.Struct({
   email: EmailAddress,
+  verifier: Schema.String,
+  failures: Schema.Int,
 });
+
+const TakenPayload = Schema.Struct({ payload: Schema.String });
 
 const OAuthStatePayload = Schema.Struct({
   redirectUri: Schema.String,
   codeChallenge: Schema.String,
   client: AuthClientKind,
+  googleCodeVerifier: Schema.optionalKey(Schema.String),
+  googleNonce: Schema.optionalKey(Schema.String),
 });
 interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStatePayload> {
   readonly expiresAt: number;
@@ -70,6 +80,8 @@ export interface EphemeralStoreApi {
     readonly redirectUri: string;
     readonly codeChallenge: string;
     readonly client: AuthClientKind;
+    readonly googleCodeVerifier: string;
+    readonly googleNonce: string;
     readonly expiresAt: number;
   }) => Effect.Effect<string, EphemeralStoreError>;
   readonly consumeOAuthState: (
@@ -94,16 +106,28 @@ export class EphemeralStore extends Context.Service<EphemeralStore, EphemeralSto
 
 type EphemeralKind = typeof ephemeralRecord.$inferSelect.kind;
 
-export const EXPIRED_SWEEP_LIMIT = 32;
+const EXPIRED_SWEEP_LIMIT = 32;
 
 const error = (operation: string, cause: unknown) =>
-  new EphemeralStoreError({ operation, message: String(cause), cause });
+  new EphemeralStoreError({ operation, message: storageFailureMessage(cause), cause });
 
-const keyId = () => crypto.randomUUID();
+const makeEphemeralStore = (
+  database: AuthDrizzle,
+  pepper: Redacted.Redacted<string>,
+  crypto: AuthCrypto["Service"],
+): EphemeralStoreApi => {
+  const keyId = crypto.randomId.pipe(Effect.mapError((cause) => error("keyId", cause)));
 
-const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralStoreApi => {
   const recordKey = (kind: EphemeralKind, id: string) =>
-    sha256(`${pepper}:${kind}:${id}`).pipe(Effect.mapError((cause) => error("digest", cause)));
+    crypto.recordKey(pepper, kind, id).pipe(Effect.mapError((cause) => error("digest", cause)));
+
+  const otpVerifier = (challengeId: OtpChallengeIdType, code: OtpCode) =>
+    crypto
+      .otpVerifier(pepper, challengeId, code)
+      .pipe(Effect.mapError((cause) => error("verifier", cause)));
+
+  const storedVerifier = sql`json_extract(${ephemeralRecord.payload}, '$.verifier')`;
+  const storedFailures = sql`json_extract(${ephemeralRecord.payload}, '$.failures')`;
 
   const sweepExpired = (now: number) =>
     database
@@ -170,29 +194,57 @@ const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralSto
 
   return {
     createOtp: Effect.fn("EphemeralStore.createOtp")(function* (input) {
-      const challengeId = OtpChallengeId.make(keyId());
+      const challengeId = OtpChallengeId.make(yield* keyId);
+      const verifier = yield* otpVerifier(challengeId, input.code);
       yield* putRecord(
         "createOtp",
         "otp",
-        `${challengeId}:${input.code}`,
+        challengeId,
         OtpPayload,
-        { email: input.email },
+        { email: input.email, verifier, failures: 0 },
         input.expiresAt,
       );
       return challengeId;
     }),
     consumeOtp: Effect.fn("EphemeralStore.consumeOtp")(function* (input) {
-      const taken = yield* takeRecord(
-        "consumeOtp",
-        "otp",
-        `${input.challengeId}:${input.code}`,
-        OtpPayload,
-        input.now,
+      const key = yield* recordKey("otp", input.challengeId);
+      const verifier = yield* otpVerifier(input.challengeId, input.code);
+      const challenge = and(eq(ephemeralRecord.key, key), eq(ephemeralRecord.kind, "otp"));
+      const [taken] = yield* runD1Batch(database, [
+        database
+          .delete(ephemeralRecord)
+          .where(
+            and(
+              challenge,
+              gt(ephemeralRecord.expiresAt, input.now),
+              or(
+                sql`${storedVerifier} = ${verifier}`,
+                sql`${storedFailures} >= ${OTP_FAILURE_BUDGET - 1}`,
+              ),
+            ),
+          )
+          .returning({ payload: ephemeralRecord.payload }),
+        database
+          .update(ephemeralRecord)
+          .set({
+            payload: sql`json_set(${ephemeralRecord.payload}, '$.failures', ${storedFailures} + 1)`,
+          })
+          .where(challenge),
+      ]).pipe(Effect.mapError((cause) => error("consumeOtp.attempt", cause)));
+      const [row] = yield* Schema.decodeUnknownEffect(Schema.Array(TakenPayload))(taken ?? []).pipe(
+        Effect.mapError((cause) => error("consumeOtp.row", cause)),
       );
-      return taken?.payload.email ?? null;
+      if (!row) return null;
+      const payload = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(OtpPayload))(
+        row.payload,
+      ).pipe(Effect.mapError((cause) => error("consumeOtp.decode", cause)));
+      const matched = yield* crypto
+        .matches(payload.verifier, verifier)
+        .pipe(Effect.mapError((cause) => error("consumeOtp.compare", cause)));
+      return matched ? payload.email : null;
     }),
     createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
-      const state = keyId();
+      const state = yield* keyId;
       yield* putRecord(
         "createOAuthState",
         "oauth-state",
@@ -202,6 +254,8 @@ const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralSto
           redirectUri: input.redirectUri,
           codeChallenge: input.codeChallenge,
           client: input.client,
+          googleCodeVerifier: input.googleCodeVerifier,
+          googleNonce: input.googleNonce,
         },
         input.expiresAt,
       );
@@ -219,7 +273,7 @@ const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralSto
     }),
     createAuthorizationGrant: Effect.fn("EphemeralStore.createAuthorizationGrant")(
       function* (input) {
-        const code = AuthorizationCode.make(keyId());
+        const code = AuthorizationCode.make(yield* keyId);
         yield* putRecord(
           "createAuthorizationGrant",
           "authorization",
@@ -246,10 +300,11 @@ const makeEphemeralStore = (database: AuthDrizzle, pepper: string): EphemeralSto
   };
 };
 
-export const ephemeralStoreLayer = (database: D1Database, pepper: string) =>
+export const ephemeralStoreLayer = (database: D1Database, pepper: Redacted.Redacted<string>) =>
   Layer.effect(
     EphemeralStore,
-    Effect.map(D1Drizzle.makeWithDefaults({}), (drizzle) =>
-      EphemeralStore.of(makeEphemeralStore(drizzle, pepper)),
-    ),
-  ).pipe(Layer.provide(D1Client.layer({ db: database })));
+    Effect.gen(function* () {
+      const drizzle = yield* D1Drizzle.makeWithDefaults({});
+      return EphemeralStore.of(makeEphemeralStore(drizzle, pepper, yield* AuthCrypto));
+    }),
+  ).pipe(Layer.provide(D1Client.layer({ db: database })), Layer.provide(AuthCrypto.layer));
