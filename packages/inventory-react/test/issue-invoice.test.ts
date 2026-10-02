@@ -141,8 +141,9 @@ describe("issueInvoice", () => {
       ],
       [[panadol.batch.id, 2]],
     ]);
-    const statuses = await replica.readOutboxStatuses();
-    expect(statuses.filter((status) => status === "pending")).toHaveLength(enqueued.length);
+    const { activity, statuses } = await replica.readSyncActivity();
+    expect(statuses).toEqual(["pending"]);
+    expect(activity.pendingCount).toBe(enqueued.length);
     const batches = await replica.readSubset({
       source: "batches",
       where: { _tag: "compare", column: "productId", op: "eq", value: panadol.product.id },

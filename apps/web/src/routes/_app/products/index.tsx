@@ -1,3 +1,4 @@
+import { preloadProductList, type ProductListRequest } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
@@ -5,8 +6,7 @@ import * as React from "react";
 import { productList, type ProductListView } from "@/components/products/list";
 import { ProductsPage } from "@/components/products/page";
 import { useShownRequest } from "@/components/shared/list-view";
-import { formValidator } from "@/lib/form-schema";
-import { preloadInventory, preloadProductList, type ProductListRequest } from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 import { ListSearchText } from "@/lib/list-view";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -18,7 +18,7 @@ const ProductsSearch = Schema.Struct({
   strength: lenientSearchParam(ListSearchText),
 });
 
-const productsSearch = formValidator(ProductsSearch);
+const productsSearch = Schema.toStandardSchemaV1(ProductsSearch);
 
 const viewFor = (search: typeof ProductsSearch.Type): ProductListView => ({
   ...productList.viewOf(search),

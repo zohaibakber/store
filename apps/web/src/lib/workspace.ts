@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 
 import type { OpenWorkspace, Workspace } from "@/host-access";
+import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import type { DeviceWorkspace } from "@/session/device-workspace";
 import { selectBoundWorkspace } from "@/session/workspace-session";
@@ -35,6 +36,8 @@ export const workspaceStorageKey = (workspace: Workspace): string => {
       return `organization.${workspace.organization.id}`;
   }
 };
+
+export const useWorkspaceStorageKey = () => workspaceStorageKey(useAuth().workspace);
 
 export const useOpenWorkspace = () => {
   const navigate = useNavigate();

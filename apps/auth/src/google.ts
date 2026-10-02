@@ -110,7 +110,7 @@ export class GoogleIdentityRejected extends Schema.TaggedError<GoogleIdentityRej
   },
 ) {}
 
-export interface GoogleOAuthApi {
+interface GoogleOAuthApi {
   readonly authorizationUrl: (input: {
     readonly state: string;
     readonly codeChallenge: string;

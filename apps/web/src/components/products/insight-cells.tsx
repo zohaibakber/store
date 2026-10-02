@@ -1,18 +1,11 @@
-import { createContext, use } from "react";
+import { useProductInsight } from "@store/inventory-react";
 import type * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { StatusLabel } from "@/components/insights/status-badge";
 import { EMPTY } from "@/lib/format";
-import { useProductInsight } from "@/lib/inventory";
 
 import { formatStock } from "./stock";
-
-const LiveInsightsContext = createContext(false);
-
-export function LiveProductInsights({ children }: { readonly children: React.ReactNode }) {
-  return <LiveInsightsContext value>{children}</LiveInsightsContext>;
-}
 
 const PLACEHOLDER = <span className="text-muted-foreground">{EMPTY}</span>;
 
@@ -33,8 +26,6 @@ function LiveStatus({ productId }: { readonly productId: string }) {
 }
 
 function InsightCell({ children }: { readonly children: React.ReactNode }) {
-  const live = use(LiveInsightsContext);
-  if (!live) return PLACEHOLDER;
   return <AsyncBoundary fallback={PLACEHOLDER}>{children}</AsyncBoundary>;
 }
 

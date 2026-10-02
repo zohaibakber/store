@@ -8,11 +8,18 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   RESTOCK_VIEWS,
   type InsightsSummary,
+  type ProductInsight,
   type RestockCursor,
   type RestockView,
+  type StockStatus,
 } from "@store/contracts";
+import {
+  useInventoryInsights,
+  usePurchasingGate,
+  useRestockExport,
+  useRestockPage,
+} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
-import type { ProductInsight, StockStatus } from "@store/services/insights";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
   createColumnHelper,
@@ -30,12 +37,14 @@ import * as React from "react";
 import { PurchasingGateNotice } from "@/components/purchases/gate-notice";
 import { OrderBuilderSheet } from "@/components/purchases/order-builder";
 import type { DraftLine } from "@/components/purchases/presentation";
-import { DataTable, DataTableColumnHeader, DataTableFilter } from "@/components/shared/data-table";
 import {
-  ListTableContent,
+  DataTable,
+  DataTableColumnHeader,
+  DataTableFilter,
   listTableFeatures,
   type ListTableFeatures,
-} from "@/components/shared/list-view";
+} from "@/components/shared/data-table";
+import { ListTableContent } from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -45,12 +54,6 @@ import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
-import {
-  useInventoryInsights,
-  usePurchasingGate,
-  useRestockExport,
-  useRestockPage,
-} from "@/lib/inventory";
 import { isString } from "@/lib/predicates";
 
 import { InsightsBuilding } from "./building";

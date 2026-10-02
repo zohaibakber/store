@@ -1,4 +1,4 @@
-import { isNativeRedirect } from "@store/auth";
+import { isNativeRedirect } from "@store/auth/security";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 const callbackPageHeaders = {

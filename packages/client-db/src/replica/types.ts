@@ -28,7 +28,7 @@ import type { ReplicaSyncActivity } from "./activity";
 import type { InvoiceCoherenceGate } from "./coherence";
 import type { ReplicaRowInvalid } from "./errors";
 import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
-import type { OutboxCommandStatus, ReplicaRow, SqliteResultRow } from "./sqlite-row";
+import type { ReplicaRow, SqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import type {
   InventorySubsetSpec,
@@ -161,7 +161,6 @@ export type EnqueuedCommand = {
 };
 
 type ReplicaMutationSurface = {
-  readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
   readonly enqueueCommand: (request: EnqueueCommandRequest) => Promise<EnqueuedCommand>;
   readonly readCommandStatus: (operationId: string) => Promise<CommandStatus | undefined>;
   readonly wakeSyncUpload?: () => void;

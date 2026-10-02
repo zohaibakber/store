@@ -1,6 +1,7 @@
 import { Delete02Icon, InformationCircleIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
+import { useInventoryActions, useSuspenseProductCount } from "@store/inventory-react";
 import { Suspense, useId, useMemo, useRef, useState } from "react";
 
 import {
@@ -31,7 +32,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStoreCommand } from "@/hooks/use-store-command";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { useInventoryActions, useSuspenseProductCount } from "@/lib/inventory";
 
 const MAX_NAME = 64;
 

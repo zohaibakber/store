@@ -3,15 +3,8 @@ import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
-import { PositiveIntFromString } from "../internal/primitives";
-import { SyncIdentifier } from "../schema-primitives";
-import {
-  SyncBadRequest,
-  SyncConflict,
-  SyncForbidden,
-  SyncNotFound,
-  SyncServiceUnavailable,
-} from "./http-errors";
+import { publicErrorSchema } from "../http-errors";
+import { PositiveIntFromString, SyncIdentifier } from "../schema-primitives";
 import {
   ImportCatalogRequest,
   ImportCatalogResult,
@@ -34,6 +27,21 @@ import {
   SnapshotId,
   SnapshotPartPayload,
 } from "./snapshot";
+
+export const SyncBadRequest = publicErrorSchema("BadRequest", 400);
+export type SyncBadRequest = typeof SyncBadRequest.Type;
+
+export const SyncForbidden = publicErrorSchema("Forbidden", 403);
+export type SyncForbidden = typeof SyncForbidden.Type;
+
+export const SyncNotFound = publicErrorSchema("NotFound", 404);
+export type SyncNotFound = typeof SyncNotFound.Type;
+
+export const SyncConflict = publicErrorSchema("Conflict", 409);
+export type SyncConflict = typeof SyncConflict.Type;
+
+export const SyncServiceUnavailable = publicErrorSchema("ServiceUnavailable", 503);
+export type SyncServiceUnavailable = typeof SyncServiceUnavailable.Type;
 
 const SyncHttpErrors = [
   SyncBadRequest,

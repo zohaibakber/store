@@ -1,12 +1,7 @@
-import { isTrustedOrigin } from "@store/auth";
-import { RuntimeContext } from "alchemy";
+import { isTrustedOrigin } from "@store/auth/security";
 import * as Cause from "effect/Cause";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Scope from "effect/Scope";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
@@ -24,6 +19,7 @@ import { LiveRoutes, type LiveRouteDependencies } from "../live/route";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
+import { buildOncePerIsolate, workerRuntimeServices } from "../runtime/isolate";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
 import { ServerRuntime, type ServerRuntimeContract } from "./runtime";
@@ -80,28 +76,6 @@ const recoverUnexpected = <E, R>(
       );
     }),
   );
-
-const buildOncePerIsolate = <A, E, R>(
-  build: Effect.Effect<A, E, R | Scope.Scope>,
-  isolateServices: Context.Context<R>,
-) =>
-  Effect.gen(function* () {
-    const isolateScope = yield* Scope.make();
-    return yield* build.pipe(
-      Scope.provide(isolateScope),
-      Effect.onError((cause) => Scope.close(isolateScope, Exit.failCause(cause))),
-      Effect.updateContext<never, R>(() => isolateServices),
-    );
-  });
-
-const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
-  Effect.flatMap(
-    Option.match({
-      onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
-      onSome: (runtime) => Effect.succeed(Context.make(RuntimeContext, runtime)),
-    }),
-  ),
-);
 
 export interface WorkerServices {
   readonly runtime: ServerRuntimeContract;

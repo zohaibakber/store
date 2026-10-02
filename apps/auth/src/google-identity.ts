@@ -1,10 +1,10 @@
 import {
-  isTrustedRedirect,
   type AuthorizationCode,
   type BeginGoogleInput,
   type ExchangeGoogleIdTokenInput,
   type ExchangeGoogleInput,
 } from "@store/auth";
+import { isTrustedRedirect } from "@store/auth/security";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,18 +12,7 @@ import * as Layer from "effect/Layer";
 
 import { AUTHORIZATION_TTL_MS, AuthCrypto, OAUTH_STATE_TTL_MS } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
-import {
-  AccountNotFound,
-  GoogleAccountLinked,
-  GoogleCodeUnverified,
-  InvalidAuthorizationCode,
-  InvalidCodeVerifier,
-  InvalidGoogleIdentity,
-  InvalidOAuthClient,
-  InvalidOAuthState,
-  InvalidRedirect,
-  PasswordAccountExists,
-} from "./failures";
+import { AuthRefusal } from "./failures";
 import { GoogleOAuth, type GoogleProfile } from "./google";
 import { AuthLimiter } from "./limits";
 import { AuthRepository, type UserRecord } from "./repository";
@@ -56,7 +45,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         const existing = yield* repository.findUserByEmail(profile.email);
         if (!existing) return yield* repository.createGoogleUser(profile);
         if (existing.passwordHash && existing.emailVerified) {
-          return yield* new PasswordAccountExists();
+          return yield* new AuthRefusal({ reason: "PasswordAccountExists" });
         }
         const claimed = existing.passwordHash
           ? yield* repository.claimUnverifiedPasswordUser({
@@ -70,7 +59,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
               providerAccountId: profile.providerAccountId,
             });
         if (!claimed) {
-          return yield* new GoogleAccountLinked();
+          return yield* new AuthRefusal({ reason: "GoogleAccountLinked" });
         }
         return { ...existing, passwordHash: null, emailVerified: true } satisfies UserRecord;
       });
@@ -78,7 +67,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       const beginGoogle = Effect.fn("Auth.Google.beginGoogle")(function* (input: BeginGoogleInput) {
         const now = yield* Clock.currentTimeMillis;
         if (!isTrustedRedirect(input.redirectUri, trustedRedirects)) {
-          return yield* new InvalidRedirect();
+          return yield* new AuthRefusal({ reason: "InvalidRedirect" });
         }
         const googleCodeVerifier = yield* crypto.randomToken(32);
         const googleNonce = yield* crypto.randomToken(16);
@@ -104,7 +93,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         const now = yield* Clock.currentTimeMillis;
         const state = yield* ephemeral.consumeOAuthState(input.state, now);
         if (!state) {
-          return yield* new InvalidOAuthState();
+          return yield* new AuthRefusal({ reason: "InvalidOAuthState" });
         }
         const profile = yield* google
           .exchangeCode({
@@ -114,7 +103,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
           })
           .pipe(
             Effect.catchTag("Auth.GoogleIdentityRejected", () =>
-              Effect.fail(new GoogleCodeUnverified()),
+              Effect.fail(new AuthRefusal({ reason: "GoogleCodeUnverified" })),
             ),
           );
         const user = yield* linkGoogleUser(profile);
@@ -133,18 +122,18 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         const now = yield* Clock.currentTimeMillis;
         const grant = yield* ephemeral.consumeAuthorizationGrant(input.code, now);
         if (!grant) {
-          return yield* new InvalidAuthorizationCode();
+          return yield* new AuthRefusal({ reason: "InvalidAuthorizationCode" });
         }
         const challenge = yield* crypto.pkceChallenge(input.codeVerifier);
         if (!(yield* crypto.matches(challenge, grant.codeChallenge))) {
-          return yield* new InvalidCodeVerifier();
+          return yield* new AuthRefusal({ reason: "InvalidCodeVerifier" });
         }
         if (input.client._tag !== grant.client._tag) {
-          return yield* new InvalidOAuthClient();
+          return yield* new AuthRefusal({ reason: "InvalidOAuthClient" });
         }
         const user = yield* repository.findUserById(grant.userId);
         if (!user) {
-          return yield* new AccountNotFound();
+          return yield* new AuthRefusal({ reason: "AccountNotFound" });
         }
         return yield* sessions.issueSession(user, grant.client, `oauth-${input.code}`);
       });
@@ -162,7 +151,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
               }),
             ),
           ),
-          Effect.mapError(() => new InvalidGoogleIdentity()),
+          Effect.mapError(() => new AuthRefusal({ reason: "InvalidGoogleIdentity" })),
         );
         yield* limiter.admit(
           "tenPerMinute",

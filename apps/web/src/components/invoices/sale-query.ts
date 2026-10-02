@@ -1,6 +1,6 @@
 const QUANTITY_PREFIX = /^\s*(\d{1,4})\s*(?:\*|[x×](?=\s|$))\s*(.*)$/iu;
 
-export interface SaleQuery {
+interface SaleQuery {
   readonly quantity: number;
   readonly term: string;
 }

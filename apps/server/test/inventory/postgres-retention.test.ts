@@ -84,7 +84,7 @@ const openDrizzle = Effect.gen(function* () {
 });
 
 const maintain = (db: InventoryDrizzle, policy: Partial<MaintenancePolicy> = {}) =>
-  makeInventoryMaintenance(db, TEST_POLICY).runScheduled(policy);
+  makeInventoryMaintenance(db, { ...TEST_POLICY, ...policy }).runScheduled();
 
 const reportFor = (summary: MaintenanceSummary, organizationId: string) => {
   const report = summary.retention.find((entry) => entry.organizationId === organizationId);

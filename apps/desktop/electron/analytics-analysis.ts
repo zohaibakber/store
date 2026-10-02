@@ -24,7 +24,7 @@ import {
   type SalesLedger,
 } from "@store/services/insights";
 
-export type SaleFact = {
+type SaleFact = {
   readonly productId: string;
   readonly day: number;
   readonly units: number;

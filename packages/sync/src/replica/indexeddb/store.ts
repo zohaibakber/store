@@ -33,7 +33,6 @@ import * as Queue from "effect/Queue";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import { withDetachedScope } from "../../detached-scope";
 import {
   ACTIVITY_COMMAND_STATUSES,
   MAX_REJECTED_ACTIVITY_ROWS,
@@ -48,6 +47,7 @@ import {
 } from "../codecs";
 import type { ClaimNextUploadInput, UploadClaim } from "../commands";
 import {
+  generationResetNotice,
   makeReplicaCommitHub,
   mergeTouched,
   noticeFromState,
@@ -75,7 +75,6 @@ import {
   mapReplicaStoreFailure,
   ReplicaStorageError,
 } from "../errors";
-import { generationResetNotice } from "../generation-reset";
 import {
   integrateGroupOverPending,
   projectLocalCommand,
@@ -285,7 +284,6 @@ interface IndexedDbSubsetReader {
 }
 
 interface IndexedDbOutboxReader {
-  readonly listOutboxStatuses: () => Effect.Effect<ReadonlyArray<CommandStatus>, ReplicaStoreError>;
   readonly readOutboxActivity: () => Effect.Effect<ReplicaOutboxActivity, ReplicaStoreError>;
   readonly readPendingRowIds: (
     entity: SyncEntity,
@@ -295,10 +293,6 @@ interface IndexedDbOutboxReader {
 type IndexedDbReplicaStoreContract = ReplicaStoreContract &
   IndexedDbSubsetReader &
   IndexedDbOutboxReader;
-
-type DisposableIndexedDbReplicaStore = IndexedDbReplicaStoreContract & {
-  readonly dispose: () => Effect.Effect<void>;
-};
 
 export class IndexedDbReplicaStore extends Context.Service<
   IndexedDbReplicaStore,
@@ -961,10 +955,6 @@ const makeScopedIndexedDbReplicaStore = (
               ),
             ),
         ),
-      listOutboxStatuses: () =>
-        withQuery((api) => api.from("command_outbox").select()).pipe(
-          Effect.map((rows) => rows.map((row) => row.status)),
-        ),
       readStamp: () => readStateWith(stampOf),
       recordCaughtUp,
       readOutboxActivity,
@@ -1011,13 +1001,6 @@ const makeScopedIndexedDbReplicaStore = (
     };
   });
 
-export const makeIndexedDbReplicaStore = (
-  input: MakeIndexedDbReplicaStoreInput,
-): Effect.Effect<DisposableIndexedDbReplicaStore, ReplicaStoreError> =>
-  withDetachedScope(makeScopedIndexedDbReplicaStore(input)).pipe(
-    Effect.map(({ value, close }) => ({ ...value, dispose: () => close })),
-  );
-
 export const layerIndexedDbReplicaStore = (
   input: MakeIndexedDbReplicaStoreInput,
 ): Layer.Layer<ReplicaStore | IndexedDbReplicaStore, ReplicaStoreError> =>
@@ -1029,18 +1012,9 @@ export const layerIndexedDbReplicaStore = (
     ),
   );
 
-export {
-  IndexedDbCorruptRecord,
-  IndexedDbIdentityMismatch,
-  IndexedDbQuotaExceeded,
-  IndexedDbUnavailable,
-};
-
 export type {
   IndexedDbEntityTable,
   IndexedDbResidualPredicate,
   IndexedDbScan,
   IndexedDbSubsetPlan,
-  IndexedDbSubsetRow,
-  IndexedDbSubsetSummary,
 } from "./query";

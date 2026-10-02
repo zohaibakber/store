@@ -41,7 +41,7 @@ type SupervisedLaunch<Boot> = {
   readonly boot: Boot;
 };
 
-export type SpawnSupervisedWorker<Client, Boot> = (
+type SpawnSupervisedWorker<Client, Boot> = (
   launch: SupervisedLaunch<Boot>,
 ) => Effect.Effect<SupervisedProcess<Client>, never, Scope.Scope>;
 
@@ -55,7 +55,7 @@ export type SpawnReplicaReader = SpawnSupervisedWorker<
   typeof ReplicaReaderBoot.Type
 >;
 
-export type LiveWorker<Client> = SupervisedProcess<Client> & { readonly incarnation: number };
+type LiveWorker<Client> = SupervisedProcess<Client> & { readonly incarnation: number };
 
 export type LiveReplicaWorker = LiveWorker<ReplicaWorkerClient>;
 
@@ -122,7 +122,7 @@ const unavailable = () =>
 export const startReplicaSupervisor = <Client extends EngineClient, Boot>(options: {
   readonly spawn: SpawnSupervisedWorker<Client, Boot>;
   readonly launch: SupervisedLaunch<Boot>;
-  readonly policy?: ReplicaSupervisorPolicy;
+  readonly policy: ReplicaSupervisorPolicy;
   readonly attach: (
     worker: LiveWorker<Client>,
     recovered: boolean,
@@ -130,7 +130,7 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
   readonly onExhausted: Effect.Effect<void>;
 }): Effect.Effect<ReplicaSupervisor<Client>, ReplicaWorkerFailure, Scope.Scope> =>
   Effect.gen(function* () {
-    const policy = options.policy ?? DEFAULT_SUPERVISOR_POLICY;
+    const { policy } = options;
     const state = yield* SubscriptionRef.make<ReplicaSupervisorState<Client>>({ _tag: "Starting" });
     const incarnations = yield* Ref.make(0);
     const retryRequests = yield* Queue.dropping<void>(1);

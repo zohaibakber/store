@@ -2,10 +2,7 @@ import { openElectronIpcReplicaHandle } from "@store/client-db";
 import { replicaAuthorityOf, type InventoryHost } from "@store/inventory-react";
 import * as Schema from "effect/Schema";
 
-const InventoryHttpConfig = Schema.Struct({
-  apiBaseUrl: Schema.String,
-  deviceId: Schema.String,
-});
+import { InventoryHttpConfig } from "@/host/electron";
 
 export const createElectronInventoryHost = async (): Promise<InventoryHost | undefined> => {
   const http = window.inventoryHttp;

@@ -51,6 +51,7 @@ import {
 } from "../commands";
 import {
   EMPTY_TOUCHED,
+  generationResetNotice,
   makeReplicaCommitHub,
   mergeTouched,
   noticeFromState,
@@ -65,7 +66,6 @@ import {
   type DigestFence,
 } from "../coverage";
 import { isStorageFullFailure, mapReplicaStoreFailure } from "../errors";
-import { generationResetNotice } from "../generation-reset";
 import {
   abandonSnapshotCandidate,
   applyCandidateAuthority,

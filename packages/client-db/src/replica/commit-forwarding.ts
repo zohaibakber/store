@@ -1,5 +1,5 @@
 import type { ReplicaCommitNotice as StoreCommitNotice } from "@store/contracts/sync/replica-model";
-import { ReplicaStore } from "@store/sync/browser";
+import { ReplicaStore } from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";

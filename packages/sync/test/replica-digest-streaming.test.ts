@@ -32,7 +32,8 @@ import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 import { sqlitePartitionDigest } from "../src/replica/digest";
 import { indexedDbPartitionDigest } from "../src/replica/indexeddb/digest";
 import { ReplicaIndexedDb, storedProduct } from "../src/replica/indexeddb/schema";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
+import { openReplicaStore } from "../src/sqlite";
 
 const ORG = "org-golden";
 

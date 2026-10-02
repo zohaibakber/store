@@ -1,21 +1,20 @@
+import {
+  preloadAll,
+  preloadCatalogProductsById,
+  preloadProductSearch,
+} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { InvoiceCreatePage } from "@/components/invoices/create-page";
-import { formValidator } from "@/lib/form-schema";
-import {
-  preloadAll,
-  preloadCatalogProductsById,
-  preloadInventory,
-  preloadProductSearch,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 import { saleDraftsAtom } from "@/lib/preferences";
 import { SALE_SEARCH_LIMIT, saleProductIds } from "@/lib/sale-drafts";
 import { lenientSearchParam } from "@/lib/search-param";
 import { workspaceStorageKey } from "@/lib/workspace";
 import { publishedWorkspaceSnapshot } from "@/session/workspace-session";
 
-const newInvoiceSearch = formValidator(
+const newInvoiceSearch = Schema.toStandardSchemaV1(
   Schema.Struct({ add: lenientSearchParam(Schema.NonEmptyString) }),
 );
 

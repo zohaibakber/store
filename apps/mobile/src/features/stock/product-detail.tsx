@@ -21,13 +21,14 @@ import { Text } from "@/ui/text";
 import { detailHeaderOptions } from "../detail-header";
 import { formatDateTime, formatExpiry } from "../format";
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
-import { movementDelta, movementLabel } from "./movement-text";
 import { AttentionMark } from "./product-row";
 import { ReceiveBatchSheet } from "./receive-batch-sheet";
 import {
   attentionLabel,
   batchAttention,
   batchOnHand,
+  movementDelta,
+  movementLabel,
   onHandOf,
   productSubtitle,
   stockAttention,

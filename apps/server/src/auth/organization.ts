@@ -10,7 +10,7 @@ import { Forbidden, Unauthenticated, unauthenticated } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 import { authenticateRequest } from "./session";
 
-export interface CurrentOrganizationContext {
+interface CurrentOrganizationContext {
   readonly organizationId: AccessClaims["activeOrganizationId"];
   readonly userId: AccessClaims["subject"];
   readonly role: AccessClaims["role"];

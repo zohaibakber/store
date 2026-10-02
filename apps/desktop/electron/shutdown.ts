@@ -5,7 +5,7 @@ interface BeforeQuitEvent {
 interface ShutdownCoordinatorOptions {
   readonly dispose: () => Promise<void>;
   readonly quit: () => void;
-  readonly reportError?: (cause: unknown) => void;
+  readonly reportError: (cause: unknown) => void;
 }
 
 export const makeShutdownCoordinator = (options: ShutdownCoordinatorOptions) => {
@@ -18,7 +18,7 @@ export const makeShutdownCoordinator = (options: ShutdownCoordinatorOptions) => 
     if (pending) return;
     pending = options
       .dispose()
-      .catch((cause) => options.reportError?.(cause))
+      .catch((cause) => options.reportError(cause))
       .then(() => {
         completed = true;
         options.quit();

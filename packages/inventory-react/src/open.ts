@@ -18,26 +18,16 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Atom from "effect/unstable/reactivity/Atom";
 
-import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
-import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
+import { createWorkspaceAtoms, type WorkspaceAtoms } from "./atoms";
+import { catalogOpenFailure, STORAGE_FAILED } from "./errors";
 import {
   inventoryScopeId,
   replicaAuthorityOf,
   type InventoryHost,
   type InventoryScope,
 } from "./host";
-import { makeInsightsSource, type InsightsSource } from "./insights-source";
-import { countInvoices, readInvoicePageIds } from "./invoice-list";
+import { makeInsightsSource } from "./insights-source";
 import { createCatalogLifetime, type CatalogLifetime } from "./lifetime";
-import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
-import {
-  countPurchaseOrders,
-  countSuppliers,
-  readLearnedSupplierIds,
-  readProductsOnOrder,
-  readPurchaseOrderPageIds,
-} from "./purchasing";
-import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
 
 const actorFor = (
@@ -55,8 +45,6 @@ type OutboxSnapshot = {
   readonly activity: InventorySyncActivity | undefined;
 };
 
-const STORAGE_FAILED = "Local replica storage failed.";
-
 const readOutboxSnapshot = (replica: ReplicaHandle) =>
   Effect.tryPromise(() => replica.readSyncActivity()).pipe(
     Effect.map((read): OutboxSnapshot => ({
@@ -72,37 +60,6 @@ const readSyncSnapshot = (replica: ReplicaHandle): Effect.Effect<OutboxSnapshot>
       activity: undefined,
     })),
   );
-
-const workspaceReadFailure = () => new WorkspaceReadFailure({ message: STORAGE_FAILED });
-
-const workspaceSources = (
-  replica: ReplicaHandle,
-  initialActivity: InventorySyncActivity | undefined,
-  insights: InsightsSource,
-): WorkspaceAtomSources => ({
-  changes: replica,
-  initialActivity: initialActivity ?? EMPTY_SYNC_ACTIVITY,
-  readPendingRowIds: (entity) => {
-    const readIds = replica.readPendingRowIds;
-    if (readIds === undefined) return Effect.succeed(new Set<string>());
-    return Effect.tryPromise({ try: () => readIds(entity), catch: workspaceReadFailure }).pipe(
-      Effect.map((ids): ReadonlySet<string> => new Set(ids)),
-    );
-  },
-  searchProducts: (query, limit) => searchCatalogProducts(replica, query, limit),
-  readProductPage: (request) => readProductPage(replica, request),
-  summarizeProducts: (filters, distinct) =>
-    summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceReadFailure)),
-  findProductsByNames: (names) => findProductsByNames(replica, names),
-  readProductsOnOrder: (productIds) => readProductsOnOrder(replica, productIds),
-  readLearnedSuppliers: (productIds) => readLearnedSupplierIds(replica, productIds),
-  readPurchaseOrderPage: (request) => readPurchaseOrderPageIds(replica, request),
-  countPurchaseOrders: (filters) => countPurchaseOrders(replica, filters),
-  countSuppliers: countSuppliers(replica),
-  readInvoicePage: (request) => readInvoicePageIds(replica, request),
-  countInvoices: (filters) => countInvoices(replica, filters),
-  insights,
-});
 
 const openCollections = (dbClient: DbClient, scopeId: string, replica: ReplicaHandle) => {
   const options = catalogCollectionOptions(scopeId, replica);
@@ -208,7 +165,12 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
     const insights = yield* makeInsightsSource(replica);
     const atoms = yield* Effect.acquireRelease(
       Effect.sync(() =>
-        createWorkspaceAtoms(outbox.status, workspaceSources(replica, outbox.activity, insights)),
+        createWorkspaceAtoms(
+          replica,
+          insights,
+          outbox.status,
+          outbox.activity ?? EMPTY_SYNC_ACTIVITY,
+        ),
       ),
       (opened) => Effect.sync(() => opened.registry.dispose()),
     );

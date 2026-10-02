@@ -7,7 +7,7 @@ import {
   type ReplicaSubsetReader,
   type SubsetPredicate,
 } from "@store/client-db";
-import type { StockPolicy, StockStatus } from "@store/services/insights";
+import type { StockPolicy, StockStatus } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";

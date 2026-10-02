@@ -3,7 +3,7 @@ import { RequestError } from "@store/workspace";
 
 import { SESSION_ENDED_NOTICE } from "./model";
 
-export type AuthProblemKind =
+type AuthProblemKind =
   | "offline"
   | "unavailable"
   | "wrongCode"
@@ -14,7 +14,7 @@ export type AuthProblemKind =
   | "invalid"
   | "rejected";
 
-export type AuthField = "email" | "code" | "password" | "name" | "organizationName" | "invitation";
+type AuthField = "email" | "code" | "password" | "name" | "organizationName" | "invitation";
 
 export interface AuthProblem {
   readonly kind: AuthProblemKind;

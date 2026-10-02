@@ -34,11 +34,11 @@ export const typedCommands = (commands: InventoryCommandsContract) => {
     submitEncoded,
     commit: (actor: InventoryActor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
-        Effect.flatMap((submitted) => Effect.orDie(decodeReceipt(submitted.body))),
+        Effect.flatMap((submitted) => Effect.orDie(decodeReceipt(submitted.json))),
       ),
     submit: (actor: InventoryActor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
-        Effect.flatMap((submitted) => Effect.orDie(decodeSubmitResult(submitted.body))),
+        Effect.flatMap((submitted) => Effect.orDie(decodeSubmitResult(submitted.json))),
       ),
     pull: (actor: InventoryActor, request: SyncPullRequest) =>
       commands

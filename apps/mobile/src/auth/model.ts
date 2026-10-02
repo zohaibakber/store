@@ -2,12 +2,12 @@ import { TokenSet } from "@store/auth";
 import type { AuthenticatedWorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Schema from "effect/Schema";
 
-export const AccountOrganization = Schema.Struct({
+const AccountOrganization = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   role: Schema.String,
 });
-export interface AccountOrganization extends Schema.Schema.Type<typeof AccountOrganization> {}
+interface AccountOrganization extends Schema.Schema.Type<typeof AccountOrganization> {}
 
 export const Account = Schema.Struct({
   userId: Schema.String,

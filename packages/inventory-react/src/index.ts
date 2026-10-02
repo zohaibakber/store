@@ -1,28 +1,17 @@
-export { rejectedCommandLabel, rejectedCommandSubject, rejectionReason } from "@store/client-db";
+export { rejectedCommandLabel } from "@store/client-db";
 export type {
   InventorySyncActivity,
   InventorySyncStatus,
-  PurchaseOrderLineInput,
-  ReceivedDelivery,
-  ReceiveDeliveryInput,
   ReceiveDeliveryLineInput,
   RejectedCommand,
-  RejectedCommandLabel,
-  RejectedCommandSubject,
-  RejectedCommandTarget,
-  SavedPurchaseOrder,
-  SaveOrderDraftInput,
-  SaveSupplierInput,
 } from "@store/client-db";
 export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
-export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
 export { createAppCatalogLifetime } from "./open";
 export { configureInventoryPreferences } from "./preferences";
 export {
   inventoryScopeId,
   replicaAuthorityOf,
   type InventoryHost,
-  type ReplicaAuthority,
   type ReplicaOpenIdentity,
 } from "./host";
 export {
@@ -55,7 +44,6 @@ export {
   usePendingRowIds,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
-  useSuspenseCatalogProducts,
   useSuspenseCatalogProductsById,
   useSuspenseStockMovementHistory,
   useSuspenseCatalogSuggestions,
@@ -64,6 +52,9 @@ export {
   useProductSearch,
   useSuspenseInvoiceCount,
   useSuspenseInvoicePage,
+  useSuspenseProductCount,
+  useSuspenseProductFacets,
+  useSuspenseProductPage,
   useSuspenseProductSearch,
 } from "./queries";
 export {
@@ -86,12 +77,11 @@ export {
   type ProductStockSummary,
   type SearchableProduct,
 } from "./search";
-export type { ProductOnOrder, PurchaseOrderListRequest } from "./purchasing";
+export type { PurchaseOrderListRequest } from "./purchasing";
 export {
   useLearnedSuppliers,
   useProductsOnOrder,
   usePurchasingGate,
-  useSuppliers,
   useSuspenseOpenPurchaseOrders,
   useSuspenseProductOnOrder,
   useSuspensePurchaseOrder,
@@ -103,12 +93,7 @@ export {
   useSuspenseSuppliers,
   type PurchasingGate,
 } from "./purchasing-queries";
-export type { ProductFacets, ProductListFilters, ProductListRequest } from "./product-list";
-export {
-  useSuspenseProductCount,
-  useSuspenseProductFacets,
-  useSuspenseProductPage,
-} from "./product-list-hooks";
+export type { ProductFacets, ProductListRequest } from "./product-list";
 export {
   useInventoryInsights,
   useProductInsight,
@@ -117,9 +102,8 @@ export {
   useRestockPage,
   useStockPolicy,
 } from "./insights";
-export type { InventoryInsights } from "./insights";
 export { inventorySyncIssueLabel } from "./sync-status";
-export type { ImportInventoryRequest, Inventory, InventoryActions } from "./types";
+export type { Inventory, InventoryActions } from "./types";
 export {
   preloadAll,
   preloadCatalogCategories,

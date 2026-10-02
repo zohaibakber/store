@@ -5,13 +5,13 @@ import * as Haptics from "expo-haptics";
 import * as React from "react";
 import { StyleSheet, View, type KeyboardTypeOptions } from "react-native";
 
+import { EXPIRY_INPUT_HINT } from "@/scan/expiry";
 import { colors, fonts, radius, space, touch, type } from "@/theme/tokens";
 import { ActionButton } from "@/ui/action-button";
 import { Text } from "@/ui/text";
 
 import {
   emptyReceiveBatchFields,
-  expiryHint,
   parseReceiveBatch,
   type ReceiveBatchField,
   type ReceiveBatchFields,
@@ -138,7 +138,7 @@ function ReceiveBatchForm({
         error={errorFor("batchNumber")}
       />
       <Field
-        hint={expiryHint}
+        hint={EXPIRY_INPUT_HINT}
         keyboardType="numbers-and-punctuation"
         label="Expiry"
         onChangeText={edit("expiry")}

@@ -10,7 +10,7 @@ import {
 import { useTextRecognition } from "react-native-vision-camera-mlkit";
 import { createSynchronizable, scheduleOnRN } from "react-native-worklets";
 
-export type LiveTextBlock = {
+type LiveTextBlock = {
   readonly text: string;
   readonly left: number;
   readonly top: number;

@@ -12,19 +12,17 @@ const widthClassNames = {
 function PageLayout({
   children,
   className,
-  contentClassName,
   width = "full",
   ...props
 }: ComponentProps<"div"> & {
   children: ReactNode;
-  contentClassName?: string;
   width?: PageWidth;
 }) {
   return (
     <div data-slot="page-layout" className={cn("p-4 pt-2", className)} {...props}>
       <div
         data-slot="page-layout-content"
-        className={cn("flex w-full flex-col gap-4", widthClassNames[width], contentClassName)}
+        className={cn("flex w-full flex-col gap-4", widthClassNames[width])}
       >
         {children}
       </div>

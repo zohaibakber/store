@@ -1,7 +1,8 @@
+import { preloadSuppliers, useSuspenseSuppliers } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { SuppliersPage } from "@/components/purchases/suppliers-page";
-import { preloadInventory, preloadSuppliers, useSuspenseSuppliers } from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 
 export const Route = createFileRoute("/_app/purchases/suppliers")({
   loader: ({ context }) => preloadInventory(context, preloadSuppliers),

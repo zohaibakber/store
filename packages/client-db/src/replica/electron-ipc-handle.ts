@@ -123,7 +123,6 @@ export type ElectronReplicaBridge = {
     workspaceToken: string,
     callback: (health: ReplicaSyncHealth) => void,
   ) => () => void;
-  readonly readOutboxStatuses: (workspaceToken: string) => Promise<ReadonlyArray<string>>;
   readonly readSyncActivity: (
     workspaceToken: string,
   ) => Promise<typeof ReplicaSyncActivity.Encoded>;
@@ -153,7 +152,6 @@ const decodeRestockRead = Schema.decodeUnknownSync(RestockPageRead);
 const encodeContext = Schema.encodeSync(InsightsContext);
 const encodeRestockRequest = Schema.encodeSync(RestockPageRequest);
 const decodeSyncEntity = Schema.decodeUnknownOption(SyncEntity);
-const decodeCommandStatus = Schema.decodeUnknownOption(CommandStatus);
 const encodeEnqueueRequest = Schema.encodeSync(EnqueueCommandRequest);
 const decodeQueuedCommandStatus = Schema.decodeUnknownSync(CommandStatus);
 const decodeSyncActivity = Schema.decodeUnknownSync(ReplicaSyncActivity);
@@ -313,8 +311,6 @@ export const openElectronIpcReplicaHandle = async (
       const result = await bridge.readInsights({ workspaceToken, window });
       return { stamp: workspaceStamp(result.stamp), facts: decodeInsightsFacts(result.facts) };
     },
-    readOutboxStatuses: async () =>
-      decodedSome(await bridge.readOutboxStatuses(workspaceToken), decodeCommandStatus),
     readSyncActivity: async () => decodeSyncActivity(await bridge.readSyncActivity(workspaceToken)),
     enqueueCommand: async (request) => {
       const queued = await bridge.enqueueCommand({

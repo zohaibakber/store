@@ -4,7 +4,7 @@ export function AppLoading({ label = "Loading" }: { label?: string }) {
   return (
     <main className="flex min-h-svh items-center justify-center bg-background">
       <div aria-label={label} className="flex size-24 items-center justify-center">
-        <BrandMark alt="" className="size-16 rounded-xl object-contain" />
+        <BrandMark className="size-16 rounded-xl object-contain" />
       </div>
     </main>
   );

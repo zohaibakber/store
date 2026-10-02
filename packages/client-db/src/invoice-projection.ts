@@ -11,7 +11,7 @@ import type {
   IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
 
-import type { CatalogActor, CatalogWriteIds } from "./catalog-projection";
+import type { CatalogActor, CatalogWriteIds } from "./projection-context";
 import {
   persistableRow,
   type BatchRow,

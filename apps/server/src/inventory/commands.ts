@@ -16,7 +16,7 @@ import * as Number from "effect/Number";
 import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
-import type { EncodedJsonBody, InventoryActor, SubmittedCommand } from "./model";
+import type { EncodedCommit, EncodedJsonBody, InventoryActor } from "./model";
 import {
   databaseError,
   isDataException,
@@ -87,7 +87,7 @@ export interface InventoryCommandsContract {
   readonly submitRaw: (
     actor: InventoryActor,
     bodyText: string,
-  ) => Effect.Effect<SubmittedCommand, InventoryError | SyncRequestMalformed>;
+  ) => Effect.Effect<EncodedCommit, InventoryError | SyncRequestMalformed>;
   readonly receipt: (
     actor: InventoryActor,
     operationId: string,
@@ -167,7 +167,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
       ),
     );
     if (row.guard === "MALFORMED") return yield* malformedRequest;
-    const { body } = yield* answered(row);
+    const { body: json } = yield* answered(row);
     const fanout =
       row.fanout_epoch === null ||
       row.fanout_horizon === null ||
@@ -182,7 +182,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
             byteLength: row.fanout_bytes,
             originReplicaId: row.origin_replica_id,
           };
-    return { body, fanout } satisfies SubmittedCommand;
+    return { json, fanout } satisfies EncodedCommit;
   });
 
   return InventoryCommands.of({

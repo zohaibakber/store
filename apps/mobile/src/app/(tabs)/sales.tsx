@@ -4,7 +4,7 @@ import { StyleSheet, View } from "react-native";
 import { ListSkeleton } from "@/features/list-states";
 import { InvoiceList } from "@/features/sales/invoice-list";
 import { ScanFab, useScanFabExtension } from "@/features/scan-fab";
-import { useSyncRefresh } from "@/features/sync/sync-now";
+import { useSyncRefresh } from "@/features/sync/sync-hooks";
 import { AccountAvatar, TabHeader } from "@/features/tab-header";
 import { colors } from "@/theme/tokens";
 

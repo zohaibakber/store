@@ -1,14 +1,14 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useCallback } from "react";
 
-import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { recentProductsAtom, type RecentProduct } from "@/lib/preferences";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 export type { RecentProduct };
 
 const LIMIT = 8;
 
-export type RecentProductSource = {
+type RecentProductSource = {
   readonly id: string;
   readonly name: string;
   readonly strength: string | null;

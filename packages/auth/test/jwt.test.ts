@@ -3,15 +3,8 @@ import * as Encoding from "effect/Encoding";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  AUTH_JWT_KEY_ID,
-  EmailAddress,
-  issueAccessToken,
-  makeAccessTokenVerifier,
-  OrganizationId,
-  SessionId,
-  UserId,
-} from "../src/auth";
+import { AUTH_JWT_KEY_ID, issueAccessToken, makeAccessTokenVerifier } from "../src/jwt";
+import { EmailAddress, OrganizationId, SessionId, UserId } from "../src/model";
 
 const NEXT_KEY_ID = "tabaaq-auth-next";
 const textEncoder = new TextEncoder();

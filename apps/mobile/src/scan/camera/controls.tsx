@@ -13,6 +13,7 @@ import {
   WifiOff01Icon,
 } from "@hugeicons/core-free-icons";
 import { FlashList } from "@shopify/flash-list";
+import type { ProductScanMode } from "@store/contracts/server-api.schema";
 import { Image } from "expo-image";
 import * as React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -22,7 +23,6 @@ import { colors, fonts, motion, radius, space, touch, type } from "@/theme/token
 import { Icon, type IconProps } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
-import type { ProductScanMode } from "../model";
 import type { DraftStatus } from "../status";
 import { PressScale } from "../ui/press-scale";
 

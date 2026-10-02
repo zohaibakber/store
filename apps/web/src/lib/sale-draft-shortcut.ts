@@ -1,6 +1,6 @@
 import { MAX_SALE_DRAFTS } from "@/lib/sale-drafts";
 
-export type SaleDraftShortcut =
+type SaleDraftShortcut =
   | { readonly _tag: "Jump"; readonly index: number }
   | { readonly _tag: "Cycle"; readonly step: 1 | -1 }
   | { readonly _tag: "Discard" };

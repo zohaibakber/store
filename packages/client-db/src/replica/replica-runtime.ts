@@ -1,5 +1,5 @@
 import type { CommandStatus } from "@store/contracts";
-import type { ReplicaStore } from "@store/sync/browser";
+import type { ReplicaStore } from "@store/sync";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";

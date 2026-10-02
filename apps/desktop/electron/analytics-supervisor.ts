@@ -25,6 +25,7 @@ import {
   type AnalyticsWorkerRpcs,
 } from "./analytics-rpc";
 import type { ReplicaCommitNotice } from "./replica-rpc";
+import { spawnNodeAnalyticsWorker } from "./worker-process";
 
 type AnalyticsWorkerClient = RpcClient.FromGroup<typeof AnalyticsWorkerRpcs, RpcClientError>;
 
@@ -41,10 +42,6 @@ type AnalyticsWorkerLaunch = {
   readonly workerPath: string;
   readonly boot: typeof AnalyticsWorkerBoot.Type;
 };
-
-export type SpawnAnalyticsWorker = (
-  launch: AnalyticsWorkerLaunch,
-) => Effect.Effect<AnalyticsWorkerProcess, never, Scope.Scope>;
 
 const ANALYTICS_POLICY = {
   bootTimeout: Duration.seconds(20),
@@ -67,7 +64,6 @@ class AnalyticsWorkerLost extends Schema.TaggedError<AnalyticsWorkerLost>()("Ana
 const unavailable = (message: string) => new AnalyticsWorkerFailure({ message });
 
 export const makeAnalyticsController = (options: {
-  readonly spawn: SpawnAnalyticsWorker;
   readonly launch: AnalyticsWorkerLaunch;
   readonly onEvent: (event: AnalyticsEvent) => Effect.Effect<void>;
 }): Effect.Effect<AnalyticsController, never, Scope.Scope> =>
@@ -98,7 +94,7 @@ export const makeAnalyticsController = (options: {
           }
           yield* Ref.set(failures, { count: 0, at: 0 });
         }
-        const process = yield* options.spawn(options.launch);
+        const process = yield* spawnNodeAnalyticsWorker(options.launch);
         yield* process.client.Ready().pipe(
           Effect.timeoutOption(ANALYTICS_POLICY.bootTimeout),
           Effect.flatMap(

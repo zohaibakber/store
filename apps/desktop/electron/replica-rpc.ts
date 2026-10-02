@@ -22,6 +22,16 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+const PERMANENT_STREAMS = 4;
+const CONTROL_SLOTS = 8;
+const FINITE_DATABASE_OPERATIONS = 2;
+export const WORKER_RPC_CONCURRENCY =
+  PERMANENT_STREAMS + CONTROL_SLOTS + FINITE_DATABASE_OPERATIONS;
+
+const READER_CONTROL_SLOTS = 2;
+const READER_FINITE_READS = 2;
+export const READER_RPC_CONCURRENCY = READER_CONTROL_SLOTS + READER_FINITE_READS;
+
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
 
 export const ReplicaWorkspaceToken = NonEmptyString;
@@ -89,6 +99,14 @@ const ReplicaCatalogCounts = Schema.Struct({
   purchaseOrders: Schema.Natural,
 });
 
+export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) => ({
+  products: summary.products,
+  sales: summary.sales,
+  purchaseOrders: summary.purchaseOrders,
+});
+
+export const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
+
 export const ReplicaPublishSummary = Schema.Struct({
   importId: ImportId,
   ...ReplicaCatalogCounts.fields,
@@ -125,7 +143,7 @@ export const ReplicaWorkerBoot = Schema.Union([
 
 export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
-const ReplicaCommitStamp = Schema.Struct({
+export const ReplicaCommitStamp = Schema.Struct({
   generationId: NonEmptyString,
   localCommitVersion: Schema.Natural,
 });
@@ -226,10 +244,6 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("ReadInsights", {
     payload: { window: ReplicaInsightsWindow },
     success: Schema.Struct({ stamp: ReplicaCommitStamp, facts: ReplicaInsightsFacts }),
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadOutboxStatuses", {
-    success: Schema.Array(CommandStatus),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("ReadSyncActivity", { success: ReplicaSyncActivity, error: ReplicaWorkerFailure }),

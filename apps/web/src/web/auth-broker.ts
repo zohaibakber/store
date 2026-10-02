@@ -17,7 +17,7 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
-import { browserStore, type KeyValueStorage } from "@/lib/first-party-auth";
+import { browserStore } from "@/lib/first-party-auth";
 
 const SESSION_EXPECTED_KEY = "tabaaq-web-session-expected";
 const REFRESH_LOCK = "tabaaq-web-session-refresh";
@@ -25,9 +25,6 @@ const REFRESH_LOCK = "tabaaq-web-session-refresh";
 export type WebAuthBrokerOptions = {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
-  readonly fetch?: typeof fetch;
-  readonly storage?: KeyValueStorage;
-  readonly isOnline?: () => boolean;
 };
 
 const webLocks = Effect.try(() => globalThis.navigator?.locks).pipe(
@@ -58,7 +55,7 @@ const oneTabAtATime = <A, E>(refresh: Effect.Effect<A, E>): Effect.Effect<A, E> 
       : holdRefreshLock(locks).pipe(Effect.andThen(refresh), Effect.scoped),
   );
 
-export interface WebAuthApi {
+interface WebAuthApi {
   readonly sessionExpected: Effect.Effect<boolean>;
   readonly snapshot: Effect.Effect<WorkspaceSnapshot>;
   readonly initialize: Effect.Effect<WorkspaceSnapshot>;
@@ -73,9 +70,9 @@ export const layerWebAuth = (
   options: WebAuthBrokerOptions,
   publishSession: (snapshot: WorkspaceSnapshot) => void,
 ): Layer.Layer<WebAuth | SessionHttp | AuthClient> => {
-  const send: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
-  const hint = browserStore(() => options.storage ?? globalThis.localStorage);
-  const isOnline = options.isOnline ?? (() => globalThis.navigator?.onLine ?? true);
+  const send: typeof fetch = (input, init) => globalThis.fetch(input, init);
+  const hint = browserStore(() => globalThis.localStorage);
+  const isOnline = () => globalThis.navigator?.onLine ?? true;
   const snapshot = MutableRef.make<WorkspaceSnapshot>(
     unauthenticatedWorkspace({ isOnline: false }),
   );

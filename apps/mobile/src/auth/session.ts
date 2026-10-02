@@ -1,3 +1,5 @@
+import type { Account } from "./model";
+
 export type LiveAccessToken = (options: { readonly force: boolean }) => Promise<string | null>;
 
 export type SignedInSession = {
@@ -12,12 +14,6 @@ export type SignedInSession = {
   readonly signOut: () => Promise<void>;
 };
 
-export type SessionOrganization = {
-  readonly id: string;
-  readonly name: string;
-  readonly role: string;
-};
-
 export type Session =
   | { readonly status: "loading" }
   | { readonly status: "signedOut"; readonly notice?: string }
@@ -26,7 +22,7 @@ export type Session =
       readonly userId: string;
       readonly email: string;
       readonly displayName: string;
-      readonly organization: SessionOrganization | null;
+      readonly organization: Account["organization"];
       readonly signOut: () => Promise<void>;
     }
   | SignedInSession;

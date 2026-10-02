@@ -57,12 +57,12 @@ import {
 } from "./problems";
 import type { LiveAccessToken, Session } from "./session";
 
-export interface SignInFlow {
+interface SignInFlow {
   readonly route: LoginRoute;
   readonly issuedAt: number;
 }
 
-export type ActionResult =
+type ActionResult =
   | { readonly _tag: "Done" }
   | { readonly _tag: "Failed"; readonly problem: AuthProblem };
 
@@ -70,7 +70,7 @@ export type IdentifyResult =
   | { readonly _tag: "Routed"; readonly route: LoginRoute["_tag"] }
   | { readonly _tag: "Failed"; readonly problem: AuthProblem };
 
-export type GoogleSignInResult = ActionResult | { readonly _tag: "Cancelled" };
+type GoogleSignInResult = ActionResult | { readonly _tag: "Cancelled" };
 
 export type GoogleIdTokenResult =
   | { readonly _tag: "Token"; readonly idToken: string }
@@ -90,7 +90,7 @@ export interface SessionVault {
   readonly saveLastOrganization: (value: LastOrganization) => Promise<void>;
 }
 
-export interface AuthControllerOptions {
+interface AuthControllerOptions {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
   readonly fetch: typeof fetch;
@@ -98,7 +98,6 @@ export interface AuthControllerOptions {
   readonly isOnline: () => Promise<boolean>;
   readonly google: GoogleIdentity | null;
   readonly client: AuthClientKind;
-  readonly now?: () => number;
 }
 
 export interface AuthController {
@@ -158,7 +157,6 @@ const settled = <A, R>(action: Effect.Effect<A, Failed, R>) =>
   Effect.catch(action, (failure) => Effect.succeed(failure));
 
 export const createAuthController = (options: AuthControllerOptions): AuthController => {
-  const now = options.now ?? Date.now;
   const registry = AtomRegistry.make();
   const stateAtom = Atom.make<AuthState>(initialAuthState).pipe(Atom.keepAlive);
   const flowAtom = Atom.make<SignInFlow | null>(null).pipe(Atom.keepAlive);
@@ -185,8 +183,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     Effect.map(isNetworkFailure(facts) ? online : Effect.succeed(true), (isOnline) => {
       const context: FailureContext =
         codeIssuedAt === undefined
-          ? { online: isOnline, now: now() }
-          : { online: isOnline, now: now(), codeIssuedAt };
+          ? { online: isOnline, now: Date.now() }
+          : { online: isOnline, now: Date.now(), codeIssuedAt };
       return failed(describeFailure(facts, context));
     });
 
@@ -339,7 +337,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     const route = yield* AuthClient.use((client) => client.identify({ email: address })).pipe(
       rejecting(),
     );
-    setFlow({ route, issuedAt: now() });
+    setFlow({ route, issuedAt: Date.now() });
     const routed: IdentifyResult = { _tag: "Routed", route: route._tag };
     return routed;
   }, settled);

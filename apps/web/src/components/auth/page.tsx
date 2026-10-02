@@ -4,7 +4,6 @@ import * as React from "react";
 
 import { PasswordInput } from "@/components/auth/password-input";
 import { BrandMark } from "@/components/brand-mark";
-import { GoogleIcon } from "@/components/icons/google";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -28,6 +27,18 @@ type AuthStep =
 const messageOf = (cause: unknown) =>
   cause instanceof Error ? cause.message : "Could not sign in.";
 
+export function AuthScreen({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10">
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 z-0 h-10 [-webkit-app-region:drag]"
+      />
+      <div className="relative z-10 w-full max-w-sm">{children}</div>
+    </div>
+  );
+}
+
 function AuthHeader({
   description,
   title,
@@ -39,7 +50,7 @@ function AuthHeader({
     <div className="flex flex-col items-center gap-2 text-center">
       <Link className="flex flex-col items-center gap-2 font-medium" to="/">
         <div className="flex size-8 items-center justify-center rounded-md">
-          <BrandMark alt="" className="size-8 rounded-md" />
+          <BrandMark className="size-8 rounded-md" />
         </div>
         <span className="sr-only">Tabaaq</span>
       </Link>
@@ -107,7 +118,7 @@ function IdentifierSignIn({
             type="button"
             variant="outline"
           >
-            <GoogleIcon aria-hidden="true" className="size-4" />
+            <img alt="" aria-hidden="true" className="size-4" src="/google.svg" />
             Continue with Google
           </Button>
         </Field>
@@ -309,7 +320,7 @@ export function useGoogleCallback(): GoogleCallback {
 
   React.useEffect(
     () =>
-      appHost().signIn.onOAuthCallback?.((url) => {
+      appHost().signIn.onOAuthCallback((url) => {
         setState({ completing: true, error: null });
         appHost()
           .signIn.completeGoogle(url)

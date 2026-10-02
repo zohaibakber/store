@@ -9,15 +9,15 @@ import * as Stream from "effect/Stream";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { describe, expect, it } from "vitest";
 
-import { assertTrustedIpcSender, isTrustedIpcSenderFrame } from "../../electron/ipc-sender";
 import {
+  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
   REPLICA_COMMAND_STATUS_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_OUTBOX_CHANNEL,
   REPLICA_READ_SUBSET_CHANNEL,
-} from "../../electron/replica-channels";
+} from "../../electron/ipc-channels";
+import { isTrustedIpcSenderFrame } from "../../electron/ipc-sender";
 import {
   registerReplicaWorkerIpc,
   type ReplicaInvokeEvent,
@@ -67,7 +67,6 @@ const setupIpc = () => {
     Engine: () => Effect.succeed("sqlite" as const),
     Stamp: () => Effect.die("unused"),
     ReadInsights: () => Effect.die("unused"),
-    ReadOutboxStatuses: () => Effect.die("unused"),
     ReadSyncActivity: () => Effect.die("unused"),
     EnqueueCommand: () => Effect.die("unused"),
     ReadCommandStatus: () => Effect.die("unused"),
@@ -134,8 +133,8 @@ const setupIpc = () => {
     syncApiRequest: () => Effect.succeed({ ok: true, status: 200, bodyText: "{}" }),
     liveAccessToken: async () => "access-1",
     allowedOrigins: () => allowed,
-    spawnWorker,
-    spawnReader,
+    backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
+    sessions: { spawnWorker, spawnReader },
   });
   const senderEvent = (id: number, url = allowed[0]!): ReplicaInvokeEvent => ({
     senderFrame: { url },
@@ -165,9 +164,6 @@ describe("replica worker IPC contract", () => {
     expect(isTrustedIpcSenderFrame({ url: "https://app.tabaaq.local/inventory" }, allowed)).toBe(
       true,
     );
-    expect(() =>
-      assertTrustedIpcSender({ url: "https://evil.example" }, ["https://app.tabaaq.local"]),
-    ).toThrow(untrusted);
 
     const { listeners, registration, senderEvent, invoke, open } = setupIpc();
     const { workspaceToken } = await open(senderEvent(7));
@@ -221,8 +217,8 @@ describe("replica worker IPC contract", () => {
     const { registration, senderEvent, invoke, open } = setupIpc();
     const { workspaceToken } = await open(senderEvent(7));
     const intruder = senderEvent(9);
-    await expect(invoke(REPLICA_OUTBOX_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
-      "Rejected replica outbox read from a different renderer.",
+    await expect(invoke(REPLICA_ACTIVITY_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
+      "Rejected replica activity read from a different renderer.",
     );
     await expect(
       invoke(REPLICA_COMMAND_STATUS_CHANNEL, intruder, { workspaceToken, operationId: "op-1" }),
@@ -234,7 +230,7 @@ describe("replica worker IPC contract", () => {
       "Rejected replica close from a different renderer.",
     );
     await expect(
-      invoke(REPLICA_OUTBOX_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
+      invoke(REPLICA_ACTIVITY_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
     ).rejects.toThrow("Unknown replica workspace.");
     await registration.dispose();
   });

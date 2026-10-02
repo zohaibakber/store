@@ -5,7 +5,6 @@ import * as React from "react";
 import { appHost } from "@/host";
 import { themePreferenceAtom, type ThemePreference } from "@/lib/preferences";
 
-export type { ThemePreference };
 type ResolvedTheme = "dark" | "light";
 
 type ThemeContextValue = {

@@ -1,4 +1,12 @@
-import { PURCHASE_ORDER_TABS } from "@store/inventory-react";
+import {
+  PURCHASE_ORDER_TABS,
+  preloadAll,
+  preloadPurchaseOrderList,
+  preloadPurchaseOrderTabs,
+  preloadSuppliers,
+  useSuspenseSuppliers,
+  type PurchaseOrderListRequest,
+} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
@@ -11,16 +19,7 @@ import {
 import { PurchaseOrdersPage } from "@/components/purchases/orders-page";
 import { supplierIdsMatching, supplierNamesOf } from "@/components/purchases/presentation";
 import { useShownRequest } from "@/components/shared/list-view";
-import { formValidator } from "@/lib/form-schema";
-import {
-  preloadAll,
-  preloadInventory,
-  preloadPurchaseOrderList,
-  preloadPurchaseOrderTabs,
-  preloadSuppliers,
-  useSuspenseSuppliers,
-  type PurchaseOrderListRequest,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const PurchasesSearch = Schema.Struct({
@@ -31,7 +30,7 @@ const PurchasesSearch = Schema.Struct({
 
 type PurchasesSearch = typeof PurchasesSearch.Type;
 
-const purchasesSearch = formValidator(PurchasesSearch);
+const purchasesSearch = Schema.toStandardSchemaV1(PurchasesSearch);
 
 const viewFor = (search: PurchasesSearch): PurchaseOrderListView => ({
   tab: search.tab ?? DEFAULT_PURCHASE_ORDER_TAB,

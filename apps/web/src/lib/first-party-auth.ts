@@ -30,7 +30,7 @@ const storageBlocked = (cause: unknown) =>
     message: cause instanceof Error ? cause.message : "Browser storage is unavailable.",
   });
 
-export type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+type KeyValueStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const browserStore = (storage: () => KeyValueStorage) => ({
   get: (key: string) =>
@@ -44,7 +44,7 @@ export const browserStore = (storage: () => KeyValueStorage) => ({
     Effect.try({ try: () => storage().removeItem(key), catch: storageBlocked }),
 });
 
-export type BrowserStore = ReturnType<typeof browserStore>;
+type BrowserStore = ReturnType<typeof browserStore>;
 
 const proofKey = Effect.promise(async () => {
   const verifier = Encoding.encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));

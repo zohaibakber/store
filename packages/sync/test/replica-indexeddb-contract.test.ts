@@ -3,7 +3,7 @@ import { LAST_UNIT_REPLICA_A, lastUnitBuyerAEnvelope } from "@store/contracts/sy
 import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 
 const databaseName = "replica-contract";
 

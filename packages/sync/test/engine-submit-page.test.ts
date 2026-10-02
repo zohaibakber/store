@@ -17,11 +17,10 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
-import * as Semaphore from "effect/Semaphore";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
-import { runReplicaTransaction } from "../src/replica/storage";
-import { makeSqliteReplicaStore } from "../src/sqlite";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
+import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { SyncTransport } from "../src/transport";
 import { stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
@@ -99,7 +98,6 @@ const openEngine = (
     }
     const engine = yield* makeSyncEngineFromReplicaStore(
       store,
-      yield* Semaphore.make(1),
       transport,
       options.pullMaxBytes === undefined ? {} : { pullMaxBytes: options.pullMaxBytes },
     );

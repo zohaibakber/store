@@ -53,7 +53,6 @@ const scriptedWorker = (script: Script) =>
     Engine: () => Effect.die("unused"),
     Stamp: () => Effect.die("unused"),
     ReadInsights: () => Effect.die("unused"),
-    ReadOutboxStatuses: () => Effect.die("unused"),
     ReadSyncActivity: () => Effect.die("unused"),
     EnqueueCommand: () => Effect.die("unused"),
     ReadCommandStatus: () => Effect.die("unused"),

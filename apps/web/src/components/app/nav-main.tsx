@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 import { useParkedSaleCountIn } from "@/hooks/use-sale-drafts";
-import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { appHost } from "@/host";
 import { formatCount } from "@/lib/format";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 type AppRoute =
   | "/"
@@ -34,7 +34,7 @@ type AppRoute =
   | "/purchases/suppliers"
   | "/invoices";
 
-export type NavSubItem = {
+type NavSubItem = {
   title: string;
   url: AppRoute;
   icon: React.ReactNode;

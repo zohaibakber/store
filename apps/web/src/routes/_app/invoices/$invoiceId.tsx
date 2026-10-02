@@ -1,11 +1,8 @@
+import { preloadInventoryInvoice, useSuspenseInventoryInvoice } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { InvoiceDetailError, InvoiceDetailPage } from "@/components/invoices/detail-page";
-import {
-  preloadInventory,
-  preloadInventoryInvoice,
-  useSuspenseInventoryInvoice,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 
 export const Route = createFileRoute("/_app/invoices/$invoiceId")({
   loader: ({ context, params }) =>

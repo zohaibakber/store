@@ -1,4 +1,4 @@
-export type StabilityConfig = {
+type StabilityConfig = {
   readonly minimumTokens: number;
   readonly holdMillis: number;
   readonly cooldownMillis: number;
@@ -40,30 +40,26 @@ const tokenSimilarity = (left: ReadonlyArray<string>, right: ReadonlyArray<strin
   return union === 0 ? 0 : shared / union;
 };
 
-export type StabilityStep = {
+type StabilityStep = {
   readonly state: StabilityState;
   readonly capture: boolean;
 };
 
-export const stepStability = (
-  state: StabilityState,
-  text: string,
-  now: number,
-  config: StabilityConfig = AUTO_CAPTURE,
-): StabilityStep => {
+export const stepStability = (state: StabilityState, text: string, now: number): StabilityStep => {
   const tokens = textTokens(text);
-  if (tokens.length < config.minimumTokens) {
+  if (tokens.length < AUTO_CAPTURE.minimumTokens) {
     return { state: { ...state, tokens, steadySince: null }, capture: false };
   }
   const steady =
     state.steadySince !== null &&
-    tokenSimilarity(state.tokens, tokens) >= config.sameFrameSimilarity;
+    tokenSimilarity(state.tokens, tokens) >= AUTO_CAPTURE.sameFrameSimilarity;
   const steadySince = steady && state.steadySince !== null ? state.steadySince : now;
-  const held = now - steadySince >= config.holdMillis;
-  const cooled = state.lastCaptureAt === null || now - state.lastCaptureAt >= config.cooldownMillis;
+  const held = now - steadySince >= AUTO_CAPTURE.holdMillis;
+  const cooled =
+    state.lastCaptureAt === null || now - state.lastCaptureAt >= AUTO_CAPTURE.cooldownMillis;
   const newItem =
     state.lastCaptured === null ||
-    tokenSimilarity(state.lastCaptured, tokens) < config.sameItemSimilarity;
+    tokenSimilarity(state.lastCaptured, tokens) < AUTO_CAPTURE.sameItemSimilarity;
   if (held && cooled && newItem) {
     return {
       state: { tokens, steadySince, lastCaptured: tokens, lastCaptureAt: now },

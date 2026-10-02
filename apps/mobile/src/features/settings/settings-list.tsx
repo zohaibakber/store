@@ -8,8 +8,6 @@ import { StyleSheet } from "react-native";
 import { colors, fonts, space, type } from "@/theme/tokens";
 import { ComposeActionButton } from "@/ui/action-button";
 
-import { appVersionLabel } from "../format";
-
 const groupStyle = { backgroundColor: colors.ground };
 const labelStyle = {
   fontFamily: fonts.regular,
@@ -42,7 +40,12 @@ const dialogColors = {
   textContentColor: colors.muted,
 };
 
-export type SettingsAccount = {
+const appVersionLabel = (version: string | null, build: string | null) => {
+  if (version === null) return "Unknown";
+  return build === null ? version : `${version} (${build})`;
+};
+
+type SettingsAccount = {
   readonly email: string;
   readonly organizationName: string | null;
 };

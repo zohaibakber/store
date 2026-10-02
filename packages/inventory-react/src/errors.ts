@@ -25,6 +25,10 @@ export class WorkspaceReadFailure extends Schema.TaggedError<WorkspaceReadFailur
   },
 ) {}
 
+export const STORAGE_FAILED = "Local replica storage failed.";
+
+export const workspaceStorageFailure = () => new WorkspaceReadFailure({ message: STORAGE_FAILED });
+
 export const staleCatalogLease = () =>
   new StaleCatalogLease({ message: "Catalog lease is no longer current." });
 

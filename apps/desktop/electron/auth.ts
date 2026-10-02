@@ -73,10 +73,9 @@ const persistenceError = (cause: unknown) =>
 
 const desktopClient = nativeClient("Tabaaq Desktop");
 
-export class GoogleSignInFailure extends Schema.TaggedError<GoogleSignInFailure>()(
-  "GoogleSignInFailure",
-  { message: Schema.String },
-) {}
+class GoogleSignInFailure extends Schema.TaggedError<GoogleSignInFailure>()("GoogleSignInFailure", {
+  message: Schema.String,
+}) {}
 
 const googleCallbackInvalid = () =>
   new GoogleSignInFailure({ message: "The Google callback is invalid." });
@@ -118,7 +117,7 @@ const writePersisted = (value: PersistedAuth) =>
     });
   });
 
-export interface DesktopAuthApi {
+interface DesktopAuthApi {
   readonly session: Effect.Effect<WorkspaceSnapshot>;
   readonly initialize: Effect.Effect<WorkspaceSnapshot>;
   readonly identify: (input: IdentifyInput) => Effect.Effect<LoginRoute, AuthClientError>;

@@ -31,6 +31,12 @@ export const ReplicaRestockPageInput = Schema.Struct({
   request: RestockPageRequest,
 });
 
+const ANALYTICS_PERMANENT_STREAMS = 1;
+const ANALYTICS_CONTROL_SLOTS = 4;
+const ANALYTICS_FINITE_READS = 4;
+export const ANALYTICS_WORKER_RPC_CONCURRENCY =
+  ANALYTICS_PERMANENT_STREAMS + ANALYTICS_CONTROL_SLOTS + ANALYTICS_FINITE_READS;
+
 export const AnalyticsWorkerBoot = Schema.Struct({
   replicaDatabasePath: Schema.String,
   analyticsDatabasePath: Schema.String,

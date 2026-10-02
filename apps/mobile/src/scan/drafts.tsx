@@ -1,3 +1,4 @@
+import type { ProductScanMode } from "@store/contracts/server-api.schema";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -6,7 +7,6 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Queue from "effect/Queue";
-import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { randomUUID } from "expo-crypto";
@@ -21,7 +21,6 @@ import { sameEdits } from "./fields";
 import {
   MAX_PARSE_ATTEMPTS,
   type ParseState,
-  type ProductScanMode,
   type ReviewEdits,
   type ScanDraft,
   canRetryParse,
@@ -29,14 +28,14 @@ import {
 } from "./model";
 import { type ScanParseError, parseProductScan } from "./parse-client";
 
-export type NewDraft = {
+type NewDraft = {
   readonly mode: ProductScanMode;
   readonly capturedPath: string | null;
   readonly recognizedText: string;
   readonly lines: ReadonlyArray<string>;
 };
 
-export type ScanDrafts = {
+type ScanDrafts = {
   readonly drafts: ReadonlyArray<ScanDraft>;
   readonly loaded: boolean;
   readonly parsing: ReadonlySet<string>;
@@ -53,8 +52,6 @@ export type ScanDrafts = {
 };
 
 const ScanDraftsContext = React.createContext<ScanDrafts | null>(null);
-
-const apiBaseUrl = Result.getOrNull(mobileConfig)?.apiBaseUrl ?? null;
 
 type ParseEnvironment = {
   readonly online: boolean;
@@ -192,7 +189,7 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
         const draft = draftsRef.current.get(draftId);
         if (!draft || !eligibleForParse(draft, yield* Clock.currentTimeMillis)) return;
         const environment = environmentRef.current;
-        if (!environment.online || environment.fetch === null || apiBaseUrl === null) {
+        if (!environment.online || environment.fetch === null) {
           setParse(draftId, { _tag: "Deferred" });
           return;
         }
@@ -201,7 +198,7 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
           return;
         }
         setParsing((current) => new Set(current).add(draftId));
-        const exit = yield* parseProductScan(apiBaseUrl, {
+        const exit = yield* parseProductScan(mobileConfig.apiBaseUrl, {
           recognizedText: draft.recognizedText,
           mode: draft.mode,
         }).pipe(

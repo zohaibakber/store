@@ -1,7 +1,13 @@
 import * as Schema from "effect/Schema";
 
-import { LocalCatalogReport } from "./local-catalog-standing";
 import { CatalogCounts } from "./workspace-backup";
+
+export const LocalCatalogReport = Schema.Union([
+  Schema.TaggedStruct("empty", {}),
+  Schema.TaggedStruct("stocked", {}),
+  Schema.TaggedStruct("unknown", {}),
+]);
+export type LocalCatalogReport = typeof LocalCatalogReport.Type;
 
 export const PublishOffer = Schema.Union([
   Schema.TaggedStruct("none", {}),

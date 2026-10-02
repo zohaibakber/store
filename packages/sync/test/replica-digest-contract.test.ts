@@ -19,13 +19,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import { TestClock } from "effect/testing";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import type { SyncTransport } from "../src/transport";
@@ -39,6 +37,7 @@ import {
   type PostgresPartitionTables,
 } from "./lib/authority-digest";
 import { enqueueRequestOf } from "./lib/enqueue";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   catalogEnvelope,
   FIXTURE_NOW,
@@ -350,10 +349,8 @@ const withEngine = <A, E>(
   ) => Effect.Effect<A, E>,
 ) =>
   Effect.gen(function* () {
-    const mutex = yield* Semaphore.make(1);
     const engine = yield* makeSyncEngineFromReplicaStore(
       harness.store,
-      mutex,
       authorityTransport(harness.incarnation, authority),
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },
     );

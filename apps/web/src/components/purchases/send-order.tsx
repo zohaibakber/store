@@ -8,6 +8,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder, PurchaseOrderItem, Supplier } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { useInventoryActions } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import {
   purchaseOrderCostTotal,
@@ -35,7 +36,6 @@ import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format-date";
-import { useInventoryActions } from "@/lib/inventory";
 import { usePageShortcuts } from "@/lib/shortcuts";
 
 import {
@@ -45,7 +45,7 @@ import {
   UNKNOWN_SUPPLIER,
 } from "./presentation";
 
-export type SendOrderActionProps = {
+type SendOrderActionProps = {
   readonly canMarkSent: boolean;
   readonly order: PurchaseOrder;
   readonly supplier: Supplier | undefined;

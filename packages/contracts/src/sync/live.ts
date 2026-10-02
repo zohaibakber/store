@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { PositiveIntFromString } from "../internal/primitives";
-import { SyncIdentifier } from "../schema-primitives";
+import { PositiveIntFromString, SyncIdentifier } from "../schema-primitives";
 import {
   OrgCommitSequence,
   SyncEpoch,

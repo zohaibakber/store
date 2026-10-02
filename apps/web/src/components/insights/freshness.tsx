@@ -1,8 +1,8 @@
 import type { AnalyticsStatus } from "@store/contracts";
+import { useInventoryInsights } from "@store/inventory-react";
 
 import { Spinner } from "@/components/ui/spinner";
 import { formatRelativeTime } from "@/lib/format";
-import { useInventoryInsights } from "@/lib/inventory";
 
 import { progressPercent } from "./presentation";
 

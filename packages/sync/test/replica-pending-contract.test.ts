@@ -32,11 +32,11 @@ import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { IndexedDbSubsetRow } from "../src/replica/indexeddb/query";
 import { entityStore } from "../src/replica/indexeddb/schema";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { enqueueRequestOf } from "./lib/enqueue";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   acceptedCatalogReceipt,
   catalogEnvelope,

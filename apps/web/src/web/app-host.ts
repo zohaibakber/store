@@ -18,7 +18,7 @@ const SIGN_IN_PATH = "/sign-in";
 type BrowserLocation = Pick<Location, "origin" | "href" | "pathname" | "assign">;
 type BrowserHistory = Pick<History, "state" | "replaceState">;
 
-export type WebAppHostOptions = WebAuthBrokerOptions & {
+type WebAppHostOptions = WebAuthBrokerOptions & {
   readonly location: BrowserLocation;
   readonly history: BrowserHistory;
 };

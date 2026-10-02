@@ -14,7 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { seedCatalogGroup } from "./lib/pending-fixture";
 
 const databaseName = "replica-idb-generation";

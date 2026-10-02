@@ -1,6 +1,5 @@
-import type { InsightsSummary } from "@store/contracts";
+import type { InsightsSummary, SalesPeriod } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type { SalesPeriod } from "@store/services/insights";
 
 import { Badge } from "@/components/ui/badge";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";

@@ -27,6 +27,15 @@ export const noticeFromState = (
   touchedKeys,
 });
 
+export const generationResetNotice = (
+  databaseIdentity: string,
+  after: ReplicaReadStamp,
+): ReplicaCommitNotice => ({
+  ...noticeFromState(databaseIdentity, after, SYNC_ENTITIES),
+  fullInvalidation: true,
+  overflowedEntities: SYNC_ENTITIES,
+});
+
 type ReplicaCommitHub = {
   readonly publish: (notice: ReplicaCommitNotice | undefined) => Effect.Effect<void>;
   readonly commits: Stream.Stream<ReplicaCommitNotice>;

@@ -5,6 +5,12 @@ import {
   type PurchaseOrder,
   type PurchaseOrderItem,
 } from "@store/contracts";
+import {
+  useInventoryActions,
+  usePurchasingGate,
+  useSuspenseCatalogProductsById,
+  type ReceiveDeliveryLineInput,
+} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import * as React from "react";
 
@@ -27,12 +33,6 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY, formatCount } from "@/lib/format";
-import {
-  useInventoryActions,
-  usePurchasingGate,
-  useSuspenseCatalogProductsById,
-  type ReceiveDeliveryLineInput,
-} from "@/lib/inventory";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -247,7 +247,7 @@ function ReceiveLineRow({
   );
 }
 
-export type ReceiveDeliveryBodyProps = {
+type ReceiveDeliveryBodyProps = {
   readonly note?: string | null;
   readonly onDone: () => void;
   readonly onReceived?: () => void;

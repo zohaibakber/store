@@ -1,5 +1,4 @@
 import { nativeClient } from "@store/auth";
-import * as Result from "effect/Result";
 import Constants from "expo-constants";
 import * as Network from "expo-network";
 import * as React from "react";
@@ -11,16 +10,10 @@ import { makeGoogleIdentity } from "./google";
 import type { Session } from "./session";
 import { secureSessionVault } from "./vault";
 
-export type { Session, SessionOrganization, SignedInSession } from "./session";
-export type {
-  ActionResult,
-  AuthController,
-  GoogleSignInResult,
-  IdentifyResult,
-  SignInFlow,
-} from "./controller";
-export { canRenameOrganization } from "./model";
-export type { AuthField, AuthProblem, AuthProblemKind } from "./problems";
+export type { SignedInSession } from "./session";
+export type { IdentifyResult } from "./controller";
+export { canRenameOrganization, type Account } from "./model";
+export type { AuthProblem } from "./problems";
 
 const SessionContext = React.createContext<Session>({ status: "loading" });
 const ControllerContext = React.createContext<AuthController | null>(null);
@@ -31,21 +24,22 @@ const deviceLabel = () => {
   return label.slice(0, 100);
 };
 
-const createNativeAuthController = () => {
-  const config = Result.getOrThrow(mobileConfig);
-  return createAuthController({
-    apiBaseUrl: config.apiBaseUrl,
-    authBaseUrl: config.authBaseUrl,
+const createNativeAuthController = () =>
+  createAuthController({
+    apiBaseUrl: mobileConfig.apiBaseUrl,
+    authBaseUrl: mobileConfig.authBaseUrl,
     fetch: (input, init) => globalThis.fetch(input, init),
     vault: secureSessionVault,
     isOnline: async () => {
       const state = await Network.getNetworkStateAsync();
       return state.isConnected !== false && state.isInternetReachable !== false;
     },
-    google: config.googleWebClientId === null ? null : makeGoogleIdentity(config.googleWebClientId),
+    google:
+      mobileConfig.googleWebClientId === null
+        ? null
+        : makeGoogleIdentity(mobileConfig.googleWebClientId),
     client: nativeClient(deviceLabel()),
   });
-};
 
 export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
   const [controller] = React.useState(createNativeAuthController);

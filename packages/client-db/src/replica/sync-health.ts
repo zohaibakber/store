@@ -1,4 +1,4 @@
-import type { SyncSchedulerContract } from "@store/sync/browser";
+import type { SyncSchedulerContract } from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";

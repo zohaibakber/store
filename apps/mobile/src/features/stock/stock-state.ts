@@ -1,7 +1,7 @@
-import type { Product } from "@store/contracts";
+import type { Product, StockMovement } from "@store/contracts";
 import type { ProductStockSummary } from "@store/inventory-react";
 
-import { DAY_MS, formatCount } from "../format";
+import { DAY_MS, formatCount, formatSignedCount } from "../format";
 
 const EXPIRY_WINDOW_DAYS = 90;
 
@@ -13,7 +13,7 @@ export const stockFilters: ReadonlyArray<{ readonly id: StockFilter; readonly la
   { id: "expiringSoon", label: "Expiring soon" },
 ];
 
-export type StockAttention = "expired" | "outOfStock" | "lowStock" | "expiringSoon";
+type StockAttention = "expired" | "outOfStock" | "lowStock" | "expiringSoon";
 
 type StockState = Pick<
   ProductStockSummary,
@@ -58,7 +58,7 @@ export const attentionLabel = (attention: StockAttention) => {
   }
 };
 
-export type BatchAttention = "expired" | "expiringSoon";
+type BatchAttention = "expired" | "expiringSoon";
 
 export const batchAttention = (expiresAt: number | null, now: number): BatchAttention | null => {
   if (expiresAt === null) return null;
@@ -66,12 +66,15 @@ export const batchAttention = (expiresAt: number | null, now: number): BatchAtte
   return expiresWithinWindow(expiresAt, now) ? "expiringSoon" : null;
 };
 
-export type OnHand = { readonly value: string; readonly unit: string };
+type OnHand = { readonly value: string; readonly unit: string };
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
+const countsUnitsOnly = (unitsPerPack: number, tracksPacks: boolean) =>
+  !tracksPacks || unitsPerPack <= 1;
+
 export const onHandOf = (units: number, unitsPerPack: number, tracksPacks: boolean): OnHand => {
-  if (!tracksPacks || unitsPerPack <= 1) {
+  if (countsUnitsOnly(unitsPerPack, tracksPacks)) {
     return { value: formatCount(units), unit: plural(units, "unit", "units") };
   }
   const packs = Math.floor(units / unitsPerPack);
@@ -89,12 +92,43 @@ export const batchOnHand = (
   unitsPerPack: number,
   tracksPacks: boolean,
 ) => {
-  if (!tracksPacks || unitsPerPack <= 1) {
+  if (countsUnitsOnly(unitsPerPack, tracksPacks)) {
     const units = packQuantity * unitsPerPack + unitQuantity;
     return `${formatCount(units)} ${plural(units, "unit", "units")}`;
   }
   const packs = `${formatCount(packQuantity)} ${plural(packQuantity, "pack", "packs")}`;
   return unitQuantity > 0 ? `${packs} + ${formatCount(unitQuantity)}` : packs;
+};
+
+export const movementLabel = (type: StockMovement["type"]) => {
+  switch (type) {
+    case "stock_in":
+      return "Received";
+    case "sale":
+      return "Sold";
+    case "open_pack":
+      return "Pack opened";
+    case "adjustment":
+      return "Adjusted";
+  }
+};
+
+const signedPart = (delta: number, one: string, many: string) =>
+  `${formatSignedCount(delta)} ${plural(Math.abs(delta), one, many)}`;
+
+export const movementDelta = (
+  movement: Pick<StockMovement, "packDelta" | "unitDelta">,
+  unitsPerPack: number,
+  tracksPacks: boolean,
+) => {
+  if (countsUnitsOnly(unitsPerPack, tracksPacks)) {
+    return signedPart(movement.packDelta * unitsPerPack + movement.unitDelta, "unit", "units");
+  }
+  const parts = [
+    movement.packDelta === 0 ? null : signedPart(movement.packDelta, "pack", "packs"),
+    movement.unitDelta === 0 ? null : signedPart(movement.unitDelta, "unit", "units"),
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? "No change" : parts.join(", ");
 };
 
 export const productSubtitle = (

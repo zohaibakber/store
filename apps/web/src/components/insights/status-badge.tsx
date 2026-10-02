@@ -1,4 +1,4 @@
-import type { StockStatus } from "@store/services/insights";
+import type { StockStatus } from "@store/contracts";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -21,14 +21,25 @@ export function StatusDot({ status }: { readonly status: StockStatus }) {
   return <ToneDot tone={STATUS_META[status].tone} />;
 }
 
-export function StatusBadge({ status }: { readonly status: StockStatus }) {
-  const meta = STATUS_META[status];
+export function ToneBadge({
+  hint,
+  label,
+  tone,
+}: {
+  readonly hint: string;
+  readonly label: string;
+  readonly tone: Tone;
+}) {
   return (
-    <Badge title={meta.hint} variant="outline">
-      <ToneDot tone={meta.tone} />
-      {meta.label}
+    <Badge title={hint} variant="outline">
+      <ToneDot tone={tone} />
+      {label}
     </Badge>
   );
+}
+
+export function StatusBadge({ status }: { readonly status: StockStatus }) {
+  return <ToneBadge {...STATUS_META[status]} />;
 }
 
 export function StatusLabel({ status }: { readonly status: StockStatus }) {

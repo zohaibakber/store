@@ -23,19 +23,19 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import { TestClock } from "effect/testing";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { openReplicaStore } from "../src/sqlite";
 import { makeSyncTransport, type SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { FIXTURE_USER_ID } from "./lib/replica-fixture";
 
@@ -174,7 +174,7 @@ const survivesUnknownEntities = Effect.fn(function* (
   const transport = yield* newerAuthorityTransport(
     historyAuthorityTransport(authority, incarnation),
   );
-  const engine = yield* makeSyncEngineFromReplicaStore(store, yield* Semaphore.make(1), transport);
+  const engine = yield* makeSyncEngineFromReplicaStore(store, transport);
   const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   const { generationId } = yield* store.readStamp();
 

@@ -1,19 +1,19 @@
 import { ProductId } from "@store/contracts/ids";
+import {
+  preloadAll,
+  preloadCatalogCategories,
+  preloadCatalogProduct,
+  preloadProductFacets,
+  useSuspenseCatalogSuggestions,
+  useSuspenseCatalogCategories,
+  useSuspenseCatalogProduct,
+} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import {
-  preloadAll,
-  preloadCatalogCategories,
-  preloadCatalogProduct,
-  preloadInventory,
-  preloadProductFacets,
-  useSuspenseCatalogSuggestions,
-  useSuspenseCatalogCategories,
-  useSuspenseCatalogProduct,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 
 export const Route = createFileRoute("/_app/products/$productId_/edit")({
   loader: ({ context, params }) =>

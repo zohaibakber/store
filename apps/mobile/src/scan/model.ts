@@ -1,8 +1,6 @@
 import { ProductScanMode, ProductScanResult } from "@store/contracts/server-api.schema";
 import * as Schema from "effect/Schema";
 
-export { ProductScanMode, ProductScanResult };
-
 export const ParseState = Schema.Union([
   Schema.TaggedStruct("Waiting", {}),
   Schema.TaggedStruct("Deferred", {}),

@@ -1,9 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
-import { formValidator } from "@/lib/form-schema";
-
-const sectionSearch = formValidator(
+const sectionSearch = Schema.toStandardSchemaV1(
   Schema.Struct({
     invitation: Schema.optionalKey(Schema.String),
   }),

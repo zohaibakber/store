@@ -1,4 +1,5 @@
 import type { Category, Product, ProductSuggestions } from "@store/contracts";
+import { useInventoryActions } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -20,8 +21,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { formValidator } from "@/lib/form-schema";
-import { useInventoryActions } from "@/lib/inventory";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 type StrengthUnit = (typeof strengthUnits)[number];
@@ -37,7 +36,7 @@ const optionalPrice = Schema.String.check(
   ),
 );
 
-const productFormSchema = formValidator(
+const productFormSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.Trim.check(
       Schema.isMinLength(1, { message: "Product name is required." }),

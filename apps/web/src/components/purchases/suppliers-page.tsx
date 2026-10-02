@@ -6,6 +6,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Supplier } from "@store/contracts";
+import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
 import * as React from "react";
 
 import { PageActions } from "@/components/shared/page-actions";
@@ -56,7 +57,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStoreCommand } from "@/hooks/use-store-command";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY } from "@/lib/format";
-import { useInventoryActions, usePurchasingGate } from "@/lib/inventory";
 
 import { PurchasingGateNotice } from "./gate-notice";
 

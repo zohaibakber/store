@@ -15,6 +15,7 @@ import {
   restorePreviousReplicaFile,
   swapReplicaFile,
 } from "./replica-restore-files";
+import { RESTORE_LOCAL_ONLY } from "./replica-rpc";
 import type { ReplicaSession, ReplicaSessions } from "./replica-sessions";
 
 export type ReplicaBackupDialogs = {
@@ -22,7 +23,7 @@ export type ReplicaBackupDialogs = {
   readonly chooseSource: () => Promise<string | null>;
 };
 
-export type StagedRestores = {
+type StagedRestores = {
   readonly stage: (workspaceToken: string, stagedPath: string) => void;
   readonly take: (workspaceToken: string) => string | undefined;
   readonly discard: (workspaceToken: string) => Effect.Effect<void>;
@@ -34,8 +35,6 @@ export type ReplicaBackup = {
   readonly applyRestore: (session: ReplicaSession | undefined) => Effect.Effect<RestoreOutcome>;
   readonly discardRestore: (session: ReplicaSession | undefined) => Effect.Effect<void>;
 };
-
-const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
 
 const NO_WORKSPACE = "Open a workspace before using backups.";
 
@@ -68,7 +67,7 @@ export const makeStagedRestores = (): StagedRestores => {
 export const makeReplicaBackup = (deps: {
   readonly sessions: ReplicaSessions;
   readonly stagedRestores: StagedRestores;
-  readonly dialogs: ReplicaBackupDialogs | undefined;
+  readonly dialogs: ReplicaBackupDialogs;
 }): ReplicaBackup => {
   const { sessions, stagedRestores, dialogs } = deps;
 
@@ -174,12 +173,9 @@ export const makeReplicaBackup = (deps: {
 
   return {
     backUp: (session) =>
-      session === undefined || dialogs === undefined
-        ? Effect.succeed(failed(NO_WORKSPACE))
-        : backUp(session, dialogs),
+      session === undefined ? Effect.succeed(failed(NO_WORKSPACE)) : backUp(session, dialogs),
     chooseRestore: (session) => {
-      if (session === undefined || dialogs === undefined)
-        return Effect.succeed(failed(NO_WORKSPACE));
+      if (session === undefined) return Effect.succeed(failed(NO_WORKSPACE));
       switch (session.identity.authority) {
         case "local":
           return stageRestore(session, dialogs);

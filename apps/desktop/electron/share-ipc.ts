@@ -6,12 +6,12 @@ import type { SavePdfOutcome, ShareBridge } from "@store/web/host/share";
 import * as Schema from "effect/Schema";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import { trustedIpcListener } from "./ipc-sender";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
-} from "./share-channels";
+} from "./ipc-channels";
+import { trustedIpcListener } from "./ipc-sender";
 
 const MAX_COPIED_TEXT_LENGTH = 200_000;
 
@@ -34,15 +34,12 @@ type ShareIpcEvent = Pick<IpcMainInvokeEvent, "senderFrame"> & {
 };
 
 export const registerShareIpc = (options: {
-  readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
+  readonly ipcMain: Pick<IpcMain, "handle">;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly openExternal: (url: string) => Promise<void>;
   readonly writeClipboardText: (text: string) => void;
   readonly choosePdfDestination: (suggestedName: string) => Promise<string | null>;
-  readonly writePdf?: (filePath: string, data: Uint8Array) => Promise<void>;
 }) => {
-  const writePdf = options.writePdf ?? writeFile;
-
   const openExternal = async (
     _event: ShareIpcEvent,
     input: ShareIpcInput<"openExternal">,
@@ -67,7 +64,7 @@ export const registerShareIpc = (options: {
         preferCSSPageSize: true,
         printBackground: false,
       });
-      await writePdf(filePath, data);
+      await writeFile(filePath, data);
       return { _tag: "saved", fileName: path.basename(filePath) };
     } catch {
       return { _tag: "failed", message: "The PDF could not be saved." };
@@ -80,10 +77,4 @@ export const registerShareIpc = (options: {
   options.ipcMain.handle(SHARE_OPEN_EXTERNAL_CHANNEL, trusted(openExternal));
   options.ipcMain.handle(SHARE_COPY_TEXT_CHANNEL, trusted(copyText));
   options.ipcMain.handle(SHARE_SAVE_PDF_CHANNEL, trusted(savePdf));
-
-  return () => {
-    options.ipcMain.removeHandler(SHARE_OPEN_EXTERNAL_CHANNEL);
-    options.ipcMain.removeHandler(SHARE_COPY_TEXT_CHANNEL);
-    options.ipcMain.removeHandler(SHARE_SAVE_PDF_CHANNEL);
-  };
 };

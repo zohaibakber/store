@@ -4,8 +4,7 @@ import {
   type Product,
   type PurchaseOrderItem,
 } from "@store/contracts";
-
-import type { ReceiveDeliveryLineInput } from "@/lib/inventory";
+import type { ReceiveDeliveryLineInput } from "@store/inventory-react";
 
 import { byProductName } from "./presentation";
 
@@ -25,7 +24,7 @@ export type ReceiveRow = {
   readonly cost: number | null;
 };
 
-export type ReceiveProducts = ReadonlyMap<string, ReceiveProduct>;
+type ReceiveProducts = ReadonlyMap<string, ReceiveProduct>;
 
 export const MAX_BATCH_NUMBER_LENGTH = 64;
 
@@ -62,7 +61,7 @@ const rowCost = (row: ReceiveRow, product: ReceiveProduct): number | null =>
     ? null
     : Math.round((rowBaseUnits(row, product) * row.cost) / product.unitsPerPack);
 
-export type ReceiveRowProblem = "quantity" | "cost" | "batchNumber";
+type ReceiveRowProblem = "quantity" | "cost" | "batchNumber";
 
 export const rowProblems = (row: ReceiveRow): ReadonlySet<ReceiveRowProblem> => {
   const problems = new Set<ReceiveRowProblem>();
@@ -181,7 +180,7 @@ export const receiveLineInputs = (
     ];
   });
 
-export type DeliverySummary = {
+type DeliverySummary = {
   readonly lines: number;
   readonly baseUnits: number;
   readonly cost: number;

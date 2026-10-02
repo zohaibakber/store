@@ -1,5 +1,5 @@
-import { ReplicaStore } from "@store/sync/browser";
-import { layerSqliteReplicaStore } from "@store/sync/sqlite";
+import { ReplicaStore } from "@store/sync";
+import { layerSqliteReplicaStore } from "@store/sync/sql-client";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";

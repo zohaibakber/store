@@ -26,8 +26,6 @@ import {
 } from "./projection-context";
 import { persistableRow, type BatchRow, type CategoryRow, type ProductRow } from "./rows";
 
-export type { CatalogActor, CatalogWriteIds, ProjectionContext } from "./projection-context";
-
 const CATALOG_IMPORT_ROWS_PER_LINE = 2;
 
 const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(

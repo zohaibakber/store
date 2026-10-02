@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { InventoryError } from "./errors";
-import type { EncodedJsonBody, ImportedCatalog, InventoryActor } from "./model";
+import type { EncodedCommit, EncodedJsonBody, InventoryActor } from "./model";
 import {
   isDataException,
   protocol,
@@ -39,7 +39,7 @@ export interface InventoryImportsContract {
     actor: InventoryActor,
     importId: ImportId,
     request: ImportCatalogRequest,
-  ) => Effect.Effect<ImportedCatalog, InventoryError>;
+  ) => Effect.Effect<EncodedCommit, InventoryError>;
 }
 
 const committedRow = syncFunctionRow(
@@ -116,6 +116,6 @@ export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsCont
               byteLength: 0,
               originReplicaId: NO_ORIGIN_REPLICA,
             };
-      return { json, fanout } satisfies ImportedCatalog;
+      return { json, fanout } satisfies EncodedCommit;
     }),
   });

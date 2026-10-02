@@ -12,7 +12,7 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { authSession } from "@/lib/auth";
+import { appHost } from "@/host";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 
 const originOpensInviteLinks = (origin: string | undefined) => Boolean(origin?.startsWith("http"));
@@ -71,7 +71,7 @@ const rewritesAccessToken = (result: OrganizationCommandResult) =>
 
 const organizationRosterAtom = Atom.make(
   Effect.tryPromise({
-    try: () => authSession().organizationRoster(),
+    try: () => appHost().auth.organizationRoster(),
     catch: (cause) => storeErrorMessage(cause, "Couldn't load the organization."),
   }),
 );
@@ -87,8 +87,8 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const organize = React.useCallback(
     async (command: OrganizationCommand) => {
       try {
-        const commandResult = await authSession().organize(command);
-        if (rewritesAccessToken(commandResult)) await authSession().renewSession();
+        const commandResult = await appHost().auth.organize(command);
+        if (rewritesAccessToken(commandResult)) await appHost().auth.renewSession();
         refresh();
         return commandResult;
       } catch (cause) {

@@ -1,13 +1,13 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 import type { CatalogLifetime, CatalogReplica } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FiberHandle from "effect/FiberHandle";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 
+import type { AuthSessionBridge } from "@/host";
 import { hasAuthenticatedWorkspace, type HostAccessPolicy } from "@/host-access";
 import type { ReplayChannel } from "@/host/replay-channel";
 
@@ -18,11 +18,6 @@ import {
   type DeviceWorkspaceStore,
 } from "./device-workspace";
 
-export type SessionChangeBridge = {
-  readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
-};
-
 export type WorkspaceSession =
   | { readonly _tag: "Steady"; readonly snapshot: WorkspaceSnapshot }
   | { readonly _tag: "Switching"; readonly snapshot: WorkspaceSnapshot };
@@ -31,7 +26,7 @@ export const publishedWorkspaceSnapshot = (
   session: WorkspaceSession | undefined,
 ): WorkspaceSnapshot | null => session?.snapshot ?? null;
 
-export type WorkspaceScope =
+type WorkspaceScope =
   | { readonly _tag: "None" }
   | { readonly _tag: "Local" }
   | { readonly _tag: "Organization"; readonly key: string };
@@ -73,7 +68,7 @@ type WorkspaceSessionPorts = {
   readonly device?: DeviceWorkspaceStore;
 };
 
-export type ApplyWorkspaceSnapshotPorts = WorkspaceSessionPorts & {
+type ApplyWorkspaceSnapshotPorts = WorkspaceSessionPorts & {
   readonly invalidate: () => Promise<void>;
   readonly flush: (fn: () => void) => void;
 };
@@ -156,15 +151,9 @@ const applyWorkspaceChange = (
     }
   });
 
-export const applyWorkspaceSnapshot = (
-  ports: ApplyWorkspaceSnapshotPorts,
-  next: WorkspaceSnapshot,
-): Effect.Effect<void> => applyWorkspaceChange(ports, { _tag: "Session", snapshot: next });
-
-export type WorkspaceSessionBinding = {
+type WorkspaceSessionBinding = {
   readonly refresh: () => Promise<void>;
   readonly change: (change: DeviceChange) => Promise<void>;
-  readonly stop: () => void;
 };
 
 const boundSession = Ref.makeUnsafe(Option.none<WorkspaceSessionBinding>());
@@ -188,31 +177,23 @@ export const witnessBoundLocalCatalog = async (state: DeviceWorkspace["localCata
 };
 
 export const bindWorkspaceSession = (
-  input: ApplyWorkspaceSnapshotPorts & { readonly bridge: SessionChangeBridge },
-): WorkspaceSessionBinding => {
+  input: ApplyWorkspaceSnapshotPorts & {
+    readonly bridge: Pick<AuthSessionBridge, "getSession" | "onSessionChange">;
+  },
+): void => {
   const scope = Scope.makeUnsafe();
   const latestCommit = Effect.runSync(FiberHandle.make<void>().pipe(Scope.provide(scope)));
   const commit = (change: WorkspaceChange) =>
     FiberHandle.run(latestCommit, applyWorkspaceChange(input, change), { startImmediately: true });
   const settled = (change: WorkspaceChange) =>
     Effect.runPromise(Effect.flatMap(commit(change), Fiber.await)).then(() => undefined);
-  const unsubscribe = input.bridge.onSessionChange((snapshot) => {
+  input.bridge.onSessionChange((snapshot) => {
     Effect.runSync(commit({ _tag: "Session", snapshot }));
   });
   const binding: WorkspaceSessionBinding = {
     refresh: async () => settled({ _tag: "Session", snapshot: await input.bridge.getSession() }),
     change: (change) =>
       recordFor(input.device, change) === null ? Promise.resolve() : settled(change),
-    stop: () => {
-      unsubscribe();
-      Effect.runSync(
-        Ref.update(boundSession, (current) =>
-          Option.isSome(current) && current.value === binding ? Option.none() : current,
-        ),
-      );
-      Effect.runFork(Scope.close(scope, Exit.void));
-    },
   };
   Effect.runSync(Ref.set(boundSession, Option.some(binding)));
-  return binding;
 };

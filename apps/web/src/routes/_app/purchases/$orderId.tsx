@@ -1,18 +1,19 @@
-import { createFileRoute } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
-
-import { PurchaseOrderError, PurchaseOrderPage } from "@/components/purchases/order-page";
-import { formValidator } from "@/lib/form-schema";
 import {
-  preloadInventory,
   preloadPurchaseOrder,
   useSuspensePurchaseOrder,
   useSuspensePurchaseOrderDeliveries,
   useSuspenseSuppliers,
-} from "@/lib/inventory";
+} from "@store/inventory-react";
+import { createFileRoute } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
+
+import { PurchaseOrderError, PurchaseOrderPage } from "@/components/purchases/order-page";
+import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
-const orderSearch = formValidator(Schema.Struct({ receive: lenientSearchParam(Schema.Boolean) }));
+const orderSearch = Schema.toStandardSchemaV1(
+  Schema.Struct({ receive: lenientSearchParam(Schema.Boolean) }),
+);
 
 export const Route = createFileRoute("/_app/purchases/$orderId")({
   validateSearch: orderSearch,

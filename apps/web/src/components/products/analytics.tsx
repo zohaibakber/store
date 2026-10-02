@@ -1,6 +1,7 @@
 import { EyeClosedIcon, EyeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { RestockView } from "@store/contracts";
+import { useInventoryInsights } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -9,7 +10,6 @@ import { AsyncBoundary } from "@/components/app/error-boundary";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { useInventoryInsights } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 
 function PrivateStockValue({ value }: { value: string }) {

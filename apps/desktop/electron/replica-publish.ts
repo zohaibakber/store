@@ -1,8 +1,8 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import { MAX_IMPORT_PARTS } from "@store/contracts";
-import type { LocalCatalogReport } from "@store/web/host/local-catalog-standing";
 import type { CatalogCounts } from "@store/web/host/workspace-backup";
 import type {
+  LocalCatalogReport,
   PublishOffer,
   PublishOutcome,
   PublishProgress,
@@ -22,7 +22,11 @@ import {
   type PublishMarker,
 } from "./replica-publish-files";
 import { removeReplicaFile } from "./replica-restore-files";
-import type { ReplicaPublishSummary, ReplicaWorkerFailure } from "./replica-rpc";
+import {
+  catalogCountsOf,
+  type ReplicaPublishSummary,
+  type ReplicaWorkerFailure,
+} from "./replica-rpc";
 import type { ReplicaWorkerClient } from "./replica-supervisor";
 
 type PublishClient = Pick<ReplicaWorkerClient, "PublishSummary" | "PublishStage" | "PublishCommit">;
@@ -47,7 +51,7 @@ type Standing =
       readonly pending: Option.Option<PublishMarker>;
     };
 
-const NO_OFFER: PublishOffer = { _tag: "none" };
+export const NO_OFFER: PublishOffer = { _tag: "none" };
 
 const NOTHING_TO_MOVE = "This device has no data to move.";
 
@@ -63,13 +67,7 @@ const MOVING_ELSEWHERE =
 
 const UNFINISHED = "This device's data could not be read to the end. Try again.";
 
-const failed = (message: string): PublishOutcome => ({ _tag: "failed", message });
-
-const countsOf = (summary: Summary): CatalogCounts => ({
-  products: summary.products,
-  sales: summary.sales,
-  purchaseOrders: summary.purchaseOrders,
-});
+export const failed = (message: string): PublishOutcome => ({ _tag: "failed", message });
 
 const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: PublishPorts) {
   if (!(yield* replicaFileExists(ports.databasePath))) {
@@ -114,14 +112,14 @@ export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffe
           return {
             _tag: "elsewhere",
             organizationId: standing.organizationId,
-            counts: countsOf(standing.summary),
+            counts: catalogCountsOf(standing.summary),
           };
         case "here":
           return standing.summary.rows === 0
             ? NO_OFFER
             : {
                 _tag: "available",
-                counts: countsOf(standing.summary),
+                counts: catalogCountsOf(standing.summary),
                 resuming: Option.isSome(standing.pending),
               };
       }
@@ -230,7 +228,7 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
   summary: Summary,
   pending: Option.Option<PublishMarker>,
 ) {
-  const counts = countsOf(summary);
+  const counts = catalogCountsOf(summary);
   if (Option.isSome(pending)) {
     const resumed = yield* resume(ports, pending.value, counts);
     if (Option.isSome(resumed)) return resumed.value;

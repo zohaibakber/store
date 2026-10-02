@@ -1,4 +1,5 @@
 import type { Product } from "@store/contracts";
+import { useInventoryActions } from "@store/inventory-react";
 
 import {
   Select,
@@ -10,7 +11,6 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { useInventoryActions } from "@/lib/inventory";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible to customers" },

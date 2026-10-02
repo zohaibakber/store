@@ -6,7 +6,7 @@ import { Text } from "@/ui/text";
 
 const ripple = { color: colors.hairline };
 
-export type InvoiceRowProps = {
+type InvoiceRowProps = {
   readonly id: string;
   readonly title: string;
   readonly subtitle: string;

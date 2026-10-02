@@ -19,7 +19,7 @@ const InventorySchema = Drizzle.Schema("InventoryPostgresSchema", {
   dialect: "postgres",
 });
 
-export const InventoryPostgres = Effect.gen(function* () {
+const InventoryPostgres = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Planetscale.PostgresDatabase("InventoryPostgres", {
     region: { slug: INVENTORY_REGION.planetscale },

@@ -44,9 +44,7 @@ export interface ListSorting<Sort extends string> {
   readonly isSort: (id: string) => id is Sort;
 }
 
-export interface ListViewDefinition<Columns extends SortColumns> extends ListSorting<
-  Columns[number]
-> {
+interface ListViewDefinition<Columns extends SortColumns> extends ListSorting<Columns[number]> {
   readonly searchFields: ReturnType<typeof listSearchFields<Columns>>;
   readonly viewOf: (search: Partial<ListSearch<Columns[number]>>) => ListView<Columns[number]>;
   readonly searchOf: (view: ListView<Columns[number]>) => ListSearch<Columns[number]>;

@@ -9,10 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
-import { formValidator } from "@/lib/form-schema";
 import { useOrganization } from "@/lib/organization";
 
-const profileSchema = formValidator(
+const profileSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.Trim.check(
       Schema.isMinLength(2, { message: "Give the store a name." }),

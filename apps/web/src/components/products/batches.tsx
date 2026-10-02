@@ -2,6 +2,7 @@ import { PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Batch, Product, StockMovement } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
+import { useInventoryActions } from "@store/inventory-react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { format, isValid, parse } from "date-fns";
@@ -43,10 +44,8 @@ import {
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { formValidator } from "@/lib/form-schema";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 import { formatDate, parseExpiryDate } from "@/lib/format-date";
-import { useInventoryActions } from "@/lib/inventory";
 import { cn } from "@/lib/utils";
 
 import { formatBatchQuantity, formatDelta, formatStock } from "./stock";
@@ -108,7 +107,7 @@ const UnitStock = Schema.Struct({
 
 const STOCK_VALIDATORS = {
   pack: {
-    add: formValidator(
+    add: Schema.toStandardSchemaV1(
       PackBatch.check(
         Schema.makeFilter((value) =>
           Number(value.packQuantity || 0) + Number(value.unitQuantity || 0) >= 1
@@ -117,10 +116,10 @@ const STOCK_VALIDATORS = {
         ),
       ),
     ),
-    edit: formValidator(PackBatch),
+    edit: Schema.toStandardSchemaV1(PackBatch),
   },
   unit: {
-    add: formValidator(
+    add: Schema.toStandardSchemaV1(
       UnitStock.check(
         Schema.makeFilter((value) =>
           Number(value.unitQuantity || 0) >= 1
@@ -129,7 +128,7 @@ const STOCK_VALIDATORS = {
         ),
       ),
     ),
-    edit: formValidator(UnitStock),
+    edit: Schema.toStandardSchemaV1(UnitStock),
   },
 };
 

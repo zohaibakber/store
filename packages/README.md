@@ -10,9 +10,10 @@
   authority, and the SQLite replica.
 - `sync`. Host-agnostic replica engine: command outbox, pending projections,
   coverage and digest cadence, the polling scheduler with typed transport
-  failures, and the typed `SyncHttpApi` client. The shared entrypoint stays
-  native-free (`test/browser-boundary.test.ts` enforces it); SQLite lives
-  behind `@store/sync/sqlite` and IndexedDB behind `@store/sync/browser`.
+  failures, and the typed `SyncHttpApi` client. The shared entrypoint
+  (`@store/sync`) stays native-free (`test/browser-boundary.test.ts` enforces
+  it); SQLite lives behind `@store/sync/sqlite` and IndexedDB behind
+  `@store/sync/replica/indexeddb`.
 - `inventory-react`. React bindings over the replica (atoms, queries, sync
   status, insights) shared by the desktop renderer and the mobile app.
 - `workspace`. Shared session HTTP, token renewal, and organization clients.

@@ -10,7 +10,7 @@ import type {
 import { stockPolicyAtom } from "./atoms";
 import { useCatalogReplica } from "./provider";
 
-export type InventoryInsights = {
+type InventoryInsights = {
   readonly summary: InsightsSummary | null;
   readonly status: AnalyticsStatus;
   readonly refreshing: boolean;

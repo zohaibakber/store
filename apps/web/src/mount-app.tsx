@@ -13,9 +13,9 @@ import ReactDOM from "react-dom/client";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { ThemeProvider } from "@/components/theme/provider";
+import { appHost } from "@/host";
 import type { HostAccessPolicy } from "@/host-access";
 import { makeReplayChannel } from "@/host/replay-channel";
-import { authSession } from "@/lib/auth";
 import { preferenceStore } from "@/lib/preferences";
 import type { DeviceWorkspaceStore } from "@/session/device-workspace";
 import {
@@ -51,7 +51,7 @@ export const mountApp = (input: {
   });
   bindWorkspaceSession({
     ...workspace,
-    bridge: authSession(),
+    bridge: appHost().auth,
     invalidate: () => router.invalidate().then(() => undefined),
     flush: flushSync,
   });

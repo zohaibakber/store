@@ -2,7 +2,6 @@ import type { ElectronReplicaBridge } from "@store/client-db";
 import type { DeviceLabel } from "@store/contracts";
 import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
 import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
-import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FiberMap from "effect/FiberMap";
@@ -16,21 +15,10 @@ import {
 } from "./analytics-rpc";
 import {
   BACKUP_SAVE_CHANNEL,
-  RESTORE_APPLY_CHANNEL,
-  RESTORE_CHOOSE_CHANNEL,
-  RESTORE_DISCARD_CHANNEL,
-} from "./backup-channels";
-import { trustedIpcListener, type TrustedIpcSenderFrame } from "./ipc-sender";
-import {
   PUBLISH_DISCARD_CHANNEL,
   PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_START_CHANNEL,
-} from "./publish-channels";
-import type { ReplicaAdmissionLimits } from "./replica-admission";
-import { makeReplicaAuthorityHost, type ReplicaSyncApiRequest } from "./replica-authority-host";
-import { makeReplicaBackup, makeStagedRestores, type ReplicaBackupDialogs } from "./replica-backup";
-import {
   REPLICA_ACTIVITY_CHANNEL,
   REPLICA_CANCEL_READ_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
@@ -38,7 +26,6 @@ import {
   REPLICA_ENQUEUE_CHANNEL,
   REPLICA_INSIGHTS_SUMMARY_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_OUTBOX_CHANNEL,
   REPLICA_PRODUCT_INSIGHTS_CHANNEL,
   REPLICA_READ_BATCH_CHANNEL,
   REPLICA_READ_INSIGHTS_CHANNEL,
@@ -48,7 +35,13 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-} from "./replica-channels";
+  RESTORE_APPLY_CHANNEL,
+  RESTORE_CHOOSE_CHANNEL,
+  RESTORE_DISCARD_CHANNEL,
+} from "./ipc-channels";
+import { trustedIpcListener, type TrustedIpcSenderFrame } from "./ipc-sender";
+import { makeReplicaAuthorityHost, type ReplicaSyncApiRequest } from "./replica-authority-host";
+import { makeReplicaBackup, makeStagedRestores, type ReplicaBackupDialogs } from "./replica-backup";
 import { makeReplicaPublishHost } from "./replica-publish-host";
 import {
   ReplicaCancelReadInput,
@@ -61,15 +54,13 @@ import {
   ReplicaSummarizeSubsetInput,
   ReplicaWorkspaceToken,
 } from "./replica-rpc";
-import { makeReplicaSessions, type ReplicaSender, type ReplicaSession } from "./replica-sessions";
 import {
-  isWorkerLost,
-  type ReplicaSupervisorPolicy,
-  type SpawnReplicaReader,
-  type SpawnReplicaWorker,
-} from "./replica-supervisor";
-
-export type { ReplicaSentEvent } from "./replica-sessions";
+  makeReplicaSessions,
+  type ReplicaSender,
+  type ReplicaSession,
+  type ReplicaSessionTuning,
+} from "./replica-sessions";
+import { isWorkerLost } from "./replica-supervisor";
 
 export type ReplicaInvokeEvent = {
   readonly senderFrame: TrustedIpcSenderFrame | null;
@@ -93,7 +84,6 @@ const CHANNEL_METHODS = {
   [REPLICA_INSIGHTS_SUMMARY_CHANNEL]: "readInsightsSummary",
   [REPLICA_PRODUCT_INSIGHTS_CHANNEL]: "readProductInsights",
   [REPLICA_RESTOCK_PAGE_CHANNEL]: "readRestockPage",
-  [REPLICA_OUTBOX_CHANNEL]: "readOutboxStatuses",
   [REPLICA_ACTIVITY_CHANNEL]: "readSyncActivity",
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueCommand",
   [REPLICA_COMMAND_STATUS_CHANNEL]: "readCommandStatus",
@@ -220,14 +210,8 @@ export const registerReplicaWorkerIpc = (options: {
   readonly syncApiRequest: ReplicaSyncApiRequest;
   readonly liveAccessToken: (force: boolean) => Promise<string | null>;
   readonly allowedOrigins: () => ReadonlyArray<string>;
-  readonly spawnWorker?: SpawnReplicaWorker;
-  readonly spawnReader?: SpawnReplicaReader;
-  readonly readerPath?: string;
-  readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
-  readonly admissionLimits?: ReplicaAdmissionLimits;
-  readonly closeGrace?: Duration.Input;
-  readonly ownershipWait?: Duration.Input;
-  readonly backupDialogs?: ReplicaBackupDialogs;
+  readonly backupDialogs: ReplicaBackupDialogs;
+  readonly sessions?: ReplicaSessionTuning;
 }) => {
   const stagedRestores = makeStagedRestores();
   const sessions = makeReplicaSessions({
@@ -235,13 +219,7 @@ export const registerReplicaWorkerIpc = (options: {
     workerPath: options.workerPath,
     authority: makeReplicaAuthorityHost(options),
     onDispose: (session) => stagedRestores.discard(session.workspaceToken),
-    spawnWorker: options.spawnWorker,
-    spawnReader: options.spawnReader,
-    readerPath: options.readerPath,
-    supervisorPolicy: options.supervisorPolicy,
-    admissionLimits: options.admissionLimits,
-    closeGrace: options.closeGrace,
-    ownershipWait: options.ownershipWait,
+    ...options.sessions,
   });
   const backup = makeReplicaBackup({
     sessions,
@@ -370,12 +348,6 @@ export const registerReplicaWorkerIpc = (options: {
         ),
       );
     },
-    [REPLICA_OUTBOX_CHANNEL]: (event, input) =>
-      withSession(event, input, "outbox read", (session) =>
-        session.admission.read(
-          session.supervisor.useIdempotent((worker) => worker.client.ReadOutboxStatuses()),
-        ),
-      ),
     [REPLICA_ACTIVITY_CHANNEL]: (event, input) =>
       withSession(event, input, "activity read", (session) =>
         session.admission.read(

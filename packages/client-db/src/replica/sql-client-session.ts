@@ -17,7 +17,7 @@ import {
   type ReplicaOutboxActivity,
   type SyncSchedulerPolicy,
   type SyncWakeReason,
-} from "@store/sync/browser";
+} from "@store/sync";
 import {
   layerSqliteReplicaStore,
   LocalAuthority,
@@ -33,7 +33,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { readSqliteInsightsFacts } from "./insights-sqlite";
-import { readOutboxStatusesSqlite } from "./node-outbox";
 import { replicaStampQuery } from "./replica-queries";
 import { enqueuedCommand, openReplicaRuntime, type ReplicaRun } from "./replica-runtime";
 import {
@@ -43,12 +42,7 @@ import {
   readSnapshotSummary,
   type ReplicaSnapshotRunner,
 } from "./snapshot-read";
-import {
-  decodeReplicaStampRow,
-  decodeSqliteResultRow,
-  type OutboxCommandStatus,
-  type ReplicaRow,
-} from "./sqlite-row";
+import { decodeReplicaStampRow, decodeSqliteResultRow, type ReplicaRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
@@ -142,7 +136,6 @@ type SqliteReplicaReads = Required<ReplicaSubsetReader> &
   ReplicaInsightsReader &
   ReplicaSummaryReader & {
     readonly stamp: () => Promise<ReplicaQueryStamp>;
-    readonly readOutboxStatuses: () => Promise<ReadonlyArray<OutboxCommandStatus>>;
     readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
   };
 
@@ -190,7 +183,6 @@ export const sqliteReplicaReads = (run: ReplicaRun<SqliteReplica>, workspaceToke
         withHandle((handle) => readReplicaInsights(handle, workspaceToken, window)),
       summarizeSubset: (spec) =>
         withSnapshot((snapshot) => readSnapshotSummary(snapshot, workspaceToken, spec)),
-      readOutboxStatuses: () => withHandle((handle) => readOutboxStatusesSqlite(handle.db)),
       readPendingRowIds: (entity) =>
         withHandle((handle) => readPendingRowIdsSqlite(handle.db, entity)),
     } satisfies SqliteReplicaReads,

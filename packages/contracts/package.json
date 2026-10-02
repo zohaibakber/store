@@ -9,6 +9,7 @@
     "./catalog-rules": "./src/catalog/rules.ts",
     "./catalog-write": "./src/catalog/write.ts",
     "./entity-rows": "./src/sync/entity-rows.ts",
+    "./http-errors": "./src/http-errors.ts",
     "./sync/replica-model": "./src/sync/replica-model.ts",
     "./sync/replica-analytics": "./src/sync/replica-analytics.ts",
     "./sync/replica-insights": "./src/sync/replica-insights.ts",
@@ -19,7 +20,6 @@
     "./store-helpers": "./src/store/helpers.ts",
     "./store.schema": "./src/store/schema.ts",
     "./sync/api": "./src/sync/api.ts",
-    "./sync/http-errors": "./src/sync/http-errors.ts",
     "./sync/fixtures": "./src/sync/fixtures/last-unit-invoice.ts",
     "./updater": "./src/updater.ts"
   },

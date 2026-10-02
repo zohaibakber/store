@@ -1,6 +1,6 @@
 import { app } from "electron";
 
-import { NEW_SALE_CHANNEL } from "./new-sale-channels";
+import { NEW_SALE_CHANNEL } from "./ipc-channels";
 
 type AcceleratorInput = {
   readonly type: string;

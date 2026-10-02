@@ -15,9 +15,9 @@ const FORBIDDEN = [
 
 const nativeSpecifiers = (bare: ReadonlySet<string>) => matchingSpecifiers(bare, FORBIDDEN);
 
-describe("browser entrypoint boundary", () => {
-  it("reaches no native SQLite driver or node built-in from browser.ts", () => {
-    const graph = collectGraph(resolve(packageRoot, "src/browser.ts"));
+describe("shared entrypoint boundary", () => {
+  it("reaches no native SQLite driver or node built-in from the shared entrypoint", () => {
+    const graph = collectGraph(resolve(packageRoot, "src/index.ts"));
     expect(graph.files.size).toBeGreaterThan(5);
     expect(nativeSpecifiers(graph.bare)).toStrictEqual([]);
   });

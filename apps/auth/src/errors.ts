@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import { SqlError } from "effect/unstable/sql/SqlError";
 
 import type { EphemeralStoreError } from "./ephemeral";
-import { Unavailable, type AuthFailure } from "./failures";
+import { AuthRefusal, type AuthFailure } from "./failures";
 import type { GoogleOAuthError } from "./google";
 import type { RepositoryError } from "./repository";
 
@@ -109,6 +109,6 @@ export const unavailableOnInfrastructureFailure = <A, R>(
   Effect.catchTag(effect, INFRASTRUCTURE_TAGS, (failure) =>
     Effect.logError("auth.infrastructure").pipe(
       Effect.annotateLogs(infrastructureDiagnostics(failure)),
-      Effect.andThen(Effect.fail(new Unavailable())),
+      Effect.andThen(Effect.fail(new AuthRefusal({ reason: "Unavailable" }))),
     ),
   );

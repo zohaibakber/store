@@ -41,7 +41,7 @@ function WorkspaceMark({
         className,
       )}
     >
-      <BrandMark alt="" className="size-6 shrink-0 rounded-sm" />
+      <BrandMark className="size-6 shrink-0 rounded-sm" />
       <span className="truncate font-medium group-data-[collapsible=icon]:hidden">{name}</span>
     </span>
   );

@@ -4,9 +4,8 @@ import * as Layer from "effect/Layer";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
 
-import { READER_RPC_CONCURRENCY } from "./replica-admission";
 import { makeReplicaReaderHandlers } from "./replica-reader-handlers";
-import { ReplicaReaderBoot, ReplicaReaderRpcs } from "./replica-rpc";
+import { READER_RPC_CONCURRENCY, ReplicaReaderBoot, ReplicaReaderRpcs } from "./replica-rpc";
 import { layerWorkerSentry } from "./sentry-worker";
 
 RpcServer.layer(ReplicaReaderRpcs, { concurrency: READER_RPC_CONCURRENCY }).pipe(

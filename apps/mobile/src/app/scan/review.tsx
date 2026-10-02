@@ -1,3 +1,3 @@
-import { ReviewScreen } from "@/scan";
+import { ReviewScreen } from "@/scan/screens/review-screen";
 
 export default ReviewScreen;

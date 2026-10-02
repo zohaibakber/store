@@ -4,7 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { RateLimited } from "./failures";
+import { AuthRefusal, type RateLimitAttempt } from "./failures";
 
 export const AUTH_RATE_LIMIT_PERIOD_SECONDS = 60;
 
@@ -21,8 +21,8 @@ interface AuthLimiterApi {
   readonly admit: (
     bucket: keyof AuthLimits,
     key: string,
-    attempting: RateLimited["attempting"],
-  ) => Effect.Effect<void, RateLimited, RuntimeContext>;
+    attempting: RateLimitAttempt,
+  ) => Effect.Effect<void, AuthRefusal, RuntimeContext>;
 }
 
 export class AuthLimiter extends Context.Service<AuthLimiter, AuthLimiterApi>()(
@@ -42,7 +42,8 @@ export const authLimiterLayer = (limits: AuthLimits) =>
           ),
           Effect.orDie,
         );
-        if (!decision.success) return yield* new RateLimited({ attempting });
+        if (!decision.success)
+          return yield* new AuthRefusal({ reason: `RateLimited.${attempting}` });
       }),
     }),
   );

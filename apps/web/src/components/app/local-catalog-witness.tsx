@@ -1,9 +1,9 @@
+import { useCatalogIsReady } from "@store/inventory-react";
 import { useEffect } from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
-import { useCatalogIsReady } from "@/lib/inventory";
 import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { witnessBoundLocalCatalog } from "@/session/workspace-session";
 

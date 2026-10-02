@@ -21,7 +21,7 @@ export const RELEVANT_ENTITIES = [
 
 const RELEVANT: ReadonlySet<string> = new Set(RELEVANT_ENTITIES);
 
-export type ChangeWindow =
+type ChangeWindow =
   | { readonly kind: "keys"; readonly keys: ReadonlySet<string> }
   | { readonly kind: "reset" };
 
@@ -29,7 +29,7 @@ export type ChangeFeed = {
   readonly since: (from: InventoryStamp, through: InventoryStamp) => Effect.Effect<ChangeWindow>;
 };
 
-export type ChangeJournal = {
+type ChangeJournal = {
   readonly record: (notice: ReplicaCommitNotice) => Effect.Effect<void>;
   readonly track: <A, E, R>(
     use: (feed: ChangeFeed) => Effect.Effect<A, E, R>,

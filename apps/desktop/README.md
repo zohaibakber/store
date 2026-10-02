@@ -21,7 +21,7 @@ path or a table. Sales and catalog edits are the same two sync commands
 (`issueInvoice`, `catalogWrite`): they commit locally, show as pending rows,
 and settle when the authority's decision arrives through the pull.
 
-Channel names live in `electron/*-channels.ts`. The bridge types they carry
+Channel names live in `electron/ipc-channels.ts`. The bridge types they carry
 come from `@store/web/host/*`.
 
 Sentry reports errors only, and only when `VITE_SENTRY_DSN` is set. Each

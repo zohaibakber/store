@@ -25,34 +25,24 @@ import {
   AUTH_RENEW_SESSION_CHANNEL,
   AUTH_SESSION_CHANGED_CHANNEL,
   AUTH_SIGN_OUT_CHANNEL,
-} from "./auth-channels";
-import {
   BACKUP_SAVE_CHANNEL,
-  RESTORE_APPLY_CHANNEL,
-  RESTORE_CHOOSE_CHANNEL,
-  RESTORE_DISCARD_CHANNEL,
-} from "./backup-channels";
-import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
-import { NEW_SALE_CHANNEL } from "./new-sale-channels";
-import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
-import {
+  INVENTORY_HTTP_CONFIG_CHANNEL,
+  NEW_SALE_CHANNEL,
+  OAUTH_CALLBACK_CHANNEL,
   PUBLISH_DISCARD_CHANNEL,
   PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_PROGRESS_CHANNEL,
   PUBLISH_START_CHANNEL,
-} from "./publish-channels";
-import {
+  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_ANALYTICS_CHANNEL,
   REPLICA_CANCEL_READ_CHANNEL,
-  REPLICA_COMMAND_STATUS_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
+  REPLICA_COMMAND_STATUS_CHANNEL,
   REPLICA_COMMIT_CHANNEL,
   REPLICA_ENQUEUE_CHANNEL,
-  REPLICA_ACTIVITY_CHANNEL,
-  REPLICA_OPEN_CHANNEL,
   REPLICA_INSIGHTS_SUMMARY_CHANNEL,
-  REPLICA_OUTBOX_CHANNEL,
+  REPLICA_OPEN_CHANNEL,
   REPLICA_PRODUCT_INSIGHTS_CHANNEL,
   REPLICA_READ_BATCH_CHANNEL,
   REPLICA_READ_INSIGHTS_CHANNEL,
@@ -63,23 +53,23 @@ import {
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_SYNC_HEALTH_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  type ReplicaAnalyticsEvent,
-  type ReplicaCommitEvent,
-  type ReplicaSyncHealthEvent,
-} from "./replica-channels";
-import { SERVER_UPLOADS_CHANNEL } from "./server-api-channels";
-import {
+  RESTORE_APPLY_CHANNEL,
+  RESTORE_CHOOSE_CHANNEL,
+  RESTORE_DISCARD_CHANNEL,
+  SERVER_UPLOADS_CHANNEL,
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
-} from "./share-channels";
-import { THEME_SET_SOURCE_CHANNEL } from "./theme-channels";
-import {
+  THEME_SET_SOURCE_CHANNEL,
   UPDATER_CHECK_CHANNEL,
   UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
-} from "./updater-channels";
+  type ReplicaAnalyticsEvent,
+  type ReplicaCommitEvent,
+  type ReplicaSyncHealthEvent,
+} from "./ipc-channels";
+import { isOAuthCallbackUrl } from "./oauth-callback";
 
 const inventoryHttp: InventoryHttpBridge = {
   getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),
@@ -123,8 +113,6 @@ const replica: ElectronReplicaBridge = {
     ipcRenderer.on(REPLICA_ANALYTICS_CHANNEL, listener);
     return () => ipcRenderer.off(REPLICA_ANALYTICS_CHANNEL, listener);
   },
-  readOutboxStatuses: (workspaceToken) =>
-    ipcRenderer.invoke(REPLICA_OUTBOX_CHANNEL, workspaceToken),
   readSyncActivity: (workspaceToken) =>
     ipcRenderer.invoke(REPLICA_ACTIVITY_CHANNEL, workspaceToken),
   enqueueCommand: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),

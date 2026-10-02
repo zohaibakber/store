@@ -8,7 +8,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider, useSession } from "@/auth";
 import { MobileInventoryProvider } from "@/inventory";
-import { ScanDraftsProvider } from "@/scan";
+import { ScanDraftsProvider } from "@/scan/drafts";
 import { colors } from "@/theme/tokens";
 
 void SplashScreen.preventAutoHideAsync();

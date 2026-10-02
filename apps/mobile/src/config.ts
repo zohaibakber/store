@@ -10,7 +10,7 @@ const MobileExtra = Schema.Struct({
   googleWebClientId: Schema.optionalKey(Schema.String),
 });
 
-export interface MobileConfig {
+interface MobileConfig {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
   readonly googleWebClientId: string | null;
@@ -27,6 +27,6 @@ const configFrom = (extra: typeof MobileExtra.Type): MobileConfig => {
   };
 };
 
-export const mobileConfig = Schema.decodeUnknownResult(MobileExtra)(
-  Constants.expoConfig?.extra,
-).pipe(Result.map(configFrom));
+export const mobileConfig = Result.getOrThrow(
+  Schema.decodeUnknownResult(MobileExtra)(Constants.expoConfig?.extra).pipe(Result.map(configFrom)),
+);

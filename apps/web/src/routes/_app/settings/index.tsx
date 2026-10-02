@@ -2,10 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { SettingsPage } from "@/components/settings/settings-page";
-import { formValidator } from "@/lib/form-schema";
-import { preloadCatalog } from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 
-const settingsSearch = formValidator(
+const settingsSearch = Schema.toStandardSchemaV1(
   Schema.Struct({
     invitation: Schema.optionalKey(Schema.String),
   }),
@@ -13,6 +12,6 @@ const settingsSearch = formValidator(
 
 export const Route = createFileRoute("/_app/settings/")({
   validateSearch: settingsSearch,
-  loader: ({ context }) => preloadCatalog(context),
+  loader: ({ context }) => preloadInventory(context),
   component: SettingsPage,
 });

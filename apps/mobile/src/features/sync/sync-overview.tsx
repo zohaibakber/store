@@ -13,11 +13,18 @@ import { useRouter } from "expo-router";
 import * as React from "react";
 import { StyleSheet } from "react-native";
 
+import { useSyncNow } from "@/inventory";
 import { colors, fonts, space, type } from "@/theme/tokens";
 import { ComposeActionButton } from "@/ui/action-button";
 
-import { firstFixableProduct, syncActivityView, type RejectedRowView } from "./sync-activity";
-import { syncHealthView, type SyncTone } from "./sync-health";
+import { useSyncRefresh } from "./sync-hooks";
+import {
+  firstFixableProduct,
+  syncActivityView,
+  syncHealthView,
+  type RejectedRowView,
+  type SyncTone,
+} from "./sync-view";
 
 const rowColors = {
   containerColor: colors.ground,
@@ -45,13 +52,10 @@ const toneColor = {
 const dotModifiers = [size(10, 10)];
 const actionRowModifiers = [fillMaxWidth(), padding(space[4], space[4], space[4], space[4])];
 
-export function SyncOverview({ syncNow }: { readonly syncNow: () => Promise<void> }) {
+export function SyncOverview() {
   const state = useInventoryState();
-  const [syncing, setSyncing] = React.useState(false);
-  const runSync = () => {
-    setSyncing(true);
-    void syncNow().finally(() => setSyncing(false));
-  };
+  const syncNow = useSyncNow();
+  const { refreshing, refresh } = useSyncRefresh();
   return (
     <Host style={styles.host}>
       <List onRefresh={syncNow}>
@@ -73,9 +77,9 @@ export function SyncOverview({ syncNow }: { readonly syncNow: () => Promise<void
         )}
         <Row horizontalArrangement="end" modifiers={actionRowModifiers}>
           <ComposeActionButton
-            disabled={syncing}
-            label={syncing ? "Syncing" : "Sync now"}
-            onPress={runSync}
+            disabled={refreshing}
+            label={refreshing ? "Syncing" : "Sync now"}
+            onPress={refresh}
           />
         </Row>
       </List>

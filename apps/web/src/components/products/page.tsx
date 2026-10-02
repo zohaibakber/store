@@ -1,10 +1,16 @@
 import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  useSuspenseCatalogCategories,
+  useSuspenseProductCount,
+  useSuspenseProductFacets,
+  useSuspenseProductPage,
+  type ProductListRequest,
+} from "@store/inventory-react";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
 import { ProductAnalytics } from "@/components/products/analytics";
-import { LiveProductInsights } from "@/components/products/insight-cells";
 import type { ProductListView } from "@/components/products/list";
 import { ProductTableFilters, useProductsTable } from "@/components/products/table";
 import { DataTable, DataTableFilter, DataTableViewOptions } from "@/components/shared/data-table";
@@ -12,13 +18,6 @@ import { ListTableContent } from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
-import {
-  useSuspenseCatalogCategories,
-  useSuspenseProductCount,
-  useSuspenseProductFacets,
-  useSuspenseProductPage,
-  type ProductListRequest,
-} from "@/lib/inventory";
 
 export function ProductsPage({
   loading,
@@ -69,9 +68,7 @@ export function ProductsPage({
       </PageActions>
       <PageLayout>
         <ProductAnalytics />
-        <LiveProductInsights>
-          <ListTableContent loading={loading} />
-        </LiveProductInsights>
+        <ListTableContent loading={loading} />
       </PageLayout>
     </DataTable>
   );

@@ -14,7 +14,6 @@ import {
   eq,
   inArray,
   toArray,
-  useLiveQuery,
   useLiveSuspenseQuery,
   type InitialQueryBuilder,
   type Ref,
@@ -159,12 +158,6 @@ const liveOpenPurchaseOrders = sharedLiveQuery(openPurchaseOrdersQuery);
 export const livePurchaseOrder = sharedLiveQuery(purchaseOrderQuery);
 
 export const livePurchaseOrderDeliveries = sharedLiveQuery(purchaseOrderDeliveriesQuery);
-
-export const useSuppliers = () => {
-  const live = useLiveQuery({ query: suppliersQuery(useCatalogReplica()) });
-  const data: ReadonlyArray<Supplier> = live.data;
-  return { ...live, data };
-};
 
 export const useSuspenseSuppliers = (): ReadonlyArray<Supplier> =>
   useLiveSuspenseQuery(liveSuppliers(useCatalogReplica())).data;

@@ -10,7 +10,7 @@ const PRODUCT_ROW_HEIGHT = 72;
 
 const ripple = { color: colors.hairline };
 
-export type ProductRowProps = {
+type ProductRowProps = {
   readonly id: string;
   readonly name: string;
   readonly subtitle: string;

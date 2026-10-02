@@ -15,8 +15,6 @@ import {
   ExchangeGoogleInput,
   IdentifyInput,
   LoginCommand,
-  RefreshInput,
-  SignOutInput,
   type BeginGoogleInput as BeginGoogleInputType,
   type ExchangeGoogleIdTokenInput as ExchangeGoogleIdTokenInputType,
   type ExchangeGoogleInput as ExchangeGoogleInputType,
@@ -25,9 +23,6 @@ import {
   type IssuedSession as IssuedSessionType,
   type LoginCommand as LoginCommandType,
   type LoginRoute as LoginRouteType,
-  type RefreshedSession as RefreshedSessionType,
-  type RefreshInput as RefreshInputType,
-  type SignOutInput as SignOutInputType,
 } from "./model";
 
 const AuthClientOperation = Schema.Literals([
@@ -39,8 +34,6 @@ const AuthClientOperation = Schema.Literals([
   "google.begin",
   "google.exchange",
   "google.native",
-  "session.refresh",
-  "session.logout",
 ]);
 type AuthClientOperation = typeof AuthClientOperation.Type;
 
@@ -70,10 +63,6 @@ export interface AuthClientApi {
   readonly exchangeGoogleIdToken: (
     input: ExchangeGoogleIdTokenInputType,
   ) => Effect.Effect<IssuedSessionType, AuthClientError>;
-  readonly refresh: (
-    input?: RefreshInputType,
-  ) => Effect.Effect<RefreshedSessionType, AuthClientError>;
-  readonly signOut: (input?: SignOutInputType) => Effect.Effect<void, AuthClientError>;
 }
 
 export class AuthClient extends Context.Service<AuthClient, AuthClientApi>()(
@@ -192,24 +181,6 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
           input,
           (payload) => session.googleNative({ payload }),
         ),
-    ),
-    refresh: Effect.fn("AuthClient.refresh")((input: RefreshInputType = {}) =>
-      request(
-        "session.refresh",
-        "The refresh request is invalid.",
-        RefreshInput,
-        input,
-        (payload) => session.refresh({ payload }),
-      ),
-    ),
-    signOut: Effect.fn("AuthClient.signOut")((input: SignOutInputType = {}) =>
-      request(
-        "session.logout",
-        "The sign-out request is invalid.",
-        SignOutInput,
-        input,
-        (payload) => session.logout({ payload }),
-      ).pipe(Effect.asVoid),
     ),
   });
 });

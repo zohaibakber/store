@@ -4,8 +4,11 @@ import * as Layer from "effect/Layer";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
 
-import { ANALYTICS_WORKER_RPC_CONCURRENCY } from "./analytics-admission";
-import { AnalyticsWorkerBoot, AnalyticsWorkerRpcs } from "./analytics-rpc";
+import {
+  ANALYTICS_WORKER_RPC_CONCURRENCY,
+  AnalyticsWorkerBoot,
+  AnalyticsWorkerRpcs,
+} from "./analytics-rpc";
 import { makeAnalyticsWorkerHandlers } from "./analytics-worker-handlers";
 import { layerWorkerSentry } from "./sentry-worker";
 

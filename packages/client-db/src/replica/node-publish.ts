@@ -22,7 +22,8 @@ import {
   sqlitePartitionDigest,
   type CatalogPart,
   type SqliteReplicaHandle,
-} from "@store/sync/sqlite";
+} from "@store/sync/sql-client";
+import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import { count, eq, inArray } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -178,7 +179,7 @@ const summarize = Effect.fn("ReplicaPublish.summarize")(function* (handle: Sqlit
   };
 });
 
-const replicaAt = (path: string) => (existsSync(path) ? SqliteReplica.layer(path) : undefined);
+const replicaAt = (path: string) => (existsSync(path) ? layerNodeSqliteReplica(path) : undefined);
 
 const withReplica = <A, E>(
   path: string,

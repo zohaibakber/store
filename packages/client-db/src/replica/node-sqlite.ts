@@ -1,12 +1,13 @@
 import type { SyncEntity } from "@store/contracts";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore } from "@store/sync/browser";
+import { ReplicaStore } from "@store/sync";
 import {
   layerSqliteReplicaStore,
   runReplicaTransaction,
-  SqliteReplica,
+  type SqliteReplica,
   type SqliteReplicaHandle,
-} from "@store/sync/sqlite";
+} from "@store/sync/sql-client";
+import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import { eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -46,7 +47,7 @@ type NodeReplicaSqlite = ReplicaHandle &
 export const layerSeededSqliteReplica = (
   path: string,
   identity: NodeReplicaIdentity,
-): Layer.Layer<SqliteReplica> => layerSeededReplica(SqliteReplica.layer(path), identity);
+): Layer.Layer<SqliteReplica> => layerSeededReplica(layerNodeSqliteReplica(path), identity);
 
 export const openNodeReplicaSqlite = async (
   identity: NodeReplicaIdentity,
