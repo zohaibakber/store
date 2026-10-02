@@ -37,7 +37,6 @@ import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
 import {
   DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
   dueSince,
-  STALE_PEER_RECHECK_INTERVAL_MILLIS,
   type DigestVerificationCadence,
 } from "./replica/cadence";
 import {
@@ -177,7 +176,7 @@ export const makeSyncEngineFromReplicaStore = (
     });
 
     const registered = yield* Deferred.make<void>();
-    const heldBackAt = yield* Ref.make<number | undefined>(undefined);
+    const heldBack = yield* Ref.make(false);
 
     const announce = Effect.fn("SyncEngine.announce")(function* (replicaId: string) {
       const authority = yield* transport.registerReplica({
@@ -193,29 +192,29 @@ export const makeSyncEngineFromReplicaStore = (
         );
       }
       yield* Ref.set(
-        heldBackAt,
-        purchasingBlockedByStaleReplica(authority.lowestActiveSchemaVersion)
-          ? registeredAt
-          : undefined,
+        heldBack,
+        purchasingBlockedByStaleReplica(authority.lowestActiveSchemaVersion),
       );
     });
 
     const ensureRegistered = Effect.fn("SyncEngine.ensureRegistered")(function* () {
       const reannouncing = yield* Deferred.isDone(registered);
-      if (reannouncing) {
-        const heldBack = yield* Ref.get(heldBackAt);
-        if (heldBack === undefined) return;
-        const now = yield* Clock.currentTimeMillis;
-        if (!dueSince(heldBack, now, STALE_PEER_RECHECK_INTERVAL_MILLIS)) return;
-      }
+      if (reannouncing && !(yield* Ref.get(heldBack))) return;
       const cursor = yield* withPermit(store.readSyncCursor());
       if (reannouncing || shouldAnnounce(cursor)) yield* announce(cursor.replicaId);
       yield* Deferred.succeed(registered, undefined);
     });
 
+    const reannounce = withPermit(store.readSyncCursor()).pipe(
+      Effect.flatMap((cursor) => announce(cursor.replicaId)),
+      Effect.ignore,
+    );
+
     const noteReceipt = (receipt: CommandReceipt) =>
       receipt.result._tag === "rejected" && receipt.result.code === "REPLICA_SCHEMA_OUTDATED"
-        ? Ref.set(heldBackAt, 0)
+        ? Ref.getAndSet(heldBack, true).pipe(
+            Effect.flatMap((known) => (known ? Effect.void : reannounce)),
+          )
         : Effect.void;
 
     const uploadOnce = Effect.fn("SyncEngine.uploadOnce")(function* () {
@@ -244,7 +243,9 @@ export const makeSyncEngineFromReplicaStore = (
             const submitted = yield* transport.submitCommand(
               yield* submitRequestFor(activeClaim.envelope),
             );
-            return yield* settleSubmitted(activeClaim.claimId, submitted);
+            const receipt = yield* settleSubmitted(activeClaim.claimId, submitted);
+            yield* noteReceipt(receipt);
+            return receipt;
           }),
         (activeClaim) =>
           activeClaim
@@ -320,7 +321,6 @@ export const makeSyncEngineFromReplicaStore = (
       submitted: SyncSubmitCommandResult,
     ) {
       const { page, ...receipt } = submitted;
-      yield* noteReceipt(receipt);
       if (page === undefined) {
         yield* withPermit(store.settleUploadClaim(claimId, receipt));
         return receipt;

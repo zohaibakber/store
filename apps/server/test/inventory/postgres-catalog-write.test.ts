@@ -58,6 +58,7 @@ import * as Schema from "effect/Schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
+import { makeInventoryDevices } from "../../src/inventory/devices";
 import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import type { InventoryActor } from "../../src/inventory/model";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
@@ -466,6 +467,29 @@ describe("postgres catalog writes", () => {
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
         ]);
+        const devices = makeInventoryDevices(db);
+        const standingOf = devices
+          .list(actor)
+          .pipe(
+            Effect.map(
+              (listed) =>
+                listed.devices.find((device) => device.replicaId === LAST_UNIT_REPLICA_B) ?? null,
+            ),
+          );
+        const listedHolding = yield* standingOf;
+        yield* devices.command(actor, { _tag: "IgnoreDevice", replicaId: LAST_UNIT_REPLICA_B });
+        const ignored = yield* write("cmd-ignored", [supplierWrite("sup-4", null, "Umbrella")]);
+        const listedIgnored = yield* standingOf;
+        yield* devices.command(actor, { _tag: "HeedDevice", replicaId: LAST_UNIT_REPLICA_B });
+        const heeded = yield* write("cmd-heeded", [supplierWrite("sup-5", null, "Hooli")]);
+        yield* devices.command(actor, { _tag: "RemoveDevice", replicaId: LAST_UNIT_REPLICA_B });
+        const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
+        const listedRemoved = yield* standingOf;
+        yield* Effect.sleep("5 millis");
+        const relive = yield* makeInventoryLive(db);
+        yield* relive.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
+        const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
+        const listedReturned = yield* standingOf;
         yield* db
           .update(replicas)
           .set({ lastSeenAt: now - ACTIVE_REPLICA_WINDOW_MILLIS - 60_000 })
@@ -486,6 +510,14 @@ describe("postgres catalog writes", () => {
           abandoned,
           registeredAbandoned,
           reconnected,
+          listedHolding,
+          ignored,
+          listedIgnored,
+          heeded,
+          removed,
+          listedRemoved,
+          returned,
+          listedReturned,
           dormant,
           registeredClear,
           upgraded,
@@ -500,6 +532,14 @@ describe("postgres catalog writes", () => {
     expect(outcome.abandoned).toMatchObject(ACCEPTED);
     expect(outcome.registeredAbandoned.lowestActiveSchemaVersion).toBe(2);
     expect(outcome.reconnected).toEqual(rejection(staleReplicaRejection(null)));
+    expect(outcome.listedHolding).toMatchObject({ upToDate: false, holdsBack: true });
+    expect(outcome.ignored).toMatchObject(ACCEPTED);
+    expect(outcome.listedIgnored).toMatchObject({ ignored: true, holdsBack: false });
+    expect(outcome.heeded).toEqual(rejection(staleReplicaRejection(null)));
+    expect(outcome.removed).toMatchObject(ACCEPTED);
+    expect(outcome.listedRemoved).toBeNull();
+    expect(outcome.returned).toEqual(rejection(staleReplicaRejection(null)));
+    expect(outcome.listedReturned).toMatchObject({ ignored: false, holdsBack: true });
     expect(outcome.dormant).toMatchObject(ACCEPTED);
     expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
     expect(outcome.upgraded).toMatchObject(ACCEPTED);

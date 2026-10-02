@@ -10,6 +10,7 @@ import { StoreApi } from "../http/api";
 import { publicError } from "../http/errors";
 import { failWithSyncHttpError } from "../http/sync-errors";
 import { InventoryCommands, MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
+import { InventoryDevices } from "../inventory/devices";
 import type { InventoryError } from "../inventory/errors";
 import { InventoryImports } from "../inventory/imports";
 import type { EncodedSnapshotPart, InventoryActor } from "../inventory/model";
@@ -77,19 +78,25 @@ const asActor = <A, R>(
     Effect.withSpan(`SyncHandlers.${span}`),
   );
 
-const ownerRequired = SyncForbidden.make(
-  publicError("OWNER_REQUIRED", "Only an owner can move a device's data into this organization."),
+const ownerRequired = (message: string) =>
+  SyncForbidden.make(publicError("OWNER_REQUIRED", message));
+
+const publishOwnerRequired = ownerRequired(
+  "Only an owner can move a device's data into this organization.",
 );
+
+const devicesOwnerRequired = ownerRequired("Only an owner can manage this organization's devices.");
 
 const asOwner = <A, R>(
   span: string,
+  refusal: SyncForbidden,
   run: (actor: InventoryActor) => Effect.Effect<A, InventoryError, R>,
 ) =>
   CurrentOrganization.pipe(
     Effect.flatMap((identity) =>
       identity.role === "owner"
         ? Effect.catch(run(identity), failWithSyncHttpError)
-        : Effect.fail(ownerRequired),
+        : Effect.fail(refusal),
     ),
     Effect.withSpan(`SyncHandlers.${span}`),
   );
@@ -101,6 +108,7 @@ export const SyncHandlers = HttpApiBuilder.group(
     const commands = yield* InventoryCommands;
     const snapshots = yield* InventorySnapshots;
     const imports = yield* InventoryImports;
+    const devices = yield* InventoryDevices;
     const fanout = yield* LiveFanout;
 
     return handlers
@@ -149,7 +157,7 @@ export const SyncHandlers = HttpApiBuilder.group(
         ).pipe(Effect.map((part) => snapshotPartResponse(part, request.headers["if-none-match"]))),
       )
       .handleRaw("stageImportPart", ({ params, request }) =>
-        asOwner("stageImportPart", (actor) =>
+        asOwner("stageImportPart", publishOwnerRequired, (actor) =>
           Effect.gen(function* () {
             const bodyText = yield* boundedBodyText(request, MAX_IMPORT_PART_BYTES);
             if (bodyText === undefined) return importPartTooLargeResponse();
@@ -164,7 +172,7 @@ export const SyncHandlers = HttpApiBuilder.group(
         ),
       )
       .handle("commitImport", ({ params, payload }) =>
-        asOwner("commitImport", (actor) =>
+        asOwner("commitImport", publishOwnerRequired, (actor) =>
           imports
             .commit(actor, params.importId, payload)
             .pipe(
@@ -175,6 +183,12 @@ export const SyncHandlers = HttpApiBuilder.group(
               ),
             ),
         ).pipe(Effect.map((committed) => encodedJsonResponse(committed.json))),
+      )
+      .handle("listDevices", () =>
+        asOwner("listDevices", devicesOwnerRequired, (actor) => devices.list(actor)),
+      )
+      .handle("commandDevice", ({ payload }) =>
+        asOwner("commandDevice", devicesOwnerRequired, (actor) => devices.command(actor, payload)),
       );
   }),
 );

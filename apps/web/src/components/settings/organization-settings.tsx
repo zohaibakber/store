@@ -3,6 +3,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 
 import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { AcceptInvitationCard } from "@/components/settings/organization/accept-invitation-card";
+import { OrganizationDevicesCard } from "@/components/settings/organization/devices-card";
 import { OrganizationInvitationsCard } from "@/components/settings/organization/invitations-card";
 import { OrganizationMembersCard } from "@/components/settings/organization/members-card";
 import { OrganizationProfileCard } from "@/components/settings/organization/profile-card";
@@ -54,6 +55,7 @@ function OrganizationPanel({ userId }: { userId: string }) {
         members={members}
         organization={organization}
       />
+      {organization.role === "owner" ? <OrganizationDevicesCard members={members} /> : null}
       <AcceptInvitationCard />
     </div>
   );

@@ -1,4 +1,5 @@
 import type { ElectronReplicaBridge } from "@store/client-db";
+import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import * as Schema from "effect/Schema";
 
@@ -23,6 +24,8 @@ export type ServerApiIpcBridge = {
   readonly analyseInvoices: (input: {
     files: Array<InvoiceUploadFile>;
   }) => Promise<InvoiceExtraction>;
+  readonly organizationDevices: () => Promise<OrganizationDevices>;
+  readonly commandDevice: (command: DeviceCommand) => Promise<OrganizationDevices>;
 };
 
 export const InventoryHttpConfig = Schema.Struct({
@@ -84,6 +87,10 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
       onOAuthCallback: (listener) => auth.onOAuthCallback(listener),
     },
     analyseInvoices: (files) => serverApi.analyseInvoices({ files: [...files] }),
+    devices: {
+      list: () => withServerMessage(serverApi.organizationDevices()),
+      command: (command) => withServerMessage(serverApi.commandDevice(command)),
+    },
     newSaleShortcut: controlNewSaleShortcut,
     shell: bridges.desktopShell,
     updater: bridges.updater,

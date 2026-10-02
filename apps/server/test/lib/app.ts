@@ -21,7 +21,8 @@ const unusedInventory = {
   commands: { register: unused, submitRaw: unused, receipt: unused, pullEncoded: unused },
   snapshots: { acquireSnapshot: unused, readSnapshotPartEncoded: unused },
   imports: { stagePart: unused, commit: unused },
-} satisfies Pick<WorkerServices, "commands" | "snapshots" | "imports">;
+  devices: { list: unused, command: unused },
+} satisfies Pick<WorkerServices, "commands" | "snapshots" | "imports" | "devices">;
 
 export const TEST_ACCESS_TOKEN = "header.payload.signature";
 
@@ -79,6 +80,7 @@ export const webHandlerFor = async (options: AppOptions = {}) => {
       commands: options.commands ?? unusedInventory.commands,
       snapshots: options.snapshots ?? unusedInventory.snapshots,
       imports: options.imports ?? unusedInventory.imports,
+      devices: options.devices ?? unusedInventory.devices,
       liveFanout: options.liveFanout ?? { publish: () => Effect.void },
       hubs: options.hubs ?? { getByName: () => ({ fetch: unused }) },
       readLiveHorizon: options.readLiveHorizon ?? unused,

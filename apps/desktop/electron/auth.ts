@@ -16,12 +16,14 @@ import {
   type OrganizationCommandResult,
   type OrganizationRoster,
 } from "@store/auth";
+import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
+import { commandOrganizationDevice, listOrganizationDevices } from "@store/web/host/devices";
 import type { SignInCredentials } from "@store/web/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "@store/web/host/invoice-upload";
 import {
@@ -137,6 +139,10 @@ interface DesktopAuthApi {
   readonly analyseInvoices: (
     files: ReadonlyArray<InvoiceUploadFile>,
   ) => Effect.Effect<InvoiceExtraction, Error | RequestError>;
+  readonly organizationDevices: Effect.Effect<OrganizationDevices, RequestError>;
+  readonly commandDevice: (
+    command: DeviceCommand,
+  ) => Effect.Effect<OrganizationDevices, RequestError>;
   readonly liveAccessToken: (force: boolean) => Effect.Effect<string | null, RequestError>;
   readonly withSession: <A, E>(effect: Effect.Effect<A, E, SessionHttp>) => Effect.Effect<A, E>;
 }
@@ -278,6 +284,8 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     organizationRoster: withSession(SessionHttp.use((session) => session.organizationRoster)),
     organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
     analyseInvoices: (files) => withSession(analyseInvoiceUpload(files)),
+    organizationDevices: withSession(listOrganizationDevices),
+    commandDevice: (command) => withSession(commandOrganizationDevice(command)),
     liveAccessToken: (force) =>
       withSession(SessionHttp.use((session) => session.ensureFreshAccess(force))).pipe(
         Effect.map((access) => access?.accessToken ?? null),

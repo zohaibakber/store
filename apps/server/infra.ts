@@ -19,6 +19,7 @@ import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
 import { makeWorkerFetch } from "./src/http/app";
 import { RATE_LIMITS } from "./src/http/runtime";
 import { makeInventoryCommands } from "./src/inventory/commands";
+import { makeInventoryDevices } from "./src/inventory/devices";
 import { makeInventoryImports } from "./src/inventory/imports";
 import { makeInventoryLive } from "./src/inventory/live-horizon";
 import { MAINTENANCE_POLICY, makeInventoryMaintenance } from "./src/inventory/maintenance";
@@ -167,6 +168,7 @@ export const ApiLive = Api.make(
       commands: makeInventoryCommands(db),
       snapshots: makeInventorySnapshots(db),
       imports: makeInventoryImports(db),
+      devices: makeInventoryDevices(db),
       readLiveHorizon: live.readLiveHorizon,
       hubs,
       liveFanout,

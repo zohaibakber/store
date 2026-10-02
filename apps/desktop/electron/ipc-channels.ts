@@ -13,6 +13,8 @@ export const AUTH_SESSION_CHANGED_CHANNEL = "auth:session-changed";
 export const OAUTH_CALLBACK_CHANNEL = "auth:oauth-callback";
 
 export const SERVER_UPLOADS_CHANNEL = "server:uploads";
+export const SERVER_DEVICES_CHANNEL = "server:devices";
+export const SERVER_DEVICE_COMMAND_CHANNEL = "server:device-command";
 
 export const INVENTORY_HTTP_CONFIG_CHANNEL = "inventory:http-config";
 

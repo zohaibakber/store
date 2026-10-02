@@ -10,6 +10,7 @@ import type { WorkspaceSnapshot } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
+import type { DevicesBridge } from "./devices";
 import type { InvoiceUploadFile } from "./invoice-upload";
 import type { NewSaleShortcut } from "./new-sale-shortcut";
 import type { SavePdfOutcome } from "./share";
@@ -66,6 +67,7 @@ export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
   readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
+  readonly devices: DevicesBridge;
   readonly newSaleShortcut: NewSaleShortcut;
   readonly shell?: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;

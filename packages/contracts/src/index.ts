@@ -8,6 +8,7 @@ export * from "./server/schema";
 export * from "./store/helpers";
 export * from "./store/invoice-allocation";
 export * from "./store/schema";
+export * from "./sync/devices";
 export * from "./sync/digest";
 export * from "./sync/import";
 export * from "./sync/live";

@@ -1,7 +1,5 @@
 export const DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS = 6 * 60 * 60_000;
 
-export const STALE_PEER_RECHECK_INTERVAL_MILLIS = 30_000;
-
 export type DigestVerificationCadence = number | "never";
 
 export const dueSince = (

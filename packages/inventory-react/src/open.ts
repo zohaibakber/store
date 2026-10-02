@@ -192,7 +192,13 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       },
       syncNow: wakeSyncUpload,
     };
-    return { ...tables, atoms, actions, authority: replicaAuthorityOf(scope) };
+    return {
+      ...tables,
+      atoms,
+      actions,
+      authority: replicaAuthorityOf(scope),
+      deviceId: actor.deviceId,
+    };
   });
 
 export const openInventoryWorkspace = (

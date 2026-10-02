@@ -6,6 +6,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 
 import type { AppHost } from "@/host";
+import { commandOrganizationDevice, listOrganizationDevices } from "@/host/devices";
 import { analyseInvoiceUpload } from "@/host/invoice-upload";
 import { altNewSaleShortcut } from "@/host/new-sale-shortcut";
 import { makeReplayChannel } from "@/host/replay-channel";
@@ -93,6 +94,10 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
       },
     },
     analyseInvoices: (files) => runtime.runPromise(analyseInvoiceUpload(files)),
+    devices: {
+      list: () => runtime.runPromise(listOrganizationDevices),
+      command: (command) => runtime.runPromise(commandOrganizationDevice(command)),
+    },
     newSaleShortcut: altNewSaleShortcut,
     openExternal: async (url) => {
       if (!isWhatsAppUrl(url)) throw new Error("Only WhatsApp links can be opened.");

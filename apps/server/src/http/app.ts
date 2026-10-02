@@ -12,6 +12,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { OrganizationAuthLive } from "../auth/organization";
 import { InventoryCommands, type InventoryCommandsContract } from "../inventory/commands";
+import { InventoryDevices, type InventoryDevicesContract } from "../inventory/devices";
 import { InventoryImports, type InventoryImportsContract } from "../inventory/imports";
 import { InventorySnapshots, type InventorySnapshotsContract } from "../inventory/snapshots";
 import { LiveFanout, type LiveFanoutContract } from "../live/fanout";
@@ -82,6 +83,7 @@ export interface WorkerServices {
   readonly commands: InventoryCommandsContract;
   readonly snapshots: InventorySnapshotsContract;
   readonly imports: InventoryImportsContract;
+  readonly devices: InventoryDevicesContract;
   readonly liveFanout: LiveFanoutContract;
   readonly hubs: LiveRouteDependencies["hubs"];
   readonly readLiveHorizon: LiveRouteDependencies["readLiveHorizon"];
@@ -102,6 +104,7 @@ export const makeWorkerFetch = Effect.fnUntraced(function* (services: WorkerServ
       Layer.succeed(InventoryCommands, services.commands),
       Layer.succeed(InventorySnapshots, services.snapshots),
       Layer.succeed(InventoryImports, services.imports),
+      Layer.succeed(InventoryDevices, services.devices),
       Layer.succeed(LiveFanout, services.liveFanout),
       HttpServer.layerServices,
     ]),

@@ -32,6 +32,7 @@ export type Inventory = {
   readonly actions: InventoryActions;
   readonly atoms: WorkspaceAtoms;
   readonly authority: ReplicaAuthority;
+  readonly deviceId: string;
   readonly dispose: () => Promise<void>;
 };
 
