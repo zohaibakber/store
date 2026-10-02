@@ -19,8 +19,7 @@ import {
   type ListTableFeatures,
 } from "@/components/shared/data-table";
 import { ListTableContent, useListTable } from "@/components/shared/list-view";
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatNumber } from "@/lib/format";
@@ -125,14 +124,14 @@ function InvoicesPage({
       }
       table={table}
     >
-      <PageActions>
-        <DataTableFilter columnId="customer" placeholder="Search invoices" />
-        <Button render={<Link to="/invoices/new" />} size="sm">
-          <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-          New sale
-        </Button>
-      </PageActions>
       <PageLayout>
+        <PageToolbar>
+          <DataTableFilter className="me-auto" columnId="customer" placeholder="Search invoices" />
+          <Button render={<Link to="/invoices/new" />} size="sm">
+            <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+            New sale
+          </Button>
+        </PageToolbar>
         <ListTableContent loading={loading} />
       </PageLayout>
     </DataTable>

@@ -9,8 +9,7 @@ import type { Supplier } from "@store/contracts";
 import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
 import * as React from "react";
 
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -243,9 +242,10 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
 
   return (
     <PageLayout>
-      <PageActions>
+      <PageToolbar>
+        <PageHeading className="me-auto">Suppliers</PageHeading>
         <AddSupplierButton disabled={gate.blocked} onClick={() => edit(null)} />
-      </PageActions>
+      </PageToolbar>
       <PurchasingGateNotice gate={gate} />
       <Frame className="w-full">
         {suppliers.length === 0 ? (

@@ -51,7 +51,7 @@ export function RecentInvoices() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table aria-label="Recent invoices" variant="card">
+        <Table aria-label="Recent invoices">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Invoice</TableHead>

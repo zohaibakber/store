@@ -2,8 +2,7 @@ import type { SalesRange } from "@store/contracts";
 import { useInventoryInsights } from "@store/inventory-react";
 import * as React from "react";
 
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 
@@ -40,17 +39,17 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
   return (
     <>
       <KpiGrid period={period} summary={summary} />
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <AttentionFeed summary={summary} />
-        <ExpiringSoon summary={summary} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <AttentionFeed className="lg:col-span-2" summary={summary} />
+        <StockHealth summary={summary} />
       </div>
       <RevenueTrend period={period} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <StockHealth summary={summary} />
+        <TopSellers period={period} />
         <SalesRhythm summary={summary} />
       </div>
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <TopSellers period={period} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ExpiringSoon summary={summary} />
         <RecentInvoices />
       </div>
     </>
@@ -73,7 +72,8 @@ export function OverviewPage({
   }
   return (
     <PageLayout>
-      <PageActions>
+      <PageToolbar>
+        <PageHeading className="me-auto">Dashboard</PageHeading>
         <React.Suspense fallback={null}>
           <InsightsFreshness />
         </React.Suspense>
@@ -84,7 +84,7 @@ export function OverviewPage({
           value={VALUE_FROM_RANGE[range]}
         />
         <PlanningSheet />
-      </PageActions>
+      </PageToolbar>
       <OverviewBody range={range} />
     </PageLayout>
   );

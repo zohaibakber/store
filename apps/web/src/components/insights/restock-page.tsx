@@ -45,8 +45,7 @@ import {
   type ListTableFeatures,
 } from "@/components/shared/data-table";
 import { ListTableContent } from "@/components/shared/list-view";
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -425,9 +424,9 @@ function RestockBody({
         className="gap-3"
         table={table}
       >
-        <PageActions>
+        <PageToolbar>
+          <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
           <InsightsFreshness />
-          <DataTableFilter columnId="name" placeholder="Search products" />
           <ExportButton />
           <PlanningSheet />
           {selected.size > 0 ? (
@@ -453,7 +452,7 @@ function RestockBody({
               </Badge>
             ) : null}
           </Button>
-        </PageActions>
+        </PageToolbar>
         <PurchasingGateNotice gate={gate} />
         <div className="flex items-center gap-2">
           <div className="min-w-0 overflow-x-auto">
@@ -497,9 +496,10 @@ function RestockGate({
   if (summary === null) {
     return (
       <>
-        <PageActions>
+        <PageToolbar>
+          <PageHeading className="me-auto">Restock</PageHeading>
           <InsightsFreshness />
-        </PageActions>
+        </PageToolbar>
         <InsightsBuilding status={status} />
       </>
     );

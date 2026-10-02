@@ -10,11 +10,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCatalogIsReady, useInventoryInsights } from "@store/inventory-react";
-import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
-import { NavHistory } from "@/components/app/nav-history";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
 import { WorkspaceLogo } from "@/components/app/workspace-logo";
@@ -24,10 +22,7 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
   SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useFirstSyncPending } from "@/lib/inventory/provider";
@@ -67,25 +62,21 @@ const navMain = [
     title: "Products",
     url: "/products",
     icon: <HugeiconsIcon icon={TagIcon} />,
-    items: [
-      {
-        title: "Categories",
-        url: "/products/categories",
-        icon: <HugeiconsIcon icon={TagsIcon} />,
-      },
-    ],
+  },
+  {
+    title: "Categories",
+    url: "/categories",
+    icon: <HugeiconsIcon icon={TagsIcon} />,
   },
   {
     title: "Purchases",
     url: "/purchases",
     icon: <HugeiconsIcon icon={ShoppingBasket01Icon} />,
-    items: [
-      {
-        title: "Suppliers",
-        url: "/purchases/suppliers",
-        icon: <HugeiconsIcon icon={UserMultipleIcon} />,
-      },
-    ],
+  },
+  {
+    title: "Suppliers",
+    url: "/suppliers",
+    icon: <HugeiconsIcon icon={UserMultipleIcon} />,
   },
   {
     title: "Restock",
@@ -98,32 +89,25 @@ const navMain = [
     url: "/invoices",
     icon: <HugeiconsIcon icon={Invoice01Icon} />,
   },
+  {
+    title: "Settings",
+    url: "/settings",
+    icon: <HugeiconsIcon icon={SettingsIcon} />,
+  },
 ] satisfies NavMainItem[];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <div className="flex items-center justify-between group-data-[collapsible=icon]:justify-center">
+      <SidebarHeader className="-mb-2">
+        <div className="flex h-8 items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <WorkspaceLogo />
-          <NavHistory className="group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
       </SidebarContent>
       <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Settings"
-              render={<Link activeProps={{ "data-active": true }} to="/settings" />}
-            >
-              <HugeiconsIcon icon={SettingsIcon} />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
         <NavUser />
       </SidebarFooter>
       <SidebarRail />

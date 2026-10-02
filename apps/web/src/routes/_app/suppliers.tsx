@@ -4,7 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { SuppliersPage } from "@/components/purchases/suppliers-page";
 import { preloadInventory } from "@/lib/inventory/preload";
 
-export const Route = createFileRoute("/_app/purchases/suppliers")({
+export const Route = createFileRoute("/_app/suppliers")({
   loader: ({ context }) => preloadInventory(context, preloadSuppliers),
   component: SuppliersRoute,
   staticData: { breadcrumb: "Suppliers" },

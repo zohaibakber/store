@@ -154,7 +154,7 @@ export function AttentionFeed({
           title="All clear"
         />
       ) : (
-        <Table aria-label="Products that need restocking" variant="card">
+        <Table aria-label="Products that need restocking">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -372,7 +372,7 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
           title="No sales yet"
         />
       ) : (
-        <Table aria-label="Top sellers" variant="card">
+        <Table aria-label="Top sellers">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8">Product</TableHead>
@@ -511,7 +511,7 @@ export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary })
           title="Nothing expiring"
         />
       ) : (
-        <Table aria-label="Expiring batches" variant="card">
+        <Table aria-label="Expiring batches">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 min-w-40">Product</TableHead>

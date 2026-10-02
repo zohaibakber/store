@@ -30,7 +30,7 @@ function InvoiceItems() {
         table
         title="Items"
       >
-        <Table className="table-fixed" variant="card">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-8">

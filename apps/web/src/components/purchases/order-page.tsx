@@ -151,7 +151,7 @@ function LinesCard({ order }: { readonly order: PurchaseOrder }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table variant="card">
+        <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-full min-w-48">Product</TableHead>
@@ -212,7 +212,7 @@ function DeliveriesCard({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table className="table-fixed" variant="card">
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-48">Date</TableHead>

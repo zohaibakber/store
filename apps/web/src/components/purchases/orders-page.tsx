@@ -24,8 +24,7 @@ import {
 } from "@/components/shared/data-table";
 import { FrameCard } from "@/components/shared/frame-card";
 import { ListTableContent, useListTable } from "@/components/shared/list-view";
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -221,13 +220,17 @@ export function PurchaseOrdersPage({
         }
         table={table}
       >
-        <PageActions>
-          <DataTableFilter columnId="supplier" placeholder="Search by supplier" />
-          <Button render={<Link to="/purchases/suppliers" />} size="sm" variant="outline">
+        <PageToolbar>
+          <DataTableFilter
+            className="me-auto"
+            columnId="supplier"
+            placeholder="Search by supplier"
+          />
+          <Button render={<Link to="/suppliers" />} size="sm" variant="outline">
             Suppliers
           </Button>
           <NewOrderButton disabled={gate.blocked} onClick={() => onBuilderOpenChange(true)} />
-        </PageActions>
+        </PageToolbar>
         <PurchasingGateNotice gate={gate} />
         <Tabs
           onValueChange={(next: PurchaseOrderTab) => onViewChange({ ...view, tab: next, page: 0 })}

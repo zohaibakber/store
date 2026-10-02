@@ -4,8 +4,7 @@ import { preloadCatalogCategories, useSuspenseCatalogCategories } from "@store/i
 import { createFileRoute } from "@tanstack/react-router";
 
 import { PdfReadingNeedsAccount } from "@/components/app/pdf-reading-needs-account";
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { UploadAttachmentList } from "@/components/uploads/attachment-list";
@@ -37,8 +36,9 @@ function UploadPage() {
   } = useUpload();
 
   return (
-    <>
-      <PageActions>
+    <PageLayout width="narrow">
+      <PageToolbar>
+        <PageHeading className="me-auto">Import products</PageHeading>
         <Button
           disabled={processing || !files.length}
           onClick={() => void analyse()}
@@ -48,24 +48,22 @@ function UploadPage() {
           <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
           Analyse invoices
         </Button>
-      </PageActions>
-      <PageLayout width="narrow">
-        {!isOnline && (
-          <Alert variant="error">
-            <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
-            <AlertTitle>You're offline</AlertTitle>
-            <AlertDescription>
-              Invoice uploads need a connection. Your selected files and review stay on this screen.
-            </AlertDescription>
-          </Alert>
-        )}
-        <PdfReadingNeedsAccount />
-        <div className="flex flex-col gap-2">
-          <UploadDropzone />
-          <UploadAttachmentList />
-        </div>
-        <UploadProposedChanges />
-      </PageLayout>
-    </>
+      </PageToolbar>
+      {!isOnline && (
+        <Alert variant="error">
+          <HugeiconsIcon aria-hidden="true" icon={Alert02Icon} />
+          <AlertTitle>You're offline</AlertTitle>
+          <AlertDescription>
+            Invoice uploads need a connection. Your selected files and review stay on this screen.
+          </AlertDescription>
+        </Alert>
+      )}
+      <PdfReadingNeedsAccount />
+      <div className="flex flex-col gap-2">
+        <UploadDropzone />
+        <UploadAttachmentList />
+      </div>
+      <UploadProposedChanges />
+    </PageLayout>
   );
 }

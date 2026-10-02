@@ -7,7 +7,6 @@ import {
   FramePanel,
   FrameTitle,
 } from "@/components/ui/frame";
-import { cn } from "@/lib/utils";
 
 export function FrameCard({
   action,
@@ -27,7 +26,11 @@ export function FrameCard({
 }): React.ReactElement {
   const hasHeader = title != null || description != null || action != null;
   const body = table ? (
-    children
+    <FramePanel className="flex-1 overflow-hidden">
+      <div className="-m-5 **:data-[slot=table-cell]:first:ps-5 **:data-[slot=table-cell]:last:pe-5 **:data-[slot=table-head]:h-8 **:data-[slot=table-head]:text-xs **:data-[slot=table-head]:first:ps-5 **:data-[slot=table-head]:last:pe-5">
+        {children}
+      </div>
+    </FramePanel>
   ) : flush ? (
     <FramePanel className="flex-1 overflow-hidden">
       <div className="-m-5">{children}</div>
@@ -35,25 +38,6 @@ export function FrameCard({
   ) : (
     <FramePanel className="flex-1">{children}</FramePanel>
   );
-
-  if (table !== undefined) {
-    return (
-      <section className={cn("flex min-w-0 flex-col gap-2", className)} {...props}>
-        {hasHeader && (
-          <div className="flex min-h-7 min-w-0 items-center gap-3 px-1">
-            {title != null && <h2 className="shrink-0 text-sm font-medium">{title}</h2>}
-            {description != null && (
-              <p className="min-w-0 truncate text-sm text-muted-foreground tabular-nums">
-                {description}
-              </p>
-            )}
-            {action != null && <div className="ms-auto flex shrink-0 items-center">{action}</div>}
-          </div>
-        )}
-        <Frame>{body}</Frame>
-      </section>
-    );
-  }
 
   return (
     <Frame className={className} {...props}>

@@ -310,11 +310,8 @@ export const useStockMovementHistory = (productId: string, pageSize = HISTORY_PA
 
 const NO_INVOICES: ReadonlyArray<Invoice> = [];
 
-export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE, enabled = true) => {
-  const inventory = useCatalogReplica();
-  const live = useLiveQuery({
-    query: (query) => (enabled ? invoicesQuery(inventory)(query).limit(limit) : undefined),
-  });
+export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) => {
+  const live = useLiveQuery(liveRecentInvoices(useCatalogReplica(), limit));
   const data: ReadonlyArray<Invoice> = live.data ?? NO_INVOICES;
   return { ...live, data };
 };

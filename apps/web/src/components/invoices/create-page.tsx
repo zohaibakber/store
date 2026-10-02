@@ -115,12 +115,12 @@ function InvoiceCreatePage({
       {addProductId && (
         <AddProductFromSearch key={addProductId} onDone={onProductAdded} productId={addProductId} />
       )}
-      <SaleDraftTabs />
       <SaleDiscardDialog />
       <PageLayout>
+        <SaleDraftTabs />
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <InvoiceItems />
-          <div className="lg:sticky lg:top-12">
+          <div className="lg:sticky lg:top-16">
             <InvoiceCheckout />
           </div>
         </div>

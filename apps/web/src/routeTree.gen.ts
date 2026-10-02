@@ -13,22 +13,22 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
+import { Route as AppCategoriesRouteImport } from './routes/_app/categories'
 import { Route as AppInvoicesRouteImport } from './routes/_app/invoices'
 import { Route as AppProductsRouteImport } from './routes/_app/products'
 import { Route as AppPurchasesRouteImport } from './routes/_app/purchases'
 import { Route as AppRestockRouteImport } from './routes/_app/restock'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppSuppliersRouteImport } from './routes/_app/suppliers'
 import { Route as AppInvoicesIndexRouteImport } from './routes/_app/invoices/index'
 import { Route as AppInvoicesInvoiceIdRouteImport } from './routes/_app/invoices/$invoiceId'
 import { Route as AppInvoicesNewRouteImport } from './routes/_app/invoices/new'
 import { Route as AppProductsIndexRouteImport } from './routes/_app/products/index'
 import { Route as AppProductsProductIdRouteImport } from './routes/_app/products/$productId'
-import { Route as AppProductsCategoriesRouteImport } from './routes/_app/products/categories'
 import { Route as AppProductsNewRouteImport } from './routes/_app/products/new'
 import { Route as AppProductsUploadRouteImport } from './routes/_app/products/upload'
 import { Route as AppPurchasesIndexRouteImport } from './routes/_app/purchases/index'
 import { Route as AppPurchasesOrderIdRouteImport } from './routes/_app/purchases/$orderId'
-import { Route as AppPurchasesSuppliersRouteImport } from './routes/_app/purchases/suppliers'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSettingsSectionRouteImport } from './routes/_app/settings/$section'
 import { Route as AppProductsProductIdEditRouteImport } from './routes/_app/products/$productId_.edit'
@@ -50,6 +50,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppSplatRoute = AppSplatRouteImport.update({
   id: '/$',
   path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCategoriesRoute = AppCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
   getParentRoute: () => AppRoute,
 } as any)
 const AppInvoicesRoute = AppInvoicesRouteImport.update({
@@ -77,6 +82,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSuppliersRoute = AppSuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInvoicesIndexRoute = AppInvoicesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -102,11 +112,6 @@ const AppProductsProductIdRoute = AppProductsProductIdRouteImport.update({
   path: '/$productId',
   getParentRoute: () => AppProductsRoute,
 } as any)
-const AppProductsCategoriesRoute = AppProductsCategoriesRouteImport.update({
-  id: '/categories',
-  path: '/categories',
-  getParentRoute: () => AppProductsRoute,
-} as any)
 const AppProductsNewRoute = AppProductsNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -125,11 +130,6 @@ const AppPurchasesIndexRoute = AppPurchasesIndexRouteImport.update({
 const AppPurchasesOrderIdRoute = AppPurchasesOrderIdRouteImport.update({
   id: '/$orderId',
   path: '/$orderId',
-  getParentRoute: () => AppPurchasesRoute,
-} as any)
-const AppPurchasesSuppliersRoute = AppPurchasesSuppliersRouteImport.update({
-  id: '/suppliers',
-  path: '/suppliers',
   getParentRoute: () => AppPurchasesRoute,
 } as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
@@ -153,19 +153,19 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/sign-in': typeof SignInRoute
   '/$': typeof AppSplatRoute
+  '/categories': typeof AppCategoriesRoute
   '/invoices': typeof AppInvoicesRouteWithChildren
   '/products': typeof AppProductsRouteWithChildren
   '/purchases': typeof AppPurchasesRouteWithChildren
   '/restock': typeof AppRestockRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/suppliers': typeof AppSuppliersRoute
   '/invoices/$invoiceId': typeof AppInvoicesInvoiceIdRoute
   '/invoices/new': typeof AppInvoicesNewRoute
   '/products/$productId': typeof AppProductsProductIdRoute
-  '/products/categories': typeof AppProductsCategoriesRoute
   '/products/new': typeof AppProductsNewRoute
   '/products/upload': typeof AppProductsUploadRoute
   '/purchases/$orderId': typeof AppPurchasesOrderIdRoute
-  '/purchases/suppliers': typeof AppPurchasesSuppliersRoute
   '/settings/$section': typeof AppSettingsSectionRoute
   '/invoices/': typeof AppInvoicesIndexRoute
   '/products/': typeof AppProductsIndexRoute
@@ -176,16 +176,16 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/$': typeof AppSplatRoute
+  '/categories': typeof AppCategoriesRoute
   '/restock': typeof AppRestockRoute
+  '/suppliers': typeof AppSuppliersRoute
   '/': typeof AppIndexRoute
   '/invoices/$invoiceId': typeof AppInvoicesInvoiceIdRoute
   '/invoices/new': typeof AppInvoicesNewRoute
   '/products/$productId': typeof AppProductsProductIdRoute
-  '/products/categories': typeof AppProductsCategoriesRoute
   '/products/new': typeof AppProductsNewRoute
   '/products/upload': typeof AppProductsUploadRoute
   '/purchases/$orderId': typeof AppPurchasesOrderIdRoute
-  '/purchases/suppliers': typeof AppPurchasesSuppliersRoute
   '/settings/$section': typeof AppSettingsSectionRoute
   '/invoices': typeof AppInvoicesIndexRoute
   '/products': typeof AppProductsIndexRoute
@@ -198,20 +198,20 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/_app/$': typeof AppSplatRoute
+  '/_app/categories': typeof AppCategoriesRoute
   '/_app/invoices': typeof AppInvoicesRouteWithChildren
   '/_app/products': typeof AppProductsRouteWithChildren
   '/_app/purchases': typeof AppPurchasesRouteWithChildren
   '/_app/restock': typeof AppRestockRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
+  '/_app/suppliers': typeof AppSuppliersRoute
   '/_app/': typeof AppIndexRoute
   '/_app/invoices/$invoiceId': typeof AppInvoicesInvoiceIdRoute
   '/_app/invoices/new': typeof AppInvoicesNewRoute
   '/_app/products/$productId': typeof AppProductsProductIdRoute
-  '/_app/products/categories': typeof AppProductsCategoriesRoute
   '/_app/products/new': typeof AppProductsNewRoute
   '/_app/products/upload': typeof AppProductsUploadRoute
   '/_app/purchases/$orderId': typeof AppPurchasesOrderIdRoute
-  '/_app/purchases/suppliers': typeof AppPurchasesSuppliersRoute
   '/_app/settings/$section': typeof AppSettingsSectionRoute
   '/_app/invoices/': typeof AppInvoicesIndexRoute
   '/_app/products/': typeof AppProductsIndexRoute
@@ -225,19 +225,19 @@ export interface FileRouteTypes {
     | '/'
     | '/sign-in'
     | '/$'
+    | '/categories'
     | '/invoices'
     | '/products'
     | '/purchases'
     | '/restock'
     | '/settings'
+    | '/suppliers'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
-    | '/products/categories'
     | '/products/new'
     | '/products/upload'
     | '/purchases/$orderId'
-    | '/purchases/suppliers'
     | '/settings/$section'
     | '/invoices/'
     | '/products/'
@@ -248,16 +248,16 @@ export interface FileRouteTypes {
   to:
     | '/sign-in'
     | '/$'
+    | '/categories'
     | '/restock'
+    | '/suppliers'
     | '/'
     | '/invoices/$invoiceId'
     | '/invoices/new'
     | '/products/$productId'
-    | '/products/categories'
     | '/products/new'
     | '/products/upload'
     | '/purchases/$orderId'
-    | '/purchases/suppliers'
     | '/settings/$section'
     | '/invoices'
     | '/products'
@@ -269,20 +269,20 @@ export interface FileRouteTypes {
     | '/_app'
     | '/sign-in'
     | '/_app/$'
+    | '/_app/categories'
     | '/_app/invoices'
     | '/_app/products'
     | '/_app/purchases'
     | '/_app/restock'
     | '/_app/settings'
+    | '/_app/suppliers'
     | '/_app/'
     | '/_app/invoices/$invoiceId'
     | '/_app/invoices/new'
     | '/_app/products/$productId'
-    | '/_app/products/categories'
     | '/_app/products/new'
     | '/_app/products/upload'
     | '/_app/purchases/$orderId'
-    | '/_app/purchases/suppliers'
     | '/_app/settings/$section'
     | '/_app/invoices/'
     | '/_app/products/'
@@ -326,6 +326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSplatRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/categories': {
+      id: '/_app/categories'
+      path: '/categories'
+      fullPath: '/categories'
+      preLoaderRoute: typeof AppCategoriesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/invoices': {
       id: '/_app/invoices'
       path: '/invoices'
@@ -359,6 +366,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/suppliers': {
+      id: '/_app/suppliers'
+      path: '/suppliers'
+      fullPath: '/suppliers'
+      preLoaderRoute: typeof AppSuppliersRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/invoices/': {
@@ -396,13 +410,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProductsProductIdRouteImport
       parentRoute: typeof AppProductsRoute
     }
-    '/_app/products/categories': {
-      id: '/_app/products/categories'
-      path: '/categories'
-      fullPath: '/products/categories'
-      preLoaderRoute: typeof AppProductsCategoriesRouteImport
-      parentRoute: typeof AppProductsRoute
-    }
     '/_app/products/new': {
       id: '/_app/products/new'
       path: '/new'
@@ -429,13 +436,6 @@ declare module '@tanstack/react-router' {
       path: '/$orderId'
       fullPath: '/purchases/$orderId'
       preLoaderRoute: typeof AppPurchasesOrderIdRouteImport
-      parentRoute: typeof AppPurchasesRoute
-    }
-    '/_app/purchases/suppliers': {
-      id: '/_app/purchases/suppliers'
-      path: '/suppliers'
-      fullPath: '/purchases/suppliers'
-      preLoaderRoute: typeof AppPurchasesSuppliersRouteImport
       parentRoute: typeof AppPurchasesRoute
     }
     '/_app/settings/': {
@@ -480,7 +480,6 @@ const AppInvoicesRouteWithChildren = AppInvoicesRoute._addFileChildren(
 
 interface AppProductsRouteChildren {
   AppProductsProductIdRoute: typeof AppProductsProductIdRoute
-  AppProductsCategoriesRoute: typeof AppProductsCategoriesRoute
   AppProductsNewRoute: typeof AppProductsNewRoute
   AppProductsUploadRoute: typeof AppProductsUploadRoute
   AppProductsIndexRoute: typeof AppProductsIndexRoute
@@ -489,7 +488,6 @@ interface AppProductsRouteChildren {
 
 const AppProductsRouteChildren: AppProductsRouteChildren = {
   AppProductsProductIdRoute: AppProductsProductIdRoute,
-  AppProductsCategoriesRoute: AppProductsCategoriesRoute,
   AppProductsNewRoute: AppProductsNewRoute,
   AppProductsUploadRoute: AppProductsUploadRoute,
   AppProductsIndexRoute: AppProductsIndexRoute,
@@ -502,13 +500,11 @@ const AppProductsRouteWithChildren = AppProductsRoute._addFileChildren(
 
 interface AppPurchasesRouteChildren {
   AppPurchasesOrderIdRoute: typeof AppPurchasesOrderIdRoute
-  AppPurchasesSuppliersRoute: typeof AppPurchasesSuppliersRoute
   AppPurchasesIndexRoute: typeof AppPurchasesIndexRoute
 }
 
 const AppPurchasesRouteChildren: AppPurchasesRouteChildren = {
   AppPurchasesOrderIdRoute: AppPurchasesOrderIdRoute,
-  AppPurchasesSuppliersRoute: AppPurchasesSuppliersRoute,
   AppPurchasesIndexRoute: AppPurchasesIndexRoute,
 }
 
@@ -532,21 +528,25 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppSplatRoute: typeof AppSplatRoute
+  AppCategoriesRoute: typeof AppCategoriesRoute
   AppInvoicesRoute: typeof AppInvoicesRouteWithChildren
   AppProductsRoute: typeof AppProductsRouteWithChildren
   AppPurchasesRoute: typeof AppPurchasesRouteWithChildren
   AppRestockRoute: typeof AppRestockRoute
   AppSettingsRoute: typeof AppSettingsRouteWithChildren
+  AppSuppliersRoute: typeof AppSuppliersRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppSplatRoute: AppSplatRoute,
+  AppCategoriesRoute: AppCategoriesRoute,
   AppInvoicesRoute: AppInvoicesRouteWithChildren,
   AppProductsRoute: AppProductsRouteWithChildren,
   AppPurchasesRoute: AppPurchasesRouteWithChildren,
   AppRestockRoute: AppRestockRoute,
   AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppSuppliersRoute: AppSuppliersRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

@@ -521,7 +521,7 @@ export function ProductBatchesCard({ product }: { product: Product }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table variant="card">
+        <Table>
           <TableHeader>
             <TableRow>
               {tracksPacks ? <TableHead>Batch</TableHead> : null}
@@ -626,7 +626,7 @@ export function ProductStockMovementsCard({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table variant="card">
+        <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>

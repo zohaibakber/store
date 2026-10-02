@@ -3,9 +3,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useCanGoBack, useRouter, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-export function NavHistory({ className }: { className?: string }) {
+export function NavHistory() {
   const router = useRouter();
   const canGoBack = useCanGoBack();
   const canGoForward = useRouterState({
@@ -13,7 +12,7 @@ export function NavHistory({ className }: { className?: string }) {
   });
 
   return (
-    <div className={cn("flex items-center gap-0.5", className)}>
+    <div className="flex items-center gap-0.5">
       <Button
         aria-label="Go back"
         disabled={!canGoBack}

@@ -15,8 +15,7 @@ import type { ProductListView } from "@/components/products/list";
 import { ProductTableFilters, useProductsTable } from "@/components/products/table";
 import { DataTable, DataTableFilter, DataTableViewOptions } from "@/components/shared/data-table";
 import { ListTableContent } from "@/components/shared/list-view";
-import { PageActions } from "@/components/shared/page-actions";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 
 export function ProductsPage({
@@ -53,20 +52,20 @@ export function ProductsPage({
       }
       table={table}
     >
-      <PageActions>
-        <DataTableFilter columnId="name" placeholder="Search products" />
-        <ProductTableFilters categories={categories} facets={facets} />
-        <DataTableViewOptions />
-        <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
-          <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-          Import
-        </Button>
-        <Button render={<Link to="/products/new" />} size="sm">
-          <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-          Add product
-        </Button>
-      </PageActions>
       <PageLayout>
+        <PageToolbar>
+          <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
+          <ProductTableFilters categories={categories} facets={facets} />
+          <DataTableViewOptions />
+          <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
+            <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
+            Import
+          </Button>
+          <Button render={<Link to="/products/new" />} size="sm">
+            <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+            Add product
+          </Button>
+        </PageToolbar>
         <ProductAnalytics />
         <ListTableContent loading={loading} />
       </PageLayout>

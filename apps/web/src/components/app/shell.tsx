@@ -5,11 +5,13 @@ import { Suspense } from "react";
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { PageLoading } from "@/components/app/loading-spinner";
 import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
+import { NavHistory } from "@/components/app/nav-history";
 import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
-import { SiteHeader } from "@/components/app/site-header";
-import { PageActionsProvider } from "@/components/shared/page-actions";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
+import { TitleBar, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
+import { Separator } from "@/components/ui/separator";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
@@ -27,17 +29,25 @@ export function AppShell() {
     <TooltipProvider>
       <CommandMenuProvider>
         <SidebarProvider
-          className="h-svh min-h-0 overflow-hidden"
+          className="h-svh min-h-0 flex-col overflow-hidden"
           onOpenChange={setSidebarOpen}
           open={sidebarOpen}
         >
-          <AppSidebar />
-          <SidebarInset
-            className="min-h-0 scrollbar-none overflow-y-auto"
-            data-scroll-restoration-id="app-content"
-          >
-            <PageActionsProvider>
-              <SiteHeader />
+          <TitleBar>
+            <TitleBarStart>
+              <SidebarTrigger />
+              <NavHistory />
+              <Separator className="h-4" orientation="vertical" />
+              <SiteBreadcrumbs />
+            </TitleBarStart>
+            <TitleBarSearch />
+          </TitleBar>
+          <div className="flex min-h-0 flex-1">
+            <AppSidebar className="top-10 h-auto" />
+            <SidebarInset
+              className="min-h-0 scrollbar-none overflow-y-auto"
+              data-scroll-restoration-id="app-content"
+            >
               <LocalCatalogWitness workspace={workspace} />
               {inventory && lease ? (
                 <InventoryReady>
@@ -49,8 +59,8 @@ export function AppShell() {
               ) : (
                 <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
               )}
-            </PageActionsProvider>
-          </SidebarInset>
+            </SidebarInset>
+          </div>
         </SidebarProvider>
       </CommandMenuProvider>
     </TooltipProvider>

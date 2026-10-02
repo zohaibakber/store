@@ -2,8 +2,8 @@ import type { Category, ProductSuggestions } from "@store/contracts";
 import type * as React from "react";
 
 import { ProductForm, type useProductCreateForm } from "@/components/products/form";
-import { PageActions } from "@/components/shared/page-actions";
 import {
+  PageAction,
   PageDescription,
   PageHeader,
   PageHeading,
@@ -47,33 +47,26 @@ export function ProductFormPage({
   }, true);
 
   return (
-    <>
-      <PageActions>
-        <Button onClick={onCancel} size="sm" type="button" variant="ghost">
-          Cancel
-          <Kbd>Esc</Kbd>
-        </Button>
-        <form.Subscribe selector={(state) => state.isSubmitting}>
-          {(isSubmitting) => (
-            <Button disabled={isSubmitting} form={formId} size="sm" type="submit">
-              {submitLabel}
-              <Kbd>Ctrl ↵</Kbd>
-            </Button>
-          )}
-        </form.Subscribe>
-      </PageActions>
-      <PageLayout width="narrow">
-        <PageHeader>
-          <PageHeading>{title}</PageHeading>
-          {description ? <PageDescription>{description}</PageDescription> : null}
-        </PageHeader>
-        <ProductForm
-          categories={categories}
-          form={form}
-          formId={formId}
-          suggestions={suggestions}
-        />
-      </PageLayout>
-    </>
+    <PageLayout width="narrow">
+      <PageHeader>
+        <PageHeading>{title}</PageHeading>
+        {description ? <PageDescription>{description}</PageDescription> : null}
+        <PageAction>
+          <Button onClick={onCancel} size="sm" type="button" variant="ghost">
+            Cancel
+            <Kbd>Esc</Kbd>
+          </Button>
+          <form.Subscribe selector={(state) => state.isSubmitting}>
+            {(isSubmitting) => (
+              <Button disabled={isSubmitting} form={formId} size="sm" type="submit">
+                {submitLabel}
+                <Kbd>Ctrl ↵</Kbd>
+              </Button>
+            )}
+          </form.Subscribe>
+        </PageAction>
+      </PageHeader>
+      <ProductForm categories={categories} form={form} formId={formId} suggestions={suggestions} />
+    </PageLayout>
   );
 }

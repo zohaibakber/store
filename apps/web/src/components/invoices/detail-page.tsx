@@ -88,7 +88,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
         table
         title="Items"
       >
-        <Table variant="card">
+        <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 w-full min-w-48">Product</TableHead>

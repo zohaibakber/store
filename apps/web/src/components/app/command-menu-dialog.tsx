@@ -242,7 +242,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         icon: TagsIcon,
         run: () => {
           close();
-          void navigate({ to: "/products/categories" });
+          void navigate({ to: "/categories" });
         },
       },
       {
@@ -264,7 +264,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         icon: UserMultipleIcon,
         run: () => {
           close();
-          void navigate({ to: "/purchases/suppliers" });
+          void navigate({ to: "/suppliers" });
         },
       },
       {
@@ -410,10 +410,8 @@ function PaletteResults({
   const recents = useRecentProducts();
   const trimmed = searchQuery.trim();
   const products = useProductSearch(trimmed, PRODUCT_LIMIT);
-  const invoices = useInventoryInvoices(
-    INVOICE_WINDOW,
-    searchesInvoices(page, scope, trimmed),
-  ).data;
+  const { data: invoices, isReady: invoicesReady } = useInventoryInvoices(INVOICE_WINDOW);
+  const awaitingInvoices = searchesInvoices(page, scope, trimmed) && !invoicesReady;
 
   const highlight = (entry: Entry | undefined) => {
     setHighlighted(entry);
@@ -441,7 +439,10 @@ function PaletteResults({
     [actions, invoices, page, productActions, products, query, recents, scope, trimmed],
   );
 
-  const shownGroups = useDeferredValue(groups);
+  const [settledGroups, setSettledGroups] = useState(groups);
+  if (!awaitingInvoices && settledGroups !== groups) setSettledGroups(groups);
+
+  const shownGroups = useDeferredValue(settledGroups);
 
   const runEntry = (entry: Entry) => {
     switch (entry.kind) {
@@ -570,7 +571,7 @@ function PaletteResults({
                     onMouseDown={(event) => event.preventDefault()}
                     size="sm"
                     tabIndex={-1}
-                    variant={entry.value === scope ? "default" : "secondary"}
+                    variant={entry.value === scope ? "secondary" : "ghost"}
                   >
                     {entry.label}
                   </Button>

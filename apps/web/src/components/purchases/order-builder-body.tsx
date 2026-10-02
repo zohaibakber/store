@@ -458,7 +458,7 @@ export function OrderBuilderBody({
                   )
                 }
               >
-                <Table variant="card">
+                <Table>
                   <TableBody>
                     {group.lines.map((line) => (
                       <BuilderLineRow

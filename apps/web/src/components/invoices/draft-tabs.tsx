@@ -5,7 +5,7 @@ import { formatPrice } from "@store/services/format";
 import { useEffect, useId, useRef } from "react";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
-import { PageActions } from "@/components/shared/page-actions";
+import { PageToolbar } from "@/components/shared/page-layout";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -136,7 +136,7 @@ function SaleDraftTabs() {
   if (!several && !started) return null;
 
   return (
-    <PageActions>
+    <PageToolbar className="justify-between">
       <div
         aria-label="Open sales"
         className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto"
@@ -158,7 +158,7 @@ function SaleDraftTabs() {
         </span>
       </div>
       <HoldSaleButton started={started} />
-    </PageActions>
+    </PageToolbar>
   );
 }
 

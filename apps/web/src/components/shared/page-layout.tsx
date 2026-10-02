@@ -19,7 +19,7 @@ function PageLayout({
   width?: PageWidth;
 }) {
   return (
-    <div data-slot="page-layout" className={cn("p-4 pt-2", className)} {...props}>
+    <div data-slot="page-layout" className={cn("p-4", className)} {...props}>
       <div
         data-slot="page-layout-content"
         className={cn("flex w-full flex-col gap-4", widthClassNames[width])}
@@ -27,6 +27,19 @@ function PageLayout({
         {children}
       </div>
     </div>
+  );
+}
+
+function PageToolbar({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="page-toolbar"
+      className={cn(
+        "sticky top-0 z-10 -my-4 flex h-16 min-w-0 shrink-0 items-center justify-end gap-2 bg-background",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -79,4 +92,12 @@ function PageAction({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-export { PageAction, PageContent, PageDescription, PageHeader, PageHeading, PageLayout };
+export {
+  PageAction,
+  PageContent,
+  PageDescription,
+  PageHeader,
+  PageHeading,
+  PageLayout,
+  PageToolbar,
+};
