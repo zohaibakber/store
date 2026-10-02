@@ -12,8 +12,6 @@ import * as Array from "effect/Array";
 
 import { byClientSequence } from "./decisions";
 
-export const PLACEHOLDER_INCARNATION = "local";
-
 export const UNRECEIPTED_COMMAND_STATUSES: ReadonlyArray<CommandStatus> = ["pending", "sending"];
 
 type RegistrationReplicaState = {
@@ -145,7 +143,7 @@ export const announcementFields = (authority: RegisterReplicaResult) => ({
   lowestActiveSchemaVersion: authority.lowestActiveSchemaVersion ?? null,
 });
 
-export const announcementOf = (state: {
+const announcementOf = (state: {
   readonly registeredAt: number | null;
   readonly announcedSchemaVersion?: number | null | undefined;
   readonly lowestActiveSchemaVersion?: number | null | undefined;
@@ -153,4 +151,21 @@ export const announcementOf = (state: {
   registered: state.registeredAt !== null,
   announcedSchemaVersion: state.announcedSchemaVersion ?? undefined,
   lowestActiveSchemaVersion: state.lowestActiveSchemaVersion ?? undefined,
+});
+
+export const syncCursorOf = (state: {
+  readonly epoch: string;
+  readonly appliedCommitSequence: string;
+  readonly replicaId: string;
+  readonly caughtUpAt: number | null;
+  readonly activeGeneration: number;
+  readonly registeredAt: number | null;
+  readonly announcedSchemaVersion?: number | null | undefined;
+  readonly lowestActiveSchemaVersion?: number | null | undefined;
+}) => ({
+  epoch: state.epoch,
+  appliedCommitSequence: state.appliedCommitSequence,
+  replicaId: state.replicaId,
+  bootstrapped: state.caughtUpAt !== null || state.activeGeneration !== 1,
+  ...announcementOf(state),
 });

@@ -19,7 +19,6 @@ import {
   type StaleCatalogLease,
 } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
-import { inventoryScopeId, openInventoryWorkspace } from "./open";
 import type { Inventory } from "./types";
 
 export type CatalogLease = {
@@ -148,9 +147,3 @@ export const createCatalogLifetime = <Replica extends CatalogReplica>(input: {
       }),
   };
 };
-
-export const createAppCatalogLifetime = (): CatalogLifetime<Inventory> =>
-  createCatalogLifetime({
-    open: openInventoryWorkspace,
-    databaseName: inventoryScopeId,
-  });

@@ -110,12 +110,12 @@ const writeTargets = (write: CatalogRowWrite): ReadonlyArray<RejectedCommandTarg
     : [target];
 };
 
-export type CommandTargets = {
+type CommandTargets = {
   readonly targets: ReadonlyArray<RejectedCommandTarget>;
   readonly productId: string | null;
 };
 
-export const commandTargets = (command: SyncCommand): CommandTargets => {
+const commandTargets = (command: SyncCommand): CommandTargets => {
   switch (command._tag) {
     case "catalogWrite": {
       const productIds = command.payload.writes.flatMap((write) => {
@@ -206,7 +206,7 @@ export const rejectedCommandLabel = (
   };
 };
 
-export const rejectedCommandFromOutbox = (row: OutboxActivityRow): Option.Option<RejectedCommand> =>
+const rejectedCommandFromOutbox = (row: OutboxActivityRow): Option.Option<RejectedCommand> =>
   decodeEnvelope(row.envelopeJson).pipe(
     Option.map((envelope) => {
       const receipt = row.receiptJson === null ? Option.none() : decodeReceipt(row.receiptJson);
@@ -252,12 +252,4 @@ const presentStatuses = (activity: ReplicaOutboxActivity): ReadonlyArray<Command
 export const replicaSyncActivityOf = (outbox: ReplicaOutboxActivity): ReplicaSyncActivity => ({
   statuses: presentStatuses(outbox),
   activity: syncActivityFromOutbox(outbox),
-});
-
-export const syncActivityFromStatuses = (
-  statuses: ReadonlyArray<CommandStatus>,
-): InventorySyncActivity => ({
-  ...EMPTY_SYNC_ACTIVITY,
-  pendingCount: statuses.filter((status) => PENDING_STATUSES.has(status)).length,
-  rejectedCount: statuses.filter((status) => status === "rejected").length,
 });

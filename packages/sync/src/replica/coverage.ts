@@ -8,10 +8,10 @@ import {
 import { replicaCoverage } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { loadReplicaState } from "./commands";
 import { decideCoverageAfterPull } from "./decisions";
@@ -113,13 +113,15 @@ export const recordSnapshotCoverage = Effect.fn("ReplicaCoverage.recordSnapshotC
 export const markCoverageRepair = (tx: ReplicaDb, subscription: SyncSubscription) =>
   saveCoverage(tx, { _tag: "awaitingSnapshot", subscription });
 
-export type DigestFence = {
-  readonly appliedCommitSequence: string;
-  readonly localCommitVersion: number;
-  readonly activeGeneration: number;
-};
+const DigestFence = Schema.Struct({
+  appliedCommitSequence: Schema.String,
+  localCommitVersion: Schema.Number,
+  activeGeneration: Schema.Number,
+});
 
-export type ReplicaTransactor = <A, E>(
+export type DigestFence = typeof DigestFence.Type;
+
+type ReplicaTransactor = <A, E>(
   span: string,
   run: (tx: ReplicaDb) => Effect.Effect<A, E>,
 ) => Effect.Effect<A, ReplicaStoreError>;
@@ -134,9 +136,9 @@ type ScannedDigest = {
   readonly report: PartitionDigestReport | undefined;
 };
 
-class DigestFenceMoved extends Data.TaggedError("DigestFenceMoved")<{
-  readonly current: DigestFence;
-}> {}
+class DigestFenceMoved extends Schema.TaggedError<DigestFenceMoved>()("DigestFenceMoved", {
+  current: DigestFence,
+}) {}
 
 const DIGEST_SCAN_ATTEMPTS = 3;
 
@@ -172,7 +174,7 @@ const fencedReader =
           (current): Effect.Effect<Result.Result<A, DigestFenceMoved>, EffectDrizzleQueryError> =>
             sameFence(current, fence)
               ? read(tx).pipe(Effect.map(Result.succeed))
-              : Effect.succeed(Result.fail(new DigestFenceMoved({ current }))),
+              : Effect.succeed(Result.fail(DigestFenceMoved.make({ current }))),
         ),
       ),
     ).pipe(Effect.flatMap(Effect.fromResult));

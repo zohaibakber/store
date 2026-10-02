@@ -1,3 +1,4 @@
+import type { ReplicaCommitNotice as CatalogCommitNotice } from "@store/client-db";
 import {
   InsightsContext,
   InsightsSummaryRead,
@@ -5,6 +6,7 @@ import {
   ProductInsightsRead,
   RestockPageRead,
   RestockPageRequest,
+  SyncEntity,
 } from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
@@ -40,16 +42,35 @@ export class AnalyticsWorkerFailure extends Schema.TaggedError<AnalyticsWorkerFa
 ) {}
 
 export const AnalyticsEvent = Schema.Struct({
-  revision: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  revision: Schema.Natural,
   state: Schema.Literals(["idle", "building", "refreshing"]),
   progress: Schema.NullOr(
     Schema.Struct({
-      done: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-      total: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+      done: Schema.Natural,
+      total: Schema.Natural,
     }),
   ),
 });
 export type AnalyticsEvent = typeof AnalyticsEvent.Type;
+
+const ANALYTICS_NOTICE_TOKEN = "analytics";
+
+const isSyncEntity = Schema.is(SyncEntity);
+
+export const analyticsNoticeOf = ({
+  overflowedEntities,
+  ...notice
+}: typeof ReplicaCommitNotice.Type): CatalogCommitNotice =>
+  Object.assign(
+    {
+      ...notice,
+      workspaceToken: ANALYTICS_NOTICE_TOKEN,
+      touchedEntities: notice.touchedEntities.filter(isSyncEntity),
+    },
+    overflowedEntities === undefined
+      ? undefined
+      : { overflowedEntities: overflowedEntities.filter(isSyncEntity) },
+  );
 
 export const AnalyticsWorkerRpcs = RpcGroup.make(
   Rpc.make("Ready", { success: Schema.Literal("ready"), error: AnalyticsWorkerFailure }),

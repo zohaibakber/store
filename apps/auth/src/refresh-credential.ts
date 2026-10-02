@@ -1,22 +1,26 @@
-import { RefreshToken, type AuthClientKind } from "@store/auth";
-import * as Schema from "effect/Schema";
+import type { AuthClientKind, RefreshToken } from "@store/auth";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 
-type ResolvedRefresh = {
-  readonly client: AuthClientKind;
-  readonly refreshToken: typeof RefreshToken.Type;
+export const UNIDENTIFIED_NATIVE_CLIENT: AuthClientKind = {
+  _tag: "Native",
+  deviceName: "Native client",
 };
 
+export interface PresentedRefresh {
+  readonly client: AuthClientKind;
+  readonly refreshToken: Redacted.Redacted<string>;
+}
+
 export const resolveRefreshCredential = (input: {
-  readonly cookie: string | undefined;
-  readonly bodyToken: typeof RefreshToken.Type | undefined;
-}): ResolvedRefresh | undefined => {
-  if (input.bodyToken)
-    return {
-      client: { _tag: "Native", deviceName: "Native client" },
-      refreshToken: input.bodyToken,
-    };
-  if (!input.cookie) return undefined;
-  const decoded = Schema.decodeUnknownOption(RefreshToken)(input.cookie);
-  if (decoded._tag !== "Some") return undefined;
-  return { client: { _tag: "Browser" }, refreshToken: decoded.value };
+  readonly cookie: Option.Option<Redacted.Redacted<string>>;
+  readonly bodyToken: RefreshToken | undefined;
+}): PresentedRefresh | undefined => {
+  if (input.bodyToken) {
+    return { client: UNIDENTIFIED_NATIVE_CLIENT, refreshToken: Redacted.make(input.bodyToken) };
+  }
+  return Option.match(input.cookie, {
+    onNone: () => undefined,
+    onSome: (refreshToken): PresentedRefresh => ({ client: { _tag: "Browser" }, refreshToken }),
+  });
 };

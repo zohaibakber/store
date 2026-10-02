@@ -5,8 +5,9 @@ import type * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import type { InvoiceListRequest } from "./invoice-list";
+import { PURCHASE_ORDER_TABS } from "./list-request";
 import type { ProductListRequest } from "./product-list";
-import { PURCHASE_ORDER_TABS, type PurchaseOrderListRequest } from "./purchasing";
+import type { PurchaseOrderListRequest } from "./purchasing";
 import {
   livePurchaseOrder,
   livePurchaseOrderDeliveries,

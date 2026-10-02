@@ -9,18 +9,24 @@ import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { OrganizationAuthLive } from "../auth/organization";
+import { InventoryCommands, type InventoryCommandsContract } from "../inventory/commands";
+import { InventoryImports, type InventoryImportsContract } from "../inventory/imports";
+import { InventorySnapshots, type InventorySnapshotsContract } from "../inventory/snapshots";
+import { LiveFanout, type LiveFanoutContract } from "../live/fanout";
+import { LiveRoutes, type LiveRouteDependencies } from "../live/route";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
-import { ServerRuntime } from "./runtime";
+import { ServerRuntime, type ServerRuntimeContract } from "./runtime";
 import { AuthHandlers, SystemHandlers } from "./system";
 
 const ProtectedHandlers = Layer.mergeAll(UploadHandlers, ProductScanHandlers, SyncHandlers).pipe(
@@ -51,9 +57,7 @@ const Cors = HttpRouter.middleware(
   { global: true },
 );
 
-export const ServerRoutes = Layer.mergeAll(ApiRoutes, Cors);
-
-export const recoverUnexpected = <E, R>(
+const recoverUnexpected = <E, R>(
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
 ) =>
   effect.pipe(
@@ -77,7 +81,7 @@ export const recoverUnexpected = <E, R>(
     }),
   );
 
-export const buildOncePerIsolate = <A, E, R>(
+const buildOncePerIsolate = <A, E, R>(
   build: Effect.Effect<A, E, R | Scope.Scope>,
   isolateServices: Context.Context<R>,
 ) =>
@@ -90,7 +94,7 @@ export const buildOncePerIsolate = <A, E, R>(
     );
   });
 
-export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
+const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
   Effect.flatMap(
     Option.match({
       onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
@@ -98,3 +102,39 @@ export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
     }),
   ),
 );
+
+export interface WorkerServices {
+  readonly runtime: ServerRuntimeContract;
+  readonly commands: InventoryCommandsContract;
+  readonly snapshots: InventorySnapshotsContract;
+  readonly imports: InventoryImportsContract;
+  readonly liveFanout: LiveFanoutContract;
+  readonly hubs: LiveRouteDependencies["hubs"];
+  readonly readLiveHorizon: LiveRouteDependencies["readLiveHorizon"];
+}
+
+export const makeWorkerFetch = Effect.fnUntraced(function* (services: WorkerServices) {
+  const routes = Layer.mergeAll(
+    ApiRoutes,
+    Cors,
+    LiveRoutes({
+      hubs: services.hubs,
+      verifyAccessToken: services.runtime.verifyAccessToken,
+      readLiveHorizon: services.readLiveHorizon,
+    }),
+  ).pipe(
+    Layer.provide([
+      Layer.succeed(ServerRuntime, services.runtime),
+      Layer.succeed(InventoryCommands, services.commands),
+      Layer.succeed(InventorySnapshots, services.snapshots),
+      Layer.succeed(InventoryImports, services.imports),
+      Layer.succeed(LiveFanout, services.liveFanout),
+      HttpServer.layerServices,
+    ]),
+  );
+  const serveRequest = yield* buildOncePerIsolate(
+    HttpRouter.toHttpEffect(routes),
+    yield* workerRuntimeServices,
+  );
+  return recoverUnexpected(serveRequest);
+});

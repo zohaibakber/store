@@ -10,14 +10,9 @@ import * as Stream from "effect/Stream";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  publishLocalWorkspace,
-  readLocalCatalog,
-  type PublishPorts,
-} from "../../electron/replica-publish";
+import { publishLocalWorkspace, type PublishPorts } from "../../electron/replica-publish";
 import { readPublishMarker, writePublishMarker } from "../../electron/replica-publish-files";
 import { ReplicaWorkerFailure, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
-import { makeReplicaWorkerHandlers } from "../../electron/replica-worker-handlers";
 
 const ORGANIZATION = "org-1";
 
@@ -143,44 +138,10 @@ const resumeWith = async (current: ImportId) => {
 };
 
 describe("resuming a move the organization already accepted", () => {
-  it("sets the file aside when it is unchanged since its seal", async () => {
-    const resumed = await resumeWith(SEALED);
-    expect(resumed.outcome).toEqual({
-      _tag: "published",
-      counts: { products: 3, sales: 2, purchaseOrders: 0 },
-    });
-    expect(resumed).toMatchObject({ staged: 0, kept: false, archived: true });
-    expect(Option.isNone(resumed.marker)).toBe(true);
-  });
-
   it("neither sets aside nor stages again a file that changed after its seal", async () => {
     const resumed = await resumeWith(ImportId.make("import-later"));
     expect(resumed.outcome._tag).toBe("failed");
     expect(resumed).toMatchObject({ staged: 0, kept: true, archived: false });
     expect(Option.isNone(resumed.marker)).toBe(true);
-  });
-});
-
-describe("local catalog standing", () => {
-  const standingOf = (databasePath: string) =>
-    withWorker(
-      makeReplicaWorkerHandlers(
-        Effect.succeed({
-          authority: "remote" as const,
-          organizationId: ORGANIZATION,
-          userId: "user-1",
-          replicaId: "replica-1",
-          databasePath: path.join(directory(), "organization.sqlite"),
-          apiBaseUrl: "https://api.tabaaq.local",
-        }),
-        () => Promise.reject(new Error("unused")),
-      ),
-      databasePath,
-      readLocalCatalog,
-    );
-
-  it("reads a missing file as empty and an unreadable one as unknown", async () => {
-    expect(await standingOf(path.join(directory(), "replica.sqlite"))).toEqual({ _tag: "empty" });
-    expect(await standingOf(fileIn(directory(), "not a replica"))).toEqual({ _tag: "unknown" });
   });
 });

@@ -1,11 +1,12 @@
 import { AuthorizationCode, EmailAddress, OtpCode, UserId, type AuthClientKind } from "@store/auth";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
-import { EXPIRED_SWEEP_LIMIT, EphemeralStore, ephemeralStoreLayer } from "../src/ephemeral";
+import { EphemeralStore, ephemeralStoreLayer } from "../src/ephemeral";
 import { authD1 } from "./sqlite-d1";
 
-const PEPPER = "ephemeral-pepper";
+const PEPPER = Redacted.make("ephemeral-pepper");
 const native: AuthClientKind = { _tag: "Native", deviceName: "Front counter" };
 
 const storeOn = (d1: ReturnType<typeof authD1>) => {
@@ -23,18 +24,26 @@ const email = EmailAddress.make("owner@example.com");
 const code = OtpCode.make("123456");
 
 describe("ephemeral store on D1", () => {
-  it("keeps the OTP challenge after a wrong code", async () => {
-    const run = storeOn(authD1());
+  it("burns the OTP challenge on the fifth wrong code and not before", async () => {
+    const d1 = authD1();
+    const run = storeOn(d1);
     const now = Date.now();
-    const challengeId = await run((store) =>
-      store.createOtp({ email, code, expiresAt: now + 60_000 }),
-    );
-    const wrong = await run((store) =>
-      store.consumeOtp({ challengeId, code: OtpCode.make("654321"), now }),
-    );
-    const right = await run((store) => store.consumeOtp({ challengeId, code, now }));
-    expect(wrong).toBeNull();
-    expect(right).toBe(email);
+    const wrong = OtpCode.make("654321");
+    const attemptsBeforeTheRightCode = async (wrongGuesses: number) => {
+      const challengeId = await run((store) =>
+        store.createOtp({ email, code, expiresAt: now + 60_000 }),
+      );
+      for (let guess = 0; guess < wrongGuesses; guess += 1) {
+        expect(
+          await run((store) => store.consumeOtp({ challengeId, code: wrong, now })),
+        ).toBeNull();
+      }
+      return run((store) => store.consumeOtp({ challengeId, code, now }));
+    };
+
+    expect(await attemptsBeforeTheRightCode(4)).toBe(email);
+    expect(await attemptsBeforeTheRightCode(5)).toBeNull();
+    expect(rowCount(d1)).toBe(0);
   });
 
   it("lets exactly one of concurrent OTP consumers across isolates succeed", async () => {
@@ -96,6 +105,8 @@ describe("ephemeral store on D1", () => {
       redirectUri: "https://app.example.com/callback",
       codeChallenge: "challenge",
       client: { _tag: "Browser" } satisfies AuthClientKind,
+      googleCodeVerifier: "google-verifier",
+      googleNonce: "google-nonce",
       expiresAt: now + 60_000,
     };
     const state = await run((store) => store.createOAuthState(input));
@@ -134,6 +145,8 @@ describe("ephemeral store on D1", () => {
         redirectUri: "https://app.example.com/callback",
         codeChallenge: "challenge",
         client: native,
+        googleCodeVerifier: "google-verifier",
+        googleNonce: "google-nonce",
         expiresAt: now + 60_000,
       }),
     );
@@ -145,7 +158,7 @@ describe("ephemeral store on D1", () => {
     expect(asState?.redirectUri).toBe("https://app.example.com/callback");
   });
 
-  it("stores only peppered digests as keys", async () => {
+  it("stores a keyed verifier, never the code or a digest anyone could recompute", async () => {
     const d1 = authD1();
     const run = storeOn(d1);
     const now = Date.now();
@@ -153,22 +166,17 @@ describe("ephemeral store on D1", () => {
       store.createOtp({ email, code, expiresAt: now + 60_000 }),
     );
     const row = d1.database.prepare("SELECT key, payload FROM auth_ephemeral_record").get();
-    expect(String(row?.key)).not.toContain(challengeId);
-    expect(String(row?.payload)).not.toContain(code);
-  });
-
-  it("sweeps a bounded batch of expired rows on write", async () => {
-    const d1 = authD1();
-    const run = storeOn(d1);
-    const now = Date.now();
-    const insert = d1.database.prepare(
-      "INSERT INTO auth_ephemeral_record (key, kind, payload, expiresAt, createdAt) VALUES (?, 'otp', '{}', ?, ?)",
+    const stored = `${String(row?.key)} ${String(row?.payload)}`;
+    const digest = async (value: string) =>
+      Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+    const unkeyed = await Promise.all(
+      [code, `${challengeId}:${code}`, `otp:${challengeId}:${code}`].map(digest),
     );
-    const stale = EXPIRED_SWEEP_LIMIT + 5;
-    for (let index = 0; index < stale; index += 1) {
-      insert.run(`stale-${index}`, now - 1_000, now - 2_000);
+    expect(stored).not.toContain(challengeId);
+    expect(stored).not.toContain(code);
+    for (const bytes of unkeyed) {
+      expect(stored).not.toContain(bytes.toString("base64url"));
+      expect(stored).not.toContain(bytes.toString("hex"));
     }
-    await run((store) => store.createOtp({ email, code, expiresAt: now + 60_000 }));
-    expect(rowCount(d1)).toBe(stale - EXPIRED_SWEEP_LIMIT + 1);
   });
 });

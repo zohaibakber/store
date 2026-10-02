@@ -1,3 +1,5 @@
+import * as Result from "effect/Result";
+
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
 const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
@@ -17,18 +19,23 @@ const unquote = (value: string) =>
     .replace(/['"]+$/, "")
     .trim();
 
+const parseUrl = (value: string) =>
+  Result.try({
+    try: () => new URL(value),
+    catch: (cause) =>
+      cause instanceof Error ? cause.message : "is not an origin or origin pattern",
+  });
+
 export const publicHostnameFrom = (value: string | undefined): string | undefined => {
   const trimmed = unquote(value ?? "");
   if (!trimmed || /[*?]/.test(trimmed)) return undefined;
-  try {
-    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-    if (!url.hostname || url.hostname === "localhost" || url.hostname.endsWith(".localhost")) {
-      return undefined;
-    }
-    return url.hostname;
-  } catch {
-    return undefined;
-  }
+  return Result.match(parseUrl(trimmed.includes("://") ? trimmed : `https://${trimmed}`), {
+    onFailure: () => undefined,
+    onSuccess: ({ hostname }) =>
+      !hostname || hostname === "localhost" || hostname.endsWith(".localhost")
+        ? undefined
+        : hostname,
+  });
 };
 
 export const parseTrustedOrigins = (value: string | undefined) =>
@@ -85,16 +92,18 @@ const isLoopbackHost = (host: string) => {
   );
 };
 
-const secureWebOrigin = (value: string, label: string) => {
-  const url = new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new Error(`${label} must use HTTP or HTTPS.`);
-  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash)
-    throw new Error(`${label} must be an origin without credentials, a path, query, or fragment.`);
-  if (url.protocol !== "https:" && !localHosts.has(url.hostname))
-    throw new Error(`${label} must use HTTPS outside local development.`);
-  return url.origin;
-};
+const secureWebOrigin = (value: string, label: string): Result.Result<string, string> =>
+  Result.flatMap(parseUrl(value), (url) => {
+    if (url.protocol !== "http:" && url.protocol !== "https:")
+      return Result.fail(`${label} must use HTTP or HTTPS.`);
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash)
+      return Result.fail(
+        `${label} must be an origin without credentials, a path, query, or fragment.`,
+      );
+    if (url.protocol !== "https:" && !localHosts.has(url.hostname))
+      return Result.fail(`${label} must use HTTPS outside local development.`);
+    return Result.succeed(url.origin);
+  });
 
 const schemePrefix = /^([a-z][a-z0-9+.-]*):\/\/?/i;
 const wildcarded = /[*?]/;
@@ -132,17 +141,12 @@ const classifyTrustedOrigin = (
     return { origins: [isWeb ? `${protocol}://${host}` : `https://${host}`] };
   }
 
-  try {
-    const secure = secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin");
-    if (!options.allowInsecure || !isLoopbackHost(host)) return { origins: [secure] };
-    return {
-      origins: [...new Set([secure, secureWebOrigin(`http://${host}`, "Trusted origin")])],
-    };
-  } catch (cause) {
-    return {
-      reason: cause instanceof Error ? cause.message : "is not an origin or origin pattern",
-    };
-  }
+  const secure = secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin");
+  if (Result.isFailure(secure)) return { reason: secure.failure };
+  if (!options.allowInsecure || !isLoopbackHost(host)) return { origins: [secure.success] };
+  const insecure = secureWebOrigin(`http://${host}`, "Trusted origin");
+  if (Result.isFailure(insecure)) return { reason: insecure.failure };
+  return { origins: [...new Set([secure.success, insecure.success])] };
 };
 
 interface ResolvedTrustedOrigins {
@@ -180,7 +184,10 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
   );
   const mobileProtocol = protocol(input.mobileProtocol, "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL);
 
-  const baseURL = secureWebOrigin(input.baseURL, "Auth base URL");
+  const baseURL = Result.getOrThrowWith(
+    secureWebOrigin(input.baseURL, "Auth base URL"),
+    (reason) => new Error(reason),
+  );
   const secureCookies = baseURL.startsWith("https://");
 
   const configured = resolveTrustedOrigins(input.trustedOrigins, {
@@ -226,16 +233,13 @@ const globToRegExp = (pattern: string) => {
   return new RegExp(`^${source}$`);
 };
 
-const webOriginOf = (url: string) => {
-  try {
-    const origin = new URL(url).origin;
-    return origin === "null" ? null : origin;
-  } catch {
-    return null;
-  }
-};
+const webOriginOf = (url: string) =>
+  Result.match(parseUrl(url), {
+    onFailure: () => null,
+    onSuccess: ({ origin }) => (origin === "null" ? null : origin),
+  });
 
-export const matchesTrustedOrigin = (origin: string | undefined, pattern: string) => {
+const matchesTrustedOrigin = (origin: string | undefined, pattern: string) => {
   if (!origin) return false;
   const webOrigin = webOriginOf(origin);
   if (wildcarded.test(pattern)) {
@@ -251,21 +255,15 @@ export const isTrustedOrigin = (origin: string | undefined, patterns: ReadonlyAr
 
 const isHttpProtocol = (protocol: string) => protocol === "http:" || protocol === "https:";
 
-export const isNativeRedirect = (redirectUri: string) => {
-  try {
-    return !isHttpProtocol(new URL(redirectUri).protocol);
-  } catch {
-    return false;
-  }
-};
+export const isNativeRedirect = (redirectUri: string) =>
+  Result.match(parseUrl(redirectUri), {
+    onFailure: () => false,
+    onSuccess: (url) => !isHttpProtocol(url.protocol),
+  });
 
-export const isTrustedRedirect = (redirectUri: string, patterns: ReadonlyArray<string>) => {
-  let target: string;
-  try {
-    const url = new URL(redirectUri);
-    target = isHttpProtocol(url.protocol) ? url.origin : redirectUri;
-  } catch {
-    return false;
-  }
-  return isTrustedOrigin(target, patterns);
-};
+export const isTrustedRedirect = (redirectUri: string, patterns: ReadonlyArray<string>) =>
+  Result.match(parseUrl(redirectUri), {
+    onFailure: () => false,
+    onSuccess: (url) =>
+      isTrustedOrigin(isHttpProtocol(url.protocol) ? url.origin : redirectUri, patterns),
+  });

@@ -5,27 +5,16 @@ export {
   InventorySubsetSummarySpec,
   SubsetPredicate,
 } from "./subset-spec";
-export {
-  decodeBatchSqliteRows,
-  decodeCategorySqliteRows,
-  decodeInvoiceItemSqliteRows,
-  decodeInvoiceSqliteRows,
-  decodeProductSqliteRows,
-  decodePurchaseOrderItemSqliteRows,
-  decodePurchaseOrderSqliteRows,
-  decodeStockMovementSqliteRows,
-  decodeSupplierSqliteRows,
-} from "./decode";
+export { decodeBatchSqliteRows, decodeInvoiceSqliteRows, decodeProductSqliteRows } from "./decode";
 export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
 export type { ElectronReplicaBridge } from "./electron-ipc-handle";
-export { openIndexedDbReplicaHandle } from "./indexeddb-handle";
 export {
   indexedDbReplicaDatabaseName,
   REPLICA_STORAGE_PREFIX,
   sqliteReplicaFileName,
 } from "@store/sync/replica/storage-name";
 export { inventoryReplicaScope } from "./scope";
-export { createInvoiceCoherenceGate, sqliteCollectionOptions } from "./collection";
+export { catalogCollectionOptions } from "./collection";
 export {
   accumulateNotice,
   mergeAccumulators,
@@ -42,7 +31,6 @@ export {
   rejectionReason,
   replicaSyncActivityOf,
   ReplicaSyncActivity,
-  syncActivityFromStatuses,
 } from "./activity";
 export type {
   InventorySyncActivity,
@@ -53,14 +41,11 @@ export type {
 } from "./activity";
 export type { InventorySyncStatus, ReplicaSyncHealth } from "./status";
 export type {
-  InventoryCollectionDescriptor,
-  InventoryCollectionRow,
   ReplicaAnalytics,
   ReplicaChangeFeed,
   ReplicaCommitNotice,
   ReplicaHandle,
   ReplicaSummaryReader,
-  ReplicaRow,
   ReplicaSubsetReader,
   SqliteResultRow,
 } from "./types";

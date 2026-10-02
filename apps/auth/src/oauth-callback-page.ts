@@ -25,6 +25,14 @@ const escapeHtml = (value: string) =>
     }
   });
 
+const scriptUnsafe = /[<>\u2028\u2029]/g;
+
+const scriptString = (value: string) =>
+  JSON.stringify(value).replace(
+    scriptUnsafe,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+
 const page = (input: {
   readonly title: string;
   readonly heading: string;
@@ -39,7 +47,7 @@ const page = (input: {
   const openApp =
     input.actionHref === undefined
       ? ""
-      : `<script>location.replace(${JSON.stringify(input.actionHref)})</script>`;
+      : `<script>location.replace(${scriptString(input.actionHref)})</script>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -112,4 +120,6 @@ export const oauthCallbackErrorResponse = (status: number, message: string) =>
 export const googleOAuthAppResponse = (redirect: URL) =>
   isNativeRedirect(redirect.href)
     ? nativeOAuthHandoffResponse(redirect)
-    : HttpServerResponse.redirect(redirect);
+    : HttpServerResponse.redirect(redirect, {
+        headers: { "cache-control": callbackPageHeaders["cache-control"] },
+      });

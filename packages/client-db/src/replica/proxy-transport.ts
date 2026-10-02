@@ -40,7 +40,7 @@ export type SyncProxyResponse = {
   readonly retryAfter?: string;
 };
 
-export type SyncProxyFetch = (request: SyncProxyRequest) => Promise<SyncProxyResponse>;
+type SyncProxyFetch = (request: SyncProxyRequest) => Promise<SyncProxyResponse>;
 
 type SyncOperation = keyof typeof SYNC_REQUEST_TIMEOUT_MILLIS;
 

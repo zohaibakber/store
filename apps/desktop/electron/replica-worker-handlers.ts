@@ -43,6 +43,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { PROXY_CONCURRENCY, SNAPSHOT_DOWNLOAD_CONCURRENCY } from "./replica-admission";
 import { makePendingReplies, makeSharedFlight } from "./replica-pending";
 import {
+  commitStampOf,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
   type AccessTokenRequest,
@@ -67,14 +68,6 @@ const workerFailure = (cause: unknown) =>
   new ReplicaWorkerFailure({
     message: cause instanceof Error ? cause.message : "Replica worker failed.",
   });
-
-const stampOf = (stamp: {
-  readonly generationId: string;
-  readonly localCommitVersion: number;
-}) => ({
-  generationId: stamp.generationId,
-  localCommitVersion: stamp.localCommitVersion,
-});
 
 const timedOutProxy = (): ProxyFetchResult => ({
   ok: false,
@@ -336,10 +329,10 @@ export const makeReplicaWorkerHandlers = <R>(
 
       return ReplicaWorkerRpcs.of({
         Engine: () => Effect.succeed(opened === undefined ? "unavailable" : "sqlite"),
-        Stamp: () => withSession((current) => current.stamp()).pipe(Effect.map(stampOf)),
+        Stamp: () => withSession((current) => current.stamp()).pipe(Effect.map(commitStampOf)),
         ReadInsights: ({ window }) =>
           withSession((current) => current.readInsights(window)).pipe(
-            Effect.map((read) => ({ stamp: stampOf(read.stamp), facts: read.facts })),
+            Effect.map((read) => ({ stamp: commitStampOf(read.stamp), facts: read.facts })),
           ),
         ReadOutboxStatuses: () => withSession((current) => current.readOutboxStatuses()),
         ReadSyncActivity: () =>
@@ -351,7 +344,7 @@ export const makeReplicaWorkerHandlers = <R>(
             Effect.map((queued) => ({
               operationId: queued.operationId,
               status: queued.status,
-              stamp: stampOf(queued.stamp),
+              stamp: commitStampOf(queued.stamp),
             })),
           ),
         ReadCommandStatus: ({ operationId }) =>
@@ -420,7 +413,7 @@ export const makeReplicaWorkerHandlers = <R>(
                 Stream.map((notice) =>
                   Object.assign(
                     {
-                      ...stampOf(notice),
+                      ...commitStampOf(notice),
                       touchedEntities: notice.touchedEntities,
                       touchedKeys: notice.touchedKeys,
                     },

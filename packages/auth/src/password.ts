@@ -1,10 +1,12 @@
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { Password } from "./model";
+import { constantTimeEqual, layer, pbkdf2Sha256 } from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const WORKERD_PBKDF2_ITERATIONS = 100_000;
@@ -24,44 +26,16 @@ export class PasswordHashError extends Schema.TaggedError<PasswordHashError>()(
   },
 ) {}
 
-const derive = (password: Password, salt: Uint8Array<ArrayBuffer>, iterations: number) =>
-  Effect.tryPromise({
-    try: async () => {
-      const key = await crypto.subtle.importKey(
-        "raw",
-        textEncoder.encode(password),
-        "PBKDF2",
-        false,
-        ["deriveBits"],
-      );
-      return new Uint8Array(
-        await crypto.subtle.deriveBits(
-          {
-            name: "PBKDF2",
-            hash: "SHA-256",
-            salt,
-            iterations,
-          },
-          key,
-          HASH_BYTES * 8,
-        ),
-      );
-    },
-    catch: (cause) =>
-      new PasswordHashError({
-        message: `Password hashing failed: ${String(cause)}`,
-        cause,
-      }),
-  });
+const hashingFailed = (cause: unknown) =>
+  new PasswordHashError({ message: `Password hashing failed: ${String(cause)}`, cause });
 
-const constantTimeEqual = (left: Uint8Array, right: Uint8Array) => {
-  let difference = left.length ^ right.length;
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  }
-  return difference === 0;
-};
+const derive = (password: Password, salt: Uint8Array, iterations: number) =>
+  pbkdf2Sha256({
+    password: textEncoder.encode(password),
+    salt,
+    iterations,
+    bytes: HASH_BYTES,
+  }).pipe(Effect.mapError((failure) => hashingFailed(failure.cause)));
 
 const decodeSaltOrHash = (value: string) =>
   Effect.fromResult(Encoding.decodeBase64Url(value)).pipe(
@@ -74,15 +48,16 @@ const decodeSaltOrHash = (value: string) =>
     ),
   );
 
-export const hashPassword = Effect.fn("Password.hash")(function* (password: Password) {
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+const hashPassword = Effect.fn("Password.hash")(function* (password: Password) {
+  const crypto = yield* Crypto.Crypto;
+  const salt = yield* crypto.randomBytes(SALT_BYTES).pipe(Effect.mapError(hashingFailed));
   const hash = yield* derive(password, salt, WORKERD_PBKDF2_ITERATIONS);
   return PasswordHash.make(
     `pbkdf2-sha256$${WORKERD_PBKDF2_ITERATIONS}$${Encoding.encodeBase64Url(salt)}$${Encoding.encodeBase64Url(hash)}`,
   );
 });
 
-export const verifyPassword = Effect.fn("Password.verify")(function* (
+const verifyPassword = Effect.fn("Password.verify")(function* (
   password: Password,
   encoded: PasswordHash,
 ) {
@@ -99,8 +74,10 @@ export const verifyPassword = Effect.fn("Password.verify")(function* (
   }
   const salt = yield* decodeSaltOrHash(saltText);
   const expected = yield* decodeSaltOrHash(hashText);
-  const actual = yield* derive(password, new Uint8Array(salt), iterations);
-  return constantTimeEqual(actual, expected);
+  const actual = yield* derive(password, salt, iterations);
+  return yield* constantTimeEqual(actual, expected).pipe(
+    Effect.mapError((failure) => hashingFailed(failure.cause)),
+  );
 });
 
 export interface PasswordHasherApi {
@@ -115,10 +92,13 @@ export class PasswordHasher extends Context.Service<PasswordHasher, PasswordHash
   "@store/auth/PasswordHasher",
 ) {}
 
-export const passwordHasherLayer = Layer.succeed(
+export const passwordHasherLayer = Layer.effect(
   PasswordHasher,
-  PasswordHasher.of({
-    hash: hashPassword,
-    verify: verifyPassword,
+  Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    return PasswordHasher.of({
+      hash: (password) => Effect.provideService(hashPassword(password), Crypto.Crypto, crypto),
+      verify: verifyPassword,
+    });
   }),
-);
+).pipe(Layer.provide(layer));

@@ -1,10 +1,12 @@
 import { ImportId, ImportPartNumber } from "@store/contracts";
+import type { InventoryHttpConfig } from "@store/web/host/electron";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { IpcMain, IpcMainInvokeEvent } from "electron";
+import type { IpcMain } from "electron";
 
 import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
-import { assertTrustedIpcSender } from "./ipc-sender";
-import type { ReplicaSyncApiRequest } from "./replica-ipc";
+import { trustedIpcListener } from "./ipc-sender";
+import { SyncApiRequestFailure, type ReplicaSyncApiRequest } from "./replica-authority-host";
 
 type InventoryHttpRequest = {
   readonly method: "GET" | "POST";
@@ -95,32 +97,59 @@ const validatedInventoryUrl = (apiBaseUrl: string, request: InventoryHttpRequest
 
 const DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS = 30_000;
 
-export const makeReplicaSyncApiRequest =
-  (
-    apiBaseUrl: string,
-    apiFetch: (url: string, init: RequestInit) => Promise<Response>,
-  ): ReplicaSyncApiRequest =>
-  async (pathname, init) => {
+const DEADLINE_PASSED = "The operation was aborted due to timeout";
+
+const failureOf = (cause: unknown) =>
+  new SyncApiRequestFailure({
+    message: cause instanceof Error ? cause.message : "Sync proxy failed.",
+  });
+
+export const makeReplicaSyncApiRequest = (
+  apiBaseUrl: string,
+  apiFetch: (url: string, init: RequestInit) => Promise<Response>,
+): ReplicaSyncApiRequest =>
+  Effect.fn("InventoryHttp.syncApiRequest")(function* (pathname, init) {
     const method = init?.method ?? "GET";
     const body = init?.body ?? null;
-    const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
-    const url = validatedInventoryUrl(apiBaseUrl, { method, url: new URL(pathname, base).href });
-    assertInventoryRequestBodySize(body);
-    const deadline = AbortSignal.timeout(
-      init?.timeoutMillis ?? DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS,
-    );
-    const response = await apiFetch(url, {
-      method,
-      headers: body ? { "content-type": "application/json" } : undefined,
-      body: body ?? undefined,
-      signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+    const url = yield* Effect.try({
+      try: () => {
+        const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
+        const validated = validatedInventoryUrl(apiBaseUrl, {
+          method,
+          url: new URL(pathname, base).href,
+        });
+        assertInventoryRequestBodySize(body);
+        return validated;
+      },
+      catch: failureOf,
     });
-    const retryAfter = response.headers.get("retry-after");
-    const bodyText = await response.text();
-    return retryAfter === null
-      ? { ok: response.ok, status: response.status, bodyText }
-      : { ok: response.ok, status: response.status, bodyText, retryAfter: retryAfter.slice(0, 64) };
-  };
+    return yield* Effect.tryPromise({
+      try: async (signal) => {
+        const response = await apiFetch(url, {
+          method,
+          headers: body ? { "content-type": "application/json" } : undefined,
+          body: body ?? undefined,
+          signal,
+        });
+        const retryAfter = response.headers.get("retry-after");
+        const bodyText = await response.text();
+        return retryAfter === null
+          ? { ok: response.ok, status: response.status, bodyText }
+          : {
+              ok: response.ok,
+              status: response.status,
+              bodyText,
+              retryAfter: retryAfter.slice(0, 64),
+            };
+      },
+      catch: failureOf,
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: init?.timeoutMillis ?? DEFAULT_SYNC_REQUEST_TIMEOUT_MILLIS,
+        orElse: () => Effect.fail(new SyncApiRequestFailure({ message: DEADLINE_PASSED })),
+      }),
+    );
+  });
 
 export const registerInventoryHttpIpc = (options: {
   readonly apiBaseUrl: string;
@@ -128,15 +157,13 @@ export const registerInventoryHttpIpc = (options: {
   readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
   readonly allowedOrigins: () => ReadonlyArray<string>;
 }) => {
-  const handleConfig = (event: Pick<IpcMainInvokeEvent, "senderFrame">) => {
-    assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
-    return {
+  options.ipcMain.handle(
+    INVENTORY_HTTP_CONFIG_CHANNEL,
+    trustedIpcListener(options.allowedOrigins, (): InventoryHttpConfig => ({
       apiBaseUrl: options.apiBaseUrl,
       deviceId: options.deviceId,
-    };
-  };
-
-  options.ipcMain.handle(INVENTORY_HTTP_CONFIG_CHANNEL, handleConfig);
+    })),
+  );
 
   return () => {
     options.ipcMain.removeHandler(INVENTORY_HTTP_CONFIG_CHANNEL);

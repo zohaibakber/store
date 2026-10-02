@@ -4,14 +4,10 @@ import * as Exit from "effect/Exit";
 import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 
+import { interruptibleReads, type ReadSubset } from "./collection-read";
 import { MAX_BATCH_ROWS, MAX_BATCH_SPECS } from "./sources";
 import type { InventorySubsetSpec } from "./subset-spec";
-import type {
-  ReplicaQueryStamp,
-  ReplicaReadOptions,
-  ReplicaSubsetRead,
-  ReplicaSubsetReader,
-} from "./types";
+import type { ReplicaQueryStamp, ReplicaSubsetRead, ReplicaSubsetReader } from "./types";
 
 const INVOICE_COHERENCE_ENTITIES = ["invoice", "invoiceItem", "stockMovement"] as const;
 
@@ -33,7 +29,7 @@ export type InvoiceCoherenceGate = {
     touchedEntities: ReadonlyArray<SyncEntity>,
     publish: () => Promise<void>,
   ) => Promise<void>;
-  readonly reader: (executor: ReplicaSubsetReader) => ReplicaSubsetReader;
+  readonly reader: (executor: ReplicaSubsetReader) => ReadSubset;
 };
 
 class SubsetRead extends Request.Class<
@@ -158,17 +154,16 @@ export const createInvoiceCoherenceGate = (): InvoiceCoherenceGate => {
         await flush(batch);
       }
     },
-    reader: (executor) => ({
-      readSubset: (spec: InventorySubsetSpec, options?: ReplicaReadOptions) => {
-        const resolver = resolverFor(executor);
-        if (resolver === undefined || activeSources.size < 2 || !batchable(spec)) {
-          return executor.readSubset(spec, options);
-        }
-        return Effect.runPromise(Effect.request(new SubsetRead({ spec }), resolver), {
-          signal: options?.signal,
+    reader: (executor) => {
+      const direct = interruptibleReads(executor);
+      return (spec) =>
+        Effect.suspend(() => {
+          const resolver = resolverFor(executor);
+          return resolver === undefined || activeSources.size < 2 || !batchable(spec)
+            ? direct(spec)
+            : Effect.request(new SubsetRead({ spec }), resolver);
         });
-      },
-    }),
+    },
   };
 };
 

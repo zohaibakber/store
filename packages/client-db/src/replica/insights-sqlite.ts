@@ -11,63 +11,22 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  BatchFactRow,
   batchFacts,
   currentOrganization,
+  DayFactRow,
+  HourFactRow,
   invoiceDays,
   invoiceHours,
+  OnOrderFactRow,
   onOrderFacts,
   productDaySales,
+  ProductFactRow,
   productFacts,
+  SaleFactRow,
+  toProductFact,
   type InvoiceWindow,
 } from "./replica-queries";
-
-const Flag = Schema.Number;
-
-const ProductFactRow = Schema.Struct({
-  id: Schema.String,
-  name: Schema.String,
-  categoryId: Schema.String,
-  categoryName: Schema.NullOr(Schema.String),
-  tracksPacks: Flag,
-  unitsPerPack: Schema.Number,
-  purchasePrice: Schema.NullOr(Schema.Number),
-  retailPrice: Schema.NullOr(Schema.Number),
-  unitPrice: Schema.NullOr(Schema.Number),
-  visible: Flag,
-  createdAt: Schema.Number,
-});
-
-const BatchFactRow = Schema.Struct({
-  productId: Schema.String,
-  batchNumber: Schema.NullOr(Schema.String),
-  packQuantity: Schema.Number,
-  unitQuantity: Schema.Number,
-  expiresAt: Schema.NullOr(Schema.Number),
-});
-
-const SaleFactRow = Schema.Struct({
-  productId: Schema.String,
-  day: Schema.Number,
-  units: Schema.Number,
-  revenue: Schema.Number,
-});
-
-const OnOrderFactRow = Schema.Struct({
-  productId: Schema.String,
-  units: Schema.Number,
-});
-
-const DayFactRow = Schema.Struct({
-  day: Schema.Number,
-  invoices: Schema.Number,
-  revenue: Schema.Number,
-});
-
-const HourFactRow = Schema.Struct({
-  hour: Schema.Number,
-  invoices: Schema.Number,
-  revenue: Schema.Number,
-});
 
 const decodeRows = <S extends Schema.Top & { readonly DecodingServices: never }>(
   schema: S,
@@ -103,11 +62,7 @@ export const readSqliteInsightsFacts = Effect.fn("ReplicaNodeSqlite.readInsights
   const hours = yield* decodeRows(HourFactRow, hourRows);
   const facts: ReplicaInsightsFacts = {
     window,
-    products: products.map((row) => ({
-      ...row,
-      tracksPacks: row.tracksPacks !== 0,
-      visible: row.visible !== 0,
-    })),
+    products: products.map(toProductFact),
     batches,
     sales,
     onOrder,

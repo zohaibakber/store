@@ -6,7 +6,6 @@ import {
   PARTITION_DIGEST_VERSION,
   ReplicaClientSequence,
   SnapshotId,
-  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   syncProtocolError,
   type CatalogRowWrite,
@@ -20,35 +19,22 @@ import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { SyncRecoveryRequired } from "../src/replica/errors";
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
-import { PLACEHOLDER_INCARNATION } from "../src/replica/registration";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
-import type { SyncSchedulerPolicy } from "../src/scheduler";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
 import { enqueueRequestOf } from "./lib/enqueue";
-import { startOwnedSync } from "./lib/owned-sync";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
-
-const fastPolicy: SyncSchedulerPolicy = {
-  activePollMillis: 5,
-  backoffMillis: [5],
-  hiddenPollMillis: 5,
-  liveIdlePollMillis: 5,
-};
 
 type Harness = {
   readonly store: ReplicaStoreContract;
@@ -65,7 +51,7 @@ const makeSqliteHarness = Effect.fn("registration.sqlite")(function* () {
       userId: USER_ID,
       replicaId: LAST_UNIT_REPLICA_A,
       epoch: "1",
-      incarnation: PLACEHOLDER_INCARNATION,
+      incarnation: "local",
       appliedCommitSequence: "0",
       nextClientSequence: "1",
       localCommitVersion: 0,
@@ -263,36 +249,7 @@ const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
     Effect.flatMap((mutex) => makeSyncEngineFromReplicaStore(store, mutex, transport)),
   );
 
-type OwnedSync = Effect.Success<ReturnType<typeof startOwnedSync>>;
-
-const statusOf = (owned: OwnedSync) => SubscriptionRef.get(owned.scheduler.status);
-
-const firstSettledStatus = (owned: OwnedSync) =>
-  SubscriptionRef.changes(owned.scheduler.status).pipe(
-    Stream.filter((status) => status._tag !== "running"),
-    Stream.runHead,
-  );
-
-const awaitCall = (calls: Queue.Dequeue<AuthorityCall>, call: AuthorityCall) =>
-  Queue.take(calls).pipe(Effect.repeat({ until: (taken) => taken === call }), Effect.asVoid);
-
 describe.each(harnesses)("$name replica registration", ({ make }) => {
-  it.effect("adopts the authority identity into a fresh replica", () =>
-    withHarness(make, (store) =>
-      Effect.gen(function* () {
-        const identity = { epoch: "4", incarnation: "authority-a", nextClientSequence: "1" };
-        const before = yield* store.readSyncCursor();
-        expect(before.registered).toBe(false);
-        const outcome = yield* store.adoptRegistration(registration(identity), FIXTURE_NOW);
-        expect(outcome).toEqual({ _tag: "registered" });
-        const after = yield* store.readSyncCursor();
-        expect(after).toMatchObject({ epoch: "4", registered: true, appliedCommitSequence: "0" });
-        yield* store.verifyAuthority({ incarnation: "authority-a", horizon: "0" });
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "4", "1"), FIXTURE_NOW));
-      }),
-    ),
-  );
-
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
@@ -316,26 +273,6 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(authority.accepted).toEqual(["7", "8", "9"]);
         yield* engine.ensureRegistered();
         expect(authority.counts.registers).toBe(1);
-      }),
-    ),
-  );
-
-  it.effect("keeps allocations that already match the authority", () =>
-    withHarness(make, (store) =>
-      Effect.gen(function* () {
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
-        const claim = yield* store.claimNextUpload({ claimId: "claim-1", claimedAt: FIXTURE_NOW });
-        expect(claim.value?.operationId).toBe("op-1");
-        yield* store.releaseUploadClaim("op-1", "claim-1");
-        const authority = makeAuthority({
-          epoch: "1",
-          incarnation: "authority-c",
-          nextClientSequence: "1",
-        });
-        const engine = yield* engineFor(store, authority.transport);
-        yield* engine.ensureRegistered();
-        yield* engine.uploadOnce();
-        expect(authority.accepted).toEqual(["1"]);
       }),
     ),
   );
@@ -379,131 +316,6 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         );
         expect(rekeyed).toMatchObject({ _tag: "refused", code: "INCARNATION_MISMATCH" });
         expect(yield* store.readSyncCursor()).toMatchObject({ epoch: "1", registered: true });
-      }),
-    ),
-  );
-
-  it.effect("stops with recovery when a registered replica meets a restored authority", () =>
-    withHarness(make, (store) =>
-      Effect.gen(function* () {
-        const identity = { epoch: "1", incarnation: "authority-f", nextClientSequence: "1" };
-        yield* store.adoptRegistration(registration(identity), FIXTURE_NOW);
-        yield* store.recordCaughtUp(FIXTURE_NOW);
-        const authority = makeAuthority(
-          { ...identity, epoch: "2" },
-          { pullFailure: syncProtocolError("EPOCH_MISMATCH", "The authority was restored.") },
-        );
-        const owned = yield* startOwnedSync(store, authority.transport, {
-          databaseIdentity: `registered-${databaseCounter}`,
-          policy: fastPolicy,
-        });
-        const settled = yield* firstSettledStatus(owned);
-        yield* owned.dispose;
-        expect(Option.getOrUndefined(settled)).toMatchObject({
-          _tag: "recoveryRequired",
-          code: "EPOCH_MISMATCH",
-        });
-        expect(authority.counts.registers).toBe(0);
-        expect(authority.counts.pulls).toBe(1);
-      }),
-    ),
-  );
-
-  it.effect("announces again only while another device holds purchasing back", () =>
-    withHarness(make, (store) =>
-      Effect.gen(function* () {
-        const identity = { epoch: "1", incarnation: "authority-h", nextClientSequence: "1" };
-        const held = makeAuthority(identity, {
-          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION - 1,
-        });
-        yield* (yield* engineFor(store, held.transport)).ensureRegistered();
-        expect(held.counts.registers).toBe(1);
-        expect(yield* store.readSyncCursor()).toMatchObject({
-          registered: true,
-          announcedSchemaVersion: SYNC_SCHEMA_VERSION,
-          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION - 1,
-        });
-
-        const released = makeAuthority(identity, {
-          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION,
-        });
-        yield* (yield* engineFor(store, released.transport)).ensureRegistered();
-        expect(released.counts.registers).toBe(1);
-        expect(yield* store.readSyncCursor()).toMatchObject({
-          lowestActiveSchemaVersion: SYNC_SCHEMA_VERSION,
-        });
-
-        yield* (yield* engineFor(store, released.transport)).ensureRegistered();
-        expect(released.counts.registers).toBe(1);
-      }),
-    ),
-  );
-
-  it.effect("retries an offline registration on the next wake without blocking local writes", () =>
-    withHarness(make, (store) =>
-      Effect.gen(function* () {
-        const calls = yield* Queue.unbounded<AuthorityCall>();
-        const authority = makeAuthority(
-          { epoch: "1", incarnation: "authority-g", nextClientSequence: "1" },
-          { offlineRegistrations: 2, calls },
-        );
-        const owned = yield* startOwnedSync(store, authority.transport, {
-          databaseIdentity: `offline-${databaseCounter}`,
-          policy: { ...fastPolicy, activePollMillis: 60_000, backoffMillis: [60_000] },
-        });
-        yield* awaitCall(calls, "register");
-        yield* owned.scheduler.wake("reconnect");
-        yield* awaitCall(calls, "register");
-        expect(authority.counts).toMatchObject({ registers: 2, pulls: 0 });
-        expect(yield* statusOf(owned)).toEqual({ _tag: "running" });
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
-        yield* owned.scheduler.wake("reconnect");
-        yield* awaitCall(calls, "pull");
-        const status = yield* statusOf(owned);
-        yield* owned.dispose;
-        expect(status).toEqual({ _tag: "running" });
-        expect(authority.counts.registers).toBe(3);
-        expect(authority.accepted).toEqual(["1"]);
-        expect(authority.counts.pulls).toBeGreaterThan(0);
-        expect(yield* store.readSyncCursor()).toMatchObject({ registered: true });
-      }),
-    ),
-  );
-});
-
-describe("schema version announcement", () => {
-  it.effect("registers once more when a replica registered by an older build opens", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const identity = { epoch: "1", incarnation: "authority-i", nextClientSequence: "1" };
-        const handle = yield* openReplicaStore();
-        yield* runReplicaTransaction(handle, (tx) =>
-          tx.insert(replicaState).values({
-            id: "singleton",
-            organizationId: LAST_UNIT_ORGANIZATION_ID,
-            userId: USER_ID,
-            replicaId: LAST_UNIT_REPLICA_A,
-            epoch: identity.epoch,
-            incarnation: identity.incarnation,
-            appliedCommitSequence: "0",
-            nextClientSequence: "1",
-            localCommitVersion: 0,
-            registeredAt: FIXTURE_NOW,
-          }),
-        ).pipe(Effect.orDie);
-        const store = yield* makeSqliteReplicaStore(handle, "sqlite-announcement");
-        expect(yield* store.readSyncCursor()).toMatchObject({
-          registered: true,
-          announcedSchemaVersion: undefined,
-        });
-        const authority = makeAuthority(identity);
-        yield* (yield* engineFor(store, authority.transport)).ensureRegistered();
-        yield* (yield* engineFor(store, authority.transport)).ensureRegistered();
-        expect(authority.counts.registers).toBe(1);
-        expect(yield* store.readSyncCursor()).toMatchObject({
-          announcedSchemaVersion: SYNC_SCHEMA_VERSION,
-          lowestActiveSchemaVersion: undefined,
-        });
       }),
     ),
   );

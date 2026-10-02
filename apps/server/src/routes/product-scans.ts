@@ -31,7 +31,7 @@ export const ProductScanHandlers = HttpApiBuilder.group(
       Effect.fn("ProductScanHandlers.parse")(function* ({ payload }) {
         const identity = yield* CurrentOrganization;
         const rateLimit = yield* runtime
-          .limitProductScan(`${identity.organizationId}:${identity.user.id}`)
+          .limitProductScan(`${identity.organizationId}:${identity.userId}`)
           .pipe(Effect.orDie);
         if (!rateLimit.success) {
           yield* retryAfter(RATE_LIMITS.productScan.period * 1_000);

@@ -36,7 +36,7 @@ import * as Struct from "effect/Struct";
 
 import type { ImportClient, ImportFailure } from "./proxy-import";
 
-export class ReplicaPublishFailure extends Schema.TaggedError<ReplicaPublishFailure>()(
+class ReplicaPublishFailure extends Schema.TaggedError<ReplicaPublishFailure>()(
   "ReplicaPublishFailure",
   {
     reason: Schema.Literals([

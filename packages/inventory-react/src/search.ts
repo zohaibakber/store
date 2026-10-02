@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
 
-export const MAX_PRODUCT_SEARCH_RESULTS = 200;
+const MAX_PRODUCT_SEARCH_RESULTS = 200;
 
 const MAX_SEARCH_QUERY_LENGTH = 120;
 

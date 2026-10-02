@@ -7,10 +7,8 @@ import {
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
-import { countRows, MAX_LIST_SEARCH_LENGTH, readPageIds, type ListPage } from "./list-page";
-
-export const INVOICE_SORT_COLUMNS = ["createdAt", "invoiceNumber"] as const;
-export type InvoiceSortColumn = (typeof INVOICE_SORT_COLUMNS)[number];
+import { countRows, readPageIds } from "./list-page";
+import { MAX_LIST_SEARCH_LENGTH, type InvoiceSortColumn, type ListPage } from "./list-request";
 
 export type InvoiceListFilters = {
   readonly customer?: string;

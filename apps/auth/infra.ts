@@ -1,6 +1,8 @@
 import {
   accessTokenLayer,
+  activeJwtKeyId,
   decodeJsonWebKeyText,
+  decodeJwtKeyRingText,
   disabledEmailLayer,
   developmentEmailLayer,
   passwordHasherLayer,
@@ -18,7 +20,6 @@ import { AuthDatabase } from "@store/db/auth/infra";
 import { Api, OrgHub } from "@store/server/api";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -29,19 +30,24 @@ import * as Redacted from "effect/Redacted";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerError from "effect/unstable/http/HttpServerError";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { AuthCrypto } from "./src/crypto";
 import { ephemeralStoreLayer } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
-import { authRoutes, buildOncePerIsolate, workerRuntimeServices } from "./src/http";
+import {
+  authRoutes,
+  buildOncePerIsolate,
+  recoverUnexpected,
+  workerRuntimeServices,
+} from "./src/http";
 import { hubRevocationLayer } from "./src/hub-revocation";
 import { writeJwksAssets } from "./src/jwks-asset";
-import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./src/limits";
+import { AUTH_RATE_LIMIT_PERIOD_SECONDS, authLimiterLayer } from "./src/limits";
 import { resolveProductionAuthHostname } from "./src/public-hostname";
 import { AuthRepository, authRepositoryLayer } from "./src/repository";
 import { authServiceLayer } from "./src/service";
 import { pruneExpiredSessions, SESSION_PRUNE_POLICY } from "./src/session-maintenance";
+import { AuthSettings } from "./src/settings";
 
 const LOCAL_AUTH_ORIGIN = "http://localhost:8788";
 
@@ -78,7 +84,7 @@ export const AuthLive = Auth.make(
             const path = yield* Path.Path;
             return yield* writeJwksAssets(
               path.join(import.meta.dirname, ".alchemy", "jwks-assets"),
-              yield* decodeJsonWebKeyText(publicJwkText),
+              yield* decodeJwtKeyRingText(publicJwkText),
             );
           }).pipe(Effect.orDie),
         );
@@ -144,14 +150,15 @@ export const AuthLive = Auth.make(
       ],
     });
 
-    const privateJwkText = Redacted.value(yield* Config.Redacted("AUTH_JWT_PRIVATE_JWK"));
+    const privateJwk = yield* Effect.flatMap(Config.Redacted("AUTH_JWT_PRIVATE_JWK"), (text) =>
+      decodeJsonWebKeyText(Redacted.value(text)),
+    ).pipe(Effect.orDie);
     const publicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
-    const privateJwk = yield* decodeJsonWebKeyText(privateJwkText).pipe(Effect.orDie);
-    const publicJwk = yield* decodeJsonWebKeyText(publicJwkText).pipe(Effect.orDie);
-    const refreshTokenPepper = Redacted.value(yield* Config.Redacted("AUTH_REFRESH_TOKEN_PEPPER"));
-    const ephemeralPepper = Redacted.value(yield* Config.Redacted("AUTH_EPHEMERAL_PEPPER"));
+    const keys = yield* decodeJwtKeyRingText(publicJwkText).pipe(Effect.orDie);
+    const refreshTokenPepper = yield* Config.Redacted("AUTH_REFRESH_TOKEN_PEPPER");
+    const ephemeralPepper = yield* Config.Redacted("AUTH_EPHEMERAL_PEPPER");
     const googleClientId = yield* Config.String("GOOGLE_OAUTH_CLIENT_ID");
-    const googleClientSecret = Redacted.value(yield* Config.Redacted("GOOGLE_OAUTH_CLIENT_SECRET"));
+    const googleClientSecret = yield* Config.Redacted("GOOGLE_OAUTH_CLIENT_SECRET");
     const googleNativeClientIds = yield* Config.String("GOOGLE_OAUTH_NATIVE_CLIENT_IDS").pipe(
       Config.withDefault(""),
       Config.map((value) =>
@@ -190,8 +197,9 @@ export const AuthLive = Auth.make(
       accessTokenLayer({
         issuer: security.baseURL,
         audience: "tabaaq-api",
+        keys,
+        activeKeyId: activeJwtKeyId(keys, privateJwk),
         privateJwk,
-        publicJwk,
       }),
       developmentOtp ? developmentEmailLayer : disabledEmailLayer,
       googleOAuthLayer({
@@ -201,23 +209,26 @@ export const AuthLive = Auth.make(
         nativeClientIds: googleNativeClientIds,
       }).pipe(Layer.provide(FetchHttpClient.layer)),
       hubRevocationLayer(orgHubs, (effect) => execution.waitUntil(effect)),
+      authLimiterLayer({
+        tenPerMinute: (key) => tenPerMinute.limit({ key }),
+        fivePerMinute: (key) => fivePerMinute.limit({ key }),
+      }),
+      AuthCrypto.layer,
+      Layer.succeed(AuthSettings, {
+        developmentOtp,
+        trustedRedirects: security.trustedRedirects,
+        refreshTokenPepper,
+      }),
     );
     const runtime = yield* Effect.exit(
       buildOncePerIsolate(
         Effect.gen(function* () {
           const dependencies = yield* Layer.build(DependenciesLive);
-          const ServiceLive = authServiceLayer({
-            developmentOtp,
-            trustedRedirects: security.trustedRedirects,
-            refreshTokenPepper,
-            limits: {
-              tenPerMinute: (key) => tenPerMinute.limit({ key }),
-              fivePerMinute: (key) => fivePerMinute.limit({ key }),
-            },
-          }).pipe(Layer.provide(Layer.succeedContext(dependencies)));
+          const ServiceLive = authServiceLayer.pipe(
+            Layer.provide(Layer.succeedContext(dependencies)),
+          );
           const RoutesLive = authRoutes({
-            baseUrl: security.baseURL,
-            publicJwk,
+            keys,
             secureCookies: security.secureCookies,
             trustedOrigins: security.trustedOrigins,
           }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
@@ -231,7 +242,11 @@ export const AuthLive = Auth.make(
       Exit.isSuccess(runtime)
         ? pruneExpiredSessions(runtime.value.repository).pipe(
             Effect.tap((progress) => Effect.log("auth session prune run", progress)),
-            Effect.tapError((error) => Effect.logError("auth session prune failed", error)),
+            Effect.tapError((error) =>
+              Effect.logError("auth session prune failed").pipe(
+                Effect.annotateLogs({ operation: error.operation, message: error.message }),
+              ),
+            ),
             Effect.ignore,
           )
         : Effect.logError("auth session prune skipped: the auth runtime failed to build"),
@@ -240,36 +255,7 @@ export const AuthLive = Auth.make(
     const serveRequest = Exit.isSuccess(runtime)
       ? runtime.value.serveRequest
       : Effect.failCause(runtime.cause);
-    const handler = serveRequest.pipe(
-      Effect.catchIf(
-        (error) =>
-          HttpServerError.isHttpServerError(error) && error.reason._tag === "RouteNotFound",
-        () =>
-          Effect.succeed(
-            HttpServerResponse.jsonUnsafe(
-              { error: { code: "NOT_FOUND", message: "No such authentication route." } },
-              { status: 404 },
-            ),
-          ),
-      ),
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterrupts(cause)) return Effect.failCause(cause);
-        return Effect.logError("auth.request_failed").pipe(
-          Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-          Effect.as(
-            HttpServerResponse.jsonUnsafe(
-              {
-                error: {
-                  code: "INTERNAL_SERVER_ERROR",
-                  message: "The authentication request could not be handled.",
-                },
-              },
-              { status: 500 },
-            ),
-          ),
-        );
-      }),
-    );
+    const handler = recoverUnexpected(serveRequest);
 
     return { fetch: handler };
   }).pipe(

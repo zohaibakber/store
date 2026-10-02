@@ -2,7 +2,7 @@ import * as IndexedDbDatabase from "@effect/platform-browser/IndexedDbDatabase";
 import type * as IndexedDbQueryBuilder from "@effect/platform-browser/IndexedDbQueryBuilder";
 import * as IndexedDbTable from "@effect/platform-browser/IndexedDbTable";
 import * as IndexedDbVersion from "@effect/platform-browser/IndexedDbVersion";
-import { SyncEntity, type SyncEntityChange } from "@store/contracts";
+import { PositiveInt, SyncEntity, type SyncEntityChange } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   CommandStatus,
@@ -23,12 +23,11 @@ import * as Schema from "effect/Schema";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1));
 const SignedInteger = Schema.Number.check(Schema.isInt());
 
 const withGeneration = <A extends Schema.Struct.Fields>(fields: A) =>
   Schema.Struct({
-    generation: PositiveInteger,
+    generation: PositiveInt,
     ...fields,
   });
 
@@ -42,11 +41,11 @@ export const ReplicaStateRow = Schema.Struct({
   appliedCommitSequence: NonEmptyString,
   nextClientSequence: NonEmptyString,
   localCommitVersion: NonNegativeInteger,
-  activeGeneration: PositiveInteger,
+  activeGeneration: PositiveInt,
   caughtUpAt: Schema.NullOr(NonNegativeInteger),
   registeredAt: Schema.NullOr(NonNegativeInteger),
-  announcedSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInteger)),
-  lowestActiveSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInteger)),
+  announcedSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInt)),
+  lowestActiveSchemaVersion: Schema.optionalKey(Schema.NullOr(PositiveInt)),
 });
 export type ReplicaStateRow = typeof ReplicaStateRow.Type;
 
@@ -77,7 +76,7 @@ const CoverageRow = Schema.Struct({
 
 const SnapshotImportRow = Schema.Struct({
   snapshotId: NonEmptyString,
-  generation: PositiveInteger,
+  generation: PositiveInt,
   subscription: NonEmptyString,
   horizon: NonEmptyString,
   stage: Schema.Literals(["importing", "caught_up", "activated", "failed"]),
@@ -109,7 +108,7 @@ const StagedSnapshotRow = Schema.Struct({
   snapshotId: NonEmptyString,
   entity: NonEmptyString,
   entityId: NonEmptyString,
-  rowVersion: PositiveInteger,
+  rowVersion: PositiveInt,
   rowJson: NonEmptyString,
 });
 

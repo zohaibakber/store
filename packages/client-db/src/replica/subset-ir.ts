@@ -185,7 +185,7 @@ const compileOrder = (
     return clauses;
   });
 
-export type InventoryRead =
+type InventoryRead =
   | { readonly _tag: "window"; readonly spec: InventorySubsetSpec }
   | { readonly _tag: "drain"; readonly where?: SubsetPredicate };
 
@@ -207,7 +207,7 @@ const compileFilter = <Row extends InventoryCollectionRow>(
     return { where, orderBy };
   });
 
-export const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
+const analyzeInventorySubset = <Row extends InventoryCollectionRow>(
   descriptor: InventoryCollectionDescriptor<Row>,
   options: CompileSubsetInput,
 ): Effect.Effect<InventorySubsetSpec, UnsupportedSubsetQuery> =>

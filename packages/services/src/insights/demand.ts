@@ -3,10 +3,9 @@ import type { DemandForecast } from "@store/contracts/sync/replica-analytics";
 import { mean, sum } from "./statistics";
 
 export type { DemandForecast };
-export type DemandPattern = DemandForecast["pattern"];
-export type DemandMethod = DemandForecast["method"];
+type DemandPattern = DemandForecast["pattern"];
 export type DemandTrend = DemandForecast["trend"];
-export type DemandConfidence = DemandForecast["confidence"];
+type DemandConfidence = DemandForecast["confidence"];
 
 const ADI_CUTOFF = 1.32;
 const CV2_CUTOFF = 0.49;

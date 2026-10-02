@@ -42,8 +42,6 @@ export const badRequest = (code: string, message: string) =>
   BadRequest.make(publicError(code, message));
 export const unauthenticated = (code: string, message: string) =>
   Unauthenticated.make(publicError(code, message));
-export const forbidden = (code: string, message: string) =>
-  Forbidden.make(publicError(code, message));
 export const payloadTooLarge = (code: string, message: string) =>
   PayloadTooLarge.make(publicError(code, message));
 export const unsupportedMediaType = (code: string, message: string) =>

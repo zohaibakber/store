@@ -5,7 +5,6 @@ import {
   InvitationToken,
   OrganizationId,
   OrganizationName,
-  OrganizationSlug,
   OtpCode,
   Password,
   authClientLayer,
@@ -16,26 +15,20 @@ import {
   type IssuedSession,
   type LoginRoute,
   type OrganizationCommand,
+  type TokenSet,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import {
-  MemoryTokenStore,
-  RequestError,
-  SessionHttp,
-  layerSessionHttp,
-  sessionFetch,
-  type SessionHttpApi,
-} from "@store/workspace";
+import { RequestError, SessionHttp, layerSessionHttp, sessionFetch } from "@store/workspace";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
@@ -43,6 +36,7 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import {
   SESSION_ENDED_NOTICE,
   accountFromWorkspace,
+  canRenameOrganization,
   initialAuthState,
   transition,
   type Account,
@@ -53,7 +47,6 @@ import {
 } from "./model";
 import {
   describeFailure,
-  endsSession,
   failureFacts,
   invalid,
   isNetworkFailure,
@@ -139,19 +132,36 @@ const failed = (reason: AuthProblem): Failed => ({ _tag: "Failed", problem: reas
 
 const startAgain = () => failed(invalid("Start again with your email."));
 
-const canRename = (role: string) => role === "owner" || role === "admin";
-
 const sessionEnded = failed(problem("sessionEnded", SESSION_ENDED_NOTICE));
+
+const isSessionRejection = (status: number) => status === 401 || status === 403;
+
+class SessionWork extends Context.Service<SessionWork, FiberSet.FiberSet<ActionResult, never>>()(
+  "@store/mobile/auth/SessionWork",
+) {}
+
+const sessionVault = (vault: SessionVault) => ({
+  session: Effect.tryPromise(() => vault.load()).pipe(Effect.orElseSucceed(() => null)),
+  lastOrganization: Effect.tryPromise(() => vault.loadLastOrganization()).pipe(
+    Effect.orElseSucceed(() => null),
+  ),
+  save: (session: StoredSession) => Effect.ignore(Effect.tryPromise(() => vault.save(session))),
+  clear: Effect.ignore(Effect.tryPromise(() => vault.clear())),
+  rememberOrganization: (value: LastOrganization) =>
+    Effect.ignore(Effect.tryPromise(() => vault.saveLastOrganization(value))),
+});
+
+const valid = <A>(schema: Schema.Codec<A, unknown>, input: string, reason: AuthProblem) =>
+  Effect.mapError(Schema.decodeUnknownEffect(schema)(input), () => failed(reason));
+
+const settled = <A, R>(action: Effect.Effect<A, Failed, R>) =>
+  Effect.catch(action, (failure) => Effect.succeed(failure));
 
 export const createAuthController = (options: AuthControllerOptions): AuthController => {
   const now = options.now ?? Date.now;
   const registry = AtomRegistry.make();
   const stateAtom = Atom.make<AuthState>(initialAuthState).pipe(Atom.keepAlive);
   const flowAtom = Atom.make<SignInFlow | null>(null).pipe(Atom.keepAlive);
-  const tokens = new MemoryTokenStore();
-  const sessionWork = Effect.runSync(
-    FiberSet.make<ActionResult, never>().pipe(Scope.provide(Scope.makeUnsafe())),
-  );
   let started: Promise<void> | null = null;
 
   const getState = () => registry.get(stateAtom);
@@ -167,31 +177,37 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     return state._tag === "Active" ? state.account : null;
   };
 
-  const describe = async (facts: FailureFacts, codeIssuedAt?: number) => {
-    const online = isNetworkFailure(facts) ? await options.isOnline().catch(() => true) : true;
-    const context: FailureContext =
-      codeIssuedAt === undefined ? { online, now: now() } : { online, now: now(), codeIssuedAt };
-    return describeFailure(facts, context);
-  };
+  const vault = sessionVault(options.vault);
 
-  const failure = async (cause: unknown, codeIssuedAt?: number) =>
-    failed(await describe(failureFacts(cause), codeIssuedAt));
+  const online = Effect.tryPromise(() => options.isOnline()).pipe(Effect.orElseSucceed(() => true));
 
-  const failedWith = (facts: FailureFacts) =>
-    Effect.promise(() => describe(facts)).pipe(Effect.map(failed));
+  const failedWith = (facts: FailureFacts, codeIssuedAt?: number) =>
+    Effect.map(isNetworkFailure(facts) ? online : Effect.succeed(true), (isOnline) => {
+      const context: FailureContext =
+        codeIssuedAt === undefined
+          ? { online: isOnline, now: now() }
+          : { online: isOnline, now: now(), codeIssuedAt };
+      return failed(describeFailure(facts, context));
+    });
 
-  const lastOrganization = () => options.vault.loadLastOrganization().catch(() => null);
+  const rejecting =
+    (codeIssuedAt?: number) =>
+    <A, R>(attempt: Effect.Effect<A, AuthClientError | RequestError, R>) =>
+      Effect.catch(attempt, (cause) =>
+        Effect.flatMap(failedWith(failureFacts(cause), codeIssuedAt), Effect.fail),
+      );
 
-  const persist = (account: Account) =>
-    Effect.promise(async () => {
-      const current = tokens.get();
-      if (current === null) return;
-      await options.vault.save({ version: 1, tokens: current, account }).catch(() => undefined);
-    }).pipe(Effect.uninterruptible);
+  const persist = (account: Account, tokens: TokenSet | null) =>
+    tokens === null
+      ? Effect.void
+      : Effect.uninterruptible(vault.save({ version: 1, tokens, account }));
 
-  const adoptAccount = Effect.fn("MobileAuth.adoptAccount")(function* (account: Account) {
-    yield* persist(account);
-    const remembered = yield* Effect.promise(lastOrganization);
+  const adoptAccount = Effect.fn("MobileAuth.adoptAccount")(function* (
+    account: Account,
+    tokens: TokenSet | null,
+  ) {
+    yield* persist(account, tokens);
+    const remembered = yield* vault.lastOrganization;
     dispatch({ _tag: "AccountRefreshed", account, lastOrganization: remembered });
   });
 
@@ -201,8 +217,8 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       yield* session.setTokens(null);
       setFlow(null);
       dispatch(event);
-      yield* FiberSet.clear(sessionWork);
-      yield* Effect.promise(() => options.vault.clear().catch(() => undefined));
+      yield* SessionWork.use(FiberSet.clear);
+      yield* vault.clear;
     });
 
   const endSession = Effect.sync(() => {
@@ -214,38 +230,28 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       layerSessionHttp({
         apiBaseUrl: options.apiBaseUrl,
         authBaseUrl: options.authBaseUrl,
-        tokens,
         credential: "refreshToken",
-        onRefreshed: (refreshed) =>
+        onRefreshed: (refreshed, tokens) =>
           activeAccount() === null
             ? Effect.void
-            : adoptAccount(accountFromWorkspace(refreshed.workspace)),
+            : adoptAccount(accountFromWorkspace(refreshed.workspace), tokens),
         onRejected: endSession,
       }),
       authClientLayer({ baseUrl: options.authBaseUrl }),
+      Layer.effect(SessionWork, FiberSet.make<ActionResult, never>()),
     ).pipe(
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
     ),
   );
 
-  const run = <A>(f: (client: AuthClientApi) => Effect.Effect<A, AuthClientError>) =>
-    runtime.runPromise(Effect.result(AuthClient.use(f)));
-
-  const withSession = <A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E>) =>
-    runtime.runPromise(SessionHttp.use(f));
-
   const inSession = (
     work: Effect.Effect<ActionResult, never, SessionHttp>,
     whenInterrupted: ActionResult,
   ) =>
-    runtime.runPromise(
-      FiberSet.run(sessionWork, work).pipe(
-        Effect.flatMap(Fiber.await),
-        Effect.flatMap((exit) =>
-          Exit.hasInterrupts(exit) ? Effect.succeed(whenInterrupted) : exit,
-        ),
-      ),
+    SessionWork.use((sessionWork) => FiberSet.run(sessionWork, work)).pipe(
+      Effect.flatMap(Fiber.await),
+      Effect.flatMap((exit) => (Exit.hasInterrupts(exit) ? Effect.succeed(whenInterrupted) : exit)),
     );
 
   const accountOf = (snapshot: WorkspaceSnapshot) =>
@@ -264,252 +270,263 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     const refreshed = yield* session.ensureFreshAccess();
     if (refreshed?.workspace !== undefined) return accountFromWorkspace(refreshed.workspace);
     return yield* Effect.flatMap(session.workspace, accountOf);
-  }).pipe(Effect.mapError(failureFacts));
+  });
 
-  const issuedAccount = (issued: IssuedSession) =>
-    SessionHttp.use((session) => session.adopt(issued)).pipe(
-      Effect.flatMap(accountOf),
-      Effect.mapError(failureFacts),
-    );
+  const confirmSession = Effect.fn("MobileAuth.confirmSession")(function* (
+    rejection: RequestError,
+  ) {
+    const session = yield* SessionHttp;
+    const confirmed = yield* Effect.result(session.ensureFreshAccess(true));
+    if (Result.isFailure(confirmed)) return yield* failedWith(failureFacts(confirmed.failure));
+    if (confirmed.success?.workspace !== undefined) return done;
+    return yield* failedWith(failureFacts(rejection));
+  });
 
   const refreshAccount = Effect.fn("MobileAuth.refreshAccount")(function* () {
     const loaded = yield* Effect.result(fetchAccount);
     if (Result.isFailure(loaded)) {
-      if (endsSession(loaded.failure)) yield* endSession;
-      return yield* failedWith(loaded.failure);
+      const rejection = loaded.failure;
+      return rejection.refresh === undefined && isSessionRejection(rejection.status)
+        ? yield* confirmSession(rejection)
+        : yield* failedWith(failureFacts(rejection));
     }
     if (getState()._tag !== "Active") return done;
-    yield* adoptAccount(loaded.success);
+    const session = yield* SessionHttp;
+    yield* adoptAccount(loaded.success, yield* session.tokens);
     return done;
   });
 
-  const reloadAccount = () => inSession(refreshAccount(), sessionEnded);
-
   const organize = (command: OrganizationCommand) =>
-    withSession((session) =>
-      session
-        .organize(command)
-        .pipe(
-          Effect.flatMap((result) =>
-            Effect.map(session.renewAccess, (renewed) => ({ result, renewed })),
-          ),
-        ),
+    SessionHttp.use((session) =>
+      Effect.flatMap(session.organize(command), (result) =>
+        Effect.map(session.renewAccess, (renewed) => ({ result, renewed })),
+      ),
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.flatMap(failedWith(failureFacts(Cause.squash(cause))), Effect.fail),
+      ),
     );
 
   const signInWith = Effect.fn("MobileAuth.signInWith")(function* (issued: IssuedSession) {
-    const loaded = yield* Effect.result(issuedAccount(issued));
+    const session = yield* SessionHttp;
+    const loaded = yield* Effect.result(Effect.flatMap(session.adopt(issued), accountOf));
     if (Result.isFailure(loaded)) {
-      const session = yield* SessionHttp;
       yield* session.setTokens(null);
       yield* Effect.forkDetach(Effect.ignore(session.logout(issued)));
-      return yield* failedWith(loaded.failure);
+      return yield* failedWith(failureFacts(loaded.failure));
     }
-    yield* persist(loaded.success);
-    const remembered = yield* Effect.promise(lastOrganization);
+    yield* persist(loaded.success, yield* session.tokens);
+    const remembered = yield* vault.lastOrganization;
     setFlow(null);
     dispatch({ _tag: "SignedIn", account: loaded.success, lastOrganization: remembered });
     return done;
   });
 
-  const adopt = async (issued: IssuedSession): Promise<ActionResult> => {
-    await runtime.runPromise(FiberSet.clear(sessionWork));
-    return inSession(signInWith(issued), done);
-  };
+  const adopt = (issued: IssuedSession) =>
+    Effect.andThen(SessionWork.use(FiberSet.clear), inSession(signInWith(issued), done));
 
-  const identify = async (email: string): Promise<IdentifyResult> => {
-    const address = Schema.decodeUnknownOption(EmailAddress)(normalizeEmail(email));
-    if (Option.isNone(address)) return failed(invalid("Enter a valid email address.", "email"));
-    const result = await run((client) => client.identify({ email: address.value }));
-    if (Result.isFailure(result)) return failure(result.failure);
-    setFlow({ route: result.success, issuedAt: now() });
-    return { _tag: "Routed", route: result.success._tag };
-  };
+  const signIn = (
+    exchange: (client: AuthClientApi) => Effect.Effect<IssuedSession, AuthClientError>,
+    codeIssuedAt?: number,
+  ) => AuthClient.use(exchange).pipe(rejecting(codeIssuedAt), Effect.flatMap(adopt));
 
-  const resendCode = async (): Promise<ActionResult> => {
+  const identify = Effect.fn("MobileAuth.identify")(function* (email: string) {
+    const address = yield* valid(
+      EmailAddress,
+      normalizeEmail(email),
+      invalid("Enter a valid email address.", "email"),
+    );
+    const route = yield* AuthClient.use((client) => client.identify({ email: address })).pipe(
+      rejecting(),
+    );
+    setFlow({ route, issuedAt: now() });
+    const routed: IdentifyResult = { _tag: "Routed", route: route._tag };
+    return routed;
+  }, settled);
+
+  const resendCode = Effect.fn("MobileAuth.resendCode")(function* () {
     const route = getFlow()?.route;
     if (route?._tag !== "Otp") return startAgain();
-    const result = await identify(route.email);
+    const result = yield* identify(route.email);
     return result._tag === "Failed" ? result : done;
-  };
+  });
 
-  const verifyCode = async (code: string): Promise<ActionResult> => {
+  const verifyCode = Effect.fn("MobileAuth.verifyCode")(function* (code: string) {
     const flow = getFlow();
     const route = flow?.route;
     if (flow === null || route?._tag !== "Otp") return startAgain();
-    const otp = Schema.decodeUnknownOption(OtpCode)(code.trim());
-    if (Option.isNone(otp)) return failed(invalid("Enter the 6-digit code.", "code"));
-    const result = await run((client) =>
-      client.authenticate({
-        _tag: "Otp",
-        challengeId: route.challengeId,
-        code: otp.value,
-        client: options.client,
-      }),
+    const otp = yield* valid(OtpCode, code.trim(), invalid("Enter the 6-digit code.", "code"));
+    return yield* signIn(
+      (client) =>
+        client.authenticate({
+          _tag: "Otp",
+          challengeId: route.challengeId,
+          code: otp,
+          client: options.client,
+        }),
+      flow.issuedAt,
     );
-    if (Result.isFailure(result)) return failure(result.failure, flow.issuedAt);
-    return adopt(result.success);
-  };
+  }, settled);
 
-  const signInWithPassword = async (password: string): Promise<ActionResult> => {
+  const signInWithPassword = Effect.fn("MobileAuth.signInWithPassword")(function* (
+    password: string,
+  ) {
     const route = getFlow()?.route;
     if (route?._tag !== "Password") return startAgain();
     if (password.length === 0) return failed(invalid("Enter your password.", "password"));
-    const decoded = Schema.decodeUnknownOption(Password)(password);
-    if (Option.isNone(decoded)) {
-      return failed({
-        kind: "wrongPassword",
-        message: "That password isn't right.",
-        field: "password",
-      });
-    }
-    const result = await run((client) =>
+    const decoded = yield* valid(Password, password, {
+      kind: "wrongPassword",
+      message: "That password isn't right.",
+      field: "password",
+    });
+    return yield* signIn((client) =>
       client.authenticate({
         _tag: "Password",
         email: route.email,
-        password: decoded.value,
+        password: decoded,
         client: options.client,
       }),
     );
-    if (Result.isFailure(result)) return failure(result.failure);
-    return adopt(result.success);
-  };
+  }, settled);
 
-  const createAccount = async (input: {
+  const createAccount = Effect.fn("MobileAuth.createAccount")(function* (input: {
     readonly name: string;
     readonly password: string;
-  }): Promise<ActionResult> => {
+  }) {
     const route = getFlow()?.route;
     if (route?._tag !== "Registration") return startAgain();
     const name = input.name.trim();
     if (name.length === 0 || name.length > 100) {
       return failed(invalid("Enter your name.", "name"));
     }
-    const password = Schema.decodeUnknownOption(Password)(input.password);
-    if (Option.isNone(password)) {
-      return failed(
-        invalid("Use 10 to 100 characters, with no spaces at the start or end.", "password"),
-      );
-    }
-    const result = await run((client) =>
+    const password = yield* valid(
+      Password,
+      input.password,
+      invalid("Use 10 to 100 characters, with no spaces at the start or end.", "password"),
+    );
+    return yield* signIn((client) =>
       client.authenticate({
         _tag: "RegisterPassword",
         email: route.email,
         name,
-        password: password.value,
+        password,
         client: options.client,
       }),
     );
-    if (Result.isFailure(result)) return failure(result.failure);
-    return adopt(result.success);
-  };
+  }, settled);
 
-  const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
+  const signInWithGoogle = Effect.fn("MobileAuth.signInWithGoogle")(function* () {
     const google = options.google;
     if (google === null) {
       return failed(problem("unavailable", "Google sign-in isn't set up in this build."));
     }
-    const identity = await google.requestIdToken();
+    const identity = yield* Effect.promise(() => google.requestIdToken());
     if (identity._tag === "Cancelled") return identity;
     if (identity._tag === "Failed") return failed(problem("rejected", identity.message));
-    const idToken = Schema.decodeUnknownOption(GoogleIdToken)(identity.idToken);
-    if (Option.isNone(idToken)) {
-      return failed(problem("rejected", "Google sign-in didn't finish. Try again."));
-    }
-    const result = await run((client) =>
-      client.exchangeGoogleIdToken({ idToken: idToken.value, client: options.client }),
+    const idToken = yield* valid(
+      GoogleIdToken,
+      identity.idToken,
+      problem("rejected", "Google sign-in didn't finish. Try again."),
     );
-    if (Result.isFailure(result)) return failure(result.failure);
-    return adopt(result.success);
-  };
+    return yield* signIn((client) =>
+      client.exchangeGoogleIdToken({ idToken, client: options.client }),
+    );
+  }, settled);
 
-  const confirm = async (account: Account, organizationId: string) => {
-    await options.vault
-      .saveLastOrganization({ userId: account.userId, organizationId })
-      .catch(() => undefined);
-    dispatch({ _tag: "OrganizationConfirmed", organizationId });
-  };
+  const confirm = (account: Account, organizationId: string) =>
+    vault
+      .rememberOrganization({ userId: account.userId, organizationId })
+      .pipe(
+        Effect.andThen(
+          Effect.sync(() => dispatch({ _tag: "OrganizationConfirmed", organizationId })),
+        ),
+      );
 
-  const rename = async (
+  const rename = Effect.fn("MobileAuth.rename")(function* (
     organization: NonNullable<Account["organization"]>,
     desired: string,
-  ): Promise<ActionResult> => {
-    const name = Schema.decodeUnknownOption(OrganizationName)(desired);
-    if (Option.isNone(name)) {
-      return failed(invalid("Use 2 to 60 characters for the store name.", "organizationName"));
-    }
-    const organizationId = Schema.decodeUnknownOption(OrganizationId)(organization.id);
-    if (Option.isNone(organizationId))
-      return failed(problem("rejected", "This store can't be renamed."));
-    const slug = Schema.decodeUnknownOption(OrganizationSlug)(organization.slug);
-    try {
-      const { renewed } = await organize({
-        _tag: "UpdateOrganization",
-        organizationId: organizationId.value,
-        name: name.value,
-        slug: Option.getOrNull(slug),
-      });
-      return renewed === null ? sessionEnded : done;
-    } catch (cause) {
-      return failure(cause);
-    }
-  };
+  ) {
+    const name = yield* valid(
+      OrganizationName,
+      desired,
+      invalid("Use 2 to 60 characters for the store name.", "organizationName"),
+    );
+    const organizationId = yield* valid(
+      OrganizationId,
+      organization.id,
+      problem("rejected", "This store can't be renamed."),
+    );
+    const { renewed } = yield* organize({
+      _tag: "UpdateOrganization",
+      organizationId,
+      name,
+    });
+    return renewed === null ? sessionEnded : done;
+  }, settled);
 
-  const confirmOrganization = async (input: { readonly name?: string }): Promise<ActionResult> => {
+  const confirmOrganization = Effect.fn("MobileAuth.confirmOrganization")(function* (input: {
+    readonly name?: string;
+  }) {
     const account = activeAccount();
     const organization = account?.organization ?? null;
     if (account === null || organization === null) {
       return failed(invalid("Join a store to continue.", "invitation"));
     }
     const desired = input.name?.trim();
-    if (desired !== undefined && desired !== organization.name && canRename(organization.role)) {
-      const renamed = await rename(organization, desired);
+    if (
+      desired !== undefined &&
+      desired !== organization.name &&
+      canRenameOrganization(organization.role)
+    ) {
+      const renamed = yield* rename(organization, desired);
       if (renamed._tag === "Failed") return renamed;
     }
-    await confirm(account, organization.id);
+    yield* confirm(account, organization.id);
     return done;
-  };
+  });
 
-  const joinOrganization = async (invitation: string): Promise<ActionResult> => {
-    const token = Schema.decodeUnknownOption(InvitationToken)(invitation.trim());
-    if (Option.isNone(token)) {
-      return failed(invalid("Paste the invitation code you were sent.", "invitation"));
+  const joinOrganization = Effect.fn("MobileAuth.joinOrganization")(function* (invitation: string) {
+    const token = yield* valid(
+      InvitationToken,
+      invitation.trim(),
+      invalid("Paste the invitation code you were sent.", "invitation"),
+    );
+    const { result, renewed } = yield* organize({ _tag: "AcceptInvitation", token });
+    if (result._tag !== "Joined") {
+      return failed(problem("rejected", "The invitation could not be used."));
     }
-    try {
-      const { result, renewed } = await organize({ _tag: "AcceptInvitation", token: token.value });
-      if (result._tag !== "Joined") {
-        return failed(problem("rejected", "The invitation could not be used."));
-      }
-      if (renewed === null) return sessionEnded;
-      const account = activeAccount();
-      if (account?.organization?.id !== result.organization.id) {
-        return failed(problem("unavailable", "You joined the store. Try again in a moment."));
-      }
-      await confirm(account, result.organization.id);
-      return done;
-    } catch (cause) {
-      return failure(cause);
+    if (renewed === null) return sessionEnded;
+    const account = activeAccount();
+    if (account?.organization?.id !== result.organization.id) {
+      return failed(problem("unavailable", "You joined the store. Try again in a moment."));
     }
-  };
+    yield* confirm(account, result.organization.id);
+    return done;
+  }, settled);
 
-  const signOut = async () => {
-    const signedIn = await withSession((session) => session.settled.pipe(Effect.as(tokens.get())));
-    await runtime.runPromise(leaveSession({ _tag: "SignedOut" }));
-    await options.google?.forget().catch(() => undefined);
-    void withSession((session) => session.logout(signedIn)).catch(() => undefined);
-  };
+  const signOut = Effect.fn("MobileAuth.signOut")(function* () {
+    const session = yield* SessionHttp;
+    const signedIn = yield* session.tokens;
+    yield* session.settled;
+    yield* leaveSession({ _tag: "SignedOut" });
+    const google = options.google;
+    if (google !== null) yield* Effect.ignore(Effect.tryPromise(() => google.forget()));
+    yield* Effect.forkDetach(Effect.ignore(session.logout(signedIn)));
+  });
 
-  const restore = async () => {
-    const [stored, remembered] = await Promise.all([
-      options.vault.load().catch(() => null),
-      lastOrganization(),
-    ]);
-    if (stored !== null) await withSession((session) => session.setTokens(stored.tokens));
+  const restore = Effect.fn("MobileAuth.restore")(function* () {
+    const [stored, remembered] = yield* Effect.all([vault.session, vault.lastOrganization], {
+      concurrency: "unbounded",
+    });
+    if (stored !== null) yield* SessionHttp.use((session) => session.setTokens(stored.tokens));
     dispatch({ _tag: "Restored", account: stored?.account ?? null, lastOrganization: remembered });
-    if (stored !== null) void reloadAccount();
-  };
+    if (stored !== null) {
+      yield* SessionWork.use((sessionWork) => FiberSet.run(sessionWork, refreshAccount()));
+    }
+  });
 
   const start = () => {
-    if (started === null) started = restore();
+    if (started === null) started = runtime.runPromise(restore());
     return started;
   };
 
@@ -520,20 +537,24 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     subscribeFlow: (listener) => registry.subscribe(flowAtom, listener),
     start,
     googleAvailable: options.google !== null,
-    identify,
-    resendCode,
-    verifyCode,
-    signInWithPassword,
-    createAccount,
-    signInWithGoogle,
-    confirmOrganization,
-    joinOrganization,
-    signOut,
+    identify: (email) => runtime.runPromise(identify(email)),
+    resendCode: () => runtime.runPromise(resendCode()),
+    verifyCode: (code) => runtime.runPromise(verifyCode(code)),
+    signInWithPassword: (password) => runtime.runPromise(signInWithPassword(password)),
+    createAccount: (input) => runtime.runPromise(createAccount(input)),
+    signInWithGoogle: () => runtime.runPromise(signInWithGoogle()),
+    confirmOrganization: (input) => runtime.runPromise(confirmOrganization(input)),
+    joinOrganization: (invitation) => runtime.runPromise(joinOrganization(invitation)),
+    signOut: () => runtime.runPromise(signOut()),
     authenticatedFetch: sessionFetch((effect, runOptions) =>
       runtime.runPromise(effect, runOptions),
     ),
-    liveAccessToken: async ({ force }) =>
-      (await withSession((session) => session.ensureFreshAccess(force)))?.accessToken ?? null,
+    liveAccessToken: ({ force }) =>
+      runtime.runPromise(
+        SessionHttp.use((session) => session.ensureFreshAccess(force)).pipe(
+          Effect.map((access) => access?.accessToken ?? null),
+        ),
+      ),
   };
 };
 

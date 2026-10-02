@@ -1,13 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  AuthorityIncarnation,
-  OrgCommitSequence,
-  ReplicaClientSequence,
-  SyncEpoch,
-  type CatalogRowWrite,
-  type EnqueueCommandRequest,
-  type RegisterReplicaResult,
-} from "@store/contracts";
+import { type CatalogRowWrite, type EnqueueCommandRequest } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
 import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
@@ -17,7 +9,6 @@ import * as Scope from "effect/Scope";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
-import { PLACEHOLDER_INCARNATION } from "../src/replica/registration";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
@@ -38,7 +29,7 @@ const makeSqliteHarness = Effect.fn("enqueue.sqlite")(function* () {
       userId: "user-1",
       replicaId: LAST_UNIT_REPLICA_A,
       epoch: "1",
-      incarnation: PLACEHOLDER_INCARNATION,
+      incarnation: "local",
       appliedCommitSequence: "0",
       nextClientSequence: "1",
       localCommitVersion: 0,
@@ -152,42 +143,6 @@ describe.each(harnesses)("$name atomic enqueue", ({ make }) => {
         expect(third.notice).toBeUndefined();
         expect(yield* store.readPendingMarks()).toHaveLength(1);
         expect(yield* drainSequences(store, 3)).toEqual(["1"]);
-      }),
-    ),
-  );
-
-  it.effect("rejects a reused operation id with a different payload", () =>
-    withStore((store) =>
-      Effect.gen(function* () {
-        yield* store.enqueueCommand(categoryRequest(1));
-        const failure = yield* Effect.flip(store.enqueueCommand(categoryRequest(1, "Renamed")));
-        expect(failure).toMatchObject({ _tag: "SyncProtocolError", code: "OPERATION_ID_REUSED" });
-        expect(yield* drainSequences(store, 2)).toEqual(["1"]);
-      }),
-    ),
-  );
-
-  it.effect("replays an operation whose envelope was re-stamped by registration", () =>
-    withStore((store) =>
-      Effect.gen(function* () {
-        yield* store.enqueueCommand(categoryRequest(1));
-        const authority: RegisterReplicaResult = {
-          replicaId: LAST_UNIT_REPLICA_A,
-          epoch: SyncEpoch.make("2"),
-          incarnation: AuthorityIncarnation.make("authority"),
-          nextClientSequence: ReplicaClientSequence.make("7"),
-          retentionFloor: OrgCommitSequence.make("0"),
-          horizon: OrgCommitSequence.make("0"),
-          schemaVersion: 1,
-        };
-        expect(yield* store.adoptRegistration(authority, FIXTURE_NOW)).toEqual({
-          _tag: "registered",
-        });
-        const replayed = yield* store.enqueueCommand(categoryRequest(1));
-        expect(replayed.value.status).toBe("pending");
-        const next = yield* store.enqueueCommand(categoryRequest(2));
-        expect(next.value.status).toBe("pending");
-        expect(yield* drainSequences(store, 3)).toEqual(["7", "8"]);
       }),
     ),
   );

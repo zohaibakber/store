@@ -1,6 +1,9 @@
+import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
 import { OPEN_PURCHASE_ORDER_STATUSES, purchaseOrderLineRemaining } from "../catalog/purchasing";
+import { EpochMillis, UtcOffsetMinutes } from "../internal/primitives";
+import { PositiveInt } from "../schema-primitives";
 
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;
@@ -11,15 +14,10 @@ export const MAX_INSIGHTS_SALES = 250_000;
 export const MAX_INSIGHTS_ON_ORDER = MAX_INSIGHTS_PRODUCTS;
 export const INSIGHTS_ON_ORDER_STATUSES = OPEN_PURCHASE_ORDER_STATUSES;
 
-const Integer = Schema.Number.check(Schema.isInt());
-const NonNegativeInteger = Integer.check(Schema.isGreaterThanOrEqualTo(0));
-const PositiveInteger = Integer.check(Schema.isGreaterThanOrEqualTo(1));
-const EpochMillis = NonNegativeInteger;
-
 export const ReplicaInsightsWindow = Schema.Struct({
   since: EpochMillis,
   until: EpochMillis,
-  utcOffsetMinutes: Integer.check(Schema.isBetween({ minimum: -840, maximum: 840 })),
+  utcOffsetMinutes: UtcOffsetMinutes,
 }).check(
   Schema.makeFilter(
     (window) =>
@@ -36,7 +34,7 @@ export const InsightsProductFact = Schema.Struct({
   categoryId: Schema.String,
   categoryName: Schema.NullOr(Schema.String),
   tracksPacks: Schema.Boolean,
-  unitsPerPack: PositiveInteger,
+  unitsPerPack: PositiveInt,
   purchasePrice: Schema.NullOr(Schema.Number),
   retailPrice: Schema.NullOr(Schema.Number),
   unitPrice: Schema.NullOr(Schema.Number),
@@ -48,35 +46,35 @@ export type InsightsProductFact = typeof InsightsProductFact.Type;
 export const InsightsBatchFact = Schema.Struct({
   productId: Schema.String,
   batchNumber: Schema.NullOr(Schema.String),
-  packQuantity: Integer,
-  unitQuantity: Integer,
+  packQuantity: Schema.Int,
+  unitQuantity: Schema.Int,
   expiresAt: Schema.NullOr(Schema.Number),
 });
 export type InsightsBatchFact = typeof InsightsBatchFact.Type;
 
-export const InsightsSaleFact = Schema.Struct({
+const InsightsSaleFact = Schema.Struct({
   productId: Schema.String,
-  day: Integer,
-  units: Integer,
+  day: Schema.Int,
+  units: Schema.Int,
   revenue: Schema.Number,
 });
-export type InsightsSaleFact = typeof InsightsSaleFact.Type;
+type InsightsSaleFact = typeof InsightsSaleFact.Type;
 
 export const InsightsOnOrderFact = Schema.Struct({
   productId: Schema.String,
-  units: PositiveInteger,
+  units: PositiveInt,
 });
 export type InsightsOnOrderFact = typeof InsightsOnOrderFact.Type;
 
 const InsightsDayFact = Schema.Struct({
-  day: Integer,
-  invoices: NonNegativeInteger,
+  day: Schema.Int,
+  invoices: Schema.Natural,
   revenue: Schema.Number,
 });
 
 const InsightsHourFact = Schema.Struct({
-  hour: Integer.check(Schema.isBetween({ minimum: 0, maximum: 23 })),
-  invoices: NonNegativeInteger,
+  hour: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 23 })),
+  invoices: Schema.Natural,
   revenue: Schema.Number,
 });
 
@@ -182,6 +180,8 @@ type InsightsOpenOrderLine = {
   readonly receivedBaseUnits: number;
 };
 
+const byProductId = Order.mapInput(Order.String, (fact: InsightsOnOrderFact) => fact.productId);
+
 export const insightsOnOrderFacts = (
   openOrderLines: Iterable<InsightsOpenOrderLine>,
 ): ReadonlyArray<InsightsOnOrderFact> => {
@@ -190,7 +190,5 @@ export const insightsOnOrderFacts = (
     const remaining = purchaseOrderLineRemaining(line);
     if (remaining > 0) units.set(line.productId, (units.get(line.productId) ?? 0) + remaining);
   }
-  return [...units]
-    .map(([productId, total]) => ({ productId, units: total }))
-    .sort((left, right) => (left.productId < right.productId ? -1 : 1));
+  return [...units].map(([productId, total]) => ({ productId, units: total })).sort(byProductId);
 };

@@ -4,7 +4,11 @@ import { count, desc, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { MAX_REJECTED_ACTIVITY_ROWS, type ReplicaOutboxActivity } from "../activity";
+import {
+  ACTIVITY_COMMAND_STATUSES,
+  MAX_REJECTED_ACTIVITY_ROWS,
+  type ReplicaOutboxActivity,
+} from "../activity";
 import type { ReplicaDb } from "../sql-client/drizzle";
 
 const StatusCountRow = Schema.Struct({ status: CommandStatus, count: Schema.Number });
@@ -29,19 +33,12 @@ const decodeRejectedOutboxRows = Schema.decodeUnknownEffect(Schema.Array(Rejecte
 const decodeActivityStateRow = Schema.decodeUnknownEffect(ActivityStateRow);
 const decodePendingRowIdRows = Schema.decodeUnknownEffect(Schema.Array(PendingRowIdRow));
 
-const ACTIVITY_STATUSES = [
-  "pending",
-  "sending",
-  "accepted_awaiting_integration",
-  "rejected",
-] as const;
-
 export const readOutboxActivitySqlite = Effect.fn("SqliteReplicaActivity.readOutboxActivity")(
   function* (db: ReplicaDb) {
     const statusCounts = yield* db
       .select({ status: commandOutbox.status, count: count() })
       .from(commandOutbox)
-      .where(inArray(commandOutbox.status, ACTIVITY_STATUSES))
+      .where(inArray(commandOutbox.status, [...ACTIVITY_COMMAND_STATUSES]))
       .groupBy(commandOutbox.status)
       .all()
       .pipe(Effect.flatMap(decodeStatusCountRows), Effect.orDie);

@@ -14,7 +14,6 @@ export type {
 export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
 export type { OwnedLiveHost } from "./session";
 export {
-  dispositionFor,
   failureFromStatus,
   mapSyncFailure,
   retryAfterMillis,

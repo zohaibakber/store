@@ -9,21 +9,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { WorkspaceReadFailure } from "./errors";
+import type { ListPage } from "./list-request";
 
-export const MAX_LIST_PAGE_SIZE = 100;
-
-export const MAX_LIST_SEARCH_LENGTH = 120;
-
-export type ListSort<Column extends string> = {
-  readonly column: Column;
-  readonly direction: "asc" | "desc";
-};
-
-export type ListPage<Column extends string> = {
-  readonly sort: ListSort<Column>;
-  readonly pageIndex: number;
-  readonly pageSize: number;
-};
+const MAX_LIST_PAGE_SIZE = 100;
 
 type ListSource = InventorySubsetSpec["source"];
 
@@ -32,7 +20,7 @@ export const allOf = (predicates: ReadonlyArray<SubsetPredicate>): SubsetPredica
   return others.length === 0 ? only : { _tag: "and", predicates };
 };
 
-const pageSpec = <Column extends string>(
+export const pageSpec = <Column extends string>(
   source: ListSource,
   where: SubsetPredicate | undefined,
   page: ListPage<Column>,
@@ -50,11 +38,11 @@ const pageSpec = <Column extends string>(
   return where ? { ...spec, where } : spec;
 };
 
-const summarySpec = (
+export const summarySpec = (
   source: ListSource,
   where: SubsetPredicate | undefined,
-): InventorySubsetSummarySpec =>
-  where ? { source, where, distinct: [] } : { source, distinct: [] };
+  distinct: InventorySubsetSummarySpec["distinct"] = [],
+): InventorySubsetSummarySpec => (where ? { source, where, distinct } : { source, distinct });
 
 const decodePageRows = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ id: Schema.String })),

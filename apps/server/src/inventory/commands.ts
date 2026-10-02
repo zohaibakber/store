@@ -3,9 +3,8 @@ import {
   MAX_SYNC_PULL_TRANSACTIONS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
   MIN_PULL_BYTE_BUDGET,
+  RegisterReplicaRequest,
   RegisterReplicaResult,
-  SyncProtocolCode,
-  type RegisterReplicaRequest,
   type SyncPullRequest,
 } from "@store/contracts";
 import { commandReceipts, inventoryState } from "@store/db/postgres/schema";
@@ -21,13 +20,19 @@ import type { EncodedJsonBody, InventoryActor, SubmittedCommand } from "./model"
 import {
   databaseError,
   isDataException,
-  protocol,
   randomHex,
   requireState,
   runStatement,
   withSerializationRetry,
   type InventoryDrizzle,
 } from "./postgres";
+import {
+  actorJson,
+  answered,
+  syncFunctionJson,
+  syncFunctionReply,
+  syncFunctionRow,
+} from "./sync-function";
 
 const PULL_ENVELOPE_HEADROOM_BYTES = 16_384;
 
@@ -41,56 +46,27 @@ const clampPullByteBudget = Number.clamp({
 const pullByteBudget = (maxBytes: number | undefined): number =>
   maxBytes === undefined ? PULL_PAYLOAD_BUDGET_BYTES : clampPullByteBudget(maxBytes);
 
-const FunctionFailure = {
-  error_code: Schema.NullOr(SyncProtocolCode),
-  error_message: Schema.NullOr(Schema.String),
-};
-
-const EncodedRows = Schema.Tuple([
-  Schema.Struct({ body: Schema.NullOr(Schema.String), ...FunctionFailure }),
-]);
-
-const SubmittedRows = Schema.Tuple([
+const submittedRow = syncFunctionRow(
   Schema.Struct({
     guard: Schema.NullOr(Schema.Literal("MALFORMED")),
     origin_replica_id: Schema.NullOr(Schema.String),
-    body: Schema.NullOr(Schema.String),
     fanout_epoch: Schema.NullOr(Schema.String),
     fanout_horizon: Schema.NullOr(Schema.String),
     fanout_group: Schema.NullOr(Schema.String),
     fanout_bytes: Schema.NullOr(Schema.Number),
-    ...FunctionFailure,
+    ...syncFunctionReply,
   }),
-]);
+);
 
 const ReceiptRows = Schema.Array(
   Schema.Struct({ receipt: Schema.NullOr(Schema.fromJsonString(CommandReceipt)) }),
 );
 
-export const decodeEncodedRows = Schema.decodeUnknownEffect(EncodedRows);
-const decodeSubmittedRows = Schema.decodeUnknownEffect(SubmittedRows);
 const decodeReceiptRows = Schema.decodeUnknownEffect(ReceiptRows);
 const decodeRegisterResult = Schema.decodeUnknownEffect(
   Schema.fromJsonString(RegisterReplicaResult),
 );
-
-type FunctionOutcome = {
-  readonly body: string | null;
-  readonly error_code: SyncProtocolCode | null;
-  readonly error_message: string | null;
-};
-
-export const bodyOrProtocolError = (row: FunctionOutcome) =>
-  row.error_code !== null
-    ? protocol(row.error_code, row.error_message ?? row.error_code)
-    : row.body === null
-      ? Effect.fail(databaseError(new Error("The sync function returned no body.")))
-      : Effect.succeed(row.body);
-
-export const decodedWith =
-  <I, A>(decode: (input: I) => Effect.Effect<A, Schema.SchemaError>) =>
-  (input: I) =>
-    decode(input).pipe(Effect.mapError(databaseError));
+const encodeRegisterRequest = Schema.encodeSync(Schema.fromJsonString(RegisterReplicaRequest));
 
 export class SyncRequestMalformed extends Schema.TaggedError<SyncRequestMalformed>()(
   "SyncRequestMalformed",
@@ -102,9 +78,6 @@ const malformedRequest = SyncRequestMalformed.make({
 });
 
 export const MAX_SUBMIT_BODY_BYTES = 2 * 1024 * 1024;
-
-export const actorJson = (actor: InventoryActor) =>
-  JSON.stringify({ organizationId: actor.organizationId, userId: actor.userId });
 
 export interface InventoryCommandsContract {
   readonly register: (
@@ -135,7 +108,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     actor: InventoryActor,
     request: SyncPullRequest,
   ) {
-    const [row] = yield* runStatement(
+    const json = yield* syncFunctionJson(
       db.execute(
         sql`select "body", "error_code", "error_message" from sync.pull(
           ${actor.organizationId}::text,
@@ -148,8 +121,8 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
         )`,
         "objects",
       ),
-    ).pipe(Effect.flatMap(decodedWith(decodeEncodedRows)));
-    return { json: yield* bodyOrProtocolError(row) } satisfies EncodedJsonBody;
+    );
+    return { json } satisfies EncodedJsonBody;
   });
 
   const submitRaw = Effect.fn("InventoryCommands.submitRaw")(function* (
@@ -157,7 +130,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
     bodyText: string,
   ) {
     const receivedAt = yield* Clock.currentTimeMillis;
-    const [row] = yield* runStatement(
+    const row = yield* submittedRow(
       withSerializationRetry(
         db.execute(
           sql`select "g"."guard", "r"."request"->>'replicaId' as "origin_replica_id",
@@ -192,10 +165,9 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
         (error) => error._tag === "InventoryDatabaseError" && isDataException(error),
         () => Effect.fail(malformedRequest),
       ),
-      Effect.flatMap(decodedWith(decodeSubmittedRows)),
     );
     if (row.guard === "MALFORMED") return yield* malformedRequest;
-    const body = yield* bodyOrProtocolError(row);
+    const { body } = yield* answered(row);
     const fanout =
       row.fanout_epoch === null ||
       row.fanout_horizon === null ||
@@ -216,20 +188,19 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
   return InventoryCommands.of({
     register: Effect.fn("InventoryCommands.register")(function* (actor, request) {
       const now = yield* Clock.currentTimeMillis;
-      const [row] = yield* runStatement(
+      const body = yield* syncFunctionJson(
         withSerializationRetry(
           db.execute(
             sql`select "body", "error_code", "error_message" from sync.register_replica(
               ${actorJson(actor)}::jsonb,
-              ${JSON.stringify(request)}::jsonb,
+              ${encodeRegisterRequest(request)}::jsonb,
               ${now}::bigint,
               ${randomHex(16)}::text
             )`,
             "objects",
           ),
         ),
-      ).pipe(Effect.flatMap(decodedWith(decodeEncodedRows)));
-      const body = yield* bodyOrProtocolError(row);
+      );
       return yield* decodeRegisterResult(body).pipe(Effect.mapError(databaseError));
     }),
     submitRaw,
@@ -250,7 +221,7 @@ export const makeInventoryCommands = (db: InventoryDrizzle): InventoryCommandsCo
             ),
           )
           .where(eq(inventoryState.organizationId, actor.organizationId)),
-      ).pipe(Effect.flatMap(decodedWith(decodeReceiptRows)));
+      ).pipe(Effect.flatMap((found) => Effect.mapError(decodeReceiptRows(found), databaseError)));
       const row = yield* requireState(rows[0]);
       return row.receipt ?? undefined;
     }),

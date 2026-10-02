@@ -1,0 +1,10 @@
+export const AUTH_GET_SESSION_CHANNEL = "auth:get-session";
+export const AUTH_IDENTIFY_CHANNEL = "auth:identify";
+export const AUTH_AUTHENTICATE_CHANNEL = "auth:authenticate";
+export const AUTH_BEGIN_GOOGLE_CHANNEL = "auth:begin-google";
+export const AUTH_COMPLETE_GOOGLE_CHANNEL = "auth:complete-google";
+export const AUTH_RENEW_SESSION_CHANNEL = "auth:renew-session";
+export const AUTH_SIGN_OUT_CHANNEL = "auth:sign-out";
+export const AUTH_ORGANIZATION_CHANNEL = "auth:organization";
+export const AUTH_ORGANIZE_CHANNEL = "auth:organize";
+export const AUTH_SESSION_CHANGED_CHANNEL = "auth:session-changed";

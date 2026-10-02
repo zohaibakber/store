@@ -45,7 +45,7 @@ const sessionFor = (
   });
 
 describe("refresh session reads and pruning on D1", () => {
-  it("reads the session, its user, and the active membership in one lookup", async () => {
+  it("gives a session no membership in an organization its user does not belong to", async () => {
     const run = repositoryOn(authD1());
     const now = Date.now();
     const outcome = await run((repository) =>

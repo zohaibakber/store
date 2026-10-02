@@ -21,12 +21,18 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { applyGroupRows } from "./apply";
-import { decodeEntity, decodeSubscription } from "./codecs";
-import { loadReplicaState, parseStoredEnvelope, verifyReplicaIncarnation } from "./commands";
+import { decodeEntity, decodeStoredEnvelope, decodeSubscription } from "./codecs";
+import { loadReplicaState, verifyReplicaIncarnation } from "./commands";
 import { recordSnapshotCoverage } from "./coverage";
-import { byEntityDependency, decideOverlays, OUTSTANDING_COMMAND_STATUSES } from "./decisions";
+import {
+  byEntityDependency,
+  decideOverlays,
+  decidePartAdmission,
+  OUTSTANDING_COMMAND_STATUSES,
+} from "./decisions";
 import { hasSqlReason } from "./errors";
-import { readCommandContext, readUnitsPerPack } from "./lookup";
+import { loadCommandContext } from "./footprint";
+import { readUnitsPerPack, sqliteCatalogReads } from "./lookup";
 import { restorePendingProjection, writePendingProjection } from "./pending";
 import type { ReplicaDb } from "./sql-client/drizzle";
 import {
@@ -39,6 +45,7 @@ import {
   IMPORT_TURN_MILLIS,
   withStandbyActive,
 } from "./sqlite/generation";
+import { sqlitePendingRows } from "./sqlite/pending-rows";
 import { upsertSnapshotRows } from "./sqlite/snapshot-rows";
 
 type ImportRow = typeof snapshotImports.$inferSelect;
@@ -111,7 +118,7 @@ export const abandonSnapshotCandidate = Effect.fn("ReplicaImport.abandonSnapshot
   },
 );
 
-export const abandonOtherCandidates = Effect.fn("ReplicaImport.abandonOtherCandidates")(function* (
+const abandonOtherCandidates = Effect.fn("ReplicaImport.abandonOtherCandidates")(function* (
   tx: ReplicaDb,
   keepSnapshotId: string,
 ) {
@@ -215,34 +222,12 @@ const importPartRows = Effect.fn("ReplicaImport.importPartRows")(function* (
   }
 });
 
-type PartAdmission =
-  | { readonly _tag: "imported"; readonly stage: SnapshotImportStage }
-  | { readonly _tag: "next"; readonly importRow: ImportRow };
-
-const admitPart = Effect.fn("ReplicaImport.admitPart")(function* (
-  tx: ReplicaDb,
-  manifest: SnapshotManifest,
-  part: SnapshotPartPayload,
-) {
-  const importRow = yield* loadImport(tx, manifest.snapshotId);
-  if (!importRow || importRow.stage === "activated" || importRow.stage === "failed") {
-    return yield* Effect.fail(unavailable("The snapshot import is not active."));
-  }
-  const manifestPart = manifest.parts.find((entry) => entry.partNumber === part.partNumber);
-  if (!manifestPart) {
-    return yield* Effect.fail(unavailable("The snapshot part is not in the manifest."));
-  }
-  if (part.snapshotId !== manifest.snapshotId) {
-    return yield* Effect.fail(unavailable("The snapshot part identity does not match."));
-  }
-  if (part.partNumber <= importRow.partsImported) {
-    return { _tag: "imported", stage: stageOf(importRow) } satisfies PartAdmission;
-  }
-  if (part.partNumber !== importRow.partsImported + 1) {
-    return yield* Effect.fail(unavailable("The snapshot part arrived out of order."));
-  }
-  return { _tag: "next", importRow } satisfies PartAdmission;
-});
+const admitPart = (tx: ReplicaDb, manifest: SnapshotManifest, part: SnapshotPartPayload) =>
+  loadImport(tx, manifest.snapshotId).pipe(
+    Effect.flatMap((importRow) =>
+      Effect.fromResult(decidePartAdmission(importRow, manifest, part)),
+    ),
+  );
 
 const importAdmittedRows = (tx: ReplicaDb, rows: SnapshotPartPayload["rows"]) =>
   importPartRows(tx, rows).pipe(
@@ -273,12 +258,12 @@ export const importSnapshotPart = Effect.fn("ReplicaImport.importSnapshotPart")(
   part: SnapshotPartPayload,
 ) {
   const admission = yield* admitPart(tx, manifest, part);
-  if (admission._tag === "imported") return admission.stage;
+  if (admission._tag === "imported") return stageOf(admission.importRow);
   yield* importAdmittedRows(tx, part.rows);
   return yield* completePart(tx, manifest, admission.importRow);
 });
 
-export type ImportedRows = {
+type ImportedRows = {
   readonly partsCompleted: number;
   readonly rowOffset: number;
 };
@@ -348,7 +333,7 @@ const projectOutstandingCommand = Effect.fn("ReplicaImport.projectOutstandingCom
   state: ProjectionState,
   row: OutboxRow,
 ) {
-  const envelope = yield* parseStoredEnvelope(row);
+  const envelope = yield* decodeStoredEnvelope(row);
   const unitsPerPackFor = yield* readUnitsPerPack(
     tx,
     state.organizationId,
@@ -359,19 +344,27 @@ const projectOutstandingCommand = Effect.fn("ReplicaImport.projectOutstandingCom
   for (const overlay of decideOverlays(envelope, unitsPerPackFor)) {
     yield* tx.insert(stockOverlays).values(overlay).onConflictDoNothing();
   }
-  const { lookup } = yield* readCommandContext(tx, state.organizationId, envelope.command, {
-    checkRules: false,
-    withStock: false,
-  });
-  yield* writePendingProjection(tx, envelope, state, lookup, true);
+  const { lookup } = yield* loadCommandContext(
+    envelope.command,
+    sqliteCatalogReads(tx, state.organizationId),
+    { checkRules: false, withStock: false },
+  );
+  yield* writePendingProjection(
+    sqlitePendingRows(tx, state.organizationId),
+    envelope,
+    state,
+    lookup,
+    true,
+  );
 });
 
 const discardCommandProjection = Effect.fn("ReplicaImport.discardCommandProjection")(function* (
   tx: ReplicaDb,
+  state: ProjectionState,
   operationId: string,
 ) {
   yield* tx.delete(stockOverlays).where(eq(stockOverlays.commandId, operationId));
-  yield* restorePendingProjection(tx, operationId);
+  yield* restorePendingProjection(sqlitePendingRows(tx, state.organizationId), operationId);
 });
 
 type JournalReplay = {
@@ -394,12 +387,12 @@ const replayEntry = Effect.fn("ReplicaImport.replayEntry")(function* (
       yield* applyGroupRows(tx, state.organizationId, group);
       return group.commitSequence;
     }
-    if (mode === "full") yield* discardCommandProjection(tx, group.operationId);
+    if (mode === "full") yield* discardCommandProjection(tx, state, group.operationId);
     return through;
   }
   if (mode === "base") return through;
   if (entry.kind === "reject") {
-    yield* discardCommandProjection(tx, entry.operationId);
+    yield* discardCommandProjection(tx, state, entry.operationId);
     return through;
   }
   const row = yield* tx
@@ -434,10 +427,11 @@ const replayJournal = Effect.fn("ReplicaImport.replayJournal")(function* (
 
 const settleCoveredProjections = Effect.fn("ReplicaImport.settleCoveredProjections")(function* (
   tx: ReplicaDb,
+  state: ProjectionState,
   through: string,
 ) {
   for (const row of yield* coveredOutbox(tx, through)) {
-    yield* discardCommandProjection(tx, row.operationId);
+    yield* discardCommandProjection(tx, state, row.operationId);
   }
 });
 
@@ -575,7 +569,7 @@ const replayStep = Effect.fn("ReplicaImport.replayStep")(function* (
           "full",
           ACTIVATION_WORK_MILLIS,
         );
-        yield* settleCoveredProjections(tx, replay.through);
+        yield* settleCoveredProjections(tx, state, replay.through);
         return replay;
       }),
     );
@@ -597,7 +591,7 @@ const replayStep = Effect.fn("ReplicaImport.replayStep")(function* (
     "full",
   ).pipe(
     Effect.map((replay) => replay.through),
-    Effect.tap((through) => settleCoveredProjections(tx, through)),
+    Effect.tap((through) => settleCoveredProjections(tx, state, through)),
   );
   const journalCursor = entries.at(-1)?.seq ?? importRow.journalCursor;
   if (compareDecimalSequence(candidateThrough, state.appliedCommitSequence) < 0) {

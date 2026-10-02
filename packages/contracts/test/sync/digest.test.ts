@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   compareUtf8,
-  divergedPartitionEntities,
   PARTITION_DIGEST_DOMAIN,
   partitionDigestOf,
   sortedPartitionLeaves,
 } from "../../src/sync/digest";
+import { canonicalPayloadHash, sha256Hex } from "../../src/sync/operation-hash";
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
@@ -63,29 +63,16 @@ describe("partition digest", () => {
       ),
     });
   });
+});
 
-  it("names the entity whose rows diverged", async () => {
-    const authority = await Effect.runPromise(
-      partitionDigestOf([
-        { entity: "category", entityId: "general", rowVersion: 1 },
-        { entity: "batch", entityId: "b-1", rowVersion: 2 },
-      ]),
+describe("operation hash", () => {
+  it("hashes the canonical JSON of a payload to a fixed SHA-256 vector", async () => {
+    expect(canonicalPayloadHash({ b: 1, a: [2, { z: null, y: "é", u: undefined }] })).toBe(
+      "ec16434fd977b8278695259ef46f4abb10fc5095b65acc000e1987bed40a04f9",
     );
-    const local = await Effect.runPromise(
-      partitionDigestOf([
-        { entity: "category", entityId: "general", rowVersion: 1 },
-        { entity: "batch", entityId: "b-1", rowVersion: 1 },
-      ]),
+    expect(canonicalPayloadHash(undefined)).toBe(
+      "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
     );
-    expect(local.digest).not.toBe(authority.digest);
-    expect(divergedPartitionEntities(local, authority)).toEqual(["batch"]);
-    const withHistory = await Effect.runPromise(
-      partitionDigestOf([
-        { entity: "category", entityId: "general", rowVersion: 1 },
-        { entity: "batch", entityId: "b-1", rowVersion: 1 },
-        { entity: "invoice", entityId: "i-1", rowVersion: 1 },
-      ]),
-    );
-    expect(divergedPartitionEntities(local, withHistory)).toEqual(["invoice"]);
+    expect(await Effect.runPromise(sha256Hex("é😀"))).toBe(sha256("é😀"));
   });
 });

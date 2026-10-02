@@ -9,11 +9,13 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { OrgHub, type OrgHubContract } from "../../api";
+import type { CommitFanout } from "../inventory/model";
 import {
   admissionFromHeaders,
   advanceCursor,
@@ -26,7 +28,6 @@ import {
   userTag,
   type HubAttachment,
   type HubCursor,
-  type HubPublish,
   type HubSocket,
 } from "./hub-core";
 
@@ -74,67 +75,70 @@ export type HubState = Pick<
   "acceptWebSocket" | "getWebSockets" | "setWebSocketAutoResponse"
 >;
 
-export const makeOrgHub = (
+export const makeOrgHub = Effect.fnUntraced(function* (
   state: HubState,
   platform: HubPlatform = workerdHubPlatform,
-): Effect.Effect<OrgHubContract, never, RuntimeContext> =>
-  Effect.gen(function* () {
-    yield* state.setWebSocketAutoResponse(platform.autoResponse());
-    let cursor: HubCursor | undefined;
-    const socketsTagged = (tag?: string) =>
-      state.getWebSockets(tag).pipe(Effect.map((sockets) => sockets.map(hubSocket)));
+): Effect.fn.Return<OrgHubContract, never, RuntimeContext> {
+  yield* state.setWebSocketAutoResponse(platform.autoResponse());
+  const cursor = yield* Ref.make<HubCursor | undefined>(undefined);
+  const advance = (next: HubCursor) =>
+    Ref.modify(cursor, (current) => {
+      const advanced = advanceCursor(current, next);
+      return [advanced, advanced];
+    });
+  const socketsTagged = (tag?: string) =>
+    state.getWebSockets(tag).pipe(Effect.map((sockets) => sockets.map(hubSocket)));
 
-    return {
-      fetch: Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const admission = admissionFromHeaders(request.headers);
-        if (admission === undefined || request.headers.upgrade?.toLowerCase() !== "websocket") {
-          return badAdmission();
-        }
-        closeSockets(
-          yield* socketsTagged(replicaTag(admission.replicaId)),
-          LIVE_SOCKET_CLOSE.normal,
-          "replaced",
-        );
-        const { client, server } = platform.pair();
-        yield* state.acceptWebSocket(server, [
-          replicaTag(admission.replicaId),
-          userTag(admission.userId),
-        ]);
-        server.serializeAttachment<HubAttachment>({
-          replicaId: admission.replicaId,
-          userId: admission.userId,
-          expiresAt: admission.expiresAt,
-          maxBytes: admission.maxBytes,
-          epoch: admission.epoch,
-        });
-        cursor = advanceCursor(cursor, { epoch: admission.epoch, horizon: admission.horizon });
-        server.ws.send(helloFrame(cursor));
-        return platform.upgrade(client);
+  return {
+    fetch: Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const admission = admissionFromHeaders(request.headers);
+      if (admission === undefined || request.headers.upgrade?.toLowerCase() !== "websocket") {
+        return badAdmission();
+      }
+      closeSockets(
+        yield* socketsTagged(replicaTag(admission.replicaId)),
+        LIVE_SOCKET_CLOSE.normal,
+        "replaced",
+      );
+      const { client, server } = platform.pair();
+      yield* state.acceptWebSocket(server, [
+        replicaTag(admission.replicaId),
+        userTag(admission.userId),
+      ]);
+      server.serializeAttachment<HubAttachment>({
+        replicaId: admission.replicaId,
+        userId: admission.userId,
+        expiresAt: admission.expiresAt,
+        maxBytes: admission.maxBytes,
+        epoch: admission.epoch,
+      });
+      const greeting = yield* advance({ epoch: admission.epoch, horizon: admission.horizon });
+      server.ws.send(helloFrame(greeting));
+      return platform.upgrade(client);
+    }),
+    publish: Effect.fnUntraced(function* (input: CommitFanout) {
+      const now = yield* Clock.currentTimeMillis;
+      yield* advance({ epoch: input.epoch, horizon: input.horizon });
+      return publishToSockets(yield* socketsTagged(), input, now);
+    }),
+    revoke: (userId: string) =>
+      socketsTagged(userTag(userId)).pipe(
+        Effect.map((sockets) =>
+          closeSockets(sockets, LIVE_SOCKET_CLOSE.revoked, "membership revoked"),
+        ),
+      ),
+    webSocketMessage: (socket: Cloudflare.WebSocket) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.map((now) => {
+          closeIfExpired(hubSocket(socket), now);
+        }),
+      ),
+    webSocketClose: (socket: Cloudflare.WebSocket) =>
+      Effect.sync(() => {
+        closeSockets([hubSocket(socket)], LIVE_SOCKET_CLOSE.normal, "closed");
       }),
-      publish: (input: HubPublish) =>
-        Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
-          cursor = advanceCursor(cursor, { epoch: input.epoch, horizon: input.horizon });
-          return publishToSockets(yield* socketsTagged(), input, now);
-        }),
-      revoke: (userId: string) =>
-        socketsTagged(userTag(userId)).pipe(
-          Effect.map((sockets) =>
-            closeSockets(sockets, LIVE_SOCKET_CLOSE.revoked, "membership revoked"),
-          ),
-        ),
-      webSocketMessage: (socket: Cloudflare.WebSocket) =>
-        Clock.currentTimeMillis.pipe(
-          Effect.map((now) => {
-            closeIfExpired(hubSocket(socket), now);
-          }),
-        ),
-      webSocketClose: (socket: Cloudflare.WebSocket) =>
-        Effect.sync(() => {
-          closeSockets([hubSocket(socket)], LIVE_SOCKET_CLOSE.normal, "closed");
-        }),
-    } satisfies OrgHubContract;
-  });
+  } satisfies OrgHubContract;
+});
 
 export const OrgHubLive = OrgHub.make(Effect.map(Cloudflare.DurableObjectState, makeOrgHub));

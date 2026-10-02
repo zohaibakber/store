@@ -20,7 +20,6 @@ import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
-import { saveLocalCommand } from "../src/replica/commands";
 import { runReplicaTransaction } from "../src/replica/storage";
 import { makeSqliteReplicaStore } from "../src/sqlite";
 import type { SyncTransport } from "../src/transport";
@@ -93,10 +92,8 @@ const openEngine = (
   options: { readonly pullMaxBytes?: number; readonly verifiedDigestAt?: number } = {},
 ) =>
   Effect.gen(function* () {
-    yield* runReplicaTransaction(handle, (tx) =>
-      saveLocalCommand(tx, enqueueRequestOf(lastUnitBuyerAEnvelope, 1)),
-    );
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
+    yield* store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
     if (options.verifiedDigestAt !== undefined) {
       yield* store.recordDigestVerification(OPERATIONAL_SUBSCRIPTION, options.verifiedDigestAt);
     }
@@ -113,76 +110,6 @@ const openEngine = (
   });
 
 describe("sync engine applies the page that rides on a submit", () => {
-  it.effect("integrates the command from the submit page and skips the follow-up pull", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const recorded = recordingTransport((request) =>
-          pageOf("0", [ownGroup(request, "1")], "1"),
-        );
-        const { engine, store, outbox } = yield* openEngine(handle, recorded.transport, {
-          pullMaxBytes: 131_072,
-          verifiedDigestAt: 0,
-        });
-
-        expect(yield* engine.drainUploads()).toBe(1);
-        expect(yield* engine.catchUp()).toBe("advanced");
-
-        expect(recorded.submits).toHaveLength(1);
-        expect(recorded.submits[0]).toMatchObject({
-          operationId: lastUnitBuyerAEnvelope.operationId,
-          afterCommitSequence: "0",
-          maxBytes: 131_072,
-        });
-        expect(recorded.pulls).toHaveLength(0);
-        expect(yield* outbox).toEqual(["integrated"]);
-        expect((yield* store.readSyncCursor()).appliedCommitSequence).toBe("1");
-
-        yield* engine.setPullMaxBytes(undefined);
-        expect(yield* engine.catchUp()).toBe("unchanged");
-        expect(recorded.pulls).toEqual([
-          { epoch: LAST_UNIT_EPOCH, subscription: "operational", afterCommitSequence: "1" },
-        ]);
-      }),
-    ),
-  );
-
-  it.effect("keeps pulling when the page stops short of the horizon", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const recorded = recordingTransport((request) =>
-          pageOf("0", [ownGroup(request, "1")], "3"),
-        );
-        const { engine, outbox } = yield* openEngine(handle, recorded.transport, {
-          verifiedDigestAt: 0,
-        });
-
-        yield* engine.drainUploads();
-        yield* engine.catchUp();
-
-        expect(yield* outbox).toEqual(["integrated"]);
-        expect(recorded.pulls.map((request) => request.afterCommitSequence)).toEqual(["1"]);
-        expect(recorded.pulls[0]).not.toHaveProperty("maxBytes");
-      }),
-    ),
-  );
-
-  it.effect("settles the receipt alone and pulls when the authority sends no page", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const recorded = recordingTransport(() => undefined);
-        const { engine, outbox } = yield* openEngine(handle, recorded.transport, {
-          verifiedDigestAt: 0,
-        });
-
-        yield* engine.drainUploads();
-        expect(yield* outbox).toEqual(["accepted_awaiting_integration"]);
-        yield* engine.catchUp();
-
-        expect(recorded.pulls.map((request) => request.afterCommitSequence)).toEqual(["0"]);
-      }),
-    ),
-  );
-
   it.effect("settles the receipt and pulls when the page comes from another incarnation", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {

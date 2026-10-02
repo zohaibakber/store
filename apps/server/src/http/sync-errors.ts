@@ -5,8 +5,9 @@ import {
   SyncForbidden,
   SyncServiceUnavailable,
 } from "@store/contracts/sync/http-errors";
+import * as Effect from "effect/Effect";
 
-import type { SyncUnavailableError } from "../inventory/sync-authority";
+import type { InventoryDatabaseError, InventoryError } from "../inventory/errors";
 import { publicError } from "./errors";
 
 const syncProtocolHttpError = (error: SyncProtocolError) => {
@@ -31,9 +32,24 @@ const syncProtocolHttpError = (error: SyncProtocolError) => {
   }
 };
 
-export const mapSyncError = (error: SyncProtocolError | SyncUnavailableError) => {
-  if (error._tag === "SyncUnavailableError") {
-    return SyncServiceUnavailable.make(publicError(error.code, error.message));
-  }
-  return syncProtocolHttpError(error);
-};
+const syncUnavailable = SyncServiceUnavailable.make(
+  publicError(
+    "SYNC_UNAVAILABLE",
+    "Organization sync is temporarily unavailable. Try again shortly.",
+  ),
+);
+
+const syncDatabaseFailure = (error: InventoryDatabaseError) =>
+  Effect.logError("inventory.database_failed", error.cause ?? error.message).pipe(
+    Effect.annotateLogs({ detail: error.message }),
+    Effect.andThen(Effect.fail(syncUnavailable)),
+  );
+
+type SyncHttpError = SyncBadRequest | SyncForbidden | SyncConflict | SyncServiceUnavailable;
+
+export const failWithSyncHttpError = (
+  error: InventoryError,
+): Effect.Effect<never, SyncHttpError> =>
+  error._tag === "InventoryDatabaseError"
+    ? syncDatabaseFailure(error)
+    : Effect.fail(syncProtocolHttpError(error));

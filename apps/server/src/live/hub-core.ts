@@ -4,7 +4,10 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   SYNC_SCHEMA_VERSION,
 } from "@store/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+
+import type { CommitFanout } from "../inventory/model";
 
 export const HubAttachment = Schema.Struct({
   replicaId: Schema.String,
@@ -16,14 +19,6 @@ export const HubAttachment = Schema.Struct({
 export type HubAttachment = typeof HubAttachment.Type;
 
 export const decodeHubAttachment = Schema.decodeUnknownOption(HubAttachment);
-
-export interface HubPublish {
-  readonly epoch: string;
-  readonly horizon: string;
-  readonly group: string;
-  readonly byteLength: number;
-  readonly originReplicaId: string;
-}
 
 export interface HubCursor {
   readonly epoch: string;
@@ -37,7 +32,7 @@ export interface HubSocket {
   readonly close: (code: number, reason: string) => void;
 }
 
-export const HUB_ADMISSION_HEADERS = {
+const HUB_ADMISSION_HEADERS = {
   replicaId: "x-tabaaq-hub-replica",
   userId: "x-tabaaq-hub-user",
   expiresAt: "x-tabaaq-hub-expires",
@@ -82,20 +77,19 @@ export const admissionHeaders = (admission: HubAdmission) => ({
 
 export const admissionFromHeaders = (
   headers: Readonly<Record<string, string | undefined>>,
-): HubAdmission | undefined => {
-  const decoded = decodeAdmissionHeaders(headers);
-  if (decoded._tag === "None") return undefined;
-  const value = decoded.value;
-  return {
-    replicaId: value[HUB_ADMISSION_HEADERS.replicaId],
-    userId: value[HUB_ADMISSION_HEADERS.userId],
-    expiresAt: value[HUB_ADMISSION_HEADERS.expiresAt],
-    maxBytes:
-      value[HUB_ADMISSION_HEADERS.maxBytes] === 0 ? null : value[HUB_ADMISSION_HEADERS.maxBytes],
-    epoch: value[HUB_ADMISSION_HEADERS.epoch],
-    horizon: value[HUB_ADMISSION_HEADERS.horizon],
-  };
-};
+): HubAdmission | undefined =>
+  decodeAdmissionHeaders(headers).pipe(
+    Option.map((value) => ({
+      replicaId: value[HUB_ADMISSION_HEADERS.replicaId],
+      userId: value[HUB_ADMISSION_HEADERS.userId],
+      expiresAt: value[HUB_ADMISSION_HEADERS.expiresAt],
+      maxBytes:
+        value[HUB_ADMISSION_HEADERS.maxBytes] === 0 ? null : value[HUB_ADMISSION_HEADERS.maxBytes],
+      epoch: value[HUB_ADMISSION_HEADERS.epoch],
+      horizon: value[HUB_ADMISSION_HEADERS.horizon],
+    })),
+    Option.getOrUndefined,
+  );
 
 export const withoutAdmissionHeaders = (headers: Readonly<Record<string, string>>) =>
   Object.fromEntries(Object.entries(headers).filter(([name]) => !name.startsWith("x-tabaaq-hub-")));
@@ -115,10 +109,10 @@ const wakeFrame = (cursor: HubCursor) =>
 const resumeFrame = (cursor: HubCursor) =>
   `{"_tag":"resume","epoch":${json(cursor.epoch)},"reason":"epoch_changed","fromCommitSequence":"0"}`;
 
-const transactionsFrame = (publish: HubPublish) =>
+const transactionsFrame = (publish: CommitFanout) =>
   `{"_tag":"transactions","epoch":${json(publish.epoch)},"subscription":${json(OPERATIONAL_SUBSCRIPTION)},"schemaVersion":${SYNC_SCHEMA_VERSION},"fromCommitSequence":${json(publish.horizon)},"toCommitSequence":${json(publish.horizon)},"transactions":[${publish.group}]}`;
 
-const carriesGroup = (publish: HubPublish, attachment: HubAttachment): boolean =>
+const carriesGroup = (publish: CommitFanout, attachment: HubAttachment): boolean =>
   publish.group !== "" &&
   (attachment.maxBytes === null || publish.byteLength <= attachment.maxBytes);
 
@@ -154,7 +148,7 @@ export const closeIfExpired = (socket: HubSocket, now: number): boolean => {
 
 export const publishToSockets = (
   sockets: ReadonlyArray<HubSocket>,
-  publish: HubPublish,
+  publish: CommitFanout,
   now: number,
 ): number => {
   const cursor = { epoch: publish.epoch, horizon: publish.horizon };

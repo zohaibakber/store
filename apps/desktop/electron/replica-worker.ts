@@ -7,11 +7,13 @@ import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
 import { WORKER_RPC_CONCURRENCY } from "./replica-admission";
 import { ReplicaWorkerBoot, ReplicaWorkerRpcs } from "./replica-rpc";
 import { makeReplicaWorkerHandlers } from "./replica-worker-handlers";
+import { layerWorkerSentry } from "./sentry-worker";
 
 RpcServer.layer(ReplicaWorkerRpcs, { concurrency: WORKER_RPC_CONCURRENCY }).pipe(
   Layer.provide(makeReplicaWorkerHandlers(RpcWorker.initialMessage(ReplicaWorkerBoot))),
   Layer.provide(RpcServer.layerProtocolWorkerRunner),
   Layer.provide(NodeWorkerRunner.layer),
+  Layer.provide(layerWorkerSentry),
   Layer.launch,
   NodeRuntime.runMain,
 );

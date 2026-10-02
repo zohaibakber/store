@@ -64,7 +64,7 @@ export const removePublishMarker = (databasePath: string): Effect.Effect<void> =
     { discard: true },
   );
 
-export const archivedReplicaPath = (databasePath: string, now: number): string =>
+const archivedReplicaPath = (databasePath: string, now: number): string =>
   `${databasePath}${ARCHIVE_INFIX}${now}`;
 
 export const archiveReplicaFile = Effect.fn("ReplicaPublish.archive")(function* (input: {

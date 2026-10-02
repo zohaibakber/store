@@ -1,32 +1,16 @@
 import type {
   BatchRow,
+  CatalogActor,
+  CatalogCommands,
   CategoryRow,
   InvoiceItemRow,
   InvoiceRow,
   ProductRow,
   PurchaseOrderItemRow,
   PurchaseOrderRow,
-  ReceivedDelivery,
-  ReceiveDeliveryInput,
-  SavedPurchaseOrder,
-  SaveOrderDraftInput,
-  SaveSupplierInput,
   StockMovementRow,
   SupplierRow,
 } from "@store/client-db";
-import type {
-  CreateBatchInput,
-  CreateCategoryInput,
-  CreateInvoiceInput,
-  CreateProductInput,
-  ImportInventoryCommandResult,
-  ImportInventoryInput,
-  InvoiceId,
-  IssueInvoiceResult,
-  UpdateBatchInput,
-  UpdateCategoryInput,
-  UpdateProductInput,
-} from "@store/contracts";
 import type { Collection, DbClient } from "@tanstack/react-db";
 
 import type { WorkspaceAtoms } from "./atoms";
@@ -51,57 +35,12 @@ export type Inventory = {
   readonly dispose: () => Promise<void>;
 };
 
-export type InventoryActor = {
-  readonly organizationId: string;
-  readonly userId: string;
-  readonly deviceId: string;
-};
+export type InventoryActor = CatalogActor;
 
-type CreateProductWithBatchInput = {
-  readonly product: CreateProductInput;
-  readonly batch: Omit<CreateBatchInput, "productId">;
-};
+export type { ImportInventoryRequest } from "@store/client-db";
 
-type CreatedProductWithBatch = {
-  readonly product: ProductRow;
-  readonly batch: BatchRow;
-};
-
-export type ImportIntoNewCategoryInput = {
-  readonly newCategory: CreateCategoryInput;
-  readonly lines: ImportInventoryInput["lines"];
-};
-
-export type ImportInventoryRequest = ImportInventoryInput | ImportIntoNewCategoryInput;
-
-export interface InventoryActions {
+export interface InventoryActions extends CatalogCommands {
   readonly retrySync: () => Promise<void>;
-  readonly createCategory: (input: CreateCategoryInput) => Promise<CategoryRow>;
-  readonly updateCategory: (input: UpdateCategoryInput) => Promise<CategoryRow>;
-  readonly deleteCategory: (id: UpdateCategoryInput["id"]) => Promise<void>;
-  readonly createProduct: (input: CreateProductInput) => Promise<ProductRow>;
-  readonly createProductWithBatch: (
-    input: CreateProductWithBatchInput,
-  ) => Promise<CreatedProductWithBatch>;
-  readonly updateProduct: (input: UpdateProductInput) => Promise<ProductRow>;
-  readonly deleteProduct: (id: UpdateProductInput["id"]) => Promise<void>;
-  readonly createBatch: (input: CreateBatchInput) => Promise<BatchRow>;
-  readonly receiveBatch: (input: CreateBatchInput) => Promise<BatchRow>;
-  readonly updateBatch: (input: UpdateBatchInput) => Promise<BatchRow>;
-  readonly importInventory: (
-    input: ImportInventoryRequest,
-  ) => Promise<ImportInventoryCommandResult>;
-  readonly issueInvoice: (
-    input: CreateInvoiceInput,
-    invoiceId?: InvoiceId,
-  ) => Promise<IssueInvoiceResult>;
-  readonly saveSupplier: (input: SaveSupplierInput) => Promise<SupplierRow>;
-  readonly deleteSupplier: (id: string) => Promise<void>;
-  readonly saveOrderDraft: (input: SaveOrderDraftInput) => Promise<SavedPurchaseOrder>;
-  readonly sendOrder: (id: string) => Promise<PurchaseOrderRow>;
-  readonly closeOrder: (id: string) => Promise<PurchaseOrderRow>;
-  readonly cancelOrder: (id: string) => Promise<PurchaseOrderRow>;
-  readonly receiveDelivery: (input: ReceiveDeliveryInput) => Promise<ReceivedDelivery>;
   readonly syncNow: () => void;
 }
 

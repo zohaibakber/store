@@ -7,7 +7,7 @@ import {
 } from "@store/inventory-react";
 import * as React from "react";
 
-import type { CommitPlan, MatchedProduct } from "./fields";
+import type { ExecutablePlan, MatchedProduct } from "./fields";
 import { type CatalogCandidate, type ScanIdentity, brandQuery, pickCatalogMatch } from "./matching";
 import type { ScanDraft } from "./model";
 
@@ -91,8 +91,6 @@ export const useCatalogMatcher = (identities: ReadonlyArray<ScanIdentity>) => {
   return { matcher, isLoading: candidates.isLoading };
 };
 
-export type ExecutablePlan = Exclude<CommitPlan, { readonly _tag: "Invalid" }>;
-
 export type CategoryChoice = { readonly id: string; readonly name: string };
 
 export const useCategoryChoices = () => {
@@ -109,6 +107,9 @@ export const useCategoryChoices = () => {
     return { choices, preferredId: preferred?.id ?? null };
   }, [categories.data]);
 };
+
+export const commitFailureMessage = (cause: unknown): string =>
+  cause instanceof Error && cause.message ? cause.message : "Could not save on this phone.";
 
 export const useScanCommit = () => {
   const actions = useInventoryActions();

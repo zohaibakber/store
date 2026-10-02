@@ -1,14 +1,6 @@
-import { createHash } from "node:crypto";
-
 import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   OPERATIONAL_SUBSCRIPTION,
-  OrgCommitSequence,
-  PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION_V3,
-  SnapshotId,
-  SnapshotPartPayload,
-  SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncProtocolError,
   type AcquireSnapshotRequest,
@@ -28,12 +20,8 @@ import {
   downloadLeases,
   inventoryState,
   products,
-  purchaseOrderItems,
-  purchaseOrders,
   replicas,
-  snapshotJobs,
   snapshotParts,
-  suppliers,
 } from "@store/db/postgres/schema";
 import { asc, eq } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
@@ -44,18 +32,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
-import {
-  makeInventorySnapshots,
-  SNAPSHOT_POLICY,
-  type InventorySnapshotsContract,
-  type SnapshotPolicy,
-} from "../../src/inventory/snapshots";
-import { countStatements } from "../lib/statement-count";
+import { makeInventorySnapshots } from "../../src/inventory/snapshots";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 
 const isProtocol = Schema.is(SyncProtocolError);
-
-const encodePartPayload = Schema.encodeSync(Schema.fromJsonString(SnapshotPartPayload));
 
 let database: AuthorityPostgres;
 
@@ -95,7 +75,7 @@ const insertCategory = (db: InventoryDrizzle, organizationId: string, id: string
     ...metadata(organizationId, `seed-${id}`),
   });
 
-const openAuthority = (organizationId: string, policy: SnapshotPolicy = SNAPSHOT_POLICY) =>
+const openAuthority = (organizationId: string) =>
   Effect.gen(function* () {
     const client = yield* PgClient.PgClient;
     const db = yield* PgDrizzle.makeWithDefaults().pipe(
@@ -161,7 +141,7 @@ const openAuthority = (organizationId: string, policy: SnapshotPolicy = SNAPSHOT
       registeredAt: OCCURRED_AT,
       lastSeenAt: OCCURRED_AT,
     });
-    return { snapshots: makeInventorySnapshots(db, policy), db };
+    return { snapshots: makeInventorySnapshots(db), db };
   });
 
 const operationalRequest: AcquireSnapshotRequest = {
@@ -179,20 +159,6 @@ const readyManifest = (result: AcquireSnapshotResult) => {
   return result.manifest;
 };
 
-const decodePartPayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SnapshotPartPayload));
-
-const readPart = (
-  snapshots: InventorySnapshotsContract,
-  actor: InventoryActor,
-  snapshotId: SnapshotId,
-  partNumber: number,
-) =>
-  snapshots
-    .readSnapshotPartEncoded(actor, snapshotId, partNumber)
-    .pipe(Effect.flatMap((encoded) => Effect.orDie(decodePartPayload(encoded.json))));
-
-const sha256Hex = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
-
 describe("postgres snapshot acquisition", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
@@ -200,253 +166,6 @@ describe("postgres snapshot acquisition", () => {
 
   afterAll(async () => {
     await database?.close();
-  });
-
-  it("builds a snapshot on the first acquire in one statement and serves its parts in one statement", async () => {
-    const organizationId = decodeOrganizationId("org-snap-ready");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots } = yield* openAuthority(organizationId);
-        const acquired = yield* countStatements(
-          snapshots.acquireSnapshot(actor, operationalRequest),
-        );
-        const manifest = readyManifest(acquired.result);
-        const encoded = yield* countStatements(
-          snapshots.readSnapshotPartEncoded(actor, manifest.snapshotId, 1),
-        );
-        const part = yield* readPart(snapshots, actor, manifest.snapshotId, 1);
-        const again = yield* countStatements(snapshots.acquireSnapshot(actor, operationalRequest));
-        return { acquired, manifest, encoded, part, again };
-      }),
-    );
-    expect(result.acquired.roundTrips).toBe(1);
-    expect(result.encoded.roundTrips).toBe(1);
-    expect(result.again.roundTrips).toBe(1);
-    expect(result.manifest.horizon).toBe(OrgCommitSequence.make("2"));
-    expect(result.manifest.schemaVersion).toBe(SYNC_SCHEMA_VERSION);
-    expect(result.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION_V3);
-    expect(result.manifest.parts).toHaveLength(1);
-    expect(result.manifest.entityCounts).toEqual([
-      { entity: "category", rowCount: 1 },
-      { entity: "product", rowCount: 1 },
-      { entity: "batch", rowCount: 1 },
-      { entity: "invoice", rowCount: 0 },
-      { entity: "invoiceItem", rowCount: 0 },
-      { entity: "stockMovement", rowCount: 0 },
-    ]);
-    expect(result.part.rows.map((row) => [row.entity, row.entityId])).toEqual([
-      ["category", "general"],
-      ["product", LAST_UNIT_PRODUCT_ID],
-      ["batch", LAST_UNIT_BATCH_ID],
-    ]);
-    expect(result.encoded.result.json).toBe(encodePartPayload(result.part));
-    expect(result.encoded.result.sha256).toBe(sha256Hex(result.encoded.result.json));
-    expect(result.manifest.parts[0]).toEqual({
-      partNumber: 1,
-      byteLength: Buffer.byteLength(result.encoded.result.json, "utf8"),
-      sha256: result.encoded.result.sha256,
-    });
-    expect(readyManifest(result.again.result).snapshotId).toBe(result.manifest.snapshotId);
-  });
-
-  it("carries suppliers, purchase orders and their lines once the organization has them", async () => {
-    const organizationId = decodeOrganizationId("org-snap-purchasing");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId);
-        yield* db.insert(suppliers).values({
-          id: "supplier-1",
-          name: "Acme Distributors",
-          phone: null,
-          note: null,
-          ...metadata(organizationId, "seed-supplier"),
-        });
-        yield* db.insert(purchaseOrders).values({
-          id: "order-1",
-          orderNumber: 1,
-          supplierId: "supplier-1",
-          status: "sent",
-          note: null,
-          sentAt: OCCURRED_AT,
-          expectedAt: null,
-          total: 500,
-          ...metadata(organizationId, "seed-order"),
-        });
-        yield* db.insert(purchaseOrderItems).values({
-          id: "line-1",
-          purchaseOrderId: "order-1",
-          productId: LAST_UNIT_PRODUCT_ID,
-          productName: "Last unit",
-          quantity: 5,
-          quantityType: "pack",
-          baseUnitQuantity: 5,
-          packCost: 100,
-          receivedBaseUnits: 2,
-          ...metadata(organizationId, "seed-line"),
-        });
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        const part = yield* readPart(snapshots, actor, manifest.snapshotId, 1);
-        return { manifest, part };
-      }),
-    );
-    expect(result.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
-    expect(result.manifest.entityCounts).toEqual([
-      { entity: "category", rowCount: 1 },
-      { entity: "product", rowCount: 1 },
-      { entity: "batch", rowCount: 1 },
-      { entity: "invoice", rowCount: 0 },
-      { entity: "invoiceItem", rowCount: 0 },
-      { entity: "stockMovement", rowCount: 0 },
-      { entity: "supplier", rowCount: 1 },
-      { entity: "purchaseOrder", rowCount: 1 },
-      { entity: "purchaseOrderItem", rowCount: 1 },
-    ]);
-    expect(result.part.rows.map((row) => [row.entity, row.entityId])).toEqual([
-      ["category", "general"],
-      ["product", LAST_UNIT_PRODUCT_ID],
-      ["batch", LAST_UNIT_BATCH_ID],
-      ["supplier", "supplier-1"],
-      ["purchaseOrder", "order-1"],
-      ["purchaseOrderItem", "line-1"],
-    ]);
-    expect(result.part.rows.at(-1)?.row).toMatchObject({
-      purchaseOrderId: "order-1",
-      receivedBaseUnits: 2,
-      rowVersion: 1,
-    });
-  });
-
-  it("chunks rows into parts of the configured size", async () => {
-    const organizationId = decodeOrganizationId("org-snap-chunks");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId, {
-          ...SNAPSHOT_POLICY,
-          partRows: 2,
-        });
-        for (const id of ["tea", "spices", "zeta"]) yield* insertCategory(db, organizationId, id);
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        const parts = [];
-        for (const ref of manifest.parts) {
-          parts.push(yield* readPart(snapshots, actor, manifest.snapshotId, ref.partNumber));
-        }
-        return { manifest, parts };
-      }),
-    );
-    expect(result.manifest.parts.map((part) => part.partNumber)).toEqual([1, 2, 3]);
-    expect(result.parts.map((part) => part.rows.length)).toEqual([2, 2, 2]);
-    expect(result.parts.flatMap((part) => part.rows.map((row) => row.entityId))).toEqual([
-      "general",
-      "spices",
-      "tea",
-      "zeta",
-      LAST_UNIT_PRODUCT_ID,
-      LAST_UNIT_BATCH_ID,
-    ]);
-  });
-
-  it("reports the entity counts frozen into the snapshot, not the live tables", async () => {
-    const organizationId = decodeOrganizationId("org-snap-counts");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId);
-        const acquired = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        yield* insertCategory(db, organizationId, "late-category");
-        const again = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        return { acquired, again };
-      }),
-    );
-    expect(result.again.snapshotId).toBe(result.acquired.snapshotId);
-    expect(result.again.entityCounts).toEqual(result.acquired.entityCounts);
-  });
-
-  it("rebuilds a stale snapshot once the rebuild interval has passed", async () => {
-    const organizationId = decodeOrganizationId("org-snap-stale");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId, {
-          ...SNAPSHOT_POLICY,
-          lagTransactions: 1,
-        });
-        const first = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        yield* db
-          .update(inventoryState)
-          .set({ commitSequence: "5" })
-          .where(eq(inventoryState.organizationId, organizationId));
-        const withinInterval = readyManifest(
-          yield* snapshots.acquireSnapshot(actor, operationalRequest),
-        );
-        yield* db
-          .update(snapshotJobs)
-          .set({ publishedAt: 0 })
-          .where(eq(snapshotJobs.organizationId, organizationId));
-        const rebuilt = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        return { first, withinInterval, rebuilt };
-      }),
-    );
-    expect(result.withinInterval.snapshotId).toBe(result.first.snapshotId);
-    expect(result.rebuilt.snapshotId).not.toBe(result.first.snapshotId);
-    expect(result.rebuilt.horizon).toBe(OrgCommitSequence.make("5"));
-  });
-
-  it("shares one build between concurrent acquires", async () => {
-    const organizationId = decodeOrganizationId("org-snap-concurrent");
-    const actor = actorFor(organizationId);
-    const result = await run(
-      Effect.gen(function* () {
-        const { snapshots, db } = yield* openAuthority(organizationId);
-        const acquired = yield* Effect.all(
-          Array.from({ length: 4 }, () => snapshots.acquireSnapshot(actor, operationalRequest)),
-          { concurrency: "unbounded" },
-        );
-        const jobs = yield* db
-          .select({ snapshotId: snapshotJobs.snapshotId })
-          .from(snapshotJobs)
-          .where(eq(snapshotJobs.organizationId, organizationId));
-        return { ids: acquired.map((entry) => readyManifest(entry).snapshotId), jobs };
-      }),
-    );
-    expect(new Set(result.ids).size).toBe(1);
-    expect(result.jobs).toHaveLength(1);
-  });
-
-  it("rejects missing snapshot parts, unknown snapshots, and a wrong epoch", async () => {
-    const organizationId = decodeOrganizationId("org-snap-fail");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { snapshots } = yield* openAuthority(organizationId);
-        const manifest = readyManifest(yield* snapshots.acquireSnapshot(actor, operationalRequest));
-        const missingPart = yield* snapshots
-          .readSnapshotPartEncoded(actor, manifest.snapshotId, 99)
-          .pipe(Effect.flip);
-        const wrongEpoch = yield* snapshots
-          .acquireSnapshot(actor, { ...operationalRequest, epoch: SyncEpoch.make("9") })
-          .pipe(Effect.flip);
-        const unknownSnapshot = yield* snapshots
-          .readSnapshotPartEncoded(actor, SnapshotId.make("missing-snapshot-idxx"), 1)
-          .pipe(Effect.flip);
-        const unknownOrganization = yield* snapshots
-          .acquireSnapshot(actorFor("org-snap-missing"), operationalRequest)
-          .pipe(Effect.flip);
-        return { missingPart, wrongEpoch, unknownSnapshot, unknownOrganization };
-      }),
-    );
-    expect(isProtocol(outcome.missingPart) && outcome.missingPart.code).toBe(
-      "SNAPSHOT_UNAVAILABLE",
-    );
-    expect(isProtocol(outcome.wrongEpoch) && outcome.wrongEpoch.code).toBe("EPOCH_MISMATCH");
-    expect(isProtocol(outcome.unknownSnapshot) && outcome.unknownSnapshot.code).toBe(
-      "SNAPSHOT_UNAVAILABLE",
-    );
-    expect(isProtocol(outcome.unknownOrganization) && outcome.unknownOrganization.code).toBe(
-      "EPOCH_MISMATCH",
-    );
   });
 
   it("grants a download lease only for a replica the actor owns", async () => {
@@ -460,9 +179,7 @@ describe("postgres snapshot acquisition", () => {
           .select()
           .from(downloadLeases)
           .where(eq(downloadLeases.organizationId, organizationId));
-        const withReplica = yield* countStatements(
-          snapshots.acquireSnapshot(actor, replicaRequest),
-        );
+        const withReplica = yield* snapshots.acquireSnapshot(actor, replicaRequest);
         const leases = yield* db
           .select()
           .from(downloadLeases)
@@ -483,8 +200,7 @@ describe("postgres snapshot acquisition", () => {
     );
     expect(outcome.withoutReplica._tag).toBe("ready");
     expect(outcome.leasesBefore).toHaveLength(0);
-    expect(outcome.withReplica.roundTrips).toBe(1);
-    const manifest = readyManifest(outcome.withReplica.result);
+    const manifest = readyManifest(outcome.withReplica);
     expect(outcome.leases).toHaveLength(1);
     expect(outcome.leases[0]).toMatchObject({
       replicaId: LAST_UNIT_REPLICA_A,

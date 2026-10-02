@@ -1,406 +1,285 @@
 import {
-  AccessClaims,
   EmailAddress,
   GoogleIdToken,
   IdentifyInput,
-  OtpChallengeId,
   OtpCode,
   Password,
-  RefreshInput,
+  type OtpChallengeId,
 } from "@store/auth";
-import type { RuntimeContext } from "alchemy";
+import { RateLimitError } from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { AuthService } from "../src/service";
-import { harness, seedOrganization, seedSession, seedUser, type Harness } from "./harness";
+import { EphemeralStore, ephemeralStoreLayer } from "../src/ephemeral";
+import {
+  browser,
+  count,
+  EPHEMERAL_PEPPER,
+  failing,
+  harness,
+  native,
+  PASSWORD,
+  refreshWith,
+  run,
+  signUp,
+  forgingSigner,
+  googleClaims,
+  mintIdToken,
+  type Api,
+  type Harness,
+  type IdTokenSigner,
+} from "./harness";
 
-const googleProfile = {
-  providerAccountId: "google-sub-1",
-  email: EmailAddress.make("google@example.com"),
-  name: "Google User",
-  image: null,
-};
+const googleSignIn =
+  (profile: { sub: string; email: string }, signer?: IdTokenSigner) => (auth: Api) =>
+    Effect.promise(() => mintIdToken(googleClaims(profile), signer)).pipe(
+      Effect.flatMap((idToken) =>
+        auth.exchangeGoogleIdToken({ idToken: GoogleIdToken.make(idToken), client: browser }),
+      ),
+    );
 
-const withAccounts = () => {
-  const instance = harness({ googleProfile });
-  const passwordUser = seedUser(instance.store, {
-    id: "password-user",
-    email: "password@example.com",
-    name: "Password User",
-  });
-  seedOrganization(instance.store, {
-    id: "organization-1",
-    name: "My Store",
-    members: [{ userId: passwordUser.id, role: "owner" }],
-  });
-  const googleUser = seedUser(instance.store, {
-    id: "google-user",
-    email: "google@example.com",
-    name: "Google User",
-    password: false,
-    emailVerified: true,
-  });
-  seedOrganization(instance.store, {
-    id: "organization-2",
-    name: "Google Store",
-    members: [{ userId: googleUser.id, role: "owner" }],
-  });
-  instance.store.googleIdentities.push({
-    providerAccountId: "google-sub-1",
-    userId: googleUser.id,
-  });
-  return { instance, passwordUser, googleUser };
-};
+const identify = (instance: Harness, email: string) =>
+  run(instance, (auth) => auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })));
 
-const run = <A, E>(
-  instance: Harness,
-  use: (auth: ReturnType<typeof AuthService.of>) => Effect.Effect<A, E, RuntimeContext>,
-) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const auth = yield* AuthService;
-      return yield* use(auth);
-    }).pipe(Effect.provide(instance.layer)),
-  );
+const otpSignIn = (challengeId: OtpChallengeId, code: string) => ({
+  _tag: "Otp" as const,
+  challengeId,
+  code: OtpCode.make(code),
+  client: native,
+});
 
-describe("AuthService", () => {
-  it("routes identifiers by their credential", async () => {
-    const { instance } = withAccounts();
-    const identify = (email: string) =>
-      run(instance, (auth) =>
-        auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })),
-      );
+const sessions = (instance: Harness, where = "1 = 1") =>
+  count(instance, `SELECT count(*) AS total FROM auth_session WHERE ${where}`);
 
-    await expect(identify("password@example.com")).resolves.toEqual({
-      _tag: "Password",
-      email: "password@example.com",
-    });
-    await expect(identify("google@example.com")).resolves.toMatchObject({
+describe("one-time codes", () => {
+  const googleOnly = { sub: "google-sub-1", email: "google@example.com" };
+
+  it("signs in with a delivered code and makes nothing redeemable while delivery is disabled", async () => {
+    const delivering = harness({ deliversOtp: true });
+    await run(delivering, googleSignIn(googleOnly));
+    const delivered = await identify(delivering, googleOnly.email);
+    if (delivered._tag !== "Otp" || !delivered.developmentCode) throw new Error("expected a code");
+    expect(count(delivering, "SELECT count(*) AS total FROM auth_ephemeral_record")).toBe(1);
+    const signedIn = await run(delivering, (auth) =>
+      auth.authenticate(otpSignIn(delivered.challengeId, delivered.developmentCode ?? "")),
+    );
+    expect(signedIn.workspace.user.email).toBe(googleOnly.email);
+
+    const disabled = harness({ deliversOtp: false });
+    await run(disabled, googleSignIn(googleOnly));
+    const issuedBefore = sessions(disabled);
+    const route = await identify(disabled, googleOnly.email);
+    expect(route).toEqual({
       _tag: "Otp",
-      email: "google@example.com",
-      challengeId: "challenge-1",
+      email: googleOnly.email,
+      challengeId: expect.any(String),
     });
-    await expect(identify("new@example.com")).resolves.toEqual({
-      _tag: "Registration",
-      email: "new@example.com",
-    });
-  });
+    if (route._tag !== "Otp") throw new Error("expected the code route");
+    expect(count(disabled, "SELECT count(*) AS total FROM auth_ephemeral_record")).toBe(0);
 
-  it("refuses an identity token Google did not mint for us", async () => {
-    const { instance } = withAccounts();
-    const failure = await run(instance, (auth) =>
-      Effect.flip(
-        auth.exchangeGoogleIdToken({
-          idToken: GoogleIdToken.make("someone-elses-id-token"),
-          client: { _tag: "Native", deviceName: "Test device" },
+    const planted = await Effect.runPromise(
+      EphemeralStore.use((store) =>
+        store.createOtp({
+          email: EmailAddress.make(googleOnly.email),
+          code: OtpCode.make("123456"),
+          expiresAt: Date.now() + 60_000,
         }),
-      ),
+      ).pipe(Effect.provide(ephemeralStoreLayer(disabled.d1, EPHEMERAL_PEPPER))),
     );
-
-    expect(failure).toMatchObject({ status: 401, code: "INVALID_GOOGLE_IDENTITY" });
-    expect(instance.issued).toHaveLength(0);
-  });
-
-  it("refuses an OAuth redirect nobody trusts", async () => {
-    const { instance } = withAccounts();
-    const failure = await run(instance, (auth) =>
-      Effect.flip(
-        auth.beginGoogle({
-          redirectUri: "https://phishing.example/callback",
-          codeChallenge: "challenge",
-          client: { _tag: "Browser" },
-        }),
-      ),
-    );
-
-    expect(failure).toMatchObject({ status: 400, code: "INVALID_REDIRECT" });
+    for (const challengeId of [route.challengeId, planted]) {
+      const refused = await failing(disabled, (auth) =>
+        auth.authenticate(otpSignIn(challengeId, "123456")),
+      );
+      expect(refused).toMatchObject({ status: 401, code: "INVALID_OTP" });
+    }
+    expect(sessions(disabled)).toBe(issuedBefore);
   });
 });
 
 describe("refresh rotation", () => {
-  it("returns the workspace the rotated access token opens", async () => {
-    const { instance, passwordUser } = withAccounts();
-    const first = await run(instance, (auth) =>
-      auth.authenticate({
-        _tag: "Password",
-        email: passwordUser.email,
-        password: Password.make("valid-password"),
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
-    );
-    const refreshed = await run(instance, (auth) =>
-      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
-    );
-    const claims = Schema.decodeUnknownSync(AccessClaims)(JSON.parse(atob(refreshed.accessToken)));
-    expect(instance.issued.at(0)).toMatchObject({
-      subject: "password-user",
-      activeOrganizationId: "organization-1",
-      organizationName: "My Store",
-      role: "owner",
+  it("gives one token exactly one successor and survives an immediate replay", async () => {
+    const instance = harness();
+    const first = await signUp(instance, "owner@example.com");
+    const raced = await Promise.all([
+      refreshWith(instance, first.refreshToken),
+      refreshWith(instance, first.refreshToken),
+    ]);
+    const second = raced.flatMap((result) => (result._tag === "Success" ? [result.success] : []));
+    const lost = raced.flatMap((result) => (result._tag === "Failure" ? [result.failure] : []));
+    expect(second).toHaveLength(1);
+    expect(lost).toMatchObject([{ status: 401, code: "INVALID_REFRESH_TOKEN" }]);
+    expect(sessions(instance)).toBe(2);
+
+    const replay = await refreshWith(instance, first.refreshToken);
+    expect(replay).toMatchObject({
+      _tag: "Failure",
+      failure: { status: 401, code: "INVALID_REFRESH_TOKEN" },
     });
-    const organization = {
-      id: claims.activeOrganizationId,
-      name: "My Store",
-      slug: claims.organizationSlug,
-      role: "owner",
-    };
-    expect(claims.subject).toBe(passwordUser.id);
-    expect(claims.activeOrganizationId).toBe("organization-1");
-    expect(refreshed.workspace).toEqual({
-      status: "authenticated",
-      user: {
-        id: passwordUser.id,
-        name: "Password User",
-        email: "password@example.com",
-        image: claims.image,
-      },
-      activeOrganization: organization,
-      organizations: [organization],
-      isOnline: true,
-    });
-  });
 
-  it("does not kill the rotated session when the previous token is presented immediately", async () => {
-    const { instance, passwordUser } = withAccounts();
-    const first = await run(instance, (auth) =>
-      auth.authenticate({
-        _tag: "Password",
-        email: passwordUser.email,
-        password: Password.make("valid-password"),
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
-    );
-    const second = await run(instance, (auth) =>
-      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
-    );
-
-    const replay = await run(instance, (auth) =>
-      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
-    );
-    expect(replay).toMatchObject({ status: 401, code: "INVALID_REFRESH_TOKEN" });
-
-    const third = await run(instance, (auth) =>
-      auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken })),
-    );
-    expect(third.refreshToken).toBeDefined();
-    expect(instance.store.sessions.filter((session) => session.revokedAt === null)).toHaveLength(1);
+    const third = await refreshWith(instance, second[0]?.refreshToken);
+    expect(third._tag).toBe("Success");
+    expect(sessions(instance)).toBe(3);
+    expect(sessions(instance, "revokedAt IS NULL")).toBe(1);
+    expect(count(instance, "SELECT count(DISTINCT familyId) AS total FROM auth_session")).toBe(1);
   });
 
   it("burns the family when a revoked token is presented after the grace window", async () => {
-    const { instance, passwordUser } = withAccounts();
-    const first = await run(instance, (auth) =>
-      auth.authenticate({
-        _tag: "Password",
-        email: passwordUser.email,
-        password: Password.make("valid-password"),
-        client: { _tag: "Native", deviceName: "Test device" },
-      }),
+    const instance = harness();
+    const first = await signUp(instance, "owner@example.com");
+    const second = await refreshWith(instance, first.refreshToken);
+    if (second._tag !== "Success") throw new Error("expected a rotation");
+    instance.d1.database.exec(
+      "UPDATE auth_session SET revokedAt = revokedAt - 60 WHERE replacedBySessionId IS NOT NULL",
     );
-    const second = await run(instance, (auth) =>
-      auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken })),
-    );
-    const previousIndex = instance.store.sessions.findIndex(
-      (session) => session.replacedBySessionId !== null,
-    );
-    const previous = instance.store.sessions[previousIndex];
-    expect(previous?.revokedAt).not.toBeNull();
-    if (previousIndex < 0 || !previous) throw new Error("Expected a rotated session.");
-    instance.store.sessions[previousIndex] = { ...previous, revokedAt: Date.now() - 60_000 };
 
-    const replay = await run(instance, (auth) =>
-      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: first.refreshToken }))),
-    );
-    expect(replay).toMatchObject({ status: 401, code: "REFRESH_REUSE_DETECTED" });
+    const replay = await refreshWith(instance, first.refreshToken);
+    expect(replay).toMatchObject({
+      _tag: "Failure",
+      failure: { status: 401, code: "REFRESH_REUSE_DETECTED" },
+    });
 
-    const live = await run(instance, (auth) =>
-      Effect.flip(auth.refresh(RefreshInput.make({ refreshToken: second.refreshToken }))),
-    );
-    expect(live).toMatchObject({ status: 401 });
-    expect(instance.store.sessions.every((session) => session.revokedAt !== null)).toBe(true);
+    const live = await refreshWith(instance, second.success.refreshToken);
+    expect(live).toMatchObject({ _tag: "Failure", failure: { status: 401 } });
+    expect(sessions(instance, "revokedAt IS NULL")).toBe(0);
   });
 });
 
-describe("Google account linking", () => {
-  const linkingHarness = (email: string) => {
-    const instance = harness({
-      googleProfile: {
-        providerAccountId: "google-sub-new",
-        email: EmailAddress.make(email),
-        name: "Real Owner",
-        image: "https://example.com/avatar.png",
-      },
-    });
-    return instance;
-  };
+describe("Google sign-in", () => {
+  it("refuses an identity token Google did not mint for us", async () => {
+    const instance = harness();
+    const profile = { sub: "google-sub-1", email: "victim@example.com" };
+    const failure = await failing(instance, googleSignIn(profile, forgingSigner));
+    expect(failure).toMatchObject({ status: 401, code: "INVALID_GOOGLE_IDENTITY" });
+    expect(sessions(instance)).toBe(0);
+    expect(count(instance, "SELECT count(*) AS total FROM auth_user")).toBe(0);
 
-  it("claims an unverified password account, dropping the password it never verified", async () => {
-    const instance = linkingHarness("victim@example.com");
-    const victim = seedUser(instance.store, {
-      id: "victim",
-      email: "victim@example.com",
-      name: "Squatter",
-    });
-    const organizationId = seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "Victim Store",
-      members: [{ userId: victim.id, role: "owner" }],
-    });
-    seedSession(instance.store, { id: "session-squatter", userId: victim.id, organizationId });
+    await run(instance, googleSignIn(profile));
+    expect(sessions(instance)).toBe(1);
+  });
 
-    await run(instance, (auth) =>
-      auth.exchangeGoogleIdToken({
-        idToken: GoogleIdToken.make("valid-id-token"),
-        client: { _tag: "Browser" },
+  it("refuses an OAuth redirect nobody trusts", async () => {
+    const instance = harness();
+    const failure = await failing(instance, (auth) =>
+      auth.beginGoogle({
+        redirectUri: "https://phishing.example/callback",
+        codeChallenge: "challenge",
+        client: browser,
       }),
     );
+    expect(failure).toMatchObject({ status: 400, code: "INVALID_REDIRECT" });
+    expect(count(instance, "SELECT count(*) AS total FROM auth_ephemeral_record")).toBe(0);
+  });
 
-    const claimed = instance.store.users.find((user) => user.id === victim.id);
-    expect(claimed?.passwordHash).toBeNull();
-    expect(claimed?.emailVerified).toBe(true);
-    expect(instance.store.sessions.find((s) => s.id === "session-squatter")?.revokedAt).not.toBe(
-      null,
-    );
+  it("claims an unverified password account, dropping the password it never verified", async () => {
+    const instance = harness();
+    await signUp(instance, "victim@example.com");
+    expect(sessions(instance, "revokedAt IS NULL")).toBe(1);
+
+    await run(instance, googleSignIn({ sub: "google-sub-new", email: "victim@example.com" }));
+
+    expect(
+      count(
+        instance,
+        "SELECT count(*) AS total FROM auth_user WHERE passwordHash IS NULL AND emailVerifiedAt IS NOT NULL",
+      ),
+    ).toBe(1);
+    expect(sessions(instance)).toBe(2);
+    expect(sessions(instance, "revokedAt IS NULL")).toBe(1);
+    expect(sessions(instance, "revokedAt IS NULL AND clientKind = 'Browser'")).toBe(1);
   });
 
   it("leaves a verified password account alone", async () => {
-    const instance = linkingHarness("owner@example.com");
-    const owner = seedUser(instance.store, {
-      id: "owner",
-      email: "owner@example.com",
-      emailVerified: true,
-    });
-    seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "Owner Store",
-      members: [{ userId: owner.id, role: "owner" }],
-    });
+    const instance = harness();
+    await signUp(instance, "owner@example.com");
+    instance.d1.database.exec("UPDATE auth_user SET emailVerifiedAt = unixepoch()");
 
-    const failure = await run(instance, (auth) =>
-      Effect.flip(
-        auth.exchangeGoogleIdToken({
-          idToken: GoogleIdToken.make("valid-id-token"),
-          client: { _tag: "Browser" },
-        }),
-      ),
+    const failure = await failing(
+      instance,
+      googleSignIn({ sub: "google-sub-new", email: "owner@example.com" }),
     );
 
     expect(failure).toMatchObject({ status: 409, code: "PASSWORD_ACCOUNT_EXISTS" });
-    expect(instance.store.users.find((user) => user.id === owner.id)?.passwordHash).not.toBeNull();
+    expect(
+      count(instance, "SELECT count(*) AS total FROM auth_user WHERE passwordHash IS NULL"),
+    ).toBe(0);
+    expect(count(instance, "SELECT count(*) AS total FROM auth_oauth_account")).toBe(0);
   });
 
   it("does not move a Google identity that already belongs to somebody", async () => {
-    const instance = linkingHarness("second@example.com");
-    const first = seedUser(instance.store, {
-      id: "first",
-      email: "first@example.com",
-      password: false,
-      emailVerified: true,
-    });
-    seedOrganization(instance.store, {
-      id: "organization-1",
-      name: "First Store",
-      members: [{ userId: first.id, role: "owner" }],
-    });
-    instance.store.googleIdentities.push({
-      providerAccountId: "google-sub-new",
-      userId: first.id,
-    });
-    const second = seedUser(instance.store, {
-      id: "second",
-      email: "second@example.com",
-      password: false,
-    });
-    seedOrganization(instance.store, {
-      id: "organization-2",
-      name: "Second Store",
-      members: [{ userId: second.id, role: "owner" }],
-    });
+    const instance = harness();
+    await run(instance, googleSignIn({ sub: "google-sub-new", email: "first@example.com" }));
+    await run(instance, googleSignIn({ sub: "google-sub-2", email: "second@example.com" }));
 
-    await run(instance, (auth) =>
-      auth.exchangeGoogleIdToken({
-        idToken: GoogleIdToken.make("valid-id-token"),
-        client: { _tag: "Browser" },
-      }),
+    const session = await run(
+      instance,
+      googleSignIn({ sub: "google-sub-new", email: "second@example.com" }),
     );
 
-    expect(instance.issued.at(-1)).toMatchObject({ subject: "first" });
-    expect(instance.store.googleIdentities).toHaveLength(1);
+    expect(session.workspace.user.email).toBe("first@example.com");
+    expect(count(instance, "SELECT count(*) AS total FROM auth_oauth_account")).toBe(2);
   });
 });
 
-describe("Rate limits", () => {
-  const nativeClient = { _tag: "Native" as const, deviceName: "Test device" };
-
-  it("caps identify attempts per email and leaves other addresses alone", async () => {
+describe("rate limits", () => {
+  it("caps password guesses before the sixth try", async () => {
     const instance = harness();
-    const identify = (email: string) =>
-      run(instance, (auth) =>
-        auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })),
+    await signUp(instance, "owner@example.com");
+    const signIn = (password: string) =>
+      failing(instance, (auth) =>
+        auth.authenticate({
+          _tag: "Password",
+          email: EmailAddress.make("owner@example.com"),
+          password: Password.make(password),
+          client: native,
+        }),
       );
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await expect(identify("flood@example.com")).resolves.toMatchObject({
-        _tag: "Registration",
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await expect(signIn("not the password")).resolves.toMatchObject({
+        status: 401,
+        code: "INVALID_CREDENTIALS",
       });
     }
-
-    const denied = await run(instance, (auth) =>
-      Effect.flip(
-        auth.identify(IdentifyInput.make({ email: EmailAddress.make("flood@example.com") })),
-      ),
-    );
-    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
-    await expect(identify("other@example.com")).resolves.toMatchObject({ _tag: "Registration" });
+    await expect(signIn(PASSWORD)).resolves.toMatchObject({ status: 429, code: "RATE_LIMITED" });
   });
 
-  it("caps password attempts before the sixth try", async () => {
-    const { instance, passwordUser } = withAccounts();
-    const signIn = () =>
-      run(instance, (auth) =>
-        auth.authenticate({
-          _tag: "Password",
-          email: passwordUser.email,
-          password: Password.make("valid-password"),
-          client: nativeClient,
-        }),
-      );
+  it("refuses a correct credential while the limiter cannot answer", async () => {
+    const limiter = { available: true };
+    const limit = () =>
+      limiter.available
+        ? Effect.succeed({ success: true })
+        : Effect.fail(new RateLimitError({ message: "limiter unavailable", cause: "binding" }));
+    const instance = harness({ limits: { tenPerMinute: limit, fivePerMinute: limit } });
+    await signUp(instance, "owner@example.com");
+    limiter.available = false;
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await expect(signIn()).resolves.toMatchObject({ accessToken: expect.any(String) });
-    }
-
-    const denied = await run(instance, (auth) =>
-      Effect.flip(
-        auth.authenticate({
-          _tag: "Password",
-          email: passwordUser.email,
-          password: Password.make("valid-password"),
-          client: nativeClient,
-        }),
-      ),
-    );
-    expect(denied).toMatchObject({ status: 429, code: "RATE_LIMITED" });
-  });
-
-  it("caps OTP guesses for one challenge", async () => {
-    const instance = harness();
-    const guess = () =>
-      run(instance, (auth) =>
-        Effect.flip(
+    const attempts = await run(instance, (auth) =>
+      Effect.all([
+        Effect.exit(
           auth.authenticate({
-            _tag: "Otp",
-            challengeId: OtpChallengeId.make("challenge-1"),
-            code: OtpCode.make("000000"),
-            client: nativeClient,
+            _tag: "Password",
+            email: EmailAddress.make("owner@example.com"),
+            password: PASSWORD,
+            client: native,
           }),
         ),
-      );
+        Effect.exit(
+          auth.authenticate({
+            _tag: "RegisterPassword",
+            email: EmailAddress.make("second@example.com"),
+            name: "Second",
+            password: PASSWORD,
+            client: native,
+          }),
+        ),
+        Effect.exit(
+          auth.identify(IdentifyInput.make({ email: EmailAddress.make("owner@example.com") })),
+        ),
+      ]),
+    );
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await expect(guess()).resolves.toMatchObject({ status: 401, code: "INVALID_OTP" });
-    }
-    await expect(guess()).resolves.toMatchObject({ status: 429, code: "RATE_LIMITED" });
+    expect(attempts.map((attempt) => attempt._tag)).toEqual(["Failure", "Failure", "Failure"]);
+    expect(sessions(instance)).toBe(1);
+    expect(count(instance, "SELECT count(*) AS total FROM auth_user")).toBe(1);
   });
 });

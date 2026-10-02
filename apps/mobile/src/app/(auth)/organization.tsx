@@ -3,7 +3,13 @@ import { Store01Icon } from "@hugeicons/core-free-icons";
 import * as React from "react";
 import { View } from "react-native";
 
-import { useAuthActions, useSession, type AuthProblem, type SessionOrganization } from "@/auth";
+import {
+  canRenameOrganization,
+  useAuthActions,
+  useSession,
+  type AuthProblem,
+  type SessionOrganization,
+} from "@/auth";
 import { AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
 import { colors, radius, space } from "@/theme/tokens";
@@ -23,8 +29,6 @@ const roleLabel = (role: string) => {
       return role;
   }
 };
-
-const canRename = (role: string) => role === "owner" || role === "admin";
 
 function StoreCard({ organization }: { readonly organization: SessionOrganization }) {
   return (
@@ -67,7 +71,7 @@ function OrganizationForm({
   const [invitation, setInvitation] = React.useState("");
   const [busy, setBusy] = React.useState<Busy>(null);
   const [problem, setProblem] = React.useState<AuthProblem | null>(null);
-  const renamable = organization !== null && canRename(organization.role);
+  const renamable = organization !== null && canRenameOrganization(organization.role);
 
   const perform = async (lane: Exclude<Busy, null>, action: () => Promise<AuthProblem | null>) => {
     if (busy !== null) return;

@@ -9,7 +9,6 @@ const policyFor = (options: { readonly development?: boolean } = {}) =>
   makeDesktopContentSecurityPolicy({
     scheme: "com.tabaaq.desktop",
     apiOrigin: options.development ? "http://localhost:8787" : "https://api.tabaaq.app",
-    authOrigin: options.development ? "http://localhost:8788" : "https://auth.tabaaq.app",
     development: options.development ?? false,
   });
 
@@ -20,12 +19,6 @@ const directive = (policy: string, name: string) =>
     ?.split(" ");
 
 describe("desktop content security policy", () => {
-  it("permits Vite's injected React refresh preamble in development", () => {
-    const scriptSources = directive(policyFor({ development: true }), "script-src");
-    expect(scriptSources).toContain("'unsafe-eval'");
-    expect(scriptSources).toContain("'unsafe-inline'");
-  });
-
   it("keeps production script-src to self", () => {
     expect(directive(policyFor(), "script-src")).toEqual(["script-src", "'self'"]);
   });
@@ -33,8 +26,7 @@ describe("desktop content security policy", () => {
   it("limits production connections, frames, and workers to known origins", () => {
     const policy = policyFor();
     const connectSources = directive(policy, "connect-src");
-    expect(connectSources).toContain("https://*.ingest.sentry.io");
-    expect(connectSources).toContain("https://*.ingest.us.sentry.io");
+    expect(policy).not.toContain("sentry.io");
     expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");

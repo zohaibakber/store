@@ -9,11 +9,10 @@ import {
 import * as Clock from "effect/Clock";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as FiberSet from "effect/FiberSet";
+import * as FiberHandle from "effect/FiberHandle";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
-import * as Scope from "effect/Scope";
+import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 export type UpdaterProviderEvent =
@@ -28,7 +27,7 @@ export interface UpdaterProvider {
   readonly checkForUpdates: Effect.Effect<void, Error>;
   readonly downloadUpdate: Effect.Effect<void, Error>;
   readonly quitAndInstall: () => void;
-  readonly subscribe: (listener: (event: UpdaterProviderEvent) => void) => () => void;
+  readonly events: Stream.Stream<UpdaterProviderEvent>;
 }
 
 const sameProgress = (left: UpdaterProviderEvent, right: UpdaterProviderEvent) =>
@@ -48,7 +47,7 @@ export const sampleDownloadProgress =
       }),
     );
 
-export interface UpdaterWorkflowConfig {
+interface UpdaterWorkflowConfig {
   readonly initialCheckDelay: number;
   readonly checkInterval: number;
   readonly minimumCheckInterval: number;
@@ -60,43 +59,35 @@ interface UpdaterWorkflow {
   readonly check: (force?: boolean) => Effect.Effect<void>;
   readonly download: Effect.Effect<void, Error>;
   readonly install: Effect.Effect<void>;
-  readonly dispose: Effect.Effect<void>;
 }
 
 interface WorkflowState {
   readonly phase: UpdatePhase;
   readonly checkInFlight: boolean;
   readonly lastCheckStartedAt: number | undefined;
-  readonly retryScheduled: boolean;
-  readonly stopped: boolean;
 }
 
 export const makeUpdaterWorkflow = (
   provider: UpdaterProvider,
   publish: (event: UpdaterEvent) => void,
   config: UpdaterWorkflowConfig,
-): Effect.Effect<UpdaterWorkflow> =>
+): Effect.Effect<UpdaterWorkflow, never, Scope.Scope> =>
   Effect.gen(function* () {
     const state = yield* Ref.make<WorkflowState>({
       phase: "idle",
       checkInFlight: false,
       lastCheckStartedAt: undefined,
-      retryScheduled: false,
-      stopped: false,
     });
-    const ownerScope = yield* Scope.make("parallel");
-    const runOwned = yield* FiberSet.makeRuntime<never, unknown, never>().pipe(
-      Scope.provide(ownerScope),
-    );
+    const pendingReleaseRetry = yield* FiberHandle.make<void>();
 
     const transition = (event: UpdaterEvent, forward = true) =>
-      Ref.modify(state, (current) =>
-        current.stopped
-          ? ([false, current] as const)
-          : ([
-              forward && forwardsToRenderer(current.phase, event),
-              { ...current, phase: nextUpdatePhase(current.phase, event) },
-            ] as const),
+      Ref.modify(
+        state,
+        (current) =>
+          [
+            forward && forwardsToRenderer(current.phase, event),
+            { ...current, phase: nextUpdatePhase(current.phase, event) },
+          ] as const,
       ).pipe(
         Effect.tap((shouldPublish) =>
           shouldPublish ? Effect.sync(() => publish(event)) : Effect.void,
@@ -111,12 +102,7 @@ export const makeUpdaterWorkflow = (
           const throttled =
             current.lastCheckStartedAt !== undefined &&
             now - current.lastCheckStartedAt < config.minimumCheckInterval;
-          if (
-            current.stopped ||
-            current.phase !== "idle" ||
-            current.checkInFlight ||
-            (!force && throttled)
-          )
+          if (current.phase !== "idle" || current.checkInFlight || (!force && throttled))
             return [false, current];
           return [true, { ...current, checkInFlight: true, lastCheckStartedAt: now }];
         });
@@ -127,24 +113,10 @@ export const makeUpdaterWorkflow = (
         );
       }).pipe(Effect.withSpan("UpdaterWorkflow.check"));
 
-    const schedulePendingReleaseRetry = Ref.modify(state, (current) =>
-      current.stopped || current.retryScheduled
-        ? ([false, current] as const)
-        : ([true, { ...current, retryScheduled: true }] as const),
-    ).pipe(
-      Effect.flatMap((claimed) => {
-        if (!claimed) return Effect.void;
-        return Effect.sync(() => {
-          runOwned(
-            Effect.sleep(config.pendingReleaseRetryDelay).pipe(
-              Effect.andThen(check(true)),
-              Effect.ensuring(
-                Ref.update(state, (current) => ({ ...current, retryScheduled: false })),
-              ),
-            ),
-          );
-        });
-      }),
+    const schedulePendingReleaseRetry = FiberHandle.run(
+      pendingReleaseRetry,
+      Effect.sleep(config.pendingReleaseRetryDelay).pipe(Effect.andThen(check(true))),
+      { onlyIfMissing: true },
     );
 
     const handleProviderEvent = (event: UpdaterProviderEvent) =>
@@ -162,22 +134,19 @@ export const makeUpdaterWorkflow = (
           })
         : transition(event);
 
-    const unsubscribe = provider.subscribe((event) => {
-      runOwned(handleProviderEvent(event));
-    });
+    yield* provider.events.pipe(Stream.runForEach(handleProviderEvent), Effect.forkScoped);
 
     if (config.periodicChecks) {
-      runOwned(
-        check(true).pipe(
-          Effect.repeat(Schedule.spaced(config.checkInterval)),
-          Effect.delay(config.initialCheckDelay),
-        ),
+      yield* check(true).pipe(
+        Effect.repeat(Schedule.spaced(config.checkInterval)),
+        Effect.delay(config.initialCheckDelay),
+        Effect.forkScoped,
       );
     }
 
     const download = Effect.gen(function* () {
       const claimed = yield* Ref.modify(state, (current) =>
-        current.stopped || current.phase !== "idle"
+        current.phase !== "idle"
           ? ([false, current] as const)
           : ([true, { ...current, phase: "downloading" } satisfies WorkflowState] as const),
       );
@@ -196,20 +165,9 @@ export const makeUpdaterWorkflow = (
       );
     }).pipe(Effect.withSpan("UpdaterWorkflow.download"));
 
-    const dispose = Ref.modify(state, (current) => [
-      !current.stopped,
-      { ...current, stopped: true },
-    ]).pipe(
-      Effect.flatMap((shouldDispose) => {
-        if (!shouldDispose) return Effect.void;
-        return Effect.sync(unsubscribe).pipe(Effect.andThen(Scope.close(ownerScope, Exit.void)));
-      }),
-    );
-
     return {
       check,
       download,
       install: Effect.sync(() => provider.quitAndInstall()),
-      dispose,
     };
   });

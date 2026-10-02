@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+
+import { replacePrivateFile } from "./private-file";
 
 export const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 export type ThemeSource = typeof ThemeSource.Type;
@@ -25,14 +26,5 @@ export const readThemeSource = (userDataDirectory: string): ThemeSource => {
   }
 };
 
-export const saveThemeSource = async (userDataDirectory: string, source: ThemeSource) => {
-  const file = themeSourceFile(userDataDirectory);
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, source, { flag: "wx", mode: 0o600 });
-    await rename(temporary, file);
-  } finally {
-    await rm(temporary, { force: true });
-  }
-};
+export const saveThemeSource = (userDataDirectory: string, source: ThemeSource) =>
+  replacePrivateFile(themeSourceFile(userDataDirectory), source);

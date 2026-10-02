@@ -1,40 +1,54 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  AuthClient,
+  AuthorizationCode,
   TokenSet,
+  authClientLayer,
+  nativeClient,
+  type AuthClientError,
+  type IdentifyInput,
   type IssuedSession,
+  type LoginRoute,
   type OrganizationCommand,
   type OrganizationCommandResult,
   type OrganizationRoster,
 } from "@store/auth";
+import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
+import type { SignInCredentials } from "@store/web/host/index";
+import { analyseInvoiceUpload, type InvoiceUploadFile } from "@store/web/host/invoice-upload";
 import {
-  MemoryTokenStore,
   SessionHttp,
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,
   layerSessionHttp,
-  loadSessionSnapshot,
   renewSessionSnapshot,
+  resumeSessionSnapshot,
   sessionFetch,
-  type SessionHttpApi,
+  type RequestError,
   type SessionSnapshotHooks,
-  type WorkspaceAuthAdapter,
 } from "@store/workspace";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as MutableRef from "effect/MutableRef";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { app, net, safeStorage } from "electron";
 
-import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/lib/invoice-upload";
+import { replacePrivateFile } from "./private-file";
 
 const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&
@@ -43,164 +57,256 @@ const canPersistEncryptedSession = () =>
 const PersistedAuth = Schema.Struct({ snapshot: WorkspaceSnapshot, tokens: TokenSet });
 type PersistedAuth = typeof PersistedAuth.Type;
 
+const PersistedAuthJson = Schema.fromJsonString(PersistedAuth);
+
 const unauthenticated = (isOnline: boolean, workspaceError: string | null = null) =>
   unauthenticatedWorkspace({ isOnline, workspaceError });
 
 const netFetch: typeof fetch = (url, init) => net.fetch(url instanceof URL ? url.href : url, init);
 
+const netHttp = FetchHttpClient.layer.pipe(
+  Layer.provide(Layer.succeed(FetchHttpClient.Fetch, netFetch)),
+);
+
 const persistenceError = (cause: unknown) =>
   cause instanceof Error ? cause : new Error("Could not persist the authenticated session.");
 
-export class AuthBroker implements WorkspaceAuthAdapter {
-  readonly #tokens = new MemoryTokenStore();
-  readonly #hooks: SessionSnapshotHooks;
-  readonly #runtime: ManagedRuntime.ManagedRuntime<SessionHttp, never>;
-  readonly apiFetch: typeof fetch;
-  #snapshot: WorkspaceSnapshot = unauthenticated(false);
-  #restored: Promise<PersistedAuth | null> | undefined;
+const desktopClient = nativeClient("Tabaaq Desktop");
 
-  constructor(
-    baseUrl: string,
-    authBaseUrl: string,
-    publishSession: (snapshot: WorkspaceSnapshot) => void,
-  ) {
-    const forget = Effect.promise(() =>
-      rm(this.#storagePath(), { force: true }).catch(() => undefined),
-    );
-    this.#hooks = {
-      getLocalSnapshot: () => this.#snapshot,
-      publish: (snapshot) => {
-        this.#snapshot = snapshot;
-        publishSession(snapshot);
-        return snapshot;
-      },
-      clearAuthenticated: forget,
-      persistAuthenticated: (snapshot) =>
-        Effect.tryPromise({
-          try: async () => {
-            const tokens = this.#tokens.get();
-            if (tokens) await this.#writePersisted({ snapshot, tokens });
-          },
-          catch: persistenceError,
-        }),
-    };
-    this.#runtime = ManagedRuntime.make(
-      layerSessionHttp({
-        apiBaseUrl: baseUrl,
-        authBaseUrl,
-        tokens: this.#tokens,
-        credential: "refreshToken",
-        onRefreshed: (refreshed) =>
-          adoptAuthenticatedSnapshot(this.#hooks, refreshed.workspace).pipe(Effect.asVoid),
-        onRejected: Effect.sync(() => this.#hooks.publish(unauthenticated(true))).pipe(
-          Effect.andThen(forget),
-        ),
-      }).pipe(
-        Layer.provide(FetchHttpClient.layer),
-        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, netFetch)),
-      ),
-    );
-    this.apiFetch = sessionFetch((effect, options) => this.#runtime.runPromise(effect, options));
-  }
+export class GoogleSignInFailure extends Schema.TaggedError<GoogleSignInFailure>()(
+  "GoogleSignInFailure",
+  { message: Schema.String },
+) {}
 
-  get snapshot() {
-    return this.#snapshot;
-  }
+const googleCallbackInvalid = () =>
+  new GoogleSignInFailure({ message: "The Google callback is invalid." });
 
-  #use<A, E>(f: (session: SessionHttpApi) => Effect.Effect<A, E, SessionHttp>) {
-    return this.#runtime.runPromise(SessionHttp.use(f));
-  }
+const googleSignInNotStarted = () =>
+  new GoogleSignInFailure({
+    message: "This Google sign-in is no longer active. Choose Continue with Google again.",
+  });
 
-  async liveAccessToken(force: boolean) {
-    const access = await this.#use((session) => session.ensureFreshAccess(force));
-    return access?.accessToken ?? null;
-  }
+const proofKey = Effect.sync(() => {
+  const verifier = randomBytes(32).toString("base64url");
+  return {
+    verifier: Redacted.make(verifier),
+    codeChallenge: createHash("sha256").update(verifier).digest("base64url"),
+  };
+});
 
-  restore() {
-    this.#restored ??= this.#readPersisted().then((persisted) => {
-      if (persisted) this.#snapshot = withWorkspaceOnline(persisted.snapshot, false);
-      return persisted;
+const storagePath = () => path.join(app.getPath("userData"), "auth", "session.bin");
+
+const forgetPersisted = Effect.ignore(Effect.tryPromise(() => rm(storagePath(), { force: true })));
+
+const readPersisted = Effect.gen(function* () {
+  const encrypted = yield* Effect.tryPromise(() => readFile(storagePath()));
+  const text = yield* Effect.try(() =>
+    canPersistEncryptedSession() ? safeStorage.decryptString(encrypted) : undefined,
+  );
+  return yield* Schema.decodeUnknownEffect(PersistedAuthJson)(text);
+}).pipe(Effect.option);
+
+const writePersisted = (value: PersistedAuth) =>
+  Effect.gen(function* () {
+    const text = yield* Schema.encodeEffect(PersistedAuthJson)(value);
+    yield* Effect.tryPromise({
+      try: () =>
+        canPersistEncryptedSession()
+          ? replacePrivateFile(storagePath(), safeStorage.encryptString(text))
+          : rm(storagePath(), { force: true }),
+      catch: persistenceError,
     });
-    return this.#restored;
-  }
+  });
 
-  async initialize() {
-    const persisted = await this.restore();
-    if (!persisted) return this.#snapshot;
-    const hooks = this.#hooks;
-    return this.#use((session) =>
-      Effect.gen(function* () {
-        yield* session.setTokens(persisted.tokens);
-        const access = yield* session.ensureFreshAccess().pipe(Effect.orElseSucceed(() => null));
-        return access?.workspace === undefined
-          ? yield* loadSessionSnapshot(hooks)
-          : hooks.getLocalSnapshot();
-      }),
-    );
-  }
-
-  adoptSession(issued: IssuedSession | null) {
-    return this.#runtime.runPromise(
-      adoptSessionTokens(this.#hooks, issued, { onCleared: this.#hooks.clearAuthenticated }),
-    );
-  }
-
-  renewSession() {
-    return this.#runtime.runPromise(renewSessionSnapshot(this.#hooks));
-  }
-
-  signOut() {
-    const hooks = this.#hooks;
-    return this.#use((session) =>
-      Effect.gen(function* () {
-        yield* session.settled;
-        const tokens = session.tokens.get();
-        yield* session.setTokens(null);
-        yield* session.logout(tokens).pipe(Effect.ignore);
-        hooks.publish(unauthenticated(true));
-        if (hooks.clearAuthenticated !== undefined) yield* hooks.clearAuthenticated;
-      }),
-    );
-  }
-
-  organizationRoster(): Promise<OrganizationRoster> {
-    return this.#use((session) => session.organizationRoster);
-  }
-
-  organize(command: OrganizationCommand): Promise<OrganizationCommandResult> {
-    return this.#use((session) => session.organize(command));
-  }
-
-  analyseInvoices(files: ReadonlyArray<InvoiceUploadFile>) {
-    return this.#runtime.runPromise(analyseInvoiceUpload(files));
-  }
-
-  #storagePath() {
-    return path.join(app.getPath("userData"), "auth", "session.bin");
-  }
-
-  async #readPersisted(): Promise<PersistedAuth | null> {
-    try {
-      const encrypted = await readFile(this.#storagePath());
-      if (!canPersistEncryptedSession()) return null;
-      return Schema.decodeUnknownOption(Schema.fromJsonString(PersistedAuth))(
-        safeStorage.decryptString(encrypted),
-      ).pipe(Option.getOrNull);
-    } catch {
-      return null;
-    }
-  }
-
-  async #writePersisted(value: PersistedAuth) {
-    if (!canPersistEncryptedSession()) {
-      await rm(this.#storagePath(), { force: true });
-      return;
-    }
-    await mkdir(path.dirname(this.#storagePath()), { recursive: true });
-    await writeFile(
-      this.#storagePath(),
-      safeStorage.encryptString(Schema.encodeSync(Schema.fromJsonString(PersistedAuth))(value)),
-      { mode: 0o600 },
-    );
-  }
+export interface DesktopAuthApi {
+  readonly session: Effect.Effect<WorkspaceSnapshot>;
+  readonly initialize: Effect.Effect<WorkspaceSnapshot>;
+  readonly identify: (input: IdentifyInput) => Effect.Effect<LoginRoute, AuthClientError>;
+  readonly authenticate: (
+    credentials: SignInCredentials,
+  ) => Effect.Effect<WorkspaceSnapshot, AuthClientError>;
+  readonly beginGoogle: (redirectUri: string) => Effect.Effect<string, AuthClientError>;
+  readonly completeGoogle: (
+    code: string,
+  ) => Effect.Effect<WorkspaceSnapshot, AuthClientError | GoogleSignInFailure>;
+  readonly renewSession: Effect.Effect<WorkspaceSnapshot, RequestError>;
+  readonly signOut: Effect.Effect<void>;
+  readonly organizationRoster: Effect.Effect<OrganizationRoster, RequestError>;
+  readonly organize: (
+    command: OrganizationCommand,
+  ) => Effect.Effect<OrganizationCommandResult, RequestError>;
+  readonly analyseInvoices: (
+    files: ReadonlyArray<InvoiceUploadFile>,
+  ) => Effect.Effect<InvoiceExtraction, Error | RequestError>;
+  readonly liveAccessToken: (force: boolean) => Effect.Effect<string | null, RequestError>;
+  readonly withSession: <A, E>(effect: Effect.Effect<A, E, SessionHttp>) => Effect.Effect<A, E>;
 }
+
+export class DesktopAuth extends Context.Service<DesktopAuth, DesktopAuthApi>()(
+  "@store/desktop/DesktopAuth",
+) {}
+
+interface DesktopAuthOptions {
+  readonly apiBaseUrl: string;
+  readonly authBaseUrl: string;
+  readonly publishSession: (snapshot: WorkspaceSnapshot) => void;
+}
+
+const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
+  const scope = yield* Effect.scope;
+  const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
+  const googleVerifier = yield* Ref.make(Option.none<Redacted.Redacted<string>>());
+  const transitions = yield* Semaphore.make(1);
+
+  const hooks: SessionSnapshotHooks = {
+    getLocalSnapshot: () => MutableRef.get(snapshot),
+    publish: (next) => {
+      MutableRef.set(snapshot, next);
+      options.publishSession(next);
+      return next;
+    },
+    clearAuthenticated: forgetPersisted,
+    persistAuthenticated: (workspace, tokens) =>
+      Effect.mapError(writePersisted({ snapshot: workspace, tokens }), persistenceError),
+  };
+
+  const sessionHttp = yield* Effect.cached(
+    Layer.buildWithScope(
+      layerSessionHttp({
+        apiBaseUrl: options.apiBaseUrl,
+        authBaseUrl: options.authBaseUrl,
+        credential: "refreshToken",
+        onRefreshed: (refreshed, tokens) =>
+          adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(Effect.asVoid),
+        onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
+          Effect.andThen(forgetPersisted),
+        ),
+      }).pipe(Layer.provide(netHttp)),
+      scope,
+    ).pipe(Effect.uninterruptible),
+  );
+
+  const withSession = <A, E>(effect: Effect.Effect<A, E, SessionHttp>): Effect.Effect<A, E> =>
+    Effect.flatMap(sessionHttp, (context) => Effect.provideContext(effect, context));
+
+  const signIn = yield* Effect.cached(
+    Layer.buildWithScope(
+      authClientLayer({ baseUrl: options.authBaseUrl }).pipe(Layer.provide(netHttp)),
+      scope,
+    ).pipe(Effect.map(Context.get(AuthClient)), Effect.uninterruptible),
+  );
+
+  const restored = yield* Effect.cached(
+    Effect.tap(readPersisted, (persisted) =>
+      Effect.sync(() => {
+        if (Option.isSome(persisted)) {
+          MutableRef.set(snapshot, withWorkspaceOnline(persisted.value.snapshot, false));
+        }
+      }),
+    ).pipe(Effect.uninterruptible),
+  );
+
+  const current = Effect.sync(() => MutableRef.get(snapshot));
+
+  const adopt = (issued: IssuedSession) =>
+    transitions.withPermit(withSession(adoptSessionTokens(hooks, issued)));
+
+  const takeGoogleVerifier = Ref.getAndSet(googleVerifier, Option.none()).pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () => Effect.fail(googleSignInNotStarted()),
+        onSome: (verifier) => Effect.succeed(verifier),
+      }),
+    ),
+  );
+
+  return DesktopAuth.of({
+    session: Effect.andThen(restored, current),
+    initialize: Effect.flatMap(
+      restored,
+      Option.match({
+        onNone: () => current,
+        onSome: (persisted) => withSession(resumeSessionSnapshot(hooks, persisted.tokens)),
+      }),
+    ),
+    identify: Effect.fn("DesktopAuth.identify")(function* (input: IdentifyInput) {
+      const client = yield* signIn;
+      return yield* client.identify(input);
+    }),
+    authenticate: Effect.fn("DesktopAuth.authenticate")(function* (credentials: SignInCredentials) {
+      const client = yield* signIn;
+      const issued = yield* client.authenticate({ ...credentials, client: desktopClient });
+      return yield* adopt(issued);
+    }),
+    beginGoogle: Effect.fn("DesktopAuth.beginGoogle")(function* (redirectUri: string) {
+      const client = yield* signIn;
+      const { verifier, codeChallenge } = yield* proofKey;
+      const authorization = yield* client.beginGoogle({
+        redirectUri,
+        codeChallenge,
+        client: desktopClient,
+      });
+      yield* Ref.set(googleVerifier, Option.some(verifier));
+      return authorization.url;
+    }),
+    completeGoogle: Effect.fn("DesktopAuth.completeGoogle")(function* (code: string) {
+      const authorizationCode = yield* Schema.decodeUnknownEffect(AuthorizationCode)(code).pipe(
+        Effect.mapError(googleCallbackInvalid),
+      );
+      const verifier = yield* takeGoogleVerifier;
+      const client = yield* signIn;
+      const issued = yield* client.exchangeGoogle({
+        code: authorizationCode,
+        codeVerifier: Redacted.value(verifier),
+        client: desktopClient,
+      });
+      return yield* adopt(issued);
+    }),
+    renewSession: transitions.withPermit(withSession(renewSessionSnapshot(hooks))),
+    signOut: transitions.withPermit(
+      withSession(
+        Effect.gen(function* () {
+          const session = yield* SessionHttp;
+          yield* session.settled;
+          const tokens = yield* session.tokens;
+          yield* session.setTokens(null);
+          yield* session.logout(tokens).pipe(Effect.ignore);
+          hooks.publish(unauthenticated(true));
+          yield* forgetPersisted;
+        }),
+      ),
+    ),
+    organizationRoster: withSession(SessionHttp.use((session) => session.organizationRoster)),
+    organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
+    analyseInvoices: (files) => withSession(analyseInvoiceUpload(files)),
+    liveAccessToken: (force) =>
+      withSession(SessionHttp.use((session) => session.ensureFreshAccess(force))).pipe(
+        Effect.map((access) => access?.accessToken ?? null),
+      ),
+    withSession,
+  });
+});
+
+export const makeAuthBroker = (
+  apiBaseUrl: string,
+  authBaseUrl: string,
+  publishSession: (snapshot: WorkspaceSnapshot) => void,
+) => {
+  const runtime = ManagedRuntime.make(
+    Layer.effect(DesktopAuth, makeDesktopAuth({ apiBaseUrl, authBaseUrl, publishSession })),
+  );
+  return {
+    run: <A, E>(effect: Effect.Effect<A, E, DesktopAuth>) => runtime.runPromise(effect),
+    initialize: () => runtime.runPromise(DesktopAuth.use((auth) => auth.initialize)),
+    liveAccessToken: (force: boolean) =>
+      runtime.runPromise(DesktopAuth.use((auth) => auth.liveAccessToken(force))),
+    apiFetch: sessionFetch((effect, options) =>
+      runtime.runPromise(
+        DesktopAuth.use((auth) => auth.withSession(effect)),
+        options,
+      ),
+    ),
+  };
+};
+
+export type AuthBroker = ReturnType<typeof makeAuthBroker>;

@@ -3,7 +3,7 @@ import type { InvoiceExtractionLine } from "@store/contracts/server-api.schema";
 import { hasReceivedStock, normalizeLine } from "./line";
 import { parseMajorCurrencyToMinor } from "./pack-size";
 
-export const parseCsvRecords = (contents: string): ReadonlyArray<ReadonlyArray<string>> => {
+const parseCsvRecords = (contents: string): ReadonlyArray<ReadonlyArray<string>> => {
   const records: string[][] = [];
   let field = "";
   let row: string[] = [];

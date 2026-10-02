@@ -1,4 +1,4 @@
-import type { ReplicaHandle } from "@store/client-db";
+import { inventoryReplicaScope, type ReplicaHandle } from "@store/client-db";
 import { LOCAL_ORGANIZATION_ID } from "@store/contracts";
 
 export type InventoryScope = {
@@ -22,3 +22,6 @@ export interface InventoryHost {
   readonly deviceId: string;
   readonly openReplica: (identity: ReplicaOpenIdentity) => Promise<ReplicaHandle>;
 }
+
+export const inventoryScopeId = (host: InventoryHost, scope: InventoryScope) =>
+  inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);

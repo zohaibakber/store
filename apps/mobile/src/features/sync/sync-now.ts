@@ -9,5 +9,5 @@ export function useSyncRefresh() {
     setRefreshing(true);
     void syncNow().finally(() => setRefreshing(false));
   };
-  return { refreshing, refresh, syncNow };
+  return { refreshing, refresh };
 }

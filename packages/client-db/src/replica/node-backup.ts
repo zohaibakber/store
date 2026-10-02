@@ -14,20 +14,17 @@ import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export class ReplicaFileFailure extends Schema.TaggedError<ReplicaFileFailure>()(
-  "ReplicaFileFailure",
-  {
-    reason: Schema.Literals([
-      "notBackup",
-      "damaged",
-      "newerVersion",
-      "unknownVersion",
-      "busy",
-      "storage",
-    ]),
-    message: Schema.String,
-  },
-) {}
+class ReplicaFileFailure extends Schema.TaggedError<ReplicaFileFailure>()("ReplicaFileFailure", {
+  reason: Schema.Literals([
+    "notBackup",
+    "damaged",
+    "newerVersion",
+    "unknownVersion",
+    "busy",
+    "storage",
+  ]),
+  message: Schema.String,
+}) {}
 
 export type ReplicaFileSummary = {
   readonly organizationId: string;

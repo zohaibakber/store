@@ -11,7 +11,7 @@
   },
   "overrides": [
     {
-      "files": ["apps/desktop/src/components/ui/**"],
+      "files": ["apps/web/src/components/ui/**"],
       "rules": {
         "shadcn/no-arbitrary-values": "off",
         "shadcn/no-inline-styles": "off",

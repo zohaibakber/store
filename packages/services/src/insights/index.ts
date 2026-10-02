@@ -6,9 +6,7 @@ export {
   ATTENTION_STATUSES,
   classifyRevenueRanking,
   compareAlerts,
-  DEMAND_HISTORY_DAYS,
   emptyLedger,
-  INSIGHTS_HISTORY_DAYS,
   insightsWindowFor,
   inventoryContribution,
   MAX_ALERTS,
@@ -35,14 +33,6 @@ export type {
   StockStatus,
   TopProduct,
 } from "./analysis";
-export { forecastDemand } from "./demand";
-export type {
-  DemandConfidence,
-  DemandForecast,
-  DemandMethod,
-  DemandPattern,
-  DemandTrend,
-} from "./demand";
+export type { DemandForecast } from "./demand";
 export { DEFAULT_STOCK_POLICY, serviceLevelFor, StockPolicy } from "./policy";
 export type { AbcClass } from "./policy";
-export { inverseNormal } from "./statistics";

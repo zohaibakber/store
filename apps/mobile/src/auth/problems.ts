@@ -1,5 +1,7 @@
-import { AuthClientError } from "@store/auth";
+import { AuthClientError, sessionEndingCodes } from "@store/auth";
 import { RequestError } from "@store/workspace";
+
+import { SESSION_ENDED_NOTICE } from "./model";
 
 export type AuthProblemKind =
   | "offline"
@@ -32,19 +34,9 @@ export interface FailureContext {
   readonly codeIssuedAt?: number;
 }
 
-export const CODE_LIFETIME_MS = 10 * 60 * 1_000;
+const CODE_LIFETIME_MS = 10 * 60 * 1_000;
 
 const NETWORK_ERROR = "NETWORK_ERROR";
-
-const sessionEndedCodes = new Set([
-  "REFRESH_REQUIRED",
-  "INVALID_REFRESH_TOKEN",
-  "REFRESH_REUSE_DETECTED",
-  "REFRESH_EXPIRED",
-  "SESSION_REVOKED",
-  "ACCOUNT_NOT_FOUND",
-  "UNAUTHENTICATED",
-]);
 
 export const problem = (kind: AuthProblemKind, message: string): AuthProblem => ({
   kind,
@@ -56,7 +48,14 @@ export const invalid = (message: string, field?: AuthField): AuthProblem =>
 
 export const failureFacts = (cause: unknown): FailureFacts => {
   if (cause instanceof AuthClientError) {
-    return { status: cause.status, code: cause.code, message: cause.message };
+    switch (cause.reason._tag) {
+      case "Rejected":
+        return { status: cause.reason.status, code: cause.reason.code, message: cause.message };
+      case "InvalidInput":
+        return { status: 0, code: "INVALID_INPUT", message: cause.message };
+      case "Unreachable":
+        return { status: 0, code: NETWORK_ERROR, message: cause.message };
+    }
   }
   if (cause instanceof RequestError) {
     return { status: cause.status, code: cause.code ?? "", message: cause.message };
@@ -71,8 +70,8 @@ export const failureFacts = (cause: unknown): FailureFacts => {
 export const isNetworkFailure = (facts: FailureFacts) =>
   facts.status === 0 && facts.code === NETWORK_ERROR;
 
-export const endsSession = (facts: FailureFacts) =>
-  facts.status === 401 && sessionEndedCodes.has(facts.code);
+const endsSession = (facts: FailureFacts) =>
+  facts.status === 401 && sessionEndingCodes.has(facts.code);
 
 export const describeFailure = (facts: FailureFacts, context: FailureContext): AuthProblem => {
   if (isNetworkFailure(facts)) {
@@ -102,7 +101,7 @@ export const describeFailure = (facts: FailureFacts, context: FailureContext): A
     return { kind: "wrongPassword", message: "That password isn't right.", field: "password" };
   }
   if (endsSession(facts)) {
-    return problem("sessionEnded", "Your session ended. Sign in again.");
+    return problem("sessionEnded", SESSION_ENDED_NOTICE);
   }
   return problem("rejected", facts.message);
 };

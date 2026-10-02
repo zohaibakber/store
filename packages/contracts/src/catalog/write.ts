@@ -83,37 +83,26 @@ const BatchReceipt = Schema.Struct({
   purchaseOrderItemId: PurchaseOrderItemId,
 });
 
-const CategoryUpsertWrite = Schema.Struct({
-  entity: Schema.Literal("category"),
-  action: Schema.Literal("upsert"),
-  id: CategoryId,
-  expectedRowVersion: Schema.NullOr(CatalogRowVersion),
-  row: CategoryWriteFields,
-});
-type CategoryUpsertWrite = typeof CategoryUpsertWrite.Type;
+const upsertWrite = <const Entity extends string, Id extends Schema.Top, Row extends Schema.Top>(
+  entity: Entity,
+  id: Id,
+  row: Row,
+) =>
+  Schema.Struct({
+    entity: Schema.Literal(entity),
+    action: Schema.Literal("upsert"),
+    id,
+    expectedRowVersion: Schema.NullOr(CatalogRowVersion),
+    row,
+  });
 
-const CategoryDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("category"),
-  action: Schema.Literal("delete"),
-  id: CategoryId,
-  expectedRowVersion: CatalogRowVersion,
-});
-
-const ProductUpsertWrite = Schema.Struct({
-  entity: Schema.Literal("product"),
-  action: Schema.Literal("upsert"),
-  id: ProductId,
-  expectedRowVersion: Schema.NullOr(CatalogRowVersion),
-  row: ProductWriteFields,
-});
-type ProductUpsertWrite = typeof ProductUpsertWrite.Type;
-
-const ProductDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("product"),
-  action: Schema.Literal("delete"),
-  id: ProductId,
-  expectedRowVersion: CatalogRowVersion,
-});
+const deleteWrite = <const Entity extends string, Id extends Schema.Top>(entity: Entity, id: Id) =>
+  Schema.Struct({
+    entity: Schema.Literal(entity),
+    action: Schema.Literal("delete"),
+    id,
+    expectedRowVersion: CatalogRowVersion,
+  });
 
 const BatchUpsertWrite = Schema.Struct({
   entity: Schema.Literal("batch"),
@@ -125,92 +114,22 @@ const BatchUpsertWrite = Schema.Struct({
   row: BatchWriteFields,
   receipt: Schema.optionalKey(BatchReceipt),
 });
-type BatchUpsertWrite = typeof BatchUpsertWrite.Type;
-
-const BatchDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("batch"),
-  action: Schema.Literal("delete"),
-  id: BatchId,
-  expectedRowVersion: CatalogRowVersion,
-});
-
-const SupplierUpsertWrite = Schema.Struct({
-  entity: Schema.Literal("supplier"),
-  action: Schema.Literal("upsert"),
-  id: SupplierId,
-  expectedRowVersion: Schema.NullOr(CatalogRowVersion),
-  row: SupplierWriteFields,
-});
-type SupplierUpsertWrite = typeof SupplierUpsertWrite.Type;
-
-const SupplierDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("supplier"),
-  action: Schema.Literal("delete"),
-  id: SupplierId,
-  expectedRowVersion: CatalogRowVersion,
-});
-
-const PurchaseOrderUpsertWrite = Schema.Struct({
-  entity: Schema.Literal("purchaseOrder"),
-  action: Schema.Literal("upsert"),
-  id: PurchaseOrderId,
-  expectedRowVersion: Schema.NullOr(CatalogRowVersion),
-  row: PurchaseOrderWriteFields,
-});
-type PurchaseOrderUpsertWrite = typeof PurchaseOrderUpsertWrite.Type;
-
-const PurchaseOrderDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("purchaseOrder"),
-  action: Schema.Literal("delete"),
-  id: PurchaseOrderId,
-  expectedRowVersion: CatalogRowVersion,
-});
-
-const PurchaseOrderItemUpsertWrite = Schema.Struct({
-  entity: Schema.Literal("purchaseOrderItem"),
-  action: Schema.Literal("upsert"),
-  id: PurchaseOrderItemId,
-  expectedRowVersion: Schema.NullOr(CatalogRowVersion),
-  row: PurchaseOrderItemWriteFields,
-});
-type PurchaseOrderItemUpsertWrite = typeof PurchaseOrderItemUpsertWrite.Type;
-
-const PurchaseOrderItemDeleteWrite = Schema.Struct({
-  entity: Schema.Literal("purchaseOrderItem"),
-  action: Schema.Literal("delete"),
-  id: PurchaseOrderItemId,
-  expectedRowVersion: CatalogRowVersion,
-});
 
 export const CatalogRowWrite = Schema.Union([
-  CategoryUpsertWrite,
-  CategoryDeleteWrite,
-  ProductUpsertWrite,
-  ProductDeleteWrite,
+  upsertWrite("category", CategoryId, CategoryWriteFields),
+  deleteWrite("category", CategoryId),
+  upsertWrite("product", ProductId, ProductWriteFields),
+  deleteWrite("product", ProductId),
   BatchUpsertWrite,
-  BatchDeleteWrite,
-  SupplierUpsertWrite,
-  SupplierDeleteWrite,
-  PurchaseOrderUpsertWrite,
-  PurchaseOrderDeleteWrite,
-  PurchaseOrderItemUpsertWrite,
-  PurchaseOrderItemDeleteWrite,
+  deleteWrite("batch", BatchId),
+  upsertWrite("supplier", SupplierId, SupplierWriteFields),
+  deleteWrite("supplier", SupplierId),
+  upsertWrite("purchaseOrder", PurchaseOrderId, PurchaseOrderWriteFields),
+  deleteWrite("purchaseOrder", PurchaseOrderId),
+  upsertWrite("purchaseOrderItem", PurchaseOrderItemId, PurchaseOrderItemWriteFields),
+  deleteWrite("purchaseOrderItem", PurchaseOrderItemId),
 ]);
 export type CatalogRowWrite = typeof CatalogRowWrite.Type;
-
-export const isPurchasingWrite = (write: CatalogRowWrite): boolean => {
-  switch (write.entity) {
-    case "supplier":
-    case "purchaseOrder":
-    case "purchaseOrderItem":
-      return true;
-    case "batch":
-      return write.action === "upsert" && write.receipt !== undefined;
-    case "category":
-    case "product":
-      return false;
-  }
-};
 
 export const CatalogWriteCommand = Schema.Struct({
   commandId: SyncIdentifier,

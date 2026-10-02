@@ -13,6 +13,8 @@ import {
 } from "../ids";
 import { PositiveInt, SyncIdentifier } from "../schema-primitives";
 
+const InvoiceQuantityType = Schema.Literals(["unit", "pack"]);
+
 const mutableEntityFields = {
   organizationId: Schema.String,
   createdByUserId: Schema.String,
@@ -149,7 +151,7 @@ export const InvoiceItem = Schema.Struct({
   productName: Schema.String,
   batchNumber: Schema.NullOr(Schema.String),
   quantity: Schema.Number,
-  quantityType: Schema.Literals(["unit", "pack"]),
+  quantityType: InvoiceQuantityType,
   baseUnitQuantity: Schema.Number,
   salePrice: Schema.Number,
   ...mutableEntityFields,
@@ -170,7 +172,7 @@ export const CreateInvoiceLineInput = Schema.Struct({
   productId: ProductId,
   batchId: Schema.NullOr(BatchId),
   quantity: Schema.Number,
-  quantityType: Schema.Literals(["unit", "pack"]),
+  quantityType: InvoiceQuantityType,
   salePrice: Schema.Number,
 });
 export type CreateInvoiceLineInput = typeof CreateInvoiceLineInput.Type;
@@ -194,7 +196,7 @@ export const InvoiceAllocation = Schema.Struct({
   productId: ProductId,
   batchId: BatchId,
   quantity: PositiveInt,
-  quantityType: Schema.Literals(["unit", "pack"]),
+  quantityType: InvoiceQuantityType,
   salePrice: Schema.Natural,
   packsOpened: Schema.Natural,
 });

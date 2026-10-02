@@ -12,7 +12,7 @@ type EntityTable = (typeof syncEntityRows)[SyncEntity]["table"];
 const inOrganization = (table: EntityTable, organizationId: string, entityId: string) =>
   and(eq(table.organizationId, organizationId), eq(table.id, entityId));
 
-export const selectEntityRow = Effect.fn("ReplicaRows.selectEntityRow")(function* (
+export const selectEntityRow = Effect.fnUntraced(function* (
   tx: ReplicaDb,
   organizationId: string,
   entity: SyncEntity,
@@ -29,7 +29,7 @@ export const selectEntityRow = Effect.fn("ReplicaRows.selectEntityRow")(function
     : undefined;
 });
 
-export const writeEntityRow = Effect.fn("ReplicaRows.writeEntityRow")(function* (
+export const writeEntityRow = Effect.fnUntraced(function* (
   tx: ReplicaDb,
   entity: SyncEntity,
   row: SyncEntityChange["row"],
@@ -42,7 +42,7 @@ export const writeEntityRow = Effect.fn("ReplicaRows.writeEntityRow")(function* 
     .onConflictDoUpdate({ target: [table.organizationId, table.id], set: parsed });
 });
 
-export const removeEntityRow = Effect.fn("ReplicaRows.removeEntityRow")(function* (
+export const removeEntityRow = Effect.fnUntraced(function* (
   tx: ReplicaDb,
   organizationId: string,
   entity: SyncEntity,

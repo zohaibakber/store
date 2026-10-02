@@ -1,7 +1,5 @@
-import { SqliteReplica, type SqliteReplicaHandle } from "@store/sync/sql-client";
-import * as Context from "effect/Context";
+import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
@@ -32,11 +30,6 @@ export type ReplicaSnapshotRunner<Row extends ReplicaRow = SqliteResultRow> = <A
   work: (query: SnapshotQuery<Row>) => Effect.Effect<A, E>,
 ) => Effect.Effect<A, E | SnapshotFailure>;
 
-export class ReplicaSnapshotReader extends Context.Service<
-  ReplicaSnapshotReader,
-  ReplicaSnapshotRunner<ReplicaRow>
->()("@store/client-db/ReplicaSnapshotReader") {}
-
 const stampStatement = toStatement(replicaStampQuery);
 
 export const snapshotRunnerFromHandle =
@@ -45,11 +38,6 @@ export const snapshotRunnerFromHandle =
     handle.sql.withTransaction(
       Effect.suspend(() => work((sql, parameters) => handle.sql.unsafe(sql, parameters))),
     );
-
-export const layerHandleSnapshotReader: Layer.Layer<ReplicaSnapshotReader, never, SqliteReplica> =
-  Layer.effect(ReplicaSnapshotReader)(
-    SqliteReplica.use((handle) => Effect.succeed(snapshotRunnerFromHandle(handle))),
-  );
 
 const readSnapshotStamp = (
   query: SnapshotQuery<ReplicaRow>,

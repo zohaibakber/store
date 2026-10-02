@@ -4,7 +4,7 @@ import type * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
-import type { HubPublish } from "./src/live/hub-core";
+import type { CommitFanout } from "./src/inventory/model";
 
 export interface OrgHubContract {
   readonly fetch: Effect.Effect<
@@ -12,7 +12,7 @@ export interface OrgHubContract {
     never,
     HttpServerRequest.HttpServerRequest | RuntimeContext
   >;
-  readonly publish: (input: HubPublish) => Effect.Effect<number, never, RuntimeContext>;
+  readonly publish: (input: CommitFanout) => Effect.Effect<number, never, RuntimeContext>;
   readonly revoke: (userId: string) => Effect.Effect<number, never, RuntimeContext>;
   readonly webSocketMessage: (
     socket: Cloudflare.WebSocket,

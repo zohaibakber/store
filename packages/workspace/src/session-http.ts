@@ -2,6 +2,7 @@ import {
   AuthHttpApi,
   TokenSet,
   authHttpErrorStatus,
+  sessionEndingCodes,
   type AuthHttpError,
   type IssuedSession,
   type OrganizationCommand,
@@ -14,9 +15,11 @@ import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contra
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import { identity } from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -31,7 +34,9 @@ import * as HttpIncomingMessage from "effect/unstable/http/HttpIncomingMessage";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 const ACCESS_TOKEN_REFRESH_SKEW_MS = 30_000;
+const REFRESH_TIMEOUT = Duration.seconds(30);
 const INVALID_RESPONSE = "INVALID_RESPONSE";
+const NETWORK_ERROR = "NETWORK_ERROR";
 const SESSION_SUPERSEDED = "SESSION_SUPERSEDED";
 
 const RequestFailure = Schema.Struct({
@@ -51,49 +56,37 @@ export class RequestError extends Schema.TaggedError<RequestError>()("Workspace.
   message: Schema.String,
   status: Schema.Number,
   code: Schema.optionalKey(Schema.String),
+  refresh: Schema.optionalKey(Schema.Literals(["failed", "succeeded"])),
 }) {}
 
-export const RefreshedTokenSet = TokenSet.pipe(
+class ForeignOrigin extends Schema.TaggedError<ForeignOrigin>()("Workspace.ForeignOrigin", {
+  message: Schema.String,
+}) {}
+
+const RefreshedTokenSet = TokenSet.pipe(
   Schema.fieldsAssign({ workspace: AuthenticatedWorkspaceSnapshot }),
 );
-export interface RefreshedTokenSet extends Schema.Schema.Type<typeof RefreshedTokenSet> {}
+interface RefreshedTokenSet extends Schema.Schema.Type<typeof RefreshedTokenSet> {}
 
 type UnrefreshedTokenSet = TokenSet & { readonly workspace?: undefined };
 
-export type SessionAccess = RefreshedTokenSet | UnrefreshedTokenSet | null;
+type SessionAccess = RefreshedTokenSet | UnrefreshedTokenSet | null;
 
-export const refreshedTokens = (refreshed: TokenSet): TokenSet =>
+const refreshedTokens = (refreshed: TokenSet): TokenSet =>
   Struct.pick(refreshed, ["accessToken", "accessExpiresAt", "refreshToken", "refreshExpiresAt"]);
 
-export interface TokenStore {
-  get(): TokenSet | null;
-  set(tokens: TokenSet | null): void;
-}
-
-export class MemoryTokenStore implements TokenStore {
-  #tokens: TokenSet | null = null;
-
-  get() {
-    return this.#tokens;
-  }
-
-  set(tokens: TokenSet | null) {
-    this.#tokens = tokens;
-  }
-}
-
-export type RefreshPolicy = (tokens: TokenSet | null, force: boolean, now: number) => boolean;
+type RefreshPolicy = (tokens: TokenSet | null, force: boolean, now: number) => boolean;
 
 const isAccessTokenFresh = (tokens: TokenSet | null, now: number) =>
   tokens != null && tokens.accessExpiresAt > now + ACCESS_TOKEN_REFRESH_SKEW_MS;
 
-export const cookieSessionNeedsRefresh: RefreshPolicy = (tokens, force, now) =>
+const cookieSessionNeedsRefresh: RefreshPolicy = (tokens, force, now) =>
   force || !isAccessTokenFresh(tokens, now);
 
-export const refreshTokenNeedsRefresh: RefreshPolicy = (tokens, force, now) =>
+const refreshTokenNeedsRefresh: RefreshPolicy = (tokens, force, now) =>
   !!tokens?.refreshToken && (force || !isAccessTokenFresh(tokens, now));
 
-export type SessionCredential = "cookie" | "refreshToken";
+type SessionCredential = "cookie" | "refreshToken";
 
 interface CredentialPolicy {
   readonly needsRefresh: RefreshPolicy;
@@ -115,10 +108,7 @@ const credentialPolicies = {
   },
 } satisfies Record<SessionCredential, CredentialPolicy>;
 
-export const requestErrorFromPayload = (
-  payload: Schema.Json | null,
-  status: number,
-): RequestError => {
+const requestErrorFromPayload = (payload: Schema.Json | null, status: number): RequestError => {
   const failure = Schema.decodeUnknownOption(RequestFailure)(payload).pipe(Option.getOrNull);
   const nested = failure?.error;
   const message =
@@ -148,9 +138,23 @@ const superseded = () =>
 
 export const isSupersededSession = (error: RequestError) => error.code === SESSION_SUPERSEDED;
 
+const refreshTimedOut = () =>
+  new RequestError({
+    message: "The session refresh timed out.",
+    status: 0,
+    code: NETWORK_ERROR,
+  });
+
+const withRefresh = (error: RequestError, refresh: "failed" | "succeeded") => {
+  const { message, status, code } = error;
+  return code === undefined
+    ? new RequestError({ message, status, refresh })
+    : new RequestError({ message, status, code, refresh });
+};
+
 const isSuccessStatus = (status: number) => status >= 200 && status < 300;
 
-const isRejectedStatus = (status: number) => status === 401 || status === 403;
+export const isRejectedStatus = (status: number) => status === 401 || status === 403;
 
 const failedResponse = (response: HttpClientResponse.HttpClientResponse) =>
   response.json.pipe(
@@ -171,7 +175,7 @@ const fromClientError = (error: HttpClientError.HttpClientError): Effect.Effect<
     new RequestError({
       message: cause instanceof Error ? cause.message : error.message,
       status: 0,
-      code: reason._tag === "TransportError" ? "NETWORK_ERROR" : "INVALID_REQUEST",
+      code: reason._tag === "TransportError" ? NETWORK_ERROR : "INVALID_REQUEST",
     }),
   );
 };
@@ -182,7 +186,7 @@ type SessionFailure =
   | Schema.SchemaError
   | AuthHttpError;
 
-export const toRequestError = (failure: SessionFailure): Effect.Effect<RequestError> => {
+const toRequestError = (failure: SessionFailure): Effect.Effect<RequestError> => {
   if (failure instanceof RequestError) return Effect.succeed(failure);
   if (HttpClientError.isHttpClientError(failure)) return fromClientError(failure);
   if (failure instanceof Schema.SchemaError) return Effect.succeed(invalidResponse());
@@ -195,7 +199,7 @@ export const toRequestError = (failure: SessionFailure): Effect.Effect<RequestEr
   );
 };
 
-const asRequestError = <A, R>(effect: Effect.Effect<A, SessionFailure, R>) =>
+export const asRequestError = <A, R>(effect: Effect.Effect<A, SessionFailure, R>) =>
   effect.pipe(Effect.catch((failure) => Effect.flatMap(toRequestError(failure), Effect.fail)));
 
 export const decodeResponse =
@@ -214,19 +218,19 @@ const normalizeApiBaseUrl = (baseUrl: string) =>
 
 const normalizeAuthBaseUrl = (baseUrl: string) => baseUrl.replace(/\/$/, "");
 
-export interface SessionHttpOptions {
+interface SessionHttpOptions {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
-  readonly tokens: TokenStore;
   readonly credential: SessionCredential;
-  readonly onRefreshed: (refreshed: RefreshedTokenSet) => Effect.Effect<void>;
+  readonly onRefreshed: (refreshed: RefreshedTokenSet, tokens: TokenSet) => Effect.Effect<void>;
   readonly onRejected: Effect.Effect<void>;
+  readonly exclusive?: <A, E>(refresh: Effect.Effect<A, E>) => Effect.Effect<A, E>;
 }
 
-export interface SessionHttpApi {
+interface SessionHttpApi {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
-  readonly tokens: Pick<TokenStore, "get">;
+  readonly tokens: Effect.Effect<TokenSet | null>;
   readonly setTokens: (tokens: TokenSet | null) => Effect.Effect<void>;
   readonly adopt: (issued: IssuedSession) => Effect.Effect<WorkspaceSnapshot, RequestError>;
   readonly ensureFreshAccess: (force?: boolean) => Effect.Effect<SessionAccess, RequestError>;
@@ -265,6 +269,7 @@ interface Principal {
 interface SessionState {
   readonly owner: number;
   readonly principal: Principal | undefined;
+  readonly tokens: TokenSet | null;
   readonly seq: number;
   readonly flight: Flight | undefined;
 }
@@ -304,21 +309,20 @@ const asError = (cause: unknown) =>
   cause instanceof Error ? cause : new TypeError("The authenticated request failed.");
 
 const discardBody = (response: Response) =>
-  Effect.promise(async () => {
-    await response.body?.cancel().catch(() => undefined);
-  });
+  Effect.ignore(Effect.tryPromise(() => response.body?.cancel() ?? Promise.resolve()));
 
-export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttpOptions) {
+const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttpOptions) {
   const base = yield* HttpClient.HttpClient;
   const fetchWeb = yield* FetchHttpClient.Fetch;
   const scope = yield* Effect.scope;
   const policy = credentialPolicies[options.credential];
-  const store = options.tokens;
+  const exclusive = options.exclusive ?? identity;
   const apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl);
   const authBaseUrl = normalizeAuthBaseUrl(options.authBaseUrl);
   const state = yield* SynchronizedRef.make<SessionState>({
     owner: 0,
     principal: undefined,
+    tokens: null,
     seq: 0,
     flight: undefined,
   });
@@ -332,18 +336,28 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     baseUrl: authBaseUrl,
   });
 
-  const rotate = Effect.suspend(() => {
-    const payload = policy.input(store.get());
-    if (payload === undefined) return Effect.succeed(skipped);
-    return sessionApi.refresh({ payload }).pipe(
-      Effect.flatMap(refreshedSession),
-      Effect.catch((failure) =>
-        Effect.flatMap(toRequestError(failure), (error) =>
-          isRejectedStatus(error.status) ? Effect.succeed(rejected) : Effect.fail(error),
+  const tokens = Effect.map(SynchronizedRef.get(state), (current) => current.tokens);
+
+  const rotate = exclusive(
+    Effect.flatMap(tokens, (current) => {
+      const payload = policy.input(current);
+      if (payload === undefined) return Effect.succeed(skipped);
+      return sessionApi.refresh({ payload }).pipe(
+        Effect.timeoutOrElse({
+          duration: REFRESH_TIMEOUT,
+          orElse: () => Effect.fail(refreshTimedOut()),
+        }),
+        Effect.flatMap(refreshedSession),
+        Effect.catchTag("Unauthenticated", (failure) =>
+          sessionEndingCodes.has(failure.error.code)
+            ? Effect.succeed(rejected)
+            : Effect.fail(failure),
         ),
-      ),
-    );
-  });
+        asRequestError,
+        Effect.mapError((error) => withRefresh(error, "failed")),
+      );
+    }),
+  );
 
   const commit =
     (current: SessionState, flight: Pick<Flight, "seq">) =>
@@ -355,27 +369,28 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
         case "Skipped":
           return Effect.succeed([null, { ...current, flight: undefined }] as const);
         case "Rejected":
-          return Effect.sync(() => store.set(null)).pipe(
-            Effect.andThen(options.onRejected),
-            Effect.as([null, { ...current, principal: undefined, flight: undefined }] as const),
-          );
-        case "Refreshed":
-          return Effect.suspend(() => {
-            const principal = principalOf(rotation.refreshed.workspace);
-            const continues =
-              store.get() !== null &&
-              (current.principal === undefined || samePrincipal(current.principal, principal));
-            const next: SessionState = {
-              owner: continues ? current.owner : current.owner + 1,
-              principal,
-              seq: current.seq,
-              flight: undefined,
-            };
-            store.set(refreshedTokens(rotation.refreshed));
-            return options
-              .onRefreshed(rotation.refreshed)
-              .pipe(Effect.as([rotation.refreshed, next] as const));
-          });
+          return Effect.as(options.onRejected, [
+            null,
+            { ...current, principal: undefined, tokens: null, flight: undefined },
+          ] as const);
+        case "Refreshed": {
+          const principal = principalOf(rotation.refreshed.workspace);
+          const continues =
+            current.tokens !== null &&
+            (current.principal === undefined || samePrincipal(current.principal, principal));
+          const granted = refreshedTokens(rotation.refreshed);
+          const next: SessionState = {
+            owner: continues ? current.owner : current.owner + 1,
+            principal,
+            tokens: granted,
+            seq: current.seq,
+            flight: undefined,
+          };
+          return Effect.as(options.onRefreshed(rotation.refreshed, granted), [
+            rotation.refreshed,
+            next,
+          ] as const);
+        }
       }
     };
 
@@ -428,8 +443,8 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
   const ensureFreshAccess = (force = false): Effect.Effect<SessionAccess, RequestError> =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
-      const tokens = store.get();
-      if (!policy.needsRefresh(tokens, force, now)) return tokens;
+      const current = yield* tokens;
+      if (!policy.needsRefresh(current, force, now)) return current;
       const flight = yield* flightAfter(0);
       return yield* Deferred.await(flight.done);
     });
@@ -447,26 +462,21 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     ),
   );
 
-  const replaceTokens = (tokens: TokenSet | null, principal: Principal | undefined) =>
-    SynchronizedRef.modifyEffect(state, (current) =>
-      Effect.sync(() => {
-        store.set(tokens);
-        return [
-          current.flight,
-          { owner: current.owner + 1, principal, seq: current.seq, flight: undefined },
-        ] as const;
-      }),
-    ).pipe(
+  const replaceTokens = (next: TokenSet | null, principal: Principal | undefined) =>
+    SynchronizedRef.modify(state, (current): readonly [Flight | undefined, SessionState] => [
+      current.flight,
+      { owner: current.owner + 1, principal, tokens: next, seq: current.seq, flight: undefined },
+    ]).pipe(
       Effect.flatMap((flight) =>
         flight === undefined ? Effect.void : Fiber.interrupt(flight.fiber),
       ),
     );
 
-  const setTokens = (tokens: TokenSet | null) => replaceTokens(tokens, undefined);
+  const setTokens = (next: TokenSet | null) => replaceTokens(next, undefined);
 
   const currentGrant = Effect.map(SynchronizedRef.get(state), (current): Grant => ({
     owner: current.owner,
-    tokens: store.get(),
+    tokens: current.tokens,
   }));
 
   const rotatedFrom = (grant: Grant, current: Grant) =>
@@ -484,7 +494,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     });
 
   const replaying = <A extends { readonly status: number }, E>(
-    send: (tokens: TokenSet | null) => Effect.Effect<A, E>,
+    send: (access: TokenSet | null) => Effect.Effect<A, E>,
     discard: (response: A) => Effect.Effect<void>,
   ) =>
     Effect.gen(function* () {
@@ -499,7 +509,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
 
   const exchange = (request: HttpClientRequest.HttpClientRequest) =>
     replaying(
-      (tokens) => base.execute(withAccess(request, tokens)),
+      (access) => base.execute(withAccess(request, access)),
       () => Effect.void,
     );
 
@@ -513,11 +523,11 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     ),
   );
 
-  const sendWeb = (request: Request, tokens: TokenSet | null) =>
+  const sendWeb = (request: Request, access: TokenSet | null) =>
     Effect.tryPromise({
       try: (interrupted) => {
         const headers = new Headers(request.headers);
-        if (tokens !== null) headers.set("authorization", `Bearer ${tokens.accessToken}`);
+        if (access !== null) headers.set("authorization", `Bearer ${access.accessToken}`);
         return fetchWeb(
           new Request(request.clone(), {
             credentials: "omit",
@@ -530,7 +540,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     });
 
   const fetch = (request: Request): Effect.Effect<Response, Error> =>
-    replaying((tokens) => sendWeb(request, tokens), discardBody);
+    replaying((access) => sendWeb(request, access), discardBody);
 
   const admit = (owner: number, live: boolean, exit: Exit.Exit<WorkspaceSnapshot, RequestError>) =>
     SynchronizedRef.modify(
@@ -538,7 +548,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
       (current): readonly [Exit.Exit<WorkspaceSnapshot, RequestError>, SessionState] => {
         if (current.owner !== owner) return [Exit.fail(superseded()), current];
         if (Exit.isFailure(exit)) return [exit, current];
-        if (live && store.get() === null) return [Exit.fail(superseded()), current];
+        if (live && current.tokens === null) return [Exit.fail(superseded()), current];
         const snapshot = exit.value;
         return snapshot.status === "authenticated" && current.principal === undefined
           ? [exit, { ...current, principal: principalOf(snapshot) }]
@@ -548,17 +558,31 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
 
   const workspace = Effect.gen(function* () {
     const start = yield* currentGrant;
-    const exit = yield* http
-      .get(`${apiBaseUrl}/api/auth/session`)
-      .pipe(asRequestError, Effect.flatMap(decodeResponse(WorkspaceSnapshot)), Effect.exit);
+    const exit = yield* http.get(`${apiBaseUrl}/api/auth/session`).pipe(
+      asRequestError,
+      Effect.flatMap(decodeResponse(WorkspaceSnapshot)),
+      Effect.catch((error) =>
+        Effect.flatMap(currentGrant, (end) =>
+          Effect.fail(
+            isRejectedStatus(error.status) &&
+              error.refresh === undefined &&
+              end.owner === start.owner &&
+              rotatedFrom(start, end)
+              ? withRefresh(error, "succeeded")
+              : error,
+          ),
+        ),
+      ),
+      Effect.exit,
+    );
     return yield* yield* admit(start.owner, start.tokens !== null, exit);
   });
 
   const adopt = (issued: IssuedSession): Effect.Effect<WorkspaceSnapshot, RequestError> => {
-    const tokens = refreshedTokens(issued);
+    const granted = refreshedTokens(issued);
     return Option.match(issuedWorkspace(issued.workspace), {
-      onNone: () => Effect.andThen(setTokens(tokens), workspace),
-      onSome: (snapshot) => Effect.as(replaceTokens(tokens, principalOf(snapshot)), snapshot),
+      onNone: () => Effect.andThen(setTokens(granted), workspace),
+      onSome: (snapshot) => Effect.as(replaceTokens(granted, principalOf(snapshot)), snapshot),
     });
   };
 
@@ -588,7 +612,7 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
   return SessionHttp.of({
     apiBaseUrl,
     authBaseUrl,
-    tokens: store,
+    tokens,
     setTokens,
     adopt,
     ensureFreshAccess,
@@ -599,9 +623,9 @@ export const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttp
     workspace,
     organizationRoster: asRequestError(organizationApi.roster()),
     organize,
-    logout: (tokens) =>
+    logout: (granted) =>
       Effect.suspend(() => {
-        const payload = policy.input(tokens);
+        const payload = policy.input(granted);
         return payload === undefined
           ? Effect.void
           : asRequestError(sessionApi.logout({ payload })).pipe(Effect.asVoid);
@@ -617,29 +641,34 @@ const apiRequestFor = (apiBaseUrl: string, input: RequestInfo | URL, init?: Requ
     input instanceof Request
       ? new Request(input, init)
       : new Request(new URL(input.toString(), `${apiBaseUrl}/`), init);
-  if (new URL(request.url).origin !== new URL(`${apiBaseUrl}/`).origin) {
-    throw new TypeError("Authenticated API requests must use the configured API origin.");
-  }
-  return request;
+  return {
+    request,
+    foreign: new URL(request.url).origin !== new URL(`${apiBaseUrl}/`).origin,
+  };
 };
 
 const signalOf = (input: RequestInfo | URL, init?: RequestInit) =>
   init?.signal ?? (input instanceof Request ? input.signal : undefined) ?? undefined;
 
-export const apiFetch = (
+const apiFetch = (
   input: RequestInfo | URL,
   init?: RequestInit,
-): Effect.Effect<Response, Error, SessionHttp> =>
+): Effect.Effect<Response, Error | ForeignOrigin, SessionHttp> =>
   Effect.gen(function* () {
     const session = yield* SessionHttp;
-    const request = yield* Effect.try({
+    const { request, foreign } = yield* Effect.try({
       try: () => apiRequestFor(session.apiBaseUrl, input, init),
       catch: asError,
     });
+    if (foreign) {
+      return yield* new ForeignOrigin({
+        message: "Authenticated API requests must use the configured API origin.",
+      });
+    }
     return yield* session.fetch(request);
   });
 
-export type SessionRun = (
+type SessionRun = (
   effect: Effect.Effect<Response, Error, SessionHttp>,
   options?: Effect.RunOptions,
 ) => Promise<Response>;
@@ -648,7 +677,12 @@ export const sessionFetch =
   (run: SessionRun): typeof fetch =>
   (input, init) => {
     const signal = signalOf(input, init);
-    return run(apiFetch(input, init), signal ? { signal } : undefined).catch((cause: unknown) =>
-      Promise.reject(signal?.aborted ? signal.reason : cause),
-    );
+    return run(
+      apiFetch(input, init).pipe(
+        Effect.catchTag("Workspace.ForeignOrigin", (refused) =>
+          Effect.fail(new TypeError(refused.message)),
+        ),
+      ),
+      signal ? { signal } : undefined,
+    ).catch((cause: unknown) => Promise.reject(signal?.aborted ? signal.reason : cause));
   };

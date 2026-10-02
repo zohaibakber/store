@@ -3,17 +3,8 @@ import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
 import type { PurchasingProjectionTables } from "./purchasing-projection";
-import { drainSubset } from "./replica/collection-read";
-import {
-  decodeBatchSqliteRows,
-  decodeCategorySqliteRows,
-  decodeInvoiceSqliteRows,
-  decodeProductSqliteRows,
-  decodePurchaseOrderItemSqliteRows,
-  decodePurchaseOrderSqliteRows,
-  decodeSupplierSqliteRows,
-} from "./replica/decode";
-import type { ReplicaRowInvalid } from "./replica/errors";
+import { drainSubset, type ReadSubset } from "./replica/collection-read";
+import { decodeSourceRows } from "./replica/decode";
 import {
   DEFAULT_COLLECTION_MAXIMUM_ROWS,
   MAX_BATCH_SPECS,
@@ -22,19 +13,20 @@ import {
 } from "./replica/sources";
 import type { ReplicaRow } from "./replica/sqlite-row";
 import type { InventorySubsetSpec, SubsetPredicate } from "./replica/subset-spec";
-import type { ReplicaSubsetReader } from "./replica/types";
-import type {
-  BatchRow,
-  CategoryRow,
-  ProductRow,
-  PurchaseOrderItemRow,
-  PurchaseOrderRow,
-  SupplierRow,
-} from "./rows";
+import type { CatalogRows, ReplicaSubsetReader } from "./replica/types";
+import type { PurchaseOrderItemRow, PurchaseOrderRow } from "./rows";
 
-type DecodeRows<Row> = (
-  rows: ReadonlyArray<ReplicaRow>,
-) => Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid>;
+const CONCURRENT = { concurrency: "unbounded" } as const;
+
+const attempt = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
+
+const subsetReads =
+  (reader: ReplicaSubsetReader): ReadSubset =>
+  (spec) =>
+    attempt(() => reader.readSubset(spec));
+
+const NO_ROWS = Effect.succeed([]);
 
 export type CatalogRowsRequest = {
   readonly allCategories?: boolean;
@@ -45,32 +37,26 @@ export type CatalogRowsRequest = {
   readonly batchesOfProductIds?: Iterable<string>;
 };
 
-const readPage = async <Row>(
-  reader: ReplicaSubsetReader,
-  source: InventoryCollectionSource,
-  decode: DecodeRows<Row>,
+const readFirst = <Source extends InventoryCollectionSource>(
+  read: ReadSubset,
+  source: Source,
   where: SubsetPredicate,
-  limit: number,
-) => {
-  const read = await reader.readSubset({
-    source,
-    where,
-    orderBy: [{ column: "id", direction: "asc" }],
-    limit,
-    offset: 0,
-  });
-  return Effect.runPromise(decode(read.rows));
-};
+  orderBy: InventorySubsetSpec["orderBy"],
+): Effect.Effect<ReadonlyArray<CatalogRows[Source]>, unknown> =>
+  read({ source, where, orderBy, limit: 1, offset: 0 }).pipe(
+    Effect.flatMap((page) => decodeSourceRows(source)(page.rows)),
+  );
 
-const readAll = async <Row>(
-  reader: ReplicaSubsetReader,
-  source: InventoryCollectionSource,
-  decode: DecodeRows<Row>,
+const BY_ID: InventorySubsetSpec["orderBy"] = [{ column: "id", direction: "asc" }];
+
+const readAll = <Source extends InventoryCollectionSource>(
+  read: ReadSubset,
+  source: Source,
   where?: SubsetPredicate,
-): Promise<ReadonlyArray<Row>> => {
-  const read = await drainSubset(reader, source, where, DEFAULT_COLLECTION_MAXIMUM_ROWS);
-  return Effect.runPromise(decode(read.rows));
-};
+): Effect.Effect<ReadonlyArray<CatalogRows[Source]>, unknown> =>
+  drainSubset(read, source, where, DEFAULT_COLLECTION_MAXIMUM_ROWS).pipe(
+    Effect.flatMap((drained) => decodeSourceRows(source)(drained.rows)),
+  );
 
 const inChunks = (column: string, values: Iterable<string> | undefined) => {
   const unique = [...new Set(values ?? [])];
@@ -81,18 +67,17 @@ const inChunks = (column: string, values: Iterable<string> | undefined) => {
   return predicates;
 };
 
-const readWhereIn = async <Row extends { readonly id: string }>(
-  reader: ReplicaSubsetReader,
-  source: InventoryCollectionSource,
-  decode: DecodeRows<Row>,
+const readWhereIn = <Source extends InventoryCollectionSource>(
+  read: ReadSubset,
+  source: Source,
   column: string,
   values: Iterable<string> | undefined,
-): Promise<ReadonlyArray<Row>> =>
-  (
-    await Promise.all(
-      inChunks(column, values).map((where) => readAll(reader, source, decode, where)),
-    )
-  ).flat();
+): Effect.Effect<ReadonlyArray<CatalogRows[Source]>, unknown> =>
+  Effect.forEach(
+    inChunks(column, values),
+    (where) => readAll(read, source, where),
+    CONCURRENT,
+  ).pipe(Effect.map((chunks) => chunks.flat()));
 
 const readable = <Row extends { readonly id: string }>(
   ...groups: ReadonlyArray<ReadonlyArray<Row>>
@@ -106,73 +91,65 @@ const readable = <Row extends { readonly id: string }>(
   };
 };
 
-export const readCatalogRows = async (
+export const readCatalogRows = (
   reader: ReplicaSubsetReader,
   request: CatalogRowsRequest,
-): Promise<CatalogProjectionTables> => {
-  const [allCategories, categories, products, categoryProducts, batches, productBatches] =
-    await Promise.all([
-      request.allCategories
-        ? readAll<CategoryRow>(reader, "categories", decodeCategorySqliteRows)
-        : [],
-      readWhereIn<CategoryRow>(
-        reader,
-        "categories",
-        decodeCategorySqliteRows,
-        "id",
-        request.categoryIds,
-      ),
-      readWhereIn<ProductRow>(
-        reader,
-        "products",
-        decodeProductSqliteRows,
-        "id",
-        request.productIds,
-      ),
-      request.anyProductInCategory === undefined
-        ? []
-        : readPage<ProductRow>(
-            reader,
-            "products",
-            decodeProductSqliteRows,
-            {
-              _tag: "compare",
-              column: "categoryId",
-              op: "eq",
-              value: request.anyProductInCategory,
-            },
-            1,
-          ),
-      readWhereIn<BatchRow>(reader, "batches", decodeBatchSqliteRows, "id", request.batchIds),
-      readWhereIn<BatchRow>(
-        reader,
-        "batches",
-        decodeBatchSqliteRows,
-        "productId",
-        request.batchesOfProductIds,
-      ),
-    ]);
-  return {
-    categories: readable(allCategories, categories),
-    products: readable(products, categoryProducts),
-    batches: readable(batches, productBatches),
-  };
-};
+): Effect.Effect<CatalogProjectionTables, unknown> =>
+  Effect.suspend(() => {
+    const read = subsetReads(reader);
+    return Effect.all(
+      [
+        request.allCategories ? readAll(read, "categories") : NO_ROWS,
+        readWhereIn(read, "categories", "id", request.categoryIds),
+        readWhereIn(read, "products", "id", request.productIds),
+        request.anyProductInCategory === undefined
+          ? NO_ROWS
+          : readFirst(
+              read,
+              "products",
+              {
+                _tag: "compare",
+                column: "categoryId",
+                op: "eq",
+                value: request.anyProductInCategory,
+              },
+              BY_ID,
+            ),
+        readWhereIn(read, "batches", "id", request.batchIds),
+        readWhereIn(read, "batches", "productId", request.batchesOfProductIds),
+      ],
+      CONCURRENT,
+    );
+  }).pipe(
+    Effect.map(
+      ([allCategories, categories, products, categoryProducts, batches, productBatches]) => ({
+        categories: readable(allCategories, categories),
+        products: readable(products, categoryProducts),
+        batches: readable(batches, productBatches),
+      }),
+    ),
+  );
 
-export const readNextInvoiceNumber = async (
+const readLatest = <Source extends "invoices" | "purchaseOrders">(
+  reader: ReplicaSubsetReader,
+  source: Source,
+  column: string,
+  organizationId: string,
+): Effect.Effect<ReadonlyArray<CatalogRows[Source]>, unknown> =>
+  readFirst(
+    subsetReads(reader),
+    source,
+    { _tag: "compare", column: "organizationId", op: "eq", value: organizationId },
+    [{ column, direction: "desc" }],
+  );
+
+export const readNextInvoiceNumber = (
   reader: ReplicaSubsetReader,
   organizationId: string,
-): Promise<number> => {
-  const read = await reader.readSubset({
-    source: "invoices",
-    where: { _tag: "compare", column: "organizationId", op: "eq", value: organizationId },
-    orderBy: [{ column: "invoiceNumber", direction: "desc" }],
-    limit: 1,
-    offset: 0,
-  });
-  const latest = await Effect.runPromise(decodeInvoiceSqliteRows(read.rows));
-  return nextInvoiceNumber(latest.map((invoice) => invoice.invoiceNumber));
-};
+): Effect.Effect<number, unknown> =>
+  readLatest(reader, "invoices", "invoiceNumber", organizationId).pipe(
+    Effect.map((latest) => nextInvoiceNumber(latest.map((invoice) => invoice.invoiceNumber))),
+  );
 
 export type PurchasingRowsRequest = {
   readonly allSuppliers?: boolean;
@@ -184,115 +161,85 @@ export type PurchasingRowsRequest = {
   readonly productsOfItems?: boolean;
 };
 
-export const readPurchasingRows = async (
+export const readPurchasingRows = Effect.fnUntraced(function* (
   reader: ReplicaSubsetReader,
   request: PurchasingRowsRequest,
-): Promise<PurchasingProjectionTables> => {
-  const [allSuppliers, suppliers, orders, supplierOrders, items] = await Promise.all([
-    request.allSuppliers ? readAll<SupplierRow>(reader, "suppliers", decodeSupplierSqliteRows) : [],
-    readWhereIn<SupplierRow>(
-      reader,
-      "suppliers",
-      decodeSupplierSqliteRows,
-      "id",
-      request.supplierIds,
-    ),
-    readWhereIn<PurchaseOrderRow>(
-      reader,
-      "purchaseOrders",
-      decodePurchaseOrderSqliteRows,
-      "id",
-      request.orderIds,
-    ),
-    request.anyOrderOfSupplier === undefined
-      ? []
-      : readPage<PurchaseOrderRow>(
-          reader,
-          "purchaseOrders",
-          decodePurchaseOrderSqliteRows,
-          {
-            _tag: "compare",
-            column: "supplierId",
-            op: "eq",
-            value: request.anyOrderOfSupplier,
-          },
-          1,
-        ),
-    readWhereIn<PurchaseOrderItemRow>(
-      reader,
-      "purchaseOrderItems",
-      decodePurchaseOrderItemSqliteRows,
-      "purchaseOrderId",
-      request.itemsOfOrderIds,
-    ),
-  ]);
-  const products = await readWhereIn<ProductRow>(
-    reader,
-    "products",
-    decodeProductSqliteRows,
-    "id",
+): Effect.fn.Return<PurchasingProjectionTables, unknown> {
+  const read = subsetReads(reader);
+  const [allSuppliers, suppliers, orders, supplierOrders, items] = yield* Effect.all(
     [
-      ...(request.productIds ?? []),
-      ...(request.productsOfItems ? items.map((item) => item.productId) : []),
+      request.allSuppliers ? readAll(read, "suppliers") : NO_ROWS,
+      readWhereIn(read, "suppliers", "id", request.supplierIds),
+      readWhereIn(read, "purchaseOrders", "id", request.orderIds),
+      request.anyOrderOfSupplier === undefined
+        ? NO_ROWS
+        : readFirst(
+            read,
+            "purchaseOrders",
+            {
+              _tag: "compare",
+              column: "supplierId",
+              op: "eq",
+              value: request.anyOrderOfSupplier,
+            },
+            BY_ID,
+          ),
+      readWhereIn(read, "purchaseOrderItems", "purchaseOrderId", request.itemsOfOrderIds),
     ],
+    CONCURRENT,
   );
+  const products = yield* readWhereIn(read, "products", "id", [
+    ...(request.productIds ?? []),
+    ...(request.productsOfItems ? items.map((item) => item.productId) : []),
+  ]);
   return {
     suppliers: readable(allSuppliers, suppliers),
     purchaseOrders: readable(orders, supplierOrders),
     purchaseOrderItems: readable(items),
     products: readable(products),
   };
-};
+});
 
-export const readNextPurchaseOrderNumber = async (
+export const readNextPurchaseOrderNumber = (
   reader: ReplicaSubsetReader,
   organizationId: string,
-): Promise<number> => {
-  const read = await reader.readSubset({
-    source: "purchaseOrders",
-    where: { _tag: "compare", column: "organizationId", op: "eq", value: organizationId },
-    orderBy: [{ column: "orderNumber", direction: "desc" }],
-    limit: 1,
-    offset: 0,
-  });
-  const latest = await Effect.runPromise(decodePurchaseOrderSqliteRows(read.rows));
-  return nextInvoiceNumber(latest.map((order) => order.orderNumber));
-};
+): Effect.Effect<number, unknown> =>
+  readLatest(reader, "purchaseOrders", "orderNumber", organizationId).pipe(
+    Effect.map((latest) => nextInvoiceNumber(latest.map((order) => order.orderNumber))),
+  );
 
 export type OpenOrderLines = {
   readonly orders: ReadonlyArray<PurchaseOrderRow>;
   readonly lines: ReadonlyArray<PurchaseOrderItemRow>;
 };
 
-export const readOpenOrderLines = async (
+export const readOpenOrderLines = Effect.fnUntraced(function* (
   reader: ReplicaSubsetReader,
   productIds: Iterable<string>,
-): Promise<OpenOrderLines> => {
+): Effect.fn.Return<OpenOrderLines, unknown> {
   const products = inChunks("productId", productIds);
   if (products.length === 0) return { orders: [], lines: [] };
-  const orders = await readAll<PurchaseOrderRow>(
-    reader,
-    "purchaseOrders",
-    decodePurchaseOrderSqliteRows,
-    { _tag: "in", column: "status", values: OPEN_PURCHASE_ORDER_STATUSES },
-  );
-  const lines = await Promise.all(
+  const read = subsetReads(reader);
+  const orders = yield* readAll(read, "purchaseOrders", {
+    _tag: "in",
+    column: "status",
+    values: OPEN_PURCHASE_ORDER_STATUSES,
+  });
+  const lines = yield* Effect.forEach(
     inChunks(
       "purchaseOrderId",
       orders.map((order) => order.id),
     ).flatMap((ofOrders) =>
-      products.map((ofProducts) =>
-        readAll<PurchaseOrderItemRow>(
-          reader,
-          "purchaseOrderItems",
-          decodePurchaseOrderItemSqliteRows,
-          { _tag: "and", predicates: [ofProducts, ofOrders] },
-        ),
-      ),
+      products.map((ofProducts): SubsetPredicate => ({
+        _tag: "and",
+        predicates: [ofProducts, ofOrders],
+      })),
     ),
+    (where) => readAll(read, "purchaseOrderItems", where),
+    CONCURRENT,
   );
   return { orders, lines: lines.flat() };
-};
+});
 
 const latestLineSpec = (productId: string): InventorySubsetSpec => ({
   source: "purchaseOrderItems",
@@ -305,37 +252,39 @@ const latestLineSpec = (productId: string): InventorySubsetSpec => ({
   offset: 0,
 });
 
-const readSpecs = async (
-  reader: ReplicaSubsetReader,
-  specs: ReadonlyArray<InventorySubsetSpec>,
-): Promise<ReadonlyArray<ReplicaRow>> => {
-  const readBatch = reader.readBatch;
-  if (readBatch === undefined) {
-    return (await Promise.all(specs.map((spec) => reader.readSubset(spec)))).flatMap(
-      (read) => read.rows,
-    );
-  }
-  const batches: Array<Promise<ReadonlyArray<ReplicaRow>>> = [];
+const specBatches = (specs: ReadonlyArray<InventorySubsetSpec>) => {
+  const batches: Array<ReadonlyArray<InventorySubsetSpec>> = [];
   for (let start = 0; start < specs.length; start += MAX_BATCH_SPECS) {
-    batches.push(
-      readBatch
-        .call(reader, specs.slice(start, start + MAX_BATCH_SPECS))
-        .then((batch) => batch.reads.flat()),
-    );
+    batches.push(specs.slice(start, start + MAX_BATCH_SPECS));
   }
-  return (await Promise.all(batches)).flat();
+  return batches;
 };
 
-export const readLearnedSuppliers = async (
+const readSpecs = (
+  reader: ReplicaSubsetReader,
+  specs: ReadonlyArray<InventorySubsetSpec>,
+): Effect.Effect<ReadonlyArray<ReplicaRow>, unknown> => {
+  const readBatch = reader.readBatch;
+  return readBatch === undefined
+    ? Effect.forEach(specs, subsetReads(reader), CONCURRENT).pipe(
+        Effect.map((reads) => reads.flatMap((read) => read.rows)),
+      )
+    : Effect.forEach(
+        specBatches(specs),
+        (batch) => attempt(() => readBatch.call(reader, batch)),
+        CONCURRENT,
+      ).pipe(Effect.map((batches) => batches.flatMap((batch) => batch.reads.flat())));
+};
+
+export const readLearnedSuppliers = Effect.fnUntraced(function* (
   reader: ReplicaSubsetReader,
   productIds: Iterable<string>,
-): Promise<ReadonlyMap<string, SupplierId>> => {
-  const rows = await readSpecs(reader, [...new Set(productIds)].map(latestLineSpec));
-  const lines = await Effect.runPromise(decodePurchaseOrderItemSqliteRows(rows));
-  const orders = await readWhereIn<PurchaseOrderRow>(
-    reader,
+): Effect.fn.Return<ReadonlyMap<string, SupplierId>, unknown> {
+  const rows = yield* readSpecs(reader, [...new Set(productIds)].map(latestLineSpec));
+  const lines = yield* decodeSourceRows("purchaseOrderItems")(rows);
+  const orders = yield* readWhereIn(
+    subsetReads(reader),
     "purchaseOrders",
-    decodePurchaseOrderSqliteRows,
     "id",
     lines.map((line) => line.purchaseOrderId),
   );
@@ -346,4 +295,4 @@ export const readLearnedSuppliers = async (
     if (supplierId !== undefined) learned.set(line.productId, supplierId);
   }
   return learned;
-};
+});

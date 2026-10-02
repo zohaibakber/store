@@ -1,13 +1,9 @@
-import type { AuthSession } from "@store/auth";
-import type { WorkspaceSnapshot } from "@store/contracts";
+import type { AccessTokenVerifier } from "@store/auth";
 import type { InvoiceAiClient, ProductScanAiClient } from "@store/services";
 import type { RuntimeContext } from "alchemy";
 import type { RateLimitError } from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
-import type * as Scope from "effect/Scope";
-
-import type { AuthError } from "../auth/session";
 
 export const RATE_LIMITS = {
   invoiceExtraction: { limit: 10, period: 60 },
@@ -16,12 +12,7 @@ export const RATE_LIMITS = {
 
 export interface ServerRuntimeContract {
   readonly trustedOrigins: ReadonlyArray<string>;
-  readonly getSession: (
-    headers: Headers,
-  ) => Effect.Effect<AuthSession | null, AuthError, RuntimeContext | Scope.Scope>;
-  readonly loadWorkspace: (
-    headers: Headers,
-  ) => Effect.Effect<WorkspaceSnapshot, AuthError, RuntimeContext | Scope.Scope>;
+  readonly verifyAccessToken: AccessTokenVerifier;
   readonly invoiceAi: Effect.Effect<InvoiceAiClient, never, RuntimeContext>;
   readonly productScanAi: Effect.Effect<ProductScanAiClient, never, RuntimeContext>;
   readonly limitInvoiceExtraction: (

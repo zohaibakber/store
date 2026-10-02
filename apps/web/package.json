@@ -1,0 +1,70 @@
+{
+  "name": "@store/web",
+  "version": "0.3.105",
+  "private": true,
+  "description": "Tabaaq inventory web app",
+  "homepage": "https://github.com/zohaibakber/store",
+  "author": "Zohaib Akber <zohaibakber99@gmail.com>",
+  "type": "module",
+  "exports": {
+    "./host/*": "./src/host/*.ts",
+    "./vite": "./vite.app.ts"
+  },
+  "scripts": {
+    "dev": "vp dev",
+    "build": "tsc && vp build",
+    "preview": "vp preview"
+  },
+  "devDependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@effect/atom-react": "catalog:",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
+    "@sentry/electron": "7.20.0",
+    "@sentry/react": "10.75.0",
+    "@store/auth": "workspace:*",
+    "@store/auth-worker": "workspace:*",
+    "@store/client-db": "workspace:*",
+    "@store/contracts": "workspace:*",
+    "@store/inventory-react": "workspace:*",
+    "@store/server": "workspace:*",
+    "@store/services": "workspace:*",
+    "@store/workspace": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/charts": "^0.18.0",
+    "@tanstack/react-form": "^1.33.5",
+    "@tanstack/react-router": "^1.170.40",
+    "@tanstack/react-table": "^9.2.4",
+    "@tanstack/router-plugin": "^1.168.41",
+    "@types/d3-shape": "^3.2.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "alchemy": "catalog:",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "d3-shape": "^3.2.0",
+    "date-fns": "^4.4.0",
+    "effect": "catalog:",
+    "oxc-transform-react": "^0.151.0",
+    "react": "19.3.0",
+    "react-day-picker": "^10.0.1",
+    "react-dom": "19.3.0",
+    "shadcn": "^4.21.0",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3",
+    "thinking-orbs": "^0.3.2",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.27.1",
+      "onFail": "download"
+    }
+  }
+}

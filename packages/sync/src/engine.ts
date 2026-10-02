@@ -110,10 +110,6 @@ interface SyncEngineContract {
   readonly applyLiveFrame: (
     frame: SyncLiveServerFrame,
   ) => Effect.Effect<LiveFrameOutcome, ReplicaStoreError>;
-  readonly verifyAuthority: (input: {
-    readonly incarnation: string;
-    readonly horizon: string;
-  }) => Effect.Effect<void, SyncProtocolError | ReplicaStoreError>;
   readonly setPullMaxBytes: (maxBytes: number | undefined) => Effect.Effect<void>;
   readonly pullMaxBytes: Effect.Effect<number | undefined>;
 }
@@ -204,13 +200,6 @@ export const makeSyncEngineFromReplicaStore = (
         }
       }
       yield* Deferred.succeed(registered, undefined);
-    });
-
-    const verifyAuthority = Effect.fn("SyncEngine.verifyAuthority")(function* (input: {
-      readonly incarnation: string;
-      readonly horizon: string;
-    }) {
-      yield* withPermit(store.verifyAuthority(input));
     });
 
     const uploadOnce = Effect.fn("SyncEngine.uploadOnce")(function* () {
@@ -526,7 +515,6 @@ export const makeSyncEngineFromReplicaStore = (
       catchUp,
       hintApplied,
       applyLiveFrame: applyLiveFrameEffect,
-      verifyAuthority,
       setPullMaxBytes: (maxBytes) => Ref.set(pullMaxBytes, maxBytes),
       pullMaxBytes: Ref.get(pullMaxBytes),
     };

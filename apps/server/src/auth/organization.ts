@@ -1,4 +1,4 @@
-import type { AuthSession } from "@store/auth";
+import type { AccessClaims, AccessTokenVerifier } from "@store/auth";
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -6,14 +6,14 @@ import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
-import { Forbidden, Unauthenticated, forbidden, unauthenticated } from "../http/errors";
-import { ServerRuntime, type ServerRuntimeContract } from "../http/runtime";
+import { Forbidden, Unauthenticated, unauthenticated } from "../http/errors";
+import { ServerRuntime } from "../http/runtime";
+import { authenticateRequest } from "./session";
 
 export interface CurrentOrganizationContext {
-  readonly user: AuthSession["user"];
-  readonly session: AuthSession["session"];
-  readonly organizationId: string;
-  readonly role: AuthSession["organizations"][number]["role"];
+  readonly organizationId: AccessClaims["activeOrganizationId"];
+  readonly userId: AccessClaims["subject"];
+  readonly role: AccessClaims["role"];
 }
 
 export class CurrentOrganization extends Context.Service<
@@ -26,48 +26,28 @@ export class OrganizationAuth extends HttpApiMiddleware.Service<
   { requires: RuntimeContext; provides: CurrentOrganization }
 >()("@store/server/OrganizationAuth", { error: [Unauthenticated, Forbidden] }) {}
 
-const logAuthFailure = (message: string) =>
-  Effect.tapError((cause: unknown) =>
-    Effect.logError(message).pipe(
-      Effect.annotateLogs({
-        cause: cause instanceof Error ? cause.message : String(cause),
-      }),
-    ),
-  );
-
 const authenticateCurrentOrganization = Effect.fn(
   "OrganizationAuth.authenticateCurrentOrganization",
-)(function* (runtime: ServerRuntimeContract) {
+)(function* (verify: AccessTokenVerifier) {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const session = yield* runtime
-    .getSession(new Headers(request.headers))
-    .pipe(logAuthFailure("Access token verification failed"), Effect.orDie);
-  if (!session) return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
-
-  const organizationId = session.session.activeOrganizationId;
-  if (!organizationId)
-    return yield* Effect.fail(forbidden("ORGANIZATION_REQUIRED", "Select an organization first."));
-  const membership = session.organizations.find(
-    (organization) => organization.id === organizationId,
-  );
-  if (!membership)
-    return yield* Effect.fail(forbidden("ORGANIZATION_REQUIRED", "Select an organization first."));
-
+  const claims = yield* authenticateRequest(verify, request);
+  if (claims === null) {
+    return yield* Effect.fail(unauthenticated("UNAUTHENTICATED", "Sign in required."));
+  }
   return {
-    user: session.user,
-    session: session.session,
-    organizationId,
-    role: membership.role,
+    organizationId: claims.activeOrganizationId,
+    userId: claims.subject,
+    role: claims.role,
   } satisfies CurrentOrganizationContext;
 });
 
 export const OrganizationAuthLive = Layer.effect(
   OrganizationAuth,
   Effect.gen(function* () {
-    const runtime = yield* ServerRuntime;
+    const { verifyAccessToken } = yield* ServerRuntime;
     return (httpEffect) =>
       Effect.gen(function* () {
-        const identity = yield* authenticateCurrentOrganization(runtime);
+        const identity = yield* authenticateCurrentOrganization(verifyAccessToken);
         return yield* httpEffect.pipe(Effect.provideService(CurrentOrganization, identity));
       });
   }),

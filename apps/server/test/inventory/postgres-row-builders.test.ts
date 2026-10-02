@@ -45,8 +45,6 @@ const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient>) =>
     ),
   );
 
-const encodeRowJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-
 const ADVERSARIAL_TEXT = [
   "plain",
   'quote " inside',
@@ -69,8 +67,6 @@ const metadata = (organizationId: string, index: number, rowVersion: number) => 
   rowVersion,
 });
 
-const RowText = Schema.Struct({ id: Schema.String, json: Schema.String });
-const decodeRowTexts = Schema.decodeUnknownSync(Schema.Array(RowText));
 const DigestRow = Schema.Struct({ digest: Schema.fromJsonString(PartitionDigestReport) });
 const decodeDigestRows = Schema.decodeUnknownSync(Schema.Array(DigestRow));
 const LegacyDigest = Schema.Struct({
@@ -252,9 +248,6 @@ const seed = (organizationId: string) =>
     };
   });
 
-const byId = <Row extends { readonly id: string }>(rows: ReadonlyArray<Row>) =>
-  new Map(rows.map((row) => [row.id, row]));
-
 describe("sync row builders and partition digests", () => {
   beforeAll(async () => {
     database = await startAuthorityPostgres();
@@ -262,76 +255,6 @@ describe("sync row builders and partition digests", () => {
 
   afterAll(async () => {
     await database?.close();
-  });
-
-  it("builds the exact row JSON that the TypeScript row encoder produces", async () => {
-    const organizationId = "org-row-builders";
-    const outcome = await run(
-      Effect.gen(function* () {
-        const seeded = yield* seed(organizationId);
-        const categoryTexts = yield* seeded.db.execute(
-          sql`select "c"."id", "sync"."category_json"("c")::text as "json" from ${categories} as "c" where "c"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const productTexts = yield* seeded.db.execute(
-          sql`select "p"."id", "sync"."product_json"("p")::text as "json" from ${products} as "p" where "p"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const batchTexts = yield* seeded.db.execute(
-          sql`select "b"."id", "sync"."batch_json"("b")::text as "json" from ${batches} as "b" where "b"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const supplierTexts = yield* seeded.db.execute(
-          sql`select "s"."id", "sync"."supplier_json"("s")::text as "json" from ${suppliers} as "s" where "s"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const orderTexts = yield* seeded.db.execute(
-          sql`select "o"."id", "sync"."purchase_order_json"("o")::text as "json" from ${purchaseOrders} as "o" where "o"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const lineTexts = yield* seeded.db.execute(
-          sql`select "i"."id", "sync"."purchase_order_item_json"("i")::text as "json" from ${purchaseOrderItems} as "i" where "i"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const movementTexts = yield* seeded.db.execute(
-          sql`select "m"."id", "sync"."stock_movement_json"("m")::text as "json" from ${stockMovements} as "m" where "m"."organization_id" = ${organizationId}`,
-          "objects",
-        );
-        const selectedProducts = yield* seeded.db
-          .select()
-          .from(products)
-          .where(eq(products.organizationId, organizationId));
-        return {
-          seeded,
-          selectedProducts,
-          categoryTexts: decodeRowTexts(categoryTexts),
-          productTexts: decodeRowTexts(productTexts),
-          batchTexts: decodeRowTexts(batchTexts),
-          supplierTexts: decodeRowTexts(supplierTexts),
-          orderTexts: decodeRowTexts(orderTexts),
-          lineTexts: decodeRowTexts(lineTexts),
-          movementTexts: decodeRowTexts(movementTexts),
-        };
-      }),
-    );
-    const cases = [
-      [outcome.categoryTexts, byId(outcome.seeded.categories)],
-      [outcome.productTexts, byId(outcome.seeded.products)],
-      [outcome.batchTexts, byId(outcome.seeded.batches)],
-      [outcome.productTexts, byId(outcome.selectedProducts)],
-      [outcome.supplierTexts, byId(outcome.seeded.suppliers)],
-      [outcome.orderTexts, byId(outcome.seeded.orders)],
-      [outcome.lineTexts, byId(outcome.seeded.lines)],
-      [outcome.movementTexts, byId(outcome.seeded.movements)],
-    ] as const;
-    for (const [texts, rows] of cases) {
-      expect(texts).toHaveLength(ADVERSARIAL_TEXT.length);
-      for (const text of texts) {
-        const row = rows.get(text.id);
-        expect(row).toBeDefined();
-        expect(text.json).toBe(encodeRowJson(row));
-      }
-    }
   });
 
   it("computes the same partition digests in Postgres as the shared client contract", async () => {

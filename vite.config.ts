@@ -20,7 +20,6 @@ export default defineConfig({
       ".windsurf/**",
       "**/dist/**",
       "**/dist-electron/**",
-      "**/dist-web/**",
       "**/.vite/**",
       "**/out/**",
       "**/release/**",
@@ -30,7 +29,7 @@ export default defineConfig({
     sortImports: true,
     sortTailwindcss: {
       functions: ["clsx", "cn", "cva", "twMerge"],
-      stylesheet: "./apps/desktop/src/styles.css",
+      stylesheet: "./apps/web/src/styles.css",
     },
   },
   staged: {
@@ -62,7 +61,6 @@ export default defineConfig({
       ".windsurf/**",
       "**/dist/**",
       "**/dist-electron/**",
-      "**/dist-web/**",
       "**/.vite/**",
       "**/out/**",
       "**/release/**",
@@ -83,10 +81,10 @@ export default defineConfig({
           "apps/server/src/routes/sync.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
           "packages/inventory-react/**/*.{ts,tsx}",
-          "apps/desktop/src/lib/inventory/{index,provider,sync-status}.{ts,tsx}",
+          "apps/web/src/lib/inventory/{index,provider,sync-status}.{ts,tsx}",
           "apps/mobile/src/**/*.{ts,tsx}",
           "apps/mobile/test/**/*.ts",
-          "apps/desktop/src/start-electron.tsx",
+          "apps/web/src/start-electron.tsx",
           "apps/desktop/electron/inventory-http.ts",
           "apps/desktop/electron/inventory-http-channels.ts",
           "apps/desktop/test/electron/inventory-http.test.ts",
@@ -96,7 +94,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["apps/desktop/src/**/*.{ts,tsx}"],
+        files: ["apps/web/src/**/*.{ts,tsx}"],
         plugins: ["react"],
         rules: {
           "react/no-children-prop": "off",

@@ -7,14 +7,18 @@ design is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Workspace boundaries
 
-- `apps/desktop` owns the complete Electron application: main process, preload,
-  React renderer, Vite configuration, tests, and packaging. The renderer uses
-  hash history; the main process keeps encrypted refresh credentials and
-  proxies authenticated sync HTTP. Live inventory is the local replica, owned
-  by a main-process worker on `@effect/sql-sqlite-node` over `node:sqlite`.
-  The renderer never sees SQL. Desktop requires sign-in before inventory.
-  The same renderer also runs as a browser SPA (`--mode web`): an HttpOnly
-  refresh cookie, an in-memory access token, and the IndexedDB replica.
+- `apps/web` owns the product UI: the React app, routes, components, styles,
+  and the host contract (`src/host`) that says what a host must provide. It
+  builds and deploys alone as a browser SPA: an HttpOnly refresh cookie, an
+  in-memory access token, and the IndexedDB replica. It never imports from
+  `apps/desktop`.
+- `apps/desktop` owns the Electron shell: main process, preload, workers,
+  updater, tests, and packaging. It uses the web app as its renderer and
+  implements the host contract, importing only `@store/web/host/*` and
+  `@store/web/vite`. The renderer uses hash history; the main process keeps
+  encrypted refresh credentials and proxies authenticated sync HTTP. Live
+  inventory is the local replica, owned by a main-process worker on
+  `@effect/sql-sqlite-node` over `node:sqlite`. The renderer never sees SQL.
 - `apps/mobile` is the Expo Android app. Its replica is op-sqlite through
   `@effect/sql-sqlite-react-native`.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
@@ -39,10 +43,10 @@ design is in [`docs/architecture.md`](docs/architecture.md).
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
-Shared helpers stay next to the tests that use them, for example
-`apps/desktop/test/lib`.
+Shared helpers stay next to the tests that use them. `apps/web` has no unit
+tests; the UI is tested end to end by hand.
 
-Desktop renderer components are grouped by feature. `components/app` owns the application
+Web app components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
@@ -64,15 +68,15 @@ vp run dev
 ```
 
 `vp run` starts the API/auth Workers and the desktop workspace in parallel. The
-desktop's plain `vp dev` task starts the renderer on `:5174`, builds main and
-preload, and launches Electron. Use `vp run @store/desktop#dev` when you only
+desktop's plain `vp dev` task serves the web app as its renderer on `:5174`,
+builds main and preload, and launches Electron. Use `vp run @store/desktop#dev` when you only
 need one workspace.
 
 ```sh
 vp run dev:web
 ```
 
-That starts the same Workers and serves the renderer as a web app on
+That starts the same Workers and serves `apps/web` in the browser on
 `http://localhost:5174`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in

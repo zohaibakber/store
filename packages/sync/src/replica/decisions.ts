@@ -6,6 +6,8 @@ import {
   type PartitionDigest,
   type PartitionDigestReport,
   type PartitionEntity,
+  type SnapshotManifest,
+  type SnapshotPartPayload,
   type SyncCommand,
   SyncEntity,
   type SyncCommandEnvelope,
@@ -234,9 +236,6 @@ export const RELEASED_CLAIM_FIELDS = {
   outcomeUncertain: true,
 } as const;
 
-export const nextUploadClaim = <Row>(pendingInSequence: ReadonlyArray<Row>): Row | undefined =>
-  pendingInSequence[0];
-
 export const isStaleClaim = (
   row: { readonly claimedAt: number | null },
   staleBefore: number,
@@ -259,19 +258,6 @@ export const checkIncarnation = (
           `Expected incarnation ${local}, received ${received}.`,
         ),
       );
-
-export const checkAuthorityHead = (
-  appliedCommitSequence: string,
-  authorityHorizon: string,
-): Result.Result<void, SyncProtocolError> =>
-  compareDecimalSequence(appliedCommitSequence, authorityHorizon) > 0
-    ? Result.fail(
-        syncProtocolError(
-          "SNAPSHOT_REQUIRED",
-          `Local applied cursor ${appliedCommitSequence} is ahead of authority horizon ${authorityHorizon}.`,
-        ),
-      )
-    : Result.void;
 
 type CoverageAfterPull =
   | { readonly _tag: "unchanged" }
@@ -321,3 +307,39 @@ export const decideJournalRestore = (
 
 export const freeDocumentNumber = (proposed: number, highestOtherNumber: number): number =>
   Math.max(highestOtherNumber, proposed) + 1;
+
+type PartImportProgress = {
+  readonly stage: string;
+  readonly partsImported: number;
+};
+
+type PartAdmission<Row> = {
+  readonly _tag: "imported" | "next";
+  readonly importRow: Row;
+};
+
+const partRefused = (message: string) =>
+  Result.fail(syncProtocolError("SNAPSHOT_UNAVAILABLE", message));
+
+export const decidePartAdmission = <Row extends PartImportProgress>(
+  importRow: Row | undefined,
+  manifest: SnapshotManifest,
+  part: Pick<SnapshotPartPayload, "snapshotId" | "partNumber">,
+): Result.Result<PartAdmission<Row>, SyncProtocolError> => {
+  if (!importRow || importRow.stage === "activated" || importRow.stage === "failed") {
+    return partRefused("The snapshot import is not active.");
+  }
+  if (!manifest.parts.some((entry) => entry.partNumber === part.partNumber)) {
+    return partRefused("The snapshot part is not in the manifest.");
+  }
+  if (part.snapshotId !== manifest.snapshotId) {
+    return partRefused("The snapshot part identity does not match.");
+  }
+  if (part.partNumber <= importRow.partsImported) {
+    return Result.succeed({ _tag: "imported", importRow });
+  }
+  if (part.partNumber !== importRow.partsImported + 1) {
+    return partRefused("The snapshot part arrived out of order.");
+  }
+  return Result.succeed({ _tag: "next", importRow });
+};

@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { parseUnitsPerPack, salvageUnitsPerPack } from "../invoice-extraction/pack-size";
-import { decodeModelJson, ModelScalar, type ModelOutput } from "../model-json";
+import { decodeModelJson, ModelScalar, type GenerateModelJson } from "../model-json";
 
 class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
   message: Schema.String,
@@ -29,16 +29,10 @@ const ProductScanModelOutput = Schema.Struct({
 });
 
 const decodeProductScanModelOutput = decodeModelJson(ProductScanModelOutput);
+const decodeScanResult = Schema.decodeUnknownEffect(ProductScanResult);
 
 export interface ProductScanAiClient {
-  readonly generate: (input: {
-    readonly messages: ReadonlyArray<{
-      readonly role: "system" | "user";
-      readonly content: string;
-    }>;
-    readonly jsonSchema: object;
-    readonly signal: AbortSignal;
-  }) => Promise<ModelOutput<typeof ProductScanModelOutput.Encoded>>;
+  readonly generate: GenerateModelJson<typeof ProductScanModelOutput.Encoded>;
 }
 
 const instructions = [
@@ -166,18 +160,17 @@ const requestContent = (mode: ProductScanMode, recognizedText: string) =>
 
 export const parseProductScan = Effect.fn("ProductScan.parse")(
   function* (ai: ProductScanAiClient, input: ProductScanInput) {
-    const raw = yield* Effect.tryPromise((signal) =>
-      ai.generate({
+    const raw = yield* ai
+      .generate({
         messages: [
           { role: "system", content: instructions },
           { role: "user", content: requestContent(input.mode, input.recognizedText) },
         ],
         jsonSchema: productScanResultJsonSchema,
-        signal,
-      }),
-    ).pipe(Effect.timeout("15 seconds"));
+      })
+      .pipe(Effect.timeout("15 seconds"));
     const parsed = yield* decodeProductScanModelOutput(raw);
-    return yield* Schema.decodeUnknownEffect(ProductScanResult)(normalizeResult(parsed));
+    return yield* decodeScanResult(normalizeResult(parsed));
   },
   (effect) =>
     effect.pipe(

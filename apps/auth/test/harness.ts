@@ -1,42 +1,44 @@
 import {
-  AccessClaims,
-  AccessToken,
-  AccessTokenService,
-  AuthorizationCode,
+  accessTokenLayer,
+  AUTH_JWT_KEY_ID,
+  developmentEmailLayer,
+  disabledEmailLayer,
   EmailAddress,
-  EmailProvider,
-  InvitationId,
-  JwtError,
-  OrganizationId,
-  OrganizationMember,
-  OtpChallengeId,
-  PasswordHash,
-  PasswordHasher,
-  SessionId,
-  UserId,
-  type IssueAccessTokenInput,
-  type OrganizationRole,
-  type SendInvitationInput,
+  Password,
+  passwordHasherLayer,
+  type AuthClientKind,
+  type OrganizationCommand,
+  type OrganizationId,
+  type RefreshToken,
+  type UserId,
 } from "@store/auth";
 import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Encoding from "effect/Encoding";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
+import * as Logger from "effect/Logger";
+import * as Redacted from "effect/Redacted";
+import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
-import { EphemeralStore } from "../src/ephemeral";
-import { GoogleOAuth, GoogleOAuthError, type GoogleProfile } from "../src/google";
+import { AuthCrypto } from "../src/crypto";
+import { ephemeralStoreLayer } from "../src/ephemeral";
+import { authFailureWire, type AuthFailure } from "../src/failures";
+import { googleOAuthLayer } from "../src/google";
 import { HubRevocation } from "../src/hub-revocation";
-import type { AuthRateLimit } from "../src/limits";
-import {
-  AuthRepository,
-  type AuthRepositoryApi,
-  type InvitationRecord,
-  type MembershipRecord,
-  type SessionRecord,
-  type UserRecord,
-} from "../src/repository";
+import { authLimiterLayer, type AuthLimits, type AuthRateLimit } from "../src/limits";
+import { authRepositoryLayer } from "../src/repository";
 import { AuthService, authServiceLayer } from "../src/service";
+import { AuthSettings } from "../src/settings";
+import { authD1 } from "./sqlite-d1";
+
+export const EPHEMERAL_PEPPER = Redacted.make("ephemeral-pepper");
+const GOOGLE_CLIENT_ID = "web-client.apps.googleusercontent.com";
+export const PASSWORD = Password.make("correct horse battery");
+
+export const native: AuthClientKind = { _tag: "Native", deviceName: "Front counter" };
+export const browser: AuthClientKind = { _tag: "Browser" };
 
 const testRuntimeContext = Context.make(RuntimeContext, {
   Type: "test",
@@ -46,458 +48,12 @@ const testRuntimeContext = Context.make(RuntimeContext, {
   set: (id) => Effect.succeed(id),
 });
 
-export interface Store {
-  readonly users: Array<UserRecord>;
-  readonly organizations: Array<{ id: OrganizationId; name: string; slug: string | null }>;
-  readonly memberships: Array<{
-    organizationId: OrganizationId;
-    userId: UserId;
-    role: OrganizationRole;
-    createdAt: number;
-  }>;
-  readonly invitations: Array<{ record: InvitationRecord; tokenHash: string }>;
-  readonly sessions: Array<SessionRecord>;
-  readonly googleIdentities: Array<{ providerAccountId: string; userId: UserId }>;
-  readonly sentInvitations: Array<SendInvitationInput>;
-}
-
-const emptyStore = (): Store => ({
-  users: [],
-  organizations: [],
-  memberships: [],
-  invitations: [],
-  sessions: [],
-  googleIdentities: [],
-  sentInvitations: [],
-});
-
-const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
-
-export const seedUser = (
-  store: Store,
-  input: {
-    readonly id: string;
-    readonly email: string;
-    readonly name?: string;
-    readonly password?: boolean;
-    readonly emailVerified?: boolean;
-  },
-) => {
-  const user: UserRecord = {
-    id: UserId.make(input.id),
-    email: EmailAddress.make(input.email),
-    name: input.name ?? input.email,
-    image: null,
-    passwordHash: input.password === false ? null : PASSWORD_HASH,
-    emailVerified: input.emailVerified ?? false,
-  };
-  store.users.push(user);
-  return user;
-};
-
-export const seedOrganization = (
-  store: Store,
-  input: {
-    readonly id: string;
-    readonly name: string;
-    readonly slug?: string;
-    readonly members: ReadonlyArray<{ readonly userId: UserId; readonly role: OrganizationRole }>;
-  },
-) => {
-  const id = OrganizationId.make(input.id);
-  store.organizations.push({ id, name: input.name, slug: input.slug ?? null });
-  input.members.forEach((member, index) => {
-    store.memberships.push({
-      organizationId: id,
-      userId: member.userId,
-      role: member.role,
-      createdAt: index,
-    });
-  });
-  return id;
-};
-
-export const seedSession = (
-  store: Store,
-  input: {
-    readonly id: string;
-    readonly userId: UserId;
-    readonly organizationId: OrganizationId;
-    readonly refreshTokenHash?: string;
-  },
-) => {
-  const session: SessionRecord = {
-    id: SessionId.make(input.id),
-    familyId: `family-${input.id}`,
-    userId: input.userId,
-    activeOrganizationId: input.organizationId,
-    refreshTokenHash: input.refreshTokenHash ?? "unset",
-    clientKind: "Native",
-    deviceName: "Test device",
-    expiresAt: Date.now() + 60_000,
-    revokedAt: null,
-    replacedBySessionId: null,
-  };
-  store.sessions.push(session);
-  return session;
-};
-
-const membershipOf = (store: Store, userId: UserId, organizationId: OrganizationId) => {
-  const membership = store.memberships.find(
-    (entry) => entry.userId === userId && entry.organizationId === organizationId,
-  );
-  if (!membership) return null;
-  const organization = store.organizations.find((entry) => entry.id === organizationId);
-  return {
-    organizationId,
-    organizationName: organization?.name ?? "Unknown",
-    organizationSlug: organization?.slug ?? null,
-    role: membership.role,
-  } satisfies MembershipRecord;
-};
-
-const pending = (invitation: InvitationRecord, now: number) =>
-  invitation.acceptedAt === null && invitation.revokedAt === null && invitation.expiresAt > now;
-
-const anotherOwner = (store: Store, organizationId: OrganizationId, userId: UserId) =>
-  store.memberships.some(
-    (entry) =>
-      entry.organizationId === organizationId && entry.role === "owner" && entry.userId !== userId,
-  );
-
-const fakeRepository = (store: Store): AuthRepositoryApi => ({
-  findUserByEmail: (email) =>
-    Effect.succeed(store.users.find((user) => user.email === email) ?? null),
-  findUserById: (userId) => Effect.succeed(store.users.find((user) => user.id === userId) ?? null),
-  findUserByGoogleId: (providerAccountId) =>
-    Effect.sync(() => {
-      const identity = store.googleIdentities.find(
-        (entry) => entry.providerAccountId === providerAccountId,
-      );
-      if (!identity) return null;
-      return store.users.find((user) => user.id === identity.userId) ?? null;
-    }),
-  createPasswordUser: (input) =>
-    Effect.sync(() => {
-      const user = seedUser(store, {
-        id: `user-${store.users.length + 1}`,
-        email: input.email,
-        name: input.name,
-      });
-      seedOrganization(store, {
-        id: `organization-${store.organizations.length + 1}`,
-        name: `${input.name}'s Store`,
-        members: [{ userId: user.id, role: "owner" }],
-      });
-      return user;
-    }),
-  createGoogleUser: (input) =>
-    Effect.sync(() => {
-      const user = seedUser(store, {
-        id: `user-${store.users.length + 1}`,
-        email: input.email,
-        name: input.name,
-        password: false,
-        emailVerified: true,
-      });
-      seedOrganization(store, {
-        id: `organization-${store.organizations.length + 1}`,
-        name: `${input.name}'s Store`,
-        members: [{ userId: user.id, role: "owner" }],
-      });
-      store.googleIdentities.push({
-        providerAccountId: input.providerAccountId,
-        userId: user.id,
-      });
-      return user;
-    }),
-  attachGoogleAccount: (input) =>
-    Effect.sync(() => {
-      const taken = store.googleIdentities.some(
-        (entry) => entry.providerAccountId === input.providerAccountId,
-      );
-      if (taken) return false;
-      store.googleIdentities.push(input);
-      return true;
-    }),
-  claimUnverifiedPasswordUser: (input) =>
-    Effect.sync(() => {
-      const taken = store.googleIdentities.some(
-        (entry) => entry.providerAccountId === input.providerAccountId,
-      );
-      if (taken) return false;
-      const index = store.users.findIndex((user) => user.id === input.userId);
-      const user = store.users[index];
-      if (!user || user.passwordHash === null || user.emailVerified) return false;
-      store.users[index] = {
-        ...user,
-        passwordHash: null,
-        emailVerified: true,
-        image: user.image ?? input.image,
-      };
-      store.googleIdentities.push({
-        providerAccountId: input.providerAccountId,
-        userId: input.userId,
-      });
-      for (const [sessionIndex, session] of store.sessions.entries()) {
-        if (session.userId === input.userId && session.revokedAt === null) {
-          store.sessions[sessionIndex] = { ...session, revokedAt: input.now };
-        }
-      }
-      return true;
-    }),
-  membershipForUser: (userId) =>
-    Effect.suspend(() => {
-      const membership = store.memberships
-        .filter((entry) => entry.userId === userId)
-        .sort((left, right) => left.createdAt - right.createdAt)[0];
-      const resolved = membership ? membershipOf(store, userId, membership.organizationId) : null;
-      return resolved ? Effect.succeed(resolved) : Effect.die(`${userId} has no membership`);
-    }),
-  membershipInOrganization: (input) =>
-    Effect.sync(() => membershipOf(store, input.userId, input.organizationId)),
-  updateOrganization: (input) =>
-    Effect.sync(() => {
-      const index = store.organizations.findIndex((entry) => entry.id === input.organizationId);
-      const organization = store.organizations[index];
-      if (!organization) return null;
-      const taken = store.organizations.some(
-        (entry) => entry.id !== organization.id && input.slug !== null && entry.slug === input.slug,
-      );
-      if (taken) return null;
-      store.organizations[index] = { ...organization, name: input.name, slug: input.slug };
-      return {
-        organizationId: organization.id,
-        organizationName: input.name,
-        organizationSlug: input.slug,
-        role: input.role,
-      } satisfies MembershipRecord;
-    }),
-  listMembers: (organizationId) =>
-    Effect.sync(() =>
-      store.memberships
-        .filter((entry) => entry.organizationId === organizationId)
-        .flatMap((entry) => {
-          const user = store.users.find((candidate) => candidate.id === entry.userId);
-          if (!user) return [];
-          return [
-            OrganizationMember.make({
-              userId: user.id,
-              name: user.name,
-              email: user.email,
-              image: user.image,
-              role: entry.role,
-              joinedAt: entry.createdAt,
-            }),
-          ];
-        }),
-    ),
-  countRole: (input) =>
-    Effect.sync(
-      () =>
-        store.memberships.filter(
-          (entry) => entry.organizationId === input.organizationId && entry.role === input.role,
-        ).length,
-    ),
-  changeMemberRole: (input) =>
-    Effect.sync(() => {
-      const index = store.memberships.findIndex(
-        (entry) => entry.organizationId === input.organizationId && entry.userId === input.userId,
-      );
-      const membership = store.memberships[index];
-      if (!membership || membership.role === input.role) return false;
-      if (membership.role === "owner" && !anotherOwner(store, input.organizationId, input.userId)) {
-        return false;
-      }
-      store.memberships[index] = { ...membership, role: input.role };
-      return true;
-    }),
-  removeMember: (input) =>
-    Effect.sync(() => {
-      const index = store.memberships.findIndex(
-        (entry) => entry.organizationId === input.organizationId && entry.userId === input.userId,
-      );
-      const membership = store.memberships[index];
-      if (!membership) return false;
-      if (membership.role === "owner" && !anotherOwner(store, input.organizationId, input.userId)) {
-        return false;
-      }
-      store.memberships.splice(index, 1);
-      for (const [sessionIndex, session] of store.sessions.entries()) {
-        if (
-          session.userId === input.userId &&
-          session.activeOrganizationId === input.organizationId &&
-          session.revokedAt === null
-        ) {
-          store.sessions[sessionIndex] = { ...session, revokedAt: Date.now() };
-        }
-      }
-      return true;
-    }),
-  createInvitation: (input) =>
-    Effect.sync(() => {
-      for (const [index, entry] of store.invitations.entries()) {
-        if (
-          entry.record.organizationId === input.organizationId &&
-          entry.record.email === input.email &&
-          pending(entry.record, input.now)
-        ) {
-          store.invitations[index] = {
-            ...entry,
-            record: { ...entry.record, revokedAt: input.now },
-          };
-        }
-      }
-      const organization = store.organizations.find((entry) => entry.id === input.organizationId);
-      const record: InvitationRecord = {
-        id: InvitationId.make(`invitation-${store.invitations.length + 1}`),
-        organizationId: input.organizationId,
-        organizationName: organization?.name ?? "Unknown",
-        organizationSlug: organization?.slug ?? null,
-        email: input.email,
-        role: input.role,
-        invitedByUserId: input.invitedByUserId,
-        expiresAt: input.expiresAt,
-        acceptedAt: null,
-        revokedAt: null,
-        createdAt: input.now,
-      };
-      store.invitations.push({ record, tokenHash: input.tokenHash });
-      return record;
-    }),
-  revokeInvitation: (input) =>
-    Effect.sync(() => {
-      const index = store.invitations.findIndex(
-        (entry) =>
-          entry.record.id === input.invitationId &&
-          entry.record.organizationId === input.organizationId &&
-          entry.record.acceptedAt === null &&
-          entry.record.revokedAt === null,
-      );
-      const entry = store.invitations[index];
-      if (!entry) return false;
-      store.invitations[index] = { ...entry, record: { ...entry.record, revokedAt: input.now } };
-      return true;
-    }),
-  findInvitationByTokenHash: (tokenHash) =>
-    Effect.sync(
-      () => store.invitations.find((entry) => entry.tokenHash === tokenHash)?.record ?? null,
-    ),
-  pendingInvitationsForOrganization: (input) =>
-    Effect.sync(() =>
-      store.invitations
-        .filter(
-          (entry) =>
-            entry.record.organizationId === input.organizationId &&
-            pending(entry.record, input.now),
-        )
-        .map((entry) => entry.record),
-    ),
-  acceptInvitation: (input) =>
-    Effect.sync(() => {
-      const index = store.invitations.findIndex((entry) => entry.record.id === input.invitation.id);
-      const entry = store.invitations[index];
-      if (!entry || !pending(entry.record, input.now)) return false;
-      store.invitations[index] = { ...entry, record: { ...entry.record, acceptedAt: input.now } };
-      const already = store.memberships.some(
-        (membership) =>
-          membership.organizationId === input.invitation.organizationId &&
-          membership.userId === input.userId,
-      );
-      if (!already) {
-        store.memberships.push({
-          organizationId: input.invitation.organizationId,
-          userId: input.userId,
-          role: input.invitation.role,
-          createdAt: input.now,
-        });
-      }
-      return true;
-    }),
-  createSession: (input) =>
-    Effect.sync(() => {
-      store.sessions.push({
-        id: input.id,
-        familyId: input.familyId,
-        userId: input.userId,
-        activeOrganizationId: input.activeOrganizationId,
-        refreshTokenHash: input.refreshTokenHash,
-        clientKind: input.client._tag,
-        deviceName: input.client._tag === "Native" ? input.client.deviceName : null,
-        expiresAt: input.expiresAt,
-        revokedAt: null,
-        replacedBySessionId: null,
-      });
-    }),
-  findSession: (sessionId) =>
-    Effect.sync(() => store.sessions.find((session) => session.id === sessionId) ?? null),
-  findRefreshContext: (sessionId) =>
-    Effect.sync(() => {
-      const session = store.sessions.find((entry) => entry.id === sessionId);
-      if (!session) return null;
-      return {
-        session,
-        user: store.users.find((entry) => entry.id === session.userId) ?? null,
-        activeMembership: membershipOf(store, session.userId, session.activeOrganizationId),
-      };
-    }),
-  pruneExpiredSessions: (input) =>
-    Effect.sync(() => {
-      const expired = store.sessions
-        .filter((session) => session.expiresAt <= input.expiredBefore)
-        .slice(0, input.limit);
-      for (const session of expired) {
-        store.sessions.splice(store.sessions.indexOf(session), 1);
-      }
-      return expired.length;
-    }),
-  moveSession: (input) =>
-    Effect.sync(() => {
-      const index = store.sessions.findIndex((session) => session.id === input.sessionId);
-      const session = store.sessions[index];
-      if (!session || session.revokedAt !== null) return;
-      store.sessions[index] = { ...session, activeOrganizationId: input.organizationId };
-    }),
-  rotateSession: (input) =>
-    Effect.sync(() => {
-      const index = store.sessions.findIndex((session) => session.id === input.currentId);
-      const current = store.sessions[index];
-      if (!current || current.revokedAt !== null || current.expiresAt <= input.now) return false;
-      store.sessions[index] = {
-        ...current,
-        revokedAt: input.now,
-        replacedBySessionId: input.replacement.id,
-      };
-      store.sessions.push({
-        id: input.replacement.id,
-        familyId: input.replacement.familyId,
-        userId: input.replacement.userId,
-        activeOrganizationId: input.replacement.activeOrganizationId,
-        refreshTokenHash: input.replacement.refreshTokenHash,
-        clientKind: input.replacement.client._tag,
-        deviceName:
-          input.replacement.client._tag === "Native" ? input.replacement.client.deviceName : null,
-        expiresAt: input.replacement.expiresAt,
-        revokedAt: null,
-        replacedBySessionId: null,
-      });
-      return true;
-    }),
-  revokeSession: (sessionId, now) =>
-    Effect.sync(() => {
-      const index = store.sessions.findIndex((session) => session.id === sessionId);
-      const session = store.sessions[index];
-      if (session) store.sessions[index] = { ...session, revokedAt: now };
-    }),
-  revokeFamily: (familyId, now) =>
-    Effect.sync(() => {
-      for (const [index, session] of store.sessions.entries()) {
-        if (session.familyId === familyId && session.revokedAt === null) {
-          store.sessions[index] = { ...session, revokedAt: now };
-        }
-      }
-    }),
-});
+const signingKeys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
+  "sign",
+  "verify",
+]);
+const privateJwk = await crypto.subtle.exportKey("jwk", signingKeys.privateKey);
+const publicJwk = await crypto.subtle.exportKey("jwk", signingKeys.publicKey);
 
 const countingLimit = (limit: number): AuthRateLimit => {
   const counts = new Map<string, number>();
@@ -509,131 +65,184 @@ const countingLimit = (limit: number): AuthRateLimit => {
     });
 };
 
-const encodeClaims = (input: IssueAccessTokenInput, expiresAt: number) =>
-  AccessToken.make(
-    btoa(
-      JSON.stringify({
-        subject: input.subject,
-        sessionId: input.sessionId,
-        activeOrganizationId: input.activeOrganizationId,
-        organizationName: input.organizationName,
-        organizationSlug: input.organizationSlug,
-        role: input.role,
-        email: input.email,
-        name: input.name,
-        image: input.image,
-        expiresAt,
-      }),
-    ),
-  );
-
-export interface HubRevocationCall {
+interface HubRevocationCall {
   readonly organizationId: OrganizationId;
   readonly userId: UserId;
 }
 
-export interface Harness {
-  readonly store: Store;
-  readonly issued: Array<IssueAccessTokenInput>;
-  readonly revocations: Array<HubRevocationCall>;
-  readonly layer: Layer.Layer<AuthService | RuntimeContext>;
+const RS256 = {
+  name: "RSASSA-PKCS1-v1_5",
+  modulusLength: 2048,
+  publicExponent: new Uint8Array([1, 0, 1]),
+  hash: "SHA-256",
+};
+
+export interface IdTokenSigner {
+  readonly kid: string;
+  readonly privateKey: CryptoKey;
+  readonly publicJwk: PublishedKey;
 }
 
-export const harness = (options: { readonly googleProfile?: GoogleProfile } = {}): Harness => {
-  const store = emptyStore();
-  const issued: Array<IssueAccessTokenInput> = [];
+type PublishedKey = JsonWebKey & { readonly kid: string };
+
+interface IdTokenClaims {
+  readonly iss: string;
+  readonly aud: string;
+  readonly sub: string;
+  readonly exp: number;
+  readonly email: string;
+  readonly email_verified: boolean;
+  readonly name?: string;
+  readonly picture?: string;
+  readonly nonce?: string;
+}
+
+const idTokenSigner = async (kid: string): Promise<IdTokenSigner> => {
+  const keys = await crypto.subtle.generateKey(RS256, true, ["sign", "verify"]);
+  const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey);
+  return { kid, privateKey: keys.privateKey, publicJwk: { ...publicJwk, kid, use: "sig" } };
+};
+
+const googleSigner = await idTokenSigner("google-key-1");
+export const forgingSigner = await idTokenSigner(googleSigner.kid);
+
+export const mintIdToken = async (claims: IdTokenClaims, signer: IdTokenSigner = googleSigner) => {
+  const signingInput = [{ alg: "RS256", typ: "JWT", kid: signer.kid }, claims]
+    .map((part) => Encoding.encodeBase64Url(JSON.stringify(part)))
+    .join(".");
+  const signature = await crypto.subtle.sign(
+    RS256.name,
+    signer.privateKey,
+    new TextEncoder().encode(signingInput),
+  );
+  return `${signingInput}.${Encoding.encodeBase64Url(new Uint8Array(signature))}`;
+};
+
+export const googleClaims = (profile: {
+  readonly sub: string;
+  readonly email: string;
+}): IdTokenClaims => ({
+  iss: "https://accounts.google.com",
+  aud: GOOGLE_CLIENT_ID,
+  exp: Math.floor(Date.now() / 1_000) + 600,
+  email_verified: true,
+  name: "Google User",
+  picture: "https://example.com/avatar.png",
+  ...profile,
+});
+
+export const harness = (
+  options: {
+    readonly deliversOtp?: boolean;
+    readonly limits?: AuthLimits;
+  } = {},
+) => {
+  const d1 = authD1();
+  const deliversOtp = options.deliversOtp ?? false;
   const revocations: Array<HubRevocationCall> = [];
-  const hubs = Layer.succeed(
-    HubRevocation,
-    HubRevocation.of({
-      revoke: (organizationId, userId) =>
-        Effect.sync(() => {
-          revocations.push({ organizationId, userId });
-        }),
-    }),
+  const googleHttp = HttpClient.make((request) =>
+    Effect.succeed(
+      HttpClientResponse.fromWeb(request, Response.json({ keys: [googleSigner.publicJwk] })),
+    ),
   );
 
   const dependencies = Layer.mergeAll(
-    Layer.succeed(AuthRepository, AuthRepository.of(fakeRepository(store))),
+    authRepositoryLayer(d1),
+    ephemeralStoreLayer(d1, EPHEMERAL_PEPPER),
+    passwordHasherLayer,
+    accessTokenLayer({
+      issuer: "https://auth.example.com",
+      audience: "tabaaq-api",
+      keys: [{ kid: AUTH_JWT_KEY_ID, jwk: publicJwk }],
+      activeKeyId: AUTH_JWT_KEY_ID,
+      privateJwk,
+    }),
+    deliversOtp ? developmentEmailLayer : disabledEmailLayer,
+    googleOAuthLayer({
+      clientId: GOOGLE_CLIENT_ID,
+      clientSecret: Redacted.make("google-client-secret"),
+      callbackUrl: "https://auth.example.com/v1/oauth/google/callback",
+    }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, googleHttp))),
     Layer.succeed(
-      EphemeralStore,
-      EphemeralStore.of({
-        createOtp: () => Effect.succeed(OtpChallengeId.make("challenge-1")),
-        consumeOtp: () => Effect.succeed(null),
-        createOAuthState: () => Effect.succeed("oauth-state"),
-        consumeOAuthState: () => Effect.succeed(null),
-        createAuthorizationGrant: () =>
-          Effect.succeed(AuthorizationCode.make("authorization-code")),
-        consumeAuthorizationGrant: () => Effect.succeed(null),
-      }),
-    ),
-    Layer.succeed(
-      PasswordHasher,
-      PasswordHasher.of({
-        hash: () => Effect.succeed(PASSWORD_HASH),
-        verify: () => Effect.succeed(true),
-      }),
-    ),
-    Layer.succeed(
-      AccessTokenService,
-      AccessTokenService.of({
-        issue: (input) =>
+      HubRevocation,
+      HubRevocation.of({
+        revoke: (organizationId, userId) =>
           Effect.sync(() => {
-            issued.push(input);
-            const expiresAt = Date.now() + 300_000;
-            return { token: encodeClaims(input, expiresAt), expiresAt };
-          }),
-        verify: (token) =>
-          Effect.try({
-            try: () => Schema.decodeUnknownSync(AccessClaims)(JSON.parse(atob(token))),
-            catch: () =>
-              new JwtError({ reason: "Malformed", message: "The access token is malformed." }),
+            revocations.push({ organizationId, userId });
           }),
       }),
     ),
-    Layer.succeed(
-      EmailProvider,
-      EmailProvider.of({
-        sendOtp: () => Effect.void,
-        sendInvitation: (input) =>
-          Effect.sync(() => {
-            store.sentInvitations.push(input);
-          }),
-      }),
+    authLimiterLayer(
+      options.limits ?? { tenPerMinute: countingLimit(10), fivePerMinute: countingLimit(5) },
     ),
-    Layer.succeed(
-      GoogleOAuth,
-      GoogleOAuth.of({
-        authorizationUrl: (state) => new URL(`https://accounts.example/authorize?state=${state}`),
-        exchangeCode: () => Effect.die("not used"),
-        verifyIdToken: (idToken) =>
-          idToken === "valid-id-token" && options.googleProfile
-            ? Effect.succeed(options.googleProfile)
-            : Effect.fail(
-                new GoogleOAuthError({
-                  operation: "verifyIdToken.audience",
-                  message: "The identity token was issued for another application.",
-                }),
-              ),
-      }),
-    ),
+    AuthCrypto.layer,
+    Layer.succeed(AuthSettings, {
+      developmentOtp: deliversOtp,
+      trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
+      refreshTokenPepper: Redacted.make("refresh-pepper"),
+    }),
   );
 
-  return {
-    store,
-    issued,
-    revocations,
-    layer: Layer.merge(
-      authServiceLayer({
-        developmentOtp: true,
-        trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
-        refreshTokenPepper: "refresh-pepper",
-        limits: {
-          tenPerMinute: countingLimit(10),
-          fivePerMinute: countingLimit(5),
-        },
-      }).pipe(Layer.provide(dependencies), Layer.provide(hubs)),
-      Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
-    ),
-  };
+  const layer = Layer.mergeAll(
+    authServiceLayer.pipe(Layer.provide(dependencies)),
+    Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
+    Logger.layer([]),
+  );
+
+  return { d1, revocations, layer };
 };
+
+export type Harness = ReturnType<typeof harness>;
+
+const withPlainTokens = (auth: typeof AuthService.Service) => ({
+  ...auth,
+  roster: (accessToken: string) => auth.roster(Redacted.make(accessToken)),
+  organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
+    auth.organize({ command: input.command, accessToken: Redacted.make(input.accessToken) }),
+});
+
+export type Api = ReturnType<typeof withPlainTokens>;
+
+export const run = <A, E>(
+  instance: Harness,
+  use: (auth: Api) => Effect.Effect<A, E, RuntimeContext>,
+) =>
+  Effect.runPromise(
+    AuthService.use((auth) => use(withPlainTokens(auth))).pipe(Effect.provide(instance.layer)),
+  );
+
+export const failing = <A>(
+  instance: Harness,
+  use: (auth: Api) => Effect.Effect<A, AuthFailure, RuntimeContext>,
+) => run(instance, (auth) => Effect.flip(use(auth)).pipe(Effect.map(authFailureWire)));
+
+export const count = (instance: Harness, query: string, ...params: Array<string | number>) =>
+  Number(instance.d1.database.prepare(query).get(...params)?.total ?? -1);
+
+export const signUp = (instance: Harness, email: string, client: AuthClientKind = native) =>
+  run(instance, (auth) =>
+    auth.authenticate({
+      _tag: "RegisterPassword",
+      email: EmailAddress.make(email),
+      name: email.split("@")[0] ?? "Owner",
+      password: PASSWORD,
+      client,
+    }),
+  );
+
+export const refreshWith = (
+  instance: Harness,
+  refreshToken: RefreshToken | undefined,
+  client: AuthClientKind = native,
+) =>
+  run(instance, (auth) =>
+    Effect.result(
+      auth
+        .refresh(
+          refreshToken === undefined
+            ? undefined
+            : { client, refreshToken: Redacted.make(refreshToken) },
+        )
+        .pipe(Effect.mapError(authFailureWire)),
+    ),
+  );

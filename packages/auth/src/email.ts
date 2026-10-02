@@ -28,6 +28,7 @@ export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()
 ) {}
 
 export interface EmailProviderApi {
+  readonly deliversOtp: boolean;
   readonly sendOtp: (input: SendOtpInput) => Effect.Effect<void, EmailDeliveryError>;
   readonly sendInvitation: (input: SendInvitationInput) => Effect.Effect<void, EmailDeliveryError>;
 }
@@ -39,10 +40,10 @@ export class EmailProvider extends Context.Service<EmailProvider, EmailProviderA
 export const developmentEmailLayer = Layer.succeed(
   EmailProvider,
   EmailProvider.of({
+    deliversOtp: true,
     sendOtp: Effect.fn("EmailProvider.development.sendOtp")(function* (input) {
       yield* Effect.logInfo("auth.otp_requested").pipe(
         Effect.annotateLogs({
-          email: input.email,
           code: input.code,
           expiresAt: input.expiresAt,
           delivery: "development-log-only",
@@ -52,7 +53,6 @@ export const developmentEmailLayer = Layer.succeed(
     sendInvitation: Effect.fn("EmailProvider.development.sendInvitation")(function* (input) {
       yield* Effect.logInfo("auth.invitation_created").pipe(
         Effect.annotateLogs({
-          email: input.email,
           organization: input.organizationName,
           role: input.role,
           expiresAt: input.expiresAt,
@@ -66,19 +66,12 @@ export const developmentEmailLayer = Layer.succeed(
 export const disabledEmailLayer = Layer.succeed(
   EmailProvider,
   EmailProvider.of({
-    sendOtp: Effect.fn("EmailProvider.disabled.sendOtp")(function* (input) {
-      yield* Effect.logInfo("auth.otp_delivery_disabled").pipe(
-        Effect.annotateLogs({
-          email: input.email,
-          expiresAt: input.expiresAt,
-          delivery: "disabled",
-        }),
-      );
-    }),
+    deliversOtp: false,
+    sendOtp: () =>
+      Effect.fail(new EmailDeliveryError({ message: "One-time code delivery is disabled." })),
     sendInvitation: Effect.fn("EmailProvider.disabled.sendInvitation")(function* (input) {
       yield* Effect.logInfo("auth.invitation_delivery_disabled").pipe(
         Effect.annotateLogs({
-          email: input.email,
           organization: input.organizationName,
           role: input.role,
           expiresAt: input.expiresAt,

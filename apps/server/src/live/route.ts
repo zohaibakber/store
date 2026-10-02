@@ -1,3 +1,4 @@
+import type { AccessTokenVerifier } from "@store/auth";
 import {
   bearerFromLiveProtocols,
   LIVE_SOCKET_PATH,
@@ -8,6 +9,7 @@ import type { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as HttpHeaders from "effect/unstable/http/Headers";
 import * as HttpBody from "effect/unstable/http/HttpBody";
@@ -16,8 +18,8 @@ import type { HttpServerError } from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
+import { authenticateToken } from "../auth/session";
 import { publicError } from "../http/errors";
-import type { ServerRuntimeContract } from "../http/runtime";
 import type { InventoryError } from "../inventory/errors";
 import type { LiveHorizon } from "../inventory/live-horizon";
 import type { InventoryActor } from "../inventory/model";
@@ -33,7 +35,7 @@ interface OrgHubFetcher {
 
 export interface LiveRouteDependencies {
   readonly hubs: OrgHubFetcher;
-  readonly getSession: ServerRuntimeContract["getSession"];
+  readonly verifyAccessToken: AccessTokenVerifier;
   readonly readLiveHorizon: (
     actor: InventoryActor,
     replicaId: string,
@@ -75,61 +77,51 @@ const freshUpgradeResponse = (
   );
 };
 
-export const liveSocketHandler = (dependencies: LiveRouteDependencies) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    if (request.headers.upgrade?.toLowerCase() !== "websocket") {
-      return refuse(426, "UPGRADE_REQUIRED", "The live channel is a WebSocket.");
-    }
-    const token = bearerFromLiveProtocols(
-      offeredLiveProtocols(request.headers["sec-websocket-protocol"]),
-    );
-    if (token === undefined) {
-      return refuse(401, "UNAUTHENTICATED", "Sign in required.");
-    }
-    const session = yield* dependencies
-      .getSession(new Headers({ authorization: `Bearer ${token}` }))
-      .pipe(Effect.orElseSucceed(() => null));
-    const now = yield* Clock.currentTimeMillis;
-    if (session === null || session.session.expiresAt <= now) {
-      return refuse(401, "UNAUTHENTICATED", "Sign in required.");
-    }
-    const organizationId = session.session.activeOrganizationId;
-    const member = session.organizations.some((organization) => organization.id === organizationId);
-    if (!organizationId || !member) {
-      return refuse(403, "ORGANIZATION_REQUIRED", "Select an organization first.");
-    }
-    const query = queryOf(request);
-    if (Option.isNone(query)) {
-      return refuse(400, "INVALID_LIVE_QUERY", "The live channel needs a replica id.");
-    }
-    const horizon = yield* dependencies
-      .readLiveHorizon({ organizationId, userId: session.user.id }, query.value.replicaId)
-      .pipe(Effect.result);
-    if (horizon._tag === "Failure") return horizonFailure(horizon.failure);
-    const forwarded = request.modify({
-      headers: HttpHeaders.fromInput({
-        ...withoutAdmissionHeaders(request.headers),
-        ...admissionHeaders({
-          replicaId: query.value.replicaId,
-          userId: session.user.id,
-          expiresAt: session.session.expiresAt,
-          maxBytes: query.value.maxBytes ?? null,
-          epoch: horizon.success.epoch,
-          horizon: horizon.success.horizon,
-        }),
+export const liveSocketHandler = Effect.fnUntraced(function* (dependencies: LiveRouteDependencies) {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  if (request.headers.upgrade?.toLowerCase() !== "websocket") {
+    return refuse(426, "UPGRADE_REQUIRED", "The live channel is a WebSocket.");
+  }
+  const token = bearerFromLiveProtocols(
+    offeredLiveProtocols(request.headers["sec-websocket-protocol"]),
+  );
+  const claims = yield* authenticateToken(dependencies.verifyAccessToken, token);
+  const now = yield* Clock.currentTimeMillis;
+  if (claims === null || claims.expiresAt <= now) {
+    return refuse(401, "UNAUTHENTICATED", "Sign in required.");
+  }
+  const organizationId = claims.activeOrganizationId;
+  const query = queryOf(request);
+  if (Option.isNone(query)) {
+    return refuse(400, "INVALID_LIVE_QUERY", "The live channel needs a replica id.");
+  }
+  const horizon = yield* dependencies
+    .readLiveHorizon({ organizationId, userId: claims.subject }, query.value.replicaId)
+    .pipe(Effect.result);
+  if (Result.isFailure(horizon)) return horizonFailure(horizon.failure);
+  const forwarded = request.modify({
+    headers: HttpHeaders.fromInput({
+      ...withoutAdmissionHeaders(request.headers),
+      ...admissionHeaders({
+        replicaId: query.value.replicaId,
+        userId: claims.subject,
+        expiresAt: claims.expiresAt,
+        maxBytes: query.value.maxBytes ?? null,
+        epoch: horizon.success.epoch,
+        horizon: horizon.success.horizon,
       }),
-    });
-    return yield* dependencies.hubs
-      .getByName(organizationId)
-      .fetch(forwarded)
-      .pipe(
-        Effect.map(freshUpgradeResponse),
-        Effect.catch(() =>
-          Effect.succeed(refuse(503, "LIVE_UNAVAILABLE", "The live channel is unavailable.")),
-        ),
-      );
+    }),
   });
+  return yield* dependencies.hubs
+    .getByName(organizationId)
+    .fetch(forwarded)
+    .pipe(
+      Effect.map(freshUpgradeResponse),
+      Effect.catch(() =>
+        Effect.succeed(refuse(503, "LIVE_UNAVAILABLE", "The live channel is unavailable.")),
+      ),
+    );
+});
 
 export const LiveRoutes = (dependencies: LiveRouteDependencies) =>
   HttpRouter.add("GET", LIVE_SOCKET_PATH, liveSocketHandler(dependencies));

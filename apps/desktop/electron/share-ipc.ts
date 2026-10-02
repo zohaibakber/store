@@ -2,33 +2,32 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isWhatsAppUrl } from "@store/services/purchasing";
+import type { SavePdfOutcome, ShareBridge } from "@store/web/host/share";
 import * as Schema from "effect/Schema";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import type { SavePdfOutcome } from "../src/lib/share";
-import { assertTrustedIpcSender } from "./ipc-sender";
+import { trustedIpcListener } from "./ipc-sender";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
-  type ShareIpcBridge,
 } from "./share-channels";
 
 const MAX_COPIED_TEXT_LENGTH = 200_000;
 
-export const WhatsAppUrl = Schema.String.check(
+const WhatsAppUrl = Schema.String.check(
   Schema.makeFilter(isWhatsAppUrl, { title: "WhatsApp link under https://wa.me/" }),
 );
 
-export const CopiedText = Schema.String.check(Schema.isMaxLength(MAX_COPIED_TEXT_LENGTH));
+const CopiedText = Schema.String.check(Schema.isMaxLength(MAX_COPIED_TEXT_LENGTH));
 
-export const PdfFileStem = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/u));
+const PdfFileStem = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/u));
 
 const decodeWhatsAppUrl = Schema.decodeUnknownSync(WhatsAppUrl);
 const decodeCopiedText = Schema.decodeUnknownSync(CopiedText);
 const decodePdfFileStem = Schema.decodeUnknownSync(PdfFileStem);
 
-type ShareIpcInput<Method extends keyof ShareIpcBridge> = Parameters<ShareIpcBridge[Method]>[0];
+type ShareIpcInput<Method extends keyof ShareBridge> = Parameters<ShareBridge[Method]>[0];
 
 type ShareIpcEvent = Pick<IpcMainInvokeEvent, "senderFrame"> & {
   readonly sender: Pick<IpcMainInvokeEvent["sender"], "printToPDF">;
@@ -43,19 +42,15 @@ export const registerShareIpc = (options: {
   readonly writePdf?: (filePath: string, data: Uint8Array) => Promise<void>;
 }) => {
   const writePdf = options.writePdf ?? writeFile;
-  const admit = (event: ShareIpcEvent) =>
-    assertTrustedIpcSender(event.senderFrame, options.allowedOrigins());
 
   const openExternal = async (
-    event: ShareIpcEvent,
+    _event: ShareIpcEvent,
     input: ShareIpcInput<"openExternal">,
   ): Promise<void> => {
-    admit(event);
     await options.openExternal(new URL(decodeWhatsAppUrl(input)).href);
   };
 
-  const copyText = (event: ShareIpcEvent, input: ShareIpcInput<"copyText">): void => {
-    admit(event);
+  const copyText = (_event: ShareIpcEvent, input: ShareIpcInput<"copyText">): void => {
     options.writeClipboardText(decodeCopiedText(input));
   };
 
@@ -63,7 +58,6 @@ export const registerShareIpc = (options: {
     event: ShareIpcEvent,
     input: ShareIpcInput<"savePdf">,
   ): Promise<SavePdfOutcome> => {
-    admit(event);
     const fileStem = decodePdfFileStem(input);
     const filePath = await options.choosePdfDestination(`${fileStem}.pdf`);
     if (filePath === null) return { _tag: "cancelled" };
@@ -80,9 +74,12 @@ export const registerShareIpc = (options: {
     }
   };
 
-  options.ipcMain.handle(SHARE_OPEN_EXTERNAL_CHANNEL, openExternal);
-  options.ipcMain.handle(SHARE_COPY_TEXT_CHANNEL, copyText);
-  options.ipcMain.handle(SHARE_SAVE_PDF_CHANNEL, savePdf);
+  const trusted = <Input, Result>(listener: (event: ShareIpcEvent, input: Input) => Result) =>
+    trustedIpcListener(options.allowedOrigins, listener);
+
+  options.ipcMain.handle(SHARE_OPEN_EXTERNAL_CHANNEL, trusted(openExternal));
+  options.ipcMain.handle(SHARE_COPY_TEXT_CHANNEL, trusted(copyText));
+  options.ipcMain.handle(SHARE_SAVE_PDF_CHANNEL, trusted(savePdf));
 
   return () => {
     options.ipcMain.removeHandler(SHARE_OPEN_EXTERNAL_CHANNEL);

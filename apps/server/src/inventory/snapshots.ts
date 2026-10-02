@@ -25,7 +25,7 @@ import {
   type InventoryDrizzle,
 } from "./postgres";
 
-export type SnapshotPolicy = {
+type SnapshotPolicy = {
   readonly partRows: number;
   readonly partBytes: number;
   readonly leaseMillis: number;
@@ -74,66 +74,6 @@ const acquireStatement = (
   )::text as "result"
 `;
 
-const acquireSnapshotWith = Effect.fn("InventorySnapshots.acquireSnapshotWith")(function* (
-  db: InventoryDrizzle,
-  actor: InventoryActor,
-  request: AcquireSnapshotRequest,
-  policy: SnapshotPolicy,
-) {
-  const now = yield* Clock.currentTimeMillis;
-  const raw = yield* runStatement(
-    db.execute(acquireStatement(actor, request, policy, now), "objects"),
-  );
-  const [row] = yield* decodeAcquireRows(raw).pipe(Effect.mapError(databaseError));
-  if (row === undefined) {
-    return yield* Effect.fail(databaseError(new Error("Snapshot acquisition returned no row.")));
-  }
-  if (row.result._tag === "error") return yield* protocol(row.result.code, row.result.message);
-  return row.result;
-});
-
-const readEncodedSnapshotPart = Effect.fn("InventorySnapshots.readEncodedSnapshotPart")(function* (
-  db: InventoryDrizzle,
-  actor: InventoryActor,
-  snapshotId: SnapshotId,
-  partNumber: number,
-) {
-  const [row] = yield* runStatement(
-    db
-      .select({
-        publishedId: snapshotJobs.snapshotId,
-        payloadJson: snapshotParts.payloadJson,
-        sha256: snapshotParts.sha256,
-      })
-      .from(inventoryState)
-      .leftJoin(
-        snapshotJobs,
-        and(
-          eq(snapshotJobs.organizationId, inventoryState.organizationId),
-          eq(snapshotJobs.snapshotId, snapshotId),
-        ),
-      )
-      .leftJoin(
-        snapshotParts,
-        and(
-          eq(snapshotParts.organizationId, snapshotJobs.organizationId),
-          eq(snapshotParts.snapshotId, snapshotJobs.snapshotId),
-          eq(snapshotParts.partNumber, partNumber),
-        ),
-      )
-      .where(eq(inventoryState.organizationId, actor.organizationId))
-      .limit(1),
-  );
-  const found = yield* requireState(row);
-  if (found.publishedId === null) {
-    return yield* protocol("SNAPSHOT_UNAVAILABLE", "No snapshot is published for this id.");
-  }
-  if (found.payloadJson === null || found.sha256 === null) {
-    return yield* protocol("SNAPSHOT_UNAVAILABLE", "The snapshot part does not exist.");
-  }
-  return { json: found.payloadJson, sha256: found.sha256 } satisfies EncodedSnapshotPart;
-});
-
 export interface InventorySnapshotsContract {
   readonly acquireSnapshot: (
     actor: InventoryActor,
@@ -154,15 +94,58 @@ export class InventorySnapshots extends Context.Service<
 export const makeInventorySnapshots = (
   db: InventoryDrizzle,
   policy: SnapshotPolicy = SNAPSHOT_POLICY,
-): InventorySnapshotsContract => {
-  return InventorySnapshots.of({
+): InventorySnapshotsContract =>
+  InventorySnapshots.of({
     acquireSnapshot: Effect.fn("InventorySnapshots.acquireSnapshot")(function* (actor, request) {
-      return yield* acquireSnapshotWith(db, actor, request, policy);
+      const now = yield* Clock.currentTimeMillis;
+      const raw = yield* runStatement(
+        db.execute(acquireStatement(actor, request, policy, now), "objects"),
+      );
+      const [row] = yield* decodeAcquireRows(raw).pipe(Effect.mapError(databaseError));
+      if (row === undefined) {
+        return yield* Effect.fail(
+          databaseError(new Error("Snapshot acquisition returned no row.")),
+        );
+      }
+      if (row.result._tag === "error") return yield* protocol(row.result.code, row.result.message);
+      return row.result;
     }),
     readSnapshotPartEncoded: Effect.fn("InventorySnapshots.readSnapshotPartEncoded")(
       function* (actor, snapshotId, partNumber) {
-        return yield* readEncodedSnapshotPart(db, actor, snapshotId, partNumber);
+        const [row] = yield* runStatement(
+          db
+            .select({
+              publishedId: snapshotJobs.snapshotId,
+              payloadJson: snapshotParts.payloadJson,
+              sha256: snapshotParts.sha256,
+            })
+            .from(inventoryState)
+            .leftJoin(
+              snapshotJobs,
+              and(
+                eq(snapshotJobs.organizationId, inventoryState.organizationId),
+                eq(snapshotJobs.snapshotId, snapshotId),
+              ),
+            )
+            .leftJoin(
+              snapshotParts,
+              and(
+                eq(snapshotParts.organizationId, snapshotJobs.organizationId),
+                eq(snapshotParts.snapshotId, snapshotJobs.snapshotId),
+                eq(snapshotParts.partNumber, partNumber),
+              ),
+            )
+            .where(eq(inventoryState.organizationId, actor.organizationId))
+            .limit(1),
+        );
+        const found = yield* requireState(row);
+        if (found.publishedId === null) {
+          return yield* protocol("SNAPSHOT_UNAVAILABLE", "No snapshot is published for this id.");
+        }
+        if (found.payloadJson === null || found.sha256 === null) {
+          return yield* protocol("SNAPSHOT_UNAVAILABLE", "The snapshot part does not exist.");
+        }
+        return { json: found.payloadJson, sha256: found.sha256 } satisfies EncodedSnapshotPart;
       },
     ),
   });
-};

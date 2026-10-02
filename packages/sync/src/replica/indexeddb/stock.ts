@@ -15,7 +15,7 @@ type BatchOverlays = {
   readonly absoluteSequence: string | undefined;
 };
 
-export type VisibleStockContext = ReadonlyMap<string, BatchOverlays>;
+type VisibleStockContext = ReadonlyMap<string, BatchOverlays>;
 
 const sequenceOf = (api: ReplicaQueryBuilder, operationId: string) =>
   api
@@ -67,7 +67,7 @@ export const readVisibleStockContext = (
     .select()
     .pipe(Effect.flatMap((overlays) => contextOf(api, overlays)));
 
-export const readVisibleStockContextOf = (
+const readVisibleStockContextOf = (
   api: ReplicaQueryBuilder,
   batchIds: Iterable<string>,
 ): Effect.Effect<VisibleStockContext, unknown> =>

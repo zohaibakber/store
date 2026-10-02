@@ -1,19 +1,20 @@
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as Option from "effect/Option";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
-import * as Semaphore from "effect/Semaphore";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import Constants from "expo-constants";
 import { randomUUID } from "expo-crypto";
 import { useNetworkState } from "expo-network";
 import * as React from "react";
 
 import { useSession } from "@/auth";
+import { mobileConfig } from "@/config";
 
 import { DraftStore, fileDraftStore } from "./draft-store";
 import { sameEdits } from "./fields";
@@ -53,34 +54,21 @@ export type ScanDrafts = {
 
 const ScanDraftsContext = React.createContext<ScanDrafts | null>(null);
 
-const ExpoExtra = Schema.Struct({ apiBaseUrl: Schema.String });
-
-const apiBaseUrl = Option.getOrNull(
-  Option.map(
-    Schema.decodeUnknownOption(ExpoExtra)(Constants.expoConfig?.extra),
-    (extra) => extra.apiBaseUrl,
-  ),
-);
+const apiBaseUrl = Result.getOrNull(mobileConfig)?.apiBaseUrl ?? null;
 
 type ParseEnvironment = {
   readonly online: boolean;
   readonly fetch: typeof globalThis.fetch | null;
 };
 
-const storeLock = Semaphore.makeUnsafe(1);
-
-const runStore = <A,>(effect: Effect.Effect<A, Error, DraftStore>) =>
-  Effect.runPromise(storeLock.withPermits(1)(effect).pipe(Effect.provide(fileDraftStore)));
+const runtime = ManagedRuntime.make(Layer.merge(fileDraftStore, FetchHttpClient.layer));
 
 const persist = (draft: ScanDraft) =>
-  Effect.runFork(
-    storeLock
-      .withPermits(1)(DraftStore.use((store) => store.save(draft)))
-      .pipe(
-        Effect.provide(fileDraftStore),
-        Effect.tapError((error) => Effect.logError("Scan draft not saved", error)),
-        Effect.ignore,
-      ),
+  runtime.runFork(
+    DraftStore.use((store) => store.save(draft)).pipe(
+      Effect.tapError((error) => Effect.logError("Scan draft not saved", error)),
+      Effect.ignore,
+    ),
   );
 
 const eligibleForParse = (draft: ScanDraft, now: number): boolean => {
@@ -111,7 +99,7 @@ const parseStateAfter = (
   }
 };
 
-function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
+export function ScanDraftsProvider({ children }: { readonly children: React.ReactNode }) {
   const session = useSession();
   const network = useNetworkState();
   const online = network.isConnected !== false && network.isInternetReachable !== false;
@@ -164,7 +152,7 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
 
   React.useEffect(() => {
     let active = true;
-    void runStore(DraftStore.use((store) => store.list)).then(
+    void runtime.runPromise(DraftStore.use((store) => store.list)).then(
       (stored) => {
         if (!active) return;
         commitDrafts((current) => {
@@ -202,7 +190,7 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
     const parseDraft = (draftId: string) =>
       Effect.gen(function* () {
         const draft = draftsRef.current.get(draftId);
-        if (!draft || !eligibleForParse(draft, Date.now())) return;
+        if (!draft || !eligibleForParse(draft, yield* Clock.currentTimeMillis)) return;
         const environment = environmentRef.current;
         if (!environment.online || environment.fetch === null || apiBaseUrl === null) {
           setParse(draftId, { _tag: "Deferred" });
@@ -228,8 +216,13 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
             schedule: rateLimitRetry,
             while: (error) => error._tag === "ScanRateLimited",
           }),
-          Effect.map((result): ParseState => ({ _tag: "Parsed", result, parsedAt: Date.now() })),
-          Effect.provide(FetchHttpClient.layer),
+          Effect.flatMap((result) =>
+            Effect.map(Clock.currentTimeMillis, (parsedAt): ParseState => ({
+              _tag: "Parsed",
+              result,
+              parsedAt,
+            })),
+          ),
           Effect.provideService(FetchHttpClient.Fetch, environment.fetch),
           Effect.exit,
           Effect.ensuring(
@@ -247,7 +240,7 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
         if (latest) setParse(draftId, parseStateAfter(exit, latest.parse));
       });
 
-    const worker = Effect.runFork(
+    const worker = runtime.runFork(
       Effect.forever(
         Queue.take(queue).pipe(
           Effect.flatMap(parseDraft),
@@ -277,9 +270,11 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
       const photoUri =
         input.capturedPath === null
           ? null
-          : await runStore(
-              DraftStore.use((store) => store.adoptPhoto(id, input.capturedPath ?? "")),
-            ).catch(() => null);
+          : await runtime.runPromise(
+              DraftStore.use((store) => store.adoptPhoto(id, input.capturedPath ?? "")).pipe(
+                Effect.orElseSucceed(() => null),
+              ),
+            );
       const draft: ScanDraft = {
         id,
         mode: input.mode,
@@ -322,7 +317,7 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
         next.delete(draftId);
         return next;
       });
-      void runStore(DraftStore.use((store) => store.remove(draftId))).catch(() => undefined);
+      runtime.runFork(Effect.ignore(DraftStore.use((store) => store.remove(draftId))));
     },
     [commitDrafts],
   );
@@ -371,12 +366,6 @@ function DraftsProvider({ children }: { readonly children: React.ReactNode }) {
   );
 
   return <ScanDraftsContext value={value}>{children}</ScanDraftsContext>;
-}
-
-export function ScanDraftsProvider({ children }: { readonly children: React.ReactNode }) {
-  const parent = React.use(ScanDraftsContext);
-  if (parent !== null) return children;
-  return <DraftsProvider>{children}</DraftsProvider>;
 }
 
 export const useScanDrafts = (): ScanDrafts => {

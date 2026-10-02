@@ -6,19 +6,22 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 
 ## Clients
 
-- `apps/desktop`: Electron app. The replica lives in a main-process Node worker
+- `apps/web`: the product UI and the website. One React app with two hosts,
+  chosen at startup by whether the preload bridges are present. It defines the
+  host contract in `src/host` and never imports from `apps/desktop`. In the
+  browser it keeps the replica in IndexedDB (`@store/sync/browser`), the access
+  token in memory, and the refresh token in the auth Worker's HttpOnly cookie.
+  Prod serves it on `PRODUCTION_DOMAIN`.
+- `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
+  implements the host contract. The replica lives in a main-process Node worker
   on `@effect/sql-sqlite-node` over `node:sqlite`. The renderer reaches it
   through preload IPC that carries domain commands, bounded reads, and change
   notices only, never SQL. The main process keeps the encrypted refresh token
   and proxies authenticated sync HTTP.
-- The same renderer builds as a browser SPA (`--mode web`). It keeps the
-  replica in IndexedDB (`@store/sync/browser`), the access token in memory, and
-  the refresh token in the auth Worker's HttpOnly cookie. Prod serves it on
-  `PRODUCTION_DOMAIN`.
 - `apps/mobile`: Expo Android app. The replica is op-sqlite through
   `@effect/sql-sqlite-react-native`.
 - `packages/inventory-react` holds the React bindings (atoms, queries, sync
-  status, insights) shared by the desktop renderer and mobile.
+  status, insights) shared by the web app and mobile.
 
 ## Local replica (`packages/sync`)
 

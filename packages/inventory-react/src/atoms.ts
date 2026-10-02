@@ -1,5 +1,6 @@
 import {
   EMPTY_SYNC_ACTIVITY,
+  type CommandExecution,
   type InventorySubsetSummary,
   type InventorySyncActivity,
   type InventorySyncStatus,
@@ -30,14 +31,12 @@ import {
   Duration,
   Effect,
   Exit,
-  Layer,
   Option,
   Request,
   RequestResolver,
   Schema,
   Stream,
 } from "effect";
-import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
@@ -45,6 +44,8 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { WorkspaceReadFailure } from "./errors";
 import { emptyInsightsSource, type InsightsSource } from "./insights-source";
 import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
+import type { PurchaseOrderTab } from "./list-request";
+import { preferencesRuntime } from "./preferences";
 import {
   facetsFrom,
   PRODUCT_FACET_COLUMNS,
@@ -57,17 +58,8 @@ import type {
   ProductOnOrder,
   PurchaseOrderListFilters,
   PurchaseOrderListRequest,
-  PurchaseOrderTab,
 } from "./purchasing";
 import { canonicalSearchLimit, canonicalSearchQuery } from "./search";
-
-let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
-
-export const configureInventoryPreferences = (store: Layer.Layer<KeyValueStore.KeyValueStore>) => {
-  preferenceStore = store;
-};
-
-const preferencesRuntime = Atom.runtime(() => preferenceStore);
 
 export const stockPolicyAtom = Atom.kvs({
   runtime: preferencesRuntime,
@@ -78,11 +70,7 @@ export const stockPolicyAtom = Atom.kvs({
 
 export const minuteClockAtom = Atom.make(() => Date.now()).pipe(Atom.withRefresh("1 minute"));
 
-export type CommandExecutionState =
-  | { readonly _tag: "idle" }
-  | { readonly _tag: "accepting"; readonly operationId: string }
-  | { readonly _tag: "pending"; readonly operationId: string; readonly status: string }
-  | { readonly _tag: "failed"; readonly operationId: string; readonly message: string };
+export type CommandExecutionState = { readonly _tag: "idle" } | CommandExecution;
 
 type WorkspaceReadError = WorkspaceReadFailure;
 

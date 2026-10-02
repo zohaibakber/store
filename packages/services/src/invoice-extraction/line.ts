@@ -4,7 +4,7 @@ import { parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
 type PrintedValue = string | number | boolean | null;
 
-export type PrintedInvoiceLine = {
+type PrintedInvoiceLine = {
   readonly name?: PrintedValue | undefined;
   readonly batchNumber?: PrintedValue | undefined;
   readonly expiresAt?: PrintedValue | undefined;

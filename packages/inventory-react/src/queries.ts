@@ -360,7 +360,7 @@ export const useSuspenseCatalogProductsById = (
 ): ReadonlyArray<Product> =>
   useLiveSuspenseQuery(liveProductsById(useCatalogReplica(), productIds)).data;
 
-export const untilPaged = <Row, Live extends { readonly isReady: boolean }>(
+const untilPaged = <Row, Live extends { readonly isReady: boolean }>(
   firstPage: ReadonlyArray<Row>,
   live: Live & { readonly data: ReadonlyArray<Row>; readonly hasNextPage: boolean },
   pageSize: number,
@@ -412,22 +412,31 @@ const batchesOfProductsQuery =
 
 export const liveBatchesOfProducts = sharedLiveQuery(batchesOfProductsQuery);
 
+const productsWithStock = (
+  rows: ReadonlyArray<ProductRow>,
+  categories: ReadonlyArray<Category>,
+  batches: ReadonlyArray<Product["batches"][number]>,
+): ReadonlyArray<Product> => {
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
+  return rows.flatMap((row) => {
+    const category = categoryById.get(row.categoryId);
+    return category === undefined
+      ? []
+      : [{ ...row, category, batches: batchesByProduct[row.id] ?? [] }];
+  });
+};
+
 export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArray<Product> => {
   const inventory = useCatalogReplica();
   const rows = useAtomSuspense(inventory.atoms.productSearch(limit)(query)).value;
   const ids = rows.map((row) => row.id);
   const categories = useLiveSuspenseQuery(liveCategories(inventory)).data;
   const batches = useLiveSuspenseQuery(liveBatchesOfProducts(inventory, ids)).data;
-  return React.useMemo(() => {
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
-    const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
-    return rows.flatMap((row) => {
-      const category = categoryById.get(row.categoryId);
-      return category === undefined
-        ? []
-        : [{ ...row, category, batches: batchesByProduct[row.id] ?? [] }];
-    });
-  }, [rows, categories, batches]);
+  return React.useMemo(
+    () => productsWithStock(rows, categories, batches),
+    [rows, categories, batches],
+  );
 };
 
 export const useSuspenseCatalogSuggestions = (): ProductSuggestions => {
@@ -520,14 +529,8 @@ export const useProductSearch = (query: string, limit = 20): ReadonlyArray<Produ
     useLiveQuery({
       query: (builder) => batchesForProducts(builder, inventory, idKey ? idKey.split(" ") : []),
     }).data ?? NO_BATCHES;
-  return React.useMemo(() => {
-    const categoryById = new Map(categories.map((category) => [category.id, category]));
-    const batchesByProduct = Arr.groupBy(batches, (batch) => batch.productId);
-    return rows.flatMap((row) => {
-      const category = categoryById.get(row.categoryId);
-      return category === undefined
-        ? []
-        : [{ ...row, category, batches: batchesByProduct[row.id] ?? [] }];
-    });
-  }, [rows, categories, batches]);
+  return React.useMemo(
+    () => productsWithStock(rows, categories, batches),
+    [rows, categories, batches],
+  );
 };

@@ -85,7 +85,7 @@ export type IndexedDbResidualPredicate =
     }
   | { readonly _tag: "not"; readonly predicate: IndexedDbResidualPredicate };
 
-export type IndexedDbOrderClause = {
+type IndexedDbOrderClause = {
   readonly column: string;
   readonly direction: "asc" | "desc";
   readonly nulls: "first" | "last";

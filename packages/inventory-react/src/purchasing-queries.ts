@@ -25,6 +25,7 @@ import * as React from "react";
 
 import type { ReplicaAuthority } from "./host";
 import { inPageOrder } from "./list-page";
+import type { PurchaseOrderTab } from "./list-request";
 import { sharedLiveQuery } from "./live-collection";
 import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
@@ -32,7 +33,6 @@ import {
   type ProductOnOrder,
   type PurchaseOrderListFilters,
   type PurchaseOrderListRequest,
-  type PurchaseOrderTab,
 } from "./purchasing";
 import { HISTORY_PAGE_SIZE, inAnyOf, stockMovementFields, useLatestSuccess } from "./queries";
 import type { Inventory } from "./types";
@@ -114,7 +114,7 @@ const suppliersQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =>
     .orderBy(({ supplier }) => supplier.name, { direction: "asc", stringSort: "locale" })
     .select(({ supplier }) => supplierFields(supplier));
 
-export const purchaseOrdersQuery =
+const purchaseOrdersQuery =
   (inventory: Inventory, statuses: ReadonlyArray<PurchaseOrderStatus>) =>
   (query: InitialQueryBuilder) =>
     query
@@ -192,12 +192,6 @@ export const useSuspenseOpenPurchaseOrders = (
 ): ReadonlyArray<PurchaseOrder> =>
   useLiveSuspenseQuery(liveOpenPurchaseOrders(useCatalogReplica(), limit)).data;
 
-export const usePurchaseOrder = (orderId: string) => {
-  const live = useLiveQuery({ query: purchaseOrderQuery(useCatalogReplica(), orderId) });
-  const data: PurchaseOrder | undefined = live.data;
-  return { ...live, data };
-};
-
 export const useSuspensePurchaseOrder = (orderId: string): PurchaseOrder | undefined =>
   useLiveSuspenseQuery(livePurchaseOrder(useCatalogReplica(), orderId)).data;
 
@@ -239,11 +233,6 @@ export const useLearnedSuppliers = (productIds: ReadonlyArray<string>) =>
     NO_LEARNED_SUPPLIERS,
   );
 
-export const useSuspenseLearnedSuppliers = (
-  productIds: ReadonlyArray<string>,
-): ReadonlyMap<string, SupplierId> =>
-  useAtomSuspense(useCatalogReplica().atoms.learnedSuppliers(productIds)).value;
-
 export type PurchasingGate =
   | { readonly blocked: false }
   | { readonly blocked: true; readonly message: string };
@@ -255,7 +244,7 @@ const PURCHASING_BLOCKED: PurchasingGate = {
   message: staleReplicaRejection(null).message,
 };
 
-export const purchasingGateOf = (
+const purchasingGateOf = (
   authority: ReplicaAuthority,
   lowestActiveSchemaVersion: number | null,
 ): PurchasingGate => {

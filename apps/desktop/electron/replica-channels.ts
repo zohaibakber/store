@@ -21,13 +21,11 @@ export const REPLICA_ANALYTICS_CHANNEL = "replica:analytics";
 export const REPLICA_COMMIT_CHANNEL = "replica:commit";
 export const REPLICA_SYNC_HEALTH_CHANNEL = "replica:sync-health";
 
-export type ReplicaIpcBridge = ElectronReplicaBridge;
-
-export type ReplicaCommitEvent = Parameters<Parameters<ReplicaIpcBridge["onCommit"]>[0]>[0];
+export type ReplicaCommitEvent = Parameters<Parameters<ElectronReplicaBridge["onCommit"]>[0]>[0];
 
 export type ReplicaSyncHealthEvent = {
   readonly workspaceToken: string;
-  readonly health: Parameters<Parameters<ReplicaIpcBridge["onSyncHealth"]>[1]>[0];
+  readonly health: Parameters<Parameters<ElectronReplicaBridge["onSyncHealth"]>[1]>[0];
 };
 
 export type ReplicaAnalyticsEvent = {

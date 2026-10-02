@@ -1,10 +1,11 @@
 import { nativeClient } from "@store/auth";
-import * as Schema from "effect/Schema";
+import * as Result from "effect/Result";
 import Constants from "expo-constants";
 import * as Network from "expo-network";
 import * as React from "react";
 
-import { MobileAuthExtra, authConfigFrom } from "./config";
+import { mobileConfig } from "@/config";
+
 import { createAuthController, toSession, type AuthController } from "./controller";
 import { makeGoogleIdentity } from "./google";
 import type { Session } from "./session";
@@ -18,6 +19,7 @@ export type {
   IdentifyResult,
   SignInFlow,
 } from "./controller";
+export { canRenameOrganization } from "./model";
 export type { AuthField, AuthProblem, AuthProblemKind } from "./problems";
 
 const SessionContext = React.createContext<Session>({ status: "loading" });
@@ -30,9 +32,7 @@ const deviceLabel = () => {
 };
 
 const createNativeAuthController = () => {
-  const config = authConfigFrom(
-    Schema.decodeUnknownSync(MobileAuthExtra)(Constants.expoConfig?.extra),
-  );
+  const config = Result.getOrThrow(mobileConfig);
   return createAuthController({
     apiBaseUrl: config.apiBaseUrl,
     authBaseUrl: config.authBaseUrl,

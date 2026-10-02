@@ -2,7 +2,12 @@ import { InvoiceExtraction, invoiceExtractionJsonSchema } from "@store/contracts
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { decodeModelJson, ModelScalar, type ModelOutput } from "../model-json";
+import {
+  decodeModelJson,
+  ModelScalar,
+  type GenerateModelJson,
+  type ModelRequestError,
+} from "../model-json";
 import { receivedStockFromCsv } from "./csv";
 import { normalizeLine, nullableString } from "./line";
 
@@ -12,6 +17,11 @@ class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>(
     message: Schema.String,
     cause: Schema.Defect(),
   },
+) {}
+
+class AttachmentsUnreadable extends Schema.TaggedError<AttachmentsUnreadable>()(
+  "AttachmentsUnreadable",
+  { message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 
 const modelField = Schema.optional(ModelScalar);
@@ -33,6 +43,7 @@ const InvoiceModelOutput = Schema.Struct({
 });
 
 const decodeInvoiceModelOutput = decodeModelJson(InvoiceModelOutput);
+const decodeExtraction = Schema.decodeUnknownEffect(InvoiceExtraction);
 
 export type ConvertedDocument =
   | { readonly kind: "ok"; readonly name: string; readonly data: string }
@@ -41,15 +52,8 @@ export type ConvertedDocument =
 export interface InvoiceAiClient {
   readonly toMarkdown: (
     documents: ReadonlyArray<{ readonly name: string; readonly blob: Blob }>,
-  ) => Promise<ReadonlyArray<ConvertedDocument>>;
-  readonly generate: (input: {
-    readonly messages: ReadonlyArray<{
-      readonly role: "system" | "user";
-      readonly content: string;
-    }>;
-    readonly jsonSchema: object;
-    readonly signal: AbortSignal;
-  }) => Promise<ModelOutput<typeof InvoiceModelOutput.Encoded>>;
+  ) => Effect.Effect<ReadonlyArray<ConvertedDocument>, ModelRequestError>;
+  readonly generate: GenerateModelJson<typeof InvoiceModelOutput.Encoded>;
 }
 
 const instructions = [
@@ -82,63 +86,64 @@ const isSuccess = (
 ): document is { readonly kind: "ok"; readonly name: string; readonly data: string } =>
   document.kind === "ok";
 
-const documentsToMarkdown = (converted: ReadonlyArray<ConvertedDocument>) => {
-  const failures = converted.filter(isFailure);
-  if (failures.length === converted.length) {
-    const [failure] = failures;
-    throw new Error(
-      failure && failures.length === 1
-        ? `${failure.name} could not be read.`
-        : "None of the attachments could be read.",
-    );
-  }
-  return converted
+const unreadableMessage = (failures: ReadonlyArray<{ readonly name: string }>) => {
+  const [failure] = failures;
+  return failure && failures.length === 1
+    ? `${failure.name} could not be read.`
+    : "None of the attachments could be read.";
+};
+
+const readableMarkdown = (converted: ReadonlyArray<ConvertedDocument>) =>
+  converted
     .filter(isSuccess)
     .filter((document) => document.data.trim())
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
-};
+
+const isCsv = (file: File) => file.name.toLowerCase().endsWith(".csv");
+
+const readCsvFiles = (files: ReadonlyArray<File>) =>
+  Effect.tryPromise({
+    try: () => Promise.all(files.map((file) => file.text())),
+    catch: (cause) =>
+      new AttachmentsUnreadable({ message: "A CSV attachment could not be read.", cause }),
+  });
 
 export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
   function* (ai: InvoiceAiClient, files: ReadonlyArray<File>) {
-    const csvFiles = files.filter((file) => file.name.toLowerCase().endsWith(".csv"));
-    const csvContents = yield* Effect.tryPromise(() =>
-      Promise.all(csvFiles.map((file) => file.text())),
-    );
+    const csvContents = yield* readCsvFiles(files.filter(isCsv));
     const csvLines = csvContents.flatMap(receivedStockFromCsv);
-    const aiFiles = files.filter((file) => !file.name.toLowerCase().endsWith(".csv"));
+    const aiFiles = files.filter((file) => !isCsv(file));
     if (csvLines.length > 0 || !aiFiles.length)
-      return yield* Schema.decodeUnknownEffect(InvoiceExtraction)({
-        supplier: null,
-        invoiceNumber: null,
-        lines: csvLines,
-      });
+      return yield* decodeExtraction({ supplier: null, invoiceNumber: null, lines: csvLines });
 
-    const converted = yield* Effect.tryPromise(() =>
-      ai.toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file }))),
-    ).pipe(Effect.timeout("15 seconds"));
-    for (const failure of converted.filter(isFailure)) {
+    const converted = yield* ai
+      .toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file })))
+      .pipe(Effect.timeout("15 seconds"));
+    const failures = converted.filter(isFailure);
+    for (const failure of failures) {
       yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
         Effect.annotateLogs({ name: failure.name, error: failure.error }),
       );
     }
-    const documents = yield* Effect.try(() => documentsToMarkdown(converted));
+    if (failures.length === converted.length)
+      return yield* new AttachmentsUnreadable({ message: unreadableMessage(failures) });
+    const documents = readableMarkdown(converted);
     if (!documents.length)
-      return yield* Effect.fail(
-        new Error("No readable text could be extracted from the attachments."),
-      );
+      return yield* new AttachmentsUnreadable({
+        message: "No readable text could be extracted from the attachments.",
+      });
 
-    const raw = yield* Effect.tryPromise((signal) =>
-      ai.generate({
+    const raw = yield* ai
+      .generate({
         messages: [
           { role: "system", content: instructions },
           { role: "user", content: documents.join("\n\n") },
         ],
         jsonSchema: invoiceExtractionJsonSchema,
-        signal,
-      }),
-    ).pipe(Effect.timeout("30 seconds"));
+      })
+      .pipe(Effect.timeout("30 seconds"));
     const output = yield* decodeInvoiceModelOutput(raw);
-    return yield* Schema.decodeUnknownEffect(InvoiceExtraction)(normalizeExtraction(output));
+    return yield* decodeExtraction(normalizeExtraction(output));
   },
   (effect) =>
     effect.pipe(

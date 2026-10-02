@@ -1,11 +1,4 @@
 import { inventoryReplicaScope, sqliteReplicaFileName } from "@store/client-db";
-import * as Schema from "effect/Schema";
-
-const MobileExtra = Schema.Struct({
-  apiBaseUrl: Schema.String.check(Schema.isMinLength(1)),
-});
-
-export const decodeMobileExtra = Schema.decodeUnknownOption(MobileExtra);
 
 export const replicaDatabaseName = (
   apiBaseUrl: string,

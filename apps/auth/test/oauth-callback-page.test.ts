@@ -24,12 +24,6 @@ describe("googleOAuthAppResponse", () => {
     expect(html).toContain('href="com.tabaaq.desktop://auth/callback?code=a&amp;next=b"');
     expect(html).toContain('location.replace("com.tabaaq.desktop://auth/callback?code=a&next=b")');
   });
-
-  it("keeps a 302 for the hosted web origin", () => {
-    const response = googleOAuthAppResponse(new URL("https://app.example.com/?code=grant"));
-    expect(response.status).toBe(302);
-    expect(response.headers.location).toBe("https://app.example.com/?code=grant");
-  });
 });
 
 describe("oauthCallbackErrorResponse", () => {

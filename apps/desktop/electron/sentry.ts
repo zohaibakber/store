@@ -1,41 +1,29 @@
-import * as Sentry from "@sentry/electron/main";
-import { app } from "electron";
+import { captureException, init } from "@sentry/electron/main";
+
+import { sentryOptions } from "./sentry-options";
 
 interface DesktopErrorContext {
   readonly op: string;
 }
 
-const sentryDsn = () =>
-  (process.env["VITE_SENTRY_DSN"] ?? import.meta.env.VITE_SENTRY_DSN ?? "").trim();
-
-const RENDERER_ANR_INTEGRATION = "RendererEventLoopBlock";
-const LINUX_CRASHPAD_MINIDUMP_INTEGRATION = "SentryMinidump";
-
-const keepDesktopSentryIntegration = (integration: { readonly name: string }) => {
-  if (integration.name === RENDERER_ANR_INTEGRATION) return false;
-  if (process.platform === "linux" && integration.name === LINUX_CRASHPAD_MINIDUMP_INTEGRATION) {
-    return false;
-  }
-  return true;
-};
+const unusedIntegrations = new Set([
+  "MainProcessSession",
+  "RendererEventLoopBlock",
+  ...(process.platform === "linux" ? ["SentryMinidump"] : []),
+]);
 
 export const initDesktopSentry = () => {
-  const dsn = sentryDsn();
-  if (!dsn) return;
-  Sentry.init({
-    dsn,
-    environment: app.isPackaged ? "production" : "development",
-    release: `tabaaq-desktop@${app.getVersion()}`,
-    sendDefaultPii: false,
-    integrations: (defaults) => defaults.filter(keepDesktopSentryIntegration),
+  const options = sentryOptions();
+  if (!options) return;
+  init({
+    ...options,
+    integrations: (defaults) =>
+      defaults.filter((integration) => !unusedIntegrations.has(integration.name)),
   });
 };
 
 export const reportDesktopError = (cause: unknown, context: DesktopErrorContext) => {
   const error = cause instanceof Error ? cause : new Error(String(cause));
   console.error(error, context);
-  Sentry.withScope((scope) => {
-    scope.setTag("op", context.op);
-    Sentry.captureException(error);
-  });
+  captureException(error, { tags: { op: context.op } });
 };

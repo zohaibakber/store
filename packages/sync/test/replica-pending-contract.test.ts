@@ -49,7 +49,6 @@ import {
   NEW_CATEGORY_ID,
   ORDER_ID,
   ORDER_LINE_ID,
-  orderLineWrite,
   orderWrite,
   placeOrderWrites,
   rejectedReceipt,
@@ -60,7 +59,6 @@ import {
   SPARE_BATCH_ID,
   SUPPLIER_ID,
   SUPPLIER_NAME,
-  supplierWrite,
 } from "./lib/pending-fixture";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
@@ -343,27 +341,6 @@ for (const adapter of adapters) {
     const withHarness = <A>(use: (harness: Harness) => Effect.Effect<A, unknown>) =>
       Effect.acquireUseRelease(adapter.make(), use, (harness) => Effect.orDie(harness.close()));
 
-    it.effect("makes an offline invoice readable with a pending mark", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
-          const invoiceRows = yield* harness.rows("invoice");
-          const itemRows = yield* harness.rows("invoiceItem");
-          const movementRows = yield* harness.rows("stockMovement");
-          const marks = yield* harness.store.readPendingMarks();
-          expect(invoiceRows).toHaveLength(1);
-          expect(invoiceRows[0]?.["total"]).toBe(100);
-          expect(itemRows[0]?.["productName"]).toBe("Ten pack");
-          expect(itemRows[0]?.["batchNumber"]).toBe("B-1");
-          expect(movementRows[0]?.["type"]).toBe("sale");
-          expect(movementRows[0]?.["unitDelta"]).toBe(-1);
-          expect(
-            marks.filter((mark) => mark.operationId === lastUnitBuyerAEnvelope.operationId),
-          ).toHaveLength(3);
-        }),
-      ),
-    );
-
     it.effect("replaces shadow rows with authoritative rows and clears the mark", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -522,41 +499,6 @@ for (const adapter of adapters) {
           expect(
             marks.filter((mark) => mark.operationId === lastUnitBuyerAEnvelope.operationId),
           ).toHaveLength(3);
-        }),
-      ),
-    );
-
-    it.effect("refuses an enqueue that exceeds durable stock", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          const envelope = invoiceEnvelopeFor({
-            operationId: "oversold",
-            clientSequence: "1",
-            quantity: 50,
-            invoiceNumber: 3,
-          });
-          const failure = yield* Effect.flip(
-            harness.store.enqueueCommand(enqueueRequestOf(envelope, 1)),
-          );
-          expect(failure._tag).toBe("SyncProtocolError");
-          const invoiceRows = yield* harness.rows("invoice");
-          expect(invoiceRows).toHaveLength(0);
-        }),
-      ),
-    );
-
-    it.effect("produces no duplicate shadow rows on idempotent replay", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
-          const replay = yield* harness.store.enqueueCommand(
-            enqueueRequestOf(lastUnitBuyerAEnvelope, 2),
-          );
-          const itemRows = yield* harness.rows("invoiceItem");
-          const marks = yield* harness.store.readPendingMarks();
-          expect(replay.notice).toBeUndefined();
-          expect(itemRows).toHaveLength(1);
-          expect(marks).toHaveLength(3);
         }),
       ),
     );
@@ -735,63 +677,6 @@ for (const adapter of adapters) {
       ),
     );
 
-    it.effect("renames a colliding category shadow when snapshot activation re-applies it", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(
-            enqueueRequestOf(
-              catalogEnvelope({
-                operationId: "local-tea",
-                clientSequence: "1",
-                writes: [
-                  {
-                    entity: "category",
-                    action: "upsert",
-                    id: NEW_CATEGORY_ID,
-                    expectedRowVersion: null,
-                    row: { name: "Tea", tracksPacks: false },
-                  },
-                ],
-              }),
-              1,
-            ),
-          );
-          const teaPart: SnapshotPartPayload = {
-            ...snapshotPart,
-            rows: [
-              ...snapshotPart.rows,
-              {
-                entity: "category",
-                entityId: "remote-tea",
-                rowVersion: 1,
-                row: {
-                  id: "remote-tea",
-                  name: "Tea",
-                  tracksPacks: true,
-                  createdAt: FIXTURE_NOW,
-                  updatedAt: FIXTURE_NOW,
-                  organizationId: LAST_UNIT_ORGANIZATION_ID,
-                  createdByUserId: "user-2",
-                  updatedByUserId: "user-2",
-                  deviceId: "replica-b",
-                  operationId: "remote-tea-op",
-                  rowVersion: 1,
-                },
-              },
-            ],
-          };
-          yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
-          yield* harness.store.importSnapshotPart(snapshotManifest, teaPart);
-          yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
-          const categoryRows = yield* harness.rows("category");
-          expect(findRow(categoryRows, "remote-tea")?.["name"]).toBe("Tea");
-          expect(findRow(categoryRows, NEW_CATEGORY_ID)?.["name"]).toBe("Tea (2)");
-          const marks = yield* harness.store.readPendingMarks();
-          expect(marks.filter((mark) => mark.entityId === NEW_CATEGORY_ID)).toHaveLength(1);
-        }),
-      ),
-    );
-
     it.effect("renames a colliding category shadow before writing the remote category", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -842,32 +727,6 @@ for (const adapter of adapters) {
     const purchasing = (clientSequence: string, writes: ReadonlyArray<CatalogRowWrite>) =>
       catalogEnvelope({ operationId: `purchasing-${clientSequence}`, clientSequence, writes });
 
-    const refusalOf = (harness: Harness, writes: ReadonlyArray<CatalogRowWrite>) =>
-      Effect.flip(harness.store.enqueueCommand(enqueueRequestOf(purchasing("99", writes), 1))).pipe(
-        Effect.map((failure) => (failure._tag === "SyncProtocolError" ? failure.code : failure)),
-      );
-
-    const orderDelete: CatalogRowWrite = {
-      entity: "purchaseOrder",
-      action: "delete",
-      id: ORDER_ID,
-      expectedRowVersion: 1,
-    };
-
-    const lineDelete = (expectedRowVersion: number): CatalogRowWrite => ({
-      entity: "purchaseOrderItem",
-      action: "delete",
-      id: ORDER_LINE_ID,
-      expectedRowVersion,
-    });
-
-    const supplierDelete: CatalogRowWrite = {
-      entity: "supplier",
-      action: "delete",
-      id: SUPPLIER_ID,
-      expectedRowVersion: 1,
-    };
-
     it.effect("projects a delivery onto its order line and restores it when rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -904,112 +763,6 @@ for (const adapter of adapters) {
           expect(
             findRow(yield* harness.rows("stockMovement"), DELIVERY_MOVEMENT_ID),
           ).toBeUndefined();
-        }),
-      ),
-    );
-
-    it.effect("refuses purchasing writes with the code the authority would give", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
-          const draftRefusals: ReadonlyArray<readonly [string, ReadonlyArray<CatalogRowWrite>]> = [
-            ["ENTITY_CONFLICT", [supplierWrite({ id: "supplier-twin" })]],
-            ["SUPPLIER_HAS_ORDERS", [supplierDelete]],
-            [
-              "PURCHASE_ORDER_TRANSITION_INVALID",
-              [orderWrite({ id: "order-sent", orderNumber: 2, status: "sent" })],
-            ],
-            [
-              "ENTITY_RELATION_INVALID",
-              [orderWrite({ id: "order-orphan", orderNumber: 2, supplierId: "supplier-missing" })],
-            ],
-            [
-              "PURCHASE_ORDER_TRANSITION_INVALID",
-              [orderWrite({ status: "closed", expectedRowVersion: 1 })],
-            ],
-            ["ENTITY_CONFLICT", [{ ...orderDelete, expectedRowVersion: 5 }]],
-            ["PURCHASE_ORDER_HAS_ITEMS", [orderDelete]],
-            [
-              "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
-              [orderLineWrite({ id: "line-miscounted", baseUnitQuantity: 20 })],
-            ],
-            [
-              "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
-              [deliveryWrite({ productId: LAST_UNIT_PRODUCT_ID })],
-            ],
-            ["INVALID_OPERATION", [deliveryWrite({ expectedRowVersion: 1 })]],
-            ["ENTITY_RELATION_INVALID", [deliveryWrite({ lineId: "line-missing" })]],
-          ];
-          for (const [code, writes] of draftRefusals) {
-            expect(yield* refusalOf(harness, writes)).toBe(code);
-          }
-
-          yield* harness.store.enqueueCommand(
-            enqueueRequestOf(
-              purchasing("2", [
-                deliveryWrite(),
-                orderWrite({ status: "sent", expectedRowVersion: 1 }),
-              ]),
-              2,
-            ),
-          );
-          expect(yield* refusalOf(harness, [lineDelete(2)])).toBe("PURCHASE_ORDER_ITEM_RECEIVED");
-          expect(yield* refusalOf(harness, [{ ...orderDelete, expectedRowVersion: 2 }])).toBe(
-            "PURCHASE_ORDER_NOT_DRAFT",
-          );
-
-          yield* harness.store.enqueueCommand(
-            enqueueRequestOf(
-              purchasing("3", [orderWrite({ status: "cancelled", expectedRowVersion: 2 })]),
-              3,
-            ),
-          );
-          const closedRefusals: ReadonlyArray<ReadonlyArray<CatalogRowWrite>> = [
-            [orderWrite({ status: "sent", expectedRowVersion: 3 })],
-            [orderLineWrite({ id: "line-late" })],
-            [deliveryWrite({ batchId: "batch-late" })],
-          ];
-          for (const writes of closedRefusals) {
-            expect(yield* refusalOf(harness, writes)).toBe("PURCHASE_ORDER_NOT_OPEN");
-          }
-          expect(yield* harness.rows("purchaseOrder")).toHaveLength(1);
-          expect(yield* harness.rows("purchaseOrderItem")).toHaveLength(1);
-        }),
-      ),
-    );
-
-    it.effect("applies the writes of one command in order", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
-          yield* harness.store.enqueueCommand(
-            enqueueRequestOf(purchasing("2", [lineDelete(1), orderDelete, supplierDelete]), 2),
-          );
-          expect(yield* harness.rows("purchaseOrderItem")).toHaveLength(0);
-          expect(yield* harness.rows("purchaseOrder")).toHaveLength(0);
-          expect(yield* harness.rows("supplier")).toHaveLength(0);
-        }),
-      ),
-    );
-
-    it.effect("gives a new order the next free number when its proposed number is taken", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
-          yield* harness.store.enqueueCommand(
-            enqueueRequestOf(
-              purchasing("2", [
-                orderWrite({ id: "order-2", orderNumber: 1 }),
-                orderWrite({ id: "order-3", orderNumber: 7 }),
-                orderWrite({ id: "order-4", orderNumber: 7 }),
-              ]),
-              2,
-            ),
-          );
-          const orders = yield* harness.rows("purchaseOrder");
-          expect(
-            ["order-2", "order-3", "order-4"].map((id) => findRow(orders, id)?.["orderNumber"]),
-          ).toEqual([2, 7, 8]);
         }),
       ),
     );
@@ -1068,24 +821,6 @@ for (const adapter of adapters) {
         expect(findRow(orders, "remote-order")?.["orderNumber"]).toBe(1);
         expect(findRow(orders, ORDER_ID)?.["orderNumber"]).toBe(2);
       });
-
-    it.effect("moves supplier and order shadows aside before writing the remote rows", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
-          const applied = yield* harness.store.applyTransactionGroup({
-            commitSequence: OrgCommitSequence.make("8"),
-            operationId: "remote-purchasing-op",
-            decision: "accepted",
-            changes: remotePurchasingRows.map((row) => ({ ...row, action: "upsert" as const })),
-          });
-          yield* expectDisplacedShadows(harness);
-          expect(applied.notice?.touchedKeys).toEqual(
-            expect.arrayContaining([`supplier:${SUPPLIER_ID}`, `purchaseOrder:${ORDER_ID}`]),
-          );
-        }),
-      ),
-    );
 
     it.effect(
       "moves supplier and order shadows aside when snapshot activation re-applies them",

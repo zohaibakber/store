@@ -1,6 +1,6 @@
 import {
-  AuthSession,
   bearerTokenFromHeaders,
+  type AccessClaims,
   type AccessTokenVerifier,
   type JwtConfiguration,
 } from "@store/auth";
@@ -11,80 +11,47 @@ import {
   WorkspaceSnapshot,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
-export class AuthError extends Schema.TaggedError<AuthError>()("Server.AuthError", {
-  message: Schema.String,
-}) {}
+export type AuthVerificationConfig = Pick<JwtConfiguration, "issuer" | "audience" | "keys">;
 
-export type AuthVerificationConfig = Pick<JwtConfiguration, "issuer" | "audience" | "publicJwk">;
-
-export const authenticateHeaders = (
-  headers: Headers,
+export const authenticateToken = (
   verify: AccessTokenVerifier,
-): Effect.Effect<typeof AuthSession.Type | null, AuthError> =>
-  Effect.gen(function* () {
-    const token = bearerTokenFromHeaders(headers);
-    if (!token) return null;
-    const claims = yield* verify(token).pipe(
-      Effect.tapError((error) =>
-        Effect.logWarning("Access token verification failed").pipe(
-          Effect.annotateLogs({ cause: error.message }),
+  token: string | null | undefined,
+): Effect.Effect<AccessClaims | null> =>
+  token
+    ? verify(token).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Access token verification failed").pipe(
+            Effect.annotateLogs({ cause: error.message }),
+          ),
         ),
-      ),
-      Effect.mapError(() => new AuthError({ message: "Invalid access token." })),
-      Effect.option,
-    );
-    if (claims._tag === "None") return null;
-    const verified = claims.value;
-    return AuthSession.make({
-      user: {
-        id: verified.subject,
-        name: verified.name,
-        email: verified.email,
-        image: verified.image,
-      },
-      session: {
-        id: verified.sessionId,
-        userId: verified.subject,
-        activeOrganizationId: verified.activeOrganizationId,
-        expiresAt: verified.expiresAt,
-      },
-      organizations: [
-        {
-          id: verified.activeOrganizationId,
-          name: verified.organizationName,
-          slug: verified.organizationSlug,
-          role: verified.role,
-        },
-      ],
-    });
-  });
+        Effect.orElseSucceed(() => null),
+      )
+    : Effect.succeed(null);
 
-export const loadWorkspaceSnapshot = (
-  headers: Headers,
+export const authenticateRequest = (
   verify: AccessTokenVerifier,
-): Effect.Effect<typeof WorkspaceSnapshot.Type, AuthError> =>
-  Effect.gen(function* () {
-    const session = yield* authenticateHeaders(headers, verify);
-    if (!session) return unauthenticatedWorkspace({ isOnline: true });
-    const organizations = session.organizations.map((organization) => ({
-      id: decodeOrganizationId(organization.id),
-      name: organization.name,
-      slug: organization.slug,
-      role: organization.role,
-    }));
-    const activeOrganization = organizations[0] ?? null;
-    return WorkspaceSnapshot.make({
-      status: "authenticated",
-      user: {
-        id: decodeUserId(session.user.id),
-        name: session.user.name,
-        email: session.user.email,
-        image: session.user.image,
-      },
-      activeOrganization,
-      organizations,
-      isOnline: true,
-    });
+  request: HttpServerRequest.HttpServerRequest,
+) => authenticateToken(verify, bearerTokenFromHeaders(new Headers(request.headers)));
+
+export const workspaceSnapshotOf = (claims: AccessClaims | null): WorkspaceSnapshot => {
+  if (claims === null) return unauthenticatedWorkspace({ isOnline: true });
+  const organization = {
+    id: decodeOrganizationId(claims.activeOrganizationId),
+    name: claims.organizationName,
+    role: claims.role,
+  };
+  return WorkspaceSnapshot.make({
+    status: "authenticated",
+    user: {
+      id: decodeUserId(claims.subject),
+      name: claims.name,
+      email: claims.email,
+      image: claims.image,
+    },
+    activeOrganization: organization,
+    organizations: [organization],
+    isOnline: true,
   });
+};

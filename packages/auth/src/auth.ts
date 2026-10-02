@@ -1,12 +1,5 @@
 export { bearerTokenFromHeaders } from "./bearer";
-export {
-  AuthClient,
-  AuthClientError,
-  authClientLayer,
-  makeAuthClient,
-  type AuthClientApi,
-  type AuthClientConfiguration,
-} from "./client";
+export { AuthClient, AuthClientError, authClientLayer, type AuthClientApi } from "./client";
 export {
   developmentEmailLayer,
   disabledEmailLayer,
@@ -19,12 +12,12 @@ export {
 export {
   Authorization,
   CurrentAccessToken,
-  optionalRedactedValue,
+  presentedCredential,
   refreshCookieName,
   refreshCookieOptions,
   refreshCookieSecurity,
 } from "./http-authorization";
-export { AuthHttpApi } from "./http-api";
+export { AuthHttpApi, MalformedRequest } from "./http-api";
 export {
   AuthBadRequest,
   AuthConflict,
@@ -34,8 +27,8 @@ export {
   AuthTooManyRequests,
   AuthUnauthenticated,
   AuthUnsupportedMediaType,
-  authHttpErrorFromStatus,
   authHttpErrorStatus,
+  sessionEndingCodes,
   type AuthHttpError,
 } from "./http-errors";
 export {
@@ -43,9 +36,10 @@ export {
   AuthJwks,
   JwtError,
   accessTokenLayer,
+  activeJwtKeyId,
   AUTH_JWT_KEY_ID,
-  decodeJsonWebKey,
   decodeJsonWebKeyText,
+  decodeJwtKeyRingText,
   issueAccessToken,
   makeAccessTokenVerifier,
   publicJwks,
@@ -55,15 +49,16 @@ export {
   type IssueAccessTokenInput,
   type IssuedAccessToken,
   type JwtConfiguration,
+  type JwtKey,
+  type JwtKeyRing,
 } from "./jwt";
 export * from "./model";
 export {
   PasswordHash,
   PasswordHasher,
   PasswordHashError,
-  hashPassword,
   passwordHasherLayer,
-  verifyPassword,
   type PasswordHasherApi,
 } from "./password";
 export * from "./security";
+export * as WebCrypto from "./web-crypto";

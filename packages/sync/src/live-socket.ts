@@ -66,7 +66,7 @@ class LiveSocketOffline extends Schema.TaggedError<LiveSocketOffline>()("LiveSoc
 const JwtClaims = Schema.Struct({ exp: Schema.optionalKey(Schema.Number) });
 const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(JwtClaims));
 
-export const accessTokenExpiresAt = (token: string): number | undefined => {
+const accessTokenExpiresAt = (token: string): number | undefined => {
   const payload = token.split(".")[1];
   if (payload === undefined) return undefined;
   const json = Encoding.decodeBase64UrlString(payload);
@@ -77,7 +77,7 @@ export const accessTokenExpiresAt = (token: string): number | undefined => {
     : undefined;
 };
 
-export const liveSocketUrl = (
+const liveSocketUrl = (
   apiBaseUrl: string,
   replicaId: string,
   maxBytes: number | undefined,

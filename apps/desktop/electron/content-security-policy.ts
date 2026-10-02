@@ -6,7 +6,6 @@ const liveSocketOrigin = (apiOrigin: string): string => {
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
   readonly apiOrigin: string;
-  readonly authOrigin: string;
   readonly development: boolean;
 }) => {
   const scriptSources = [
@@ -16,10 +15,7 @@ export const makeDesktopContentSecurityPolicy = (input: {
   const connectSources = [
     "'self'",
     input.apiOrigin,
-    input.authOrigin,
     liveSocketOrigin(input.apiOrigin),
-    "https://*.ingest.sentry.io",
-    "https://*.ingest.us.sentry.io",
     ...(input.development ? ["ws:", "http://localhost:*"] : []),
   ];
 
