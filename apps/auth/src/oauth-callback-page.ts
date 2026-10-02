@@ -1,5 +1,5 @@
 import { isNativeRedirect } from "@store/auth/security";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const callbackPageHeaders = {
   "cache-control": "no-store",

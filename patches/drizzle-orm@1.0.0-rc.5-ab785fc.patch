@@ -1,0 +1,462 @@
+diff --git a/effect-d1/session.d.cts b/effect-d1/session.d.cts
+index 02b04b2..32bcbcf 100644
+--- a/effect-d1/session.d.cts
++++ b/effect-d1/session.d.cts
+@@ -9,3 +9,3 @@ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+ import { D1Client } from "@effect/sql-d1/D1Client";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-d1/session.d.ts b/effect-d1/session.d.ts
+index 08415e4..f05316c 100644
+--- a/effect-d1/session.d.ts
++++ b/effect-d1/session.d.ts
+@@ -12,3 +12,3 @@ import { D1Client } from "@effect/sql-d1/D1Client";
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-libsql/migrator.d.cts b/effect-libsql/migrator.d.cts
+index 7166a1a..2eada8e 100644
+--- a/effect-libsql/migrator.d.cts
++++ b/effect-libsql/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-libsql/migrator.d.ts b/effect-libsql/migrator.d.ts
+index a38efcb..1c5c6e6 100644
+--- a/effect-libsql/migrator.d.ts
++++ b/effect-libsql/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-libsql/session.d.cts b/effect-libsql/session.d.cts
+index 2113ebc..0898acf 100644
+--- a/effect-libsql/session.d.cts
++++ b/effect-libsql/session.d.cts
+@@ -8,3 +8,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-libsql/session.d.ts b/effect-libsql/session.d.ts
+index 29997cb..42f4b61 100644
+--- a/effect-libsql/session.d.ts
++++ b/effect-libsql/session.d.ts
+@@ -12,3 +12,3 @@ import { PreparedQueryConfig, SQLiteExecuteMethod } from "../sqlite-core/session
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-mysql2/migrator.d.cts b/effect-mysql2/migrator.d.cts
+index 40d0bc3..46480e7 100644
+--- a/effect-mysql2/migrator.d.cts
++++ b/effect-mysql2/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-mysql2/migrator.d.ts b/effect-mysql2/migrator.d.ts
+index 8248783..7c2edec 100644
+--- a/effect-mysql2/migrator.d.ts
++++ b/effect-mysql2/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-mysql2/session.d.cts b/effect-mysql2/session.d.cts
+index 5811760..9f211f8 100644
+--- a/effect-mysql2/session.d.cts
++++ b/effect-mysql2/session.d.cts
+@@ -9,3 +9,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-mysql2/session.d.ts b/effect-mysql2/session.d.ts
+index 58ed56d..ba78146 100644
+--- a/effect-mysql2/session.d.ts
++++ b/effect-mysql2/session.d.ts
+@@ -13,3 +13,3 @@ import { WithCacheConfig } from "../cache/core/types.js";
+ import { MySqlPreparedQueryConfig, MySqlQueryResultHKT } from "../mysql-core/session.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-pglite/migrator.d.cts b/effect-pglite/migrator.d.cts
+index 6d42dcf..f8be83b 100644
+--- a/effect-pglite/migrator.d.cts
++++ b/effect-pglite/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-pglite/migrator.d.ts b/effect-pglite/migrator.d.ts
+index 919507b..ec465d9 100644
+--- a/effect-pglite/migrator.d.ts
++++ b/effect-pglite/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-pglite/session.d.cts b/effect-pglite/session.d.cts
+index a51cefa..f726d7c 100644
+--- a/effect-pglite/session.d.cts
++++ b/effect-pglite/session.d.cts
+@@ -9,3 +9,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-pglite/session.d.ts b/effect-pglite/session.d.ts
+index 8d5e348..3a30ccb 100644
+--- a/effect-pglite/session.d.ts
++++ b/effect-pglite/session.d.ts
+@@ -13,3 +13,3 @@ import { WithCacheConfig } from "../cache/core/types.js";
+ import { PgQueryResultHKT, PgTransactionConfig, PreparedQueryConfig } from "../pg-core/session.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-postgres/migrator.d.cts b/effect-postgres/migrator.d.cts
+index f0776c7..4c80b35 100644
+--- a/effect-postgres/migrator.d.cts
++++ b/effect-postgres/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-postgres/migrator.d.ts b/effect-postgres/migrator.d.ts
+index 6816846..28eab80 100644
+--- a/effect-postgres/migrator.d.ts
++++ b/effect-postgres/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-postgres/session.d.cts b/effect-postgres/session.d.cts
+index f11fcbf..b5d964c 100644
+--- a/effect-postgres/session.d.cts
++++ b/effect-postgres/session.d.cts
+@@ -9,3 +9,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-postgres/session.d.ts b/effect-postgres/session.d.ts
+index 8076aaf..4520a18 100644
+--- a/effect-postgres/session.d.ts
++++ b/effect-postgres/session.d.ts
+@@ -13,3 +13,3 @@ import { WithCacheConfig } from "../cache/core/types.js";
+ import { PgQueryResultHKT, PgTransactionConfig, PreparedQueryConfig } from "../pg-core/session.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-schema/column.cjs b/effect-schema/column.cjs
+index cd95b7a..9b35e0e 100644
+--- a/effect-schema/column.cjs
++++ b/effect-schema/column.cjs
+@@ -202,3 +202,3 @@ function arrayColumnToSchema(column, constraint) {
+ 			const schema = effect.Schema.Array(effect.Schema.Number);
+-			return length ? schema.check(effect.Schema.isLengthBetween(length, length)) : schema;
++			return length ? schema.check(effect.Schema.isBetweenLength(length, length)) : schema;
+ 		}
+@@ -207,3 +207,3 @@ function arrayColumnToSchema(column, constraint) {
+ 			const schema = effect.Schema.Array(effect.Schema.BigInt.check(effect.Schema.isGreaterThanOrEqualToBigInt(require_utils.CONSTANTS.INT64_MIN), effect.Schema.isLessThanOrEqualToBigInt(require_utils.CONSTANTS.INT64_MAX)));
+-			return length ? schema.check(effect.Schema.isLengthBetween(length, length)) : schema;
++			return length ? schema.check(effect.Schema.isBetweenLength(length, length)) : schema;
+ 		}
+@@ -215,3 +215,3 @@ function arrayColumnToSchema(column, constraint) {
+ 				const schema = effect.Schema.Array(baseSchema);
+-				if (length) return schema.check(effect.Schema.isLengthBetween(length, length));
++				if (length) return schema.check(effect.Schema.isBetweenLength(length, length));
+ 				return schema;
+@@ -255,3 +255,3 @@ function stringColumnToSchema(column, constraint) {
+ 	schema = regex ? schema.check(effect.Schema.isPattern(regex)) : schema;
+-	return length && isLengthExact ? schema.check(effect.Schema.isLengthBetween(length, length)) : length ? schema.check(effect.Schema.isMaxLength(length)) : schema;
++	return length && isLengthExact ? schema.check(effect.Schema.isBetweenLength(length, length)) : length ? schema.check(effect.Schema.isMaxLength(length)) : schema;
+ }
+diff --git a/effect-schema/column.js b/effect-schema/column.js
+index 7a33c68..f740c29 100644
+--- a/effect-schema/column.js
++++ b/effect-schema/column.js
+@@ -200,3 +200,3 @@ function arrayColumnToSchema(column, constraint) {
+ 			const schema = Schema.Array(Schema.Number);
+-			return length ? schema.check(Schema.isLengthBetween(length, length)) : schema;
++			return length ? schema.check(Schema.isBetweenLength(length, length)) : schema;
+ 		}
+@@ -205,3 +205,3 @@ function arrayColumnToSchema(column, constraint) {
+ 			const schema = Schema.Array(Schema.BigInt.check(Schema.isGreaterThanOrEqualToBigInt(CONSTANTS.INT64_MIN), Schema.isLessThanOrEqualToBigInt(CONSTANTS.INT64_MAX)));
+-			return length ? schema.check(Schema.isLengthBetween(length, length)) : schema;
++			return length ? schema.check(Schema.isBetweenLength(length, length)) : schema;
+ 		}
+@@ -213,3 +213,3 @@ function arrayColumnToSchema(column, constraint) {
+ 				const schema = Schema.Array(baseSchema);
+-				if (length) return schema.check(Schema.isLengthBetween(length, length));
++				if (length) return schema.check(Schema.isBetweenLength(length, length));
+ 				return schema;
+@@ -253,3 +253,3 @@ function stringColumnToSchema(column, constraint) {
+ 	schema = regex ? schema.check(Schema.isPattern(regex)) : schema;
+-	return length && isLengthExact ? schema.check(Schema.isLengthBetween(length, length)) : length ? schema.check(Schema.isMaxLength(length)) : schema;
++	return length && isLengthExact ? schema.check(Schema.isBetweenLength(length, length)) : length ? schema.check(Schema.isMaxLength(length)) : schema;
+ }
+diff --git a/effect-sqlite-bun/migrator.d.cts b/effect-sqlite-bun/migrator.d.cts
+index 7abd0ed..8da6b39 100644
+--- a/effect-sqlite-bun/migrator.d.cts
++++ b/effect-sqlite-bun/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-bun/migrator.d.ts b/effect-sqlite-bun/migrator.d.ts
+index 2754084..343533c 100644
+--- a/effect-sqlite-bun/migrator.d.ts
++++ b/effect-sqlite-bun/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-bun/session.d.cts b/effect-sqlite-bun/session.d.cts
+index 8b2937e..2e99a23 100644
+--- a/effect-sqlite-bun/session.d.cts
++++ b/effect-sqlite-bun/session.d.cts
+@@ -8,3 +8,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-sqlite-bun/session.d.ts b/effect-sqlite-bun/session.d.ts
+index 616334b..07e37cf 100644
+--- a/effect-sqlite-bun/session.d.ts
++++ b/effect-sqlite-bun/session.d.ts
+@@ -12,3 +12,3 @@ import { PreparedQueryConfig, SQLiteExecuteMethod } from "../sqlite-core/session
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-sqlite-do/migrator.d.cts b/effect-sqlite-do/migrator.d.cts
+index 24b2359..3e45834 100644
+--- a/effect-sqlite-do/migrator.d.cts
++++ b/effect-sqlite-do/migrator.d.cts
+@@ -4,3 +4,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-do/migrator.d.ts b/effect-sqlite-do/migrator.d.ts
+index e6f3403..ba10760 100644
+--- a/effect-sqlite-do/migrator.d.ts
++++ b/effect-sqlite-do/migrator.d.ts
+@@ -4,3 +4,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-do/session.d.cts b/effect-sqlite-do/session.d.cts
+index 2875c5e..570fc83 100644
+--- a/effect-sqlite-do/session.d.cts
++++ b/effect-sqlite-do/session.d.cts
+@@ -8,3 +8,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-sqlite-do/session.d.ts b/effect-sqlite-do/session.d.ts
+index 90ce6fc..1ad13f3 100644
+--- a/effect-sqlite-do/session.d.ts
++++ b/effect-sqlite-do/session.d.ts
+@@ -12,3 +12,3 @@ import { SqliteClient } from "@effect/sql-sqlite-do/SqliteClient";
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-sqlite-node/migrator.d.cts b/effect-sqlite-node/migrator.d.cts
+index d84ea82..b1a0e46 100644
+--- a/effect-sqlite-node/migrator.d.cts
++++ b/effect-sqlite-node/migrator.d.cts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-node/migrator.d.ts b/effect-sqlite-node/migrator.d.ts
+index 45121e1..b8677ad 100644
+--- a/effect-sqlite-node/migrator.d.ts
++++ b/effect-sqlite-node/migrator.d.ts
+@@ -5,3 +5,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-node/session.d.cts b/effect-sqlite-node/session.d.cts
+index ac075bc..58fb8d5 100644
+--- a/effect-sqlite-node/session.d.cts
++++ b/effect-sqlite-node/session.d.cts
+@@ -8,3 +8,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-sqlite-node/session.d.ts b/effect-sqlite-node/session.d.ts
+index 29ab689..e5e738b 100644
+--- a/effect-sqlite-node/session.d.ts
++++ b/effect-sqlite-node/session.d.ts
+@@ -12,3 +12,3 @@ import { SqliteClient } from "@effect/sql-sqlite-node/SqliteClient";
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/effect-sqlite-wasm/migrator.d.cts b/effect-sqlite-wasm/migrator.d.cts
+index b3c5d52..cfe4a1b 100644
+--- a/effect-sqlite-wasm/migrator.d.cts
++++ b/effect-sqlite-wasm/migrator.d.cts
+@@ -4,3 +4,3 @@ import { AnyRelations } from "../relations.cjs";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-wasm/migrator.d.ts b/effect-sqlite-wasm/migrator.d.ts
+index c6a4c84..2d264ed 100644
+--- a/effect-sqlite-wasm/migrator.d.ts
++++ b/effect-sqlite-wasm/migrator.d.ts
+@@ -4,3 +4,3 @@ import { AnyRelations } from "../relations.js";
+ import * as effect_Effect0 from "effect/Effect";
+-import * as effect_unstable_sql_SqlError0 from "effect/unstable/sql/SqlError";
++import * as effect_unstable_sql_SqlError0 from "effect/sql/SqlError";
+ 
+diff --git a/effect-sqlite-wasm/session.d.cts b/effect-sqlite-wasm/session.d.cts
+index 19e91fa..3cf6bd6 100644
+--- a/effect-sqlite-wasm/session.d.cts
++++ b/effect-sqlite-wasm/session.d.cts
+@@ -8,3 +8,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectDrizzleQueryError } from "../effect-core/errors.cjs";
+diff --git a/effect-sqlite-wasm/session.d.ts b/effect-sqlite-wasm/session.d.ts
+index 9c20155..7dac883 100644
+--- a/effect-sqlite-wasm/session.d.ts
++++ b/effect-sqlite-wasm/session.d.ts
+@@ -12,3 +12,3 @@ import { SqliteClient } from "@effect/sql-sqlite-wasm/SqliteClient";
+ import { WithCacheConfig } from "../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../effect-core/logger.js";
+diff --git a/mysql-core/effect/db.d.cts b/mysql-core/effect/db.d.cts
+index e0754be..4d74171 100644
+--- a/mysql-core/effect/db.d.cts
++++ b/mysql-core/effect/db.d.cts
+@@ -26,3 +26,3 @@ import { Effect } from "effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { QueryEffectHKTBase } from "../../effect-core/query-effect.cjs";
+diff --git a/mysql-core/effect/db.d.ts b/mysql-core/effect/db.d.ts
+index e25790b..da8f270 100644
+--- a/mysql-core/effect/db.d.ts
++++ b/mysql-core/effect/db.d.ts
+@@ -27,3 +27,3 @@ import { QueryEffectHKTBase } from "../../effect-core/query-effect.js";
+ import { ResultSetHeader } from "mysql2/promise";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ 
+diff --git a/mysql-core/effect/session.d.cts b/mysql-core/effect/session.d.cts
+index 63f21bc..369b15d 100644
+--- a/mysql-core/effect/session.d.cts
++++ b/mysql-core/effect/session.d.cts
+@@ -10,3 +10,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectTransactionRollbackError, MigratorInitError } from "../../effect-core/errors.cjs";
+diff --git a/mysql-core/effect/session.d.ts b/mysql-core/effect/session.d.ts
+index badcf5a..93cd2a7 100644
+--- a/mysql-core/effect/session.d.ts
++++ b/mysql-core/effect/session.d.ts
+@@ -12,3 +12,3 @@ import { EffectTransactionRollbackError, MigratorInitError } from "../../effect-
+ import { WithCacheConfig } from "../../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../../effect-core/logger.js";
+diff --git a/pg-core/effect/db.d.cts b/pg-core/effect/db.d.cts
+index 3cf0a5a..7294bbe 100644
+--- a/pg-core/effect/db.d.cts
++++ b/pg-core/effect/db.d.cts
+@@ -23,3 +23,3 @@ import { Effect } from "effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { QueryEffectHKTBase } from "../../effect-core/query-effect.cjs";
+diff --git a/pg-core/effect/db.d.ts b/pg-core/effect/db.d.ts
+index 9aad6a2..a0411c7 100644
+--- a/pg-core/effect/db.d.ts
++++ b/pg-core/effect/db.d.ts
+@@ -29,3 +29,3 @@ import { NoDuplicateColumns, PgInsertBuilder } from "../query-builders/insert.js
+ import { RelationalQueryBuilder } from "../query-builders/query.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ 
+diff --git a/pg-core/effect/session.d.cts b/pg-core/effect/session.d.cts
+index 02e08ef..1e9312a 100644
+--- a/pg-core/effect/session.d.cts
++++ b/pg-core/effect/session.d.cts
+@@ -10,3 +10,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectTransactionRollbackError, MigratorInitError } from "../../effect-core/errors.cjs";
+diff --git a/pg-core/effect/session.d.ts b/pg-core/effect/session.d.ts
+index d5e4475..8befd20 100644
+--- a/pg-core/effect/session.d.ts
++++ b/pg-core/effect/session.d.ts
+@@ -12,3 +12,3 @@ import { EffectTransactionRollbackError, MigratorInitError } from "../../effect-
+ import { WithCacheConfig } from "../../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../../effect-core/logger.js";
+diff --git a/sqlite-core/effect/db.d.cts b/sqlite-core/effect/db.d.cts
+index 4b007d8..a236a5f 100644
+--- a/sqlite-core/effect/db.d.cts
++++ b/sqlite-core/effect/db.d.cts
+@@ -16,3 +16,3 @@ import { Effect } from "effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { QueryEffectHKTBase } from "../../effect-core/query-effect.cjs";
+diff --git a/sqlite-core/effect/db.d.ts b/sqlite-core/effect/db.d.ts
+index 09e51cb..3b19296 100644
+--- a/sqlite-core/effect/db.d.ts
++++ b/sqlite-core/effect/db.d.ts
+@@ -24,3 +24,3 @@ import { SQLiteEffectSelectBuilder } from "./select.js";
+ import { SQLiteEffectUpdateBuilder } from "./update.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ 
+diff --git a/sqlite-core/effect/session.d.cts b/sqlite-core/effect/session.d.cts
+index 9156b76..d1fb161 100644
+--- a/sqlite-core/effect/session.d.cts
++++ b/sqlite-core/effect/session.d.cts
+@@ -10,3 +10,3 @@ import * as Effect from "effect/Effect";
+ import { EffectCacheShape } from "../../cache/core/cache-effect.cjs";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectTransactionRollbackError, MigratorInitError } from "../../effect-core/errors.cjs";
+diff --git a/sqlite-core/effect/session.d.ts b/sqlite-core/effect/session.d.ts
+index e8c1532..945f913 100644
+--- a/sqlite-core/effect/session.d.ts
++++ b/sqlite-core/effect/session.d.ts
+@@ -12,3 +12,3 @@ import { PreparedQueryConfig, SQLiteExecuteMethod, SQLitePreparedQuery, SQLiteSe
+ import { WithCacheConfig } from "../../cache/core/types.js";
+-import { SqlError } from "effect/unstable/sql/SqlError";
++import { SqlError } from "effect/sql/SqlError";
+ import { EffectLoggerShape } from "../../effect-core/logger.js";

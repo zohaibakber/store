@@ -1,5 +1,5 @@
-import * as HttpBody from "effect/unstable/http/HttpBody";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpBody from "effect/http/HttpBody";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "../src/oauth-callback-page";

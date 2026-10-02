@@ -6,8 +6,8 @@ import { ImportId } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as RpcTest from "effect/rpc/RpcTest";
 import * as Stream from "effect/Stream";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { publishLocalWorkspace, type PublishPorts } from "../../electron/replica-publish";

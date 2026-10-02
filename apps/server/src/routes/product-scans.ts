@@ -1,8 +1,8 @@
 import { parseProductScan } from "@store/services";
 import * as Effect from "effect/Effect";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
 import * as Layer from "effect/Layer";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 
 import { CurrentOrganization } from "../auth/organization";
 import { ProductScanPayloadErrors, StoreApi } from "../http/api";

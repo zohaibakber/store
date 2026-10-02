@@ -4,7 +4,7 @@ import {
   type Inventory,
 } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 const EVERY_PRODUCT = {};
 

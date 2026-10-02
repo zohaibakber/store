@@ -1,7 +1,7 @@
 import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import type { SqlError } from "effect/sql/SqlError";
 
 import { lowerSqliteSubset, lowerSqliteSummary, toStatement } from "./compile";
 import type { ReplicaSnapshotFailure } from "./errors";

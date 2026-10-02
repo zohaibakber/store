@@ -12,8 +12,8 @@ import {
 } from "@store/sync/replica/indexeddb";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 
 import { replicaSyncActivityOf } from "./activity";
 import { planIndexedDbSubset } from "./indexeddb-plan";

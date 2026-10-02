@@ -2,17 +2,17 @@ import { EmailAddress, WebCrypto, type EmailAddress as EmailAddressType } from "
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import { constTrue } from "effect/Function";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as UrlParams from "effect/http/UrlParams";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
-import * as UrlParams from "effect/unstable/http/UrlParams";
 
 const GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -157,7 +157,7 @@ const decodeOkJson = <A>(
     : Effect.fail(oauthError(operation, `Google request failed (${response.status}).`));
 
 const decodeSegment = <A>(schema: Schema.Top & Schema.ConstraintDecoder<A>, segment: string) =>
-  Effect.fromResult(Encoding.decodeBase64UrlString(segment)).pipe(
+  Effect.fromResult(Base64Url.decodeString(segment)).pipe(
     Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
     Effect.mapError(malformed),
   );
@@ -254,7 +254,7 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
         }
         const header = yield* decodeSegment(IdTokenHeader, encodedHeader);
         const claims = yield* decodeSegment(IdTokenClaims, encodedClaims);
-        const signature = yield* Effect.fromResult(Encoding.decodeBase64Url(encodedSignature)).pipe(
+        const signature = yield* Effect.fromResult(Base64Url.decode(encodedSignature)).pipe(
           Effect.mapError(malformed),
         );
         const key = yield* signingKey(header.kid, now);

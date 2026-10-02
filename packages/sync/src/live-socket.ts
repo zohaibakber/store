@@ -11,7 +11,7 @@ import {
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -19,9 +19,9 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as Socket from "effect/socket/Socket";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import * as Socket from "effect/unstable/socket/Socket";
 
 export type LiveNetworkSignal = {
   readonly isOnline: () => boolean;
@@ -69,7 +69,7 @@ const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(JwtClaims)
 const accessTokenExpiresAt = (token: string): number | undefined => {
   const payload = token.split(".")[1];
   if (payload === undefined) return undefined;
-  const json = Encoding.decodeBase64UrlString(payload);
+  const json = Base64Url.decodeString(payload);
   if (Result.isFailure(json)) return undefined;
   const claims = decodeClaims(json.success);
   return Option.isSome(claims) && claims.value.exp !== undefined

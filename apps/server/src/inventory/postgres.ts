@@ -5,12 +5,12 @@ import * as DrizzlePostgres from "alchemy/Drizzle/Postgres";
 import type { EffectPgDatabase } from "drizzle-orm/effect-postgres";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import * as SqlError from "effect/unstable/sql/SqlError";
+import * as SqlError from "effect/sql/SqlError";
 
 import { InventoryDatabaseError } from "./errors";
 
@@ -31,7 +31,7 @@ export const integerTextFromNumeric = (value: string) =>
   unpadDecimalSequence(value.split(".", 1)[0] ?? value);
 
 export const randomHex = (byteCount: number): string =>
-  Encoding.encodeHex(crypto.getRandomValues(new Uint8Array(byteCount)));
+  Hex.encode(crypto.getRandomValues(new Uint8Array(byteCount)));
 
 export const requireState = <S>(state: S | undefined) =>
   state === undefined

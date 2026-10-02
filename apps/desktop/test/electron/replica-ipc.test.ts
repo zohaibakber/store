@@ -4,9 +4,9 @@ import path from "node:path";
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { describe, expect, it } from "vitest";
 
 import {

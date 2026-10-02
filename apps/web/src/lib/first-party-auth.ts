@@ -7,7 +7,7 @@ import {
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -47,8 +47,8 @@ export const browserStore = (storage: () => KeyValueStorage) => ({
 type BrowserStore = ReturnType<typeof browserStore>;
 
 const proofKey = Effect.promise(async () => {
-  const verifier = Encoding.encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const challenge = Encoding.encodeBase64Url(
+  const verifier = Base64Url.encode(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = Base64Url.encode(
     new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
   );
   return { verifier, challenge };

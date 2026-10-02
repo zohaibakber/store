@@ -1,7 +1,7 @@
 import { publicErrorSchema } from "@store/contracts/http-errors";
 import * as Effect from "effect/Effect";
-import * as HttpEffect from "effect/unstable/http/HttpEffect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpEffect from "effect/http/HttpEffect";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const BadRequest = publicErrorSchema("BadRequest", 400);
 export type BadRequest = typeof BadRequest.Type;

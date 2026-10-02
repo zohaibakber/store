@@ -2,10 +2,10 @@
 
 Default to Effect HTTP client modules for outgoing HTTP in application and provider code:
 
-- `effect/unstable/http/HttpClient`
-- `effect/unstable/http/HttpClientRequest`
-- `effect/unstable/http/HttpClientResponse`
-- `effect/unstable/http/HttpClientError`
+- `effect/http/HttpClient`
+- `effect/http/HttpClientRequest`
+- `effect/http/HttpClientResponse`
+- `effect/http/HttpClientError`
 
 For a runtime or library boundary that cannot depend on unstable Effect HTTP modules, follow [Raw Fetch Exception](#raw-fetch-exception).
 

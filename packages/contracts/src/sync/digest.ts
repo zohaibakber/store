@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Hex from "effect/encoding/Hex";
 
 import { sha256Hex } from "./operation-hash";
 import { PARTITION_DIGEST_VERSION, type PartitionDigestReport } from "./protocol";
@@ -124,7 +124,7 @@ export const makePartitionEntityHasher = (
     },
     finish: () => {
       flush();
-      return Encoding.encodeHex(hash.digest());
+      return Hex.encode(hash.digest());
     },
   };
 };

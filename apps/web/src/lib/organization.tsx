@@ -6,9 +6,9 @@ import type {
 } from "@store/auth";
 import { useSearch } from "@tanstack/react-router";
 import { Effect } from "effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
-import * as Atom from "effect/unstable/reactivity/Atom";
 import * as React from "react";
 
 import { toastManager } from "@/components/ui/toast";

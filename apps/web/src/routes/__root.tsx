@@ -1,6 +1,6 @@
 import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
 import { createRootRouteWithContext, Outlet, redirect } from "@tanstack/react-router";
-import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { Suspense } from "react";
 
 import { AppLoading } from "@/components/app/loading";

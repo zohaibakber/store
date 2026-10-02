@@ -16,9 +16,9 @@ import {
 } from "drizzle-orm/sqlite-core/effect/session";
 import type { PreparedQueryConfig, SQLiteExecuteMethod } from "drizzle-orm/sqlite-core/session";
 import * as Effect from "effect/Effect";
-import type { SqlClient } from "effect/unstable/sql/SqlClient";
-import type { Row } from "effect/unstable/sql/SqlConnection";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import type { SqlClient } from "effect/sql/SqlClient";
+import type { Row } from "effect/sql/SqlConnection";
+import type { SqlError } from "effect/sql/SqlError";
 
 interface ReplicaQueryEffectHKT extends QueryEffectHKTBase {
   readonly error: EffectDrizzleQueryError;

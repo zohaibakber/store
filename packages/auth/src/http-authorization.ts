@@ -1,8 +1,8 @@
 import * as Context from "effect/Context";
+import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
+import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
-import * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
-import * as HttpApiSecurity from "effect/unstable/httpapi/HttpApiSecurity";
 
 import { AuthUnauthenticated } from "./http-errors";
 

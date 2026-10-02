@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as SqlSchema from "effect/unstable/sql/SqlSchema";
+import * as SqlSchema from "effect/sql/SqlSchema";
 
 import type { InventoryError } from "./errors";
 import { databaseError, runStatement, type InventoryDrizzle } from "./postgres";

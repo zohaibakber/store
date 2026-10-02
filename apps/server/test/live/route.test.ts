@@ -4,9 +4,9 @@ import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import { inventoryState, replicas } from "@store/db/postgres/schema";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Redacted from "effect/Redacted";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryLive } from "../../src/inventory/live-horizon";

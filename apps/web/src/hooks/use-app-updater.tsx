@@ -1,7 +1,7 @@
 import { RegistryContext } from "@effect/atom-react";
 import { classifyUpdateFailure, updateFailureMessage } from "@store/contracts";
-import * as Atom from "effect/unstable/reactivity/Atom";
-import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as Atom from "effect/reactivity/Atom";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useEffect } from "react";
 
 import { toastManager } from "@/components/ui/toast";

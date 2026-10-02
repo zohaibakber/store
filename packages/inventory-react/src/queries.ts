@@ -29,7 +29,7 @@ import {
 } from "@tanstack/react-db";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as React from "react";
 
 import { CANDIDATE_QUERY_SEPARATOR, minuteClockAtom, stockPolicyAtom } from "./atoms";

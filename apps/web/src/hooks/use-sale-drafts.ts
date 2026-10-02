@@ -2,8 +2,8 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import * as Option from "effect/Option";
-import * as Atom from "effect/unstable/reactivity/Atom";
-import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as Atom from "effect/reactivity/Atom";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext } from "react";
 
 import { toastManager } from "@/components/ui/toast";

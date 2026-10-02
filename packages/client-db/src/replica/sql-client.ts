@@ -5,9 +5,9 @@ import {
   type SyncWakeReason,
 } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import type { SqlClient } from "effect/unstable/sql/SqlClient";
+import type { SqlClient } from "effect/sql/SqlClient";
 
 import { replicaSyncActivityOf } from "./activity";
 import { openSqliteReplicaSyncSession, type SqliteReplicaIdentity } from "./sql-client-session";

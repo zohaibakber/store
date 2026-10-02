@@ -8,7 +8,7 @@ import {
   type RequestError,
 } from "@store/workspace";
 import * as Effect from "effect/Effect";
-import * as HttpBody from "effect/unstable/http/HttpBody";
+import * as HttpBody from "effect/http/HttpBody";
 
 export type InvoiceUploadFile = {
   readonly name: string;

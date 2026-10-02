@@ -3,36 +3,39 @@ packages:
   - packages/*
 
 catalog:
-  "@effect/atom-react": 4.0.0-rc.117
-  "@effect/platform-browser": 4.0.0-rc.117
-  "@effect/platform-bun": 4.0.0-rc.117
-  "@effect/platform-node": 4.0.0-rc.117
-  "@effect/sql-d1": 4.0.0-rc.117
-  "@effect/sql-pg": 4.0.0-rc.117
-  "@effect/sql-sqlite-node": 4.0.0-rc.117
-  "@effect/sql-sqlite-react-native": 4.0.0-rc.117
-  "@effect/vitest": 4.0.0-rc.117
-  alchemy: 2.0.0-beta.79
+  "@effect/atom-react": 4.0.0
+  "@effect/platform-browser": 4.0.0
+  "@effect/platform-bun": 4.0.0
+  "@effect/platform-node": 4.0.0
+  "@effect/sql-d1": 4.0.0
+  "@effect/sql-pg": 4.0.0
+  "@effect/sql-sqlite-node": 4.0.0
+  "@effect/sql-sqlite-react-native": 4.0.0
+  "@effect/vitest": 4.0.0
+  alchemy: 2.0.0-beta.80
   drizzle-kit: 1.0.0-rc.5-ab785fc
   drizzle-orm: 1.0.0-rc.5-ab785fc
-  effect: 4.0.0-rc.117
+  effect: 4.0.0
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.0.0
   vite-plus: 1.0.0
 
 overrides:
   "@cloudflare/workers-types": 5.20260929.1
-  "@effect/atom-react": 4.0.0-rc.117
-  "@effect/platform-browser": 4.0.0-rc.117
-  "@effect/platform-bun": 4.0.0-rc.117
-  "@effect/platform-node": 4.0.0-rc.117
-  "@effect/platform-node-shared": 4.0.0-rc.117
-  "@effect/sql-d1": 4.0.0-rc.117
-  "@effect/sql-pg": 4.0.0-rc.117
-  "@effect/sql-sqlite-node": 4.0.0-rc.117
-  "@effect/sql-sqlite-react-native": 4.0.0-rc.117
-  "@effect/vitest": 4.0.0-rc.117
-  effect: 4.0.0-rc.117
+  "@effect/atom-react": 4.0.0
+  "@effect/platform-browser": 4.0.0
+  "@effect/platform-bun": 4.0.0
+  "@effect/platform-node": 4.0.0
+  "@effect/platform-node-shared": 4.0.0
+  "@effect/sql-d1": 4.0.0
+  "@effect/sql-libsql": 4.0.0
+  "@effect/sql-pg": 4.0.0
+  "@effect/sql-sqlite-do": 4.0.0
+  "@effect/sql-sqlite-node": 4.0.0
+  "@effect/sql-sqlite-react-native": 4.0.0
+  "@effect/sql-sqlite-wasm": 4.0.0
+  "@effect/vitest": 4.0.0
+  effect: 4.0.0
   drizzle-orm: 1.0.0-rc.5-ab785fc
   uuid: 11.1.1
   valibot: 1.5.0
@@ -49,18 +52,19 @@ allowBuilds:
   workerd: true
 
 minimumReleaseAgeExclude:
-  - "@effect/platform-bun@4.0.0-rc.117"
-  - "@effect/platform-node-shared@4.0.0-rc.117"
-  - "@effect/platform-node@4.0.0-rc.117"
-  - "@effect/sql-d1@4.0.0-rc.117"
-  - "@effect/sql-pg@4.0.0-rc.117"
-  - "@effect/sql-sqlite-node@4.0.0-rc.117"
-  - "@effect/vitest@4.0.0-rc.117"
-  - effect@4.0.0-rc.117
+  - "@effect/platform-bun@4.0.0"
+  - "@effect/platform-node-shared@4.0.0"
+  - "@effect/platform-node@4.0.0"
+  - "@effect/sql-d1@4.0.0"
+  - "@effect/sql-pg@4.0.0"
+  - "@effect/sql-sqlite-node@4.0.0"
+  - "@effect/vitest@4.0.0"
+  - effect@4.0.0
+  - alchemy@2.0.0-beta.80
   - "@cloudflare/workers-types@5.20260929.1"
-  - "@effect/atom-react@4.0.0-rc.117"
-  - "@effect/platform-browser@4.0.0-rc.117"
-  - "@effect/sql-sqlite-react-native@4.0.0-rc.117"
+  - "@effect/atom-react@4.0.0"
+  - "@effect/platform-browser@4.0.0"
+  - "@effect/sql-sqlite-react-native@4.0.0"
   - "@oxlint/binding-android-arm-eabi@1.86.0"
   - "@oxlint/binding-android-arm64@1.86.0"
   - "@oxlint/binding-darwin-arm64@1.86.0"
@@ -92,8 +96,28 @@ minimumReleaseAgeExclude:
   - "@voidzero-dev/vite-plus-win32-x64-msvc@1.0.0"
   - oxlint@1.86.0
   - vite-plus@1.0.0
+  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.80"
+  - "@alchemy.run/floci@2.0.0-beta.80"
+  - "@alchemy.run/node-utils@2.0.0-beta.80"
+  - "@distilled.cloud/acme@1.0.0-rc.13"
+  - "@distilled.cloud/aws@1.0.0-rc.13"
+  - "@distilled.cloud/axiom@1.0.0-rc.13"
+  - "@distilled.cloud/cloudflare@1.0.0-rc.13"
+  - "@distilled.cloud/core@1.0.0-rc.13"
+  - "@distilled.cloud/doppler@1.0.0-rc.13"
+  - "@distilled.cloud/fly-io@1.0.0-rc.13"
+  - "@distilled.cloud/gcp@1.0.0-rc.13"
+  - "@distilled.cloud/hetzner@1.0.0-rc.13"
+  - "@distilled.cloud/infisical@1.0.0-rc.13"
+  - "@distilled.cloud/neon@1.0.0-rc.13"
+  - "@distilled.cloud/planetscale@1.0.0-rc.13"
+  - "@distilled.cloud/prisma@1.0.0-rc.13"
+  - "@distilled.cloud/railway@1.0.0-rc.13"
+  - "@distilled.cloud/stripe@1.0.0-rc.13"
+  - "@distilled.cloud/zerossl@1.0.0-rc.13"
 
 patchedDependencies:
   "@tanstack/db@0.9.2": patches/@tanstack__db@0.9.2.patch
   "@tanstack/react-db@0.4.1": patches/@tanstack__react-db@0.4.1.patch
   alchemy: patches/alchemy.patch
+  drizzle-orm@1.0.0-rc.5-ab785fc: patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch

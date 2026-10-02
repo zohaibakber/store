@@ -258,7 +258,9 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     return Effect.partition([...acquisitions.values()], (acquisition) =>
       refill(acquisition, touched),
     ).pipe(
-      Effect.flatMap(([failures]) => (failures.length === 0 ? Effect.void : Effect.fail(failures))),
+      Effect.flatMap(([, failures]) =>
+        failures.length === 0 ? Effect.void : Effect.fail(failures),
+      ),
       Effect.onError(() =>
         Effect.sync(() => {
           pending = mergeAccumulators(drained, pending);

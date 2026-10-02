@@ -6,7 +6,7 @@ import {
   type InventoryHost,
 } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
 import ReactDOM from "react-dom/client";

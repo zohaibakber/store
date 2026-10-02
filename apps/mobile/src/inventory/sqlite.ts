@@ -1,9 +1,9 @@
 import * as SqliteClient from "@effect/sql-sqlite-react-native/SqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Reactivity from "effect/unstable/reactivity/Reactivity";
-import { SqlClient } from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as Reactivity from "effect/reactivity/Reactivity";
+import { SqlClient } from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 const REPLICA_PRAGMAS: ReadonlyArray<string> = [
   "PRAGMA journal_mode = WAL",
