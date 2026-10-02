@@ -798,6 +798,12 @@ const makeScopedIndexedDbReplicaStore = (
             return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
           }),
         ),
+      ).pipe(
+        Effect.tap((outcome) =>
+          outcome._tag === "registered"
+            ? readSnapshot([], (_api, state) => publish(notice(stampOf(state))))
+            : Effect.void,
+        ),
       );
 
     const readOutboxActivity = () =>

@@ -58,6 +58,7 @@ import * as Schema from "effect/Schema";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
+import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import type { InventoryActor } from "../../src/inventory/model";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { typedCommands } from "./typed-commands";
@@ -453,9 +454,23 @@ describe("postgres catalog writes", () => {
         const unnamed = yield* write("cmd-unnamed", [supplierWrite("sup-1", null, "Acme")]);
         yield* db
           .update(replicas)
+          .set({ lastSeenAt: now - 2 * 24 * 60 * 60_000 })
+          .where(peer);
+        const abandoned = yield* write("cmd-abandoned", [supplierWrite("sup-1", null, "Acme")]);
+        const registeredAbandoned = yield* commands.register(actor, {
+          replicaId: LAST_UNIT_REPLICA_A,
+          schemaVersion: 2,
+        });
+        const live = yield* makeInventoryLive(db);
+        yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
+        const reconnected = yield* write("cmd-reconnected", [
+          supplierWrite("sup-3", null, "Initech"),
+        ]);
+        yield* db
+          .update(replicas)
           .set({ lastSeenAt: now - ACTIVE_REPLICA_WINDOW_MILLIS - 60_000 })
           .where(peer);
-        const dormant = yield* write("cmd-dormant", [supplierWrite("sup-1", null, "Acme")]);
+        const dormant = yield* write("cmd-dormant", [supplierWrite("sup-3", null, "Initech")]);
         const registeredClear = yield* commands.register(actor, {
           replicaId: LAST_UNIT_REPLICA_A,
           schemaVersion: 2,
@@ -468,6 +483,9 @@ describe("postgres catalog writes", () => {
           receipt,
           registeredBlocked,
           unnamed,
+          abandoned,
+          registeredAbandoned,
+          reconnected,
           dormant,
           registeredClear,
           upgraded,
@@ -479,6 +497,9 @@ describe("postgres catalog writes", () => {
     expect(outcome.receipt).toEqual(rejection(staleReplicaRejection("Till 2")));
     expect(outcome.registeredBlocked.lowestActiveSchemaVersion).toBe(1);
     expect(outcome.unnamed).toEqual(rejection(staleReplicaRejection(null)));
+    expect(outcome.abandoned).toMatchObject(ACCEPTED);
+    expect(outcome.registeredAbandoned.lowestActiveSchemaVersion).toBe(2);
+    expect(outcome.reconnected).toEqual(rejection(staleReplicaRejection(null)));
     expect(outcome.dormant).toMatchObject(ACCEPTED);
     expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
     expect(outcome.upgraded).toMatchObject(ACCEPTED);

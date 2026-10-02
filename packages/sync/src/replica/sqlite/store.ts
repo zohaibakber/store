@@ -623,7 +623,15 @@ const makeSqliteReplicaStoreInternals = (
         ),
       adoptRegistration: (authority: RegisterReplicaResult, registeredAt: number) =>
         withTx("SqliteReplicaStore.adoptRegistration", (tx) =>
-          adoptReplicaRegistration(tx, authority, registeredAt),
+          Effect.gen(function* () {
+            const outcome = yield* adoptReplicaRegistration(tx, authority, registeredAt);
+            return { outcome, notice: noticeFromState(databaseIdentity, yield* readStamp(tx)) };
+          }),
+        ).pipe(
+          Effect.tap(({ outcome, notice }) =>
+            outcome._tag === "registered" ? publish(notice) : Effect.void,
+          ),
+          Effect.map(({ outcome }) => outcome),
         ),
       enqueueCommand,
       claimNextUpload: claimUpload,

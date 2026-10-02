@@ -400,6 +400,7 @@ export const replicas = pgTable(
     registeredAt: epochMilliseconds("registered_at").notNull(),
     lastSeenAt: epochMilliseconds("last_seen_at").notNull(),
     schemaVersion: integer("schema_version").notNull().default(1),
+    schemaVersionAt: epochMilliseconds("schema_version_at"),
   },
   (table) => [
     primaryKey({

@@ -4,6 +4,7 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
+  purchasingBlockedByStaleReplica,
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncProtocolError,
@@ -36,6 +37,7 @@ import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
 import {
   DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
   dueSince,
+  STALE_PEER_RECHECK_INTERVAL_MILLIS,
   type DigestVerificationCadence,
 } from "./replica/cadence";
 import {
@@ -175,26 +177,46 @@ export const makeSyncEngineFromReplicaStore = (
     });
 
     const registered = yield* Deferred.make<void>();
+    const heldBackAt = yield* Ref.make<number | undefined>(undefined);
+
+    const announce = Effect.fn("SyncEngine.announce")(function* (replicaId: string) {
+      const authority = yield* transport.registerReplica({
+        replicaId,
+        schemaVersion: SYNC_SCHEMA_VERSION,
+        ...(options.deviceLabel === undefined ? undefined : { deviceLabel: options.deviceLabel }),
+      });
+      const registeredAt = yield* Clock.currentTimeMillis;
+      const outcome = yield* withPermit(store.adoptRegistration(authority, registeredAt));
+      if (outcome._tag === "refused") {
+        return yield* Effect.fail(
+          SyncRecoveryRequired.make({ code: outcome.code, message: outcome.message }),
+        );
+      }
+      yield* Ref.set(
+        heldBackAt,
+        purchasingBlockedByStaleReplica(authority.lowestActiveSchemaVersion)
+          ? registeredAt
+          : undefined,
+      );
+    });
 
     const ensureRegistered = Effect.fn("SyncEngine.ensureRegistered")(function* () {
-      if (yield* Deferred.isDone(registered)) return;
-      const cursor = yield* withPermit(store.readSyncCursor());
-      if (shouldAnnounce(cursor)) {
-        const authority = yield* transport.registerReplica({
-          replicaId: cursor.replicaId,
-          schemaVersion: SYNC_SCHEMA_VERSION,
-          ...(options.deviceLabel === undefined ? undefined : { deviceLabel: options.deviceLabel }),
-        });
-        const registeredAt = yield* Clock.currentTimeMillis;
-        const outcome = yield* withPermit(store.adoptRegistration(authority, registeredAt));
-        if (outcome._tag === "refused") {
-          return yield* Effect.fail(
-            SyncRecoveryRequired.make({ code: outcome.code, message: outcome.message }),
-          );
-        }
+      const reannouncing = yield* Deferred.isDone(registered);
+      if (reannouncing) {
+        const heldBack = yield* Ref.get(heldBackAt);
+        if (heldBack === undefined) return;
+        const now = yield* Clock.currentTimeMillis;
+        if (!dueSince(heldBack, now, STALE_PEER_RECHECK_INTERVAL_MILLIS)) return;
       }
+      const cursor = yield* withPermit(store.readSyncCursor());
+      if (reannouncing || shouldAnnounce(cursor)) yield* announce(cursor.replicaId);
       yield* Deferred.succeed(registered, undefined);
     });
+
+    const noteReceipt = (receipt: CommandReceipt) =>
+      receipt.result._tag === "rejected" && receipt.result.code === "REPLICA_SCHEMA_OUTDATED"
+        ? Ref.set(heldBackAt, 0)
+        : Effect.void;
 
     const uploadOnce = Effect.fn("SyncEngine.uploadOnce")(function* () {
       return yield* Effect.acquireUseRelease(
@@ -215,6 +237,7 @@ export const makeSyncEngineFromReplicaStore = (
               const existing = yield* transport.getReceipt(activeClaim.envelope.operationId);
               if (existing) {
                 yield* withPermit(store.settleUploadClaim(activeClaim.claimId, existing));
+                yield* noteReceipt(existing);
                 return existing;
               }
             }
@@ -297,6 +320,7 @@ export const makeSyncEngineFromReplicaStore = (
       submitted: SyncSubmitCommandResult,
     ) {
       const { page, ...receipt } = submitted;
+      yield* noteReceipt(receipt);
       if (page === undefined) {
         yield* withPermit(store.settleUploadClaim(claimId, receipt));
         return receipt;

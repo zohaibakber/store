@@ -2,6 +2,7 @@ import { OrgCommitSequence, SyncEpoch } from "@store/contracts";
 import { inventoryState, replicas } from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
 import * as Cache from "effect/Cache";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -26,8 +27,23 @@ const readLiveHorizonStatement = Effect.fn("InventoryLive.readHorizonStatement")
   actor: InventoryActor,
   replicaId: string,
 ) {
+  const seenAt = yield* Clock.currentTimeMillis;
+  const seen = db.$with("seen").as(
+    db
+      .update(replicas)
+      .set({ lastSeenAt: seenAt })
+      .where(
+        and(
+          eq(replicas.organizationId, actor.organizationId),
+          eq(replicas.replicaId, replicaId),
+          eq(replicas.ownerUserId, actor.userId),
+        ),
+      )
+      .returning({ replicaId: replicas.replicaId }),
+  );
   const [row] = yield* runStatement(
     db
+      .with(seen)
       .select({
         epoch: inventoryState.epoch,
         commitSequence: inventoryState.commitSequence,
