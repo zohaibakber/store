@@ -25,7 +25,12 @@ export default Alchemy.Stack(
       policies: [
         {
           effect: "allow",
-          permissionGroups: ["Secrets Store Write", "Workers Scripts Write", "D1 Write"],
+          permissionGroups: [
+            "Secrets Store Write",
+            "Workers Scripts Write",
+            "D1 Write",
+            "Hyperdrive Write",
+          ],
           resources: {
             [`com.cloudflare.api.account.${accountId}`]: "*",
           },
