@@ -53,7 +53,7 @@ function PageHeading({ className, ...props }: ComponentProps<"h1">) {
   return (
     <h1
       data-slot="page-heading"
-      className={cn("truncate text-lg leading-tight font-medium", className)}
+      className={cn("line-clamp-2 text-lg leading-tight font-medium wrap-anywhere", className)}
       {...props}
     />
   );

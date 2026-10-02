@@ -175,6 +175,7 @@ const columns = columnHelper.columns([
               className="font-medium outline-none hover:underline focus-visible:underline"
               onClick={(event) => event.stopPropagation()}
               params={{ productId: row.original.productId }}
+              title={row.original.name}
               to="/products/$productId"
             >
               {row.original.name}

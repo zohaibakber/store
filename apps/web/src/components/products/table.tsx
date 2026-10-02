@@ -32,16 +32,24 @@ const priceCell = ({ getValue }: { getValue: () => number | null }) => {
   );
 };
 
-const textCell = (value: string) => value || <span className="text-muted-foreground">{EMPTY}</span>;
+const textCell = (value: string) =>
+  value ? (
+    <span className="block max-w-40 truncate" title={value}>
+      {value}
+    </span>
+  ) : (
+    <span className="text-muted-foreground">{EMPTY}</span>
+  );
 
 const columns = columnHelper.columns([
   columnHelper.accessor("name", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
     cell: ({ row, getValue }) => (
       <Link
-        className="font-medium hover:underline"
+        className="block max-w-80 truncate font-medium hover:underline"
         onClick={(event) => event.stopPropagation()}
         params={{ productId: row.original.id }}
+        title={getValue()}
         to="/products/$productId"
       >
         {getValue()}

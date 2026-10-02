@@ -88,11 +88,11 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
         table
         title="Items"
       >
-        <Table className="table-fixed" variant="card">
+        <Table variant="card">
           <TableHeader>
             <TableRow>
-              <TableHead className="h-8">Product</TableHead>
-              <TableHead className="h-8 w-40">Batch</TableHead>
+              <TableHead className="h-8 w-full min-w-48">Product</TableHead>
+              <TableHead className="h-8">Batch</TableHead>
               <TableHead className="h-8 w-28">
                 <span className="block text-end">Qty</span>
               </TableHead>
@@ -108,12 +108,18 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
             {invoice.items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell className="max-w-0">
-                  <span className="block truncate leading-tight font-medium capitalize">
+                  <span
+                    className="block truncate leading-tight font-medium"
+                    title={item.productName}
+                  >
                     {item.productName}
                   </span>
                 </TableCell>
                 <TableCell>
-                  <span className="text-muted-foreground tabular-nums">
+                  <span
+                    className="block max-w-48 truncate text-muted-foreground tabular-nums"
+                    title={item.batchNumber ?? undefined}
+                  >
                     {item.batchNumber ?? EMPTY}
                   </span>
                 </TableCell>

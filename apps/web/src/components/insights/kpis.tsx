@@ -75,7 +75,7 @@ function Kpi({
         <span className="truncate text-sm text-muted-foreground">{label}</span>
         {change === undefined ? null : <Delta value={change} />}
       </div>
-      <span className="truncate text-2xl font-medium tabular-nums">{value}</span>
+      <span className="text-2xl font-medium wrap-anywhere tabular-nums">{value}</span>
       <span className="truncate text-xs text-muted-foreground">{detail}</span>
       {children}
     </div>

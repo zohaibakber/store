@@ -547,7 +547,7 @@ function PaletteResults({
                   <HugeiconsIcon aria-hidden="true" icon={ArrowLeft01Icon} />
                 </Button>
                 <Badge variant="outline">
-                  <span className="max-w-80 truncate capitalize">{productLabel(page.target)}</span>
+                  <span className="max-w-80 truncate">{productLabel(page.target)}</span>
                 </Badge>
                 <span className="truncate text-xs text-muted-foreground">
                   {page.target.category.name}

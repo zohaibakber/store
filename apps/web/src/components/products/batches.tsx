@@ -455,7 +455,12 @@ function BatchRow({
     <TableRow>
       {tracksPacks ? (
         <TableCell>
-          <span className="font-medium">{batch.batchNumber ?? muted}</span>
+          <span
+            className="block max-w-56 truncate font-medium"
+            title={batch.batchNumber ?? undefined}
+          >
+            {batch.batchNumber ?? muted}
+          </span>
         </TableCell>
       ) : null}
       <TableCell>
@@ -566,9 +571,15 @@ function MovementReference({
       </Link>
     );
   }
-  if (movement.note) return <span className="truncate leading-tight">{movement.note}</span>;
   const batchNumber = batchNumbers.get(movement.batchId);
-  return batchNumber ? <span>Batch {batchNumber}</span> : muted;
+  const reference = movement.note || (batchNumber ? `Batch ${batchNumber}` : null);
+  return reference ? (
+    <span className="block max-w-56 truncate leading-tight" title={reference}>
+      {reference}
+    </span>
+  ) : (
+    muted
+  );
 }
 
 export function ProductStockMovementsCard({

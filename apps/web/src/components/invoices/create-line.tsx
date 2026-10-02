@@ -227,7 +227,7 @@ function InvoiceCreateLine({
       <LineNumber index={index} />
       <TableCell className="max-w-0">
         <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="min-w-0 truncate leading-tight font-medium capitalize">
+          <span className="min-w-0 truncate leading-tight font-medium" title={line.product.name}>
             {line.product.name}
           </span>
           {line.product.strength && (
@@ -235,7 +235,7 @@ function InvoiceCreateLine({
           )}
           {error ? (
             <span
-              className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-destructive-foreground"
+              className="shrink-0 text-xs leading-tight text-destructive-foreground"
               role="alert"
             >
               {error}
