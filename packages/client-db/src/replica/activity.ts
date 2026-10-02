@@ -11,7 +11,7 @@ import {
   MAX_REJECTED_ACTIVITY_ROWS,
   type OutboxActivityRow,
   type ReplicaOutboxActivity,
-} from "@store/sync/browser";
+} from "@store/sync";
 import * as Array from "effect/Array";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";

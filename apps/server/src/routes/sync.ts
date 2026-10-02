@@ -1,5 +1,5 @@
 import { MAX_IMPORT_PART_BYTES } from "@store/contracts";
-import { SyncForbidden, SyncNotFound } from "@store/contracts/sync/http-errors";
+import { SyncForbidden, SyncNotFound } from "@store/contracts/sync/api";
 import * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -116,7 +116,7 @@ export const SyncHandlers = HttpApiBuilder.group(
             if (submitted.fanout !== null) {
               yield* fanout.publish(actor.organizationId, submitted.fanout);
             }
-            return encodedJsonResponse(submitted.body);
+            return encodedJsonResponse(submitted.json);
           }).pipe(
             Effect.catchTag("SyncRequestMalformed", () => Effect.succeed(malformedCommandResponse)),
           ),

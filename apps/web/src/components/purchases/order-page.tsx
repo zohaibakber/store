@@ -9,10 +9,12 @@ import {
   type StockMovement,
   type Supplier,
 } from "@store/contracts";
+import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
+import { ToneBadge } from "@/components/insights/status-badge";
 import { formatDelta } from "@/components/products/stock";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
 import { FrameCard } from "@/components/shared/frame-card";
@@ -49,7 +51,6 @@ import { toastManager } from "@/components/ui/toast";
 import { useStoreCommand } from "@/hooks/use-store-command";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate, formatDateTime } from "@/lib/format-date";
-import { useInventoryActions, usePurchasingGate } from "@/lib/inventory";
 import { usePageShortcuts } from "@/lib/shortcuts";
 
 import { PurchasingGateNotice } from "./gate-notice";
@@ -59,9 +60,9 @@ import {
   formatOrderNumber,
   orderProgress,
   orderUnits,
+  PROGRESS_META,
   UNKNOWN_SUPPLIER,
 } from "./presentation";
-import { ProgressBadge } from "./progress-badge";
 import { ReceiveDeliverySheet } from "./receive-delivery-sheet";
 import { SendOrderAction } from "./send-order";
 
@@ -307,7 +308,7 @@ export function PurchaseOrderPage({
             <PageHeading>
               Order <span className="tabular-nums">{number}</span>
             </PageHeading>
-            <ProgressBadge progress={orderProgress(order)} />
+            <ToneBadge {...PROGRESS_META[orderProgress(order)]} />
           </div>
           <p className="truncate text-sm text-muted-foreground tabular-nums">{summary}</p>
         </div>

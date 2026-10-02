@@ -6,7 +6,7 @@ import * as RcMap from "effect/RcMap";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
-export type PendingReplies<A> = {
+type PendingReplies<A> = {
   readonly register: (requestId: string) => Effect.Effect<Deferred.Deferred<A>, never, Scope.Scope>;
   readonly ask: <E>(requestId: string, publish: Effect.Effect<unknown, E>) => Effect.Effect<A, E>;
   readonly respond: (requestId: string, value: A) => Effect.Effect<void>;

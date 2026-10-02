@@ -1,9 +1,4 @@
-import {
-  bearerTokenFromHeaders,
-  type AccessClaims,
-  type AccessTokenVerifier,
-  type JwtConfiguration,
-} from "@store/auth";
+import { bearerTokenFromHeaders, type AccessClaims, type AccessTokenVerifier } from "@store/auth";
 import {
   decodeOrganizationId,
   decodeUserId,
@@ -12,8 +7,6 @@ import {
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-
-export type AuthVerificationConfig = Pick<JwtConfiguration, "issuer" | "audience" | "keys">;
 
 export const authenticateToken = (
   verify: AccessTokenVerifier,

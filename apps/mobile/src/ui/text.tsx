@@ -2,7 +2,7 @@ import { Text as NativeText, type TextProps as NativeTextProps } from "react-nat
 
 import { colors, fonts, type, type TypeSize } from "@/theme/tokens";
 
-export type TextProps = NativeTextProps & {
+type TextProps = NativeTextProps & {
   readonly size?: TypeSize;
   readonly weight?: "regular" | "medium";
   readonly tone?: "ink" | "muted" | "error" | "synced" | "onCamera";

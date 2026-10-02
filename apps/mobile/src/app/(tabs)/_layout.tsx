@@ -2,7 +2,7 @@ import { DeliveryBox01Icon, Invoice03Icon, RefreshIcon } from "@hugeicons/core-f
 import type { IconSvgElement } from "@hugeicons/react-native";
 import { Tabs } from "expo-router";
 
-import { useSyncBadge } from "@/features/sync/sync-badge";
+import { useSyncBadge } from "@/features/sync/sync-hooks";
 import { colors, fonts, type } from "@/theme/tokens";
 import { Icon } from "@/ui/icon";
 

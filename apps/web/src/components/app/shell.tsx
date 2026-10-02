@@ -1,3 +1,4 @@
+import { useAtom } from "@effect/atom-react";
 import { getRouteApi, Outlet } from "@tanstack/react-router";
 import { Suspense } from "react";
 
@@ -10,16 +11,16 @@ import { SiteHeader } from "@/components/app/site-header";
 import { PageActionsProvider } from "@/components/shared/page-actions";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useSidebarPreference } from "@/hooks/use-sidebar-preference";
 import { useAuth } from "@/lib/auth";
-import { InventoryProvider, InventoryReady } from "@/lib/inventory";
+import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
+import { sidebarOpenAtom } from "@/lib/preferences";
 
 const route = getRouteApi("/_app");
 
 export function AppShell() {
   const { inventory, catalog } = route.useRouteContext();
   const { workspace } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useSidebarPreference();
+  const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
 
   const lease = catalog.lease();
   const shell = (

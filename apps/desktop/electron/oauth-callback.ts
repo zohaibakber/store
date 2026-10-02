@@ -1,5 +1,3 @@
-export const OAUTH_CALLBACK_CHANNEL = "auth:oauth-callback";
-
 export const oauthCallbackRedirectUri = (scheme: string) => `${scheme}://auth/callback`;
 
 export const isOAuthCallbackUrl = (candidate: string, scheme: string) => {

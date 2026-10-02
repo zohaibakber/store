@@ -1,5 +1,5 @@
+import type { SalesDay } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type { SalesDay } from "@store/services/insights";
 import { areaY, barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";

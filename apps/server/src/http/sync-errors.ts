@@ -4,7 +4,7 @@ import {
   SyncConflict,
   SyncForbidden,
   SyncServiceUnavailable,
-} from "@store/contracts/sync/http-errors";
+} from "@store/contracts/sync/api";
 import * as Effect from "effect/Effect";
 
 import type { InventoryDatabaseError, InventoryError } from "../inventory/errors";

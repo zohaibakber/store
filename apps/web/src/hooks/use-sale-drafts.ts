@@ -7,7 +7,6 @@ import type * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 import { useContext } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { newSaleId, saleDraftsAtom } from "@/lib/preferences";
 import {
   canOpenSaleDraft,
@@ -20,6 +19,7 @@ import {
   type SaleDraft,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 const searchFocusAtom = Atom.make(0).pipe(Atom.keepAlive);
 
@@ -32,7 +32,7 @@ const recordedSubject = (draft: SaleDraft) => {
 
 export const saleDraftLimitMessage = `${MAX_SALE_DRAFTS} sales are open. Complete or discard one first.`;
 
-export type IssuedSale = { readonly id: InvoiceId; readonly invoiceNumber: number };
+type IssuedSale = { readonly id: InvoiceId; readonly invoiceNumber: number };
 
 export const saleDraftStore = (registry: AtomRegistry.AtomRegistry, workspace: string) => {
   const atom = saleDraftsAtom(workspace);
@@ -100,7 +100,7 @@ export const saleDraftStore = (registry: AtomRegistry.AtomRegistry, workspace: s
   };
 };
 
-export type SaleDraftStore = ReturnType<typeof saleDraftStore>;
+type SaleDraftStore = ReturnType<typeof saleDraftStore>;
 
 export const useSaleDraftsIn = (workspace: string): SaleDrafts =>
   useAtomValue(saleDraftsAtom(workspace));

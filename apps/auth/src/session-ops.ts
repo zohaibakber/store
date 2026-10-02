@@ -16,16 +16,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { AuthCrypto, REFRESH_TTL_MS } from "./crypto";
-import {
-  AccountNotFound,
-  InvalidRefreshToken,
-  RefreshExpired,
-  RefreshRequired,
-  RefreshReuseDetected,
-  SessionRevoked,
-  Unauthenticated,
-} from "./failures";
-import type { PresentedRefresh } from "./refresh-credential";
+import { AuthRefusal } from "./failures";
 import {
   AuthRepository,
   type MembershipRecord,
@@ -36,6 +27,11 @@ import { AuthSettings } from "./settings";
 
 const REFRESH_REUSE_WINDOW_MS = 30_000;
 
+export interface PresentedRefresh {
+  readonly client: AuthClientKind;
+  readonly refreshToken: Redacted.Redacted<string>;
+}
+
 const formatRefreshToken = (sessionId: SessionId, secret: Redacted.Redacted<string>) =>
   RefreshToken.make(`${sessionId}.${Redacted.value(secret)}`);
 
@@ -43,11 +39,11 @@ const parseRefreshToken = Effect.fnUntraced(function* (token: Redacted.Redacted<
   const presented = Redacted.value(token);
   const separator = presented.indexOf(".");
   if (separator <= 0 || separator === presented.length - 1) {
-    return yield* new InvalidRefreshToken();
+    return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
   }
   const sessionId = yield* Schema.decodeUnknownEffect(SessionId)(
     presented.slice(0, separator),
-  ).pipe(Effect.mapError(() => new InvalidRefreshToken()));
+  ).pipe(Effect.mapError(() => new AuthRefusal({ reason: "InvalidRefreshToken" })));
   return { sessionId, secret: Redacted.make(presented.slice(separator + 1)) };
 });
 
@@ -150,32 +146,32 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     ) {
       const now = yield* Clock.currentTimeMillis;
       if (!presented) {
-        return yield* new RefreshRequired();
+        return yield* new AuthRefusal({ reason: "RefreshRequired" });
       }
       const parsed = yield* parseRefreshToken(presented.refreshToken);
       const context = yield* repository.findRefreshContext(parsed.sessionId);
       if (!context) {
-        return yield* new InvalidRefreshToken();
+        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
       const current = context.session;
       if (!(yield* secretMatches(parsed.secret, current.refreshTokenHash))) {
-        return yield* new InvalidRefreshToken();
+        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
       if (current.clientKind !== presented.client._tag) {
-        return yield* new InvalidRefreshToken();
+        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
       if (current.revokedAt !== null) {
         if (current.revokedAt + REFRESH_REUSE_WINDOW_MS > now) {
-          return yield* new InvalidRefreshToken();
+          return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
         }
         yield* repository.revokeFamily(current.familyId, now);
-        return yield* new RefreshReuseDetected();
+        return yield* new AuthRefusal({ reason: "RefreshReuseDetected" });
       }
       if (current.expiresAt <= now) {
-        return yield* new RefreshExpired();
+        return yield* new AuthRefusal({ reason: "RefreshExpired" });
       }
       if (!context.user) {
-        return yield* new AccountNotFound();
+        return yield* new AuthRefusal({ reason: "AccountNotFound" });
       }
       return { session: current, user: context.user, activeMembership: context.activeMembership };
     });
@@ -207,7 +203,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
         },
       });
       if (!rotated) {
-        return yield* new InvalidRefreshToken();
+        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
       return yield* issueTokens({
         user: input.user,
@@ -246,10 +242,10 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const now = yield* Clock.currentTimeMillis;
       const claims = yield* accessTokens
         .verify(Redacted.value(accessToken), now)
-        .pipe(Effect.mapError(() => new Unauthenticated()));
+        .pipe(Effect.mapError(() => new AuthRefusal({ reason: "Unauthenticated" })));
       const session = yield* repository.findSession(claims.sessionId);
       if (!session || session.revokedAt !== null || session.expiresAt <= now) {
-        return yield* new SessionRevoked();
+        return yield* new AuthRefusal({ reason: "SessionRevoked" });
       }
       return claims;
     });

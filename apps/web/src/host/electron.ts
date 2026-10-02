@@ -1,51 +1,35 @@
-import type {
-  IdentifyInput,
-  LoginRoute,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
-} from "@store/auth";
 import type { ElectronReplicaBridge } from "@store/client-db";
-import type { WorkspaceSnapshot } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import * as Schema from "effect/Schema";
 
 import type {
   AppHost,
   AppUpdaterBridge,
+  AuthSessionBridge,
   DesktopShellBridge,
-  SignInCredentials,
+  SignInBridge,
   ThemeBridge,
 } from "./index";
+import type { InvoiceUploadFile } from "./invoice-upload";
 import { controlNewSaleShortcut } from "./new-sale-shortcut";
 import { remoteFailureMessage } from "./remote-failure";
 import { decodedShareBridge, type ShareBridge } from "./share";
 import { decodedBackupBridge, type WorkspaceBackupBridge } from "./workspace-backup";
 import { decodedPublishBridge, type WorkspacePublishBridge } from "./workspace-publish";
 
-export type AuthIpcBridge = {
-  readonly getSession: () => Promise<WorkspaceSnapshot>;
-  readonly identify: (input: IdentifyInput) => Promise<LoginRoute>;
-  readonly authenticate: (credentials: SignInCredentials) => Promise<WorkspaceSnapshot>;
-  readonly beginGoogle: () => Promise<void>;
-  readonly completeGoogle: (callbackUrl: string) => Promise<WorkspaceSnapshot | null>;
-  readonly renewSession: () => Promise<WorkspaceSnapshot>;
-  readonly signOut: () => Promise<void>;
-  readonly organizationRoster: () => Promise<OrganizationRoster>;
-  readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
-  readonly onOAuthCallback: (callback: (url: string) => void) => () => void;
-  readonly onSessionChange: (callback: (snapshot: WorkspaceSnapshot) => void) => () => void;
-};
+export type AuthIpcBridge = AuthSessionBridge & Omit<SignInBridge, "hasPendingOAuthCallback">;
 
 export type ServerApiIpcBridge = {
   readonly analyseInvoices: (input: {
-    files: Array<{ name: string; type: string; bytes: ArrayBuffer }>;
+    files: Array<InvoiceUploadFile>;
   }) => Promise<InvoiceExtraction>;
 };
 
-export interface InventoryHttpConfig {
-  readonly apiBaseUrl: string;
-  readonly deviceId: string;
-}
+export const InventoryHttpConfig = Schema.Struct({
+  apiBaseUrl: Schema.String,
+  deviceId: Schema.String,
+});
+export type InventoryHttpConfig = typeof InventoryHttpConfig.Type;
 
 export interface InventoryHttpBridge {
   readonly getConfig: () => Promise<InventoryHttpConfig>;

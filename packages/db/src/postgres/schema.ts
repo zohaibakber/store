@@ -15,7 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { nanoid } from "nanoid";
 
-export const epochMilliseconds = (name: string) => bigint(name, { mode: "number" });
+const epochMilliseconds = (name: string) => bigint(name, { mode: "number" });
 
 const timestamps = {
   createdAt: epochMilliseconds("created_at").notNull(),
@@ -27,7 +27,7 @@ const softDeleteTimestamps = {
   deletedAt: epochMilliseconds("deleted_at"),
 };
 
-export const tenantId = (name = "organization_id") => text(name).notNull();
+const tenantId = (name = "organization_id") => text(name).notNull();
 
 const entityId = () =>
   text("id")

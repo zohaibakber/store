@@ -34,13 +34,14 @@ import {
   stepSnapshotActivation,
 } from "../src/replica/import";
 import type { ReplicaDb } from "../src/replica/sql-client/drizzle";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import {
   GENERATION_SEARCH_TABLES,
   GENERATION_TABLES,
   standbyTable,
 } from "../src/replica/sqlite/generation";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
+import { openReplicaStore } from "../src/sqlite";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   CASE_PRODUCT_ID,

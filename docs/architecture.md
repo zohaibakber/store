@@ -9,8 +9,9 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 - `apps/web`: the product UI and the website. One React app with two hosts,
   chosen at startup by whether the preload bridges are present. It defines the
   host contract in `src/host` and never imports from `apps/desktop`. In the
-  browser it keeps the replica in IndexedDB (`@store/sync/browser`), the access
-  token in memory, and the refresh token in the auth Worker's HttpOnly cookie.
+  browser it keeps the replica in IndexedDB (`@store/sync/replica/indexeddb`),
+  the access token in memory, and the refresh token in the auth Worker's
+  HttpOnly cookie.
   Prod serves it on `PRODUCTION_DOMAIN`.
 - `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
   implements the host contract. The replica lives in a main-process Node worker
@@ -25,8 +26,9 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 
 ## Local replica (`packages/sync`)
 
-- The shared entrypoint is host-agnostic and native-free. SQLite adapters live
-  behind `@store/sync/sqlite`, IndexedDB behind `@store/sync/browser`.
+- The shared entrypoint (`@store/sync`) is host-agnostic and native-free.
+  SQLite adapters live behind `@store/sync/sqlite`, IndexedDB behind
+  `@store/sync/replica/indexeddb`.
 - Commands (`issueInvoice`, `catalogWrite`) commit to a local outbox and write
   pending projections: provisional rows tagged with the operation id and
   journalled so a rejection restores the prior image. Pending stock changes

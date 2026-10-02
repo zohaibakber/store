@@ -1,5 +1,5 @@
 import type { CommandStatus } from "@store/contracts";
-import type { SyncSchedulerStatus } from "@store/sync/browser";
+import type { SyncSchedulerStatus } from "@store/sync";
 
 export type InventorySyncStatus =
   | { readonly _tag: "savedLocally" }

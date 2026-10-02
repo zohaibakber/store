@@ -34,7 +34,7 @@ export type SignInBridge = {
   readonly authenticate: (credentials: SignInCredentials) => Promise<WorkspaceSnapshot>;
   readonly beginGoogle: () => Promise<void>;
   readonly completeGoogle: (callbackUrl: string) => Promise<WorkspaceSnapshot | null>;
-  readonly onOAuthCallback?: (listener: (url: string) => void) => () => void;
+  readonly onOAuthCallback: (listener: (url: string) => void) => () => void;
   readonly hasPendingOAuthCallback?: () => boolean;
 };
 

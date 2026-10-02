@@ -1,5 +1,10 @@
 import { PackageReceiveIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  usePurchasingGate,
+  useSuspenseOpenPurchaseOrders,
+  useSuspenseSuppliers,
+} from "@store/inventory-react";
 import * as React from "react";
 
 import {
@@ -21,11 +26,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatCount } from "@/lib/format";
-import {
-  usePurchasingGate,
-  useSuspenseOpenPurchaseOrders,
-  useSuspenseSuppliers,
-} from "@/lib/inventory";
 
 import { useUpload } from "./context";
 import { deliveryNoteOf, matchOrders, matchSupplier, receivePrefillOf } from "./order-suggestion";

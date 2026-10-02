@@ -1,6 +1,6 @@
 import type { DeviceLabel } from "@store/contracts";
-import { SyncTransportService, type OwnedLiveHost, type SyncTransport } from "@store/sync/browser";
-import { SqliteReplica } from "@store/sync/sqlite";
+import { SyncTransportService, type OwnedLiveHost, type SyncTransport } from "@store/sync";
+import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Layer from "effect/Layer";
 
 import {
@@ -23,7 +23,7 @@ export const openNodeReplicaSyncSession = (input: {
   readonly deviceLabel?: DeviceLabel | undefined;
 }): Promise<NodeReplicaSyncSession> =>
   openSqliteReplicaSyncSession({
-    replica: SqliteReplica.layer(input.path),
+    replica: layerNodeSqliteReplica(input.path),
     identity: input.identity,
     databaseIdentity: input.databaseIdentity,
     transport: Layer.succeed(SyncTransportService, input.transport),
@@ -37,7 +37,7 @@ export const openNodeLocalReplicaSession = (input: {
   readonly databaseIdentity: string;
 }): Promise<NodeReplicaSyncSession> =>
   openSqliteReplicaLocalSession({
-    replica: SqliteReplica.layer(input.path),
+    replica: layerNodeSqliteReplica(input.path),
     identity: input.identity,
     databaseIdentity: input.databaseIdentity,
   });

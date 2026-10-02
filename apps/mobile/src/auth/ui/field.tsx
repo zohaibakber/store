@@ -12,7 +12,7 @@ import { View } from "react-native";
 import { colors, fonts, radius, space, touch, type } from "@/theme/tokens";
 import { Text } from "@/ui/text";
 
-export type FieldProps = Pick<
+type FieldProps = Pick<
   TextInputProps,
   | "autoCapitalize"
   | "autoComplete"

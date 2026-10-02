@@ -2,8 +2,7 @@ import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
 import { OPEN_PURCHASE_ORDER_STATUSES, purchaseOrderLineRemaining } from "../catalog/purchasing";
-import { EpochMillis, UtcOffsetMinutes } from "../internal/primitives";
-import { PositiveInt } from "../schema-primitives";
+import { EpochMillis, PositiveInt, UtcOffsetMinutes } from "../schema-primitives";
 
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;

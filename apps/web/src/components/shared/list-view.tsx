@@ -1,11 +1,5 @@
 import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
   functionalUpdate,
-  metaHelper,
-  rowPaginationFeature,
-  rowSortingFeature,
-  tableFeatures,
   useTable,
   type ColumnFiltersState,
   type PaginationState,
@@ -21,23 +15,14 @@ import {
   DataTableContent,
   DataTableFooter,
   DataTablePagination,
-  type DataTableColumnMeta,
+  listTableFeatures,
+  type ListTableFeatures,
 } from "@/components/shared/data-table";
 import { LIST_PAGE_SIZES, listPageSizeOf, type ListSorting, type ListView } from "@/lib/list-view";
 import { isString } from "@/lib/predicates";
 import { cn } from "@/lib/utils";
 
-export const listTableFeatures = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSortingFeature,
-  columnMeta: metaHelper<DataTableColumnMeta>(),
-});
-
-export type ListTableFeatures = typeof listTableFeatures;
-
-export type ListFilters = Readonly<Record<string, string | undefined>>;
+type ListFilters = Readonly<Record<string, string | undefined>>;
 
 const columnFiltersOf = (filters: ListFilters): ColumnFiltersState =>
   Object.entries(filters).flatMap(([id, value]) => (value ? [{ id, value }] : []));
@@ -117,7 +102,7 @@ export function useListTable<
   });
 }
 
-export interface ShownRequest<Request> {
+interface ShownRequest<Request> {
   readonly request: Request;
   readonly loading: boolean;
 }

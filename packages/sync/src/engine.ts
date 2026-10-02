@@ -139,12 +139,6 @@ const pullRequestFromStore = (
     })),
   );
 
-export type SyncEngineMutex = {
-  readonly withPermits: (
-    permits: number,
-  ) => <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
-};
-
 type SyncEngineOptions = {
   readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
@@ -156,11 +150,11 @@ const withMaxBytes = <R extends object>(request: R, maxBytes: number | undefined
 
 export const makeSyncEngineFromReplicaStore = (
   store: ReplicaStoreContract,
-  mutex: SyncEngineMutex,
   transport: SyncTransport,
   options: SyncEngineOptions = {},
 ): Effect.Effect<SyncEngineContract> =>
   Effect.gen(function* () {
+    const mutex = yield* Semaphore.make(1);
     const digestIntervalMillis =
       options.digestVerificationIntervalMillis ?? DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS;
     const believesCaughtUp = yield* Ref.make(true);
@@ -524,8 +518,7 @@ const makeSyncEngineFromContext = (options?: SyncEngineOptions) =>
   Effect.gen(function* () {
     const store = yield* ReplicaStore;
     const transport = yield* SyncTransportService;
-    const mutex = yield* Semaphore.make(1);
-    return yield* makeSyncEngineFromReplicaStore(store, mutex, transport, options);
+    return yield* makeSyncEngineFromReplicaStore(store, transport, options);
   });
 
 export class SyncEngine extends Context.Service<SyncEngine, SyncEngineContract>()(

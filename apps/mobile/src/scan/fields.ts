@@ -1,3 +1,5 @@
+import type { ProductScanResult } from "@store/contracts/server-api.schema";
+
 import {
   findExpiryMentions,
   formatExpiry,
@@ -6,7 +8,7 @@ import {
   readExpiryInput,
   sameExpiryMonth,
 } from "./expiry";
-import { LOW_CONFIDENCE, type ProductScanResult, type ReviewEdits } from "./model";
+import { LOW_CONFIDENCE, type ReviewEdits } from "./model";
 
 export type ScanField =
   | "name"
@@ -25,7 +27,7 @@ const SCAN_FIELDS: ReadonlyArray<ScanField> = [
   "expiresAt",
 ];
 
-export type FieldFlags = { readonly [Field in ScanField]: string | null };
+type FieldFlags = { readonly [Field in ScanField]: string | null };
 
 export type ReviewValues = { readonly [Field in ScanField]: string };
 
@@ -168,7 +170,7 @@ export type BatchFields = {
   readonly unitQuantity: number;
 };
 
-export type CommitPlan =
+type CommitPlan =
   | {
       readonly _tag: "AddBatch";
       readonly productId: string;
@@ -292,7 +294,7 @@ export const editsFrom = (values: ReviewValues, edited: ReadonlySet<ScanField>):
 export const sameEdits = (left: ReviewEdits | undefined, right: ReviewEdits): boolean =>
   SCAN_FIELDS.every((field) => left?.[field] === right[field]);
 
-export type AutoFill = {
+type AutoFill = {
   readonly values: ReviewValues;
   readonly filled: ReadonlyArray<ScanField>;
 };

@@ -17,6 +17,14 @@ import * as Stream from "effect/Stream";
 
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
 import {
+  REPLICA_ANALYTICS_CHANNEL,
+  REPLICA_COMMIT_CHANNEL,
+  REPLICA_SYNC_HEALTH_CHANNEL,
+  type ReplicaAnalyticsEvent,
+  type ReplicaCommitEvent,
+  type ReplicaSyncHealthEvent,
+} from "./ipc-channels";
+import {
   admitReplicaKey,
   LOCAL_REPLICA_KEY,
   makeReplicaAdmission,
@@ -24,17 +32,14 @@ import {
   type ReplicaAdmissionLimits,
 } from "./replica-admission";
 import type { ReplicaAuthorityHost } from "./replica-authority-host";
-import {
-  REPLICA_ANALYTICS_CHANNEL,
-  REPLICA_COMMIT_CHANNEL,
-  REPLICA_SYNC_HEALTH_CHANNEL,
-  type ReplicaAnalyticsEvent,
-  type ReplicaCommitEvent,
-  type ReplicaSyncHealthEvent,
-} from "./replica-channels";
 import { makeReplicaOwnership, type ReplicaOwnership } from "./replica-ownership";
 import { isExpiredReplicaArchive } from "./replica-publish-files";
-import { ReplicaWorkerFailure, type ReplicaAuthority, type ReplicaOpenInput } from "./replica-rpc";
+import {
+  ReplicaWorkerFailure,
+  type ReplicaAuthority,
+  type ReplicaCommitStamp,
+  type ReplicaOpenInput,
+} from "./replica-rpc";
 import {
   DEFAULT_SUPERVISOR_POLICY,
   startReplicaSupervisor,
@@ -45,11 +50,7 @@ import {
   type SpawnReplicaReader,
   type SpawnReplicaWorker,
 } from "./replica-supervisor";
-import {
-  spawnNodeAnalyticsWorker,
-  spawnNodeReplicaReader,
-  spawnNodeReplicaWorker,
-} from "./worker-process";
+import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
 
 type ReplicaSenderListener = {
   (event: "did-navigate", listener: () => void): void;
@@ -57,7 +58,7 @@ type ReplicaSenderListener = {
   (event: "destroyed", listener: () => void): void;
 };
 
-export type ReplicaSentEvent =
+type ReplicaSentEvent =
   | ReplicaCommitEvent
   | ReplicaSyncHealthEvent
   | ReplicaAnalyticsEvent
@@ -86,22 +87,24 @@ export type ReplicaSession = {
   readonly scope: Scope.Closeable;
 };
 
-type ReplicaStamp = { readonly generationId: string; readonly localCommitVersion: number };
+type ReplicaStamp = typeof ReplicaCommitStamp.Type;
 
 type ReplicaWorkers = Pick<ReplicaSession, "scope" | "supervisor" | "reader">;
 
-export type ReplicaSessionsOptions = {
+export type ReplicaSessionTuning = {
+  readonly spawnWorker?: SpawnReplicaWorker;
+  readonly spawnReader?: SpawnReplicaReader;
+  readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
+  readonly admissionLimits?: ReplicaAdmissionLimits;
+  readonly closeGrace?: Duration.Input;
+  readonly ownershipWait?: Duration.Input;
+};
+
+type ReplicaSessionsOptions = ReplicaSessionTuning & {
   readonly userDataPath: string;
   readonly workerPath: string;
   readonly authority: ReplicaAuthorityHost;
   readonly onDispose: (session: ReplicaSession) => Effect.Effect<void>;
-  readonly spawnWorker?: SpawnReplicaWorker | undefined;
-  readonly spawnReader?: SpawnReplicaReader | undefined;
-  readonly readerPath?: string | undefined;
-  readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy> | undefined;
-  readonly admissionLimits?: ReplicaAdmissionLimits | undefined;
-  readonly closeGrace?: Duration.Input | undefined;
-  readonly ownershipWait?: Duration.Input | undefined;
 };
 
 export type ReplicaSessions = {
@@ -198,8 +201,7 @@ export const makeReplicaSessions = (options: ReplicaSessionsOptions): ReplicaSes
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const spawnReader = options.spawnReader ?? spawnNodeReplicaReader;
   const analyticsWorkerPath = path.join(path.dirname(options.workerPath), "analytics-worker.js");
-  const readerPath =
-    options.readerPath ?? path.join(path.dirname(options.workerPath), "replica-reader.js");
+  const readerPath = path.join(path.dirname(options.workerPath), "replica-reader.js");
   const policy: ReplicaSupervisorPolicy = {
     ...DEFAULT_SUPERVISOR_POLICY,
     ...options.supervisorPolicy,
@@ -303,7 +305,6 @@ export const makeReplicaSessions = (options: ReplicaSessionsOptions): ReplicaSes
       yield* releaseWithSender(sender, release);
       yield* prepareReplicaDirectory(path.dirname(databasePath));
       const analytics = yield* makeAnalyticsController({
-        spawn: spawnNodeAnalyticsWorker,
         launch: {
           workerPath: analyticsWorkerPath,
           boot: {

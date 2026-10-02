@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-export class WebCryptoError extends Schema.TaggedError<WebCryptoError>()("Auth.WebCryptoError", {
+class WebCryptoError extends Schema.TaggedError<WebCryptoError>()("Auth.WebCryptoError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}

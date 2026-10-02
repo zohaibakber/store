@@ -5,7 +5,6 @@ import {
   AuthUnauthenticated,
   authHttpErrorStatus,
   CurrentAccessToken,
-  isTrustedOrigin,
   MalformedRequest,
   presentedCredential,
   publicJwks,
@@ -17,16 +16,15 @@ import {
   type RefreshToken,
   type TokenSet,
 } from "@store/auth";
-import { RuntimeContext } from "alchemy";
+import { isTrustedOrigin } from "@store/auth/security";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
 import * as Struct from "effect/Struct";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware";
@@ -41,8 +39,8 @@ import { causeDiagnostics } from "./errors";
 import { authFailureWire, authHttpError, type AuthFailure } from "./failures";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./limits";
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
-import { resolveRefreshCredential, UNIDENTIFIED_NATIVE_CLIENT } from "./refresh-credential";
 import { AuthService } from "./service";
+import type { PresentedRefresh } from "./session-ops";
 
 interface AuthHttpConfiguration {
   readonly keys: JwtKeyRing;
@@ -54,6 +52,11 @@ class AuthHttpConfig extends Context.Service<AuthHttpConfig, AuthHttpConfigurati
   "@store/auth-worker/AuthHttpConfig",
 ) {}
 
+const UNIDENTIFIED_NATIVE_CLIENT: AuthClientKind = {
+  _tag: "Native",
+  deviceName: "Native client",
+};
+
 const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, response) =>
   Effect.succeed(
     HttpServerResponse.setHeader(response, "retry-after", String(AUTH_RATE_LIMIT_PERIOD_SECONDS)),
@@ -62,7 +65,9 @@ const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, respo
 
 const fromAuth = <A, R>(effect: Effect.Effect<A, AuthFailure, R>) =>
   effect.pipe(
-    Effect.tapErrorTag("Auth.RateLimited", () => retryAfterRateLimit),
+    Effect.tapError((failure) =>
+      authFailureWire(failure).kind === "TooManyRequests" ? retryAfterRateLimit : Effect.void,
+    ),
     Effect.mapError(authHttpError),
   );
 
@@ -163,7 +168,16 @@ const SessionHandlers = HttpApiBuilder.group(
       bodyToken: RefreshToken | undefined,
     ) {
       const cookie = presentedCredential(yield* HttpApiBuilder.securityDecode(refreshCookie));
-      return resolveRefreshCredential({ cookie, bodyToken });
+      if (bodyToken) {
+        return {
+          client: UNIDENTIFIED_NATIVE_CLIENT,
+          refreshToken: Redacted.make(bodyToken),
+        } satisfies PresentedRefresh;
+      }
+      return Option.match(cookie, {
+        onNone: () => undefined,
+        onSome: (refreshToken): PresentedRefresh => ({ client: { _tag: "Browser" }, refreshToken }),
+      });
     });
 
     return handlers
@@ -413,25 +427,3 @@ export const recoverUnexpected = <E, R>(
       );
     }),
   );
-
-export const buildOncePerIsolate = <A, E, R>(
-  build: Effect.Effect<A, E, R | Scope.Scope>,
-  isolateServices: Context.Context<R>,
-) =>
-  Effect.gen(function* () {
-    const isolateScope = yield* Scope.make();
-    return yield* build.pipe(
-      Scope.provide(isolateScope),
-      Effect.onError((cause) => Scope.close(isolateScope, Exit.failCause(cause))),
-      Effect.updateContext<never, R>(() => isolateServices),
-    );
-  });
-
-export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
-  Effect.flatMap(
-    Option.match({
-      onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
-      onSome: (runtime) => Effect.succeed(Context.make(RuntimeContext, runtime)),
-    }),
-  ),
-);

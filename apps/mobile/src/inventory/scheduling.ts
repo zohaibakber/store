@@ -1,10 +1,20 @@
 import type { SqlClientReplicaHandle } from "@store/client-db/sql-client";
-import type { LiveNetworkSignal } from "@store/sync/browser";
+import type { LiveNetworkSignal } from "@store/sync";
 import * as Network from "expo-network";
 import * as React from "react";
 import { AppState } from "react-native";
 
-import { isReachable, pullMaxBytesFor, reconnected, visibilityForAppState } from "./policy";
+const isReachable = (state: Network.NetworkState): boolean =>
+  state.isInternetReachable ?? state.isConnected ?? false;
+
+const METERED_PULL_MAX_BYTES = 262_144;
+
+const METERED_NETWORK_TYPES: ReadonlySet<string> = new Set(["CELLULAR", "BLUETOOTH"]);
+
+const pullMaxBytesFor = (state: Network.NetworkState): number | undefined =>
+  state.type !== undefined && METERED_NETWORK_TYPES.has(state.type)
+    ? METERED_PULL_MAX_BYTES
+    : undefined;
 
 let lastReachable = true;
 
@@ -24,15 +34,10 @@ const ignoreFailure = (work: Promise<void>) => {
 };
 
 export const applyAppState = (handle: SqlClientReplicaHandle, state: string) => {
-  switch (visibilityForAppState(state)) {
-    case "foreground":
-      ignoreFailure(handle.setVisible(true).then(() => handle.wakeSync("focus")));
-      return;
-    case "background":
-      ignoreFailure(handle.setVisible(false));
-      return;
-    case "unchanged":
-      return;
+  if (state === "active") {
+    ignoreFailure(handle.setVisible(true).then(() => handle.wakeSync("focus")));
+  } else if (state === "background") {
+    ignoreFailure(handle.setVisible(false));
   }
 };
 
@@ -60,7 +65,7 @@ export const useReplicaScheduling = (
     });
     const network = Network.addNetworkStateListener((state) => {
       const next = isReachable(state);
-      const wake = reconnected(reachable, next);
+      const wake = reachable === false && next;
       reachable = next;
       adoptPullMaxBytes(state);
       const handle = active.current;

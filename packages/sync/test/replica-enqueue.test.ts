@@ -8,10 +8,11 @@ import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { openReplicaStore } from "../src/sqlite";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 type Harness = {

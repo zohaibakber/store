@@ -10,7 +10,7 @@ import * as Stream from "effect/Stream";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import { describe, expect, it } from "vitest";
 
-import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/replica-channels";
+import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/ipc-channels";
 import {
   registerReplicaWorkerIpc,
   type ReplicaInvokeEvent,
@@ -66,7 +66,6 @@ const makeWorld = (
         Engine: () => Effect.succeed("sqlite" as const),
         Stamp: () => Effect.succeed({ generationId: "1", localCommitVersion: 0 }),
         ReadInsights: () => Effect.die("unused"),
-        ReadOutboxStatuses: () => Effect.die("unused"),
         ReadSyncActivity: () => Effect.die("unused"),
         EnqueueCommand: () => Effect.die("unused"),
         ReadCommandStatus: () => Effect.die("unused"),
@@ -123,17 +122,20 @@ const makeWorld = (
     syncApiRequest: () => Effect.succeed({ ok: true, status: 200, bodyText: "{}" }),
     liveAccessToken: async () => "access-1",
     allowedOrigins: () => allowed,
-    spawnWorker,
-    spawnReader,
-    supervisorPolicy: {
-      retryDelay: Duration.millis(10),
-      stableAfter: Duration.millis(60),
-      bootTimeout: Duration.millis(500),
-      requestWait: Duration.millis(1_000),
+    backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
+    sessions: {
+      spawnWorker,
+      spawnReader,
+      supervisorPolicy: {
+        retryDelay: Duration.millis(10),
+        stableAfter: Duration.millis(60),
+        bootTimeout: Duration.millis(500),
+        requestWait: Duration.millis(1_000),
+      },
+      admissionLimits: { turnWait: Duration.millis(2_000), turnRun: Duration.millis(2_000) },
+      closeGrace: Duration.millis(50),
+      ownershipWait: Duration.millis(150),
     },
-    admissionLimits: { turnWait: Duration.millis(2_000), turnRun: Duration.millis(2_000) },
-    closeGrace: Duration.millis(50),
-    ownershipWait: Duration.millis(150),
   });
 
   const senderEvent = (id: number): ReplicaInvokeEvent => ({

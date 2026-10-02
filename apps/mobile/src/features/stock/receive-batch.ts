@@ -1,4 +1,5 @@
 import { EXPIRY_INPUT_HINT, readExpiryInput } from "@/scan/expiry";
+import type { BatchFields } from "@/scan/fields";
 
 export type ReceiveBatchFields = {
   readonly batchNumber: string;
@@ -14,20 +15,11 @@ export const emptyReceiveBatchFields: ReceiveBatchFields = {
   units: "",
 };
 
-export type ReceiveBatchDraft = {
-  readonly batchNumber: string | null;
-  readonly expiresAt: number | null;
-  readonly packQuantity: number;
-  readonly unitQuantity: number;
-};
-
 export type ReceiveBatchField = keyof ReceiveBatchFields;
 
-export type ReceiveBatchParse =
-  | { readonly _tag: "valid"; readonly draft: ReceiveBatchDraft }
+type ReceiveBatchParse =
+  | { readonly _tag: "valid"; readonly draft: BatchFields }
   | { readonly _tag: "invalid"; readonly field: ReceiveBatchField; readonly message: string };
-
-export const expiryHint = EXPIRY_INPUT_HINT;
 
 const parseQuantity = (text: string): number | "invalid" => {
   const value = text.trim();
@@ -38,7 +30,7 @@ const parseQuantity = (text: string): number | "invalid" => {
 export const parseReceiveBatch = (fields: ReceiveBatchFields): ReceiveBatchParse => {
   const expiry = readExpiryInput(fields.expiry);
   if (expiry._tag === "Invalid") {
-    return { _tag: "invalid", field: "expiry", message: `Use ${expiryHint}.` };
+    return { _tag: "invalid", field: "expiry", message: `Use ${EXPIRY_INPUT_HINT}.` };
   }
   const packQuantity = parseQuantity(fields.packs);
   if (packQuantity === "invalid") {

@@ -4,7 +4,7 @@ import {
   SyncScheduler,
   SyncTransportService,
   type OwnedLiveHost,
-} from "@store/sync/browser";
+} from "@store/sync";
 import {
   layerIndexedDbReplicaStore,
   IndexedDbReplicaStore,
@@ -19,7 +19,6 @@ import { replicaSyncActivityOf } from "./activity";
 import { planIndexedDbSubset } from "./indexeddb-plan";
 import { enqueuedCommand, openReplicaRuntime } from "./replica-runtime";
 import { MAX_DISTINCT_VALUES } from "./sources";
-import type { OutboxCommandStatus } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
@@ -155,8 +154,6 @@ export const openIndexedDbReplicaHandle = async (
     summarizeSubset,
     readSyncActivity: () => run(store.readOutboxActivity().pipe(Effect.map(replicaSyncActivityOf))),
     readPendingRowIds: (entity) => run(store.readPendingRowIds(entity)),
-    readOutboxStatuses: async (): Promise<ReadonlyArray<OutboxCommandStatus>> =>
-      run(store.listOutboxStatuses()),
     enqueueCommand: async (request) =>
       enqueuedCommand(input.databaseName, (await run(store.enqueueCommand(request))).value),
     readCommandStatus: (operationId: string) => run(store.readCommandStatus(operationId)),

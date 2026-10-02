@@ -1,10 +1,10 @@
-import type { SalesRange } from "@store/services/insights";
+import type { SalesRange } from "@store/contracts";
+import { useInventoryInsights } from "@store/inventory-react";
 import * as React from "react";
 
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { useInventoryInsights } from "@/lib/inventory";
 import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 
 import { InsightsBuilding } from "./building";

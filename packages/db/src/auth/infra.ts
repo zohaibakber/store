@@ -11,9 +11,6 @@ export const AuthDatabase = Effect.gen(function* () {
     out: "packages/db/migrations/auth",
     dialect: "sqlite",
   });
-
-  // Alchemy ignores `table` on the `{ out }` (Drizzle.Schema) form; the
-  // bookkeeping table is the one each stage's state already records.
   return yield* Cloudflare.D1.Database("AuthDatabase", {
     migrations: schema,
   }).pipe(RemovalPolicy.retain(stage === "prod"));

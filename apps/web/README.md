@@ -4,7 +4,7 @@ The Tabaaq product UI: React, TanStack Router, and the design system. It ships
 two ways from one source tree and one `index.html`.
 
 - In the browser it is the website. `start-web.tsx` uses browser history and
-  the IndexedDB replica from `@store/sync/browser`. `WebAuthBroker` keeps the
+  the IndexedDB replica from `@store/sync/replica/indexeddb`. `WebAuthBroker` keeps the
   access token in memory; the refresh token is the auth Worker's HttpOnly
   cookie. A localStorage hint records that this origin signed in, so a cold
   start without it skips the refresh. Google returns to `/sign-in?code=…`. New
@@ -50,8 +50,7 @@ The two hosts split this differently, through `signedInApp` in `vite.app.ts`:
 
 Modules that route files use outside the loader and component (search schemas,
 list definitions) must stay free of query code, or the website's sign-in screen
-downloads it again. Import list constants from `@store/inventory-react`
-directly, not through `@/lib/inventory`.
+downloads it again.
 
 ## Insights
 

@@ -1,6 +1,7 @@
 import { ArrowRight01Icon, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { useSuspenseInventoryInvoices } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 
@@ -22,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
-import { useSuspenseInventoryInvoices } from "@/lib/inventory";
 
 import { RECENT_INVOICE_LIMIT } from "./presentation";
 

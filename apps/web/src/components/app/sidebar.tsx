@@ -9,6 +9,7 @@ import {
   UserMultipleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useCatalogIsReady, useInventoryInsights } from "@store/inventory-react";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 
@@ -29,7 +30,6 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { useCatalogIsReady, useInventoryInsights } from "@/lib/inventory";
 import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 function RestockCountReady() {

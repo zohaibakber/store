@@ -318,7 +318,7 @@ describe("postgres inventory commands", () => {
     expect(outcome.accepted.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
     expect(outcome.rejected.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
     expect(outcome.replayed.fanout).toBeNull();
-    expect(JSON.parse(outcome.replayed.body)).toMatchObject({
+    expect(JSON.parse(outcome.replayed.json)).toMatchObject({
       operationId: first.operationId,
       commitSequence: "1",
     });

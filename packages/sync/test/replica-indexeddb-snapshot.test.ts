@@ -18,8 +18,8 @@ import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { IndexedDbSubsetPlan } from "../src/replica/indexeddb/query";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { enqueueRequestOf } from "./lib/enqueue";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 
 const databaseName = "replica-idb-snapshot";
 

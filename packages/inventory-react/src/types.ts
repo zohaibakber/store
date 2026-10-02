@@ -37,8 +37,6 @@ export type Inventory = {
 
 export type InventoryActor = CatalogActor;
 
-export type { ImportInventoryRequest } from "@store/client-db";
-
 export interface InventoryActions extends CatalogCommands {
   readonly retrySync: () => Promise<void>;
   readonly syncNow: () => void;

@@ -1,19 +1,7 @@
+import { publicErrorSchema } from "@store/contracts/http-errors";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
-
-const PublicErrorBody = Schema.Struct({
-  code: Schema.String,
-  message: Schema.String,
-});
-
-const publicErrorSchema = <const Tag extends string>(tag: Tag, status: number) =>
-  Schema.Struct({
-    _tag: Schema.tagDefaultOmit(tag),
-    error: PublicErrorBody,
-  }).pipe(HttpApiSchema.status(status));
 
 export const BadRequest = publicErrorSchema("BadRequest", 400);
 export type BadRequest = typeof BadRequest.Type;

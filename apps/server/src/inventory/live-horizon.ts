@@ -2,7 +2,6 @@ import { OrgCommitSequence, SyncEpoch } from "@store/contracts";
 import { inventoryState, replicas } from "@store/db/postgres/schema";
 import { and, eq } from "drizzle-orm";
 import * as Cache from "effect/Cache";
-import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -65,10 +64,6 @@ interface InventoryLiveContract {
   ) => Effect.Effect<LiveHorizon, InventoryError>;
 }
 
-export class InventoryLive extends Context.Service<InventoryLive, InventoryLiveContract>()(
-  "@store/server/InventoryLive",
-) {}
-
 type HorizonKey = {
   readonly organizationId: string;
   readonly userId: string;
@@ -83,7 +78,7 @@ export const makeInventoryLive = Effect.fn("InventoryLive.make")(function* (db: 
       timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.seconds(1) : Duration.zero),
     },
   );
-  return InventoryLive.of({
+  return {
     readLiveHorizon: Effect.fn("InventoryLive.readLiveHorizon")(function* (actor, replicaId) {
       return yield* Cache.get(horizons, {
         organizationId: actor.organizationId,
@@ -91,5 +86,5 @@ export const makeInventoryLive = Effect.fn("InventoryLive.make")(function* (db: 
         replicaId,
       });
     }),
-  });
+  } satisfies InventoryLiveContract;
 });

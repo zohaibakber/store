@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
+import { deviceLabelOf } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Schema from "effect/Schema";
 import {
@@ -18,36 +19,32 @@ import {
 } from "electron";
 
 import { makeAuthBroker } from "./auth";
-import { AUTH_SESSION_CHANGED_CHANNEL } from "./auth-channels";
 import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
-import { hostDeviceLabel } from "./device-label";
 import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
+import {
+  AUTH_SESSION_CHANGED_CHANNEL,
+  OAUTH_CALLBACK_CHANNEL,
+  THEME_SET_SOURCE_CHANNEL,
+} from "./ipc-channels";
 import { isTrustedIpcSenderFrame } from "./ipc-sender";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
-import {
-  isOAuthCallbackUrl,
-  OAUTH_CALLBACK_CHANNEL,
-  oauthCallbackRedirectUri,
-} from "./oauth-callback";
+import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
 import {
   desktopRendererOrigin,
   desktopRendererUrl,
   registerDesktopProtocolHandler,
   registerDesktopSchemePrivileges,
 } from "./protocol";
+import { lockDownRenderer } from "./renderer-lockdown";
 import type { ReplicaBackupDialogs } from "./replica-backup";
 import { registerReplicaWorkerIpc } from "./replica-ipc";
-import { forwardRendererLogs } from "./report-renderer-logs";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
-import { denyAllSessionPermissionRequests } from "./session-permissions";
 import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
-import { THEME_SET_SOURCE_CHANNEL } from "./theme-channels";
 import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
 import { setupUpdater } from "./updater";
-import { registerWebContentsSecurity } from "./web-contents-security";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -161,16 +158,10 @@ const allowedRendererOrigins = () =>
     Boolean(value),
   );
 
-function registerRendererCsp() {
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        "Content-Security-Policy": [rendererCsp],
-      },
-    });
-  });
-}
+const hostDeviceLabel = () => {
+  const [name = ""] = hostname().split(".");
+  return name.includes("@") ? undefined : deviceLabelOf(name);
+};
 
 const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
 
@@ -253,7 +244,14 @@ function createWindow() {
 
   win.once("ready-to-show", () => win?.show());
   win.webContents.on("did-finish-load", deliverOAuthCallback);
-  forwardRendererLogs(win);
+  win.webContents.on("console-message", (event) => {
+    if (event.level === "debug" || event.level === "info") return;
+    const location = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : "";
+    console.error(`[renderer ${event.level}] ${event.message}${location}`);
+  });
+  win.webContents.on("unresponsive", () => {
+    console.error("Renderer became unresponsive.");
+  });
 
   win.on("closed", () => {
     win = null;
@@ -344,9 +342,11 @@ void app.whenReady().then(async () => {
     developmentServerUrl: VITE_DEV_SERVER_URL,
     contentSecurityPolicy: rendererCsp,
   });
-  registerRendererCsp();
-  denyAllSessionPermissionRequests(session.defaultSession);
-  registerWebContentsSecurity(allowedRendererOrigins);
+  lockDownRenderer({
+    session: session.defaultSession,
+    allowedOrigins: allowedRendererOrigins,
+    contentSecurityPolicy: rendererCsp,
+  });
   registerNewSaleAccelerator();
   registerAuthIpc({
     ipcMain,
@@ -376,7 +376,7 @@ void app.whenReady().then(async () => {
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
-    deviceLabel: hostDeviceLabel(hostname()),
+    deviceLabel: hostDeviceLabel(),
     syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
     liveAccessToken: (force) => authBroker.liveAccessToken(force),
     allowedOrigins: allowedRendererOrigins,

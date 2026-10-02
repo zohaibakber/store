@@ -232,21 +232,6 @@ export interface AuthOrganizationMembership extends Schema.Schema.Type<
   typeof AuthOrganizationMembership
 > {}
 
-const AuthSessionRecord = Schema.Struct({
-  id: SessionId,
-  userId: UserId,
-  activeOrganizationId: OrganizationId,
-  expiresAt: Schema.Number,
-});
-interface AuthSessionRecord extends Schema.Schema.Type<typeof AuthSessionRecord> {}
-
-export const AuthSession = Schema.Struct({
-  user: AuthUser,
-  session: AuthSessionRecord,
-  organizations: Schema.Array(AuthOrganizationMembership),
-});
-export interface AuthSession extends Schema.Schema.Type<typeof AuthSession> {}
-
 const SessionWorkspace = Schema.Struct({
   status: Schema.Literal("authenticated"),
   user: AuthUser,

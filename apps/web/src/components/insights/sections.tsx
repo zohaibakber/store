@@ -8,9 +8,14 @@ import {
   PackageIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { InsightsSummary, RestockView } from "@store/contracts";
+import type {
+  InsightsSummary,
+  RestockView,
+  SalesPeriod,
+  StockStatus,
+  TopProduct,
+} from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import type { SalesPeriod, StockStatus, TopProduct } from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 

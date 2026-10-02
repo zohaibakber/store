@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { EpochMillis, UtcOffsetMinutes } from "../internal/primitives";
-import { PositiveInt, SyncIdentifier } from "../schema-primitives";
+import { EpochMillis, PositiveInt, SyncIdentifier, UtcOffsetMinutes } from "../schema-primitives";
 
 export const MAX_PRODUCT_INSIGHT_IDS = 200;
 export const MAX_RESTOCK_PAGE_ROWS = 100;

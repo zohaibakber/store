@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AppLoading } from "@/components/app/loading";
-import { AuthScreen } from "@/components/auth/brand";
-import { AuthForm, useGoogleCallback } from "@/components/auth/page";
+import { AuthForm, AuthScreen, useGoogleCallback } from "@/components/auth/page";
 import { Button } from "@/components/ui/button";
 import { useOpenWorkspace } from "@/lib/workspace";
 

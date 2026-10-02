@@ -3,7 +3,7 @@ import { unauthenticatedWorkspace } from "@store/contracts";
 import { useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
-import { appHost, type AuthSessionBridge } from "@/host";
+import { appHost } from "@/host";
 import type { OpenWorkspace, Workspace } from "@/host-access";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { refreshBoundWorkspaceSession, type WorkspaceSession } from "@/session/workspace-session";
@@ -20,11 +20,9 @@ type AuthContextValue = {
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 
-export const authSession = (): AuthSessionBridge => appHost().auth;
-
 export async function signOut() {
   try {
-    await authSession().signOut();
+    await appHost().auth.signOut();
   } catch (error) {
     toastStoreError(error);
   }
@@ -32,7 +30,7 @@ export async function signOut() {
 
 export async function bootstrapAuth(): Promise<WorkspaceSnapshot> {
   try {
-    return await authSession().getSession();
+    return await appHost().auth.getSession();
   } catch (cause) {
     return unauthenticatedWorkspace({
       isOnline: false,

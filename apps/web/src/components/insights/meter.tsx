@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 import type { Tone } from "./presentation";
 
-export type MeterTone = Tone | "chart";
+type MeterTone = Tone | "chart";
 
 const INDICATOR = {
   error: "**:data-[slot=meter-indicator]:bg-destructive",

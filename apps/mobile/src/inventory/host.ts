@@ -1,17 +1,22 @@
+import { inventoryReplicaScope, sqliteReplicaFileName } from "@store/client-db";
 import {
   openSqlClientReplicaHandle,
   type SqlClientReplicaHandle,
 } from "@store/client-db/sql-client";
 import type { InventoryHost, ReplicaOpenIdentity } from "@store/inventory-react";
-import type { LiveNetworkSignal } from "@store/sync/browser";
+import type { LiveNetworkSignal } from "@store/sync";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "expo-crypto";
 
 import type { LiveAccessToken } from "@/auth/session";
 
-import { replicaDatabaseName } from "./policy";
 import { replicaSqlClient } from "./sqlite";
+
+const replicaDatabaseName = (apiBaseUrl: string, organizationId: string, userId: string): string =>
+  sqliteReplicaFileName(
+    encodeURIComponent(`${inventoryReplicaScope(apiBaseUrl, organizationId)}:${userId}`),
+  );
 
 const databaseLocks = new Map<string, Semaphore.Semaphore>();
 
@@ -21,7 +26,7 @@ const exclusive = <A, E>(databaseName: string, work: Effect.Effect<A, E>): Promi
   return Effect.runPromise(lock.withPermit(work));
 };
 
-export type MobileReplicaListener = {
+type MobileReplicaListener = {
   readonly opened: (handle: SqlClientReplicaHandle) => void;
   readonly closed: (handle: SqlClientReplicaHandle) => void;
 };
@@ -73,13 +78,4 @@ export const createMobileInventoryHost = (input: {
     input.listener.opened(replica);
     return replica;
   },
-});
-
-export const unavailableInventoryHost = (input: {
-  readonly apiBaseUrl: string;
-  readonly message: string;
-}): InventoryHost => ({
-  apiBaseUrl: input.apiBaseUrl,
-  deviceId: "",
-  openReplica: () => Promise.reject(new Error(input.message)),
 });

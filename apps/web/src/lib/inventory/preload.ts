@@ -5,7 +5,7 @@ const PRELOAD_BUDGET = "750 millis";
 
 export const preloadInventory = (
   context: { readonly catalog: CatalogLifetime; readonly inventory: InventoryHost | null },
-  preload: (inventory: Inventory) => Effect.Effect<void, unknown>,
+  preload: (inventory: Inventory) => Effect.Effect<void, unknown> = () => Effect.void,
 ): Promise<void> => {
   const lease = context.catalog.lease();
   if (lease === null || context.inventory === null) return Promise.resolve();
@@ -21,6 +21,3 @@ export const preloadInventory = (
     ),
   );
 };
-
-export const preloadCatalog = (context: Parameters<typeof preloadInventory>[0]): Promise<void> =>
-  preloadInventory(context, () => Effect.void);

@@ -13,19 +13,17 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 
 import { Api, OrgHub } from "./api";
 import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
-import type { AuthVerificationConfig } from "./src/auth/session";
 import { makeWorkerFetch } from "./src/http/app";
 import { RATE_LIMITS } from "./src/http/runtime";
-import { InventoryAuthorityLive } from "./src/inventory/authority";
-import { InventoryCommands } from "./src/inventory/commands";
-import { InventoryImports } from "./src/inventory/imports";
-import { InventoryLive } from "./src/inventory/live-horizon";
-import { InventoryMaintenance, MAINTENANCE_POLICY } from "./src/inventory/maintenance";
-import { InventorySnapshots } from "./src/inventory/snapshots";
+import { makeInventoryCommands } from "./src/inventory/commands";
+import { makeInventoryImports } from "./src/inventory/imports";
+import { makeInventoryLive } from "./src/inventory/live-horizon";
+import { MAINTENANCE_POLICY, makeInventoryMaintenance } from "./src/inventory/maintenance";
+import { openInventoryDrizzle } from "./src/inventory/postgres";
+import { makeInventorySnapshots } from "./src/inventory/snapshots";
 import { makeLiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
 import {
@@ -68,19 +66,13 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const inventory = yield* Effect.all({
-      commands: InventoryCommands,
-      snapshots: InventorySnapshots,
-      imports: InventoryImports,
-      live: InventoryLive,
-      maintenance: InventoryMaintenance,
-    }).pipe(
-      Effect.provide(
-        InventoryAuthorityLive.pipe(Layer.provide(Cloudflare.Hyperdrive.ConnectBinding)),
-      ),
+    const db = yield* openInventoryDrizzle.pipe(
+      Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
     );
+    const live = yield* makeInventoryLive(db);
+    const maintenance = makeInventoryMaintenance(db);
     yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
-      inventory.maintenance.runScheduled().pipe(
+      maintenance.runScheduled().pipe(
         Effect.tap((progress) => Effect.log("inventory maintenance run", progress)),
         Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
       ),
@@ -158,12 +150,11 @@ export const ApiLive = Api.make(
       { discard: true },
     );
     const keys = yield* decodeJwtKeyRingText(authPublicJwkText).pipe(Effect.orDie);
-    const jwtConfig: AuthVerificationConfig = {
+    const verifyAccessToken = yield* makeAccessTokenVerifier({
       issuer: security.baseURL,
       audience: "tabaaq-api",
       keys,
-    };
-    const verifyAccessToken = yield* makeAccessTokenVerifier(jwtConfig);
+    });
     const fetch = yield* makeWorkerFetch({
       runtime: {
         trustedOrigins: security.trustedOrigins,
@@ -173,10 +164,10 @@ export const ApiLive = Api.make(
         productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
         limitProductScan: (key) => productScanRateLimit.limit({ key }),
       },
-      commands: inventory.commands,
-      snapshots: inventory.snapshots,
-      imports: inventory.imports,
-      readLiveHorizon: inventory.live.readLiveHorizon,
+      commands: makeInventoryCommands(db),
+      snapshots: makeInventorySnapshots(db),
+      imports: makeInventoryImports(db),
+      readLiveHorizon: live.readLiveHorizon,
       hubs,
       liveFanout,
     });

@@ -11,10 +11,10 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 
 import {
-  openReplicaStore,
   runReplicaTransaction,
   type SqliteReplicaHandle,
-} from "../../src/replica/storage";
+} from "../../src/replica/sql-client/handle";
+import { openReplicaStore } from "../../src/sqlite";
 
 export const FIXTURE_USER_ID = "user-1";
 

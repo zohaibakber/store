@@ -65,7 +65,7 @@ export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>
   },
 ) {}
 
-export interface EphemeralStoreApi {
+interface EphemeralStoreApi {
   readonly createOtp: (input: {
     readonly email: EmailAddressType;
     readonly code: OtpCode;

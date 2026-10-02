@@ -7,8 +7,8 @@ import {
   canRenameOrganization,
   useAuthActions,
   useSession,
+  type Account,
   type AuthProblem,
-  type SessionOrganization,
 } from "@/auth";
 import { AuthScreen, ProblemMessage, fieldError } from "@/auth/ui/auth-screen";
 import { Field } from "@/auth/ui/field";
@@ -30,7 +30,11 @@ const roleLabel = (role: string) => {
   }
 };
 
-function StoreCard({ organization }: { readonly organization: SessionOrganization }) {
+function StoreCard({
+  organization,
+}: {
+  readonly organization: NonNullable<Account["organization"]>;
+}) {
   return (
     <View
       style={{
@@ -61,7 +65,7 @@ function OrganizationForm({
   signOut,
 }: {
   readonly email: string;
-  readonly organization: SessionOrganization | null;
+  readonly organization: Account["organization"];
   readonly signOut: () => Promise<void>;
 }) {
   const { confirmOrganization, joinOrganization } = useAuthActions();

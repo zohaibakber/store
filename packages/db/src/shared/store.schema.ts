@@ -10,14 +10,14 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { nanoid } from "nanoid";
 
-export const epochMilliseconds = () => integer({ mode: "number" });
+const epochMilliseconds = () => integer({ mode: "number" });
 
 const timestamps = {
   createdAt: epochMilliseconds().notNull(),
   updatedAt: epochMilliseconds().notNull(),
 };
 
-export const tenantId = () => text().notNull();
+const tenantId = () => text().notNull();
 
 const entityId = () =>
   text()

@@ -13,11 +13,11 @@ import { StyleSheet } from "react-native";
 
 import { colors, fonts, touch, type } from "@/theme/tokens";
 
-export type ActionButtonVariant = "primary" | "secondary" | "outlined" | "text";
+type ActionButtonVariant = "primary" | "secondary" | "outlined" | "text";
 
-export type ActionButtonSize = "medium" | "large";
+type ActionButtonSize = "medium" | "large";
 
-export type ActionButtonProps = {
+type ActionButtonProps = {
   readonly label: string;
   readonly onPress: () => void;
   readonly variant?: ActionButtonVariant;

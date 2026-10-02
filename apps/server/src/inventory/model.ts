@@ -19,11 +19,6 @@ export interface CommitFanout {
   readonly originReplicaId: string;
 }
 
-export interface ImportedCatalog extends EncodedJsonBody {
-  readonly fanout: CommitFanout | null;
-}
-
-export interface SubmittedCommand {
-  readonly body: string;
+export interface EncodedCommit extends EncodedJsonBody {
   readonly fanout: CommitFanout | null;
 }

@@ -1,3 +1,3 @@
-import { BatchScreen } from "@/scan";
+import { BatchScreen } from "@/scan/screens/batch-screen";
 
 export default BatchScreen;

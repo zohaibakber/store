@@ -37,8 +37,9 @@ import {
   lastUnitBuyerBCommand,
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
-import { LocalAuthority, ReplicaStore, SyncEngine, SyncTransportService } from "@store/sync";
-import { layerSqliteReplicaStore, SqliteReplica } from "@store/sync/sqlite";
+import { ReplicaStore, SyncEngine, SyncTransportService } from "@store/sync";
+import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/sync/sql-client";
+import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -95,7 +96,7 @@ const seededReplica = (organizationId: string) =>
         })
         .pipe(Effect.orDie),
     ),
-  ).pipe(Layer.provideMerge(SqliteReplica.layer()));
+  ).pipe(Layer.provideMerge(layerNodeSqliteReplica()));
 
 const recordingLocalAuthority = (submissions: Array<LocalSubmission>) =>
   Layer.effect(

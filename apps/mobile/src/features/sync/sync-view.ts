@@ -1,6 +1,8 @@
 import {
   rejectedCommandLabel,
+  type CommandExecutionState,
   type InventorySyncActivity,
+  type InventorySyncStatus,
   type RejectedCommand,
 } from "@store/inventory-react";
 
@@ -9,6 +11,60 @@ import { DAY_MS, formatCount, formatDateTime } from "../format";
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
+export type SyncTone = "synced" | "pending" | "attention" | "error";
+
+type SyncHealthView = {
+  readonly tone: SyncTone;
+  readonly title: string;
+  readonly detail: string;
+  readonly canFix: boolean;
+};
+
+export const syncNeedsAttention = (status: InventorySyncStatus) =>
+  status._tag === "rejected" ||
+  status._tag === "storageError" ||
+  status._tag === "updateRequired" ||
+  status._tag === "recoveryRequired";
+
+export const syncHealthView = (status: InventorySyncStatus): SyncHealthView => {
+  switch (status._tag) {
+    case "caughtUp":
+      return {
+        tone: "synced",
+        title: "Caught up",
+        detail: "Every change on this phone is on the server.",
+        canFix: false,
+      };
+    case "savedLocally":
+      return {
+        tone: "pending",
+        title: "Saved on this phone",
+        detail: "Saved here. They upload when the phone is online.",
+        canFix: false,
+      };
+    case "pendingConfirmation":
+      return {
+        tone: "pending",
+        title: "Uploading",
+        detail: "Waiting for the server to confirm.",
+        canFix: false,
+      };
+    case "rejected":
+      return {
+        tone: "attention",
+        title: "A change was rejected",
+        detail: status.message,
+        canFix: true,
+      };
+    case "storageError":
+      return { tone: "error", title: "Storage problem", detail: status.message, canFix: false };
+    case "updateRequired":
+      return { tone: "error", title: "Update required", detail: status.message, canFix: false };
+    case "recoveryRequired":
+      return { tone: "error", title: "Needs recovery", detail: status.message, canFix: false };
+  }
+};
+
 export type RejectedRowView = {
   readonly key: string;
   readonly title: string;
@@ -16,7 +72,7 @@ export type RejectedRowView = {
   readonly productId: string | null;
 };
 
-export type SyncActivityView = {
+type SyncActivityView = {
   readonly pending: { readonly title: string; readonly detail: string };
   readonly lastSynced: { readonly title: string; readonly detail: string };
   readonly rejected: ReadonlyArray<RejectedRowView>;
@@ -72,3 +128,13 @@ export const syncActivityView = (
 
 export const firstFixableProduct = (activity: InventorySyncActivity): string | null =>
   activity.rejected.find((rejected) => rejected.productId !== null)?.productId ?? null;
+
+export const unsyncedOperationId = (
+  execution: CommandExecutionState,
+  status: InventorySyncStatus,
+): string | null => {
+  if (status._tag !== "savedLocally" && status._tag !== "pendingConfirmation") return null;
+  return execution._tag === "accepting" || execution._tag === "pending"
+    ? execution.operationId
+    : null;
+};

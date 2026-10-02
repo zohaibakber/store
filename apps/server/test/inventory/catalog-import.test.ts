@@ -28,21 +28,17 @@ import {
   decodeSupplierId,
 } from "@store/contracts/ids";
 import { replicaState } from "@store/db/replica.schema";
-import {
-  LocalAuthority,
-  LOCAL_AUTHORITY_EPOCH,
-  ReplicaStore,
-  SyncEngine,
-  SyncTransportService,
-  type SyncTransport,
-} from "@store/sync";
+import { ReplicaStore, SyncEngine, SyncTransportService, type SyncTransport } from "@store/sync";
 import {
   layerSqliteReplicaStore,
+  LocalAuthority,
+  LOCAL_AUTHORITY_EPOCH,
   SqliteReplica,
   sqliteCatalogParts,
   sqlitePartitionDigest,
   type SqliteReplicaHandle,
-} from "@store/sync/sqlite";
+} from "@store/sync/sql-client";
+import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import { sql } from "drizzle-orm";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Context from "effect/Context";
@@ -112,7 +108,7 @@ const seededReplica = (identity: {
         })
         .pipe(Effect.orDie),
     ),
-  ).pipe(Layer.provideMerge(SqliteReplica.layer()));
+  ).pipe(Layer.provideMerge(layerNodeSqliteReplica()));
 
 const catalog = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>): SyncCommand => ({
   _tag: "catalogWrite",

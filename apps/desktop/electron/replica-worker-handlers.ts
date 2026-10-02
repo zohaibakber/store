@@ -12,7 +12,6 @@ import {
   sealReplicaFile,
   settleReplicaFile,
   stageReplicaBackup,
-  type ReplicaFileSummary,
 } from "@store/client-db/node-backup";
 import {
   commitPublish,
@@ -43,7 +42,9 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { PROXY_CONCURRENCY, SNAPSHOT_DOWNLOAD_CONCURRENCY } from "./replica-admission";
 import { makePendingReplies, makeSharedFlight } from "./replica-pending";
 import {
+  catalogCountsOf,
   commitStampOf,
+  RESTORE_LOCAL_ONLY,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
   type AccessTokenRequest,
@@ -77,8 +78,6 @@ const timedOutProxy = (): ProxyFetchResult => ({
 
 type WorkerBoot = typeof ReplicaWorkerBoot.Type;
 
-const LOCAL_ONLY_MESSAGE = "Only the workspace on this device can be restored from a file.";
-
 const ORGANIZATION_BACKUP_MESSAGE =
   "This backup is a copy of an organization's data. Only a backup of this device's own workspace can be restored here.";
 
@@ -88,12 +87,6 @@ const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this devi
 
 const fileFailure = (failure: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: failure.message });
-
-const countsOf = (summary: ReplicaFileSummary) => ({
-  products: summary.products,
-  sales: summary.sales,
-  purchaseOrders: summary.purchaseOrders,
-});
 
 type AuthorityLink = {
   readonly open: () => Promise<NodeReplicaSyncSession>;
@@ -118,7 +111,6 @@ const sessionInput = (config: WorkerBoot) => ({
 
 const linkRemoteAuthority = (
   config: Extract<WorkerBoot, { readonly authority: "remote" }>,
-  openSession: typeof openNodeReplicaSyncSession,
 ): Effect.Effect<AuthorityLink, never, Scope.Scope> =>
   Effect.gen(function* () {
     const proxyRequests = yield* Queue.bounded<typeof ProxyFetchRequest.Type>(PROXY_QUEUE_CAPACITY);
@@ -151,7 +143,7 @@ const linkRemoteAuthority = (
 
     return {
       open: () =>
-        openSession({
+        openNodeReplicaSyncSession({
           ...sessionInput(config),
           transport: makeProxySyncTransport((request) => Effect.runPromise(proxyFetch(request))),
           live: {
@@ -196,9 +188,8 @@ const localImports: ImportClient = {
 
 const linkLocalAuthority = (
   config: Extract<WorkerBoot, { readonly authority: "local" }>,
-  openSession: typeof openNodeLocalReplicaSession,
 ): AuthorityLink => ({
-  open: () => openSession(sessionInput(config)),
+  open: () => openNodeLocalReplicaSession(sessionInput(config)),
   proxyRequests: Stream.never,
   respondProxy: () => Effect.void,
   tokenRequests: Stream.never,
@@ -208,29 +199,21 @@ const linkLocalAuthority = (
   imports: localImports,
 });
 
-const linkAuthority = (
-  config: WorkerBoot,
-  openSession: typeof openNodeReplicaSyncSession,
-  openLocalSession: typeof openNodeLocalReplicaSession,
-): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
+const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
   switch (config.authority) {
     case "local":
-      return Effect.succeed(linkLocalAuthority(config, openLocalSession));
+      return Effect.succeed(linkLocalAuthority(config));
     case "remote":
-      return linkRemoteAuthority(config, openSession);
+      return linkRemoteAuthority(config);
   }
 };
 
-export const makeReplicaWorkerHandlers = <R>(
-  boot: Effect.Effect<WorkerBoot, unknown, R>,
-  openSession = openNodeReplicaSyncSession,
-  openLocalSession = openNodeLocalReplicaSession,
-) =>
+export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
       const syncHealth = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
-      const link = yield* linkAuthority(config, openSession, openLocalSession);
+      const link = yield* linkAuthority(config);
 
       const live = yield* Ref.make<NodeReplicaSyncSession | undefined>(undefined);
 
@@ -279,7 +262,7 @@ export const makeReplicaWorkerHandlers = <R>(
           yield* Effect.acquireUseRelease(
             Effect.tryPromise({
               try: () =>
-                openLocalSession({
+                openNodeLocalReplicaSession({
                   ...sessionInput(local),
                   path: stagedPath,
                   databaseIdentity: stagedPath,
@@ -294,7 +277,7 @@ export const makeReplicaWorkerHandlers = <R>(
             (trial) => Effect.tryPromise(() => trial.close()).pipe(Effect.ignore),
           );
           const current = yield* readReplicaFileSummary(local.databasePath);
-          return { current: countsOf(current), backup: countsOf(backup) };
+          return { current: catalogCountsOf(current), backup: catalogCountsOf(backup) };
         }).pipe(
           Effect.onError(() => discardReplicaFile(stagedPath)),
           Effect.mapError(fileFailure),
@@ -334,7 +317,6 @@ export const makeReplicaWorkerHandlers = <R>(
           withSession((current) => current.readInsights(window)).pipe(
             Effect.map((read) => ({ stamp: commitStampOf(read.stamp), facts: read.facts })),
           ),
-        ReadOutboxStatuses: () => withSession((current) => current.readOutboxStatuses()),
         ReadSyncActivity: () =>
           withSession((current) => current.readOutboxActivity()).pipe(
             Effect.map(replicaSyncActivityOf),
@@ -373,7 +355,7 @@ export const makeReplicaWorkerHandlers = <R>(
             case "local":
               return stageRestore(config, sourcePath, stagedPath);
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: LOCAL_ONLY_MESSAGE }));
+              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
           }
         },
         ReleaseForRestore: ({ stagedPath }) => {
@@ -381,7 +363,7 @@ export const makeReplicaWorkerHandlers = <R>(
             case "local":
               return releaseForRestore(config, stagedPath);
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: LOCAL_ONLY_MESSAGE }));
+              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
           }
         },
         PublishSummary: ({ sourcePath }) =>

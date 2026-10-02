@@ -6,7 +6,7 @@ import {
 
 import type { LiveTextFrame } from "./scan-camera";
 
-export type CapturedScan = {
+type CapturedScan = {
   readonly path: string;
   readonly text: string;
   readonly lines: ReadonlyArray<string>;

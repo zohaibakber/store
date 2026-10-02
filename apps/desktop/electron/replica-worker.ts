@@ -4,8 +4,7 @@ import * as Layer from "effect/Layer";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
 
-import { WORKER_RPC_CONCURRENCY } from "./replica-admission";
-import { ReplicaWorkerBoot, ReplicaWorkerRpcs } from "./replica-rpc";
+import { ReplicaWorkerBoot, ReplicaWorkerRpcs, WORKER_RPC_CONCURRENCY } from "./replica-rpc";
 import { makeReplicaWorkerHandlers } from "./replica-worker-handlers";
 import { layerWorkerSentry } from "./sentry-worker";
 

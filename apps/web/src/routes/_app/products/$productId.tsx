@@ -1,23 +1,22 @@
+import {
+  preloadAll,
+  preloadCatalogProduct,
+  preloadProductStockPlan,
+  preloadStockMovementHistory,
+  useInventoryActions,
+  useSuspenseCatalogProduct,
+  useSuspenseStockMovementHistory,
+} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { ProductDetailError, ProductDetailPage } from "@/components/products/detail-page";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
-import { formValidator } from "@/lib/form-schema";
-import {
-  preloadAll,
-  preloadCatalogProduct,
-  preloadInventory,
-  preloadProductStockPlan,
-  preloadStockMovementHistory,
-  useInventoryActions,
-  useSuspenseCatalogProduct,
-  useSuspenseStockMovementHistory,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
-const productSearch = formValidator(
+const productSearch = Schema.toStandardSchemaV1(
   Schema.Struct({ addStock: lenientSearchParam(Schema.Boolean) }),
 );
 

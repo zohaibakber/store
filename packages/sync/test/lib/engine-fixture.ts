@@ -1,7 +1,6 @@
 import * as Effect from "effect/Effect";
-import * as Semaphore from "effect/Semaphore";
 
-import { makeSyncEngineFromReplicaStore, type SyncEngineMutex } from "../../src/engine";
+import { makeSyncEngineFromReplicaStore } from "../../src/engine";
 import type { SqliteReplicaHandle } from "../../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../../src/replica/sqlite/store";
 import type { SyncTransport } from "../../src/transport";
@@ -16,16 +15,8 @@ export const stubTransport = (overrides: Partial<SyncTransport> = {}): SyncTrans
   ...overrides,
 });
 
-export const sqliteEngine = (
-  handle: SqliteReplicaHandle,
-  transport: SyncTransport,
-  mutex?: SyncEngineMutex,
-) =>
+export const sqliteEngine = (handle: SqliteReplicaHandle, transport: SyncTransport) =>
   Effect.gen(function* () {
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
-    return yield* makeSyncEngineFromReplicaStore(
-      store,
-      mutex ?? (yield* Semaphore.make(1)),
-      transport,
-    );
+    return yield* makeSyncEngineFromReplicaStore(store, transport);
   });

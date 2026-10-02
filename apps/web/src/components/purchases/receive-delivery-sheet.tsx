@@ -1,4 +1,5 @@
 import type { PurchaseOrder, Supplier } from "@store/contracts";
+import type { ReceiveDeliveryLineInput } from "@store/inventory-react";
 import * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
@@ -12,7 +13,6 @@ import {
   SheetPopup,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { ReceiveDeliveryLineInput } from "@/lib/inventory";
 
 import { formatOrderNumber, UNKNOWN_SUPPLIER } from "./presentation";
 
@@ -20,7 +20,7 @@ const ReceiveDeliveryBody = React.lazy(() =>
   import("./receive-delivery-body").then((module) => ({ default: module.ReceiveDeliveryBody })),
 );
 
-export type ReceiveDeliverySheetProps = {
+type ReceiveDeliverySheetProps = {
   readonly order: PurchaseOrder;
   readonly supplier: Supplier | undefined;
   readonly open: boolean;

@@ -8,7 +8,18 @@ import {
   UnfoldMoreIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Column, ReactTable, Row, RowData, TableFeatures } from "@tanstack/react-table";
+import {
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  metaHelper,
+  rowPaginationFeature,
+  rowSortingFeature,
+  tableFeatures,
+  type Column,
+  type ReactTable,
+  type Row,
+  type RowData,
+} from "@tanstack/react-table";
 import { Children, createContext, isValidElement, use, useEffect, useId, useRef } from "react";
 import type React from "react";
 
@@ -63,94 +74,34 @@ import { isString } from "@/lib/predicates";
 import { isEditableTarget } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
-type DataTableFilterValue = string | undefined;
-
-type DataTableColumnAlign = "start" | "end";
-
 interface DataTableColumnMeta {
   readonly label?: string;
-  readonly align?: DataTableColumnAlign;
+  readonly align?: "start" | "end";
 }
 
-interface DataTableColumnDefinition {
-  readonly columnDef: { readonly meta?: DataTableColumnMeta };
-}
+const listTableFeatures = tableFeatures({
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  rowPaginationFeature,
+  rowSortingFeature,
+  columnMeta: metaHelper<DataTableColumnMeta>(),
+});
 
-const columnAlign = (column: DataTableColumnDefinition): DataTableColumnAlign =>
-  column.columnDef.meta?.align ?? "start";
+type ListTableFeatures = typeof listTableFeatures;
 
-interface DataTableSortableColumn {
-  readonly id: string;
-  readonly columnDef: { meta?: { label?: string } };
-  getCanSort(): boolean;
-  getIsSorted(): false | "asc" | "desc";
-  getToggleSortingHandler(): undefined | ((event: React.SyntheticEvent) => void);
-  getCanHide(): boolean;
-  getIsVisible(): boolean;
-  toggleVisibility(value?: boolean): void;
-}
+type DataTableColumn = Column<ListTableFeatures, RowData>;
 
-interface DataTableColumn extends DataTableSortableColumn {
-  getFilterValue?(): DataTableFilterValue;
-  setFilterValue?(value: DataTableFilterValue): void;
-}
+type DataTableRow = Row<ListTableFeatures, RowData>;
 
-interface DataTableCell {
-  readonly id: string;
-  readonly column: DataTableColumnDefinition;
-}
+const columnAlign = (column: DataTableColumn) => column.columnDef.meta?.align ?? "start";
 
-interface DataTableRow {
-  readonly id: string;
-  getVisibleCells(): ReadonlyArray<DataTableCell>;
-}
-
-interface DataTableHeaderCell {
-  readonly id: string;
-  readonly colSpan: number;
-  readonly isPlaceholder: boolean;
-  readonly column: DataTableColumnDefinition;
-}
-
-interface DataTableInstance {
-  readonly state: { readonly pagination?: { pageIndex: number; pageSize: number } };
-  FlexRender(this: void, props: { header?: unknown; cell?: unknown }): React.ReactNode;
-  getColumn(id: string): DataTableColumn | undefined;
-  getAllColumns(): ReadonlyArray<DataTableColumn>;
-  getAllLeafColumns(): ReadonlyArray<DataTableColumn>;
-  getHeaderGroups(): ReadonlyArray<{ id: string; headers: ReadonlyArray<DataTableHeaderCell> }>;
-  getRowModel(): { rows: ReadonlyArray<DataTableRow> };
-  getPageCount(): number;
-  getRowCount(): number;
-  setPageSize(size: number): void;
-  getCanPreviousPage(): boolean;
-  getCanNextPage(): boolean;
-  firstPage(): void;
-  previousPage(): void;
-  nextPage(): void;
-  lastPage(): void;
-  clearFilters(columnIds: ReadonlySet<string>): void;
-}
-
-interface DataTablePaginationAccess {
-  getPageCount(): number;
-  getRowCount(): number;
-  setPageSize(size: number): void;
-  getCanPreviousPage(): boolean;
-  getCanNextPage(): boolean;
-  firstPage(): void;
-  previousPage(): void;
-  nextPage(): void;
-  lastPage(): void;
-  setColumnFilters(
-    updater: (
-      filters: ReadonlyArray<{ id: string; value: unknown }>,
-    ) => Array<{ id: string; value: unknown }>,
-  ): void;
-}
+const filterValueOf = (column: DataTableColumn | undefined) => {
+  const value = column?.getFilterValue();
+  return isString(value) ? value : undefined;
+};
 
 interface DataTableContextValue {
-  table: DataTableInstance;
+  table: ReactTable<ListTableFeatures, RowData>;
   onRowClick?: (row: DataTableRow) => void;
   onRowPreload?: (row: DataTableRow) => void;
 }
@@ -163,82 +114,24 @@ function useDataTable() {
   return context;
 }
 
-interface DataTableProps<
-  TFeatures extends TableFeatures,
-  TData extends RowData,
-> extends React.ComponentProps<"div"> {
-  table: ReactTable<TFeatures, TData>;
-  onRowClick?: (row: Row<TFeatures, TData>) => void;
-  onRowPreload?: (row: Row<TFeatures, TData>) => void;
+interface DataTableProps<TData extends RowData> extends React.ComponentProps<"div"> {
+  table: ReactTable<ListTableFeatures, TData>;
+  onRowClick?: (row: Row<ListTableFeatures, TData>) => void;
+  onRowPreload?: (row: Row<ListTableFeatures, TData>) => void;
 }
 
-function DataTable<TFeatures extends TableFeatures, TData extends RowData>({
+function DataTable<TData extends RowData>({
   table,
   onRowClick,
   onRowPreload,
   className,
   ...props
-}: DataTableProps<TFeatures, TData>) {
-  // SAFETY: All app tables install the pagination and filtering features; the generic feature map
-  // does not expose those methods until its concrete instantiation reaches callers.
-  const configuredTable = table as ReactTable<TFeatures, TData> & DataTablePaginationAccess;
-  const adaptColumn = (column: Column<TFeatures, TData, unknown> | undefined) => {
-    if (!column) return undefined;
-    // SAFETY: The app table factory installs sorting, visibility, and filtering;
-    // column identity and definitions remain those of the original TanStack column.
-    const featureColumn = column as typeof column & DataTableColumn;
-    return {
-      id: featureColumn.id,
-      columnDef: featureColumn.columnDef,
-      getCanSort: () => featureColumn.getCanSort(),
-      getIsSorted: () => featureColumn.getIsSorted(),
-      getToggleSortingHandler: () => featureColumn.getToggleSortingHandler(),
-      getCanHide: () => featureColumn.getCanHide(),
-      getIsVisible: () => featureColumn.getIsVisible(),
-      toggleVisibility: (value?: boolean) => featureColumn.toggleVisibility(value),
-      getFilterValue: () => {
-        const value = featureColumn.getFilterValue?.();
-        return isString(value) ? value : undefined;
-      },
-      setFilterValue: (value?: string) => featureColumn.setFilterValue?.(value),
-    } satisfies DataTableColumn;
-  };
-
-  const contextTable: DataTableInstance = {
-    state: table.state,
-    FlexRender: table.FlexRender,
-    getColumn: (id) => adaptColumn(table.getColumn(id)),
-    getAllColumns: () => table.getAllColumns().flatMap((column) => adaptColumn(column) ?? []),
-    getAllLeafColumns: () =>
-      table.getAllLeafColumns().flatMap((column) => adaptColumn(column) ?? []),
-    getHeaderGroups: () => table.getHeaderGroups(),
-    getRowModel: () => ({
-      rows: table.getRowModel().rows.map((row) => {
-        // SAFETY: Visible-cell access is installed by the same app table factory.
-        const featureRow = row as typeof row & DataTableRow;
-        return featureRow;
-      }),
-    }),
-    getPageCount: () => configuredTable.getPageCount(),
-    getRowCount: () => configuredTable.getRowCount(),
-    setPageSize: (size) => configuredTable.setPageSize(size),
-    getCanPreviousPage: () => configuredTable.getCanPreviousPage(),
-    getCanNextPage: () => configuredTable.getCanNextPage(),
-    firstPage: () => configuredTable.firstPage(),
-    previousPage: () => configuredTable.previousPage(),
-    nextPage: () => configuredTable.nextPage(),
-    lastPage: () => configuredTable.lastPage(),
-    clearFilters: (columnIds) =>
-      configuredTable.setColumnFilters((filters) =>
-        filters.filter((filter) => !columnIds.has(filter.id)),
-      ),
-  };
-
+}: DataTableProps<TData>) {
   return (
     <DataTableContext
-      // SAFETY: TanStack rows are consumed only through the structural DataTableRow API.
+      // SAFETY: The context erases the row type; rows reach the callbacks only from this table.
       value={{
-        table: contextTable,
+        table: table as DataTableContextValue["table"],
         onRowClick: onRowClick as DataTableContextValue["onRowClick"],
         onRowPreload: onRowPreload as DataTableContextValue["onRowPreload"],
       }}
@@ -270,8 +163,7 @@ interface DataTableFilterOptionProps {
 function DataTableFilterOption({ columnId, label, options }: DataTableFilterOptionProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const current = column?.getFilterValue?.();
-  const value = isString(current) && current !== "" ? current : null;
+  const value = filterValueOf(column) || null;
   const id = useId();
 
   return (
@@ -280,7 +172,7 @@ function DataTableFilterOption({ columnId, label, options }: DataTableFilterOpti
       <Combobox
         autoHighlight
         items={[...options]}
-        onValueChange={(next: string | null) => column?.setFilterValue?.(next ?? undefined)}
+        onValueChange={(next: string | null) => column?.setFilterValue(next ?? undefined)}
         value={value}
       >
         <ComboboxInput id={id} placeholder={`Any ${label.toLowerCase()}`} showClear size="sm" />
@@ -310,11 +202,9 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
       isValidElement<DataTableFilterOptionProps>(child) ? [child.props.columnId] : [],
     ),
   );
-  const filteredColumns = table.getAllColumns().filter((column) => {
-    if (!optionColumnIds.has(column.id)) return false;
-    const value = column.getFilterValue?.();
-    return value !== undefined && value !== "";
-  });
+  const filteredColumns = table
+    .getAllColumns()
+    .filter((column) => optionColumnIds.has(column.id) && Boolean(filterValueOf(column)));
 
   return (
     <Popover>
@@ -343,7 +233,11 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
           <Button
             className="self-end"
             disabled={filteredColumns.length === 0}
-            onClick={() => table.clearFilters(optionColumnIds)}
+            onClick={() =>
+              table.setColumnFilters((filters) =>
+                filters.filter((filter) => !optionColumnIds.has(filter.id)),
+              )
+            }
             size="sm"
             variant="ghost"
           >
@@ -359,7 +253,7 @@ function DataTableFilterMenu({ children, className, ...props }: DataTableFilterM
 function DataTableFilter({ columnId, className, shortcut = true, ...props }: DataTableFilterProps) {
   const { table } = useDataTable();
   const column = table.getColumn(columnId);
-  const value = column?.getFilterValue?.() ?? "";
+  const value = filterValueOf(column) ?? "";
   const inputRef = useRef<HTMLInputElement>(null);
   const accessibleLabel =
     props["aria-label"] ?? (isString(props.placeholder) ? props.placeholder : "Search table");
@@ -385,11 +279,11 @@ function DataTableFilter({ columnId, className, shortcut = true, ...props }: Dat
           {...props}
           aria-keyshortcuts={shortcut ? "/" : undefined}
           aria-label={accessibleLabel}
-          onChange={(event) => column?.setFilterValue?.(event.target.value)}
+          onChange={(event) => column?.setFilterValue(event.target.value)}
           onKeyDown={(event) => {
             props.onKeyDown?.(event);
             if (event.defaultPrevented || event.key !== "Escape") return;
-            if (value) column?.setFilterValue?.("");
+            if (value) column?.setFilterValue("");
             else event.currentTarget.blur();
           }}
           ref={inputRef}
@@ -405,7 +299,7 @@ function DataTableFilter({ columnId, className, shortcut = true, ...props }: Dat
             <Button
               aria-label="Clear search"
               onClick={() => {
-                column?.setFilterValue?.("");
+                column?.setFilterValue("");
                 inputRef.current?.focus();
               }}
               size="icon-xs"
@@ -465,7 +359,7 @@ function DataTableViewOptions({ className, ...props }: React.ComponentProps<type
 }
 
 interface DataTableColumnHeaderProps extends React.ComponentProps<"div"> {
-  column: DataTableSortableColumn;
+  column: Pick<DataTableColumn, "getCanSort" | "getIsSorted" | "getToggleSortingHandler">;
   title: string;
 }
 
@@ -593,7 +487,7 @@ function DataTablePagination({
   ...props
 }: React.ComponentProps<"div"> & { pageSizes: ReadonlyArray<number> }) {
   const { table } = useDataTable();
-  const { pageIndex, pageSize } = table.state.pagination ?? { pageIndex: 0, pageSize: 25 };
+  const { pageIndex, pageSize } = table.state.pagination;
   const rowCount = table.getRowCount();
   const firstResult = pageIndex * pageSize + 1;
   const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
@@ -661,7 +555,7 @@ function DataTablePagination({
   );
 }
 
-export type { DataTableColumnMeta };
+export type { ListTableFeatures };
 
 export {
   DataTable,
@@ -673,4 +567,5 @@ export {
   DataTableFilter,
   DataTablePagination,
   DataTableViewOptions,
+  listTableFeatures,
 };

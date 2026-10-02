@@ -40,3 +40,9 @@ export const refreshCookieOptions = (secureCookies: boolean) =>
 
 export const presentedCredential = (credential: Redacted.Redacted<string>) =>
   Redacted.value(credential).length > 0 ? Option.some(credential) : Option.none();
+
+export const bearerTokenFromHeaders = (headers: Headers) => {
+  const [scheme, token] = (headers.get("authorization") ?? "").split(" ");
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") return null;
+  return token.trim() || null;
+};

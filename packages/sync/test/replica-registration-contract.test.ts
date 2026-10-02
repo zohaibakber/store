@@ -21,17 +21,17 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { SyncRecoveryRequired } from "../src/replica/errors";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
+import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { openReplicaStore, runReplicaTransaction } from "../src/replica/storage";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { openReplicaStore } from "../src/sqlite";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
 import { enqueueRequestOf } from "./lib/enqueue";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
@@ -245,9 +245,7 @@ const categoryEnvelope = (
 };
 
 const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
-  Semaphore.make(1).pipe(
-    Effect.flatMap((mutex) => makeSyncEngineFromReplicaStore(store, mutex, transport)),
-  );
+  makeSyncEngineFromReplicaStore(store, transport);
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>

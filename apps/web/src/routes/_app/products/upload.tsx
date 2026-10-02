@@ -1,5 +1,6 @@
 import { Alert02Icon, Upload01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { preloadCatalogCategories, useSuspenseCatalogCategories } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { PdfReadingNeedsAccount } from "@/components/app/pdf-reading-needs-account";
@@ -11,11 +12,7 @@ import { UploadAttachmentList } from "@/components/uploads/attachment-list";
 import { UploadProvider, useUpload } from "@/components/uploads/context";
 import { UploadDropzone } from "@/components/uploads/dropzone";
 import { UploadProposedChanges } from "@/components/uploads/proposed-changes";
-import {
-  preloadCatalogCategories,
-  preloadInventory,
-  useSuspenseCatalogCategories,
-} from "@/lib/inventory";
+import { preloadInventory } from "@/lib/inventory/preload";
 
 export const Route = createFileRoute("/_app/products/upload")({
   loader: ({ context }) => preloadInventory(context, preloadCatalogCategories),

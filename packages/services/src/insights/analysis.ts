@@ -1,8 +1,8 @@
 import {
   SALES_RANGE_DAYS,
+  type AbcClass,
   type ExpiringBatch,
   type InsightAlert,
-  type InsightKind,
   type InsightSeverity,
   type InsightsInventoryTotals,
   type InsightsSalesSummary,
@@ -11,6 +11,7 @@ import {
   type SalesDay,
   type SalesPeriod,
   type SalesRange,
+  type StockPolicy,
   type StockStatus,
   type StockStatusCounts,
   type TopProduct,
@@ -27,25 +28,11 @@ import {
 
 import { formatPrice } from "../format";
 import { forecastDemand, type DemandTrend } from "./demand";
-import { serviceLevelFor, type AbcClass, type StockPolicy } from "./policy";
+import { serviceLevelFor } from "./policy";
 import { inverseNormal } from "./statistics";
 
 const DEMAND_HISTORY_DAYS = 90;
 const INSIGHTS_HISTORY_DAYS = 2 * DEMAND_HISTORY_DAYS;
-export const SALES_RANGES = SALES_RANGE_DAYS;
-export type {
-  ExpiringBatch,
-  InsightAlert,
-  InsightKind,
-  InsightSeverity,
-  OrderSuggestion,
-  ProductInsight,
-  SalesDay,
-  SalesPeriod,
-  SalesRange,
-  StockStatus,
-  TopProduct,
-};
 
 export const ATTENTION_STATUSES: ReadonlySet<StockStatus> = new Set(["out", "critical", "low"]);
 
@@ -99,10 +86,10 @@ export const emptyLedger = (): SalesLedger => ({
   units90d: 0,
   revenue90d: 0,
   lastSoldDay: null,
-  periodRevenue: new Float64Array(SALES_RANGES.length),
-  periodUnits: new Float64Array(SALES_RANGES.length),
-  previousRevenue: new Float64Array(SALES_RANGES.length),
-  previousUnits: new Float64Array(SALES_RANGES.length),
+  periodRevenue: new Float64Array(SALES_RANGE_DAYS.length),
+  periodUnits: new Float64Array(SALES_RANGE_DAYS.length),
+  previousRevenue: new Float64Array(SALES_RANGE_DAYS.length),
+  previousUnits: new Float64Array(SALES_RANGE_DAYS.length),
 });
 
 export const addSaleToLedger = (
@@ -124,7 +111,7 @@ export const addSaleToLedger = (
   if (sale.units > 0 && (ledger.lastSoldDay === null || sale.day > ledger.lastSoldDay)) {
     ledger.lastSoldDay = sale.day;
   }
-  SALES_RANGES.forEach((range, slot) => {
+  SALES_RANGE_DAYS.forEach((range, slot) => {
     if (age < range) {
       ledger.periodRevenue[slot] = (ledger.periodRevenue[slot] ?? 0) + sale.revenue;
       ledger.periodUnits[slot] = (ledger.periodUnits[slot] ?? 0) + sale.units;

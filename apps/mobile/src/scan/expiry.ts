@@ -1,10 +1,10 @@
-export type ExpiryValue = {
+type ExpiryValue = {
   readonly year: number;
   readonly month: number;
   readonly day: number | null;
 };
 
-export type ExpiryMention = {
+type ExpiryMention = {
   readonly raw: string;
   readonly value: ExpiryValue;
   readonly label: "expiry" | "manufactured" | "none";
@@ -161,7 +161,7 @@ const expiryTimestamp = (value: ExpiryValue): number =>
 export const sameExpiryMonth = (left: ExpiryValue, right: ExpiryValue): boolean =>
   left.year === right.year && left.month === right.month;
 
-export type ExpiryInput =
+type ExpiryInput =
   | { readonly _tag: "Empty" }
   | { readonly _tag: "Valid"; readonly value: ExpiryValue; readonly expiresAt: number }
   | { readonly _tag: "Invalid" };

@@ -8,7 +8,7 @@ import { colors, radius, space } from "@/theme/tokens";
 import { Icon } from "@/ui/icon";
 import { Text } from "@/ui/text";
 
-export type AuthScreenProps = {
+type AuthScreenProps = {
   readonly title: string;
   readonly description?: React.ReactNode;
   readonly children: React.ReactNode;

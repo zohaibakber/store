@@ -1,4 +1,4 @@
-import type { ProductInsight } from "@store/services/insights";
+import type { ProductInsight } from "@store/contracts";
 
 import { STATUS_META } from "./presentation";
 

@@ -16,11 +16,11 @@ import * as Scope from "effect/Scope";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { ReplicaOutboxActivity } from "../src/replica/activity";
-import { makeIndexedDbReplicaStore } from "../src/replica/indexeddb/store";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "../src/replica/sqlite/activity";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { enqueueRequestOf } from "./lib/enqueue";
+import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   acceptedCatalogReceipt,
   catalogEnvelope,

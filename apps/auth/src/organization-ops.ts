@@ -19,18 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import { AuthCrypto, INVITATION_TTL_MS } from "./crypto";
-import {
-  AlreadyAMember,
-  CannotRemoveSelf,
-  InsufficientRole,
-  InvitationAlreadyUsed,
-  InvitationEmailMismatch,
-  InvitationInvalid,
-  InvitationNotPending,
-  LastOwner,
-  MemberNotFound,
-  OrganizationNotFound,
-} from "./failures";
+import { AuthRefusal, InvitationEmailMismatch } from "./failures";
 import { HubRevocation } from "./hub-revocation";
 import { AuthLimiter } from "./limits";
 import { AuthRepository, type InvitationRecord, type MembershipRecord } from "./repository";
@@ -69,7 +58,7 @@ export class Organizations extends Context.Service<Organizations>()(
       ) {
         const membership = yield* repository.membershipInOrganization({ userId, organizationId });
         if (!membership) {
-          return yield* new OrganizationNotFound();
+          return yield* new AuthRefusal({ reason: "OrganizationNotFound" });
         }
         return membership;
       });
@@ -81,7 +70,7 @@ export class Organizations extends Context.Service<Organizations>()(
       ) {
         const membership = yield* membershipOf(userId, organizationId);
         if (!(requires === "owner" ? OWNERS : MANAGERS).includes(membership.role)) {
-          return yield* new InsufficientRole({ requires });
+          return yield* new AuthRefusal({ reason: `InsufficientRole.${requires}` });
         }
         return membership;
       });
@@ -138,7 +127,7 @@ export class Organizations extends Context.Service<Organizations>()(
           role: membership.role,
         });
         if (!updated) {
-          return yield* new OrganizationNotFound();
+          return yield* new AuthRefusal({ reason: "OrganizationNotFound" });
         }
         return { _tag: "Updated", organization: membershipView(updated) } as const;
       });
@@ -156,7 +145,7 @@ export class Organizations extends Context.Service<Organizations>()(
         const address = EmailAddress.make(normalizeEmail(input.email));
         const members = yield* repository.listMembers(input.organizationId);
         if (members.some((member) => member.email === address)) {
-          return yield* new AlreadyAMember();
+          return yield* new AuthRefusal({ reason: "AlreadyAMember" });
         }
         const secret = yield* crypto.randomSecret(32);
         const token = InvitationToken.make(Redacted.value(secret));
@@ -206,7 +195,7 @@ export class Organizations extends Context.Service<Organizations>()(
         const spent =
           invitation !== null && (invitation.acceptedAt !== null || invitation.revokedAt !== null);
         if (!invitation || expired || spent) {
-          return yield* new InvitationInvalid();
+          return yield* new AuthRefusal({ reason: "InvitationInvalid" });
         }
         if (invitation.email !== normalizeEmail(claims.email)) {
           return yield* new InvitationEmailMismatch({ invited: invitation.email });
@@ -217,7 +206,7 @@ export class Organizations extends Context.Service<Organizations>()(
           now,
         });
         if (!accepted) {
-          return yield* new InvitationAlreadyUsed();
+          return yield* new AuthRefusal({ reason: "InvitationAlreadyUsed" });
         }
         yield* repository.moveSession({
           sessionId: claims.sessionId,
@@ -232,13 +221,13 @@ export class Organizations extends Context.Service<Organizations>()(
       const lastOwnerOrMissing = Effect.fn("Auth.Organization.lastOwnerOrMissing")(function* (
         organizationId: OrganizationId,
         userId: UserId,
-        blocks: LastOwner["blocks"],
+        blocks: "roleChange" | "removal",
       ) {
         const latest = yield* repository.membershipInOrganization({ userId, organizationId });
         if (latest?.role === "owner") {
-          return yield* new LastOwner({ blocks });
+          return yield* new AuthRefusal({ reason: `LastOwner.${blocks}` });
         }
-        return yield* new MemberNotFound();
+        return yield* new AuthRefusal({ reason: "MemberNotFound" });
       });
 
       const changeMemberRole = Effect.fn("Auth.Organization.changeMemberRole")(function* (
@@ -255,7 +244,7 @@ export class Organizations extends Context.Service<Organizations>()(
           organizationId: input.organizationId,
         });
         if (!target) {
-          return yield* new MemberNotFound();
+          return yield* new AuthRefusal({ reason: "MemberNotFound" });
         }
         if (target.role === input.role) return { _tag: "Applied" } as const;
         const changed = yield* repository.changeMemberRole(input);
@@ -282,17 +271,17 @@ export class Organizations extends Context.Service<Organizations>()(
       ) {
         const caller = yield* requireRole(claims.subject, input.organizationId, "manager");
         if (input.userId === claims.subject) {
-          return yield* new CannotRemoveSelf();
+          return yield* new AuthRefusal({ reason: "CannotRemoveSelf" });
         }
         const target = yield* repository.membershipInOrganization({
           userId: input.userId,
           organizationId: input.organizationId,
         });
         if (!target) {
-          return yield* new MemberNotFound();
+          return yield* new AuthRefusal({ reason: "MemberNotFound" });
         }
         if (caller.role === "admin" && target.role !== "member") {
-          return yield* new InsufficientRole({ requires: "ownerOverManagers" });
+          return yield* new AuthRefusal({ reason: "InsufficientRole.ownerOverManagers" });
         }
         const removed = yield* repository.removeMember(input);
         if (!removed) {
@@ -322,7 +311,7 @@ export class Organizations extends Context.Service<Organizations>()(
               now,
             });
             if (!revoked) {
-              return yield* new InvitationNotPending();
+              return yield* new AuthRefusal({ reason: "InvitationNotPending" });
             }
             return { _tag: "Applied" } as const;
           }

@@ -1,4 +1,5 @@
 import type { ProductRow } from "@store/client-db";
+import type { ProductFacets } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { createColumnHelper, type ReactTable } from "@tanstack/react-table";
@@ -7,16 +8,16 @@ import {
   DataTableColumnHeader,
   DataTableFilterMenu,
   DataTableFilterOption,
+  type ListTableFeatures,
 } from "@/components/shared/data-table";
-import { useListTable, type ListTableFeatures } from "@/components/shared/list-view";
+import { useListTable } from "@/components/shared/list-view";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
-import type { ProductFacets } from "@/lib/inventory";
 
 import { ProductStatusCell, ProductStockCell } from "./insight-cells";
 import { productList, type ProductListView } from "./list";
 
-export type ProductListRow = ProductRow & { readonly categoryName: string };
+type ProductListRow = ProductRow & { readonly categoryName: string };
 
 type CategoryOption = { readonly id: string; readonly name: string };
 

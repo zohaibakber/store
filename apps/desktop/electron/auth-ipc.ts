@@ -24,9 +24,9 @@ import {
   AUTH_ORGANIZE_CHANNEL,
   AUTH_RENEW_SESSION_CHANNEL,
   AUTH_SIGN_OUT_CHANNEL,
-} from "./auth-channels";
+  SERVER_UPLOADS_CHANNEL,
+} from "./ipc-channels";
 import { trustedIpcListener } from "./ipc-sender";
-import { SERVER_UPLOADS_CHANNEL } from "./server-api-channels";
 
 const SIGN_IN_FAILED = "Could not sign in.";
 const EMAIL_INVALID = "Enter a valid email.";

@@ -1,6 +1,14 @@
 import { Cancel01Icon, Search01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { purchaseOrderTotal, type Product, type Supplier } from "@store/contracts";
+import {
+  useInventoryActions,
+  useLearnedSuppliers,
+  useProductsOnOrder,
+  usePurchasingGate,
+  useSuspenseProductSearch,
+  useSuspenseSuppliers,
+} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
@@ -37,14 +45,6 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY, formatCount, pluralize } from "@/lib/format";
-import {
-  useInventoryActions,
-  useLearnedSuppliers,
-  useProductsOnOrder,
-  usePurchasingGate,
-  useSuspenseProductSearch,
-  useSuspenseSuppliers,
-} from "@/lib/inventory";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 
 import { PurchasingGateNotice } from "./gate-notice";

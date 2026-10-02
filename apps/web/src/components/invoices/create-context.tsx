@@ -1,6 +1,11 @@
 import type { IssueInvoiceResult, Product } from "@store/contracts";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import {
+  useInventoryActions,
+  useIssuedInvoices,
+  useSuspenseCatalogProductsById,
+} from "@store/inventory-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -35,13 +40,7 @@ import {
   useSaleDraftStoreIn,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
-import { useWorkspaceStorageKey } from "@/hooks/use-workspace-storage-key";
 import { storeErrorMessage } from "@/lib/errors";
-import {
-  useInventoryActions,
-  useIssuedInvoices,
-  useSuspenseCatalogProductsById,
-} from "@/lib/inventory";
 import {
   activateSaleDraft,
   activateSaleDraftAt,
@@ -60,6 +59,7 @@ import {
   updateSaleLine,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 type SaleLineEdits = Partial<Pick<SaleLine, "batchId" | "quantity" | "salePrice">>;
 

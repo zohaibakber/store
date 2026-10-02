@@ -1,6 +1,12 @@
-import type { ProductInsight } from "@store/contracts";
+import type { ProductInsight, StockPolicy } from "@store/contracts";
+import {
+  useProductInsight,
+  useStockPolicy,
+  useSuspenseProductOnOrder,
+  useSuspenseSuppliers,
+} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
-import { serviceLevelFor, type StockPolicy } from "@store/services/insights";
+import { serviceLevelFor } from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -15,12 +21,6 @@ import { FrameCard } from "@/components/shared/frame-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
-import {
-  useProductInsight,
-  useStockPolicy,
-  useSuspenseProductOnOrder,
-  useSuspenseSuppliers,
-} from "@/lib/inventory";
 
 import {
   describeDemand,

@@ -1,3 +1,4 @@
+import { init } from "@sentry/react";
 import { createBrowserHistory } from "@tanstack/react-router";
 
 import { installAppHost } from "@/host";
@@ -9,12 +10,27 @@ import {
   warmWebWorkspace,
 } from "@/lib/inventory/host-web";
 import { reportError } from "@/lib/report-error";
-import { initWebSentry } from "@/lib/sentry-web";
-import { apiBaseUrl } from "@/web/api-base-url";
 import { createWebAppHost } from "@/web/app-host";
 
 import { hostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
+
+const apiBaseUrl = (import.meta.env.VITE_API_URL?.trim() || "http://localhost:8787").replace(
+  /\/+$/u,
+  "",
+);
+
+const initSentry = () => {
+  const dsn = import.meta.env.VITE_SENTRY_DSN?.trim();
+  if (!dsn) return;
+  init({
+    dsn,
+    environment: import.meta.env.PROD ? "production" : "development",
+    release: `tabaaq-web@${__APP_VERSION__}`,
+    integrations: (defaults) =>
+      defaults.filter((integration) => integration.name !== "BrowserSession"),
+  });
+};
 
 const warmSignedInApp = () => {
   warmWebWorkspace();
@@ -22,7 +38,7 @@ const warmSignedInApp = () => {
 };
 
 export const startWeb = async () => {
-  initWebSentry();
+  initSentry();
   const web = createWebAppHost({
     apiBaseUrl,
     authBaseUrl,

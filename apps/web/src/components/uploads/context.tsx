@@ -1,6 +1,7 @@
 import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
 import { invoiceUploadRejection } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import { useCatalogProductLookup, useInventoryActions } from "@store/inventory-react";
 import * as Result from "effect/Result";
 import { createContext, use, useRef, useState, type ReactNode } from "react";
 
@@ -15,7 +16,6 @@ import {
   importProductMatch,
 } from "@/components/uploads/same-product";
 import { parseExpiryDate } from "@/lib/format-date";
-import { useCatalogProductLookup, useInventoryActions } from "@/lib/inventory";
 import { useInvoiceReading } from "@/lib/invoice-reading";
 
 type ExtractedLine = InvoiceExtractionLine;
@@ -274,12 +274,4 @@ function useUpload() {
   return context;
 }
 
-export {
-  UploadProvider,
-  fileDescription,
-  useUpload,
-  type ExtractedLine,
-  type InvoiceReference,
-  type ProposedChange,
-  type UploadPhase,
-};
+export { UploadProvider, fileDescription, useUpload, type ProposedChange };

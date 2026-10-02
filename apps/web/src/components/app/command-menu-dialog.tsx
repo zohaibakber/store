@@ -19,6 +19,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
+import { useCatalogIsReady, useInventoryInvoices, useProductSearch } from "@store/inventory-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Activity,
@@ -51,7 +52,6 @@ import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
-import { useCatalogIsReady, useInventoryInvoices, useProductSearch } from "@/lib/inventory";
 import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
 

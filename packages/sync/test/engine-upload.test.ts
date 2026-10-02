@@ -6,8 +6,8 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
+import { runReplicaTransaction, type SqliteReplicaHandle } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { runReplicaTransaction, type SqliteReplicaHandle } from "../src/replica/storage";
 import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { withSeededReplica } from "./lib/replica-fixture";

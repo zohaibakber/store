@@ -19,7 +19,7 @@ import { Text } from "@/ui/text";
 
 import { EmptyState, ListSkeleton, RowSeparator } from "../list-states";
 import { SCAN_FAB_CLEARANCE } from "../scan-fab";
-import { unsyncedOperationId } from "../sync/pending";
+import { unsyncedOperationId } from "../sync/sync-view";
 import { ProductRow } from "./product-row";
 import {
   attentionLabel,

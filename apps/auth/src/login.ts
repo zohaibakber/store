@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
 
 import { AuthCrypto, OTP_TTL_MS } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
-import { AccountExists, InvalidCredentials, InvalidEmail, InvalidOtp } from "./failures";
+import { AuthRefusal } from "./failures";
 import { AuthLimiter } from "./limits";
 import { AuthRepository } from "./repository";
 import { Sessions } from "./session-ops";
@@ -37,7 +37,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
       const now = yield* Clock.currentTimeMillis;
       const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
         normalizeEmail(input.email),
-      ).pipe(Effect.mapError(() => new InvalidEmail()));
+      ).pipe(Effect.mapError(() => new AuthRefusal({ reason: "InvalidEmail" })));
       yield* limiter.admit("tenPerMinute", `identify:${normalized}`, "request");
       const user = yield* repository.findUserByEmail(normalized);
       if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
@@ -76,18 +76,18 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           yield* limiter.admit("fivePerMinute", `password:${emailAddress}`, "request");
           const user = yield* repository.findUserByEmail(emailAddress);
           if (!user?.passwordHash) {
-            return yield* new InvalidCredentials();
+            return yield* new AuthRefusal({ reason: "InvalidCredentials" });
           }
           const verified = yield* passwords.verify(command.password, user.passwordHash);
           if (!verified) {
-            return yield* new InvalidCredentials();
+            return yield* new AuthRefusal({ reason: "InvalidCredentials" });
           }
           return yield* sessions.issueSession(user, command.client);
         }
         case "Otp": {
           yield* limiter.admit("fivePerMinute", `otp-attempt:${command.challengeId}`, "code");
           if (!email.deliversOtp) {
-            return yield* new InvalidOtp();
+            return yield* new AuthRefusal({ reason: "InvalidOtp" });
           }
           const emailAddress = yield* ephemeral.consumeOtp({
             challengeId: command.challengeId,
@@ -95,11 +95,11 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
             now,
           });
           if (!emailAddress) {
-            return yield* new InvalidOtp();
+            return yield* new AuthRefusal({ reason: "InvalidOtp" });
           }
           const user = yield* repository.findUserByEmail(emailAddress);
           if (!user || user.passwordHash) {
-            return yield* new InvalidOtp();
+            return yield* new AuthRefusal({ reason: "InvalidOtp" });
           }
           return yield* sessions.issueSession(user, command.client, `otp-${command.challengeId}`);
         }
@@ -108,7 +108,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           yield* limiter.admit("fivePerMinute", `register:${emailAddress}`, "request");
           const existing = yield* repository.findUserByEmail(emailAddress);
           if (existing) {
-            return yield* new AccountExists();
+            return yield* new AuthRefusal({ reason: "AccountExists" });
           }
           const passwordHash = yield* passwords.hash(command.password);
           const user = yield* repository.createPasswordUser({

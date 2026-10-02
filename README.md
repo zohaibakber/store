@@ -32,9 +32,9 @@ design is in [`docs/architecture.md`](docs/architecture.md).
   schemas and their migrations.
 - `packages/sync` owns the host-agnostic replica engine: command outbox,
   pending projections, coverage, the polling scheduler, and the typed
-  `SyncHttpApi` client. Its shared entrypoint is native-free; the SQLite
-  adapter lives behind `@store/sync/sqlite` and the IndexedDB adapter behind
-  `@store/sync/browser`.
+  `SyncHttpApi` client. Its shared entrypoint (`@store/sync`) is native-free;
+  the SQLite adapter lives behind `@store/sync/sqlite` and the IndexedDB
+  adapter behind `@store/sync/replica/indexeddb`.
 - `packages/inventory-react` owns the React bindings over the replica shared by
   the desktop renderer and mobile.
 - `packages/workspace` owns shared session HTTP and organization clients.

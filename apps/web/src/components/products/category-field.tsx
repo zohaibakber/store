@@ -1,6 +1,7 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
+import { useInventoryActions } from "@store/inventory-react";
 import * as React from "react";
 import { useMemo, useState } from "react";
 
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
 import { useStoreCommand } from "@/hooks/use-store-command";
-import { useInventoryActions } from "@/lib/inventory";
 
 interface CategoryOption {
   readonly id: string;

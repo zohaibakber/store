@@ -1,4 +1,3 @@
-import { CommandStatus } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
 const SqliteCell = Schema.Union([
@@ -20,13 +19,6 @@ const ReplicaStampRow = Schema.Struct({
   version: Schema.Number,
 });
 
-export const OutboxCommandStatus = CommandStatus;
-export type OutboxCommandStatus = CommandStatus;
-
-const OutboxStatusRow = Schema.Struct({
-  status: OutboxCommandStatus,
-});
-
 export const ComparisonScalar = Schema.Union([
   Schema.String,
   Schema.Number,
@@ -41,4 +33,3 @@ export type ComparisonList = typeof ComparisonList.Type;
 
 export const decodeSqliteResultRow = Schema.decodeUnknownSync(SqliteResultRow);
 export const decodeReplicaStampRow = Schema.decodeUnknownSync(ReplicaStampRow);
-export const decodeOutboxStatusRow = Schema.decodeUnknownOption(OutboxStatusRow);

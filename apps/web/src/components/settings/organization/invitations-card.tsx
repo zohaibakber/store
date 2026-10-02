@@ -26,7 +26,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
-import { formValidator } from "@/lib/form-schema";
 import { copyInvitation, invitationHandoff, useOrganization } from "@/lib/organization";
 
 const invitableRoles = [
@@ -34,7 +33,7 @@ const invitableRoles = [
   { value: "admin", label: "Admin" },
 ] as const;
 
-const inviteSchema = formValidator(
+const inviteSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
     email: Schema.String.check(
       Schema.isMinLength(3, { message: "Enter a valid email." }),

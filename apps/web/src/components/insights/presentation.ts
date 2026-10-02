@@ -1,5 +1,10 @@
-import type { AnalyticsStatus, StockStatusCounts } from "@store/contracts";
-import type { DemandForecast, OrderSuggestion, StockStatus } from "@store/services/insights";
+import type {
+  AnalyticsStatus,
+  DemandForecast,
+  OrderSuggestion,
+  StockStatus,
+  StockStatusCounts,
+} from "@store/contracts";
 
 import { EMPTY, formatCount } from "@/lib/format";
 

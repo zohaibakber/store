@@ -2,36 +2,53 @@ import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
+import {
+  classifyUpdateFailure,
+  forwardsToRenderer,
+  nextUpdatePhase,
+  updateFailureMessage,
+  type UpdaterEvent,
+  type UpdatePhase,
+} from "@store/contracts/updater";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FiberHandle from "effect/FiberHandle";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
 
-import { isTrustedIpcSenderFrame, trustedIpcListener } from "./ipc-sender";
 import {
   UPDATER_CHECK_CHANNEL,
   UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
-} from "./updater-channels";
-import {
-  makeUpdaterWorkflow,
-  sampleDownloadProgress,
-  type UpdaterProvider,
-  type UpdaterProviderEvent,
-} from "./updater-workflow";
+} from "./ipc-channels";
+import { isTrustedIpcSenderFrame, trustedIpcListener } from "./ipc-sender";
 
 const { autoUpdater } = electronUpdater;
 
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
-const MIN_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const RETRY_CHECK_DELAY_MS = 30_000;
 const INITIAL_CHECK_DELAY_MS = 5_000;
 const PROGRESS_EVENT_INTERVAL = "250 millis";
+
+type AutoUpdaterEvent =
+  | { readonly type: "checking" }
+  | { readonly type: "available"; readonly version: string }
+  | { readonly type: "not-available" }
+  | { readonly type: "progress"; readonly percent: number }
+  | { readonly type: "downloaded"; readonly version: string }
+  | { readonly type: "error"; readonly error: Error };
+
+interface WorkflowState {
+  readonly phase: UpdatePhase;
+  readonly checkInFlight: boolean;
+}
 
 const PendingUpdateInfo = Schema.Struct({
   fileName: Schema.optional(Schema.String),
@@ -66,8 +83,11 @@ const clearStalePendingUpdate = async (currentVersion: string) => {
 
 const clampPercent = (percent: number) => Math.min(100, Math.max(0, Math.round(percent)));
 
-const updaterEvents = Stream.callback<UpdaterProviderEvent>((queue) => {
-  const emit = (event: UpdaterProviderEvent) => {
+const sameProgress = (left: AutoUpdaterEvent, right: AutoUpdaterEvent) =>
+  left.type === "progress" && right.type === "progress" && left.percent === right.percent;
+
+const updaterEvents = Stream.callback<AutoUpdaterEvent>((queue) => {
+  const emit = (event: AutoUpdaterEvent) => {
     Queue.offerUnsafe(queue, event);
   };
   const listeners = {
@@ -104,7 +124,104 @@ const updaterEvents = Stream.callback<UpdaterProviderEvent>((queue) => {
         autoUpdater.off("error", listeners.error);
       }),
   );
-}).pipe(sampleDownloadProgress(PROGRESS_EVENT_INTERVAL));
+}).pipe(
+  Stream.changesWith(sameProgress),
+  Stream.rechunk(1),
+  Stream.throttle({
+    cost: ([event]) => (event.type === "progress" && event.percent < 100 ? 1 : 0),
+    units: 1,
+    duration: PROGRESS_EVENT_INTERVAL,
+    strategy: "enforce",
+  }),
+);
+
+const checkForUpdates = Effect.tryPromise({
+  try: () => autoUpdater.checkForUpdates().then(() => undefined),
+  catch: providerError,
+});
+
+const downloadUpdate = Effect.tryPromise({
+  try: () => autoUpdater.downloadUpdate().then(() => undefined),
+  catch: providerError,
+});
+
+const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make<WorkflowState>({ phase: "idle", checkInFlight: false });
+    const pendingReleaseRetry = yield* FiberHandle.make<void>();
+
+    const transition = (event: UpdaterEvent) =>
+      Ref.modify(
+        state,
+        (current) =>
+          [
+            forwardsToRenderer(current.phase, event),
+            { ...current, phase: nextUpdatePhase(current.phase, event) },
+          ] as const,
+      ).pipe(
+        Effect.tap((shouldPublish) =>
+          shouldPublish ? Effect.sync(() => publish(event)) : Effect.void,
+        ),
+        Effect.asVoid,
+      );
+
+    const check = Effect.gen(function* () {
+      const claimed = yield* Ref.modify(state, (current) =>
+        current.phase !== "idle" || current.checkInFlight
+          ? ([false, current] as const)
+          : ([true, { ...current, checkInFlight: true }] as const),
+      );
+      if (!claimed) return;
+      yield* checkForUpdates.pipe(
+        Effect.ignore,
+        Effect.ensuring(Ref.update(state, (current) => ({ ...current, checkInFlight: false }))),
+      );
+    }).pipe(Effect.withSpan("UpdaterWorkflow.check"));
+
+    const schedulePendingReleaseRetry = FiberHandle.run(
+      pendingReleaseRetry,
+      Effect.sleep(RETRY_CHECK_DELAY_MS).pipe(Effect.andThen(check)),
+      { onlyIfMissing: true },
+    );
+
+    const handleUpdaterEvent = (event: AutoUpdaterEvent) =>
+      event.type === "error"
+        ? Effect.gen(function* () {
+            const failure = classifyUpdateFailure(event.error.message);
+            yield* transition({
+              type: "error",
+              message: updateFailureMessage(event.error.message),
+              retrying: failure === "pending-release",
+              failure,
+            });
+            if (failure === "pending-release") yield* schedulePendingReleaseRetry;
+          })
+        : transition(event);
+
+    yield* updaterEvents.pipe(Stream.runForEach(handleUpdaterEvent), Effect.forkScoped);
+
+    yield* check.pipe(
+      Effect.repeat(Schedule.spaced(CHECK_INTERVAL_MS)),
+      Effect.delay(INITIAL_CHECK_DELAY_MS),
+      Effect.forkScoped,
+    );
+
+    const download = Effect.gen(function* () {
+      const claimed = yield* Ref.modify(state, (current) =>
+        current.phase !== "idle"
+          ? ([false, current] as const)
+          : ([true, { ...current, phase: "downloading" } satisfies WorkflowState] as const),
+      );
+      if (!claimed) return;
+      yield* downloadUpdate.pipe(
+        Effect.tapError(() =>
+          Ref.update(state, (current) => ({ ...current, phase: "idle" }) satisfies WorkflowState),
+        ),
+      );
+    }).pipe(Effect.withSpan("UpdaterWorkflow.download"));
+
+    return { check, download };
+  });
 
 export async function setupUpdater(
   getWindow: () => BrowserWindow | null,
@@ -120,37 +237,16 @@ export async function setupUpdater(
   });
   await clearStalePendingUpdate(app.getVersion());
 
-  const provider: UpdaterProvider = {
-    checkForUpdates: Effect.tryPromise({
-      try: () => autoUpdater.checkForUpdates().then(() => undefined),
-      catch: providerError,
-    }),
-    downloadUpdate: Effect.tryPromise({
-      try: () => autoUpdater.downloadUpdate().then(() => undefined),
-      catch: providerError,
-    }),
-    quitAndInstall: () => autoUpdater.quitAndInstall(),
-    events: updaterEvents,
-  };
   const scope = Scope.makeUnsafe();
   const workflow = await Effect.runPromise(
-    makeUpdaterWorkflow(
-      provider,
-      (event) => getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
-      {
-        checkInterval: CHECK_INTERVAL_MS,
-        initialCheckDelay: INITIAL_CHECK_DELAY_MS,
-        minimumCheckInterval: MIN_CHECK_INTERVAL_MS,
-        pendingReleaseRetryDelay: RETRY_CHECK_DELAY_MS,
-        periodicChecks: app.isPackaged,
-      },
+    makeUpdaterWorkflow((event) =>
+      getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
     ).pipe(Scope.provide(scope)),
   );
 
-  const skipCheckThrottle = true;
   ipcMain.handle(
     UPDATER_CHECK_CHANNEL,
-    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.check(skipCheckThrottle))),
+    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.check)),
   );
   ipcMain.handle(
     UPDATER_DOWNLOAD_CHANNEL,
@@ -158,7 +254,7 @@ export async function setupUpdater(
   );
   const install = (event: IpcMainEvent) => {
     if (!isTrustedIpcSenderFrame(event.senderFrame, allowedOrigins())) return;
-    Effect.runSync(workflow.install);
+    autoUpdater.quitAndInstall();
   };
   ipcMain.on(UPDATER_INSTALL_CHANNEL, install);
 

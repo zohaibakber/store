@@ -5,9 +5,9 @@ import {
   type PurchaseOrderItem,
   type Supplier,
 } from "@store/contracts";
+import type { ReceiveDeliveryLineInput } from "@store/inventory-react";
 
 import { parseExpiryDate } from "@/lib/format-date";
-import type { ReceiveDeliveryLineInput } from "@/lib/inventory";
 
 import type { ProposedChange } from "./context";
 
@@ -44,12 +44,12 @@ export const matchSupplier = (
   );
 };
 
-export type OrderMatchLine = {
+type OrderMatchLine = {
   readonly change: ProposedChange;
   readonly item: PurchaseOrderItem;
 };
 
-export type OrderMatch = {
+type OrderMatch = {
   readonly order: PurchaseOrder;
   readonly lines: ReadonlyArray<OrderMatchLine>;
 };

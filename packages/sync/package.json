@@ -6,9 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./browser": "./src/browser.ts",
     "./replica/indexeddb": "./src/replica/indexeddb/store.ts",
-    "./replica/storage-name": "./src/replica/storage-name.ts",
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts"
   },

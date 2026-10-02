@@ -1,4 +1,5 @@
 import { ArrowLeft01Icon, FlashIcon, FlashOffIcon, KeyboardIcon } from "@hugeicons/core-free-icons";
+import type { ProductScanMode } from "@store/contracts/server-api.schema";
 import { useCatalogIsReady } from "@store/inventory-react";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
@@ -44,7 +45,7 @@ import {
 import { TextOverlay } from "../camera/text-overlay";
 import { identityOf, useScanMatch } from "../catalog";
 import { useScanDrafts } from "../drafts";
-import { type ProductScanMode, type ScanDraft, canRetryParse } from "../model";
+import { type ScanDraft, canRetryParse } from "../model";
 import { ParsingSheet, type SheetPhase } from "../parsing-sheet";
 import { INITIAL_STABILITY, markCaptured, stepStability } from "../stability";
 import { countdownSeconds, draftStatus } from "../status";

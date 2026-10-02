@@ -21,8 +21,7 @@ import type { AuthFailure } from "./failures";
 import { GoogleIdentity, type GoogleCallback } from "./google-identity";
 import { Login } from "./login";
 import { Organizations } from "./organization-ops";
-import type { PresentedRefresh } from "./refresh-credential";
-import { Sessions } from "./session-ops";
+import { Sessions, type PresentedRefresh } from "./session-ops";
 
 interface AuthServiceApi {
   readonly identify: (

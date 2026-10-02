@@ -1,7 +1,5 @@
 import {
-  EMPTY_SYNC_ACTIVITY,
   type CommandExecution,
-  type InventorySubsetSummary,
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
@@ -10,11 +8,13 @@ import {
   offerCoalescing,
   type ReplicaChangeFeed,
   type ReplicaCommitNotice,
+  type ReplicaHandle,
 } from "@store/client-db";
 import {
   MAX_PRODUCT_INSIGHT_IDS,
   MAX_RESTOCK_PAGE_ROWS,
   RestockPageRequest,
+  StockPolicy,
   stockPolicyVersion,
   type InsightsContext,
   type InsightsSummaryRead,
@@ -25,7 +25,7 @@ import {
   type SupplierId,
   type SyncEntity,
 } from "@store/contracts";
-import { DEFAULT_STOCK_POLICY, StockPolicy } from "@store/services/insights";
+import { DEFAULT_STOCK_POLICY } from "@store/services/insights";
 import {
   Clock,
   Duration,
@@ -41,25 +41,38 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
-import { WorkspaceReadFailure } from "./errors";
-import { emptyInsightsSource, type InsightsSource } from "./insights-source";
-import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
+import { WorkspaceReadFailure, workspaceStorageFailure } from "./errors";
+import type { InsightsSource } from "./insights-source";
+import {
+  countInvoices,
+  readInvoicePageIds,
+  type InvoiceListFilters,
+  type InvoiceListRequest,
+} from "./invoice-list";
 import type { PurchaseOrderTab } from "./list-request";
 import { preferencesRuntime } from "./preferences";
 import {
   facetsFrom,
+  findProductsByNames,
   PRODUCT_FACET_COLUMNS,
+  readProductPage,
+  summarizeProducts,
   type ProductFacetColumn,
   type ProductFacets,
   type ProductListFilters,
   type ProductListRequest,
 } from "./product-list";
-import type {
-  ProductOnOrder,
-  PurchaseOrderListFilters,
-  PurchaseOrderListRequest,
+import {
+  countPurchaseOrders,
+  countSuppliers,
+  readLearnedSupplierIds,
+  readProductsOnOrder,
+  readPurchaseOrderPageIds,
+  type ProductOnOrder,
+  type PurchaseOrderListFilters,
+  type PurchaseOrderListRequest,
 } from "./purchasing";
-import { canonicalSearchLimit, canonicalSearchQuery } from "./search";
+import { canonicalSearchLimit, canonicalSearchQuery, searchCatalogProducts } from "./search";
 
 export const stockPolicyAtom = Atom.kvs({
   runtime: preferencesRuntime,
@@ -74,66 +87,22 @@ export type CommandExecutionState = { readonly _tag: "idle" } | CommandExecution
 
 type WorkspaceReadError = WorkspaceReadFailure;
 
-export type WorkspaceAtomSources = {
-  readonly changes: ReplicaChangeFeed;
-  readonly readPendingRowIds: (
-    entity: SyncEntity,
-  ) => Effect.Effect<ReadonlySet<string>, WorkspaceReadError>;
-  readonly searchProducts: (
-    query: string,
-    limit: number,
-  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
-  readonly insights: InsightsSource;
-  readonly readProductPage: (
-    request: ProductListRequest,
-  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
-  readonly summarizeProducts: (
-    filters: ProductListFilters,
-    distinct: ReadonlyArray<ProductFacetColumn>,
-  ) => Effect.Effect<InventorySubsetSummary, WorkspaceReadError>;
-  readonly findProductsByNames: (
-    names: ReadonlyArray<string>,
-  ) => Effect.Effect<ReadonlyArray<ProductRow>, WorkspaceReadError>;
-  readonly readProductsOnOrder: (
-    productIds: ReadonlyArray<string>,
-  ) => Effect.Effect<ReadonlyMap<string, ProductOnOrder>, WorkspaceReadError>;
-  readonly readLearnedSuppliers: (
-    productIds: ReadonlyArray<string>,
-  ) => Effect.Effect<ReadonlyMap<string, SupplierId>, WorkspaceReadError>;
-  readonly readPurchaseOrderPage: (
-    request: PurchaseOrderListRequest,
-  ) => Effect.Effect<ReadonlyArray<string>, WorkspaceReadError>;
-  readonly countPurchaseOrders: (
-    filters: PurchaseOrderListFilters,
-  ) => Effect.Effect<number, WorkspaceReadError>;
-  readonly countSuppliers: Effect.Effect<number, WorkspaceReadError>;
-  readonly readInvoicePage: (
-    request: InvoiceListRequest,
-  ) => Effect.Effect<ReadonlyArray<string>, WorkspaceReadError>;
-  readonly countInvoices: (
-    filters: InvoiceListFilters,
-  ) => Effect.Effect<number, WorkspaceReadError>;
-  readonly initialActivity?: InventorySyncActivity;
+const readPendingRowIds = (
+  replica: ReplicaHandle,
+  entity: SyncEntity,
+): Effect.Effect<ReadonlySet<string>, WorkspaceReadError> => {
+  const readIds = replica.readPendingRowIds;
+  if (readIds === undefined) return Effect.succeed(new Set<string>());
+  return Effect.tryPromise({ try: () => readIds(entity), catch: workspaceStorageFailure }).pipe(
+    Effect.map((ids): ReadonlySet<string> => new Set(ids)),
+  );
 };
 
-const NO_PENDING_ROWS: ReadonlySet<string> = new Set();
-
-const emptySources: WorkspaceAtomSources = {
-  changes: { subscribe: () => () => undefined },
-  readPendingRowIds: () => Effect.succeed(NO_PENDING_ROWS),
-  searchProducts: () => Effect.succeed([]),
-  readProductPage: () => Effect.succeed([]),
-  summarizeProducts: () => Effect.succeed({ count: 0, distinct: [] }),
-  findProductsByNames: () => Effect.succeed([]),
-  readProductsOnOrder: () => Effect.succeed(new Map()),
-  readLearnedSuppliers: () => Effect.succeed(new Map()),
-  readPurchaseOrderPage: () => Effect.succeed([]),
-  countPurchaseOrders: () => Effect.succeed(0),
-  countSuppliers: Effect.succeed(0),
-  readInvoicePage: () => Effect.succeed([]),
-  countInvoices: () => Effect.succeed(0),
-  insights: emptyInsightsSource,
-};
+const summarizeStoredProducts = (
+  replica: ReplicaHandle,
+  filters: ProductListFilters,
+  distinct: ReadonlyArray<ProductFacetColumn>,
+) => summarizeProducts(replica, filters, distinct).pipe(Effect.mapError(workspaceStorageFailure));
 
 const sameRowIds = (
   left: AsyncResult.AsyncResult<ReadonlySet<string>, WorkspaceReadError>,
@@ -175,8 +144,8 @@ const commitNotices = (feed: ReplicaChangeFeed) =>
 const touching = (entities: ReadonlySet<SyncEntity>) => (notice: ReplicaCommitNotice) =>
   [...entities].some((entity) => noticeAffects(notice, entity));
 
-const commitsTouching = (sources: WorkspaceAtomSources, entities: ReadonlySet<SyncEntity>) =>
-  Atom.make(commitNotices(sources.changes).pipe(Stream.filter(touching(entities))));
+const commitsTouching = (feed: ReplicaChangeFeed, entities: ReadonlySet<SyncEntity>) =>
+  Atom.make(commitNotices(feed).pipe(Stream.filter(touching(entities))));
 
 const readAfter =
   (signal: Atom.Atom<unknown>) =>
@@ -298,26 +267,26 @@ export type WorkspaceAtoms = {
 };
 
 export const createWorkspaceAtoms = (
-  initialSync: InventorySyncStatus = { _tag: "caughtUp" },
-  sources: WorkspaceAtomSources = emptySources,
+  replica: ReplicaHandle,
+  insightsSource: InsightsSource,
+  initialSync: InventorySyncStatus,
+  initialActivity: InventorySyncActivity,
 ): WorkspaceAtoms => {
   const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
-  const afterInsightChanges = readAfter(Atom.make(sources.insights.changes));
-  const afterProductCommits = readAfter(commitsTouching(sources, PRODUCT_ENTITIES));
-  const afterSupplierCommits = readAfter(commitsTouching(sources, SUPPLIER_ENTITIES));
-  const afterInvoiceCommits = readAfter(commitsTouching(sources, INVOICE_ENTITIES));
-  const afterOrderCommits = readAfter(commitsTouching(sources, PURCHASE_ORDER_ENTITIES));
-  const afterOrderLineCommits = readAfter(commitsTouching(sources, ORDER_LINE_ENTITIES));
+  const afterInsightChanges = readAfter(Atom.make(insightsSource.changes));
+  const afterProductCommits = readAfter(commitsTouching(replica, PRODUCT_ENTITIES));
+  const afterSupplierCommits = readAfter(commitsTouching(replica, SUPPLIER_ENTITIES));
+  const afterInvoiceCommits = readAfter(commitsTouching(replica, INVOICE_ENTITIES));
+  const afterOrderCommits = readAfter(commitsTouching(replica, PURCHASE_ORDER_ENTITIES));
+  const afterOrderLineCommits = readAfter(commitsTouching(replica, ORDER_LINE_ENTITIES));
   const insights = afterInsightChanges((get) =>
-    insightsContextOf(get(stockPolicyAtom)).pipe(Effect.flatMap(sources.insights.readSummary)),
+    insightsContextOf(get(stockPolicyAtom)).pipe(Effect.flatMap(insightsSource.readSummary)),
   ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER));
-  const productResolver = productInsightResolver(sources.insights);
+  const productResolver = productInsightResolver(insightsSource);
   const restockPageAtom = Atom.family((key: string) =>
     afterInsightChanges((get) =>
       insightsContextOf(get(stockPolicyAtom)).pipe(
-        Effect.flatMap((context) =>
-          sources.insights.readRestockPage(context, decodeRestockKey(key)),
-        ),
+        Effect.flatMap((context) => insightsSource.readRestockPage(context, decodeRestockKey(key))),
       ),
     ),
   );
@@ -331,13 +300,15 @@ export const createWorkspaceAtoms = (
     ),
   );
   const productSearchAtom = Atom.family((limit: number) =>
-    Atom.family((query: string) => afterProductCommits(() => sources.searchProducts(query, limit))),
+    Atom.family((query: string) =>
+      afterProductCommits(() => searchCatalogProducts(replica, query, limit)),
+    ),
   );
   const productCandidatesAtom = Atom.family((limit: number) =>
     Atom.family((queries: string) =>
       afterProductCommits(() =>
         Effect.forEach(queries === "" ? [] : queries.split(CANDIDATE_QUERY_SEPARATOR), (query) =>
-          sources.searchProducts(query, limit),
+          searchCatalogProducts(replica, query, limit),
         ).pipe(
           Effect.map((groups) => [...new Map(groups.flat().map((row) => [row.id, row])).values()]),
         ),
@@ -345,25 +316,25 @@ export const createWorkspaceAtoms = (
     ),
   );
   const productsOnOrderAtom = Atom.family((key: string) =>
-    afterOrderLineCommits(() => sources.readProductsOnOrder(idsOfKey(key))),
+    afterOrderLineCommits(() => readProductsOnOrder(replica, idsOfKey(key))),
   );
   const learnedSuppliersAtom = Atom.family((key: string) =>
-    afterOrderLineCommits(() => sources.readLearnedSuppliers(idsOfKey(key))),
+    afterOrderLineCommits(() => readLearnedSupplierIds(replica, idsOfKey(key))),
   );
   const purchaseOrderCountAtom = Atom.family((tab: PurchaseOrderTab) =>
-    afterOrderCommits(() => sources.countPurchaseOrders({ tab })),
+    afterOrderCommits(() => countPurchaseOrders(replica, { tab })),
   );
   const purchaseOrderSearchCountAtom = Atom.family((filters: PurchaseOrderListFilters) =>
-    afterOrderCommits(() => sources.countPurchaseOrders(filters)),
+    afterOrderCommits(() => countPurchaseOrders(replica, filters)),
   );
   return {
     registry,
     syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
-    syncActivity: Atom.make(sources.initialActivity ?? EMPTY_SYNC_ACTIVITY).pipe(Atom.keepAlive),
+    syncActivity: Atom.make(initialActivity).pipe(Atom.keepAlive),
     syncing: Atom.make(false).pipe(Atom.keepAlive),
     pendingRowIds: Atom.family((entity: SyncEntity) =>
-      readAfter(commitsTouching(sources, new Set([entity])))(() =>
-        sources.readPendingRowIds(entity),
+      readAfter(commitsTouching(replica, new Set([entity])))(() =>
+        readPendingRowIds(replica, entity),
       ).pipe(Atom.withEquality(sameRowIds)),
     ),
     productSearch: (limit: number) => {
@@ -375,17 +346,17 @@ export const createWorkspaceAtoms = (
       return (queries: string) => productCandidatesAtom(bounded)(queries);
     },
     productPage: Atom.family((request: ProductListRequest) =>
-      afterProductCommits(() => sources.readProductPage(request)),
+      afterProductCommits(() => readProductPage(replica, request)),
     ),
     productCount: Atom.family((filters: ProductListFilters) =>
       afterProductCommits(() =>
-        sources.summarizeProducts(filters, []).pipe(Effect.map((summary) => summary.count)),
+        summarizeStoredProducts(replica, filters, []).pipe(Effect.map((summary) => summary.count)),
       ),
     ),
     productFacets: afterProductCommits(() =>
-      sources.summarizeProducts({}, PRODUCT_FACET_COLUMNS).pipe(Effect.map(facetsFrom)),
+      summarizeStoredProducts(replica, {}, PRODUCT_FACET_COLUMNS).pipe(Effect.map(facetsFrom)),
     ),
-    productLookup: Atom.fn((names: ReadonlyArray<string>) => sources.findProductsByNames(names), {
+    productLookup: Atom.fn((names: ReadonlyArray<string>) => findProductsByNames(replica, names), {
       concurrent: true,
     }),
     commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
@@ -395,7 +366,7 @@ export const createWorkspaceAtoms = (
       Stream.paginate<RestockCursor | null, ProductInsight, WorkspaceReadError>(null, (cursor) =>
         insightsContextOf(registry.get(stockPolicyAtom)).pipe(
           Effect.flatMap((context) =>
-            sources.insights.readRestockPage(context, {
+            insightsSource.readRestockPage(context, {
               filters: { ...filters, ordersOnly: true },
               cursor,
               limit: MAX_RESTOCK_PAGE_ROWS,
@@ -420,18 +391,18 @@ export const createWorkspaceAtoms = (
     learnedSuppliers: (productIds) => learnedSuppliersAtom(idsKey(productIds)),
     purchaseOrderCount: purchaseOrderCountAtom,
     purchaseOrderPage: Atom.family((request: PurchaseOrderListRequest) =>
-      afterOrderCommits(() => sources.readPurchaseOrderPage(request)),
+      afterOrderCommits(() => readPurchaseOrderPageIds(replica, request)),
     ),
     purchaseOrderListCount: (filters) =>
       filters.supplierIds === undefined
         ? purchaseOrderCountAtom(filters.tab)
         : purchaseOrderSearchCountAtom(filters),
-    supplierCount: afterSupplierCommits(() => sources.countSuppliers),
+    supplierCount: afterSupplierCommits(() => countSuppliers(replica)),
     invoicePage: Atom.family((request: InvoiceListRequest) =>
-      afterInvoiceCommits(() => sources.readInvoicePage(request)),
+      afterInvoiceCommits(() => readInvoicePageIds(replica, request)),
     ),
     invoiceCount: Atom.family((filters: InvoiceListFilters) =>
-      afterInvoiceCommits(() => sources.countInvoices(filters)),
+      afterInvoiceCommits(() => countInvoices(replica, filters)),
     ),
   };
 };

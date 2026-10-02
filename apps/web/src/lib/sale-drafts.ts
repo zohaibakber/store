@@ -54,7 +54,7 @@ export const SaleDrafts = SaleDraftsFields.check(
 );
 export type SaleDrafts = typeof SaleDrafts.Type;
 
-export type SaleLineChanges = Partial<Pick<SaleDraftLine, "batchId" | "quantity" | "price">>;
+type SaleLineChanges = Partial<Pick<SaleDraftLine, "batchId" | "quantity" | "price">>;
 
 const emptyDraft = (id: InvoiceId, ordinal: number): SaleDraft => ({
   id,

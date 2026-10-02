@@ -3,7 +3,7 @@ import {
   type OwnedLiveHost,
   type SyncSchedulerPolicy,
   type SyncWakeReason,
-} from "@store/sync/browser";
+} from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
@@ -67,7 +67,6 @@ export const openSqlClientReplicaHandle = async <E>(
     readBatch: session.readBatch,
     readInsights: session.readInsights,
     summarizeSubset: session.summarizeSubset,
-    readOutboxStatuses: session.readOutboxStatuses,
     enqueueCommand: session.enqueueCommand,
     readCommandStatus: session.readCommandStatus,
     wakeSyncUpload: () => {

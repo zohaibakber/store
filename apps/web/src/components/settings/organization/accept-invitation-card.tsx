@@ -12,10 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
-import { formValidator } from "@/lib/form-schema";
 import { useLinkedInvitation, useOrganization } from "@/lib/organization";
 
-const acceptSchema = formValidator(
+const acceptSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
     token: Schema.Trim.check(
       Schema.isMinLength(8, { message: "Paste the invitation you were sent." }),

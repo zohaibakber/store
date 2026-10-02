@@ -25,7 +25,7 @@ export const draftStatus = (
     : "ready";
 };
 
-export type StatusCounts = { readonly [Status in DraftStatus]: number };
+type StatusCounts = { readonly [Status in DraftStatus]: number };
 
 export const countStatuses = (statuses: Iterable<DraftStatus>): StatusCounts => {
   const counts = { ready: 0, check: 0, reading: 0 };
@@ -49,8 +49,8 @@ export const draftTitle = (draft: ScanDraft): string => {
   return draft.lines[0] ?? "Typed entry";
 };
 
-export const countdownSeconds = (until: number | null, now: number): number =>
-  until === null ? 0 : Math.max(0, Math.ceil((until - now) / 1000));
+export const countdownSeconds = (until: number, now: number): number =>
+  Math.max(0, Math.ceil((until - now) / 1000));
 
 export const draftSubtitle = (draft: ScanDraft, now: number): string => {
   const { parse } = draft;
@@ -81,7 +81,7 @@ export const draftSubtitle = (draft: ScanDraft, now: number): string => {
   }
 };
 
-export type BatchRow = {
+type BatchRow = {
   readonly status: DraftStatus;
   readonly plan: ExecutablePlan | null;
 };

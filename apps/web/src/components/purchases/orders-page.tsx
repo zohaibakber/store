@@ -1,19 +1,29 @@
 import { Add01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder } from "@store/contracts";
+import {
+  PURCHASE_ORDER_TABS,
+  usePurchasingGate,
+  useSuspensePurchaseOrderCount,
+  useSuspensePurchaseOrderListCount,
+  useSuspensePurchaseOrderPage,
+  type PurchaseOrderListRequest,
+  type PurchaseOrderTab,
+} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createColumnHelper } from "@tanstack/react-table";
 import * as React from "react";
 
-import { formatInvoiceTime } from "@/components/invoices/invoice-time";
-import { DataTable, DataTableColumnHeader, DataTableFilter } from "@/components/shared/data-table";
-import { FrameCard } from "@/components/shared/frame-card";
+import { ToneBadge } from "@/components/insights/status-badge";
 import {
-  ListTableContent,
-  useListTable,
+  DataTable,
+  DataTableColumnHeader,
+  DataTableFilter,
   type ListTableFeatures,
-} from "@/components/shared/list-view";
+} from "@/components/shared/data-table";
+import { FrameCard } from "@/components/shared/frame-card";
+import { ListTableContent, useListTable } from "@/components/shared/list-view";
 import { PageActions } from "@/components/shared/page-actions";
 import { PageLayout } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
@@ -29,22 +39,18 @@ import {
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { formatDateTime } from "@/lib/format-date";
-import {
-  PURCHASE_ORDER_TABS,
-  usePurchasingGate,
-  useSuspensePurchaseOrderCount,
-  useSuspensePurchaseOrderListCount,
-  useSuspensePurchaseOrderPage,
-  type PurchaseOrderListRequest,
-  type PurchaseOrderTab,
-} from "@/lib/inventory";
+import { formatDateTime, formatInvoiceTime } from "@/lib/format-date";
 
 import { PurchasingGateNotice } from "./gate-notice";
 import { OrderBuilderSheet } from "./order-builder";
 import { purchaseOrderList, type PurchaseOrderListView } from "./order-list";
-import { formatOrderNumber, orderProgress, orderUnits, UNKNOWN_SUPPLIER } from "./presentation";
-import { ProgressBadge } from "./progress-badge";
+import {
+  formatOrderNumber,
+  orderProgress,
+  orderUnits,
+  PROGRESS_META,
+  UNKNOWN_SUPPLIER,
+} from "./presentation";
 
 const TAB_LABEL = {
   open: "Open",
@@ -97,7 +103,7 @@ const columns = columnHelper.columns([
   columnHelper.display({
     id: "status",
     header: "Status",
-    cell: ({ row }) => <ProgressBadge progress={orderProgress(row.original)} />,
+    cell: ({ row }) => <ToneBadge {...PROGRESS_META[orderProgress(row.original)]} />,
     meta: { label: "Status" },
   }),
   columnHelper.accessor((order) => order.items.length, {

@@ -14,8 +14,3 @@ export const formatDateTime = (timestamp: number) =>
 
 export const formatSignedCount = (value: number) =>
   value > 0 ? `+${formatCount(value)}` : value < 0 ? `−${formatCount(-value)}` : "0";
-
-export const appVersionLabel = (version: string | null, build: string | null) => {
-  if (version === null) return "Unknown";
-  return build === null ? version : `${version} (${build})`;
-};

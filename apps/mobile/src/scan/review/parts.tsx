@@ -86,7 +86,7 @@ const segmentLabel = {
 };
 const segmentRow = [fillMaxWidth()];
 
-export function MatchChoice({
+function MatchChoice({
   choice,
   onChange,
 }: {
@@ -118,7 +118,7 @@ const packsOnHand = (match: ScanMatch) => {
   return `${packs} ${packs === 1 ? "pack" : "packs"} in stock`;
 };
 
-export type MatchSource = "auto" | "picked";
+type MatchSource = "auto" | "picked";
 
 function LinkButton({
   label,

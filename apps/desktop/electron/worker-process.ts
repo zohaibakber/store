@@ -12,15 +12,18 @@ import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import * as RpcWorker from "effect/unstable/rpc/RpcWorker";
 import * as WorkerPlatform from "effect/unstable/workers/Worker";
 
-import { ANALYTICS_WORKER_RPC_CONCURRENCY } from "./analytics-admission";
-import { AnalyticsWorkerBoot, AnalyticsWorkerRpcs } from "./analytics-rpc";
-import type { SpawnAnalyticsWorker } from "./analytics-supervisor";
-import { READER_RPC_CONCURRENCY, WORKER_RPC_CONCURRENCY } from "./replica-admission";
 import {
+  ANALYTICS_WORKER_RPC_CONCURRENCY,
+  AnalyticsWorkerBoot,
+  AnalyticsWorkerRpcs,
+} from "./analytics-rpc";
+import {
+  READER_RPC_CONCURRENCY,
   ReplicaReaderBoot,
   ReplicaReaderRpcs,
   ReplicaWorkerBoot,
   ReplicaWorkerRpcs,
+  WORKER_RPC_CONCURRENCY,
 } from "./replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "./replica-supervisor";
 
@@ -101,7 +104,7 @@ export const spawnNodeReplicaReader: SpawnReplicaReader = spawnNodeRpcWorker({
   concurrency: READER_RPC_CONCURRENCY,
 });
 
-export const spawnNodeAnalyticsWorker: SpawnAnalyticsWorker = spawnNodeRpcWorker({
+export const spawnNodeAnalyticsWorker = spawnNodeRpcWorker({
   rpcs: AnalyticsWorkerRpcs,
   boot: AnalyticsWorkerBoot,
   concurrency: ANALYTICS_WORKER_RPC_CONCURRENCY,

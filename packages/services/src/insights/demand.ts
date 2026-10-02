@@ -2,7 +2,6 @@ import type { DemandForecast } from "@store/contracts/sync/replica-analytics";
 
 import { mean, sum } from "./statistics";
 
-export type { DemandForecast };
 type DemandPattern = DemandForecast["pattern"];
 export type DemandTrend = DemandForecast["trend"];
 type DemandConfidence = DemandForecast["confidence"];

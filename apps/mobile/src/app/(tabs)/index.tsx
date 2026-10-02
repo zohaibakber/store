@@ -8,7 +8,7 @@ import { FilterChips } from "@/features/stock/filter-chips";
 import { SearchField } from "@/features/stock/search-field";
 import { StockList } from "@/features/stock/stock-list";
 import type { StockFilter } from "@/features/stock/stock-state";
-import { useSyncRefresh } from "@/features/sync/sync-now";
+import { useSyncRefresh } from "@/features/sync/sync-hooks";
 import { AccountAvatar, TabHeader } from "@/features/tab-header";
 import { colors, space } from "@/theme/tokens";
 

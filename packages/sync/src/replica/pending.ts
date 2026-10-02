@@ -18,7 +18,6 @@ import {
   type NumberedEntity,
   type NumberedImage,
 } from "./codecs";
-import { nextFreeName } from "./collisions";
 import {
   mergeTouched,
   touchedOfChange,
@@ -45,6 +44,18 @@ import {
   type ReplicaCatalogLookup,
   type ReplicaEntityRowImage,
 } from "./projection";
+
+const nameCandidate = (name: string, suffix: number): string => `${name} (${suffix})`;
+
+const nextFreeName = <E, R>(
+  name: string,
+  isTaken: (candidate: string) => Effect.Effect<boolean, E, R>,
+): Effect.Effect<string, E, R> =>
+  Effect.gen(function* () {
+    let suffix = 2;
+    while (yield* isTaken(nameCandidate(name, suffix))) suffix += 1;
+    return nameCandidate(name, suffix);
+  });
 
 type PendingJournalEntry = {
   readonly operationId: string;

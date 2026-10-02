@@ -36,7 +36,7 @@ import { CANDIDATE_QUERY_SEPARATOR, minuteClockAtom, stockPolicyAtom } from "./a
 import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
 import { inPageOrder } from "./list-page";
 import { sharedLiveQuery } from "./live-collection";
-import { useSuspenseProductFacets } from "./product-list-hooks";
+import type { ProductFacets, ProductListFilters, ProductListRequest } from "./product-list";
 import { useCatalogReplica } from "./provider";
 import {
   canonicalSearchQuery,
@@ -220,12 +220,6 @@ const categoriesQuery = (inventory: Inventory) => (query: InitialQueryBuilder) =
     .orderBy(({ category }) => category.name, { direction: "asc", stringSort: "locale" })
     .select(({ category }) => categoryFields(category));
 
-const productsQuery = (inventory: Inventory, limit: number) => (query: InitialQueryBuilder) =>
-  productsWithCategory(query, inventory)
-    .orderBy(({ product }) => product.name, "asc")
-    .limit(limit)
-    .select(({ product, category }) => catalogProductFields(query, inventory, product, category));
-
 const productQuery = (inventory: Inventory, productId: string) => (query: InitialQueryBuilder) =>
   productsWithCategory(query, inventory)
     .where(({ product }) => eq(product.id, productId))
@@ -281,8 +275,6 @@ const issuedInvoicesQuery =
       .select(({ invoice }) => ({ id: invoice.id, invoiceNumber: invoice.invoiceNumber }));
 
 export const liveCategories = sharedLiveQuery(categoriesQuery);
-
-const liveProducts = sharedLiveQuery(productsQuery);
 
 export const liveProduct = sharedLiveQuery(productQuery);
 
@@ -348,9 +340,6 @@ export const useIssuedInvoices = (
 
 export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
   useLiveSuspenseQuery(liveCategories(useCatalogReplica())).data;
-
-export const useSuspenseCatalogProducts = (limit = 100): ReadonlyArray<Product> =>
-  useLiveSuspenseQuery(liveProducts(useCatalogReplica(), limit)).data;
 
 export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
   useLiveSuspenseQuery(liveProduct(useCatalogReplica(), productId)).data;
@@ -438,6 +427,15 @@ export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArr
     [rows, categories, batches],
   );
 };
+
+export const useSuspenseProductPage = (request: ProductListRequest): ReadonlyArray<ProductRow> =>
+  useAtomSuspense(useCatalogReplica().atoms.productPage(request)).value;
+
+export const useSuspenseProductCount = (filters: ProductListFilters): number =>
+  useAtomSuspense(useCatalogReplica().atoms.productCount(filters)).value;
+
+export const useSuspenseProductFacets = (): ProductFacets =>
+  useAtomSuspense(useCatalogReplica().atoms.productFacets).value;
 
 export const useSuspenseCatalogSuggestions = (): ProductSuggestions => {
   const facets = useSuspenseProductFacets();

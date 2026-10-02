@@ -8,4 +8,12 @@ export const SyncIdentifier = Schema.NonEmptyString.check(
 
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 
+export const PositiveIntFromString = Schema.NumberFromString.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+);
+
 export const Sha256Hex = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+
+export const EpochMillis = Schema.Natural;
+
+export const UtcOffsetMinutes = Schema.Int.check(Schema.isBetween({ minimum: -840, maximum: 840 }));

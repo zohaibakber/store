@@ -326,18 +326,3 @@ export const makeInsightsSource = (
   replica.analytics === undefined
     ? fallbackSource(replica)
     : Effect.succeed(nativeSource(replica.analytics));
-
-export const emptyInsightsSource: InsightsSource = {
-  readSummary: () => Effect.succeed({ summary: null, status: FALLBACK_STATUS }),
-  readProducts: () => Effect.succeed({ run: null, insights: [], status: FALLBACK_STATUS }),
-  readRestockPage: () =>
-    Effect.succeed({
-      run: null,
-      rows: [],
-      nextCursor: null,
-      total: 0,
-      cursorExpired: false,
-      status: FALLBACK_STATUS,
-    }),
-  changes: Stream.never,
-};

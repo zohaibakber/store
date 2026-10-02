@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
@@ -87,25 +86,18 @@ const makeMaintain = (db: InventoryDrizzle) =>
   });
 
 interface InventoryMaintenanceContract {
-  readonly runScheduled: (
-    policy?: Partial<MaintenancePolicy>,
-  ) => Effect.Effect<MaintenanceSummary, InventoryError>;
+  readonly runScheduled: () => Effect.Effect<MaintenanceSummary, InventoryError>;
 }
-
-export class InventoryMaintenance extends Context.Service<
-  InventoryMaintenance,
-  InventoryMaintenanceContract
->()("@store/server/InventoryMaintenance") {}
 
 export const makeInventoryMaintenance = (
   db: InventoryDrizzle,
-  defaults: MaintenancePolicy = MAINTENANCE_POLICY,
+  policy: MaintenancePolicy = MAINTENANCE_POLICY,
 ): InventoryMaintenanceContract => {
   const maintain = makeMaintain(db);
-  return InventoryMaintenance.of({
-    runScheduled: Effect.fn("InventoryMaintenance.runScheduled")(function* (overrides) {
+  return {
+    runScheduled: Effect.fn("InventoryMaintenance.runScheduled")(function* () {
       const now = yield* Clock.currentTimeMillis;
-      const { summary } = yield* maintain({ policy: { ...defaults, ...overrides }, now }).pipe(
+      const { summary } = yield* maintain({ policy, now }).pipe(
         Effect.catchTag("NoSuchElementError", () =>
           Effect.fail(databaseError(new Error("Maintenance returned no summary."))),
         ),
@@ -116,5 +108,5 @@ export const makeInventoryMaintenance = (
       }
       return summary;
     }),
-  });
+  };
 };
