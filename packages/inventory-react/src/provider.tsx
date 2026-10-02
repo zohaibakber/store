@@ -8,7 +8,8 @@ import { DbClient, DbProvider } from "@tanstack/react-db";
 import * as React from "react";
 
 import type { InventoryHost, InventoryScope } from "./host";
-import { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./lifetime";
+import type { CatalogLease, CatalogLifetime } from "./lifetime";
+import { createAppCatalogLifetime } from "./open";
 import { closedCatalog, inventoryState, openingCatalog, type CatalogOpening } from "./opening";
 import type { InventoryState } from "./types";
 

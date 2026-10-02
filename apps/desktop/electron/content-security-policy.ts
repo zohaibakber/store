@@ -16,8 +16,6 @@ export const makeDesktopContentSecurityPolicy = (input: {
     "'self'",
     input.apiOrigin,
     liveSocketOrigin(input.apiOrigin),
-    "https://*.ingest.sentry.io",
-    "https://*.ingest.us.sentry.io",
     ...(input.development ? ["ws:", "http://localhost:*"] : []),
   ];
 

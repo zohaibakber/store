@@ -1,9 +1,19 @@
 import "@sentry/electron/preload";
+import type { ElectronReplicaBridge } from "@store/client-db";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import type {
+  AuthIpcBridge,
+  InventoryHttpBridge,
+  ServerApiIpcBridge,
+} from "@store/web/host/electron";
+import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "@store/web/host/index";
+import { makeReplayChannel, type ReplayChannel } from "@store/web/host/replay-channel";
+import type { ShareBridge } from "@store/web/host/share";
+import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
+import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import { ipcRenderer, contextBridge } from "electron";
 
-import { makeReplayChannel, type ReplayChannel } from "../src/replay-channel";
 import {
   AUTH_AUTHENTICATE_CHANNEL,
   AUTH_BEGIN_GOOGLE_CHANNEL,
@@ -15,17 +25,15 @@ import {
   AUTH_RENEW_SESSION_CHANNEL,
   AUTH_SESSION_CHANGED_CHANNEL,
   AUTH_SIGN_OUT_CHANNEL,
-  type AuthIpcBridge,
 } from "./auth-channels";
 import {
   BACKUP_SAVE_CHANNEL,
   RESTORE_APPLY_CHANNEL,
   RESTORE_CHOOSE_CHANNEL,
   RESTORE_DISCARD_CHANNEL,
-  type WorkspaceBackupIpcBridge,
 } from "./backup-channels";
-import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpBridge } from "./inventory-http-channels";
-import { NEW_SALE_CHANNEL, type DesktopShellIpcBridge } from "./new-sale-channels";
+import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
+import { NEW_SALE_CHANNEL } from "./new-sale-channels";
 import { isOAuthCallbackUrl, OAUTH_CALLBACK_CHANNEL } from "./oauth-callback";
 import {
   PUBLISH_DISCARD_CHANNEL,
@@ -33,7 +41,6 @@ import {
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_PROGRESS_CHANNEL,
   PUBLISH_START_CHANNEL,
-  type WorkspacePublishIpcBridge,
 } from "./publish-channels";
 import {
   REPLICA_ANALYTICS_CHANNEL,
@@ -58,23 +65,20 @@ import {
   REPLICA_WAKE_CHANNEL,
   type ReplicaAnalyticsEvent,
   type ReplicaCommitEvent,
-  type ReplicaIpcBridge,
   type ReplicaSyncHealthEvent,
 } from "./replica-channels";
-import { SERVER_UPLOADS_CHANNEL, type ServerApiIpcBridge } from "./server-api-channels";
+import { SERVER_UPLOADS_CHANNEL } from "./server-api-channels";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
-  type ShareIpcBridge,
 } from "./share-channels";
-import { THEME_SET_SOURCE_CHANNEL, type ThemeIpcBridge } from "./theme-channels";
+import { THEME_SET_SOURCE_CHANNEL } from "./theme-channels";
 import {
   UPDATER_CHECK_CHANNEL,
   UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
-  type UpdaterIpcBridge,
 } from "./updater-channels";
 
 const inventoryHttp: InventoryHttpBridge = {
@@ -97,7 +101,7 @@ ipcRenderer.on(REPLICA_SYNC_HEALTH_CHANNEL, (_event, notice: ReplicaSyncHealthEv
   syncHealthReplay(notice.workspaceToken).publish(notice.health);
 });
 
-const replica: ReplicaIpcBridge = {
+const replica: ElectronReplicaBridge = {
   open: (input) => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL, input),
   close: (workspaceToken) => {
     syncHealthReplays.delete(workspaceToken);
@@ -137,7 +141,7 @@ const replica: ReplicaIpcBridge = {
 
 contextBridge.exposeInMainWorld("replica", replica);
 
-const workspaceBackup: WorkspaceBackupIpcBridge = {
+const workspaceBackup: WorkspaceBackupBridge = {
   backUp: () => ipcRenderer.invoke(BACKUP_SAVE_CHANNEL),
   chooseRestore: () => ipcRenderer.invoke(RESTORE_CHOOSE_CHANNEL),
   applyRestore: () => ipcRenderer.invoke(RESTORE_APPLY_CHANNEL),
@@ -146,7 +150,7 @@ const workspaceBackup: WorkspaceBackupIpcBridge = {
 
 contextBridge.exposeInMainWorld("workspaceBackup", workspaceBackup);
 
-const sharing: ShareIpcBridge = {
+const sharing: ShareBridge = {
   openExternal: (url) => ipcRenderer.invoke(SHARE_OPEN_EXTERNAL_CHANNEL, url),
   copyText: (text) => ipcRenderer.invoke(SHARE_COPY_TEXT_CHANNEL, text),
   savePdf: (fileStem) => ipcRenderer.invoke(SHARE_SAVE_PDF_CHANNEL, fileStem),
@@ -154,7 +158,7 @@ const sharing: ShareIpcBridge = {
 
 contextBridge.exposeInMainWorld("sharing", sharing);
 
-const workspacePublish: WorkspacePublishIpcBridge = {
+const workspacePublish: WorkspacePublishBridge = {
   offer: (organizationId) => ipcRenderer.invoke(PUBLISH_OFFER_CHANNEL, organizationId),
   publish: (organizationId) => ipcRenderer.invoke(PUBLISH_START_CHANNEL, organizationId),
   discard: (organizationId) => ipcRenderer.invoke(PUBLISH_DISCARD_CHANNEL, organizationId),
@@ -233,7 +237,7 @@ const serverApi: ServerApiIpcBridge = {
 
 contextBridge.exposeInMainWorld("serverApi", serverApi);
 
-const electronTheme: ThemeIpcBridge = {
+const electronTheme: ThemeBridge = {
   setSource(source) {
     ipcRenderer.send(THEME_SET_SOURCE_CHANNEL, source);
   },
@@ -241,7 +245,7 @@ const electronTheme: ThemeIpcBridge = {
 
 contextBridge.exposeInMainWorld("electronTheme", electronTheme);
 
-const desktopShell: DesktopShellIpcBridge = {
+const desktopShell: DesktopShellBridge = {
   onNewSale(callback) {
     const listener = () => callback();
     ipcRenderer.on(NEW_SALE_CHANNEL, listener);
@@ -252,7 +256,7 @@ const desktopShell: DesktopShellIpcBridge = {
 contextBridge.exposeInMainWorld("desktopShell", desktopShell);
 
 if (import.meta.env.PROD) {
-  const updater: UpdaterIpcBridge = {
+  const updater: AppUpdaterBridge = {
     check: () => ipcRenderer.invoke(UPDATER_CHECK_CHANNEL),
     download: () => ipcRenderer.invoke(UPDATER_DOWNLOAD_CHANNEL),
     install() {

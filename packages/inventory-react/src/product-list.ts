@@ -9,19 +9,9 @@ import {
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
-import { allOf, MAX_LIST_SEARCH_LENGTH, pageSpec, summarySpec, type ListPage } from "./list-page";
+import { allOf, pageSpec, summarySpec } from "./list-page";
+import { MAX_LIST_SEARCH_LENGTH, type ListPage, type ProductSortColumn } from "./list-request";
 import { containsToken, searchTokens } from "./search";
-
-export const PRODUCT_SORT_COLUMNS = [
-  "name",
-  "aisle",
-  "unitsPerPack",
-  "purchasePrice",
-  "retailPrice",
-  "unitPrice",
-  "updatedAt",
-] as const;
-export type ProductSortColumn = (typeof PRODUCT_SORT_COLUMNS)[number];
 
 export const PRODUCT_FACET_COLUMNS = [
   "categoryId",

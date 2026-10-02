@@ -1,14 +1,18 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import { MAX_IMPORT_PARTS } from "@store/contracts";
+import type { LocalCatalogReport } from "@store/web/host/local-catalog-standing";
+import type { CatalogCounts } from "@store/web/host/workspace-backup";
+import type {
+  PublishOffer,
+  PublishOutcome,
+  PublishProgress,
+} from "@store/web/host/workspace-publish";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-import type { LocalCatalogReport } from "../src/lib/local-catalog-standing";
-import type { CatalogCounts } from "../src/lib/workspace-backup";
-import type { PublishOffer, PublishOutcome, PublishProgress } from "../src/lib/workspace-publish";
 import {
   archiveReplicaFile,
   readPublishMarker,

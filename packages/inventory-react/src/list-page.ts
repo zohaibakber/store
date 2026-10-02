@@ -9,21 +9,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { WorkspaceReadFailure } from "./errors";
+import type { ListPage } from "./list-request";
 
 const MAX_LIST_PAGE_SIZE = 100;
-
-export const MAX_LIST_SEARCH_LENGTH = 120;
-
-type ListSort<Column extends string> = {
-  readonly column: Column;
-  readonly direction: "asc" | "desc";
-};
-
-export type ListPage<Column extends string> = {
-  readonly sort: ListSort<Column>;
-  readonly pageIndex: number;
-  readonly pageSize: number;
-};
 
 type ListSource = InventorySubsetSpec["source"];
 

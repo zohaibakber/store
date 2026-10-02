@@ -57,10 +57,6 @@ const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
 const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
-  ? path.join(process.env.APP_ROOT, "public")
-  : RENDERER_DIST;
-
 const envFallbackFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
@@ -79,7 +75,8 @@ let disposeInventoryHttp: (() => void) | undefined;
 let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
-const unpackagedDevMarkPath = () => path.join(process.env.VITE_PUBLIC, "logo-dev.png");
+const unpackagedDevMarkPath = () =>
+  path.join(process.env.APP_ROOT, "assets", "dev", "logo-dev.png");
 const appIconPath = () =>
   app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
 

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import type { PublishProgress } from "@store/web/host/workspace-publish";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -14,7 +15,6 @@ import * as Option from "effect/Option";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import type { PublishProgress } from "../src/lib/workspace-publish";
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
 import {
   admitReplicaKey,

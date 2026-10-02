@@ -34,8 +34,8 @@ invariant that nothing else covers. Don't add a test file per fix.
 
 ## Typography
 
-These rules apply to all UI work in `apps/desktop`. The tokens live in
-`apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
+These rules apply to all UI work in `apps/web`. The tokens live in
+`apps/web/src/styles.css` (Tailwind v4 `@theme` block).
 
 Conventions, not hard clamps: `@theme` sets the font family, but nothing blocks
 other weights or sizes. Follow the rules anyway.
@@ -68,13 +68,13 @@ other weights or sizes. Follow the rules anyway.
 
 ## UI components
 
-`apps/desktop/src/components/ui` is a registry managed by `components.json`, not
+`apps/web/src/components/ui` is a registry managed by `components.json`, not
 application code. Primitives there may have no importer yet. That is inventory,
 not dead code, so don't delete them for being unused.
 
-After changing UI code in `apps/desktop`, run `vp run lint:design`. Application code
+After changing UI code in `apps/web`, run `vp run lint:design`. Application code
 must pass the design-system rules with zero errors; registry-owned COSS primitives
-under `apps/desktop/src/components/ui` stay governed by their upstream definitions.
+under `apps/web/src/components/ui` stay governed by their upstream definitions.
 
 ## Cursor Cloud instructions
 
@@ -90,8 +90,9 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   without its `dist/` binary, or `vp dev` for the desktop errors that Electron
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
 - **Desktop app.** `vp run dev` from the repo root starts the API/auth workers
-  and `apps/desktop` in parallel. Its `vp dev` command starts the renderer
-  on `:5174`, builds main/preload, and launches Electron. Unpackaged/dev keeps an
+  and `apps/desktop` in parallel. Its `vp dev` command serves `apps/web` as the
+  renderer on `:5174`, builds main/preload, and launches Electron. `vp run dev:web`
+  serves `apps/web` in the browser instead. Unpackaged/dev keeps an
   escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
   can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
   Electron Fuses in electron-builder's `afterPack` hook and keep

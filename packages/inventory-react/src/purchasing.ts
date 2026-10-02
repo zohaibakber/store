@@ -19,10 +19,8 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import { WorkspaceReadFailure } from "./errors";
-import { allOf, countRows, readPageIds, type ListPage } from "./list-page";
-
-export const PURCHASE_ORDER_TABS = ["open", "drafts", "closed"] as const;
-export type PurchaseOrderTab = (typeof PURCHASE_ORDER_TABS)[number];
+import { allOf, countRows, readPageIds } from "./list-page";
+import type { ListPage, PurchaseOrderSortColumn, PurchaseOrderTab } from "./list-request";
 
 const purchaseOrderTabStatuses = (tab: PurchaseOrderTab): ReadonlyArray<PurchaseOrderStatus> => {
   switch (tab) {
@@ -119,9 +117,6 @@ export const readLearnedSupplierIds = (
     Effect.mapError(readFailure),
     Effect.withSpan("Purchasing.readLearnedSuppliers"),
   );
-
-export const PURCHASE_ORDER_SORT_COLUMNS = ["createdAt", "orderNumber"] as const;
-export type PurchaseOrderSortColumn = (typeof PURCHASE_ORDER_SORT_COLUMNS)[number];
 
 export type PurchaseOrderListFilters = {
   readonly tab: PurchaseOrderTab;

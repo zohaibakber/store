@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./insights": "./src/insights/index.ts",
@@ -16,7 +17,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
-    "typescript": "catalog:",
-    "vitest": "5.0.2"
+    "typescript": "catalog:"
   }
 }

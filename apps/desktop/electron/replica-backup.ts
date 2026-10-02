@@ -1,10 +1,14 @@
 import path from "node:path";
 
+import type {
+  BackupOutcome,
+  RestoreChoice,
+  RestoreOutcome,
+} from "@store/web/host/workspace-backup";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 
-import type { BackupOutcome, RestoreChoice, RestoreOutcome } from "../src/lib/workspace-backup";
 import {
   backupFileName,
   removeReplicaFile,

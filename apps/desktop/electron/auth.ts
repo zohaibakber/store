@@ -22,6 +22,8 @@ import {
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
+import type { SignInCredentials } from "@store/web/host/index";
+import { analyseInvoiceUpload, type InvoiceUploadFile } from "@store/web/host/invoice-upload";
 import {
   SessionHttp,
   adoptAuthenticatedSnapshot,
@@ -46,8 +48,6 @@ import * as Semaphore from "effect/Semaphore";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import { app, net, safeStorage } from "electron";
 
-import type { SignInCredentials } from "../src/host";
-import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/lib/invoice-upload";
 import { replacePrivateFile } from "./private-file";
 
 const canPersistEncryptedSession = () =>

@@ -14,21 +14,18 @@ export type {
   SaveOrderDraftInput,
   SaveSupplierInput,
 } from "@store/client-db";
-export {
-  configureInventoryPreferences,
-  minuteClockAtom,
-  stockPolicyAtom,
-  type CommandExecutionState,
-} from "./atoms";
+export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
 export { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+export { createAppCatalogLifetime } from "./open";
+export { configureInventoryPreferences } from "./preferences";
 export {
+  inventoryScopeId,
   replicaAuthorityOf,
   type InventoryHost,
   type ReplicaAuthority,
   type ReplicaOpenIdentity,
 } from "./host";
 export {
-  createAppCatalogLifetime,
   createCatalogLifetime,
   type CatalogLease,
   type CatalogLifetime,
@@ -69,12 +66,19 @@ export {
   useSuspenseInvoicePage,
   useSuspenseProductSearch,
 } from "./queries";
-export { MAX_LIST_SEARCH_LENGTH, type ListPage } from "./list-page";
 export {
   INVOICE_SORT_COLUMNS,
-  type InvoiceListRequest,
+  MAX_LIST_SEARCH_LENGTH,
+  PRODUCT_SORT_COLUMNS,
+  PURCHASE_ORDER_SORT_COLUMNS,
+  PURCHASE_ORDER_TABS,
   type InvoiceSortColumn,
-} from "./invoice-list";
+  type ListPage,
+  type ProductSortColumn,
+  type PurchaseOrderSortColumn,
+  type PurchaseOrderTab,
+} from "./list-request";
+export type { InvoiceListRequest } from "./invoice-list";
 export {
   matchCatalogProducts,
   summarizeProductStock,
@@ -82,14 +86,7 @@ export {
   type ProductStockSummary,
   type SearchableProduct,
 } from "./search";
-export {
-  PURCHASE_ORDER_SORT_COLUMNS,
-  PURCHASE_ORDER_TABS,
-  type ProductOnOrder,
-  type PurchaseOrderListRequest,
-  type PurchaseOrderSortColumn,
-  type PurchaseOrderTab,
-} from "./purchasing";
+export type { ProductOnOrder, PurchaseOrderListRequest } from "./purchasing";
 export {
   useLearnedSuppliers,
   useProductsOnOrder,
@@ -106,13 +103,7 @@ export {
   useSuspenseSuppliers,
   type PurchasingGate,
 } from "./purchasing-queries";
-export {
-  PRODUCT_SORT_COLUMNS,
-  type ProductFacets,
-  type ProductListFilters,
-  type ProductListRequest,
-  type ProductSortColumn,
-} from "./product-list";
+export type { ProductFacets, ProductListFilters, ProductListRequest } from "./product-list";
 export {
   useSuspenseProductCount,
   useSuspenseProductFacets,

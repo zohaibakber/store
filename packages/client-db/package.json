@@ -3,8 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./indexeddb": "./src/replica/indexeddb-handle.ts",
     "./node-analytics": "./src/analytics/node.ts",
     "./node-backup": "./src/replica/node-backup.ts",
     "./node-publish": "./src/replica/node-publish.ts",

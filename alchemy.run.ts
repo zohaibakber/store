@@ -7,9 +7,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
-import { Website } from "./apps/desktop/infra.ts";
 import { Api } from "./apps/server/api.ts";
 import { ApiLive } from "./apps/server/infra.ts";
+import { Website } from "./apps/web/infra.ts";
 import { Edge } from "./infra/edge.ts";
 import { InventoryDatabaseId, stageUsesNeonInventory } from "./packages/db/src/postgres/infra.ts";
 

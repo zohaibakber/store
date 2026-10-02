@@ -25,6 +25,7 @@ import * as React from "react";
 
 import type { ReplicaAuthority } from "./host";
 import { inPageOrder } from "./list-page";
+import type { PurchaseOrderTab } from "./list-request";
 import { sharedLiveQuery } from "./live-collection";
 import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
@@ -32,7 +33,6 @@ import {
   type ProductOnOrder,
   type PurchaseOrderListFilters,
   type PurchaseOrderListRequest,
-  type PurchaseOrderTab,
 } from "./purchasing";
 import { HISTORY_PAGE_SIZE, inAnyOf, stockMovementFields, useLatestSuccess } from "./queries";
 import type { Inventory } from "./types";

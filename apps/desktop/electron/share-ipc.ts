@@ -2,16 +2,15 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isWhatsAppUrl } from "@store/services/purchasing";
+import type { SavePdfOutcome, ShareBridge } from "@store/web/host/share";
 import * as Schema from "effect/Schema";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import type { SavePdfOutcome } from "../src/lib/share";
 import { trustedIpcListener } from "./ipc-sender";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
-  type ShareIpcBridge,
 } from "./share-channels";
 
 const MAX_COPIED_TEXT_LENGTH = 200_000;
@@ -28,7 +27,7 @@ const decodeWhatsAppUrl = Schema.decodeUnknownSync(WhatsAppUrl);
 const decodeCopiedText = Schema.decodeUnknownSync(CopiedText);
 const decodePdfFileStem = Schema.decodeUnknownSync(PdfFileStem);
 
-type ShareIpcInput<Method extends keyof ShareIpcBridge> = Parameters<ShareIpcBridge[Method]>[0];
+type ShareIpcInput<Method extends keyof ShareBridge> = Parameters<ShareBridge[Method]>[0];
 
 type ShareIpcEvent = Pick<IpcMainInvokeEvent, "senderFrame"> & {
   readonly sender: Pick<IpcMainInvokeEvent["sender"], "printToPDF">;

@@ -1,10 +1,10 @@
 import { InventorySubsetSummarySpec } from "@store/client-db/subset-spec";
+import type { LocalCatalogReport } from "@store/web/host/local-catalog-standing";
+import type { PublishOffer, PublishOutcome } from "@store/web/host/workspace-publish";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 
-import type { LocalCatalogReport } from "../src/lib/local-catalog-standing";
-import type { PublishOffer, PublishOutcome } from "../src/lib/workspace-publish";
 import { PUBLISH_PROGRESS_CHANNEL } from "./publish-channels";
 import {
   discardPublish,

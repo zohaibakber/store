@@ -8,7 +8,6 @@ export {
 export { decodeBatchSqliteRows, decodeInvoiceSqliteRows, decodeProductSqliteRows } from "./decode";
 export { openElectronIpcReplicaHandle } from "./electron-ipc-handle";
 export type { ElectronReplicaBridge } from "./electron-ipc-handle";
-export { openIndexedDbReplicaHandle } from "./indexeddb-handle";
 export {
   indexedDbReplicaDatabaseName,
   REPLICA_STORAGE_PREFIX,

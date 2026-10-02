@@ -1,9 +1,10 @@
 import { ImportId, ImportPartNumber } from "@store/contracts";
+import type { InventoryHttpConfig } from "@store/web/host/electron";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { IpcMain } from "electron";
 
-import { INVENTORY_HTTP_CONFIG_CHANNEL, type InventoryHttpConfig } from "./inventory-http-channels";
+import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./inventory-http-channels";
 import { trustedIpcListener } from "./ipc-sender";
 import { SyncApiRequestFailure, type ReplicaSyncApiRequest } from "./replica-authority-host";
 

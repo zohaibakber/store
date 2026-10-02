@@ -1,7 +1,6 @@
 import {
   catalogCollectionOptions,
   EMPTY_SYNC_ACTIVITY,
-  inventoryReplicaScope,
   makeCatalogCommands,
   syncStatusFromOutbox,
   syncStatusWithHealth,
@@ -21,9 +20,15 @@ import * as Atom from "effect/unstable/reactivity/Atom";
 
 import { createWorkspaceAtoms, type WorkspaceAtomSources, type WorkspaceAtoms } from "./atoms";
 import { catalogOpenFailure, WorkspaceReadFailure } from "./errors";
-import { replicaAuthorityOf, type InventoryHost, type InventoryScope } from "./host";
+import {
+  inventoryScopeId,
+  replicaAuthorityOf,
+  type InventoryHost,
+  type InventoryScope,
+} from "./host";
 import { makeInsightsSource, type InsightsSource } from "./insights-source";
 import { countInvoices, readInvoicePageIds } from "./invoice-list";
+import { createCatalogLifetime, type CatalogLifetime } from "./lifetime";
 import { findProductsByNames, readProductPage, summarizeProducts } from "./product-list";
 import {
   countPurchaseOrders,
@@ -34,9 +39,6 @@ import {
 } from "./purchasing";
 import { searchCatalogProducts } from "./search";
 import type { Inventory, InventoryActions, InventoryActor } from "./types";
-
-export const inventoryScopeId = (host: InventoryHost, scope: InventoryScope) =>
-  inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);
 
 const actorFor = (
   host: InventoryHost,
@@ -248,3 +250,9 @@ export const openInventoryWorkspace = (
       };
     }),
   );
+
+export const createAppCatalogLifetime = (): CatalogLifetime<Inventory> =>
+  createCatalogLifetime({
+    open: openInventoryWorkspace,
+    databaseName: inventoryScopeId,
+  });

@@ -26,8 +26,7 @@ describe("desktop content security policy", () => {
   it("limits production connections, frames, and workers to known origins", () => {
     const policy = policyFor();
     const connectSources = directive(policy, "connect-src");
-    expect(connectSources).toContain("https://*.ingest.sentry.io");
-    expect(connectSources).toContain("https://*.ingest.us.sentry.io");
+    expect(policy).not.toContain("sentry.io");
     expect(connectSources).toContain("wss://api.tabaaq.app");
     expect(connectSources).not.toContain("https:");
     expect(connectSources).not.toContain("wss:");

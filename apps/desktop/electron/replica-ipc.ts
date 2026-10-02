@@ -1,4 +1,7 @@
+import type { ElectronReplicaBridge } from "@store/client-db";
 import type { DeviceLabel } from "@store/contracts";
+import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
+import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -16,7 +19,6 @@ import {
   RESTORE_APPLY_CHANNEL,
   RESTORE_CHOOSE_CHANNEL,
   RESTORE_DISCARD_CHANNEL,
-  type WorkspaceBackupIpcBridge,
 } from "./backup-channels";
 import { trustedIpcListener, type TrustedIpcSenderFrame } from "./ipc-sender";
 import {
@@ -24,7 +26,6 @@ import {
   PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_START_CHANNEL,
-  type WorkspacePublishIpcBridge,
 } from "./publish-channels";
 import type { ReplicaAdmissionLimits } from "./replica-admission";
 import { makeReplicaAuthorityHost, type ReplicaSyncApiRequest } from "./replica-authority-host";
@@ -47,7 +48,6 @@ import {
   REPLICA_STAMP_CHANNEL,
   REPLICA_SUMMARIZE_SUBSET_CHANNEL,
   REPLICA_WAKE_CHANNEL,
-  type ReplicaIpcBridge,
 } from "./replica-channels";
 import { makeReplicaPublishHost } from "./replica-publish-host";
 import {
@@ -98,10 +98,10 @@ const CHANNEL_METHODS = {
   [REPLICA_ENQUEUE_CHANNEL]: "enqueueCommand",
   [REPLICA_COMMAND_STATUS_CHANNEL]: "readCommandStatus",
   [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
-} satisfies Record<string, keyof ReplicaIpcBridge>;
+} satisfies Record<string, keyof ElectronReplicaBridge>;
 
 type ChannelMethod<Channel extends keyof typeof CHANNEL_METHODS> =
-  ReplicaIpcBridge[(typeof CHANNEL_METHODS)[Channel]];
+  ElectronReplicaBridge[(typeof CHANNEL_METHODS)[Channel]];
 
 type ReplicaIpcInput = Parameters<ChannelMethod<keyof typeof CHANNEL_METHODS>>[0];
 
@@ -117,10 +117,10 @@ const BACKUP_CHANNEL_METHODS = {
   [RESTORE_CHOOSE_CHANNEL]: "chooseRestore",
   [RESTORE_APPLY_CHANNEL]: "applyRestore",
   [RESTORE_DISCARD_CHANNEL]: "discardRestore",
-} satisfies Record<string, keyof WorkspaceBackupIpcBridge>;
+} satisfies Record<string, keyof WorkspaceBackupBridge>;
 
 type BackupResult<Channel extends keyof typeof BACKUP_CHANNEL_METHODS> = BridgeResult<
-  WorkspaceBackupIpcBridge[(typeof BACKUP_CHANNEL_METHODS)[Channel]]
+  WorkspaceBackupBridge[(typeof BACKUP_CHANNEL_METHODS)[Channel]]
 >;
 
 type BackupIpcHandlers = {
@@ -134,10 +134,10 @@ const PUBLISH_CHANNEL_METHODS = {
   [PUBLISH_START_CHANNEL]: "publish",
   [PUBLISH_DISCARD_CHANNEL]: "discard",
   [PUBLISH_LOCAL_CATALOG_CHANNEL]: "localCatalog",
-} satisfies Record<string, keyof WorkspacePublishIpcBridge>;
+} satisfies Record<string, keyof WorkspacePublishBridge>;
 
 type PublishResult<Channel extends keyof typeof PUBLISH_CHANNEL_METHODS> = BridgeResult<
-  WorkspacePublishIpcBridge[(typeof PUBLISH_CHANNEL_METHODS)[Channel]]
+  WorkspacePublishBridge[(typeof PUBLISH_CHANNEL_METHODS)[Channel]]
 >;
 
 type PublishIpcHandlers = {
