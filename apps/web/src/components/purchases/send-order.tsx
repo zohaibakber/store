@@ -141,7 +141,7 @@ function OrderPrintView({
             {lines.map((line, index) => (
               <tr className="break-inside-avoid border-b" key={line.id}>
                 <td className="py-1 tabular-nums">{index + 1}</td>
-                <td className="py-1 capitalize">{line.productName}</td>
+                <td className="py-1">{line.productName}</td>
                 <td className="py-1 text-end tabular-nums">{formatLineQuantity(line)}</td>
                 <td className="py-1 text-end tabular-nums">
                   {line.packCost === null ? null : formatPrice(line.packCost)}

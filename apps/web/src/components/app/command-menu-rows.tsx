@@ -151,7 +151,7 @@ function ProductName({
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      <span className="min-w-0 truncate capitalize">
+      <span className="min-w-0 truncate">
         {name}
         {strength ? <span className="text-muted-foreground"> {strength}</span> : null}
       </span>

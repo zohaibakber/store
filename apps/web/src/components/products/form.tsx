@@ -1,4 +1,10 @@
-import type { Category, Product, ProductSuggestions } from "@store/contracts";
+import {
+  INT4_MAX,
+  MAX_CATALOG_NAME_LENGTH,
+  type Category,
+  type Product,
+  type ProductSuggestions,
+} from "@store/contracts";
 import { useInventoryActions } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
@@ -21,6 +27,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
+import { formatNumber } from "@/lib/format";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 type StrengthUnit = (typeof strengthUnits)[number];
@@ -28,28 +35,35 @@ const strengthUnitItems = strengthUnits.map((unit) => ({ label: unit, value: uni
 const strengthUnitSet: ReadonlySet<string> = new Set(strengthUnits);
 const isStrengthUnit = (value: string): value is StrengthUnit => strengthUnitSet.has(value);
 
+const MAX_PRICE = INT4_MAX / 100;
+
+const atMost = (length: number, label: string) =>
+  Schema.isMaxLength(length, { message: `${label} can be at most ${length} characters.` });
+
 const optionalPrice = Schema.String.check(
-  Schema.makeFilter((value) =>
-    value === "" || (Number.isFinite(Number(value)) && Number(value) >= 0)
-      ? undefined
-      : "Enter a valid price or leave this blank.",
-  ),
+  Schema.makeFilter((value) => {
+    if (value === "") return undefined;
+    const price = Number(value);
+    if (!Number.isFinite(price) || price < 0) return "Enter a valid price or leave this blank.";
+    return price > MAX_PRICE ? `Enter a price of ${formatNumber(MAX_PRICE)} or less.` : undefined;
+  }),
 );
 
 const productFormSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
     name: Schema.Trim.check(
       Schema.isMinLength(1, { message: "Product name is required." }),
-      Schema.isMaxLength(120),
+      atMost(MAX_CATALOG_NAME_LENGTH, "Product name"),
     ),
     categoryId: Schema.String.check(Schema.isMinLength(1, { message: "Category is required." })),
-    aisle: Schema.Trim.check(Schema.isMaxLength(64)),
-    composition: Schema.Trim.check(Schema.isMaxLength(160)),
-    strength: Schema.Trim.check(Schema.isMaxLength(20)),
+    aisle: Schema.Trim.check(atMost(64, "Aisle")),
+    composition: Schema.Trim.check(atMost(160, "Composition")),
+    strength: Schema.Trim.check(atMost(20, "Strength")),
     strengthUnit: Schema.Literals(strengthUnits),
     unitsPerPack: Schema.String.check(
       Schema.makeFilter((value) =>
-        value === "" || (Number.isInteger(Number(value)) && Number(value) >= 1)
+        value === "" ||
+        (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= INT4_MAX)
           ? undefined
           : "Units per pack must be a whole number of 1 or more.",
       ),

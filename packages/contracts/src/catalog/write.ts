@@ -13,7 +13,9 @@ import { PURCHASE_ORDER_QUANTITY_TYPES, PURCHASE_ORDER_STATUSES } from "./purcha
 
 export const MAX_CATALOG_WRITE_ROWS = 1_000;
 
-const CatalogName = Schema.NonEmptyString.check(Schema.isMaxLength(200));
+export const MAX_CATALOG_NAME_LENGTH = 200;
+
+const CatalogName = Schema.NonEmptyString.check(Schema.isMaxLength(MAX_CATALOG_NAME_LENGTH));
 
 const CatalogNote = Schema.String.check(Schema.isMaxLength(500));
 

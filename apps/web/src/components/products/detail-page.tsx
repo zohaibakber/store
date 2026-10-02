@@ -133,8 +133,10 @@ export function ProductDetailPage({
     <PageLayout>
       <PageHeader>
         <div className="flex min-w-0 flex-col gap-1">
-          <PageHeading>{product.name}</PageHeading>
-          <p className="truncate text-sm text-muted-foreground">{summary}</p>
+          <PageHeading title={product.name}>{product.name}</PageHeading>
+          <p className="truncate text-sm text-muted-foreground" title={summary}>
+            {summary}
+          </p>
         </div>
         <PageAction>
           <ShortcutButton

@@ -6,6 +6,8 @@ export const SyncIdentifier = Schema.NonEmptyString.check(
   Schema.isMaxLength(MAX_SYNC_IDENTIFIER_LENGTH),
 );
 
+export const INT4_MAX = 2_147_483_647;
+
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 
 export const PositiveIntFromString = Schema.NumberFromString.pipe(

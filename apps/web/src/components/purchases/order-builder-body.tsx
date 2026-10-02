@@ -133,7 +133,7 @@ function ProductSearch({ onPick }: { readonly onPick: (product: Product) => void
               value={product}
             >
               <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-                <span className="min-w-0 truncate capitalize">{product.name}</span>
+                <span className="min-w-0 truncate">{product.name}</span>
                 {product.strength ? (
                   <span className="shrink-0 text-muted-foreground">{product.strength}</span>
                 ) : null}
@@ -176,9 +176,11 @@ function BuilderLineRow({
   ];
   return (
     <TableRow>
-      <TableCell className="max-w-0">
+      <TableCell className="w-full max-w-0">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate leading-tight font-medium capitalize">{line.name}</span>
+          <span className="truncate leading-tight font-medium" title={line.name}>
+            {line.name}
+          </span>
           {details.length > 0 ? (
             <span className="truncate text-xs leading-tight text-muted-foreground tabular-nums">
               {details.join(" · ")}
@@ -186,7 +188,7 @@ function BuilderLineRow({
           ) : null}
         </div>
       </TableCell>
-      <TableCell className="w-44">
+      <TableCell className="w-48">
         <div className="flex items-center gap-1">
           <NumberField
             className="w-16"
@@ -212,7 +214,7 @@ function BuilderLineRow({
             >
               <SelectTrigger
                 aria-label={`Quantity unit of ${line.name}`}
-                className="w-20 min-w-0"
+                className="w-24 min-w-0"
                 size="sm"
               >
                 <SelectValue />
@@ -234,7 +236,7 @@ function BuilderLineRow({
           )}
         </div>
       </TableCell>
-      <TableCell className="w-28">
+      <TableCell className="w-36">
         <span
           className={
             cost === null
@@ -245,16 +247,18 @@ function BuilderLineRow({
           {cost === null ? EMPTY : formatPrice(cost)}
         </span>
       </TableCell>
-      <TableCell className="w-52">
-        <SupplierPicker
-          canCreate={canCreateSupplier}
-          label={`Supplier for ${line.name}`}
-          onChange={(supplierId) => onChange({ supplierId })}
-          suppliers={suppliers}
-          value={supplier?.id ?? null}
-        />
+      <TableCell>
+        <div className="w-40">
+          <SupplierPicker
+            canCreate={canCreateSupplier}
+            label={`Supplier for ${line.name}`}
+            onChange={(supplierId) => onChange({ supplierId })}
+            suppliers={suppliers}
+            value={supplier?.id ?? null}
+          />
+        </div>
       </TableCell>
-      <TableCell className="w-12">
+      <TableCell>
         <div className="flex justify-end">
           <Button
             aria-label={`Remove ${line.name}`}
@@ -444,9 +448,17 @@ export function OrderBuilderBody({
                 description={`${formatCount(group.lines.length, "line")} · est. ${formatPrice(groupTotal(group.lines))}`}
                 key={group.key}
                 table
-                title={group.supplier === null ? "Needs a supplier" : group.supplier.name}
+                title={
+                  group.supplier === null ? (
+                    "Needs a supplier"
+                  ) : (
+                    <span className="block max-w-80 truncate" title={group.supplier.name}>
+                      {group.supplier.name}
+                    </span>
+                  )
+                }
               >
-                <Table className="table-fixed" variant="card">
+                <Table variant="card">
                   <TableBody>
                     {group.lines.map((line) => (
                       <BuilderLineRow

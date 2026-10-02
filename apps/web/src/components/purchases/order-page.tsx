@@ -108,8 +108,9 @@ function LineRow({ item }: { readonly item: PurchaseOrderItem }) {
     <TableRow>
       <TableCell className="max-w-0">
         <Link
-          className="block truncate leading-tight font-medium capitalize outline-none hover:underline focus-visible:underline"
+          className="block truncate leading-tight font-medium outline-none hover:underline focus-visible:underline"
           params={{ productId: item.productId }}
+          title={item.productName}
           to="/products/$productId"
         >
           {item.productName}
@@ -150,10 +151,10 @@ function LinesCard({ order }: { readonly order: PurchaseOrder }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table className="table-fixed" variant="card">
+        <Table variant="card">
           <TableHeader>
             <TableRow>
-              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8 w-full min-w-48">Product</TableHead>
               <EndHead className="h-8 w-48">Ordered</EndHead>
               <EndHead className="h-8 w-32">Received</EndHead>
               <EndHead className="h-8 w-32">Remaining</EndHead>
@@ -229,7 +230,7 @@ function DeliveriesCard({
                   </span>
                 </TableCell>
                 <TableCell className="max-w-0">
-                  <span className="block truncate capitalize">
+                  <span className="block truncate" title={names.get(movement.productId)}>
                     {names.get(movement.productId) ?? muted}
                   </span>
                 </TableCell>
@@ -292,8 +293,8 @@ export function PurchaseOrderPage({
 
   usePageShortcuts({ r: canReceive ? () => onReceiveOpenChange(true) : undefined });
 
-  const summary = [
-    supplier?.name ?? UNKNOWN_SUPPLIER,
+  const supplierName = supplier?.name ?? UNKNOWN_SUPPLIER;
+  const details = [
     ...(supplier?.phone ? [supplier.phone] : []),
     `Created ${formatDate(order.createdAt)}`,
     ...(order.sentAt === null ? [] : [`Sent ${formatDate(order.sentAt)}`]),
@@ -310,7 +311,12 @@ export function PurchaseOrderPage({
             </PageHeading>
             <ToneBadge {...PROGRESS_META[orderProgress(order)]} />
           </div>
-          <p className="truncate text-sm text-muted-foreground tabular-nums">{summary}</p>
+          <p className="flex min-w-0 flex-wrap gap-x-1 text-sm text-muted-foreground tabular-nums">
+            <span className="max-w-full truncate" title={supplierName}>
+              {supplierName}
+            </span>
+            <span className="max-w-full truncate">· {details}</span>
+          </p>
         </div>
         {open ? (
           <PageAction>

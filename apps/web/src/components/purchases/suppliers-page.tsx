@@ -279,7 +279,10 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
               {suppliers.map((supplier) => (
                 <TableRow key={supplier.id}>
                   <TableCell className="max-w-0">
-                    <span className="block truncate leading-tight font-medium">
+                    <span
+                      className="block truncate leading-tight font-medium"
+                      title={supplier.name}
+                    >
                       {supplier.name}
                     </span>
                   </TableCell>
@@ -293,7 +296,10 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
                     </span>
                   </TableCell>
                   <TableCell className="max-w-0">
-                    <span className="block truncate text-muted-foreground">
+                    <span
+                      className="block truncate text-muted-foreground"
+                      title={supplier.note ?? undefined}
+                    >
                       {supplier.note ?? EMPTY}
                     </span>
                   </TableCell>

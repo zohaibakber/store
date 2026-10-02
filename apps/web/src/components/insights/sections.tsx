@@ -114,20 +114,15 @@ function NameCell({ children }: { readonly children: React.ReactNode }) {
   );
 }
 
-function ProductLink({
-  productId,
-  children,
-}: {
-  readonly productId: string;
-  readonly children: React.ReactNode;
-}) {
+function ProductLink({ productId, name }: { readonly productId: string; readonly name: string }) {
   return (
     <Link
       className="min-w-0 truncate leading-tight font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
       params={{ productId }}
+      title={name}
       to="/products/$productId"
     >
-      {children}
+      {name}
     </Link>
   );
 }
@@ -182,7 +177,7 @@ export function AttentionFeed({
             {shown.map((insight) => (
               <TableRow key={insight.productId}>
                 <NameCell>
-                  <ProductLink productId={insight.productId}>{insight.name}</ProductLink>
+                  <ProductLink name={insight.name} productId={insight.productId} />
                 </NameCell>
                 <TableCell>
                   <StatusBadge status={insight.status} />
@@ -396,7 +391,7 @@ export function TopSellers({ period }: { readonly period: SalesPeriod }) {
             {products.map((product) => (
               <TableRow key={product.productId}>
                 <NameCell>
-                  <ProductLink productId={product.productId}>{product.name}</ProductLink>
+                  <ProductLink name={product.name} productId={product.productId} />
                   <TrendIcon trend={product.trend} />
                 </NameCell>
                 <TableCell>
@@ -519,7 +514,7 @@ export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary })
         <Table aria-label="Expiring batches" variant="card">
           <TableHeader>
             <TableRow>
-              <TableHead className="h-8">Product</TableHead>
+              <TableHead className="h-8 min-w-40">Product</TableHead>
               <TableHead className="h-8">Batch</TableHead>
               <TableHead className="h-8">
                 <End>Units</End>
@@ -536,10 +531,15 @@ export function ExpiringSoon({ summary }: { readonly summary: InsightsSummary })
             {batches.map((batch) => (
               <TableRow key={`${batch.productId}-${batch.batchNumber ?? batch.expiresAt}`}>
                 <NameCell>
-                  <ProductLink productId={batch.productId}>{batch.name}</ProductLink>
+                  <ProductLink name={batch.name} productId={batch.productId} />
                 </NameCell>
                 <TableCell>
-                  <span className="text-muted-foreground">{batch.batchNumber ?? EMPTY}</span>
+                  <span
+                    className="block max-w-40 truncate text-muted-foreground"
+                    title={batch.batchNumber ?? undefined}
+                  >
+                    {batch.batchNumber ?? EMPTY}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <End>{formatNumber(batch.units)}</End>

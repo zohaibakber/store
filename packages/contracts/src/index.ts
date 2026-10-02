@@ -3,7 +3,7 @@ export * from "./catalog/purchasing";
 export * from "./local-workspace";
 export * from "./catalog/rules";
 export * from "./catalog/write";
-export { PositiveInt, Sha256Hex, SyncIdentifier } from "./schema-primitives";
+export { INT4_MAX, PositiveInt, Sha256Hex, SyncIdentifier } from "./schema-primitives";
 export * from "./server/schema";
 export * from "./store/helpers";
 export * from "./store/invoice-allocation";

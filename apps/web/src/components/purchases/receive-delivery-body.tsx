@@ -120,7 +120,7 @@ function ReceiveLineRow({
     return (
       <TableRow>
         <TableCell className="max-w-0">
-          <span className="block truncate font-medium capitalize">{item.productName}</span>
+          <span className="block truncate font-medium">{item.productName}</span>
         </TableCell>
         <TableCell colSpan={6}>
           <span className="text-sm text-muted-foreground">
@@ -139,9 +139,7 @@ function ReceiveLineRow({
           <span className="block truncate ps-3 text-sm text-muted-foreground">Another batch</span>
         ) : (
           <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate leading-tight font-medium capitalize">
-              {item.productName}
-            </span>
+            <span className="truncate leading-tight font-medium">{item.productName}</span>
             <span
               className={cn(
                 "truncate text-xs leading-tight tabular-nums",

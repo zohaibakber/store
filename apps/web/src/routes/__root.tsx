@@ -39,7 +39,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 function RootLayout() {
   return (
     <AuthProvider>
-      <ToastProvider>
+      <ToastProvider position="bottom-center">
         <AppUpdater />
         <Screen />
       </ToastProvider>

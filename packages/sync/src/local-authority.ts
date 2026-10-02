@@ -5,6 +5,7 @@ import {
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
+  INT4_MAX,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   purchasingRejection,
@@ -88,8 +89,6 @@ import {
 } from "./transport";
 
 export const LOCAL_AUTHORITY_EPOCH = SyncEpoch.make("1");
-
-const INT4_MAX = 2_147_483_647;
 
 const RETRY_MILLIS = 1_000;
 

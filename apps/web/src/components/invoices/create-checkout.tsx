@@ -1,3 +1,4 @@
+import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
@@ -33,6 +34,7 @@ function InvoiceCheckout() {
           <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
           <Input
             id="customer-name"
+            maxLength={MAX_CATALOG_NAME_LENGTH}
             onChange={(event) => setCustomerName(event.target.value)}
             placeholder="Walk-in customer"
             value={customerName}

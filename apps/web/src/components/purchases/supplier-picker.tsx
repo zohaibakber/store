@@ -99,7 +99,7 @@ export function SupplierPicker({
         placeholder={selected ? selected.name : placeholder}
         size="sm"
       />
-      <ComboboxPopup>
+      <ComboboxPopup className="max-w-96 *:min-w-0">
         <ComboboxEmpty>
           {canCreate ? "Type a name to add a supplier." : "No suppliers found."}
         </ComboboxEmpty>
@@ -121,7 +121,9 @@ export function SupplierPicker({
               </React.Fragment>
             ) : (
               <ComboboxItem key={option.id} value={option}>
-                <span className="truncate">{option.name}</span>
+                <span className="block truncate" title={option.name}>
+                  {option.name}
+                </span>
               </ComboboxItem>
             )
           }

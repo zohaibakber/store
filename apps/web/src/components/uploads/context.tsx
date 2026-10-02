@@ -1,5 +1,5 @@
 import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
-import { invoiceUploadRejection } from "@store/contracts";
+import { INT4_MAX, invoiceUploadRejection, MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
 import { useCatalogProductLookup, useInventoryActions } from "@store/inventory-react";
 import * as Result from "effect/Result";
@@ -15,6 +15,8 @@ import {
   ambiguousImportProductMessage,
   importProductMatch,
 } from "@/components/uploads/same-product";
+import { storeErrorMessage } from "@/lib/errors";
+import { formatCount, formatNumber } from "@/lib/format";
 import { parseExpiryDate } from "@/lib/format-date";
 import { useInvoiceReading } from "@/lib/invoice-reading";
 
@@ -67,6 +69,25 @@ const fileDescription = (file: File) => {
 };
 
 const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
+
+const QUOTED_NAME_LENGTH = 60;
+
+const quotedName = (name: string) =>
+  name.length > QUOTED_NAME_LENGTH ? `${name.slice(0, QUOTED_NAME_LENGTH)}…` : name;
+
+const importLineProblem = (line: ExtractedLine): string | null => {
+  const name = quotedName(line.name.trim());
+  if (line.name.trim().length > MAX_CATALOG_NAME_LENGTH)
+    return `“${name}” is longer than ${MAX_CATALOG_NAME_LENGTH} characters. Shorten the name in the file.`;
+  const expiresAt = parseExpiryDate(line.expiresAt);
+  if (expiresAt !== null && expiresAt < 1)
+    return `“${name}” has an expiry of ${line.expiresAt}. Use a date after 1970 or leave it empty.`;
+  if ([line.packQuantity, line.unitQuantity, line.unitsPerPack].some((value) => value > INT4_MAX))
+    return `“${name}” has a quantity above ${formatNumber(INT4_MAX)}. Lower it in the file.`;
+  if (line.packPrice !== null && line.packPrice > INT4_MAX)
+    return `“${name}” has a pack price above ${formatNumber(INT4_MAX / 100)}. Lower it in the file.`;
+  return null;
+};
 
 const proposedChanges = (
   lines: InvoiceExtraction["lines"],
@@ -147,6 +168,7 @@ function UploadProvider({
     setPhase("processing");
     const failed = (title: string) => {
       toastManager.add({ title, type: "error" });
+      setChanges([]);
       setPhase("idle");
     };
     try {
@@ -162,6 +184,11 @@ function UploadProvider({
       const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
       if (stockLines.length === 0) {
         failed("No received stock was found in the attachments.");
+        return;
+      }
+      const problem = stockLines.map(importLineProblem).find((found) => found !== null);
+      if (problem) {
+        failed(problem);
         return;
       }
       const proposed = proposedChanges(
@@ -180,7 +207,7 @@ function UploadProvider({
         type: "success",
       });
     } catch (error) {
-      failed(error instanceof Error ? error.message : "Could not analyse invoices.");
+      failed(storeErrorMessage(error, "Could not analyse invoices."));
     } finally {
       busyRef.current = false;
     }
@@ -221,13 +248,13 @@ function UploadProvider({
       setFiles([]);
       setInvoice(null);
       toastManager.add({
-        title: `Created ${result.createdProducts} products and ${result.createdBatches} batches.`,
+        title: `Created ${formatCount(result.createdProducts, "product")} and ${formatCount(result.createdBatches, "batch", "batches")}.`,
         type: "success",
       });
       setPhase("idle");
     } catch (error) {
       toastManager.add({
-        title: error instanceof Error ? error.message : "Could not apply changes.",
+        title: storeErrorMessage(error, "Could not apply changes."),
         type: "error",
       });
       setPhase("ready");

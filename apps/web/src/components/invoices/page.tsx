@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatNumber } from "@/lib/format";
 import { formatDateTime, formatInvoiceTime } from "@/lib/format-date";
+import { cn } from "@/lib/utils";
 
 const columnHelper = createColumnHelper<ListTableFeatures, Invoice>();
 
@@ -48,7 +49,13 @@ const columns = columnHelper.columns([
     id: "customer",
     header: "Customer",
     cell: ({ row, getValue }) => (
-      <span className={row.original.customerName ? undefined : "text-muted-foreground"}>
+      <span
+        className={cn(
+          "block max-w-96 truncate",
+          !row.original.customerName && "text-muted-foreground",
+        )}
+        title={row.original.customerName ?? undefined}
+      >
         {getValue()}
       </span>
     ),

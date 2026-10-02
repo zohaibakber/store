@@ -142,7 +142,7 @@ function ProductPickerSearch({
           showClear
           startAddon={<HugeiconsIcon aria-hidden="true" icon={Search01Icon} />}
         />
-        <AutocompletePopup>
+        <AutocompletePopup className="max-w-(--anchor-width) *:min-w-0">
           {!term && <AutocompleteStatus>Recent products</AutocompleteStatus>}
           <AutocompleteEmpty>No matching products.</AutocompleteEmpty>
           <AutocompleteList>
@@ -177,7 +177,7 @@ function ProductName({
 }) {
   return (
     <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-      <span className="min-w-0 truncate capitalize">{name}</span>
+      <span className="min-w-0 truncate">{name}</span>
       {strength && <span className="shrink-0 text-muted-foreground">{strength}</span>}
       <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">
         {categoryName}
