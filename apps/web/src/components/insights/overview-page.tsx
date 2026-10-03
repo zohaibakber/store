@@ -1,13 +1,11 @@
 import type { SalesRange } from "@store/contracts";
 import { useInventoryInsights } from "@store/inventory-react";
-import * as React from "react";
 
 import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
 
 import { InsightsBuilding } from "./building";
-import { InsightsFreshness } from "./freshness";
 import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
@@ -74,9 +72,6 @@ export function OverviewPage({
     <PageLayout>
       <PageToolbar>
         <PageHeading className="me-auto">Dashboard</PageHeading>
-        <React.Suspense fallback={null}>
-          <InsightsFreshness />
-        </React.Suspense>
         <SegmentedRadio
           label="Reporting period"
           onValueChange={(value) => onRangeChange(RANGE_FROM_VALUE[value])}
