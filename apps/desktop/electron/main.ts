@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import { makeSourceLinks } from "@store/web/host/source-links";
 import * as Schema from "effect/Schema";
 import {
   app,
@@ -354,17 +355,20 @@ void app.whenReady().then(async () => {
     contentSecurityPolicy: rendererCsp,
   });
   registerNewSaleAccelerator();
+  const sourceLinks = makeSourceLinks();
   registerAuthIpc({
     ipcMain,
     broker: authBroker,
     allowedOrigins: allowedRendererOrigins,
     oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
     openExternal: (url) => shell.openExternal(url),
+    rememberSourceLinks: sourceLinks.remember,
   });
   registerShareIpc({
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
     openExternal: (url) => shell.openExternal(url),
+    isSourceLink: sourceLinks.allows,
     writeClipboardText: (text) => clipboard.writeText(text),
     choosePdfDestination,
   });

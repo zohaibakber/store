@@ -1,4 +1,6 @@
 import {
+  GlobalProductSearchInput,
+  GlobalProductSearchResult,
   InvoiceExtraction,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
@@ -25,6 +27,11 @@ import {
 
 export class ProductScanPayloadErrors extends HttpApiMiddleware.Service<ProductScanPayloadErrors>()(
   "@store/server/ProductScanPayloadErrors",
+  { error: BadRequest },
+) {}
+
+export class GlobalSearchPayloadErrors extends HttpApiMiddleware.Service<GlobalSearchPayloadErrors>()(
+  "@store/server/GlobalSearchPayloadErrors",
   { error: BadRequest },
 ) {}
 
@@ -73,10 +80,21 @@ const productScans = HttpApiGroup.make("productScans").add(
     .middleware(ProductScanPayloadErrors),
 );
 
+const globalSearch = HttpApiGroup.make("globalSearch").add(
+  HttpApiEndpoint.post("search", "/api/global-search", {
+    payload: GlobalProductSearchInput,
+    success: GlobalProductSearchResult,
+    error: [BadRequest, TooManyRequests, BadGateway],
+  })
+    .middleware(OrganizationAuth)
+    .middleware(GlobalSearchPayloadErrors),
+);
+
 export const StoreApi = HttpApi.make("StoreApi").add(
   system,
   auth,
   uploads,
   productScans,
+  globalSearch,
   syncGroup.middleware(OrganizationAuth),
 );

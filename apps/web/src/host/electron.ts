@@ -1,6 +1,10 @@
 import type { ElectronReplicaBridge } from "@store/client-db";
 import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
-import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import type {
+  GlobalProductSearchInput,
+  GlobalProductSearchResult,
+  InvoiceExtraction,
+} from "@store/contracts/server-api.schema";
 import * as Schema from "effect/Schema";
 
 import type {
@@ -24,6 +28,9 @@ export type ServerApiIpcBridge = {
   readonly analyseInvoices: (input: {
     files: Array<InvoiceUploadFile>;
   }) => Promise<InvoiceExtraction>;
+  readonly searchGlobalProducts: (
+    input: GlobalProductSearchInput,
+  ) => Promise<GlobalProductSearchResult>;
   readonly organizationDevices: () => Promise<OrganizationDevices>;
   readonly commandDevice: (command: DeviceCommand) => Promise<OrganizationDevices>;
 };
@@ -87,6 +94,7 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
       onOAuthCallback: (listener) => auth.onOAuthCallback(listener),
     },
     analyseInvoices: (files) => serverApi.analyseInvoices({ files: [...files] }),
+    searchGlobalProducts: (query) => withServerMessage(serverApi.searchGlobalProducts({ query })),
     devices: {
       list: () => withServerMessage(serverApi.organizationDevices()),
       command: (command) => withServerMessage(serverApi.commandDevice(command)),

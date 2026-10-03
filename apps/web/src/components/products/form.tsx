@@ -28,6 +28,7 @@ import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
+import { lenientSearchParam } from "@/lib/search-param";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 type StrengthUnit = (typeof strengthUnits)[number];
@@ -93,8 +94,10 @@ type ParsedStrength = {
   strengthUnit: StrengthUnit;
 };
 
+const STRENGTH_WITH_UNIT = /^([\d.]+)\s*(mg|mcg|g|ml|l)$/i;
+
 const parseStrength = (value: string | null): ParsedStrength => {
-  const match = value?.match(/^([\d.]+)\s*(mg|mcg|g|ml|l)$/i);
+  const match = value?.match(STRENGTH_WITH_UNIT);
   if (!match) {
     return { strength: value ?? "", strengthUnit: "mg" };
   }
@@ -172,13 +175,46 @@ const productToFormValues = (product: Product): ProductFormValues => {
   };
 };
 
-function useProductCreateForm(categories: ReadonlyArray<Category>) {
+const ProductPrefill = Schema.Struct({
+  name: lenientSearchParam(
+    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_CATALOG_NAME_LENGTH)),
+  ),
+  composition: lenientSearchParam(
+    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
+  ),
+  strength: lenientSearchParam(Schema.String.check(Schema.isPattern(STRENGTH_WITH_UNIT))),
+  unitsPerPack: lenientSearchParam(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(INT4_MAX)),
+  ),
+});
+type ProductPrefill = typeof ProductPrefill.Type;
+
+const prefilledFormValues = (
+  base: ProductFormValues,
+  prefill: ProductPrefill,
+): ProductFormValues => {
+  const strength = prefill.strength === undefined ? base : parseStrength(prefill.strength);
+  return {
+    ...base,
+    name: prefill.name ?? base.name,
+    composition: prefill.composition ?? base.composition,
+    strength: strength.strength,
+    strengthUnit: strength.strengthUnit,
+    unitsPerPack:
+      prefill.unitsPerPack === undefined ? base.unitsPerPack : String(prefill.unitsPerPack),
+  };
+};
+
+function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: ProductPrefill = {}) {
   const navigate = useNavigate();
   const { createProduct } = useInventoryActions();
 
   return useForm({
     ...productFormOpts,
-    defaultValues: { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
+    defaultValues: prefilledFormValues(
+      { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
+      prefill,
+    ),
     onSubmit: async ({ value }) => {
       try {
         const product = await createProduct(
@@ -562,4 +598,4 @@ function UnitPriceField({
   );
 }
 
-export { ProductForm, useProductCreateForm, useProductUpdateForm };
+export { ProductForm, ProductPrefill, useProductCreateForm, useProductUpdateForm };

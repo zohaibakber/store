@@ -6,6 +6,10 @@ import {
   RegisterPasswordCommand,
 } from "@store/auth";
 import { DeviceCommand, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import {
+  GlobalProductSearchInput,
+  type GlobalProductSearchResult,
+} from "@store/contracts/server-api.schema";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import { flow } from "effect/Function";
@@ -26,6 +30,7 @@ import {
   AUTH_SIGN_OUT_CHANNEL,
   SERVER_DEVICE_COMMAND_CHANNEL,
   SERVER_DEVICES_CHANNEL,
+  SERVER_GLOBAL_SEARCH_CHANNEL,
   SERVER_UPLOADS_CHANNEL,
 } from "./ipc-channels";
 import { trustedIpcListener } from "./ipc-sender";
@@ -70,6 +75,7 @@ const decodeCallbackUrl = decodeOrReject(CallbackUrl, GOOGLE_CALLBACK_INVALID);
 const decodeOrganizationCommand = Schema.decodeUnknownEffect(OrganizationCommand);
 const decodeInvoiceUpload = Schema.decodeUnknownEffect(InvoiceUpload);
 const decodeDeviceCommand = Schema.decodeUnknownEffect(DeviceCommand);
+const decodeGlobalSearch = Schema.decodeUnknownEffect(GlobalProductSearchInput);
 
 const googleAuthorizationUrl = (candidate: string) => {
   const url = URL.parse(candidate);
@@ -103,6 +109,7 @@ export const registerAuthIpc = (options: {
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly oauthRedirectUri: string;
   readonly openExternal: (url: string) => Promise<void>;
+  readonly rememberSourceLinks: (result: GlobalProductSearchResult) => void;
 }) => {
   const { ipcMain, allowedOrigins } = options;
   const { run } = options.broker;
@@ -203,6 +210,20 @@ export const registerAuthIpc = (options: {
           const auth = yield* DesktopAuth;
           const upload = yield* decodeInvoiceUpload(input);
           return yield* auth.analyseInvoices(upload.files);
+        }),
+      ),
+    ),
+  );
+  ipcMain.handle(
+    SERVER_GLOBAL_SEARCH_CHANNEL,
+    trustedIpcListener(allowedOrigins, (_event, input) =>
+      run(
+        Effect.gen(function* () {
+          const auth = yield* DesktopAuth;
+          const search = yield* decodeGlobalSearch(input);
+          return yield* Effect.tap(auth.searchGlobalProducts(search.query), (result) =>
+            Effect.sync(() => options.rememberSourceLinks(result)),
+          );
         }),
       ),
     ),

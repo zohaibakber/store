@@ -1,10 +1,16 @@
-import { ArrowDown01Icon, ArrowUp01Icon, CornerDownLeftIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  CornerDownLeftIcon,
+  Image01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, Product, StockStatus } from "@store/contracts";
+import type { GlobalProduct } from "@store/contracts/server-api.schema";
 import { productStock } from "@store/contracts/store-helpers";
 import { useProductInsight, useSuspenseCatalogProduct } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
-import { Suspense, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CommandShortcut } from "@/components/ui/command";
@@ -14,7 +20,7 @@ import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
 
-import type { Entry, Page } from "./command-menu-entries";
+import { globalProductDetails, type Entry, type Page } from "./command-menu-entries";
 
 export function Hint({ keys, label }: { readonly keys: ReactNode; readonly label: string }) {
   return (
@@ -100,6 +106,23 @@ export function FooterHints({
     );
   }
 
+  if (entry?.kind === "global") {
+    return (
+      <div className="flex items-center gap-4">
+        <Hint keys={enterKey} label="Add to catalog" />
+        <Hint
+          keys={
+            <KbdGroup>
+              <Kbd>Ctrl</Kbd>
+              {enterKey}
+            </KbdGroup>
+          }
+          label="Open source"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-4">
       {navigate}
@@ -125,6 +148,8 @@ export function EntryRow({ entry }: { readonly entry: Entry }) {
       );
     case "invoice":
       return <InvoiceRow invoice={entry.invoice} />;
+    case "global":
+      return <GlobalProductRow product={entry.product} />;
     case "action":
       return (
         <span className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -245,6 +270,50 @@ function StockLabel({
       ) : null}
       {stock <= 0 ? "Out of stock" : formatCount(stock, "unit")}
       {tone && stock > 0 ? <span className="sr-only">, {tone.label}</span> : null}
+    </span>
+  );
+}
+
+function GlobalThumbnail({ imageUrl }: { readonly imageUrl: string | null }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground">
+      {imageUrl === null || failedUrl === imageUrl ? (
+        <HugeiconsIcon aria-hidden="true" className="size-4" icon={Image01Icon} />
+      ) : (
+        <img
+          alt=""
+          className="size-full object-cover"
+          decoding="async"
+          loading="lazy"
+          onError={() => setFailedUrl(imageUrl)}
+          referrerPolicy="no-referrer"
+          src={imageUrl}
+        />
+      )}
+    </span>
+  );
+}
+
+function GlobalProductRow({ product }: { readonly product: GlobalProduct }) {
+  const details = globalProductDetails(product);
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3">
+      <GlobalThumbnail imageUrl={product.imageUrl} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate">
+          {product.name}
+          {product.strength ? (
+            <span className="text-muted-foreground"> {product.strength}</span>
+          ) : null}
+        </span>
+        {details === "" ? null : (
+          <span className="truncate text-xs text-muted-foreground">{details}</span>
+        )}
+      </span>
+      <span className="max-w-40 shrink-0 truncate text-xs text-muted-foreground">
+        {product.sourceName}
+      </span>
     </span>
   );
 }

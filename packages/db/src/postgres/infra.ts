@@ -37,10 +37,13 @@ const InventoryPostgresRole = Effect.gen(function* () {
   });
 });
 
+const NEON_FREE_HISTORY_RETENTION_SECONDS = 6 * 60 * 60;
+
 const InventoryNeon = Effect.gen(function* () {
   const schema = yield* InventorySchema;
   return yield* Neon.Project("InventoryNeon", {
     name: "tabaaq-inventory-dev",
+    historyRetentionSeconds: NEON_FREE_HISTORY_RETENTION_SECONDS,
     migrations: schema,
   });
 });
