@@ -3,14 +3,17 @@ import {
   GoogleIdToken,
   IdentifyInput,
   OtpCode,
-  Password,
   type OtpChallengeId,
 } from "@store/auth";
 import { RateLimitError } from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
-import { EphemeralStore, ephemeralStoreLayer } from "../src/ephemeral";
+import { AuthCrypto } from "../src/crypto";
+import { AuthD1 } from "../src/d1";
+import { EphemeralStore } from "../src/ephemeral";
 import {
   browser,
   count,
@@ -59,7 +62,9 @@ describe("one-time codes", () => {
     await run(delivering, googleSignIn(googleOnly));
     const delivered = await identify(delivering, googleOnly.email);
     if (delivered._tag !== "Otp" || !delivered.developmentCode) throw new Error("expected a code");
-    expect(count(delivering, "SELECT count(*) AS total FROM auth_ephemeral_record")).toBe(1);
+    expect(
+      count(delivering, "SELECT count(*) AS total FROM auth_ephemeral_record WHERE kind = 'otp'"),
+    ).toBe(1);
     const signedIn = await run(delivering, (auth) =>
       auth.authenticate(otpSignIn(delivered.challengeId, delivered.developmentCode ?? "")),
     );
@@ -79,14 +84,22 @@ describe("one-time codes", () => {
 
     const planted = await Effect.runPromise(
       EphemeralStore.use((store) =>
-        store.createOtp({
+        store.issueOtp({
           email: EmailAddress.make(googleOnly.email),
           code: OtpCode.make("123456"),
           expiresAt: Date.now() + 60_000,
+          metered: true,
         }),
-      ).pipe(Effect.provide(ephemeralStoreLayer(disabled.d1, EPHEMERAL_PEPPER))),
+      ).pipe(
+        Effect.provide(
+          EphemeralStore.layer(EPHEMERAL_PEPPER).pipe(
+            Layer.provide([AuthD1.layer(disabled.d1), AuthCrypto.layer]),
+          ),
+        ),
+      ),
     );
-    for (const challengeId of [route.challengeId, planted]) {
+    if (planted._tag !== "Issued") throw new Error("expected a planted code");
+    for (const challengeId of [route.challengeId, planted.challengeId]) {
       const refused = await failing(disabled, (auth) =>
         auth.authenticate(otpSignIn(challengeId, "123456")),
       );
@@ -97,7 +110,7 @@ describe("one-time codes", () => {
 });
 
 describe("refresh rotation", () => {
-  it("gives one token exactly one successor and survives an immediate replay", async () => {
+  it("gives one token exactly one successor and replays a lost response once", async () => {
     const instance = harness();
     const first = await signUp(instance, "owner@example.com");
     const raced = await Promise.all([
@@ -110,15 +123,18 @@ describe("refresh rotation", () => {
     expect(lost).toMatchObject([{ status: 401, code: "INVALID_REFRESH_TOKEN" }]);
     expect(sessions(instance)).toBe(2);
 
-    const replay = await refreshWith(instance, first.refreshToken);
-    expect(replay).toMatchObject({
-      _tag: "Failure",
-      failure: { status: 401, code: "INVALID_REFRESH_TOKEN" },
-    });
-
-    const third = await refreshWith(instance, second[0]?.refreshToken);
-    expect(third._tag).toBe("Success");
+    const replayed = await refreshWith(instance, first.refreshToken);
+    if (replayed._tag !== "Success") throw new Error("expected the lost response to be replayed");
+    expect(replayed.success.refreshToken).not.toBe(second[0]?.refreshToken);
     expect(sessions(instance)).toBe(3);
+
+    const again = await refreshWith(instance, first.refreshToken);
+    if (again._tag !== "Success") throw new Error("expected a second lost response to be replayed");
+    expect(sessions(instance)).toBe(4);
+
+    const third = await refreshWith(instance, again.success.refreshToken);
+    expect(third._tag).toBe("Success");
+    expect(sessions(instance)).toBe(5);
     expect(sessions(instance, "revokedAt IS NULL")).toBe(1);
     expect(count(instance, "SELECT count(DISTINCT familyId) AS total FROM auth_session")).toBe(1);
   });
@@ -129,7 +145,7 @@ describe("refresh rotation", () => {
     const second = await refreshWith(instance, first.refreshToken);
     if (second._tag !== "Success") throw new Error("expected a rotation");
     instance.d1.database.exec(
-      "UPDATE auth_session SET revokedAt = revokedAt - 60 WHERE replacedBySessionId IS NOT NULL",
+      "UPDATE auth_session SET revokedAt = revokedAt - 120 WHERE replacedBySessionId IS NOT NULL",
     );
 
     const replay = await refreshWith(instance, first.refreshToken);
@@ -229,7 +245,7 @@ describe("rate limits", () => {
         auth.authenticate({
           _tag: "Password",
           email: EmailAddress.make("owner@example.com"),
-          password: Password.make(password),
+          password: Redacted.make(password),
           client: native,
         }),
       );
@@ -240,7 +256,10 @@ describe("rate limits", () => {
         code: "INVALID_CREDENTIALS",
       });
     }
-    await expect(signIn(PASSWORD)).resolves.toMatchObject({ status: 429, code: "RATE_LIMITED" });
+    await expect(signIn(Redacted.value(PASSWORD))).resolves.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+    });
   });
 
   it("refuses a correct credential while the limiter cannot answer", async () => {
@@ -249,7 +268,9 @@ describe("rate limits", () => {
       limiter.available
         ? Effect.succeed({ success: true })
         : Effect.fail(new RateLimitError({ message: "limiter unavailable", cause: "binding" }));
-    const instance = harness({ limits: { tenPerMinute: limit, fivePerMinute: limit } });
+    const instance = harness({
+      limits: { tenPerMinute: limit, fivePerMinute: limit, sixtyPerMinute: limit },
+    });
     await signUp(instance, "owner@example.com");
     limiter.available = false;
 

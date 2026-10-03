@@ -1,6 +1,6 @@
 import type {
   IdentifyInput,
-  LoginCommand,
+  LoginCredentials,
   LoginRoute,
   OrganizationCommand,
   OrganizationCommandResult,
@@ -31,7 +31,7 @@ export type AuthSessionBridge = {
 
 type WithoutClient<Command> = Command extends unknown ? Omit<Command, "client"> : never;
 
-export type SignInCredentials = WithoutClient<LoginCommand>;
+export type SignInCredentials = WithoutClient<LoginCredentials>;
 
 export type SignInBridge = {
   readonly identify: (input: IdentifyInput) => Promise<LoginRoute>;

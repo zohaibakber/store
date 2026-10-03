@@ -71,6 +71,12 @@ const fromAuth = <A, R>(effect: Effect.Effect<A, AuthFailure, R>) =>
     Effect.mapError(authHttpError),
   );
 
+const admitCallerAddress = (auth: AuthService["Service"]) =>
+  Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
+    const address = request.headers["cf-connecting-ip"];
+    return address === undefined ? Effect.void : auth.admitAddress(address);
+  });
+
 const browserTokenPayload = <T extends TokenSet>(tokens: T, client: AuthClientKind) =>
   client._tag === "Browser" ? Struct.omit(tokens, ["refreshToken"]) : tokens;
 
@@ -180,34 +186,41 @@ const SessionHandlers = HttpApiBuilder.group(
       });
     });
 
+    const admitCaller = fromAuth(admitCallerAddress(auth));
+
     return handlers
       .handle(
         "identify",
         Effect.fn("AuthSessionHandlers.identify")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* fromAuth(auth.identify(payload));
         }),
       )
       .handle(
         "signInPassword",
         Effect.fn("AuthSessionHandlers.signInPassword")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
         }),
       )
       .handle(
         "signInOtp",
         Effect.fn("AuthSessionHandlers.signInOtp")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
         }),
       )
       .handle(
         "signUpPassword",
         Effect.fn("AuthSessionHandlers.signUpPassword")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
         }),
       )
       .handle(
         "googleStart",
         Effect.fn("AuthSessionHandlers.googleStart")(function* ({ payload }) {
+          yield* admitCaller;
           const url = yield* fromAuth(auth.beginGoogle(payload));
           return { url: url.href };
         }),
@@ -215,12 +228,14 @@ const SessionHandlers = HttpApiBuilder.group(
       .handle(
         "googleExchange",
         Effect.fn("AuthSessionHandlers.googleExchange")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* issueBrowserTokens(auth.exchangeGoogle(payload), payload.client, cookies);
         }),
       )
       .handle(
         "googleNative",
         Effect.fn("AuthSessionHandlers.googleNative")(function* ({ payload }) {
+          yield* admitCaller;
           return yield* issueBrowserTokens(
             auth.exchangeGoogleIdToken(payload),
             payload.client,
@@ -315,7 +330,8 @@ const GoogleCallbackRoutes = HttpRouter.use((router) =>
         if (!code || !state) {
           return oauthCallbackErrorResponse(400, "Google did not return an authorization code.");
         }
-        return yield* auth.completeGoogle({ code, state }).pipe(
+        return yield* admitCallerAddress(auth).pipe(
+          Effect.andThen(auth.completeGoogle({ code, state })),
           Effect.match({
             onFailure: callbackFailureResponse,
             onSuccess: (callback) => {

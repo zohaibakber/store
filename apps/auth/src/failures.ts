@@ -43,7 +43,12 @@ const REFUSALS = {
   PasswordAccountExists: wire(
     "Conflict",
     "PASSWORD_ACCOUNT_EXISTS",
-    "Sign in with your password, then connect Google from settings.",
+    "An account already exists for this email. Sign in with your password.",
+  ),
+  GoogleMailboxUnproven: wire(
+    "Conflict",
+    "GOOGLE_MAILBOX_UNPROVEN",
+    "An account already exists for this email. Sign in the way you did before.",
   ),
   GoogleAccountLinked: wire(
     "Conflict",

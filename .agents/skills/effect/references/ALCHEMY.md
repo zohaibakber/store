@@ -34,6 +34,10 @@ At plan time a Durable Object's outer effect runs against mock state. It may res
 
 A Durable Object stub, and any HTTP client generated over one, is valid only inside the invocation that created it. Resolve the namespace binding once in the outer effect, and acquire the stub in the invocation that uses it, through Alchemy's per-execution memo. An isolate-wide layer or cache outlives the invocation; a canonical cache key does not extend the stub's lifetime. Add a keyed cache only when one invocation talks to several targets, with a capacity and a request-owned lifetime.
 
+## Values cached across requests
+
+A value an isolate keeps between requests is stored complete, in a `Ref`. `Cache`, `Effect.cached` and `Effect.cachedWithTTL` share one in-flight lookup between callers, and in a Worker that lookup's I/O belongs to the request that started it: when that request ends first, the other requests waiting on the entry can hang. Each request does its own fetch and the last one to finish writes the `Ref`. `apps/auth/src/google.ts` keeps Google's signing keys this way.
+
 ## Drizzle
 
 Yield every Drizzle chain directly: `const rows = yield* db.select().from(table)`. Alchemy's Drizzle handle is a lazy proxy that becomes an effect only when yielded. t3code found that handing an unyielded builder to `Effect.all` spins the isolate at full CPU.

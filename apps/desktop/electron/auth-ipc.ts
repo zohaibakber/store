@@ -41,11 +41,13 @@ const CREDENTIALS_INVALID = "The sign-in details are invalid.";
 const GOOGLE_CALLBACK_INVALID = "The Google callback is invalid.";
 const MAX_CALLBACK_URL_LENGTH = 2048;
 
-const SignInCredentials = Schema.Union([
-  PasswordLoginCommand.mapFields(Struct.omit(["client"])),
-  OtpLoginCommand.mapFields(Struct.omit(["client"])),
-  RegisterPasswordCommand.mapFields(Struct.omit(["client"])),
-]);
+const SignInCredentials = Schema.toEncoded(
+  Schema.Union([
+    PasswordLoginCommand.mapFields(Struct.omit(["client"])),
+    OtpLoginCommand.mapFields(Struct.omit(["client"])),
+    RegisterPasswordCommand.mapFields(Struct.omit(["client"])),
+  ]),
+);
 
 const CallbackUrl = Schema.String.check(Schema.isMaxLength(MAX_CALLBACK_URL_LENGTH));
 

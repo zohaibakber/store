@@ -80,7 +80,9 @@ To wait for a transition, read the stream: `SubscriptionRef.changes(state).pipe(
 - `Effect.forkDetach`: outlives everything. Almost never what you want.
 - Concurrency over a collection is explicit: `Effect.forEach(items, f, { concurrency: 8 })`. The default is sequential.
 - A deadline that should be a typed failure: `Effect.timeoutOrElse({ duration, orElse })`. One that should be absence: `Effect.timeoutOption`.
-- A region that must not be interrupted halfway: `Effect.uninterruptibleMask((restore) => ...)`, restoring only the wait.
+- A region that must not be interrupted halfway: `Effect.uninterruptibleMask((restore) => ...)`. Protect the smallest ownership handoff or commit/publication sequence; restore interruptibility where abandoning the work is safe. A mask neither serializes other fibers nor survives process loss. See [durability](DURABILITY.md).
+
+Pass the `AbortSignal` supplied by `Effect.tryPromise` to a foreign API that supports cancellation. Use `Effect.abortSignal` when the signal must follow a scope's lifetime instead of one call. An interrupted waiter does not establish that remote work stopped; accepted durable work needs its own cancellation and recovery policy.
 
 ## Coordination
 

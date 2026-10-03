@@ -132,7 +132,7 @@ export const ephemeralRecord = sqliteTable(
   "auth_ephemeral_record",
   {
     key: text().primaryKey(),
-    kind: text({ enum: ["otp", "oauth-state", "authorization"] }).notNull(),
+    kind: text({ enum: ["otp", "otp-issuance", "oauth-state", "authorization"] }).notNull(),
     payload: text().notNull(),
     expiresAt: integer().notNull(),
     createdAt: integer().notNull(),

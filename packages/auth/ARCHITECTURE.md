@@ -208,29 +208,58 @@ encode.
   memberships, and refresh sessions.
 - A refresh token is `sessionId.secret`. D1 stores only SHA-256 of the secret.
   Rotation consumes the current session and creates its replacement in one D1
-  batch. Reuse revokes the token family.
+  batch. A consumed token presented again within 90 seconds rotates the
+  family's live session: that is a client retrying after a lost response.
+  Presented later, it revokes the token family. Sign-out revokes the family.
 - D1 `auth_ephemeral_record` owns OTP challenges, OAuth state, and
   short-lived authorization codes. The row key is a peppered SHA-256 of the
-  record kind and identifier (for an OTP, challenge ID plus code), so D1 never
-  holds a usable code. Consumption is one
+  record kind and identifier. Consumption is one
   `DELETE ... WHERE key = ? AND kind = ? AND expiresAt > ? RETURNING payload`
   statement. D1 serializes writes, so concurrent consumers of the same record
-  get exactly one row. Every insert shares a batch with a bounded sweep of
-  expired rows. Payloads are JSON encoded and decoded through Effect Schema.
+  get exactly one row. An OTP row holds an HMAC of the challenge ID and code
+  plus a failure count, so D1 never holds a usable code. One batch deletes the
+  row on a match or on the fifth attempt and otherwise counts the failure, so a
+  challenge allows five guesses. An `otp-issuance` row per address records the
+  latest challenge and the hour's count. Issuing is one batch that swaps that
+  row by compare-and-set and inserts the new challenge only if the swap won.
+  An earlier challenge stays valid until it expires, so a second request cannot
+  cancel a code already in the inbox. While the latest challenge is live, a
+  request within 30 seconds or past the fifth issue in an hour returns that
+  challenge without sending again. Past the fifth issue with no live challenge
+  the request is refused. A failed delivery retracts the challenge and its
+  count. Issuance under `AUTH_DEV_OTP` is unmetered. Every insert shares a
+  batch with a bounded sweep of expired rows. Payloads are JSON encoded and
+  decoded through Effect Schema.
 - Login, OTP, registration, Google identity, and invitation attempts use the
   same Cloudflare Workers rate-limit bindings as the API worker. Counters are
-  per location and the window is 10 or 60 seconds.
+  per location and the window is 10 or 60 seconds. Identify, sign-in, sign-up
+  and the Google start, callback and exchange routes are also limited to 60
+  requests a minute per caller: the `CF-Connecting-IP` address, or its /64 for
+  IPv6. Refresh and sign-out are not.
+- A password is `Redacted` from the HTTP decode to the hasher. Sign-in accepts
+  any password up to 256 characters, so the registration policy can tighten
+  without locking anyone out. A stored hash below the current cost still
+  verifies and is replaced on that sign-in by compare-and-set.
+- A Google identity attaches to an existing account by email only when Google
+  owns the mailbox: a `gmail.com` address or a non-empty Workspace `hd` claim.
+  Any other verified email creates a new account or is refused.
 - Access tokens are short-lived ES256 JWTs. The auth Worker signs with a private
   JWK. The API and clients verify with the public JWK. Access can continue while
   offline until `exp`; refresh and sync require the network.
 - A new user gets one organization in the same D1 batch. The organization ID
-  directly scopes inventory rows and replica sync.
+  directly scopes inventory rows and replica sync. A new session opens the
+  membership the user joined most recently.
 - Postgres is the authoritative inventory database. Authenticated
   `/api/sync/*` requests write to Postgres. The API validates the same JWT and
   filters every replica stream by its signed organization claim.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in
   platform secure storage.
+- The browser clears its session before it asks the Worker to revoke the
+  cookie. If that request fails or takes over ten seconds it leaves a hint in
+  local storage. A start that finds the hint opens signed out and retries in
+  the background, until the request succeeds or the user signs in again. A
+  refresh in another tab does not clear the hint.
 - Every cookie-authenticated mutation validates `Origin` against the explicit
   allowlist and requires JSON. Native refresh uses a bearer-like body secret and
   an allowlisted app redirect.
@@ -255,6 +284,7 @@ apps/auth/
   infra.ts             auth.<domain> Worker, D1, secrets
   src/service.ts       AuthService layer composing login/session/google/org ops
   src/crypto.ts        peppered hashes, OTP, refresh token parsing
+  src/d1.ts            the one D1 client and atomic batches
   src/repository.ts    D1 authority
   src/ephemeral.ts     single-use expiring D1 records
   src/google.ts        Google OAuth adapter
@@ -276,6 +306,12 @@ apps/server/
   implementation because Web Crypto supports it without native modules and
   workerd rejects higher counts. The password module isolates a future Argon2id
   service.
+- We accept that anyone who knows an address can spend its five codes for the
+  hour, in exchange for a bound on the mail one address can be sent. No
+  production layer delivers OTP yet, so this applies once one does.
+- We accept that a new session opens the most recently joined organization and
+  that nothing switches organizations yet, so an owner who accepts an
+  invitation cannot reach their first organization until that exists.
 - We accept a development-only OTP return value while email delivery is absent.
   Production must not enable `AUTH_DEV_OTP`.
 

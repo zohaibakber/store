@@ -43,6 +43,8 @@ Assert what a caller or operator can observe: returned values and typed failures
 
 Worth asserting: what happens on interruption and at scope close, retry bounds, idempotency of a replayed command, convergence of two replicas, and that a rejected import or migration wrote nothing. Assertions that mirror the implementation line by line are the throwaway kind.
 
+For durable work, pause execution with `Deferred` at the commit boundaries. Exercise a failed acceptance, a committed request with no execution yet, a remote success with no local receipt yet, and cancellation racing a late result. Reopen over the persisted state and check identity, visible state and external effects. Compare full replay with checkpoint plus suffix, including state first read after recovery. The [durability reference](DURABILITY.md) defines the expected outcomes. A formal model can check the abstract transitions; the implementation still needs these checks through its real storage and service boundaries.
+
 ## Real services, doubles at the true boundaries
 
 - Run the real service through its real layer. Replace only what leaves the process: the network, another process, a paid provider.

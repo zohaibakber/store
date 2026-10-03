@@ -21,7 +21,7 @@ import {
   type GoogleAuthorization as GoogleAuthorizationType,
   type IdentifyInput as IdentifyInputType,
   type IssuedSession as IssuedSessionType,
-  type LoginCommand as LoginCommandType,
+  type LoginCredentials,
   type LoginRoute as LoginRouteType,
 } from "./model";
 
@@ -52,7 +52,7 @@ export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth
 export interface AuthClientApi {
   readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
   readonly authenticate: (
-    command: LoginCommandType,
+    command: LoginCredentials,
   ) => Effect.Effect<IssuedSessionType, AuthClientError>;
   readonly beginGoogle: (
     input: BeginGoogleInputType,
@@ -85,7 +85,14 @@ const clientError =
           reason: { _tag: "Unreachable" },
           message: cause.message,
         });
-      default:
+      case "BadRequest":
+      case "Unauthenticated":
+      case "Forbidden":
+      case "NotFound":
+      case "Conflict":
+      case "UnsupportedMediaType":
+      case "TooManyRequests":
+      case "ServiceUnavailable":
         return new AuthClientError({
           operation,
           reason: {
@@ -95,8 +102,14 @@ const clientError =
           },
           message: cause.error.message,
         });
+      default: {
+        const _exhaustive: never = cause;
+        return _exhaustive;
+      }
     }
   };
+
+const decodeLoginCommand = Schema.decodeEffect(LoginCommand);
 
 const request = <Payload, A>(
   operation: AuthClientOperation,
@@ -121,8 +134,8 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
     baseUrl: baseUrl.replace(/\/+$/u, ""),
   });
 
-  const authenticate = Effect.fn("AuthClient.authenticate")((command: LoginCommandType) =>
-    Schema.decodeUnknownEffect(LoginCommand)(command).pipe(
+  const authenticate = Effect.fn("AuthClient.authenticate")((command: LoginCredentials) =>
+    decodeLoginCommand(command).pipe(
       Effect.mapError(() => invalidInput("authenticate", "The sign-in details are invalid.")),
       Effect.flatMap((valid) => {
         switch (valid._tag) {

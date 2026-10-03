@@ -1,6 +1,12 @@
-import { EmailAddress, WebCrypto, type EmailAddress as EmailAddressType } from "@store/auth";
+import {
+  EmailAddress,
+  normalizeEmail,
+  WebCrypto,
+  type EmailAddress as EmailAddressType,
+} from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import { constTrue } from "effect/Function";
@@ -22,11 +28,16 @@ const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 const KEY_SET_DEFAULT_TTL_MS = 60 * 60 * 1_000;
 const KEY_SET_MAX_TTL_MS = 24 * 60 * 60 * 1_000;
 const KEY_SET_REFETCH_COOLDOWN_MS = 60 * 1_000;
+const GOOGLE_REQUEST_TIMEOUT = Duration.seconds(10);
 
 const textEncoder = new TextEncoder();
 
 const GoogleTokenResponse = Schema.Struct({
   id_token: Schema.String,
+});
+
+const GoogleTokenRefusal = Schema.Struct({
+  error: Schema.String,
 });
 
 const GoogleKeySet = Schema.Struct({
@@ -57,7 +68,10 @@ const IdTokenClaims = Schema.Struct({
   name: Schema.optionalKey(Schema.String),
   picture: Schema.optionalKey(Schema.String),
   nonce: Schema.optionalKey(Schema.String),
+  hd: Schema.optionalKey(Schema.String),
 });
+
+const GOOGLE_MAILBOX = /@(gmail|googlemail)\.com$/u;
 
 const isTrue = (value: boolean | "true" | "false") => value === true || value === "true";
 
@@ -80,6 +94,7 @@ interface IdTokenExpectation {
 export interface GoogleProfile {
   readonly providerAccountId: string;
   readonly email: EmailAddressType;
+  readonly ownsMailbox: boolean;
   readonly name: string;
   readonly image: string | null;
 }
@@ -105,6 +120,7 @@ export class GoogleIdentityRejected extends Schema.TaggedError<GoogleIdentityRej
       "Expired",
       "EmailUnverified",
       "Nonce",
+      "Grant",
     ]),
     message: Schema.String,
   },
@@ -212,6 +228,12 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
           Effect.mapError((cause) => oauthError(operation, cause)),
         );
 
+      const withinDeadline = (operation: string) =>
+        Effect.timeoutOrElse({
+          duration: GOOGLE_REQUEST_TIMEOUT,
+          orElse: () => Effect.fail(oauthError(operation, "Google request timed out.")),
+        });
+
       const fetchKeySet = Effect.fnUntraced(function* (now: number) {
         const response = yield* execute("keys.request", HttpClientRequest.get(GOOGLE_KEYS_URL));
         const keys = signingKeys(yield* decodeOkJson("keys", GoogleKeySet, response));
@@ -222,7 +244,23 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
         };
         yield* Ref.set(keySetCache, Option.some(keySet));
         return keySet;
-      });
+      }, withinDeadline("keys.request"));
+
+      const exchangeForIdToken = Effect.fnUntraced(function* (
+        request: HttpClientRequest.HttpClientRequest,
+      ) {
+        const response = yield* execute("exchangeCode.request", request);
+        if (response.status === 400) {
+          const refusal = yield* HttpClientResponse.schemaBodyJson(GoogleTokenRefusal)(
+            response,
+          ).pipe(Effect.mapError((cause) => oauthError("exchangeCode.refusal", cause)));
+          return yield* refusal.error === "invalid_grant"
+            ? rejected("Grant", "Google refused the authorization code.")
+            : oauthError("exchangeCode.token", `Google refused the request (${refusal.error}).`);
+        }
+        const tokens = yield* decodeOkJson("exchangeCode.token", GoogleTokenResponse, response);
+        return tokens.id_token;
+      }, withinDeadline("exchangeCode.request"));
 
       const currentKeySet = (now: number) =>
         Ref.get(keySetCache).pipe(
@@ -282,10 +320,12 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
         ) {
           return yield* rejected("Nonce", "The identity token belongs to another sign-in.");
         }
+        const email = EmailAddress.make(normalizeEmail(claims.email));
         return {
           providerAccountId: claims.sub,
-          email: claims.email,
-          name: claims.name ?? claims.email.split("@")[0] ?? claims.email,
+          email,
+          ownsMailbox: (claims.hd ?? "") !== "" || GOOGLE_MAILBOX.test(email),
+          name: claims.name ?? email.split("@")[0] ?? email,
           image: claims.picture ?? null,
         } satisfies GoogleProfile;
       });
@@ -317,9 +357,8 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
               redirect_uri: configuration.callbackUrl,
             }),
           );
-          const response = yield* execute("exchangeCode.request", request);
-          const tokens = yield* decodeOkJson("exchangeCode.token", GoogleTokenResponse, response);
-          return yield* verify(tokens.id_token, { audiences: webAudience, nonce: input.nonce });
+          const idToken = yield* exchangeForIdToken(request);
+          return yield* verify(idToken, { audiences: webAudience, nonce: input.nonce });
         }),
         verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
           return yield* verify(idToken, { audiences, nonce: undefined });

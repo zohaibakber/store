@@ -16,7 +16,6 @@ Places where the repo does not yet meet the target. They are here so nobody copi
 ## Services and layers
 
 - **Tags without layers in `apps/server`.** `InventoryCommands`, `InventorySnapshots`, `InventoryImports`, `InventoryDevices` and `LiveFanout` are built by free `makeX(db)` functions and wrapped in `Layer.succeed` in `apps/server/src/http/app.ts`. Target: each service owns a layer that yields its database dependency; the Alchemy init effect bridges the built handle once.
-- **`D1Client.layer({ db })` built twice.** `apps/auth/src/repository.ts` and `apps/auth/src/ephemeral.ts` each call the factory, so the auth isolate holds two clients. Target: one constant at the composition root in `apps/auth/infra.ts`.
 - **Four layer spellings and two interface suffixes.** `X.layer`, `xLayer`, `layerX`, `XLive`; `XApi` and `XContract`. Target: the naming table in [services and layers](SERVICES_LAYERS.md), with the interface inline.
 - **Unnamed service methods.** `packages/workspace` (`SessionHttp`), `packages/inventory-react` and most of `apps/desktop` use `Effect.gen` where `Effect.fn("Service.method")` belongs, so their traces have no spans.
 
@@ -25,19 +24,18 @@ Places where the repo does not yet meet the target. They are here so nobody copi
 - **Validation by `throw new Error(message)`.** `packages/client-db/src/{catalog,purchasing,invoice}-projection.ts`, `packages/contracts/src/catalog/rules.ts`, `packages/contracts/src/store/invoice-allocation.ts`, wrapped in `catalog-commands.ts` by `Effect.try` with `catch: (cause) => cause`. User-facing refusals travel as `unknown`. Target: pure code returns `Result` with one tagged refusal, lifted by `Effect.fromResult`.
 - **Plain `Error` in `E`.** `apps/desktop/electron/{replica-sessions,auth-ipc,auth}.ts`, and the `E extends Error` constraint in `packages/client-db/src/replica/proxy-transport.ts`.
 - **`Effect.orDie` on every replica read.** `packages/client-db/src/replica/sql-client-session.ts`. A storage failure reaches the UI as a defect. Target: `ReplicaStorageError` in `E`.
-- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, `packages/sync/src/session.ts`, `packages/auth/src/client.ts`. A new case is silently treated as the generic one.
+- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, `packages/sync/src/session.ts`. A new case is silently treated as the generic one.
 - **Mixed construction and tags.** `X.make({...})` beside `new X({...})`; dotted tags in `apps/auth` and `packages/workspace` beside class-name tags elsewhere. Dotted tags that cross the wire are contracts.
 - **Failures dropped without a log.** A failed replica open becomes `undefined` in `replica-worker-handlers.ts`; the live-frame failure reason is discarded in `packages/sync/src/session.ts`.
 
 ## Hand-rolled
 
 - **Second sync HTTP client.** `packages/client-db/src/replica/proxy-transport.ts` re-declares the sync routes, encoding and error decoding that `HttpApiClient.make(SyncHttpApi)` derives. Target: the proxy is an `HttpClient` whose execution posts to the main process, provided to `SyncTransportService.layer`.
-- **TTL cache for Google signing keys.** `apps/auth/src/google.ts` keeps a `Ref<Option<KeySet>>` with a manual expiry and no in-flight sharing. Target: `Cache.makeWith` or `Effect.cachedInvalidateWithTTL`.
 - **Backoff ladders and `sleepJittered`.** `packages/sync/src/live-socket.ts` and `scheduler.ts` index a delay table by an attempt counter, and each defines `sleepJittered`. Target: one `Schedule`.
 - **Web Locks acquisition, twice.** `packages/sync/src/web-ownership.ts` and `apps/web/src/web/auth-broker.ts`. Target: one scoped `holdWebLock(name)`.
 - **Reply correlation `Map`.** `apps/desktop/electron/replica-pending.ts`. Target: `Rpc`, or a `Deferred` registry in a `Ref`.
 - **Mutable `Map` and `let` state beside Effect primitives.** `packages/client-db/src/replica/collection-sync.ts`, `apps/desktop/electron/{replica-sessions,replica-ownership,replica-backup}.ts`, `packages/inventory-react/src/{lifetime,preferences}.ts`, `apps/web/src/web/app-host.ts`.
-- **The `crypto` global in Effect code.** `apps/server/src/inventory/postgres.ts`, `apps/desktop/electron/{replica-sessions,replica-pending,replica-worker-handlers,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
+- **The `crypto` global in Effect code.** `apps/server/src/inventory/postgres.ts`, `apps/desktop/electron/{replica-sessions,replica-pending,replica-worker-handlers,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
 - **`Date.now()` and `setTimeout`.** `packages/inventory-react/src/{atoms,live-collection}.ts` and UI code in `apps/web`.
 - **A hand-written cross-tab storage atom** beside `Atom.kvs` in `apps/web/src/lib/preferences.ts`.
 

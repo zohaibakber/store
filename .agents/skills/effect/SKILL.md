@@ -76,6 +76,7 @@ Read the ones that match the change, completely, before editing.
 - State, fibers, scopes, queues, caches, batching, time: [concurrency](references/CONCURRENCY.md).
 - Event sources, subscriptions, pagination, backpressure, stream consumers: [streams](references/STREAMS.md).
 - Retry, repeat, polling workers, deadlines, idempotency, transactions against remote calls: [retry](references/RETRY.md).
+- Work that survives a restart, commit visibility, replay, checkpoints and durable cancellation: [durability](references/DURABILITY.md).
 - Configuration, environment, secrets, logging, spans, personal data: [configuration](references/CONFIG.md).
 - Choosing a module, or replacing hand-rolled code: [module map](references/MODULES.md).
 - `HttpApi`, `HttpClient`, `Rpc`, workers, SQL: [HTTP, RPC and SQL](references/HTTP_RPC.md).

@@ -47,6 +47,9 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         if (existing.passwordHash && existing.emailVerified) {
           return yield* new AuthRefusal({ reason: "PasswordAccountExists" });
         }
+        if (!profile.ownsMailbox) {
+          return yield* new AuthRefusal({ reason: "GoogleMailboxUnproven" });
+        }
         const claimed = existing.passwordHash
           ? yield* repository.claimUnverifiedPasswordUser({
               userId: existing.id,

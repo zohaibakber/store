@@ -111,3 +111,5 @@ When undoing a remote commit must stay possible, persist the identity and the in
 - No atomic change needed: an ordinary call.
 - Changes in one datastore that commit or roll back together: `sql.withTransaction`. Close it before any network call or long-running work.
 - Progress that must survive process loss, redelivery, long delays or several transaction boundaries: persisted state that a worker resumes, as the sync engine's command queue does, or `effect/workflow` after the user agrees to adopt it.
+
+An in-memory `Schedule`, `Deferred` or scoped fiber carries no progress across a restart. Persist the operation identity, accepted input and recovery state when that is part of the contract. See [durability](DURABILITY.md) for commit ordering, recovery and cancellation.
