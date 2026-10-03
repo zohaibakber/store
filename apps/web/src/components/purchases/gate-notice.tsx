@@ -16,7 +16,11 @@ export function PurchasingGateNotice({ gate }: { readonly gate: PurchasingGate }
       <AlertDescription>{gate.message}</AlertDescription>
       {owns ? (
         <AlertAction>
-          <Button render={<Link to="/settings" />} size="sm" variant="outline">
+          <Button
+            render={<Link params={{ section: "organization" }} to="/settings/$section" />}
+            size="sm"
+            variant="outline"
+          >
             Review devices
           </Button>
         </AlertAction>

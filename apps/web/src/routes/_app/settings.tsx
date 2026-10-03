@@ -1,6 +1,8 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+
+import { SettingsLayout } from "@/components/settings/settings-layout";
 
 export const Route = createFileRoute("/_app/settings")({
-  component: Outlet,
+  component: SettingsLayout,
   staticData: { breadcrumb: "Settings" },
 });

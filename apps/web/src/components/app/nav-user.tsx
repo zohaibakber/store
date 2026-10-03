@@ -158,7 +158,7 @@ export function NavUser() {
             <MenuSeparator />
             <MenuGroup>
               {signedIn ? (
-                <MenuItem render={<Link to="/settings" />}>
+                <MenuItem render={<Link params={{ section: "account" }} to="/settings/$section" />}>
                   <HugeiconsIcon aria-hidden="true" icon={SettingsIcon} />
                   Account settings
                 </MenuItem>

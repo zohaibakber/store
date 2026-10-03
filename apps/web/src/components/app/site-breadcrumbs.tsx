@@ -12,11 +12,12 @@ import {
 } from "@/components/ui/breadcrumb";
 
 type BreadcrumbLoaderData = Invoice | { readonly product?: { readonly name: string } } | undefined;
-type BreadcrumbLabel = string | ((loaderData: BreadcrumbLoaderData) => string);
+type BreadcrumbParams = Readonly<Record<string, string | undefined>>;
+type BreadcrumbResolver = (loaderData: BreadcrumbLoaderData, params: BreadcrumbParams) => string;
+type BreadcrumbLabel = string | BreadcrumbResolver;
 
-const isBreadcrumbLoader = <Value,>(
-  value: Value,
-): value is Value & ((loaderData: BreadcrumbLoaderData) => string) => typeof value === "function";
+const isBreadcrumbLoader = <Value,>(value: Value): value is Value & BreadcrumbResolver =>
+  typeof value === "function";
 
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
@@ -39,7 +40,7 @@ export function SiteBreadcrumbs() {
           if (isBreadcrumbLoader(breadcrumb)) {
             // SAFETY: TanStack supplies each match's own loader result to its static-data label.
             const loaderData = match.loaderData as BreadcrumbLoaderData;
-            label = breadcrumb(loaderData);
+            label = breadcrumb(loaderData, match.params);
           } else {
             label = breadcrumb;
           }

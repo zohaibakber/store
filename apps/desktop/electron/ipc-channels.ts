@@ -53,6 +53,7 @@ export const PUBLISH_PROGRESS_CHANNEL = "publish:progress";
 export const SHARE_OPEN_EXTERNAL_CHANNEL = "share:open-external";
 export const SHARE_COPY_TEXT_CHANNEL = "share:copy-text";
 export const SHARE_SAVE_PDF_CHANNEL = "share:save-pdf";
+export const SHARE_PRINT_CHANNEL = "share:print";
 
 export const THEME_SET_SOURCE_CHANNEL = "theme:set-source";
 

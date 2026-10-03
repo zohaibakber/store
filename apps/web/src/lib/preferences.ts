@@ -5,6 +5,7 @@ import * as Atom from "effect/reactivity/Atom";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { DEFAULT_RECEIPT_FORMAT, ReceiptFormat } from "@/lib/receipt-format";
 import { initialSaleDrafts, SaleDrafts } from "@/lib/sale-drafts";
 
 export const browserStorage = (): Storage | null => {
@@ -65,6 +66,15 @@ export const recentProductsAtom = Atom.family((workspace: string) =>
     key: `store.recent-products.${workspace}`,
     schema: Schema.Array(RecentProductSchema),
     defaultValue: (): ReadonlyArray<RecentProduct> => [],
+  }).pipe(Atom.keepAlive),
+);
+
+export const receiptFormatAtom = Atom.family((workspace: string) =>
+  Atom.kvs({
+    runtime: preferencesRuntime,
+    key: `store.receipt-format.${workspace}`,
+    schema: ReceiptFormat,
+    defaultValue: (): ReceiptFormat => DEFAULT_RECEIPT_FORMAT,
   }).pipe(Atom.keepAlive),
 );
 

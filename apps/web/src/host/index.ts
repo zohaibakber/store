@@ -16,7 +16,7 @@ import type { UpdaterEvent } from "@store/contracts/updater";
 import type { DevicesBridge } from "./devices";
 import type { InvoiceUploadFile } from "./invoice-upload";
 import type { NewSaleShortcut } from "./new-sale-shortcut";
-import type { SavePdfOutcome } from "./share";
+import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
 
@@ -80,6 +80,7 @@ export interface AppHost {
   readonly openExternal: (url: string) => Promise<void>;
   readonly copyText: (text: string) => Promise<void>;
   readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
+  readonly print: (page: PrintPage) => Promise<PrintOutcome>;
   readonly publish?: WorkspacePublishBridge;
 }
 

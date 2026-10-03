@@ -313,6 +313,36 @@
   }
 }
 
+[data-paper] {
+  color-scheme: light;
+  --background: var(--color-white);
+  --foreground: var(--color-black);
+  --muted-foreground: var(--color-neutral-600);
+  --border: var(--color-neutral-300);
+}
+
+[data-paper="a4"] {
+  width: 210mm;
+  padding: 16mm;
+}
+
+[data-paper="roll-58"],
+[data-paper="roll-80"] {
+  padding: 4mm 5mm;
+}
+
+[data-paper="roll-58"] {
+  width: 58mm;
+}
+
+[data-paper="roll-80"] {
+  width: 80mm;
+}
+
+[data-paper-preview] > [data-paper="a4"] {
+  zoom: 0.8;
+}
+
 @media print {
   @page {
     margin: 16mm;
@@ -325,6 +355,20 @@
     --foreground: var(--color-black);
     --muted-foreground: var(--color-neutral-600);
     --border: var(--color-neutral-300);
+  }
+
+  @page roll {
+    margin: 0;
+  }
+
+  [data-paper="a4"] {
+    width: auto;
+    padding: 0;
+  }
+
+  [data-paper="roll-58"],
+  [data-paper="roll-80"] {
+    page: roll;
   }
 
   html,
