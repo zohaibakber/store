@@ -1,132 +1,116 @@
-# Schema And Data Modeling
+# Schema
 
-Use this when touching data models, DTOs, row schemas, wire contracts, brands, variants, optional fields, or decoders.
+Everything that crosses a process, the network, storage or JSON text has a Schema, and the Schema is the single definition of the type.
+
+## Provenance decides the parser
+
+| What the producer hands you | What to do |
+| --- | --- |
+| A raw body, a SQL row, native storage, an untyped callback | Decode at the owning boundary into the strongest meaningful type (`decodeUnknownEffect`). |
+| A known encoded representation, such as a `string` or a schema's encoded type | Keep the input type and validate the contents (`Schema.decodeEffect`). |
+| A value already parsed into a domain type | Pass it through. Decoding it again, or encoding it to decode it, adds work and proves nothing. |
+| A value you just computed or patched | Establish what is still unproven (a range, a cross-field rule, a legal transition) with the owning constructor: `X.make`, or `X.makeEffect` to keep the failure in `E`. |
+
+- A SQL generic, a library's type declaration and `satisfies` are compile-time claims. They do not prove what arrived at runtime.
+- Decode wherever less-trusted data re-enters typed code: database reads, cache hits, RPC responses, consumed events, rehydrated state. A check at write time does not prove the stored bytes are still valid.
+- On a measured hot path, a documented trust invariant may replace the read-time decode. The unchecked representation then stays inside the module that owns it.
+- A boundary whose shape differs from the application input (naming, encoding, optionality) gets its own schema, named for what it is (`CreateUserRequest`, `UserRow`), kept inside the boundary, and translated before inner code sees it. When the shapes mean the same thing, decode straight into the application type.
+
+## Where contracts live
+
+- `packages/contracts/src`: wire contracts shared by every process. `ids.ts` holds branded IDs, `sync/` the sync protocol and API, `http-errors.ts` the wire errors.
+- `packages/auth/src/model.ts` and `http-api.ts`: the auth wire model and API.
+- IPC and RPC schemas sit beside their protocol: `apps/desktop/electron/replica-rpc.ts`, `ipc-channels.ts`.
+
+A new wire shape goes in the contract package its consumers already import. The server and the client import the same definition.
 
 ## Records
 
-Default to `Schema.Struct(...)` plus a same-name `interface`.
-
 ```ts
-export const User = Schema.Struct({
-  id: UserId,
-  name: Schema.NonEmptyString,
-  email: Schema.optionalKey(Schema.String),
+export const QuoteLine = Schema.Struct({
+  productId: ProductId,
+  quantity: Schema.Int.check(Schema.isGreaterThan(0)),
+  note: Schema.optionalKey(Schema.String),
 });
-
-export interface User extends Schema.Schema.Type<typeof User> {}
+export type QuoteLine = typeof QuoteLine.Type;
 ```
 
-Guidance:
+- Data is `Schema.Struct` with a same-name type alias. `Schema.Class` is for errors only.
+- `Schema.optionalKey` for a key that may be absent. `Schema.optional` only when an explicit `undefined` is part of the contract. `Schema.NullOr` only when the encoded form really carries `null`.
+- Refine with `.check(Schema.isGreaterThan(0), Schema.isMaxLength(320))`.
+- Reuse fields between contracts that mean the same thing: `User.fields.name`, `User.pipe(Schema.fieldsAssign({...}))`, `User.mapFields(...)`, with `Struct.omit` and `Struct.pick` for subsets. Write an explicit mapping when behaviour, joins or translation are involved.
+- `Schema.encodeKeys({ name: "display_name" })` when only the key names differ between the decoded and encoded forms.
+- A value with a default is a required field after decoding; the default is applied by the decoder or constructor.
+- Build a trusted value with `QuoteLine.make({...})`; it validates. `QuoteLine.makeEffect` keeps the failure in `E`.
+- `.annotate({ identifier: "QuoteLine" })` only when tooling reads it: `HttpApi`, `Rpc`, JSON Schema, diagnostics.
 
-- Add `.annotate({ identifier: "User" })` only when tooling consumes it: HTTP API, RPC, OpenAPI/JSON Schema, docs, diagnostics, or codegen.
-- Use `schema.make(...)` when construction is trusted.
-- Use `schema.makeEffect(...)` when construction failure should stay in the Effect error channel.
-- Decode unknown input at boundaries with `Schema.decodeUnknownEffect(...)` by default.
-- Use `Schema.decodeUnknownSync(...)` only in scripts, tests, or startup paths where throwing is acceptable.
-- Use `Schema.decodeUnknownOption(...)` only when mismatch details are intentionally discarded.
-- Use `Schema.decodeUnknownResult(...)` for pure code that wants explicit success/failure without Effect.
-
-## Field And Contract Reuse
-
-Reuse fields directly when contracts are semantically related.
+## IDs
 
 ```ts
-export const CreateUserInput = Schema.Struct({
-  name: User.fields.name,
-  email: User.fields.email,
-});
-
-export const StoredUser = User.pipe(
-  Schema.fieldsAssign({
-    createdAt: Schema.DateTimeUtcFromString,
-  }),
-);
+export const ProductId = Schema.NonEmptyString.pipe(Schema.brand("ProductId"));
+export type ProductId = typeof ProductId.Type;
+export const decodeProductId = Schema.decodeUnknownSync(ProductId);
 ```
 
-Guidance:
+Every identifier is a branded string from `packages/contracts/src/ids.ts`. A function that takes a `ProductId` cannot be handed an `OrderId` or a raw string. Brand names are unique across the workspace.
 
-- Use `.fields`, `Schema.fieldsAssign(...)`, and `.mapFields(...)` when contracts are genuinely related.
-- Use `Schema.encodeKeys(...)` when decoded TypeScript names differ from encoded wire/storage keys and naming is the only difference.
-- Keep explicit mapping when behavior, joins, validation, or domain translation is involved.
-- Use `Schema.extendTo(...)` sparingly for decoded-only derived fields.
-- Use field reuse to build small related contracts, not one oversized inheritance-by-schema object.
+Brand whatever could be mixed up or carries a rule: units (`Milliseconds`, `Paisa`), and strings and numbers with real constraints (`EmailAddress`, `Slug`, `PositiveInt`). Apply the checks, then `Schema.brand`. Display text, local counters and indexes stay primitives until they gain a rule.
 
-## Optionality And Defaults
-
-- Use `Schema.optionalKey(...)` for absent JSON/storage keys.
-- Use `Schema.optional(...)` only when explicit `undefined` is part of the contract.
-- Use `Schema.NullOr`, `Schema.UndefinedOr`, or `Schema.NullishOr` only when nullish values are truly part of the encoded contract.
-- Keep normalized defaulted values as required fields and apply defaults in constructors/decoding.
-- Do not make domain values optional merely for construction convenience.
-
-## Nominal Values
-
-- Use constrained branded schemas for scalar IDs and value objects.
-- Use normal schema constraints before `Schema.brand(...)` for most code.
-- Reach for `Schema.fromBrand(...)` only when the project already models brands with `Brand` constructors or wants the check packaged with the brand constructor.
-
-## Variants
+## Unions
 
 ```ts
-type Step = Data.TaggedEnum<{
-  Continue: { readonly cursor: number };
-  Finished: { readonly count: number };
-}>;
-
-export const Step = Data.taggedEnum<Step>();
-
-const next = Step.Continue({ cursor: 10 });
-const label = Step.$match(next, {
-  Continue: ({ cursor }) => `continue at ${cursor}`,
-  Finished: ({ count }) => `finished ${count}`,
+export const QuoteCommand = Schema.TaggedUnion({
+  add: { line: QuoteLine },
+  clear: {},
 });
+export type QuoteCommand = typeof QuoteCommand.Type;
+
+export const describe = (command: QuoteCommand): string => {
+  switch (command._tag) {
+    case "add":
+      return `add ${command.line.quantity}`;
+    case "clear":
+      return "clear";
+  }
+};
 ```
+
+- `Schema.TaggedUnion` for a `_tag` union that is decoded, stored or sent. `Schema.Union([Schema.TaggedStruct("a", {...}), ...])` when the members exist separately. `Schema.Literals([...])` for a closed set of strings.
+- Consume a union with a `switch` on `_tag` that has a declared return type and no `default`, or a `never` guard. Either makes a new member a compile error.
+- `TaggedUnion` also gives constructors and an exhaustive matcher: `QuoteCommand.cases.add.make({ line })`, `QuoteCommand.match(command, { add: ..., clear: ... })`.
+- An external contract with its own discriminator (`type`, `kind`) uses `Schema.tag` on each struct and `Schema.toTaggedUnion("type")`. `Schema.tagDefaultOmit` is for an encoded form that leaves the discriminator out.
+- An internal union that never leaves the process is a plain `_tag` union, or `Data.TaggedEnum` when it is built in several places or matched as an expression: `Data.taggedEnum<Step>()` gives `Step.Continue({...})`, `Step.$is` and an exhaustive `Step.$match`.
+- State that allows different data or operations per stage (`Draft`, `Sent`, `Paid`) is a tagged union, so an illegal combination cannot be built. A status literal with one transition function is enough when the stages differ only by name.
+- Internal unions are closed and handled exhaustively. An external protocol that may send a variant you do not know gets an explicit, tested fallback.
+
+## Decoding
 
 ```ts
-export const Event = Schema.TaggedUnion({
-  Started: { runId: RunId },
-  Finished: { runId: RunId, result: Schema.Json },
-});
+const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(QuoteCommand));
 
-export type Event = typeof Event.Type;
-
-const event = Event.cases.Started.make({ runId });
-const label = Event.match(event, {
-  Started: ({ runId }) => `started ${runId}`,
-  Finished: ({ runId }) => `finished ${runId}`,
-});
+export const parseCommand = (text: string) =>
+  decodeCommand(text).pipe(
+    Effect.mapError((issue) => new MalformedCommand({ message: issue.message })),
+  );
 ```
 
-Guidance:
+- Build the decoder once at module scope and reuse it. Compiling a schema per call is wasted work on a hot path.
+- Keep the decoder private to the boundary that owns it. What a module exports is a narrow parser with the real input type, such as `parseCommand(text: string)`, so library parse options stay out of the public surface.
+- Names carry meaning: `parseX` takes untrusted or less-structured input, `makeX` builds from typed pieces, `isX` is a predicate.
+- JSON text is `Schema.fromJsonString(X)`. Application code has no `JSON.parse`.
+- Pick the decoder by what the caller does with a mismatch:
+  - `decodeUnknownEffect`: inside Effect, the failure is mapped to a tagged error.
+  - `decodeUnknownOption`: a mismatch means "absent".
+  - `decodeUnknownResult`: pure code that wants success or failure.
+  - `decodeUnknownSync`: module-level constants and Promise edges, where a throw is the right outcome.
+  - `Schema.is(X)`: a type guard.
+- SQL rows are decoded like any other input: `Schema.Array(Schema.Struct({...}))` with the failure mapped to the storage error.
+- A cast on data needs `// SAFETY:` and a reason. Decoding is almost always the answer instead.
 
-- Use `Data.TaggedEnum` for internal control-flow algebras; it provides constructors, `$is`, and exhaustive `$match`. Do not add a Schema solely to obtain these utilities.
-- Use `Schema.TaggedStruct` for the ordinary Effect-owned `_tag` variant.
-- Use `Schema.TaggedUnion` when the union needs decoding, encoding, persistence, wire validation, JSON Schema derivation, or schema composition.
-- Prefer a principled split over forcing one representation everywhere: Data internally, Schema at boundaries.
-- Use `Schema.tag(...)` when an external contract has a custom discriminator field such as `type` or `kind`; combine those structs with `Schema.toTaggedUnion("type")` when union helpers are needed.
-- If the encoded contract omits the discriminant, use `Schema.tagDefaultOmit(...)` deliberately.
-- Avoid `Schema.Class` and `Schema.TaggedClass` for new data models.
+## Secrets
 
-## Errors
+A token, pepper, password or client secret is `Redacted.Redacted<string>` from the moment it is read (`Config.Redacted`, `Schema.Redacted`) until the one call that needs `Redacted.value`. A redacted value prints as `<redacted>` in logs and errors.
 
-`Schema.TaggedError` is the default for typed, schema-backed, yieldable Effect errors in v4.
+## Guards
 
-```ts
-export class PersistenceError extends Schema.TaggedError<PersistenceError>()(
-  "UserRepo.PersistenceError",
-  {
-    operation: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {}
-```
-
-Guidance:
-
-- Map infrastructure failures into domain-specific tagged errors at service boundaries.
-- Include operation labels when they help diagnose adapter, persistence, provider, or transport failures.
-- Use schema unions for public API or transport error surfaces.
-- Use `Schema.Defect()` for defect-like payloads.
-- Preserve interruption when catching broad causes at ingress, worker, or stream boundaries.
-- Prefer `Data.TaggedError` only for lightweight internal errors that do not need Schema decode/encode.
-- Do not use `Schema.TaggedErrorClass` (removed / never shipped under that name in Effect v4).
+Runtime checks on `unknown` use `Predicate` (`Predicate.isObject`, `Predicate.isString`, `Predicate.hasProperty`) or `Schema.is`. A local `isRecord` helper duplicates them.

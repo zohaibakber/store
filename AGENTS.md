@@ -54,6 +54,13 @@ other weights or sizes. Follow the rules anyway.
 - **Icons.** Hugeicons, via `<HugeiconsIcon icon={...} />` from
   `@hugeicons/react` with icons from `@hugeicons/core-free-icons`.
 
+## Effect
+
+Before writing, reviewing or refactoring code that imports `effect` or `@effect/*`,
+read `.agents/skills/effect/SKILL.md` and the references it points to for the
+change. It describes the target; existing code that differs from it is listed in
+`.agents/skills/effect/references/DEPARTURES.md` and is not a pattern to copy.
+
 ## Sync engine boundaries
 
 - Replicas hard-delete. A `delete` change removes the row; client schemas carry
