@@ -1,4 +1,4 @@
-import { EmailAddress, OtpCode, Password, normalizeEmail, type LoginRoute } from "@store/auth";
+import { EmailAddress, OtpCode, normalizeEmail, type LoginRoute } from "@store/auth";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -402,7 +402,7 @@ export function AuthForm({
               await appHost().signIn.authenticate({
                 _tag: "Password",
                 email: step.email,
-                password: Password.make(password),
+                password,
               });
             })
           }
@@ -436,7 +436,7 @@ export function AuthForm({
                 _tag: "RegisterPassword",
                 email: step.email,
                 name: input.name.trim(),
-                password: Password.make(input.password),
+                password: input.password,
               });
             })
           }

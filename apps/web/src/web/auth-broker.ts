@@ -10,6 +10,7 @@ import {
   type SessionSnapshotHooks,
 } from "@store/workspace";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
@@ -20,7 +21,9 @@ import * as Semaphore from "effect/Semaphore";
 import { browserStore } from "@/lib/first-party-auth";
 
 const SESSION_EXPECTED_KEY = "tabaaq-web-session-expected";
+const SIGN_OUT_PENDING_KEY = "tabaaq-web-sign-out-pending";
 const REFRESH_LOCK = "tabaaq-web-session-refresh";
+const REVOKE_DEADLINE = Duration.seconds(10);
 
 export type WebAuthBrokerOptions = {
   readonly apiBaseUrl: string;
@@ -83,7 +86,18 @@ export const layerWebAuth = (
     publishSession(next);
     return next;
   };
+  const signOutPending = hint.get(SIGN_OUT_PENDING_KEY).pipe(
+    Effect.map(Option.contains("1")),
+    Effect.orElseSucceed(() => false),
+  );
   const expectSession = Effect.ignore(hint.set(SESSION_EXPECTED_KEY, "1"));
+  const signedIn = Effect.ignore(hint.remove(SIGN_OUT_PENDING_KEY)).pipe(
+    Effect.andThen(expectSession),
+  );
+  const sessionKept = Effect.when(
+    expectSession,
+    Effect.map(signOutPending, (pending) => !pending),
+  );
   const sessionExpected = hint.get(SESSION_EXPECTED_KEY).pipe(
     Effect.map(Option.contains("1")),
     Effect.orElseSucceed(() => false),
@@ -105,28 +119,40 @@ export const layerWebAuth = (
       const transitions = yield* Semaphore.make(1);
       const transition = <A, E>(effect: Effect.Effect<A, E, SessionHttp>) =>
         transitions.withPermit(Effect.provideService(effect, SessionHttp, session));
+      const revokeCookie = session.logout(null).pipe(
+        Effect.andThen(Effect.ignore(hint.remove(SIGN_OUT_PENDING_KEY))),
+        Effect.catchTag("Workspace.RequestError", (error) =>
+          Effect.logWarning("auth.sign_out_pending").pipe(
+            Effect.annotateLogs({ status: error.status, code: error.code ?? "" }),
+          ),
+        ),
+        Effect.timeoutOrElse({
+          duration: REVOKE_DEADLINE,
+          orElse: () => Effect.logWarning("auth.sign_out_pending"),
+        }),
+      );
+      yield* Effect.forkScoped(transitions.withPermit(Effect.when(revokeCookie, signOutPending)));
       return WebAuth.of({
         sessionExpected,
         snapshot: Effect.sync(() => MutableRef.get(snapshot)),
-        initialize: Effect.flatMap(sessionExpected, (expected) =>
-          expected
-            ? session.ensureFreshAccess(true).pipe(
-                Effect.match({
-                  onFailure: (error) => publish(signedOut(error.message)),
-                  onSuccess: () => MutableRef.get(snapshot),
-                }),
-              )
-            : Effect.sync(() => publish(signedOut())),
-        ),
-        adopt: (issued) =>
-          transition(Effect.andThen(expectSession, adoptSessionTokens(hooks, issued))),
+        initialize: Effect.gen(function* () {
+          if ((yield* signOutPending) || !(yield* sessionExpected)) return publish(signedOut());
+          return yield* session.ensureFreshAccess(true).pipe(
+            Effect.match({
+              onFailure: (error) => publish(signedOut(error.message)),
+              onSuccess: () => MutableRef.get(snapshot),
+            }),
+          );
+        }),
+        adopt: (issued) => transition(Effect.andThen(signedIn, adoptSessionTokens(hooks, issued))),
         renewSession: transition(renewSessionSnapshot(hooks)),
         signOut: transition(
           Effect.gen(function* () {
             yield* session.settled;
             yield* session.setTokens(null);
+            yield* Effect.ignore(hint.set(SIGN_OUT_PENDING_KEY, "1"));
             yield* forget;
-            yield* session.logout(null).pipe(Effect.ignore);
+            yield* revokeCookie;
           }),
         ),
       });
@@ -140,7 +166,7 @@ export const layerWebAuth = (
         authBaseUrl: options.authBaseUrl,
         credential: "cookie",
         onRefreshed: (refreshed, tokens) =>
-          expectSession.pipe(
+          sessionKept.pipe(
             Effect.andThen(adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens)),
             Effect.asVoid,
           ),

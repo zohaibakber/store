@@ -7,11 +7,14 @@ import {
   PasswordHasher,
   type IdentifyInput,
   type LoginCommand,
+  type PasswordHash,
+  type UserId,
 } from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { AuthCrypto, OTP_TTL_MS } from "./crypto";
@@ -33,6 +36,18 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
     const crypto = yield* AuthCrypto;
     const { developmentOtp } = yield* AuthSettings;
 
+    const rehash = Effect.fn("Auth.Login.rehash")(
+      function* (userId: UserId, previous: PasswordHash, password: Redacted.Redacted<string>) {
+        const next = yield* passwords.hash(password);
+        yield* repository.replacePasswordHash({ userId, previous, next });
+      },
+      Effect.catchTag(["Auth.PasswordHashError", "Auth.RepositoryError"], (failure) =>
+        Effect.logWarning("auth.password_rehash_failed").pipe(
+          Effect.annotateLogs({ tag: failure._tag, message: failure.message }),
+        ),
+      ),
+    );
+
     const identify = Effect.fn("Auth.Login.identify")(function* (input: IdentifyInput) {
       const now = yield* Clock.currentTimeMillis;
       const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
@@ -51,21 +66,40 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
       }
       const code = yield* crypto.otpCode;
       const expiresAt = now + OTP_TTL_MS;
-      const challengeId = yield* ephemeral.createOtp({
+      const issue = yield* ephemeral.issueOtp({
         email: normalized,
         code,
         expiresAt,
+        metered: !developmentOtp,
       });
-      yield* email.sendOtp({ email: normalized, code, expiresAt });
-      if (developmentOtp) {
-        return LoginRoute.make({
-          _tag: "Otp",
-          email: normalized,
-          challengeId,
-          developmentCode: code,
-        });
+      switch (issue._tag) {
+        case "Exhausted":
+          return yield* new AuthRefusal({ reason: "RateLimited.code" });
+        case "Pending":
+          return LoginRoute.make({
+            _tag: "Otp",
+            email: normalized,
+            challengeId: issue.challengeId,
+          });
+        case "Issued": {
+          yield* email
+            .sendOtp({ email: normalized, code, expiresAt })
+            .pipe(
+              Effect.tapError(() =>
+                Effect.ignore(
+                  ephemeral.retractOtp({ email: normalized, challengeId: issue.challengeId }),
+                  { log: "Warn", message: "auth.otp_retract_failed" },
+                ),
+              ),
+            );
+          const route = { _tag: "Otp", email: normalized, challengeId: issue.challengeId } as const;
+          return LoginRoute.make(developmentOtp ? { ...route, developmentCode: code } : route);
+        }
+        default: {
+          const _exhaustive: never = issue;
+          return _exhaustive;
+        }
       }
-      return LoginRoute.make({ _tag: "Otp", email: normalized, challengeId });
     });
 
     const authenticate = Effect.fn("Auth.Login.authenticate")(function* (command: LoginCommand) {
@@ -78,9 +112,12 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           if (!user?.passwordHash) {
             return yield* new AuthRefusal({ reason: "InvalidCredentials" });
           }
-          const verified = yield* passwords.verify(command.password, user.passwordHash);
-          if (!verified) {
+          const verdict = yield* passwords.verify(command.password, user.passwordHash);
+          if (!verdict.matches) {
             return yield* new AuthRefusal({ reason: "InvalidCredentials" });
+          }
+          if (verdict.outdated) {
+            yield* rehash(user.id, user.passwordHash, command.password);
           }
           return yield* sessions.issueSession(user, command.client);
         }
@@ -111,11 +148,15 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
             return yield* new AuthRefusal({ reason: "AccountExists" });
           }
           const passwordHash = yield* passwords.hash(command.password);
-          const user = yield* repository.createPasswordUser({
-            email: emailAddress,
-            name: command.name,
-            passwordHash,
-          });
+          const user = yield* repository
+            .createPasswordUser({ email: emailAddress, name: command.name, passwordHash })
+            .pipe(
+              Effect.catchTag("Auth.RepositoryError", (failure) =>
+                Effect.flatMap(repository.findUserByEmail(emailAddress), (raced) =>
+                  Effect.fail(raced ? new AuthRefusal({ reason: "AccountExists" }) : failure),
+                ),
+              ),
+            );
           return yield* sessions.issueSession(user, command.client);
         }
         default: {

@@ -6,7 +6,7 @@ import {
   OrganizationId,
   OrganizationName,
   OtpCode,
-  Password,
+  PasswordPolicy,
   authClientLayer,
   normalizeEmail,
   type AuthClientApi,
@@ -372,16 +372,11 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
     const route = getFlow()?.route;
     if (route?._tag !== "Password") return startAgain();
     if (password.length === 0) return failed(invalid("Enter your password.", "password"));
-    const decoded = yield* valid(Password, password, {
-      kind: "wrongPassword",
-      message: "That password isn't right.",
-      field: "password",
-    });
     return yield* signIn((client) =>
       client.authenticate({
         _tag: "Password",
         email: route.email,
-        password: decoded,
+        password,
         client: options.client,
       }),
     );
@@ -398,7 +393,7 @@ export const createAuthController = (options: AuthControllerOptions): AuthContro
       return failed(invalid("Enter your name.", "name"));
     }
     const password = yield* valid(
-      Password,
+      PasswordPolicy,
       input.password,
       invalid("Use 10 to 100 characters, with no spaces at the start or end.", "password"),
     );

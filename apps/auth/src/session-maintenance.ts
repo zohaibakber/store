@@ -2,7 +2,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
-import type { AuthRepositoryApi } from "./repository";
+import type { AuthRepository } from "./repository";
 
 export const SESSION_PRUNE_POLICY = {
   cronExpression: "23 * * * *",
@@ -24,7 +24,7 @@ type SessionPruneProgress = {
 };
 
 export const pruneExpiredSessions = Effect.fn("AuthMaintenance.pruneExpiredSessions")(function* (
-  repository: AuthRepositoryApi,
+  repository: AuthRepository["Service"],
   policy: SessionPrunePolicy = SESSION_PRUNE_POLICY,
 ) {
   const now = yield* Clock.currentTimeMillis;

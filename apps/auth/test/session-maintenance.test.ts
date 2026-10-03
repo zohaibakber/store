@@ -1,20 +1,23 @@
 import { EmailAddress, PasswordHash, SessionId, type OrganizationId } from "@store/auth";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import { AuthRepository, authRepositoryLayer, type AuthRepositoryApi } from "../src/repository";
+import { AuthCrypto } from "../src/crypto";
+import { AuthD1 } from "../src/d1";
+import { AuthRepository } from "../src/repository";
 import { pruneExpiredSessions } from "../src/session-maintenance";
 import { authD1 } from "./sqlite-d1";
 
 const repositoryOn = (d1: ReturnType<typeof authD1>) => {
-  const layer = authRepositoryLayer(d1);
-  return <A, E>(use: (repository: AuthRepositoryApi) => Effect.Effect<A, E>) =>
+  const layer = AuthRepository.layer.pipe(Layer.provide([AuthD1.layer(d1), AuthCrypto.layer]));
+  return <A, E>(use: (repository: AuthRepository["Service"]) => Effect.Effect<A, E>) =>
     Effect.runPromise(AuthRepository.use(use).pipe(Effect.provide(layer)));
 };
 
 const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
 
-const seedOwner = (repository: AuthRepositoryApi, email: string) =>
+const seedOwner = (repository: AuthRepository["Service"], email: string) =>
   Effect.gen(function* () {
     const owner = yield* repository.createPasswordUser({
       email: EmailAddress.make(email),
@@ -26,10 +29,10 @@ const seedOwner = (repository: AuthRepositoryApi, email: string) =>
   });
 
 const sessionFor = (
-  repository: AuthRepositoryApi,
+  repository: AuthRepository["Service"],
   input: {
     readonly id: string;
-    readonly userId: Parameters<AuthRepositoryApi["membershipForUser"]>[0];
+    readonly userId: Parameters<AuthRepository["Service"]["membershipForUser"]>[0];
     readonly organizationId: OrganizationId;
     readonly expiresAt: number;
   },
@@ -101,7 +104,7 @@ describe("refresh session reads and pruning on D1", () => {
         yield* seed("expired-long-ago-2", now - 20 * day);
         yield* seed("expired-recently", now - day);
         yield* seed("live", now + day);
-        yield* repository.revokeSession(SessionId.make("live"), now);
+        yield* repository.revokeFamily("family-live", now);
         const policy = { retainAfterExpiryMillis: 7 * day, batchRows: 1, maxBatches: 1 };
         const first = yield* pruneExpiredSessions(repository, policy);
         const second = yield* pruneExpiredSessions(repository, { ...policy, maxBatches: 5 });

@@ -4,8 +4,7 @@ import {
   developmentEmailLayer,
   disabledEmailLayer,
   EmailAddress,
-  Password,
-  passwordHasherLayer,
+  PasswordHasher,
   type AuthClientKind,
   type OrganizationCommand,
   type OrganizationId,
@@ -23,19 +22,20 @@ import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
 
 import { AuthCrypto } from "../src/crypto";
-import { ephemeralStoreLayer } from "../src/ephemeral";
+import { AuthD1 } from "../src/d1";
+import { EphemeralStore } from "../src/ephemeral";
 import { authFailureWire, type AuthFailure } from "../src/failures";
 import { googleOAuthLayer } from "../src/google";
 import { HubRevocation } from "../src/hub-revocation";
 import { authLimiterLayer, type AuthLimits, type AuthRateLimit } from "../src/limits";
-import { authRepositoryLayer } from "../src/repository";
+import { AuthRepository } from "../src/repository";
 import { AuthService, authServiceLayer } from "../src/service";
 import { AuthSettings } from "../src/settings";
 import { authD1 } from "./sqlite-d1";
 
 export const EPHEMERAL_PEPPER = Redacted.make("ephemeral-pepper");
 const GOOGLE_CLIENT_ID = "web-client.apps.googleusercontent.com";
-export const PASSWORD = Password.make("correct horse battery");
+export const PASSWORD = Redacted.make("correct horse battery");
 
 export const native: AuthClientKind = { _tag: "Native", deviceName: "Front counter" };
 export const browser: AuthClientKind = { _tag: "Browser" };
@@ -95,6 +95,7 @@ interface IdTokenClaims {
   readonly name?: string;
   readonly picture?: string;
   readonly nonce?: string;
+  readonly hd?: string;
 }
 
 const idTokenSigner = async (kid: string): Promise<IdTokenSigner> => {
@@ -121,6 +122,7 @@ export const mintIdToken = async (claims: IdTokenClaims, signer: IdTokenSigner =
 export const googleClaims = (profile: {
   readonly sub: string;
   readonly email: string;
+  readonly hd?: string;
 }): IdTokenClaims => ({
   iss: "https://accounts.google.com",
   aud: GOOGLE_CLIENT_ID,
@@ -128,6 +130,7 @@ export const googleClaims = (profile: {
   email_verified: true,
   name: "Google User",
   picture: "https://example.com/avatar.png",
+  hd: "example.com",
   ...profile,
 });
 
@@ -147,9 +150,9 @@ export const harness = (
   );
 
   const dependencies = Layer.mergeAll(
-    authRepositoryLayer(d1),
-    ephemeralStoreLayer(d1, EPHEMERAL_PEPPER),
-    passwordHasherLayer,
+    AuthRepository.layer,
+    EphemeralStore.layer(EPHEMERAL_PEPPER),
+    PasswordHasher.layer,
     accessTokenLayer({
       issuer: "https://auth.example.com",
       audience: "tabaaq-api",
@@ -173,15 +176,18 @@ export const harness = (
       }),
     ),
     authLimiterLayer(
-      options.limits ?? { tenPerMinute: countingLimit(10), fivePerMinute: countingLimit(5) },
+      options.limits ?? {
+        tenPerMinute: countingLimit(10),
+        fivePerMinute: countingLimit(5),
+        sixtyPerMinute: countingLimit(60),
+      },
     ),
-    AuthCrypto.layer,
     Layer.succeed(AuthSettings, {
       developmentOtp: deliversOtp,
       trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
       refreshTokenPepper: Redacted.make("refresh-pepper"),
     }),
-  );
+  ).pipe(Layer.provide(AuthD1.layer(d1)), Layer.provideMerge(AuthCrypto.layer));
 
   const layer = Layer.mergeAll(
     authServiceLayer.pipe(Layer.provide(dependencies)),

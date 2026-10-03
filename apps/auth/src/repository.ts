@@ -1,5 +1,3 @@
-import type { D1Database } from "@cloudflare/workers-types";
-import * as D1Client from "@effect/sql-d1/D1Client";
 import {
   EmailAddress,
   InvitationId,
@@ -41,9 +39,7 @@ import {
   not,
   or,
   sql,
-  type Column,
 } from "drizzle-orm";
-import * as D1Drizzle from "drizzle-orm/effect-d1";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -51,7 +47,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { AuthCrypto } from "./crypto";
-import { runD1Batch, type AuthDrizzle, type CompilableQuery } from "./d1-batch";
+import { AuthD1, bound, runD1Batch, type AuthDrizzle, type CompilableQuery } from "./d1";
 import { storageFailureMessage } from "./errors";
 
 const UserRecord = Schema.Struct({
@@ -99,7 +95,7 @@ const SessionRecord = Schema.Struct({
 });
 export interface SessionRecord extends Schema.Schema.Type<typeof SessionRecord> {}
 
-interface RefreshContext {
+export interface RefreshContext {
   readonly session: SessionRecord;
   readonly user: UserRecord | null;
   readonly activeMembership: MembershipRecord | null;
@@ -131,121 +127,123 @@ interface NewInvitation {
   readonly now: number;
 }
 
-export interface AuthRepositoryApi {
-  readonly findUserByEmail: (
-    email: EmailAddressType,
-  ) => Effect.Effect<UserRecord | null, RepositoryError>;
-  readonly findUserById: (userId: UserIdType) => Effect.Effect<UserRecord | null, RepositoryError>;
-  readonly findUserByGoogleId: (
-    providerAccountId: string,
-  ) => Effect.Effect<UserRecord | null, RepositoryError>;
-  readonly createPasswordUser: (input: {
-    readonly email: EmailAddressType;
-    readonly name: string;
-    readonly passwordHash: PasswordHashType;
-  }) => Effect.Effect<UserRecord, RepositoryError>;
-  readonly createGoogleUser: (input: {
-    readonly email: EmailAddressType;
-    readonly name: string;
-    readonly image: string | null;
-    readonly providerAccountId: string;
-  }) => Effect.Effect<UserRecord, RepositoryError>;
-  readonly attachGoogleAccount: (input: {
-    readonly userId: UserIdType;
-    readonly providerAccountId: string;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly claimUnverifiedPasswordUser: (input: {
-    readonly userId: UserIdType;
-    readonly providerAccountId: string;
-    readonly image: string | null;
-    readonly now: number;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly membershipForUser: (
-    userId: UserIdType,
-  ) => Effect.Effect<MembershipRecord, RepositoryError>;
-  readonly membershipInOrganization: (input: {
-    readonly userId: UserIdType;
-    readonly organizationId: OrganizationIdType;
-  }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
-  readonly updateOrganization: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly name: string;
-    readonly role: OrganizationRoleType;
-  }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
-  readonly listMembers: (
-    organizationId: OrganizationIdType,
-  ) => Effect.Effect<ReadonlyArray<OrganizationMember>, RepositoryError>;
-  readonly changeMemberRole: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly userId: UserIdType;
-    readonly role: OrganizationRoleType;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly removeMember: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly userId: UserIdType;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly createInvitation: (
-    input: NewInvitation,
-  ) => Effect.Effect<InvitationRecord, RepositoryError>;
-  readonly revokeInvitation: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly invitationId: InvitationIdType;
-    readonly now: number;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly findInvitationByTokenHash: (
-    tokenHash: string,
-  ) => Effect.Effect<InvitationRecord | null, RepositoryError>;
-  readonly pendingInvitationsForOrganization: (input: {
-    readonly organizationId: OrganizationIdType;
-    readonly now: number;
-  }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
-  readonly acceptInvitation: (input: {
-    readonly invitation: InvitationRecord;
-    readonly userId: UserIdType;
-    readonly now: number;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly createSession: (input: NewSession) => Effect.Effect<void, RepositoryError>;
-  readonly findSession: (
-    sessionId: SessionIdType,
-  ) => Effect.Effect<SessionRecord | null, RepositoryError>;
-  readonly findRefreshContext: (
-    sessionId: SessionIdType,
-  ) => Effect.Effect<RefreshContext | null, RepositoryError>;
-  readonly pruneExpiredSessions: (input: {
-    readonly expiredBefore: number;
-    readonly limit: number;
-  }) => Effect.Effect<number, RepositoryError>;
-  readonly moveSession: (input: {
-    readonly sessionId: SessionIdType;
-    readonly organizationId: OrganizationIdType;
-  }) => Effect.Effect<void, RepositoryError>;
-  readonly rotateSession: (input: {
-    readonly currentId: SessionIdType;
-    readonly replacement: NewSession;
-    readonly now: number;
-  }) => Effect.Effect<boolean, RepositoryError>;
-  readonly revokeSession: (
-    sessionId: SessionIdType,
-    now: number,
-  ) => Effect.Effect<void, RepositoryError>;
-  readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
+export class AuthRepository extends Context.Service<
+  AuthRepository,
+  {
+    readonly findUserByEmail: (
+      email: EmailAddressType,
+    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    readonly findUserById: (
+      userId: UserIdType,
+    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    readonly findUserByGoogleId: (
+      providerAccountId: string,
+    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    readonly createPasswordUser: (input: {
+      readonly email: EmailAddressType;
+      readonly name: string;
+      readonly passwordHash: PasswordHashType;
+    }) => Effect.Effect<UserRecord, RepositoryError>;
+    readonly replacePasswordHash: (input: {
+      readonly userId: UserIdType;
+      readonly previous: PasswordHashType;
+      readonly next: PasswordHashType;
+    }) => Effect.Effect<void, RepositoryError>;
+    readonly createGoogleUser: (input: {
+      readonly email: EmailAddressType;
+      readonly name: string;
+      readonly image: string | null;
+      readonly providerAccountId: string;
+    }) => Effect.Effect<UserRecord, RepositoryError>;
+    readonly attachGoogleAccount: (input: {
+      readonly userId: UserIdType;
+      readonly providerAccountId: string;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly claimUnverifiedPasswordUser: (input: {
+      readonly userId: UserIdType;
+      readonly providerAccountId: string;
+      readonly image: string | null;
+      readonly now: number;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly membershipForUser: (
+      userId: UserIdType,
+    ) => Effect.Effect<MembershipRecord, RepositoryError>;
+    readonly membershipInOrganization: (input: {
+      readonly userId: UserIdType;
+      readonly organizationId: OrganizationIdType;
+    }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
+    readonly updateOrganization: (input: {
+      readonly organizationId: OrganizationIdType;
+      readonly name: string;
+      readonly role: OrganizationRoleType;
+    }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
+    readonly listMembers: (
+      organizationId: OrganizationIdType,
+    ) => Effect.Effect<ReadonlyArray<OrganizationMember>, RepositoryError>;
+    readonly changeMemberRole: (input: {
+      readonly organizationId: OrganizationIdType;
+      readonly userId: UserIdType;
+      readonly role: OrganizationRoleType;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly removeMember: (input: {
+      readonly organizationId: OrganizationIdType;
+      readonly userId: UserIdType;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly createInvitation: (
+      input: NewInvitation,
+    ) => Effect.Effect<InvitationRecord, RepositoryError>;
+    readonly revokeInvitation: (input: {
+      readonly organizationId: OrganizationIdType;
+      readonly invitationId: InvitationIdType;
+      readonly now: number;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly findInvitationByTokenHash: (
+      tokenHash: string,
+    ) => Effect.Effect<InvitationRecord | null, RepositoryError>;
+    readonly pendingInvitationsForOrganization: (input: {
+      readonly organizationId: OrganizationIdType;
+      readonly now: number;
+    }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
+    readonly acceptInvitation: (input: {
+      readonly invitation: InvitationRecord;
+      readonly userId: UserIdType;
+      readonly sessionId: SessionIdType;
+      readonly now: number;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly createSession: (input: NewSession) => Effect.Effect<void, RepositoryError>;
+    readonly findSession: (
+      sessionId: SessionIdType,
+    ) => Effect.Effect<SessionRecord | null, RepositoryError>;
+    readonly findRefreshContext: (
+      sessionId: SessionIdType,
+    ) => Effect.Effect<RefreshContext | null, RepositoryError>;
+    readonly pruneExpiredSessions: (input: {
+      readonly expiredBefore: number;
+      readonly limit: number;
+    }) => Effect.Effect<number, RepositoryError>;
+    readonly rotateSession: (input: {
+      readonly currentId: SessionIdType;
+      readonly replacement: NewSession;
+      readonly now: number;
+    }) => Effect.Effect<boolean, RepositoryError>;
+    readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
+  }
+>()("@store/auth-worker/AuthRepository") {
+  static readonly layer = Layer.effect(
+    AuthRepository,
+    Effect.gen(function* () {
+      const database = yield* AuthD1;
+      const crypto = yield* AuthCrypto;
+      return AuthRepository.of(makeAuthRepository(database, crypto));
+    }),
+  );
 }
-
-export class AuthRepository extends Context.Service<AuthRepository, AuthRepositoryApi>()(
-  "@store/auth-worker/AuthRepository",
-) {}
 
 const repositoryError = (operation: string, cause: unknown) =>
   new RepositoryError({ operation, message: storageFailureMessage(cause), cause });
 
 const at = (milliseconds: number) => new Date(milliseconds);
 
-type Stored<C extends Column> = C["_"]["notNull"] extends true
-  ? C["_"]["data"]
-  : C["_"]["data"] | null;
-
-const bound = <C extends Column>(column: C, value: Stored<C>) =>
-  sql<Stored<C>>`${sql.param(value, column)}`.as(column.name);
 const millis = (value: Date | null) => (value === null ? null : value.getTime());
 
 interface ReturnedId {
@@ -400,7 +398,7 @@ const sessionValues = (input: NewSession) => ({
 const makeAuthRepository = (
   database: AuthDrizzle,
   crypto: AuthCrypto["Service"],
-): AuthRepositoryApi => {
+): AuthRepository["Service"] => {
   const fail = (operation: string) =>
     Effect.mapError((cause: unknown) => repositoryError(operation, cause));
 
@@ -529,6 +527,13 @@ const makeAuthRepository = (
       yield* atomicBatch("createPasswordUser", account.inserts);
       return account.record;
     }),
+    replacePasswordHash: Effect.fn("AuthRepository.replacePasswordHash")(function* (input) {
+      yield* database
+        .update(user)
+        .set({ passwordHash: input.next })
+        .where(and(eq(user.id, input.userId), eq(user.passwordHash, input.previous)))
+        .pipe(fail("replacePasswordHash"));
+    }),
     createGoogleUser: Effect.fn("AuthRepository.createGoogleUser")(function* (input) {
       const now = yield* Clock.currentTimeMillis;
       const account = yield* newAccount({
@@ -621,7 +626,7 @@ const makeAuthRepository = (
         .from(organizationMembership)
         .innerJoin(organization, eq(organization.id, organizationMembership.organizationId))
         .where(eq(organizationMembership.userId, userId))
-        .orderBy(asc(organizationMembership.createdAt))
+        .orderBy(desc(organizationMembership.createdAt))
         .limit(1)
         .pipe(fail("membershipForUser"));
       if (!row) {
@@ -845,6 +850,27 @@ const makeAuthRepository = (
           .set({ acceptedAt: at(input.now) })
           .where(pendingInvitation)
           .returning({ id: organizationInvitation.id }),
+        database
+          .update(session)
+          .set({ activeOrganizationId: input.invitation.organizationId })
+          .where(
+            and(
+              eq(session.id, input.sessionId),
+              eq(session.userId, input.userId),
+              isNull(session.revokedAt),
+              exists(
+                database
+                  .select({ id: organizationInvitation.id })
+                  .from(organizationInvitation)
+                  .where(
+                    and(
+                      eq(organizationInvitation.id, input.invitation.id),
+                      eq(organizationInvitation.acceptedAt, at(input.now)),
+                    ),
+                  ),
+              ),
+            ),
+          ),
       ]);
       return returningMatchedOne(results[1]);
     }),
@@ -935,13 +961,6 @@ const makeAuthRepository = (
         .pipe(fail("pruneExpiredSessions"));
       return pruned.length;
     }),
-    moveSession: Effect.fn("AuthRepository.moveSession")(function* (input) {
-      yield* database
-        .update(session)
-        .set({ activeOrganizationId: input.organizationId })
-        .where(and(eq(session.id, input.sessionId), isNull(session.revokedAt)))
-        .pipe(fail("moveSession"));
-    }),
     rotateSession: Effect.fn("AuthRepository.rotateSession")(function* (input) {
       const successor = sessionValues(input.replacement);
       const results = yield* atomicBatch("rotateSession", [
@@ -983,13 +1002,6 @@ const makeAuthRepository = (
       ]);
       return returningMatchedOne(results[0]);
     }),
-    revokeSession: Effect.fn("AuthRepository.revokeSession")(function* (sessionId, now) {
-      yield* database
-        .update(session)
-        .set({ revokedAt: at(now) })
-        .where(and(eq(session.id, sessionId), isNull(session.revokedAt)))
-        .pipe(fail("revokeSession"));
-    }),
     revokeFamily: Effect.fn("AuthRepository.revokeFamily")(function* (familyId, now) {
       yield* database
         .update(session)
@@ -999,12 +1011,3 @@ const makeAuthRepository = (
     }),
   };
 };
-
-export const authRepositoryLayer = (database: D1Database) =>
-  Layer.effect(
-    AuthRepository,
-    Effect.gen(function* () {
-      const drizzle = yield* D1Drizzle.makeWithDefaults({});
-      return AuthRepository.of(makeAuthRepository(drizzle, yield* AuthCrypto));
-    }),
-  ).pipe(Layer.provide(D1Client.layer({ db: database })), Layer.provide(AuthCrypto.layer));

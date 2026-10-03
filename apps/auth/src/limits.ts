@@ -15,6 +15,7 @@ export type AuthRateLimit = (
 export interface AuthLimits {
   readonly tenPerMinute: AuthRateLimit;
   readonly fivePerMinute: AuthRateLimit;
+  readonly sixtyPerMinute: AuthRateLimit;
 }
 
 interface AuthLimiterApi {

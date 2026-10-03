@@ -5,7 +5,7 @@ import {
   decodeJwtKeyRingText,
   disabledEmailLayer,
   developmentEmailLayer,
-  passwordHasherLayer,
+  PasswordHasher,
 } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
@@ -33,14 +33,15 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 
 import { AuthCrypto } from "./src/crypto";
-import { ephemeralStoreLayer } from "./src/ephemeral";
+import { AuthD1 } from "./src/d1";
+import { EphemeralStore } from "./src/ephemeral";
 import { googleOAuthLayer } from "./src/google";
 import { authRoutes, recoverUnexpected } from "./src/http";
 import { hubRevocationLayer } from "./src/hub-revocation";
 import { writeJwksAssets } from "./src/jwks-asset";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS, authLimiterLayer } from "./src/limits";
 import { resolveProductionAuthHostname } from "./src/public-hostname";
-import { AuthRepository, authRepositoryLayer } from "./src/repository";
+import { AuthRepository } from "./src/repository";
 import { authServiceLayer } from "./src/service";
 import { pruneExpiredSessions, SESSION_PRUNE_POLICY } from "./src/session-maintenance";
 import { AuthSettings } from "./src/settings";
@@ -172,6 +173,10 @@ export const AuthLive = Auth.make(
       namespaceId: 1004,
       simple: { limit: 5, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
     });
+    const sixtyPerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_SIXTY_PER_MINUTE", {
+      namespaceId: 1005,
+      simple: { limit: 60, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
+    });
     const developmentOtp = yield* Config.Boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
     if (!localDevelopment && developmentOtp) {
       return yield* Effect.die(
@@ -187,9 +192,9 @@ export const AuthLive = Auth.make(
     const isolateServices = yield* workerRuntimeServices;
     const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
     const DependenciesLive = Layer.mergeAll(
-      authRepositoryLayer(database),
-      ephemeralStoreLayer(database, ephemeralPepper),
-      passwordHasherLayer,
+      AuthRepository.layer,
+      EphemeralStore.layer(ephemeralPepper),
+      PasswordHasher.layer,
       accessTokenLayer({
         issuer: security.baseURL,
         audience: "tabaaq-api",
@@ -208,14 +213,14 @@ export const AuthLive = Auth.make(
       authLimiterLayer({
         tenPerMinute: (key) => tenPerMinute.limit({ key }),
         fivePerMinute: (key) => fivePerMinute.limit({ key }),
+        sixtyPerMinute: (key) => sixtyPerMinute.limit({ key }),
       }),
-      AuthCrypto.layer,
       Layer.succeed(AuthSettings, {
         developmentOtp,
         trustedRedirects: security.trustedRedirects,
         refreshTokenPepper,
       }),
-    );
+    ).pipe(Layer.provide(AuthD1.layer(database)), Layer.provideMerge(AuthCrypto.layer));
     const runtime = yield* Effect.exit(
       buildOncePerIsolate(
         Effect.gen(function* () {

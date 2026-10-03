@@ -203,15 +203,12 @@ export class Organizations extends Context.Service<Organizations>()(
         const accepted = yield* repository.acceptInvitation({
           invitation,
           userId: claims.subject,
+          sessionId: claims.sessionId,
           now,
         });
         if (!accepted) {
           return yield* new AuthRefusal({ reason: "InvitationAlreadyUsed" });
         }
-        yield* repository.moveSession({
-          sessionId: claims.sessionId,
-          organizationId: invitation.organizationId,
-        });
         return {
           _tag: "Joined",
           organization: membershipView(invitation),

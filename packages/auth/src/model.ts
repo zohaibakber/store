@@ -22,7 +22,9 @@ export type AuthorizationCode = typeof AuthorizationCode.Type;
 export const AccessToken = NonEmptyString.pipe(Schema.brand("AccessToken"));
 export type AccessToken = typeof AccessToken.Type;
 
-export const RefreshToken = NonEmptyString.pipe(Schema.brand("RefreshToken"));
+export const RefreshToken = NonEmptyString.check(Schema.isMaxLength(512)).pipe(
+  Schema.brand("RefreshToken"),
+);
 export type RefreshToken = typeof RefreshToken.Type;
 
 export const EmailAddress = Schema.String.check(
@@ -32,14 +34,18 @@ export const EmailAddress = Schema.String.check(
 ).pipe(Schema.brand("EmailAddress"));
 export type EmailAddress = typeof EmailAddress.Type;
 
-export const Password = Schema.String.check(
+export const PasswordPolicy = Schema.String.check(
   Schema.isMinLength(10),
   Schema.isMaxLength(100),
   Schema.makeFilter((value) => value === value.trim(), {
     title: "Password without surrounding whitespace",
   }),
-).pipe(Schema.brand("Password"));
-export type Password = typeof Password.Type;
+);
+
+const NewPassword = Schema.RedactedFromValue(PasswordPolicy);
+const SubmittedPassword = Schema.RedactedFromValue(
+  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+);
 
 export const OtpCode = Schema.String.check(Schema.isPattern(/^\d{6}$/u)).pipe(
   Schema.brand("OtpCode"),
@@ -111,7 +117,7 @@ export type LoginRoute = typeof LoginRoute.Type;
 export const PasswordLoginCommand = Schema.Struct({
   _tag: Schema.Literal("Password"),
   email: EmailAddress,
-  password: Password,
+  password: SubmittedPassword,
   client: AuthClientKind,
 });
 
@@ -126,7 +132,7 @@ export const RegisterPasswordCommand = Schema.Struct({
   _tag: Schema.Literal("RegisterPassword"),
   email: EmailAddress,
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  password: Password,
+  password: NewPassword,
   client: AuthClientKind,
 });
 
@@ -136,6 +142,7 @@ export const LoginCommand = Schema.Union([
   RegisterPasswordCommand,
 ]);
 export type LoginCommand = typeof LoginCommand.Type;
+export type LoginCredentials = typeof LoginCommand.Encoded;
 
 export const TokenSet = Schema.Struct({
   accessToken: AccessToken,
@@ -158,9 +165,12 @@ export const AccessClaims = Schema.Struct({
 });
 export interface AccessClaims extends Schema.Schema.Type<typeof AccessClaims> {}
 
+const PkceChallenge = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/u));
+const PkceVerifier = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._~-]{43,128}$/u));
+
 export const BeginGoogleInput = Schema.Struct({
-  redirectUri: NonEmptyString,
-  codeChallenge: NonEmptyString,
+  redirectUri: NonEmptyString.check(Schema.isMaxLength(2048)),
+  codeChallenge: PkceChallenge,
   client: AuthClientKind,
 });
 export interface BeginGoogleInput extends Schema.Schema.Type<typeof BeginGoogleInput> {}
@@ -172,7 +182,7 @@ export interface GoogleAuthorization extends Schema.Schema.Type<typeof GoogleAut
 
 export const ExchangeGoogleInput = Schema.Struct({
   code: AuthorizationCode,
-  codeVerifier: NonEmptyString,
+  codeVerifier: PkceVerifier,
   client: AuthClientKind,
 });
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}

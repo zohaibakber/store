@@ -67,6 +67,8 @@ export const layerChanges = (source: Source) =>
 
 Natural backpressure is the default. `Stream.buffer({ capacity, strategy })` decouples a producer from a slower consumer, and the strategy is a decision: `suspend` pushes back, `dropping` sheds new values, `sliding` keeps the latest. An unbounded buffer needs a bound that exists somewhere else.
 
+A bounded `PubSub.sliding` suits progress updates only when consumers can tolerate gaps and recover the current state. Keep durable completion in a receipt or stored result that a reconnecting consumer can read. When retries can overlap, identify updates by operation, attempt and sequence so consumers can reject stale attempts and detect gaps. Closing a progress subscription releases that subscription; whether it cancels the work is a separate ownership decision. See [durability](DURABILITY.md).
+
 ## Interfaces
 
 A service exposes `Stream` and keeps the `Queue`, `PubSub` or `SubscriptionRef` private:

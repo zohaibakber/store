@@ -37,5 +37,5 @@ export {
   type JwtKeyRing,
 } from "./jwt";
 export * from "./model";
-export { PasswordHash, PasswordHasher, PasswordHashError, passwordHasherLayer } from "./password";
+export { PasswordHash, PasswordHasher, PasswordHashError } from "./password";
 export * as WebCrypto from "./web-crypto";

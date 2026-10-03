@@ -1,23 +1,38 @@
 import { AuthorizationCode, EmailAddress, OtpCode, UserId, type AuthClientKind } from "@store/auth";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
-import { EphemeralStore, ephemeralStoreLayer } from "../src/ephemeral";
+import { AuthCrypto } from "../src/crypto";
+import { AuthD1 } from "../src/d1";
+import { EphemeralStore } from "../src/ephemeral";
 import { authD1 } from "./sqlite-d1";
 
 const PEPPER = Redacted.make("ephemeral-pepper");
 const native: AuthClientKind = { _tag: "Native", deviceName: "Front counter" };
 
 const storeOn = (d1: ReturnType<typeof authD1>) => {
-  const layer = ephemeralStoreLayer(d1, PEPPER);
+  const layer = EphemeralStore.layer(PEPPER).pipe(
+    Layer.provide([AuthD1.layer(d1), AuthCrypto.layer]),
+  );
   return <A, E>(use: (store: typeof EphemeralStore.Service) => Effect.Effect<A, E>) =>
     Effect.runPromise(EphemeralStore.use(use).pipe(Effect.provide(layer)));
 };
 
+const issueOtp = (
+  store: typeof EphemeralStore.Service,
+  input: Omit<Parameters<typeof EphemeralStore.Service.issueOtp>[0], "metered">,
+) =>
+  Effect.flatMap(store.issueOtp({ ...input, metered: true }), (issue) =>
+    issue._tag === "Issued" ? Effect.succeed(issue.challengeId) : Effect.die(issue),
+  );
+
 const rowCount = (d1: ReturnType<typeof authD1>) =>
   Number(
-    d1.database.prepare("SELECT count(*) AS total FROM auth_ephemeral_record").get()?.total ?? -1,
+    d1.database
+      .prepare("SELECT count(*) AS total FROM auth_ephemeral_record WHERE kind <> 'otp-issuance'")
+      .get()?.total ?? -1,
   );
 
 const email = EmailAddress.make("owner@example.com");
@@ -31,7 +46,7 @@ describe("ephemeral store on D1", () => {
     const wrong = OtpCode.make("654321");
     const attemptsBeforeTheRightCode = async (wrongGuesses: number) => {
       const challengeId = await run((store) =>
-        store.createOtp({ email, code, expiresAt: now + 60_000 }),
+        issueOtp(store, { email, code, expiresAt: now + 60_000 }),
       );
       for (let guess = 0; guess < wrongGuesses; guess += 1) {
         expect(
@@ -52,7 +67,7 @@ describe("ephemeral store on D1", () => {
     const right = storeOn(d1);
     const now = Date.now();
     const challengeId = await left((store) =>
-      store.createOtp({ email, code, expiresAt: now + 60_000 }),
+      issueOtp(store, { email, code, expiresAt: now + 60_000 }),
     );
     const results = await Promise.all(
       Array.from({ length: 8 }, (_, index) =>
@@ -120,7 +135,7 @@ describe("ephemeral store on D1", () => {
     const run = storeOn(authD1());
     const now = Date.now();
     const expiresAt = now + 1_000;
-    const challengeId = await run((store) => store.createOtp({ email, code, expiresAt }));
+    const challengeId = await run((store) => issueOtp(store, { email, code, expiresAt }));
     const authorization = await run((store) =>
       store.createAuthorizationGrant({
         userId: UserId.make("user-1"),
@@ -163,9 +178,11 @@ describe("ephemeral store on D1", () => {
     const run = storeOn(d1);
     const now = Date.now();
     const challengeId = await run((store) =>
-      store.createOtp({ email, code, expiresAt: now + 60_000 }),
+      issueOtp(store, { email, code, expiresAt: now + 60_000 }),
     );
-    const row = d1.database.prepare("SELECT key, payload FROM auth_ephemeral_record").get();
+    const row = d1.database
+      .prepare("SELECT key, payload FROM auth_ephemeral_record WHERE kind = 'otp'")
+      .get();
     const stored = `${String(row?.key)} ${String(row?.payload)}`;
     const digest = async (value: string) =>
       Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));

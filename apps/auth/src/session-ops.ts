@@ -4,9 +4,7 @@ import {
   SessionId,
   sessionWorkspaceFromClaims,
   type AuthClientKind,
-  type OrganizationId,
   type RefreshedSession,
-  type UserId,
 } from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -20,12 +18,15 @@ import { AuthRefusal } from "./failures";
 import {
   AuthRepository,
   type MembershipRecord,
+  type RefreshContext,
+  type RepositoryError,
   type SessionRecord,
   type UserRecord,
 } from "./repository";
 import { AuthSettings } from "./settings";
 
-const REFRESH_REUSE_WINDOW_MS = 30_000;
+const REFRESH_REUSE_WINDOW_MS = 90_000;
+const REFRESH_REPLAY_HOPS = 4;
 
 export interface PresentedRefresh {
   readonly client: AuthClientKind;
@@ -59,20 +60,6 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
 
     const secretMatches = (secret: Redacted.Redacted<string>, storedHash: string) =>
       Effect.flatMap(hashSecret(secret), (actualHash) => crypto.matches(actualHash, storedHash));
-
-    const resolveMembership = Effect.fn("Auth.Session.resolveMembership")(function* (
-      userId: UserId,
-      preferred?: OrganizationId,
-    ) {
-      if (preferred) {
-        const membership = yield* repository.membershipInOrganization({
-          userId,
-          organizationId: preferred,
-        });
-        if (membership) return membership;
-      }
-      return yield* repository.membershipForUser(userId);
-    });
 
     const accessClaims = (
       user: UserRecord,
@@ -116,7 +103,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       replayKey?: string,
     ) {
       const now = yield* Clock.currentTimeMillis;
-      const membership = yield* resolveMembership(user.id);
+      const membership = yield* repository.membershipForUser(user.id);
       const sessionId = SessionId.make(replayKey ?? (yield* crypto.randomId));
       const familyId = yield* crypto.randomId;
       const refreshSecret = yield* crypto.randomSecret(32);
@@ -141,6 +128,34 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       });
     });
 
+    const liveRefresh = Effect.fnUntraced(function* (context: RefreshContext, now: number) {
+      if (context.session.expiresAt <= now) {
+        return yield* new AuthRefusal({ reason: "RefreshExpired" });
+      }
+      if (!context.user) {
+        return yield* new AuthRefusal({ reason: "AccountNotFound" });
+      }
+      return {
+        session: context.session,
+        user: context.user,
+        activeMembership: context.activeMembership,
+      };
+    });
+
+    const liveSuccessor: (
+      revoked: SessionRecord,
+      hops: number,
+    ) => Effect.Effect<RefreshContext | null, RepositoryError> = Effect.fnUntraced(
+      function* (revoked, hops) {
+        if (hops === 0 || revoked.replacedBySessionId === null) return null;
+        const successor = yield* repository.findRefreshContext(revoked.replacedBySessionId);
+        if (!successor) return null;
+        return successor.session.revokedAt === null
+          ? successor
+          : yield* liveSuccessor(successor.session, hops - 1);
+      },
+    );
+
     const openRefresh = Effect.fn("Auth.Session.openRefresh")(function* (
       presented: PresentedRefresh | undefined,
     ) {
@@ -160,20 +175,18 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       if (current.clientKind !== presented.client._tag) {
         return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
-      if (current.revokedAt !== null) {
-        if (current.revokedAt + REFRESH_REUSE_WINDOW_MS > now) {
-          return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
-        }
+      if (current.revokedAt === null) {
+        return yield* liveRefresh(context, now);
+      }
+      if (current.revokedAt + REFRESH_REUSE_WINDOW_MS <= now) {
         yield* repository.revokeFamily(current.familyId, now);
         return yield* new AuthRefusal({ reason: "RefreshReuseDetected" });
       }
-      if (current.expiresAt <= now) {
-        return yield* new AuthRefusal({ reason: "RefreshExpired" });
+      const successor = yield* liveSuccessor(current, REFRESH_REPLAY_HOPS);
+      if (!successor) {
+        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
-      if (!context.user) {
-        return yield* new AuthRefusal({ reason: "AccountNotFound" });
-      }
-      return { session: current, user: context.user, activeMembership: context.activeMembership };
+      return yield* liveRefresh(successor, now);
     });
 
     const rotateInto = Effect.fn("Auth.Session.rotateInto")(function* (input: {
@@ -233,7 +246,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const session = yield* repository.findSession(parsed.sessionId);
       if (!session) return;
       if (!(yield* secretMatches(parsed.secret, session.refreshTokenHash))) return;
-      yield* repository.revokeSession(session.id, now);
+      yield* repository.revokeFamily(session.familyId, now);
     });
 
     const authorize = Effect.fn("Auth.Session.authorize")(function* (
