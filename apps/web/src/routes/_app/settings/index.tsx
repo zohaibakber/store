@@ -1,8 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
-import { SettingsPage } from "@/components/settings/settings-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { defaultSettingsSection } from "@/components/settings/sections";
 
 const settingsSearch = Schema.toStandardSchemaV1(
   Schema.Struct({
@@ -12,6 +11,14 @@ const settingsSearch = Schema.toStandardSchemaV1(
 
 export const Route = createFileRoute("/_app/settings/")({
   validateSearch: settingsSearch,
-  loader: ({ context }) => preloadInventory(context),
-  component: SettingsPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({
+      to: "/settings/$section",
+      params: {
+        section: search.invitation === undefined ? defaultSettingsSection : "organization",
+      },
+      search,
+      replace: true,
+    });
+  },
 });

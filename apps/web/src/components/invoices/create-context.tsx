@@ -32,7 +32,9 @@ import {
   type SaleLine,
   type SaleLineView,
 } from "@/components/invoices/sale-line";
+import { usePrintReceipt } from "@/components/receipts/print-host";
 import { toastManager } from "@/components/ui/toast";
+import { useReceiptFormat } from "@/hooks/use-receipt-format";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import {
   useCompletingSale,
@@ -155,9 +157,11 @@ const recordSale = async (sale: {
   readonly close: () => boolean;
   readonly focusSearch: () => void;
   readonly view: (invoiceId: InvoiceId) => Promise<void>;
+  readonly print: (invoiceId: InvoiceId) => void;
 }) => {
   try {
     const invoice = await sale.issue();
+    sale.print(invoice.invoiceId);
     const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
     if (sale.close()) {
       const toastId = toastManager.add({
@@ -188,6 +192,8 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { issueInvoice } = useInventoryActions();
   const rememberRecentProduct = useRememberRecentProduct();
+  const printReceipt = usePrintReceipt();
+  const receiptFormat = useReceiptFormat();
   const workspace = useWorkspaceStorageKey();
   const drafts = useSaleDraftsIn(workspace);
   const store = useSaleDraftStoreIn(workspace);
@@ -283,6 +289,11 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
         close: () => store.complete(draft.id),
         focusSearch: store.focusSearch,
         view: (invoiceId) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId } }),
+        print: (invoiceId) => {
+          if (receiptFormat.printAfterSale) {
+            printReceipt({ invoiceId, paper: receiptFormat.paper, output: "printer" });
+          }
+        },
       }),
     );
   };

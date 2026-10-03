@@ -108,6 +108,10 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
       window.print();
       return { _tag: "printed" };
     },
+    print: async () => {
+      window.print();
+      return { _tag: "printed" };
+    },
   };
 
   return {

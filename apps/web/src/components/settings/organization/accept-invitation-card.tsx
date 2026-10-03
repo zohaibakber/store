@@ -49,7 +49,12 @@ export function AcceptInvitationCard() {
       if (result?._tag !== "Joined") return;
       form.reset({ token: "" });
       toastManager.add({ title: `You joined ${result.organization.name}`, type: "success" });
-      await navigate({ to: "/settings", search: {}, replace: true });
+      await navigate({
+        to: "/settings/$section",
+        params: { section: "organization" },
+        search: {},
+        replace: true,
+      });
     },
   });
 

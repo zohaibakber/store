@@ -74,7 +74,19 @@ _Avoid_: Dashboard analytics, stock recommendations
 
 **Invoice.**
 A recorded sale against catalog stock.
-_Avoid_: Bill, order, receipt
+_Avoid_: Bill, order
+
+**Receipt.**
+The printed form of an invoice. It has two layouts: an A4 invoice page and a
+thermal roll receipt (80 mm or 58 mm). Printing never changes the invoice.
+_Avoid_: Bill, slip
+
+**Receipt format.**
+What a workspace prints around an invoice: store name, address, phone, licence
+and tax numbers, footer note, the default paper, the roll width, and whether
+batch numbers show. It is kept on the device, one per workspace, and is not part
+of the catalog.
+_Avoid_: Template, print settings
 
 **Sale draft.**
 An unfinished sale kept on the device, one set per workspace. It stores what the

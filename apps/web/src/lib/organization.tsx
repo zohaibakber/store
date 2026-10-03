@@ -22,7 +22,7 @@ export const invitationHandoff = (token: string) => {
   return originOpensInviteLinks(origin)
     ? {
         kind: "link" as const,
-        value: `${origin}/settings?invitation=${encodeURIComponent(token)}`,
+        value: `${origin}/settings/organization?invitation=${encodeURIComponent(token)}`,
       }
     : { kind: "token" as const, value: token };
 };

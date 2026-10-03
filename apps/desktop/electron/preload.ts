@@ -61,6 +61,7 @@ import {
   SERVER_UPLOADS_CHANNEL,
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
+  SHARE_PRINT_CHANNEL,
   SHARE_SAVE_PDF_CHANNEL,
   THEME_SET_SOURCE_CHANNEL,
   UPDATER_CHECK_CHANNEL,
@@ -148,6 +149,7 @@ const sharing: ShareBridge = {
   openExternal: (url) => ipcRenderer.invoke(SHARE_OPEN_EXTERNAL_CHANNEL, url),
   copyText: (text) => ipcRenderer.invoke(SHARE_COPY_TEXT_CHANNEL, text),
   savePdf: (fileStem) => ipcRenderer.invoke(SHARE_SAVE_PDF_CHANNEL, fileStem),
+  print: (page) => ipcRenderer.invoke(SHARE_PRINT_CHANNEL, page),
 };
 
 contextBridge.exposeInMainWorld("sharing", sharing);

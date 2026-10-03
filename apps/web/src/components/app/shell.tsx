@@ -12,6 +12,7 @@ import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
 import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
+import { ReceiptPrintHost } from "@/components/receipts/print-host";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -60,6 +61,7 @@ export function AppShell() {
               {inventory && lease ? (
                 <InventoryReady>
                   <PublishOffer />
+                  <ReceiptPrintHost />
                   <Suspense fallback={<PageLoading />}>
                     <Outlet />
                   </Suspense>

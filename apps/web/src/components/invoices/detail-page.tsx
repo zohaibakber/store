@@ -6,6 +6,7 @@ import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 
+import { PrintReceiptAction } from "@/components/receipts/print-action";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
@@ -79,6 +80,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
           {format(invoice.createdAt, "h:mm a")}
         </PageDescription>
         <PageAction>
+          <PrintReceiptAction invoiceId={invoice.id} />
           <NewSaleAction />
         </PageAction>
       </PageHeader>
