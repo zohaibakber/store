@@ -7,9 +7,11 @@ import * as Schema from "effect/Schema";
 
 import type { AppHost } from "@/host";
 import { commandOrganizationDevice, listOrganizationDevices } from "@/host/devices";
+import { searchGlobalProducts } from "@/host/global-search";
 import { analyseInvoiceUpload } from "@/host/invoice-upload";
 import { altNewSaleShortcut } from "@/host/new-sale-shortcut";
 import { makeReplayChannel } from "@/host/replay-channel";
+import { makeSourceLinks } from "@/host/source-links";
 import { browserSignIn, browserStore } from "@/lib/first-party-auth";
 
 import { WebAuth, layerWebAuth, type WebAuthBrokerOptions } from "./auth-broker";
@@ -44,6 +46,7 @@ class AuthorizationRefused extends Schema.TaggedError<AuthorizationRefused>()(
 
 export const createWebAppHost = (options: WebAppHostOptions) => {
   const sessions = makeReplayChannel<WorkspaceSnapshot>();
+  const sourceLinks = makeSourceLinks();
   let pendingOAuthCallback = claimOAuthCallback(options.location, options.history);
 
   const publish = (snapshot: WorkspaceSnapshot) => {
@@ -94,13 +97,21 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
       },
     },
     analyseInvoices: (files) => runtime.runPromise(analyseInvoiceUpload(files)),
+    searchGlobalProducts: (query) =>
+      runtime.runPromise(
+        searchGlobalProducts(query).pipe(
+          Effect.tap((result) => Effect.sync(() => sourceLinks.remember(result))),
+        ),
+      ),
     devices: {
       list: () => runtime.runPromise(listOrganizationDevices),
       command: (command) => runtime.runPromise(commandOrganizationDevice(command)),
     },
     newSaleShortcut: altNewSaleShortcut,
     openExternal: async (url) => {
-      if (!isWhatsAppUrl(url)) throw new Error("Only WhatsApp links can be opened.");
+      if (!isWhatsAppUrl(url) && !sourceLinks.allows(url)) {
+        throw new Error("Only WhatsApp links and web search sources can be opened.");
+      }
       window.open(url, "_blank", "noopener");
     },
     copyText: (text) => navigator.clipboard.writeText(text),

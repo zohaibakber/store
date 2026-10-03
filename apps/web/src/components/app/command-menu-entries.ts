@@ -1,6 +1,12 @@
 import type { IconSvgElement } from "@hugeicons/react";
 import type { Invoice, Product } from "@store/contracts";
+import {
+  MAX_GLOBAL_SEARCH_QUERY_LENGTH,
+  MIN_GLOBAL_SEARCH_QUERY_LENGTH,
+  type GlobalProduct,
+} from "@store/contracts/server-api.schema";
 
+import type { GlobalSearchView } from "@/hooks/use-global-product-search";
 import type { RecentProduct } from "@/hooks/use-recent-products";
 
 export const PRODUCT_LIMIT = 30;
@@ -10,9 +16,11 @@ const INVOICE_LIMIT = 30;
 export const INVOICE_WINDOW = 200;
 const SUGGESTED_ACTION_IDS = ["new-sale", "add-product", "go-products", "go-invoices"];
 
-export type Scope = "all" | "products" | "invoices" | "actions";
+export type Scope = "all" | "products" | "invoices" | "actions" | "global";
 
-export const SCOPES: ReadonlyArray<{ readonly value: Scope; readonly label: string }> = [
+export type CatalogScope = Exclude<Scope, "global">;
+
+export const SCOPES: ReadonlyArray<{ readonly value: CatalogScope; readonly label: string }> = [
   { value: "all", label: "All" },
   { value: "products", label: "Products" },
   { value: "invoices", label: "Invoices" },
@@ -24,6 +32,7 @@ export const PLACEHOLDERS = {
   products: "Search products…",
   invoices: "Search invoices by number or customer…",
   actions: "Search actions…",
+  global: "Search products on the web…",
 } satisfies Record<Scope, string>;
 
 export type ProductTarget = {
@@ -47,6 +56,7 @@ export type Entry =
   | { readonly kind: "product"; readonly id: string; readonly product: Product }
   | { readonly kind: "recent"; readonly id: string; readonly recent: RecentProduct }
   | { readonly kind: "invoice"; readonly id: string; readonly invoice: Invoice }
+  | { readonly kind: "global"; readonly id: string; readonly product: GlobalProduct }
   | ActionEntry;
 
 export type EntryGroup = { readonly value: string; readonly items: ReadonlyArray<Entry> };
@@ -72,6 +82,26 @@ export const entryTarget = (entry: Entry | undefined): ProductTarget | undefined
 
 export const productLabel = (target: ProductTarget) =>
   target.strength ? `${target.name} ${target.strength}` : target.name;
+
+export const WEB_SEARCH_ACTION_ID = "search-the-web";
+
+export const webSearchLabel = (trimmed: string) => `Search the web for “${trimmed}”`;
+
+export const globalProductDetails = (product: GlobalProduct) =>
+  [
+    product.composition,
+    product.manufacturer,
+    product.unitsPerPack === null ? null : `${product.unitsPerPack} per pack`,
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+export const globalProductPrefill = (product: GlobalProduct) => ({
+  name: product.name,
+  composition: product.composition ?? undefined,
+  strength: product.strength ?? undefined,
+  unitsPerPack: product.unitsPerPack ?? undefined,
+});
 
 const tokensOf = (query: string) => query.toLowerCase().split(/\s+/u).filter(Boolean);
 
@@ -111,8 +141,10 @@ export const rootGroups = (input: {
   readonly recents: ReadonlyArray<RecentProduct>;
   readonly invoices: ReadonlyArray<Invoice>;
   readonly actions: ReadonlyArray<ActionEntry>;
+  readonly global: GlobalSearchView;
+  readonly webSearch: ActionEntry | null;
 }): ReadonlyArray<EntryGroup> => {
-  const { scope, trimmed, products, recents, invoices, actions } = input;
+  const { scope, trimmed, products, recents, invoices, actions, global, webSearch } = input;
   const tokens = tokensOf(trimmed);
   const productEntries = (limit: number): ReadonlyArray<Entry> =>
     products.slice(0, limit).map((product) => ({ kind: "product", id: product.id, product }));
@@ -128,6 +160,26 @@ export const rootGroups = (input: {
       invoice,
     }));
   const actionEntries = actions.filter((action) => matchesAction(action, tokens));
+  const webSearchEntries: ReadonlyArray<Entry> = webSearch ? [webSearch] : [];
+  const globalEntries = (): ReadonlyArray<Entry> => {
+    switch (global._tag) {
+      case "Results":
+        return global.products.map((product, index) => ({
+          kind: "global",
+          id: `global-${index}-${product.sourceUrl}`,
+          product,
+        }));
+      case "Ready":
+        return webSearchEntries;
+      case "SignedOut":
+      case "Offline":
+      case "Empty":
+      case "TooShort":
+      case "TooLong":
+      case "Searching":
+        return [];
+    }
+  };
 
   const all: ReadonlyArray<EntryGroup> =
     scope === "all"
@@ -143,6 +195,7 @@ export const rootGroups = (input: {
             { value: "Products", items: productEntries(ALL_PRODUCT_LIMIT) },
             { value: "Invoices", items: invoiceEntries(ALL_INVOICE_LIMIT) },
             { value: "Actions", items: actionEntries },
+            { value: "Global", items: webSearchEntries },
           ]
       : scope === "products"
         ? trimmed === ""
@@ -163,19 +216,48 @@ export const rootGroups = (input: {
                 items: invoiceEntries(INVOICE_LIMIT),
               },
             ]
-          : [{ value: "Actions", items: actionEntries }];
+          : scope === "actions"
+            ? [{ value: "Actions", items: actionEntries }]
+            : [{ value: "Global", items: globalEntries() }];
   return all.filter((group) => group.items.length > 0);
 };
 
-export const emptyMessage = (page: Page, scope: Scope, trimmed: string) =>
+const globalEmptyMessage = (global: GlobalSearchView, trimmed: string): string | null => {
+  switch (global._tag) {
+    case "SignedOut":
+      return "Sign in to search products on the web.";
+    case "Offline":
+      return "You're offline. Connect to search the web.";
+    case "Empty":
+      return "Type a product name, then press Enter to search the web.";
+    case "TooShort":
+      return `Type at least ${MIN_GLOBAL_SEARCH_QUERY_LENGTH} characters to search the web.`;
+    case "TooLong":
+      return `Shorten the search to ${MAX_GLOBAL_SEARCH_QUERY_LENGTH} characters or fewer.`;
+    case "Results":
+      return `No products found on the web for “${trimmed}”.`;
+    case "Ready":
+    case "Searching":
+      return null;
+  }
+};
+
+export const emptyMessage = (
+  page: Page,
+  scope: Scope,
+  trimmed: string,
+  global: GlobalSearchView,
+): string | null =>
   page.kind === "product"
     ? "No matching actions."
-    : trimmed === ""
-      ? scope === "invoices"
-        ? "No invoices yet."
-        : "Type to search products."
-      : scope === "invoices"
-        ? "No invoices found."
-        : scope === "actions"
-          ? "No actions found."
-          : "No results found.";
+    : scope === "global"
+      ? globalEmptyMessage(global, trimmed)
+      : trimmed === ""
+        ? scope === "invoices"
+          ? "No invoices yet."
+          : "Type to search products."
+        : scope === "invoices"
+          ? "No invoices found."
+          : scope === "actions"
+            ? "No actions found."
+            : "No results found.";

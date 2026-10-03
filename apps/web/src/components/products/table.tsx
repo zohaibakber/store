@@ -161,6 +161,7 @@ export function useProductsTable(input: {
     }),
     initialState: {
       columnVisibility: {
+        unitPrice: false,
         purchasePrice: false,
         strength: false,
         unitsPerPack: false,

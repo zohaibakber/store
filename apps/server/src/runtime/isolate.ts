@@ -1,4 +1,5 @@
 import { RuntimeContext } from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -18,11 +19,15 @@ export const buildOncePerIsolate = <A, E, R>(
     );
   });
 
-export const workerRuntimeServices = Effect.serviceOption(RuntimeContext).pipe(
-  Effect.flatMap(
-    Option.match({
-      onNone: () => Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext.")),
-      onSome: (runtime) => Effect.succeed(Context.make(RuntimeContext, runtime)),
-    }),
-  ),
-);
+export const workerRuntimeServices = Effect.gen(function* () {
+  const runtime = yield* Effect.serviceOption(RuntimeContext);
+  if (Option.isNone(runtime)) {
+    return yield* Effect.die(new Error("Alchemy did not provide the Worker RuntimeContext."));
+  }
+  const services = Context.make(RuntimeContext, runtime.value);
+  return Option.match(yield* Effect.serviceOption(Cloudflare.Workers.WorkerEnvironment), {
+    onNone: () => services,
+    onSome: (environment) =>
+      Context.add(services, Cloudflare.Workers.WorkerEnvironment, environment),
+  });
+});

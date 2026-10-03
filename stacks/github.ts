@@ -30,6 +30,7 @@ export default Alchemy.Stack(
             "Workers Scripts Write",
             "D1 Write",
             "Hyperdrive Write",
+            "AI Gateway Write",
           ],
           resources: {
             [`com.cloudflare.api.account.${accountId}`]: "*",

@@ -9,13 +9,19 @@ import {
   resolveAuthSecurity,
 } from "@store/auth/security";
 import { inventoryPlacement } from "@store/db/postgres/infra";
+import { searchGlobalProducts } from "@store/services";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import { Api, OrgHub } from "./api";
+import { workersAiLanguageModel } from "./src/ai/language-model";
 import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
+import { makeGlobalSearchCache } from "./src/global-search/cache";
+import { PageImagesLive } from "./src/global-search/page-images";
+import { cloudflareWebSearch } from "./src/global-search/web-search";
 import { makeWorkerFetch } from "./src/http/app";
 import { RATE_LIMITS } from "./src/http/runtime";
 import { makeInventoryCommands } from "./src/inventory/commands";
@@ -27,6 +33,7 @@ import { openInventoryDrizzle } from "./src/inventory/postgres";
 import { makeInventorySnapshots } from "./src/inventory/snapshots";
 import { makeLiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
+import { buildOncePerIsolate, workerRuntimeServices } from "./src/runtime/isolate";
 import {
   PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
   PRODUCTION_DOMAIN_MISSING_MESSAGE,
@@ -39,6 +46,7 @@ import {
 } from "./src/runtime/production-domain";
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
+const GLOBAL_SEARCH_GATEWAY_CACHE_SECONDS = 7 * 24 * 60 * 60;
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -93,6 +101,35 @@ export const ApiLive = Api.make(
       namespaceId: 1001,
       simple: RATE_LIMITS.productScan,
     });
+    const globalSearchRateLimit = yield* Cloudflare.RateLimit("GLOBAL_SEARCH_RATE_LIMIT", {
+      namespaceId: 1003,
+      simple: RATE_LIMITS.globalSearch,
+    });
+    const globalSearchGateway = yield* Cloudflare.AI.Gateway("GlobalSearchGateway", {
+      cacheTtl: GLOBAL_SEARCH_GATEWAY_CACHE_SECONDS,
+      rateLimitingInterval: 60,
+      rateLimitingLimit: 120,
+      rateLimitingTechnique: "sliding",
+      spendLimits: {
+        enabled: true,
+        rules: [{ limitType: "cost", limit: 100, window: "1 day" }],
+      },
+    });
+    const aiGateway = yield* Cloudflare.AI.QueryGateway(globalSearchGateway);
+    const globalSearchServices = yield* Effect.cached(
+      Effect.uninterruptible(
+        buildOncePerIsolate(
+          Layer.build(
+            Layer.mergeAll(
+              cloudflareWebSearch(aiGateway),
+              workersAiLanguageModel(aiGateway),
+              PageImagesLive,
+            ),
+          ),
+          yield* workerRuntimeServices,
+        ),
+      ),
+    );
     const authPublicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
     const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
     const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
@@ -164,6 +201,12 @@ export const ApiLive = Api.make(
         limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
         productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
         limitProductScan: (key) => productScanRateLimit.limit({ key }),
+        globalSearchCache: makeGlobalSearchCache((effect) => execution.waitUntil(effect)),
+        searchGlobalProducts: (query) =>
+          Effect.flatMap(globalSearchServices, (services) =>
+            Effect.provide(searchGlobalProducts(query), services),
+          ),
+        limitGlobalSearch: (key) => globalSearchRateLimit.limit({ key }),
       },
       commands: makeInventoryCommands(db),
       snapshots: makeInventorySnapshots(db),
@@ -179,6 +222,7 @@ export const ApiLive = Api.make(
     Effect.provide(OrgHubLive),
     Effect.provide(Cloudflare.Workers.CronEventSourceLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
+    Effect.provide(Cloudflare.AI.QueryGatewayBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),
   ),
 );

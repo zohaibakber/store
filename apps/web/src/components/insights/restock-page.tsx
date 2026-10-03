@@ -57,7 +57,6 @@ import { isString } from "@/lib/predicates";
 
 import { InsightsBuilding } from "./building";
 import { buyListHeader, buyListLine, downloadText } from "./buy-list";
-import { InsightsFreshness } from "./freshness";
 import { PlanningSheet } from "./planning-sheet";
 import {
   describeDemand,
@@ -426,7 +425,6 @@ function RestockBody({
       >
         <PageToolbar>
           <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
-          <InsightsFreshness />
           <ExportButton />
           <PlanningSheet />
           {selected.size > 0 ? (
@@ -498,7 +496,6 @@ function RestockGate({
       <>
         <PageToolbar>
           <PageHeading className="me-auto">Restock</PageHeading>
-          <InsightsFreshness />
         </PageToolbar>
         <InsightsBuilding status={status} />
       </>

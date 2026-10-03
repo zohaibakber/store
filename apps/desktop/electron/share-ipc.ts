@@ -15,15 +15,10 @@ import { trustedIpcListener } from "./ipc-sender";
 
 const MAX_COPIED_TEXT_LENGTH = 200_000;
 
-const WhatsAppUrl = Schema.String.check(
-  Schema.makeFilter(isWhatsAppUrl, { title: "WhatsApp link under https://wa.me/" }),
-);
-
 const CopiedText = Schema.String.check(Schema.isMaxLength(MAX_COPIED_TEXT_LENGTH));
 
 const PdfFileStem = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/u));
 
-const decodeWhatsAppUrl = Schema.decodeUnknownSync(WhatsAppUrl);
 const decodeCopiedText = Schema.decodeUnknownSync(CopiedText);
 const decodePdfFileStem = Schema.decodeUnknownSync(PdfFileStem);
 
@@ -37,14 +32,23 @@ export const registerShareIpc = (options: {
   readonly ipcMain: Pick<IpcMain, "handle">;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly openExternal: (url: string) => Promise<void>;
+  readonly isSourceLink: (url: string) => boolean;
   readonly writeClipboardText: (text: string) => void;
   readonly choosePdfDestination: (suggestedName: string) => Promise<string | null>;
 }) => {
+  const decodeExternalUrl = Schema.decodeUnknownSync(
+    Schema.String.check(
+      Schema.makeFilter((url) => isWhatsAppUrl(url) || options.isSourceLink(url), {
+        title: "WhatsApp link under https://wa.me/ or a web search source",
+      }),
+    ),
+  );
+
   const openExternal = async (
     _event: ShareIpcEvent,
     input: ShareIpcInput<"openExternal">,
   ): Promise<void> => {
-    await options.openExternal(new URL(decodeWhatsAppUrl(input)).href);
+    await options.openExternal(new URL(decodeExternalUrl(input)).href);
   };
 
   const copyText = (_event: ShareIpcEvent, input: ShareIpcInput<"copyText">): void => {

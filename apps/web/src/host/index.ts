@@ -7,7 +7,10 @@ import type {
   OrganizationRoster,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import type {
+  GlobalProductSearchResult,
+  InvoiceExtraction,
+} from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
 import type { DevicesBridge } from "./devices";
@@ -67,6 +70,7 @@ export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
   readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
+  readonly searchGlobalProducts: (query: string) => Promise<GlobalProductSearchResult>;
   readonly devices: DevicesBridge;
   readonly newSaleShortcut: NewSaleShortcut;
   readonly shell?: DesktopShellBridge;

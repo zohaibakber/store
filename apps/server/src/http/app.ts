@@ -17,6 +17,7 @@ import { InventoryImports, type InventoryImportsContract } from "../inventory/im
 import { InventorySnapshots, type InventorySnapshotsContract } from "../inventory/snapshots";
 import { LiveFanout, type LiveFanoutContract } from "../live/fanout";
 import { LiveRoutes, type LiveRouteDependencies } from "../live/route";
+import { GlobalSearchHandlers } from "../routes/global-search";
 import { ProductScanHandlers } from "../routes/product-scans";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
@@ -26,9 +27,12 @@ import { publicError } from "./errors";
 import { ServerRuntime, type ServerRuntimeContract } from "./runtime";
 import { AuthHandlers, SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(UploadHandlers, ProductScanHandlers, SyncHandlers).pipe(
-  Layer.provide(OrganizationAuthLive),
-);
+const ProtectedHandlers = Layer.mergeAll(
+  UploadHandlers,
+  ProductScanHandlers,
+  GlobalSearchHandlers,
+  SyncHandlers,
+).pipe(Layer.provide(OrganizationAuthLive));
 
 const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, AuthHandlers, ProtectedHandlers)),

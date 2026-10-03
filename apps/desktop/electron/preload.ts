@@ -58,6 +58,7 @@ import {
   RESTORE_DISCARD_CHANNEL,
   SERVER_DEVICE_COMMAND_CHANNEL,
   SERVER_DEVICES_CHANNEL,
+  SERVER_GLOBAL_SEARCH_CHANNEL,
   SERVER_UPLOADS_CHANNEL,
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,
@@ -227,6 +228,7 @@ contextBridge.exposeInMainWorld("auth", auth);
 
 const serverApi: ServerApiIpcBridge = {
   analyseInvoices: (input) => ipcRenderer.invoke(SERVER_UPLOADS_CHANNEL, input),
+  searchGlobalProducts: (input) => ipcRenderer.invoke(SERVER_GLOBAL_SEARCH_CHANNEL, input),
   organizationDevices: () => ipcRenderer.invoke(SERVER_DEVICES_CHANNEL),
   commandDevice: (command) => ipcRenderer.invoke(SERVER_DEVICE_COMMAND_CHANNEL, command),
 };

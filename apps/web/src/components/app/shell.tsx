@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/app/sidebar";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
+import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -44,6 +45,7 @@ export function AppShell() {
             </TitleBarStart>
             <TitleBarSearch />
             <TitleBarEnd>
+              <TitleBarInsightsFreshness />
               <WorkspaceSyncAction workspace={workspace} />
               <WindowControls />
             </TitleBarEnd>

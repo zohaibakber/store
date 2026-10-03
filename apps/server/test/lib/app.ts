@@ -11,6 +11,7 @@ import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as HttpEffect from "effect/http/HttpEffect";
+import * as Option from "effect/Option";
 
 import { makeWorkerFetch, type WorkerServices } from "../../src/http/app";
 import type { ServerRuntimeContract } from "../../src/http/runtime";
@@ -60,8 +61,14 @@ export const testRuntimeContext = Context.make(RuntimeContext, {
   set: (id) => Effect.succeed(id),
 });
 
+type GlobalSearchRuntime = Pick<
+  ServerRuntimeContract,
+  "globalSearchCache" | "searchGlobalProducts" | "limitGlobalSearch"
+>;
+
 export interface AppOptions extends Partial<Omit<WorkerServices, "runtime">> {
   readonly claims?: AccessClaims;
+  readonly globalSearch?: Partial<GlobalSearchRuntime>;
 }
 
 const runtimeFor = (options: AppOptions): ServerRuntimeContract => ({
@@ -71,6 +78,10 @@ const runtimeFor = (options: AppOptions): ServerRuntimeContract => ({
   limitInvoiceExtraction: unused,
   productScanAi: Effect.succeed({ generate: unused }),
   limitProductScan: unused,
+  globalSearchCache: { get: () => Effect.succeed(Option.none()), put: () => Effect.void },
+  searchGlobalProducts: unused,
+  limitGlobalSearch: unused,
+  ...options.globalSearch,
 });
 
 export const webHandlerFor = async (options: AppOptions = {}) => {

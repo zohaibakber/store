@@ -7,8 +7,8 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { parseUnitsPerPack, salvageUnitsPerPack } from "../invoice-extraction/pack-size";
 import { decodeModelJson, ModelScalar, type GenerateModelJson } from "../model-json";
+import { isNumber, isString, nullableText, unitsPerPack } from "../model-normalize";
 
 class ProductScanError extends Schema.TaggedError<ProductScanError>()("ProductScanError", {
   message: Schema.String,
@@ -50,15 +50,6 @@ const instructions = [
   "In batch mode prioritize batch number and expiry, but include visible product fields.",
   "Respond with JSON matching the provided schema and nothing else.",
 ].join("\n");
-
-const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
-
-const nullableText = (value: ModelScalar | undefined, maximumLength: number): string | null => {
-  const text = isString(value) ? value : value === undefined || value === null ? "" : String(value);
-  const normalized = text.trim().replace(/\s+/g, " ");
-  if (!normalized || /^(?:n\/?a|none|null|not found|unknown)$/i.test(normalized)) return null;
-  return normalized.slice(0, maximumLength);
-};
 
 const validMonth = (month: number) => Number.isInteger(month) && month >= 1 && month <= 12;
 
@@ -113,8 +104,6 @@ const normalizeExpiry = (value: ModelScalar | undefined): string | null => {
   return null;
 };
 
-const isNumber = <Value>(value: Value): value is Value & number => typeof value === "number";
-
 const finiteNumber = (value: ModelScalar | undefined): number | null => {
   if (isNumber(value)) return Number.isFinite(value) ? value : null;
   if (!isString(value)) return null;
@@ -126,14 +115,6 @@ const confidence = (value: ModelScalar | undefined): number => {
   const parsed = finiteNumber(value) ?? 0;
   const ratio = parsed > 1 && parsed <= 100 ? parsed / 100 : parsed;
   return Math.min(1, Math.max(0, ratio));
-};
-
-const unitsPerPack = (value: ModelScalar | undefined, name: string | null): number | null => {
-  if (!isString(value) && !isNumber(value)) return null;
-  if (isString(value) && !value.trim()) return null;
-  const parsed = parseUnitsPerPack(value, Number.NaN);
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10_000) return null;
-  return salvageUnitsPerPack(name ?? "", parsed);
 };
 
 const normalizeResult = (value: typeof ProductScanModelOutput.Type) => {

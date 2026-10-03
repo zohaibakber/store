@@ -1,8 +1,12 @@
 import type { AnalyticsStatus } from "@store/contracts";
-import { useInventoryInsights } from "@store/inventory-react";
+import { useCatalogIsReady, useInventoryInsights } from "@store/inventory-react";
+import { useLocation } from "@tanstack/react-router";
 
+import { AsyncBoundary } from "@/components/app/error-boundary";
 import { Spinner } from "@/components/ui/spinner";
 import { formatRelativeTime } from "@/lib/format";
+import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
+import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 import { progressPercent } from "./presentation";
 
@@ -43,4 +47,29 @@ export function InsightsFreshness() {
       {describeFreshness({ status, completedAt: summary?.run.completedAt ?? null })}
     </span>
   );
+}
+
+const INSIGHTS_PATHS: ReadonlySet<string> = new Set(["/", "/restock"]);
+
+function PopulatedInsightsFreshness() {
+  if (useCatalogIsEmpty()) return null;
+  return <InsightsFreshness />;
+}
+
+function SyncedInsightsFreshness() {
+  if (useFirstSyncPending()) return null;
+  return (
+    <AsyncBoundary fallback={null}>
+      <PopulatedInsightsFreshness />
+    </AsyncBoundary>
+  );
+}
+
+export function TitleBarInsightsFreshness() {
+  const onInsightsPage = useLocation({
+    select: (location) => INSIGHTS_PATHS.has(location.pathname),
+  });
+  const ready = useCatalogIsReady();
+  if (!onInsightsPage || !ready) return null;
+  return <SyncedInsightsFreshness />;
 }

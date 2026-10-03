@@ -7,10 +7,10 @@ import {
 } from "@store/services";
 import * as Effect from "effect/Effect";
 
-const MODEL = "@cf/google/gemma-4-26b-a4b-it";
+export const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 
 type JsonSchemaValue = string | number | boolean | null | JsonSchemaObject | JsonSchemaValue[];
-interface JsonSchemaObject {
+export interface JsonSchemaObject {
   readonly [key: string]: JsonSchemaValue;
 }
 

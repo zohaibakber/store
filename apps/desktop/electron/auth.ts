@@ -17,13 +17,17 @@ import {
   type OrganizationRoster,
 } from "@store/auth";
 import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
-import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import type {
+  GlobalProductSearchResult,
+  InvoiceExtraction,
+} from "@store/contracts/server-api.schema";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
 import { commandOrganizationDevice, listOrganizationDevices } from "@store/web/host/devices";
+import { searchGlobalProducts } from "@store/web/host/global-search";
 import type { SignInCredentials } from "@store/web/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "@store/web/host/invoice-upload";
 import {
@@ -139,6 +143,9 @@ interface DesktopAuthApi {
   readonly analyseInvoices: (
     files: ReadonlyArray<InvoiceUploadFile>,
   ) => Effect.Effect<InvoiceExtraction, Error | RequestError>;
+  readonly searchGlobalProducts: (
+    query: string,
+  ) => Effect.Effect<GlobalProductSearchResult, Error | RequestError>;
   readonly organizationDevices: Effect.Effect<OrganizationDevices, RequestError>;
   readonly commandDevice: (
     command: DeviceCommand,
@@ -284,6 +291,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     organizationRoster: withSession(SessionHttp.use((session) => session.organizationRoster)),
     organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
     analyseInvoices: (files) => withSession(analyseInvoiceUpload(files)),
+    searchGlobalProducts: (query) => withSession(searchGlobalProducts(query)),
     organizationDevices: withSession(listOrganizationDevices),
     commandDevice: (command) => withSession(commandOrganizationDevice(command)),
     liveAccessToken: (force) =>
