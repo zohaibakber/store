@@ -11,7 +11,6 @@ import {
 import { and, eq, max, ne, sql } from "drizzle-orm";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
 import { decodeEntity } from "../codecs";
 import type { PendingRowStore } from "../pending";
@@ -187,19 +186,17 @@ export const sqlitePendingRows = (
   },
 });
 
-const PendingPresence = Schema.Tuple([Schema.Struct({ pending: Schema.Number })]);
-
-const decodePendingPresence = Schema.decodeUnknownEffect(PendingPresence);
-
 export const hasPendingProjection = Effect.fn("ReplicaPending.hasPendingProjection")(function* (
   tx: ReplicaDb,
 ) {
-  const [presence] = yield* tx
-    .all(
-      sql`select (exists(select 1 from ${pendingRowMarks}) or exists(select 1 from ${pendingRowJournal}) or exists(select 1 from ${stockOverlays})) as pending`,
-    )
-    .pipe(Effect.flatMap(decodePendingPresence));
-  return presence.pending !== 0;
+  const held = yield* tx
+    .select({ held: sql`1` })
+    .from(pendingRowMarks)
+    .unionAll(tx.select({ held: sql`1` }).from(pendingRowJournal))
+    .unionAll(tx.select({ held: sql`1` }).from(stockOverlays))
+    .limit(1)
+    .get();
+  return held !== undefined;
 });
 
 export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(function* (

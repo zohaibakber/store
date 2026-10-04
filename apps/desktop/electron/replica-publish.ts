@@ -8,6 +8,7 @@ import type {
 } from "@store/web/host/workspace-publish";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
@@ -87,7 +88,7 @@ const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: 
 
 export const readLocalCatalog = (
   ports: Pick<PublishPorts, "databasePath" | "worker">,
-): Effect.Effect<LocalCatalogReport> =>
+): Effect.Effect<LocalCatalogReport, never, FileSystem.FileSystem> =>
   replicaFileExists(ports.databasePath).pipe(
     Effect.flatMap((exists) =>
       exists
@@ -100,7 +101,9 @@ export const readLocalCatalog = (
     Effect.catch(() => Effect.succeed<LocalCatalogReport>({ _tag: "unknown" })),
   );
 
-export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffer> =>
+export const readPublishOffer = (
+  ports: PublishPorts,
+): Effect.Effect<PublishOffer, never, FileSystem.FileSystem> =>
   readStanding(ports).pipe(
     Effect.map((standing): PublishOffer => {
       switch (standing._tag) {
@@ -125,7 +128,9 @@ export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffe
     Effect.catch(() => Effect.succeed(NO_OFFER)),
   );
 
-export const discardPublish = (ports: PublishPorts): Effect.Effect<PublishOffer> =>
+export const discardPublish = (
+  ports: PublishPorts,
+): Effect.Effect<PublishOffer, never, FileSystem.FileSystem> =>
   removePublishMarker(ports.databasePath).pipe(Effect.andThen(readPublishOffer(ports)));
 
 const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
@@ -231,7 +236,9 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
   }
 });
 
-export const publishLocalWorkspace = (ports: PublishPorts): Effect.Effect<PublishOutcome> =>
+export const publishLocalWorkspace = (
+  ports: PublishPorts,
+): Effect.Effect<PublishOutcome, never, FileSystem.FileSystem> =>
   readStanding(ports).pipe(
     Effect.flatMap((standing) => {
       switch (standing._tag) {

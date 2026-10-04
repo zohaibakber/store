@@ -5,6 +5,7 @@ import type {
   PublishOutcome,
 } from "@store/web/host/workspace-publish";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 
@@ -29,18 +30,18 @@ type ReplicaPublishHost = {
   readonly offer: (
     session: WorkspaceSession | undefined,
     organizationId: string,
-  ) => Effect.Effect<PublishOffer>;
+  ) => Effect.Effect<PublishOffer, never, FileSystem.FileSystem>;
   readonly publish: (
     session: WorkspaceSession | undefined,
     organizationId: string,
-  ) => Effect.Effect<PublishOutcome>;
+  ) => Effect.Effect<PublishOutcome, never, FileSystem.FileSystem>;
   readonly discard: (
     session: WorkspaceSession | undefined,
     organizationId: string,
-  ) => Effect.Effect<PublishOffer>;
+  ) => Effect.Effect<PublishOffer, never, FileSystem.FileSystem>;
   readonly localCatalog: (
     session: WorkspaceSession | undefined,
-  ) => Effect.Effect<LocalCatalogReport>;
+  ) => Effect.Effect<LocalCatalogReport, never, FileSystem.FileSystem>;
 };
 
 const PUBLISH_NEEDS_ORGANIZATION = "Open the organization that should receive this device's data.";
@@ -92,9 +93,9 @@ export const makeReplicaPublishHost = (sessions: WorkspaceSessions): ReplicaPubl
   const withLocalReplicaClosed = <A>(
     session: WorkspaceSession | undefined,
     organizationId: string,
-    use: (ports: PublishPorts) => Effect.Effect<A>,
+    use: (ports: PublishPorts) => Effect.Effect<A, never, FileSystem.FileSystem>,
     otherwise: (message: string) => A,
-  ): Effect.Effect<A> =>
+  ): Effect.Effect<A, never, FileSystem.FileSystem> =>
     Effect.scoped(
       Effect.gen(function* () {
         if (

@@ -1,3 +1,5 @@
+// Must stay the first import: parsers created before it run on the interpreter.
+import "effect/schema/SchemaJITCompiler/enable";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeWorkerRunner from "@effect/platform-node/NodeWorkerRunner";
 import * as Layer from "effect/Layer";

@@ -1,3 +1,5 @@
+// Must stay the first import: parsers created before it run on the interpreter.
+import "effect/schema/SchemaJITCompiler/enable";
 import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

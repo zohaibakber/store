@@ -171,16 +171,13 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
           const worker: LiveWorker<Client> = { ...process, incarnation };
           const engine = yield* process.client.Engine().pipe(
             Effect.mapError((cause) => new WorkerIncarnationFailed({ message: cause.message })),
-            Effect.timeoutOption(policy.bootTimeout),
-            Effect.flatMap(
-              Option.match({
-                onNone: () =>
-                  Effect.fail(
-                    new WorkerIncarnationFailed({ message: "The worker did not boot in time." }),
-                  ),
-                onSome: Effect.succeed,
-              }),
-            ),
+            Effect.timeoutOrElse({
+              duration: policy.bootTimeout,
+              orElse: () =>
+                Effect.fail(
+                  new WorkerIncarnationFailed({ message: "The worker did not boot in time." }),
+                ),
+            }),
             Effect.raceFirst(
               process.lost.pipe(
                 Effect.andThen(
@@ -250,17 +247,17 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
     const settled = SubscriptionRef.changes(state).pipe(
       Stream.filter((current) => current._tag !== "Starting" && current._tag !== "Recovering"),
       Stream.runHead,
-      Effect.timeoutOption(policy.requestWait),
+      Effect.timeoutOrElse({
+        duration: policy.requestWait,
+        orElse: () => Effect.fail(restarting()),
+      }),
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.fail(restarting()),
-          onSome: Option.match({
-            onNone: () => Effect.fail(restarting()),
-            onSome: (current) =>
-              current._tag === "Running"
-                ? Effect.succeed(current.worker)
-                : Effect.fail(current._tag === "Exhausted" ? exhausted() : unavailable()),
-          }),
+          onSome: (current) =>
+            current._tag === "Running"
+              ? Effect.succeed(current.worker)
+              : Effect.fail(current._tag === "Exhausted" ? exhausted() : unavailable()),
         }),
       ),
     );

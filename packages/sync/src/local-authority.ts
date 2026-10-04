@@ -64,7 +64,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { decodeStoredEnvelope } from "./replica/codecs";
-import { loadReplicaState } from "./replica/commands";
+import { clientSequenceLength, loadReplicaState } from "./replica/commands";
 import {
   decideCatalogRow,
   projectCommand,
@@ -1332,8 +1332,6 @@ const groupOf = (
 const DECIDED_STATUSES = ["integrated", "accepted_awaiting_integration", "rejected"] as const;
 
 const UNAPPLIED_STATUSES = ["accepted_awaiting_integration", "rejected"] as const;
-
-const clientSequenceLength = sql`length(${commandOutbox.clientSequence})`;
 
 const nextCommitSequence = (state: ReplicaStateRow) =>
   OrgCommitSequence.make(incrementDecimalSequence(state.appliedCommitSequence));

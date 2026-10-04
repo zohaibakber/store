@@ -2,7 +2,7 @@ import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
@@ -27,22 +27,19 @@ const make = (port: MessagePortMain): WorkerRunner.WorkerRunnerPlatform["Service
         Effect.scopedWith(
           Effect.fnUntraced(function* (scope) {
             const closeLatch = Deferred.makeUnsafe<void, WorkerError>();
-            const trackFiber = Fiber.runIn(scope);
-            const services = yield* Effect.context<R>();
-            const runFork = Effect.runForkWith(services);
-            const onExit = (exit: Exit.Exit<unknown, unknown>) => {
-              if (exit._tag === "Failure" && !Cause.hasInterruptsOnly(exit.cause)) {
-                runFork(Effect.logError("MessagePortMainRunner.unhandled", exit.cause));
-              }
-            };
+            const runFork = yield* FiberSet.makeRuntime<R>().pipe(Scope.provide(scope));
             const onMessage = (event: { readonly data: WorkerRunner.PlatformMessage<I> }) => {
               const message = event.data;
               if (message[0] === 0) {
                 const result = handler(0, message[1]);
                 if (Effect.isEffect(result)) {
-                  const fiber = runFork(result);
-                  fiber.addObserver(onExit);
-                  trackFiber(fiber);
+                  runFork(
+                    Effect.onExit(result, (exit) =>
+                      Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
+                        ? Effect.logError("MessagePortMainRunner.unhandled", exit.cause)
+                        : Effect.void,
+                    ),
+                  );
                 }
               } else {
                 Deferred.doneUnsafe(closeLatch, Exit.void);

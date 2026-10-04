@@ -1,7 +1,6 @@
-import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-
 import { ImportId } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -27,41 +26,59 @@ const PublishMarkerJson = Schema.fromJsonString(PublishMarker);
 const decodeMarker = Schema.decodeUnknownOption(PublishMarkerJson);
 const encodeMarker = Schema.encodeSync(PublishMarkerJson);
 
+const encoder = new TextEncoder();
+
 const markerPath = (databasePath: string) => `${databasePath}${MARKER_SUFFIX}`;
 
 const draftPath = (databasePath: string) => `${markerPath(databasePath)}.draft`;
 
 const failure = (message: string) => new ReplicaWorkerFailure({ message });
 
-export const replicaFileExists = (databasePath: string): Effect.Effect<boolean> =>
-  Effect.tryPromise(() => stat(databasePath)).pipe(
-    Effect.map((file) => file.isFile()),
+export const replicaFileExists = Effect.fn("ReplicaPublish.exists")(function* (
+  databasePath: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.stat(databasePath).pipe(
+    Effect.map((file) => file.type === "File"),
     Effect.orElseSucceed(() => false),
   );
+});
 
-export const readPublishMarker = (
+export const readPublishMarker = Effect.fn("ReplicaPublish.readMarker")(function* (
   databasePath: string,
-): Effect.Effect<Option.Option<PublishMarker>> =>
-  Effect.tryPromise(() => readFile(markerPath(databasePath), "utf8")).pipe(
+) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.readFileString(markerPath(databasePath)).pipe(
     Effect.map(decodeMarker),
-    Effect.orElseSucceed(() => Option.none()),
+    Effect.orElseSucceed(() => Option.none<PublishMarker>()),
   );
+});
 
-export const writePublishMarker = (databasePath: string, marker: PublishMarker) =>
-  Effect.tryPromise({
-    try: async () => {
-      await writeFile(draftPath(databasePath), encodeMarker(marker), { flush: true });
-      await rename(draftPath(databasePath), markerPath(databasePath));
-    },
-    catch: () => failure("This device could not record the move. Nothing was moved."),
-  });
+export const writePublishMarker = Effect.fn("ReplicaPublish.writeMarker")(
+  function* (databasePath: string, marker: PublishMarker) {
+    const fs = yield* FileSystem.FileSystem;
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const draft = yield* fs.open(draftPath(databasePath), { flag: "w" });
+        yield* draft.writeAll(encoder.encode(encodeMarker(marker)));
+        yield* draft.sync;
+      }),
+    );
+    yield* fs.rename(draftPath(databasePath), markerPath(databasePath));
+  },
+  Effect.mapError(() => failure("This device could not record the move. Nothing was moved.")),
+);
 
-export const removePublishMarker = (databasePath: string): Effect.Effect<void> =>
-  Effect.forEach(
+export const removePublishMarker = Effect.fn("ReplicaPublish.removeMarker")(function* (
+  databasePath: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* Effect.forEach(
     [markerPath(databasePath), draftPath(databasePath)],
-    (file) => Effect.tryPromise(() => rm(file, { force: true })).pipe(Effect.ignore),
+    (file) => fs.remove(file, { force: true }).pipe(Effect.ignore),
     { discard: true },
   );
+});
 
 const archivedReplicaPath = (databasePath: string, now: number): string =>
   `${databasePath}${ARCHIVE_INFIX}${now}`;
@@ -72,10 +89,10 @@ export const archiveReplicaFile = Effect.fn("ReplicaPublish.archive")(function* 
 }) {
   if (!(yield* replicaFileExists(input.databasePath))) return;
   yield* detachReplicaFile(input.databasePath);
-  yield* Effect.tryPromise({
-    try: () => rename(input.databasePath, archivedReplicaPath(input.databasePath, input.now)),
-    catch: () => failure("This device's copy could not be set aside."),
-  });
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs
+    .rename(input.databasePath, archivedReplicaPath(input.databasePath, input.now))
+    .pipe(Effect.mapError(() => failure("This device's copy could not be set aside.")));
 });
 
 export const isExpiredReplicaArchive = (name: string, now: number): boolean => {
