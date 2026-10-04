@@ -1,6 +1,6 @@
 import { CommandStatus, type SyncEntity } from "@store/contracts";
 import { commandOutbox, pendingRowMarks, replicaState } from "@store/db/replica.schema";
-import { count, desc, eq, inArray, sql } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -9,6 +9,7 @@ import {
   MAX_REJECTED_ACTIVITY_ROWS,
   type ReplicaOutboxActivity,
 } from "../activity";
+import { clientSequenceLength } from "../commands";
 import type { ReplicaDb } from "../sql-client/drizzle";
 
 const StatusCountRow = Schema.Struct({ status: CommandStatus, count: Schema.Number });
@@ -52,10 +53,7 @@ export const readOutboxActivitySqlite = Effect.fn("SqliteReplicaActivity.readOut
       })
       .from(commandOutbox)
       .where(eq(commandOutbox.status, "rejected"))
-      .orderBy(
-        desc(sql`length(${commandOutbox.clientSequence})`),
-        desc(commandOutbox.clientSequence),
-      )
+      .orderBy(desc(clientSequenceLength), desc(commandOutbox.clientSequence))
       .limit(MAX_REJECTED_ACTIVITY_ROWS)
       .all()
       .pipe(Effect.flatMap(decodeRejectedOutboxRows), Effect.orDie);

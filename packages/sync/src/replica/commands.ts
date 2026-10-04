@@ -54,7 +54,7 @@ export type UploadClaim = {
 
 const INTEGRATED_COMMAND_RETENTION = 256;
 
-const clientSequenceLength = sql`length(${commandOutbox.clientSequence})`;
+export const clientSequenceLength = sql`length(${commandOutbox.clientSequence})`;
 
 export const loadReplicaState = Effect.fn("ReplicaCommands.loadReplicaState")(function* (
   tx: ReplicaDb,
