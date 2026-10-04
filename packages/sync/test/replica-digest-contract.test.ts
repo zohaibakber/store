@@ -27,6 +27,7 @@ import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cade
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import type { SyncTransport } from "../src/transport";
+import { applyGroup } from "./lib/authority";
 import {
   authorityDigest,
   commitToAuthority,
@@ -398,7 +399,7 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
           yield* engine.downloadOnce(pullRequest);
           const [tampered] = remoteChanges;
           if (tampered === undefined) return yield* Effect.die("missing fixture");
-          yield* harness.store.applyTransactionGroup(tampered);
+          yield* applyGroup(harness.store, tampered);
           yield* TestClock.adjust("7 hours");
           const failure = yield* Effect.exit(engine.downloadOnce(pullRequest));
           expect(Exit.isFailure(failure)).toBe(true);
@@ -538,25 +539,31 @@ describe.each(harnesses)(
     it.effect("verifies a replica built from server-shaped change rows", () =>
       Effect.gen(function* () {
         const harness = yield* makeHarness();
-        const applied = yield* harness.store.applyRemotePage({
-          epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
-          incarnation: AuthorityIncarnation.make(harness.incarnation),
-          subscription: "operational",
-          schemaVersion: 1,
-          transactions: [
-            {
-              commitSequence: OrgCommitSequence.make("1"),
-              operationId: "server-dataset",
-              decision: "accepted",
-              changes: serverChangeLog(serverTables),
+        const applied = yield* harness.store.integrateAuthority({
+          payload: {
+            _tag: "pullPage",
+            page: {
+              epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
+              incarnation: AuthorityIncarnation.make(harness.incarnation),
+              subscription: "operational",
+              schemaVersion: 1,
+              transactions: [
+                {
+                  commitSequence: OrgCommitSequence.make("1"),
+                  operationId: "server-dataset",
+                  decision: "accepted",
+                  changes: serverChangeLog(serverTables),
+                },
+              ],
+              nextCommitSequence: OrgCommitSequence.make("1"),
+              horizon: OrgCommitSequence.make("1"),
+              retentionFloor: OrgCommitSequence.make("0"),
+              digest: yield* serverPartitionDigest(serverTables),
             },
-          ],
-          nextCommitSequence: OrgCommitSequence.make("1"),
-          horizon: OrgCommitSequence.make("1"),
-          retentionFloor: OrgCommitSequence.make("0"),
-          digest: yield* serverPartitionDigest(serverTables),
+          },
         });
         expect(applied.value).toEqual({
+          outcome: { _tag: "applied" },
           appliedThrough: "1",
           repairRequired: false,
           digestVerified: true,

@@ -17,11 +17,12 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Socket from "effect/socket/Socket";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+
+import { makeBackoff } from "./backoff";
 
 export type LiveNetworkSignal = {
   readonly isOnline: () => boolean;
@@ -52,7 +53,8 @@ const LIVE_SOCKET_POLICY = {
   keepaliveMillis: 30_000,
   pongTimeoutMillis: 10_000,
   renewBeforeExpiryMillis: 2 * 60_000,
-  backoffMillis: [1_000, 2_000, 5_000, 15_000, 30_000, 60_000],
+  reconnectBaseMillis: 1_000,
+  reconnectMaxMillis: 60_000,
 } as const;
 
 class LiveSocketStale extends Schema.TaggedError<LiveSocketStale>()("LiveSocketStale", {
@@ -110,9 +112,6 @@ const browserNetworkSignal = (): LiveNetworkSignal | undefined => {
   };
 };
 
-const sleepJittered = (millis: number): Effect.Effect<void> =>
-  Effect.void.pipe(Effect.schedule(Schedule.jittered(Schedule.duration(Duration.millis(millis)))));
-
 const textOf = (data: string | Uint8Array): string =>
   data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
 
@@ -140,7 +139,10 @@ export const makeLiveSocket = (
 ): Effect.Effect<LiveSocket> =>
   Effect.gen(function* () {
     const nudges = yield* Queue.sliding<void>(1);
-    const attempts = yield* Ref.make(0);
+    const reconnect = yield* makeBackoff({
+      baseMillis: LIVE_SOCKET_POLICY.reconnectBaseMillis,
+      maxMillis: LIVE_SOCKET_POLICY.reconnectMaxMillis,
+    });
     const forceRefresh = yield* Ref.make(false);
     const refusalRefreshSpent = yield* Ref.make(false);
     const network = host.network ?? browserNetworkSignal();
@@ -167,12 +169,7 @@ export const makeLiveSocket = (
         }),
       );
 
-    const backOff = Effect.gen(function* () {
-      const attempt = yield* Ref.getAndUpdate(attempts, (n) => n + 1);
-      const ladder = LIVE_SOCKET_POLICY.backoffMillis;
-      const delay = ladder[Math.min(attempt, ladder.length - 1)] ?? 60_000;
-      yield* Effect.raceFirst(sleepJittered(delay), Queue.take(nudges));
-    });
+    const backOff = Effect.raceFirst(reconnect.wait, Queue.take(nudges));
 
     const session = (token: string) =>
       Effect.gen(function* () {
@@ -187,7 +184,7 @@ export const makeLiveSocket = (
         const reader = yield* socket.reader;
         const writer = yield* socket.writer;
         const heardAt = yield* Ref.make(yield* Clock.currentTimeMillis);
-        yield* Ref.set(attempts, 0);
+        yield* reconnect.reset;
         yield* handlers.setConnected(true);
 
         const receive = (data: string | Uint8Array) =>

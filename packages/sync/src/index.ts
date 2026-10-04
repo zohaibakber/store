@@ -4,14 +4,10 @@ export { MAX_REJECTED_ACTIVITY_ROWS } from "./replica/activity";
 export type { OutboxActivityRow, ReplicaOutboxActivity } from "./replica/activity";
 export { ReplicaStore } from "./replica/store";
 export { SyncScheduler } from "./scheduler";
-export type {
-  SyncSchedulerContract,
-  SyncSchedulerPolicy,
-  SyncSchedulerStatus,
-  SyncWakeReason,
-} from "./scheduler";
+export type { SyncSchedulerContract, SyncSchedulerPolicy, SyncWakeReason } from "./scheduler";
 export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
 export type { OwnedLiveHost } from "./session";
+export type { SuspendReason, SyncPhase, SyncState } from "./sync-state";
 export {
   failureFromStatus,
   mapSyncFailure,

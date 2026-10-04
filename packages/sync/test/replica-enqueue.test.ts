@@ -98,7 +98,11 @@ const drainSequences = (store: ReplicaStoreContract, count: number) =>
   Effect.gen(function* () {
     const sequences: Array<string> = [];
     for (let index = 0; index < count; index += 1) {
-      const claim = yield* store.claimNextUpload({ claimId: `claim-${index}`, claimedAt: 1 });
+      const claim = yield* store.claimNextUpload({
+        claimId: `claim-${index}`,
+        claimedAt: 1,
+        staleBefore: 0,
+      });
       if (!claim.value) break;
       sequences.push(claim.value.envelope.clientSequence);
       yield* store.settleUploadClaim(

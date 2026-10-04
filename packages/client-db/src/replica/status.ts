@@ -1,5 +1,5 @@
 import type { CommandStatus } from "@store/contracts";
-import type { SyncSchedulerStatus } from "@store/sync";
+import type { SyncPhase, SyncState } from "@store/sync";
 
 export type InventorySyncStatus =
   | { readonly _tag: "savedLocally" }
@@ -8,13 +8,15 @@ export type InventorySyncStatus =
   | { readonly _tag: "rejected"; readonly message: string }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
+  | { readonly _tag: "recoveryRequired"; readonly message: string };
+
+export type SyncTransfer = NonNullable<SyncState["transfer"]>;
 
 export type ReplicaSyncHealth =
-  | { readonly _tag: "running"; readonly syncing?: boolean }
+  | { readonly _tag: "running"; readonly syncing?: boolean; readonly transfer?: SyncTransfer }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recoveryRequired"; readonly message: string; readonly retryable?: boolean };
+  | { readonly _tag: "recoveryRequired"; readonly message: string };
 
 const UPDATE_REQUIRED_MESSAGE =
   "This version of the app is too old to sync. Update it to continue. Pending changes are saved on this device.";
@@ -32,27 +34,45 @@ export const syncStatusFromOutbox = (
   return { _tag: "caughtUp" };
 };
 
-export const syncHealthFromScheduler = (
-  status: SyncSchedulerStatus,
-  syncing: boolean,
-): ReplicaSyncHealth => {
-  switch (status._tag) {
-    case "storageError":
-      return { _tag: "storageError", message: status.message };
-    case "recoveryRequired":
-      return { _tag: "recoveryRequired", message: status.message };
-    case "pausedForAuth":
-      return {
-        _tag: "recoveryRequired",
-        message: "Sign in again to resume syncing. Pending changes are saved on this device.",
-      };
-    case "stopped":
-      return { _tag: "recoveryRequired", message: status.message };
+const SYNCING_PHASES: ReadonlySet<SyncPhase> = new Set<SyncPhase>([
+  "registering",
+  "uploading",
+  "catchingUp",
+  "recovering",
+]);
+
+export const syncHealthOf = (state: SyncState): ReplicaSyncHealth => {
+  const suspended = state.suspended;
+  if (suspended === undefined) {
+    const syncing = SYNCING_PHASES.has(state.phase);
+    return state.transfer === undefined
+      ? { _tag: "running", syncing }
+      : { _tag: "running", syncing, transfer: state.transfer };
+  }
+  switch (suspended.reason) {
+    case "storage":
+      return { _tag: "storageError", message: suspended.message };
     case "updateRequired":
       return { _tag: "updateRequired", message: UPDATE_REQUIRED_MESSAGE };
-    case "running":
-      return { _tag: "running", syncing };
+    case "auth":
+    case "garbledResponses":
+    case "refused":
+    case "protocol":
+    case "recoveryRequired":
+      return { _tag: "recoveryRequired", message: suspended.message };
   }
+};
+
+export const sameSyncHealth = (left: ReplicaSyncHealth, right: ReplicaSyncHealth): boolean => {
+  if (left._tag === "running") {
+    return (
+      right._tag === "running" &&
+      left.syncing === right.syncing &&
+      left.transfer?.partsDone === right.transfer?.partsDone &&
+      left.transfer?.partsTotal === right.transfer?.partsTotal
+    );
+  }
+  return right._tag === left._tag && right.message === left.message;
 };
 
 export const syncStatusWithHealth = (

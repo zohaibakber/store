@@ -1,5 +1,6 @@
 import { AuthClient, authClientLayer, type IssuedSession } from "@store/auth";
 import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts/workspace";
+import { holdWebLock } from "@store/sync/web-lock";
 import {
   SessionHttp,
   adoptAuthenticatedSnapshot,
@@ -30,32 +31,10 @@ export type WebAuthBrokerOptions = {
   readonly authBaseUrl: string;
 };
 
-const webLocks = Effect.try(() => globalThis.navigator?.locks).pipe(
-  Effect.orElseSucceed(() => undefined),
-);
-
-const holdRefreshLock = (locks: LockManager) =>
-  Effect.acquireRelease(
-    Effect.callback<() => void>((resume, signal) => {
-      locks
-        .request(REFRESH_LOCK, { signal }, () =>
-          signal.aborted
-            ? Promise.resolve()
-            : new Promise<void>((release) => resume(Effect.succeed(release))),
-        )
-        .catch(() => {
-          if (!signal.aborted) resume(Effect.succeed(() => undefined));
-        });
-    }),
-    (release) => Effect.sync(release),
-    { interruptible: true },
-  );
-
 const oneTabAtATime = <A, E>(refresh: Effect.Effect<A, E>): Effect.Effect<A, E> =>
-  Effect.flatMap(webLocks, (locks) =>
-    locks === undefined
-      ? refresh
-      : holdRefreshLock(locks).pipe(Effect.andThen(refresh), Effect.scoped),
+  holdWebLock(REFRESH_LOCK, { whenRefused: "proceed" }).pipe(
+    Effect.andThen(refresh),
+    Effect.scoped,
   );
 
 interface WebAuthApi {

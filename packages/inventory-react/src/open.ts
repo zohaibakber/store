@@ -102,7 +102,13 @@ const followSyncHealth = (replica: ReplicaHandle, atoms: WorkspaceAtoms) =>
     yield* Effect.acquireRelease(
       Effect.sync(() =>
         replica.subscribeSyncHealth?.((next) => {
-          atoms.registry.set(atoms.syncing, next._tag === "running" && next.syncing === true);
+          Atom.batch(() => {
+            atoms.registry.set(atoms.syncing, next._tag === "running" && next.syncing === true);
+            atoms.registry.set(
+              atoms.syncTransfer,
+              next._tag === "running" ? next.transfer : undefined,
+            );
+          });
           Effect.runSync(SubscriptionRef.set(health, next));
         }),
       ),
@@ -189,6 +195,7 @@ const acquireWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       }),
       retrySync: async () => {
         await replica.retryRecovery?.();
+        wakeSyncUpload();
       },
       syncNow: wakeSyncUpload,
     };

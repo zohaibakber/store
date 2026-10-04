@@ -35,6 +35,7 @@ import { entityStore } from "../src/replica/indexeddb/schema";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
+import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
@@ -78,7 +79,7 @@ const makeSqliteHarness = Effect.fn("harness.sqlite")(function* () {
   const scope = yield* Scope.make();
   const handle = yield* Scope.provide(seedReplicaTenUnits(), scope);
   const store = yield* makeSqliteReplicaStore(handle, "sqlite-pending");
-  yield* store.applyTransactionGroup(seedSpareBatchGroup);
+  yield* applyGroup(store, seedSpareBatchGroup);
   return {
     store,
     rows: (entity: SyncEntity) =>
@@ -109,8 +110,8 @@ const makeIndexedHarness = Effect.fn("harness.indexeddb")(function* () {
     indexedDB,
     IDBKeyRange,
   });
-  yield* store.applyTransactionGroup(seedCatalogGroup);
-  yield* store.applyTransactionGroup(seedSpareBatchGroup);
+  yield* applyGroup(store, seedCatalogGroup);
+  yield* applyGroup(store, seedSpareBatchGroup);
   return {
     store,
     rows: (entity: SyncEntity) =>
@@ -345,7 +346,8 @@ for (const adapter of adapters) {
       withHarness((harness) =>
         Effect.gen(function* () {
           yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
-          yield* harness.store.applyTransactionGroup(
+          yield* applyGroup(
+            harness.store,
             authoritativeInvoiceGroup({
               operationId: lastUnitBuyerAEnvelope.operationId,
               commitSequence: "5",
@@ -377,7 +379,11 @@ for (const adapter of adapters) {
           expect(findRow(shadowedCategories, NEW_CATEGORY_ID)).toBeDefined();
           expect(findRow(shadowedProducts, LAST_UNIT_PRODUCT_ID)?.["name"]).toBe("Renamed");
 
-          yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10 });
+          yield* harness.store.claimNextUpload({
+            claimId: "claim-1",
+            claimedAt: 10,
+            staleBefore: 0,
+          });
           yield* harness.store.settleUploadClaim("claim-1", rejectedReceipt(envelope, "6"));
 
           const restoredCategories = yield* harness.rows("category");
@@ -395,7 +401,8 @@ for (const adapter of adapters) {
         Effect.gen(function* () {
           const before = yield* harness.rows("batch");
           expect(findRow(before, SPARE_BATCH_ID)).toBeDefined();
-          yield* harness.store.applyTransactionGroup(
+          yield* applyGroup(
+            harness.store,
             deleteGroup({
               entity: "batch",
               entityId: SPARE_BATCH_ID,
@@ -413,7 +420,8 @@ for (const adapter of adapters) {
       withHarness((harness) =>
         Effect.gen(function* () {
           yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
-          yield* harness.store.applyTransactionGroup(
+          yield* applyGroup(
+            harness.store,
             deleteGroup({
               entity: "product",
               entityId: LAST_UNIT_PRODUCT_ID,
@@ -434,7 +442,7 @@ for (const adapter of adapters) {
     it.effect("stores no deletedAt field for an authoritative image carrying one", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.applyTransactionGroup(remoteProductGroup);
+          yield* applyGroup(harness.store, remoteProductGroup);
           const productRows = yield* harness.rows("product");
           const row = findRow(productRows, LAST_UNIT_PRODUCT_ID);
           expect(row?.["name"]).toBe("Remote name");
@@ -455,7 +463,11 @@ for (const adapter of adapters) {
           const shadowed = yield* harness.rows("batch");
           expect(findRow(shadowed, SPARE_BATCH_ID)).toBeUndefined();
 
-          yield* harness.store.claimNextUpload({ claimId: "claim-delete", claimedAt: 10 });
+          yield* harness.store.claimNextUpload({
+            claimId: "claim-delete",
+            claimedAt: 10,
+            staleBefore: 0,
+          });
           yield* harness.store.settleUploadClaim("claim-delete", rejectedReceipt(envelope, "6"));
 
           const restored = yield* harness.rows("batch");
@@ -513,7 +525,8 @@ for (const adapter of adapters) {
             invoiceNumber: 5,
           });
           yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
-          const applied = yield* harness.store.applyTransactionGroup(
+          const applied = yield* applyGroup(
+            harness.store,
             authoritativeInvoiceGroup({
               operationId: "remote-invoice",
               commitSequence: "6",
@@ -532,7 +545,8 @@ for (const adapter of adapters) {
             ),
           ).toHaveLength(1);
 
-          yield* harness.store.applyTransactionGroup(
+          yield* applyGroup(
+            harness.store,
             authoritativeInvoiceGroup({
               operationId: "shadow-five",
               commitSequence: "7",
@@ -556,6 +570,7 @@ for (const adapter of adapters) {
             const claimed = yield* harness.store.claimNextUpload({
               claimId: `claim-${attempt}`,
               claimedAt: attempt,
+              staleBefore: 0,
             });
             expect(claimed.value?.operationId).toBe(lastUnitBuyerAEnvelope.operationId);
             yield* harness.store.releaseUploadClaim(
@@ -569,6 +584,7 @@ for (const adapter of adapters) {
           const next = yield* harness.store.claimNextUpload({
             claimId: "claim-last",
             claimedAt: 99,
+            staleBefore: 0,
           });
           expect(status).toBe("pending");
           expect(invoiceRows).toHaveLength(1);
@@ -583,7 +599,11 @@ for (const adapter of adapters) {
     const rejectNext = (harness: Harness, envelope: SyncCommandEnvelope, commitSequence: string) =>
       Effect.gen(function* () {
         const claimId = `reject-${envelope.operationId}`;
-        const claimed = yield* harness.store.claimNextUpload({ claimId, claimedAt: 10 });
+        const claimed = yield* harness.store.claimNextUpload({
+          claimId,
+          claimedAt: 10,
+          staleBefore: 0,
+        });
         expect(claimed.value?.operationId).toBe(envelope.operationId);
         yield* harness.store.settleUploadClaim(claimId, rejectedReceipt(envelope, commitSequence));
       });
@@ -626,7 +646,7 @@ for (const adapter of adapters) {
         Effect.gen(function* () {
           yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
           yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
-          yield* harness.store.applyTransactionGroup(remoteProductGroup);
+          yield* applyGroup(harness.store, remoteProductGroup);
           expect(yield* productName(harness)).toBe("Remote name");
           const marks = yield* harness.store.readPendingMarks();
           expect(marks.filter((mark) => mark.entity === "product")).toHaveLength(0);
@@ -646,7 +666,8 @@ for (const adapter of adapters) {
         Effect.gen(function* () {
           yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
           yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
-          yield* harness.store.applyTransactionGroup(
+          yield* applyGroup(
+            harness.store,
             deleteGroup({
               entity: "product",
               entityId: LAST_UNIT_PRODUCT_ID,
@@ -686,7 +707,7 @@ for (const adapter of adapters) {
             writes: [insertCategoryWrite],
           });
           yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
-          const applied = yield* harness.store.applyTransactionGroup(remoteColdChainGroup);
+          const applied = yield* applyGroup(harness.store, remoteColdChainGroup);
           const afterRemote = yield* harness.rows("category");
           expect(findRow(afterRemote, "remote-cold")?.["name"]).toBe("Cold chain");
           expect(findRow(afterRemote, NEW_CATEGORY_ID)?.["name"]).toBe("Cold chain (2)");
@@ -709,9 +730,9 @@ for (const adapter of adapters) {
             commitSequence: "5",
             invoiceNumber: 7,
           });
-          yield* harness.store.applyTransactionGroup(group);
+          yield* applyGroup(harness.store, group);
           const first = yield* harness.rows("invoice");
-          yield* harness.store.applyTransactionGroup(group);
+          yield* applyGroup(harness.store, group);
           const second = yield* harness.rows("invoice");
           expect(first).toHaveLength(1);
           expect(second).toEqual(first);
@@ -747,12 +768,20 @@ for (const adapter of adapters) {
           expect(order?.["status"]).toBe("sent");
           expect(order?.["orderNumber"]).toBe(1);
 
-          yield* harness.store.claimNextUpload({ claimId: "claim-place", claimedAt: 10 });
+          yield* harness.store.claimNextUpload({
+            claimId: "claim-place",
+            claimedAt: 10,
+            staleBefore: 0,
+          });
           yield* harness.store.settleUploadClaim(
             "claim-place",
             acceptedCatalogReceipt(placeOrder, "10", placeOrderWrites.length),
           );
-          yield* harness.store.claimNextUpload({ claimId: "claim-receive", claimedAt: 11 });
+          yield* harness.store.claimNextUpload({
+            claimId: "claim-receive",
+            claimedAt: 11,
+            staleBefore: 0,
+          });
           yield* harness.store.settleUploadClaim("claim-receive", rejectedReceipt(receive, "11"));
 
           const restored = findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID);

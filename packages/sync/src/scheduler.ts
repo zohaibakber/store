@@ -1,45 +1,48 @@
-import type { SyncLiveWakeHint, SyncProtocolCode } from "@store/contracts";
+import type { SyncLiveWakeHint } from "@store/contracts";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FiberMap from "effect/FiberMap";
+import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { makeBackoff, type Backoff } from "./backoff";
 import {
   DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
   type DigestVerificationCadence,
 } from "./replica/cadence";
 import {
+  initialSessionState,
+  step,
+  type Cadence,
+  type SessionCommand,
+  type SessionEvent,
+  type SessionState,
+  type SessionStep,
+  type StepOutcome,
+  type SyncWakeReason,
+} from "./session-state";
+import { restingPhase, type SyncPhase, type SyncState } from "./sync-state";
+import {
   classifySyncFailure,
   dispositionFor,
+  type RecoverableCode,
   type SyncFailureCause,
-  type SyncFailureDisposition,
 } from "./transport";
 
-export type SyncWakeReason =
-  | "startup"
-  | "localWrite"
-  | "focus"
-  | "reconnect"
-  | "timer"
-  | "ownership"
-  | "live";
-
-type SyncWake = {
-  readonly reason: SyncWakeReason;
-  readonly hint?: SyncLiveWakeHint;
-};
+export type { SyncWakeReason } from "./session-state";
 
 export type SyncCatchUpOutcome = "advanced" | "unchanged";
 
 export type SyncSchedulerPolicy = {
   readonly activePollMillis: number;
-  readonly backoffMillis: ReadonlyArray<number>;
+  readonly backoffMaxMillis?: number;
   readonly hiddenPollMillis: number;
   readonly liveIdlePollMillis: number;
   readonly minPollMillis?: number;
@@ -50,13 +53,15 @@ export type SyncSchedulerPolicy = {
 
 const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;
 
+const DEFAULT_BACKOFF_MAX_MILLIS = 5 * 60_000;
+
 const PULL_FLOOR_MILLIS = 60_000;
 
 const LIVE_IDLE_PULL_MILLIS = 15 * 60_000;
 
 export const defaultHttpPollPolicy: SyncSchedulerPolicy = {
   activePollMillis: PULL_FLOOR_MILLIS,
-  backoffMillis: [PULL_FLOOR_MILLIS, 2 * 60_000, 5 * 60_000],
+  backoffMaxMillis: DEFAULT_BACKOFF_MAX_MILLIS,
   hiddenPollMillis: 5 * 60_000,
   liveIdlePollMillis: LIVE_IDLE_PULL_MILLIS,
   minPollMillis: PULL_FLOOR_MILLIS,
@@ -64,25 +69,8 @@ export const defaultHttpPollPolicy: SyncSchedulerPolicy = {
   digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
 };
 
-export type SyncSchedulerStatus =
-  | { readonly _tag: "running" }
-  | { readonly _tag: "pausedForAuth"; readonly status: number }
-  | {
-      readonly _tag: "stopped";
-      readonly status: number | undefined;
-      readonly message: string;
-    }
-  | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "storageError"; readonly message: string }
-  | {
-      readonly _tag: "recoveryRequired";
-      readonly code: SyncProtocolCode;
-      readonly message: string;
-    };
-
 export type SyncSchedulerContract = {
-  readonly status: SubscriptionRef.SubscriptionRef<SyncSchedulerStatus>;
-  readonly syncing: SubscriptionRef.SubscriptionRef<boolean>;
+  readonly state: SubscriptionRef.SubscriptionRef<SyncState>;
   readonly wake: (reason: SyncWakeReason, hint?: SyncLiveWakeHint) => Effect.Effect<void>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void>;
   readonly setNetworkOwner: (owner: boolean) => Effect.Effect<void>;
@@ -94,239 +82,240 @@ type SyncSchedulerHandlers = {
   readonly register?: () => Effect.Effect<void, SyncFailureCause>;
   readonly drainUpload: () => Effect.Effect<void, SyncFailureCause>;
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncFailureCause>;
-  readonly recover?: (code: SyncProtocolCode) => Effect.Effect<void, SyncFailureCause>;
+  readonly recover?: (code: RecoverableCode) => Effect.Effect<void, SyncFailureCause>;
   readonly hintApplied?: (hint: SyncLiveWakeHint) => Effect.Effect<boolean>;
 };
 
-type SchedulerVisibility = {
-  readonly visible: boolean;
-  readonly owner: boolean;
-  readonly live: boolean;
+type Incoming = { readonly event: SessionEvent; readonly run?: number };
+
+type RunCommand = Extract<SessionCommand, { readonly _tag: "run" }>;
+
+const PHASE_OF_STEP = {
+  register: "registering",
+  upload: "uploading",
+  catchUp: "catchingUp",
+  recover: "recovering",
+} as const satisfies Record<SessionStep, SyncPhase>;
+
+const TIMER: Incoming = { event: { _tag: "timer" } };
+
+const projectSession =
+  (before: SessionState, after: SessionState) =>
+  (current: SyncState): SyncState => {
+    const { suspended: shown, ...rest } = current;
+    const running = after.running;
+    const phase =
+      running === undefined
+        ? restingPhase(current.cursor)
+        : before.running?.step === running.step
+          ? current.phase
+          : PHASE_OF_STEP[running.step];
+    const base = { ...rest, phase, live: after.live, owner: after.owner };
+    if (after.suspended === undefined) return base;
+    const { reason, message } = after.suspended;
+    return {
+      ...base,
+      suspended: shown?.retryAt === undefined ? { reason, message } : { ...shown, reason, message },
+    };
+  };
+
+const withRetryAt =
+  (retryAt: number | undefined) =>
+  (current: SyncState): SyncState => {
+    if (current.suspended === undefined || current.suspended.retryAt === retryAt) return current;
+    const { reason, message } = current.suspended;
+    return {
+      ...current,
+      suspended: retryAt === undefined ? { reason, message } : { reason, message, retryAt },
+    };
+  };
+
+const makeCadences = (policy: SyncSchedulerPolicy) => {
+  const backoffMaxMillis = policy.backoffMaxMillis ?? DEFAULT_BACKOFF_MAX_MILLIS;
+  const floorMillis = policy.minPollMillis ?? 0;
+  const growing = (baseMillis: number) =>
+    makeBackoff({ baseMillis, maxMillis: Math.max(baseMillis, backoffMaxMillis), floorMillis });
+  const constant = (baseMillis: number) =>
+    makeBackoff({ baseMillis, maxMillis: baseMillis, floorMillis });
+  return Effect.all({
+    active: growing(policy.activePollMillis),
+    hidden: growing(policy.hiddenPollMillis),
+    live: constant(policy.liveIdlePollMillis),
+    slow: constant(policy.hiddenPollMillis),
+  }) satisfies Effect.Effect<Record<Cadence, Backoff>>;
 };
-
-const sleepJittered = (delay: Duration.Duration, floorMillis: number): Effect.Effect<void> =>
-  Effect.void.pipe(
-    Effect.schedule(
-      Schedule.jittered(Schedule.duration(delay)).pipe(
-        Schedule.modifyDelay(({ duration }) =>
-          Effect.succeed(
-            Duration.max(
-              Duration.millis(Math.round(Duration.toMillis(duration))),
-              Duration.millis(floorMillis),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-const delayFor = (
-  policy: SyncSchedulerPolicy,
-  visibility: SchedulerVisibility,
-  emptyPolls: number,
-): Duration.Duration => {
-  if (visibility.live) return Duration.millis(policy.liveIdlePollMillis);
-  const base = visibility.visible ? policy.activePollMillis : policy.hiddenPollMillis;
-  if (emptyPolls <= 0) return Duration.millis(base);
-  const index = Math.min(emptyPolls - 1, policy.backoffMillis.length - 1);
-  return Duration.millis(Math.max(base, policy.backoffMillis[index] ?? base));
-};
-
-const terminalStatus = (disposition: SyncFailureDisposition): SyncSchedulerStatus | undefined => {
-  switch (disposition._tag) {
-    case "pauseForAuth":
-      return { _tag: "pausedForAuth", status: disposition.status };
-    case "stop":
-      return { _tag: "stopped", status: disposition.status, message: disposition.message };
-    case "updateRequired":
-      return { _tag: "updateRequired", message: disposition.message };
-    case "storageError":
-      return { _tag: "storageError", message: disposition.message };
-    case "recoveryRequired":
-      return { _tag: "recoveryRequired", code: disposition.code, message: disposition.message };
-    case "retry":
-    case "recover":
-      return undefined;
-  }
-};
-
-const blocksUploadsOnly = (status: SyncSchedulerStatus): boolean =>
-  status._tag === "recoveryRequired" && status.code === "REPLICA_SEQUENCE_GAP";
-
-const isHalted = (status: SyncSchedulerStatus): boolean =>
-  status._tag !== "running" && status._tag !== "pausedForAuth" && !blocksUploadsOnly(status);
-
-const canDownload = (status: SyncSchedulerStatus): boolean =>
-  status._tag === "running" || blocksUploadsOnly(status);
-
-const isExplicitWake = (reason: SyncWakeReason): boolean =>
-  reason === "localWrite" || reason === "focus" || reason === "reconnect" || reason === "live";
-
-type QueuedWake = SyncWake | { readonly reason: "cadenceChanged" };
-
-const timerWake: SyncWake = { reason: "timer" };
-
-const cadenceChanged: QueuedWake = { reason: "cadenceChanged" };
 
 const makeScheduler = (
   handlers: SyncSchedulerHandlers,
   policy: SyncSchedulerPolicy,
+  state: SubscriptionRef.SubscriptionRef<SyncState>,
 ): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const wakes = yield* Queue.unbounded<QueuedWake>();
-    const visibility = yield* Ref.make<SchedulerVisibility>({
-      visible: true,
-      owner: false,
-      live: false,
+    const events = yield* Queue.unbounded<Incoming>();
+    const session = yield* Ref.make(initialSessionState);
+    const currentRun = yield* Ref.make(0);
+    const fibers = yield* FiberMap.make<"step" | "timer", void, never>();
+    const cadences = yield* makeCadences(policy);
+    const reduce = step({
+      canRecover: handlers.recover !== undefined,
+      maxRetryAfterMillis: policy.maxRetryAfterMillis ?? DEFAULT_MAX_RETRY_AFTER_MILLIS,
     });
-    const emptyPolls = yield* Ref.make(0);
-    const retryAfter = yield* Ref.make<number | undefined>(undefined);
-    const status = yield* SubscriptionRef.make<SyncSchedulerStatus>({ _tag: "running" });
-    const syncing = yield* SubscriptionRef.make(false);
-    const maxRetryAfter = policy.maxRetryAfterMillis ?? DEFAULT_MAX_RETRY_AFTER_MILLIS;
 
-    const backOff = Ref.update(emptyPolls, (n) => Math.min(n + 1, policy.backoffMillis.length));
+    const offer = (incoming: Incoming) => Queue.offer(events, incoming).pipe(Effect.asVoid);
 
-    const handleFailure = (error: SyncFailureCause, allowRecovery: boolean): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-        const disposition = dispositionFor(classifySyncFailure(error, now));
-        const halted = terminalStatus(disposition);
-        if (halted !== undefined) {
-          yield* SubscriptionRef.set(status, halted);
-          return;
-        }
-        if (disposition._tag === "recover") {
-          const recover = handlers.recover;
-          if (recover === undefined || !allowRecovery) {
-            yield* backOff;
-            return;
-          }
-          yield* recover(disposition.code).pipe(
-            Effect.matchEffect({
-              onFailure: (cause) => handleFailure(cause, false),
-              onSuccess: () => Ref.set(emptyPolls, 0),
-            }),
-          );
-          return;
-        }
-        if (disposition._tag === "retry" && disposition.delayMillis !== undefined) {
-          yield* Ref.set(retryAfter, Math.min(disposition.delayMillis, maxRetryAfter));
-        }
-        yield* backOff;
-      });
-
-    const onFailure = (error: SyncFailureCause) => handleFailure(error, true);
-
-    const cycle = Effect.gen(function* () {
-      const register = handlers.register;
-      if (register !== undefined) {
-        const registered = yield* register().pipe(
-          Effect.matchEffect({
-            onFailure: (error) => onFailure(error).pipe(Effect.as(false)),
-            onSuccess: () => Effect.succeed(true),
-          }),
-        );
-        if (!registered) return;
-      }
-      if (!blocksUploadsOnly(yield* SubscriptionRef.get(status))) {
-        yield* handlers
-          .drainUpload()
-          .pipe(Effect.matchEffect({ onFailure, onSuccess: () => Effect.void }));
-      }
-      const afterUpload = yield* SubscriptionRef.get(status);
-      if (!canDownload(afterUpload)) return;
-      yield* handlers.catchUp().pipe(
-        Effect.matchEffect({
-          onFailure,
-          onSuccess: (outcome) => (outcome === "advanced" ? Ref.set(emptyPolls, 0) : backOff),
-        }),
+    const supervised = <A>(effect: Effect.Effect<A>, fallback: A): Effect.Effect<A> =>
+      Effect.catchCauseIf(
+        effect,
+        (cause) => !Cause.hasInterrupts(cause),
+        (cause) => Effect.logError("sync.session_defect", cause).pipe(Effect.as(fallback)),
       );
-    });
 
-    const runCycle = Effect.gen(function* () {
-      const current = yield* Ref.get(visibility);
-      if (!current.owner) return;
-      yield* SubscriptionRef.set(syncing, true);
-      yield* cycle.pipe(Effect.ensuring(SubscriptionRef.set(syncing, false)));
-    });
+    const hintApplied = (hint: SyncLiveWakeHint): Effect.Effect<boolean> =>
+      handlers.hintApplied === undefined
+        ? Effect.succeed(false)
+        : supervised(handlers.hintApplied(hint), false);
 
-    const awaitWork: Effect.Effect<ReadonlyArray<QueuedWake>> = Effect.gen(function* () {
-      const state = yield* SubscriptionRef.get(status);
-      if (state._tag === "pausedForAuth") {
-        const woken = yield* Queue.takeAll(wakes);
-        if (woken.every((wake) => wake.reason === "cadenceChanged")) return [];
-        yield* SubscriptionRef.set(status, { _tag: "running" });
-        yield* Ref.set(emptyPolls, 0);
-        return woken;
+    const handlerFor = (command: RunCommand): Effect.Effect<boolean, SyncFailureCause> => {
+      switch (command.step) {
+        case "register":
+          return handlers.register === undefined
+            ? Effect.succeed(false)
+            : Effect.as(handlers.register(), false);
+        case "upload":
+          return Effect.as(handlers.drainUpload(), false);
+        case "catchUp":
+          return Effect.map(handlers.catchUp(), (outcome) => outcome === "advanced");
+        case "recover":
+          return handlers.recover === undefined || command.code === undefined
+            ? Effect.succeed(false)
+            : Effect.as(handlers.recover(command.code), false);
       }
-      const override = yield* Ref.getAndSet(retryAfter, undefined);
-      if (override !== undefined) {
-        yield* Effect.sleep(Duration.millis(override));
-        return [timerWake, ...(yield* Queue.clear(wakes))];
-      }
-      const delay = sleepJittered(
-        delayFor(policy, yield* Ref.get(visibility), yield* Ref.get(emptyPolls)),
-        policy.minPollMillis ?? 0,
-      );
-      return yield* Queue.takeAll(wakes).pipe(Effect.raceFirst(delay.pipe(Effect.as([timerWake]))));
-    });
-
-    const dueWake = (wake: QueuedWake): Effect.Effect<SyncWake | undefined> => {
-      if (wake.reason === "cadenceChanged") return Effect.succeed(undefined);
-      const hintApplied = handlers.hintApplied;
-      if (wake.reason !== "live" || wake.hint === undefined || hintApplied === undefined) {
-        return Effect.succeed(wake);
-      }
-      return Effect.map(hintApplied(wake.hint), (applied) => (applied ? undefined : wake));
     };
 
-    const loop = Effect.forever(
-      Effect.gen(function* () {
-        const state = yield* SubscriptionRef.get(status);
-        if (isHalted(state)) return yield* Effect.interrupt;
-        const woken = yield* awaitWork;
-        const due = (yield* Effect.forEach(woken, dueWake)).filter(
-          (wake): wake is SyncWake => wake !== undefined,
+    const failedOutcome = Effect.fn("SyncScheduler.failedOutcome")(function* (
+      stepName: SessionStep,
+      cause: Cause.Cause<SyncFailureCause>,
+    ) {
+      const error = Cause.findErrorOption(cause);
+      if (Option.isNone(error)) {
+        yield* Effect.logError("sync.step_defect", cause).pipe(
+          Effect.annotateLogs({ step: stepName }),
         );
-        if (due.length === 0) return;
-        if (due.some((wake) => isExplicitWake(wake.reason))) yield* Ref.set(emptyPolls, 0);
-        yield* runCycle;
-      }),
+        return {
+          _tag: "failed",
+          disposition: { _tag: "retry", delayMillis: undefined },
+        } satisfies StepOutcome;
+      }
+      const failure = classifySyncFailure(error.value, yield* Clock.currentTimeMillis);
+      const disposition = dispositionFor(failure);
+      if (disposition._tag === "suspend" || (disposition._tag === "retry" && disposition.suspect)) {
+        yield* Effect.logWarning("sync.step_failed").pipe(
+          Effect.annotateLogs({ step: stepName, failure: failure._tag, message: failure.message }),
+        );
+      }
+      return { _tag: "failed", disposition } satisfies StepOutcome;
+    });
+
+    const runStep = Effect.fn("SyncScheduler.runStep")(function* (command: RunCommand) {
+      const run = yield* Ref.updateAndGet(currentRun, (n) => n + 1);
+      const reported = handlerFor(command).pipe(
+        Effect.matchCauseEffect({
+          onSuccess: (advanced): Effect.Effect<StepOutcome> =>
+            Effect.succeed({ _tag: "done", advanced }),
+          onFailure: (cause) => failedOutcome(command.step, cause),
+        }),
+        Effect.flatMap((outcome) =>
+          offer({ run, event: { _tag: "stepEnded", step: command.step, outcome } }),
+        ),
+      );
+      yield* FiberMap.run(fibers, "step", reported);
+    });
+
+    const cancelSleep = FiberMap.remove(fibers, "timer").pipe(
+      Effect.andThen(SubscriptionRef.update(state, withRetryAt(undefined))),
     );
 
-    const updateCadence = (change: (current: SchedulerVisibility) => SchedulerVisibility) =>
-      Ref.modify(visibility, (current) => {
-        const next = change(current);
-        return [next.visible !== current.visible || next.live !== current.live, next] as const;
-      }).pipe(
-        Effect.flatMap((changed) => (changed ? Queue.offer(wakes, cadenceChanged) : Effect.void)),
-        Effect.asVoid,
-      );
+    const arm = Effect.fn("SyncScheduler.arm")(function* (delay: Duration.Duration) {
+      if (!Duration.isFinite(delay)) return yield* cancelSleep;
+      yield* FiberMap.run(fibers, "timer", Effect.sleep(delay).pipe(Effect.andThen(offer(TIMER))));
+      const retryAt = (yield* Clock.currentTimeMillis) + Duration.toMillis(delay);
+      yield* SubscriptionRef.update(state, withRetryAt(retryAt));
+    });
+
+    const resetCadences = Effect.forEach(Object.values(cadences), (cadence) => cadence.reset, {
+      discard: true,
+    });
+
+    const recheck = Effect.fn("SyncScheduler.recheck")(function* (hint: SyncLiveWakeHint) {
+      if (!(yield* hintApplied(hint)))
+        yield* offer({ event: { _tag: "wake", reason: "live", hint } });
+    });
+
+    const execute = (command: SessionCommand): Effect.Effect<void> => {
+      switch (command._tag) {
+        case "run":
+          return runStep(command);
+        case "interrupt":
+          return Ref.update(currentRun, (n) => n + 1).pipe(
+            Effect.andThen(FiberMap.remove(fibers, "step")),
+          );
+        case "sleep":
+          return (command.reset ? resetCadences : Effect.void).pipe(
+            Effect.andThen(cadences[command.cadence].next),
+            Effect.flatMap(arm),
+          );
+        case "sleepFor":
+          return arm(Duration.millis(command.millis));
+        case "cancelSleep":
+          return cancelSleep;
+        case "recheck":
+          return recheck(command.hint);
+      }
+    };
+
+    const isStale = Effect.fn("SyncScheduler.isStale")(function* ({ event, run }: Incoming) {
+      if (run !== undefined) return run !== (yield* Ref.get(currentRun));
+      if (event._tag !== "wake" || event.reason !== "live" || event.hint === undefined)
+        return false;
+      return yield* hintApplied(event.hint);
+    });
+
+    const handle = Effect.fn("SyncScheduler.handle")(function* (incoming: Incoming) {
+      if (yield* isStale(incoming)) return;
+      const before = yield* Ref.get(session);
+      const [after, commands] = reduce(before, incoming.event);
+      yield* Ref.set(session, after);
+      yield* SubscriptionRef.update(state, projectSession(before, after));
+      if (incoming.event._tag === "timer") {
+        yield* SubscriptionRef.update(state, withRetryAt(undefined));
+      }
+      yield* Effect.forEach(commands, (command) => supervised(execute(command), undefined), {
+        discard: true,
+      });
+    });
+
+    const loop = Effect.forever(
+      Queue.take(events).pipe(
+        Effect.flatMap((incoming) => supervised(handle(incoming), undefined)),
+      ),
+    );
     const fiber = yield* Effect.forkScoped(loop);
 
     return {
-      status,
-      syncing,
+      state,
       wake: (reason, hint) =>
-        Queue.offer(wakes, hint === undefined ? { reason } : { reason, hint }).pipe(Effect.asVoid),
-      setVisible: (visible) => updateCadence((current) => ({ ...current, visible })),
-      setNetworkOwner: (owner) =>
-        Effect.gen(function* () {
-          yield* Ref.update(visibility, (current) => ({ ...current, owner }));
-          if (owner) yield* Queue.offer(wakes, { reason: "ownership" });
+        offer({
+          event: hint === undefined ? { _tag: "wake", reason } : { _tag: "wake", reason, hint },
         }),
-      setLiveConnected: (connected) =>
-        updateCadence((current) => ({ ...current, live: connected })),
-      shutdown: Fiber.interrupt(fiber).pipe(Effect.asVoid),
+      setVisible: (visible) => offer({ event: { _tag: "visible", visible } }),
+      setNetworkOwner: (owned) => offer({ event: { _tag: "owner", owned } }),
+      setLiveConnected: (connected) => offer({ event: { _tag: "live", connected } }),
+      shutdown: Fiber.interrupt(fiber).pipe(Effect.andThen(FiberMap.clear(fibers))),
     } satisfies SyncSchedulerContract;
   });
 
 export class SyncScheduler extends Context.Service<SyncScheduler, SyncSchedulerContract>()(
   "@store/sync/SyncScheduler",
 ) {
-  static readonly make = (
-    handlers: SyncSchedulerHandlers,
-    policy: SyncSchedulerPolicy = defaultHttpPollPolicy,
-  ): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> => makeScheduler(handlers, policy);
+  static readonly make = makeScheduler;
 }

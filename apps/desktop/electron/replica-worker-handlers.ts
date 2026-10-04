@@ -23,7 +23,7 @@ import {
   type ReplicaPublishCommit,
 } from "@store/client-db/node-publish";
 import {
-  makeProxySyncTransport,
+  layerProxySyncTransport,
   openNodeLocalReplicaSession,
   openNodeReplicaSyncSession,
   type NodeReplicaSyncSession,
@@ -145,7 +145,7 @@ const linkRemoteAuthority = (
       open: () =>
         openNodeReplicaSyncSession({
           ...sessionInput(config),
-          transport: makeProxySyncTransport((request) => Effect.runPromise(proxyFetch(request))),
+          transport: layerProxySyncTransport(proxyFetch),
           live: {
             apiBaseUrl: config.apiBaseUrl,
             accessToken: ({ force }) =>

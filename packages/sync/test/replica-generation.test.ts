@@ -42,6 +42,7 @@ import {
 } from "../src/replica/sqlite/generation";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { openReplicaStore } from "../src/sqlite";
+import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   CASE_PRODUCT_ID,
@@ -326,7 +327,7 @@ const scenario = (
       yield* session.close;
       session = yield* openAt(path);
     });
-    yield* session.store.applyTransactionGroup(seedCatalogGroup);
+    yield* applyGroup(session.store, seedCatalogGroup);
     yield* session.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
     yield* settle;
     yield* runReplicaTransaction(session.handle, (tx) => beginSnapshotImport(tx, manifest));
@@ -382,8 +383,8 @@ const events = new Map<number, ScenarioEvent>([
         store.enqueueCommand(categoryCommand(1)),
       ]),
   ],
-  [2, (store) => store.applyTransactionGroup(remoteRename("2", "Remote before horizon"))],
-  [101, (store) => store.applyTransactionGroup(remoteRename("4", "Remote after horizon"))],
+  [2, (store) => applyGroup(store, remoteRename("2", "Remote before horizon"))],
+  [101, (store) => applyGroup(store, remoteRename("4", "Remote after horizon"))],
   [
     102,
     (store) =>
@@ -689,7 +690,7 @@ describe("replica snapshot switch races", () => {
         yield* store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
         yield* importCandidate(handle);
         while ((yield* importStage(handle)) !== "replaying") yield* stepOnce(handle);
-        yield* store.applyTransactionGroup({
+        yield* applyGroup(store, {
           commitSequence: OrgCommitSequence.make("3"),
           operationId: lastUnitBuyerAEnvelope.operationId,
           decision: "accepted",
@@ -713,7 +714,7 @@ describe("replica snapshot switch races", () => {
     withSeededReplica((handle) =>
       Effect.gen(function* () {
         const store = yield* makeSqliteReplicaStore(handle, "gap");
-        yield* store.applyTransactionGroup(remoteRename("5", "Active five"));
+        yield* applyGroup(store, remoteRename("5", "Active five"));
         yield* importCandidate(handle);
         const first = yield* stepOnce(handle);
         expect(first).toEqual({

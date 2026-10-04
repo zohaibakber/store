@@ -31,6 +31,7 @@ import {
   SyncRecoveryRequired,
   type ReplicaStorageFailure,
 } from "./replica/errors";
+import type { Suspension } from "./sync-state";
 
 const OptionalNumber = Schema.optionalKey(Schema.Number);
 
@@ -58,16 +59,16 @@ class SyncTransportAuthRequired extends Schema.TaggedError<SyncTransportAuthRequ
   },
 ) {}
 
-class SyncTransportInvalid extends Schema.TaggedError<SyncTransportInvalid>()(
-  "SyncTransportInvalid",
+class SyncTransportRefused extends Schema.TaggedError<SyncTransportRefused>()(
+  "SyncTransportRefused",
   {
     message: Schema.String,
     status: OptionalNumber,
   },
 ) {}
 
-export class SyncTransportUndecodable extends Schema.TaggedError<SyncTransportUndecodable>()(
-  "SyncTransportUndecodable",
+export class SyncTransportGarbled extends Schema.TaggedError<SyncTransportGarbled>()(
+  "SyncTransportGarbled",
   {
     message: Schema.String,
     status: OptionalNumber,
@@ -78,8 +79,8 @@ export type SyncTransportError =
   | SyncTransportUnavailable
   | SyncTransportOffline
   | SyncTransportAuthRequired
-  | SyncTransportInvalid
-  | SyncTransportUndecodable;
+  | SyncTransportRefused
+  | SyncTransportGarbled;
 
 export type SyncFailure = SyncTransportError | SyncProtocolError;
 
@@ -89,24 +90,31 @@ type SyncCycleFailure =
   | ReplicaCoverageRepairRequired
   | SyncRecoveryRequired;
 
-export type SyncFailureDisposition =
-  | { readonly _tag: "retry"; readonly delayMillis: number | undefined }
-  | { readonly _tag: "pauseForAuth"; readonly status: number }
-  | { readonly _tag: "stop"; readonly status: number | undefined; readonly message: string }
-  | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recover"; readonly code: SyncProtocolCode }
-  | { readonly _tag: "storageError"; readonly message: string }
-  | {
-      readonly _tag: "recoveryRequired";
-      readonly code: SyncProtocolCode;
-      readonly message: string;
-    };
+export type RecoverableCode = "EPOCH_MISMATCH" | "INCARNATION_MISMATCH" | "SNAPSHOT_REQUIRED";
 
-const RECOVERABLE_PROTOCOL_CODES: ReadonlySet<SyncProtocolCode> = new Set<SyncProtocolCode>([
-  "EPOCH_MISMATCH",
-  "INCARNATION_MISMATCH",
-  "SNAPSHOT_REQUIRED",
-]);
+export type SyncFailureSuspect = {
+  readonly reason: "garbledResponses" | "refused";
+  readonly message: string;
+  readonly status?: number;
+};
+
+export type SyncFailureDisposition =
+  | {
+      readonly _tag: "retry";
+      readonly delayMillis: number | undefined;
+      readonly suspect?: SyncFailureSuspect;
+    }
+  | { readonly _tag: "recover"; readonly code: RecoverableCode }
+  | { readonly _tag: "suspend"; readonly suspension: Suspension };
+
+const AUTH_REQUIRED_MESSAGE =
+  "Sign in again to resume syncing. Pending changes are saved on this device.";
+
+const GARBLED_MESSAGE =
+  "The server sent responses this app could not read. Sync keeps retrying on its own. Pending changes are saved on this device.";
+
+const REFUSED_MESSAGE =
+  "The server refused the sync request. Sync keeps retrying on its own. Pending changes are saved on this device.";
 
 const decodeRetryAfterSeconds = Schema.decodeUnknownOption(
   Schema.FiniteFromString.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -158,37 +166,44 @@ export const failureFromStatus = (
   retryAfter?: number,
 ): SyncTransportError => {
   if (isAuthStatus(status)) {
-    return SyncTransportAuthRequired.make({ message, status });
+    return new SyncTransportAuthRequired({ message, status });
   }
   if (retryAfter !== undefined || status === 408 || status === 429 || status >= 500) {
-    return SyncTransportUnavailable.make(
+    return new SyncTransportUnavailable(
       retryAfter === undefined
         ? { message, status }
         : { message, status, retryAfterMillis: retryAfter },
     );
   }
-  return SyncTransportInvalid.make({ message, status });
+  return new SyncTransportRefused({ message, status });
 };
 
 const fromTypedHttpError = (tag: string, code: string, message: string): SyncFailure => {
   const protocolCode = decodeProtocolCode(code);
   if (Option.isSome(protocolCode)) {
-    return SyncProtocolError.make({ code: protocolCode.value, message });
+    return new SyncProtocolError({ code: protocolCode.value, message });
   }
   return failureFromStatus(statusForErrorTag(tag), message);
 };
 
+const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300;
+
 const fromHttpClientError = (error: HttpClientError.HttpClientError, now: number): SyncFailure => {
   const reason = error.reason;
-  if (reason._tag === "StatusCodeError") {
-    const header = Headers.get(reason.response.headers, "retry-after");
-    const delay = Option.isSome(header) ? retryAfterMillis(header.value, now) : undefined;
-    return failureFromStatus(reason.response.status, error.message, delay);
+  if (
+    reason._tag !== "StatusCodeError" &&
+    reason._tag !== "DecodeError" &&
+    reason._tag !== "EmptyBodyError"
+  ) {
+    return new SyncTransportOffline({ message: error.message });
   }
-  if (reason._tag === "DecodeError" || reason._tag === "EmptyBodyError") {
-    return SyncTransportInvalid.make({ message: error.message, status: reason.response.status });
+  const status = reason.response.status;
+  if (reason._tag !== "StatusCodeError" && isSuccessStatus(status)) {
+    return new SyncTransportGarbled({ message: error.message, status });
   }
-  return SyncTransportOffline.make({ message: error.message });
+  const header = Headers.get(reason.response.headers, "retry-after");
+  const delay = Option.isSome(header) ? retryAfterMillis(header.value, now) : undefined;
+  return failureFromStatus(status, error.message, delay);
 };
 
 export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailure => {
@@ -197,20 +212,20 @@ export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailur
     error instanceof SyncTransportUnavailable ||
     error instanceof SyncTransportOffline ||
     error instanceof SyncTransportAuthRequired ||
-    error instanceof SyncTransportInvalid ||
-    error instanceof SyncTransportUndecodable
+    error instanceof SyncTransportRefused ||
+    error instanceof SyncTransportGarbled
   ) {
     return error;
   }
   if (HttpClientError.isHttpClientError(error)) return fromHttpClientError(error, now);
   if (error instanceof Schema.SchemaError) {
-    return SyncTransportUndecodable.make({ message: error.message });
+    return new SyncTransportGarbled({ message: error.message });
   }
   const typed = decodeTypedHttpError(error);
   if (Option.isSome(typed)) {
     return fromTypedHttpError(typed.value._tag, typed.value.error.code, typed.value.error.message);
   }
-  return SyncTransportOffline.make({
+  return new SyncTransportOffline({
     message: error instanceof Error ? error.message : "The sync transport is unavailable.",
   });
 };
@@ -222,16 +237,48 @@ export const classifySyncFailure = (error: SyncFailureCause, now: number): SyncC
     ? error
     : mapSyncFailure(error, now);
 
+const suspect = (
+  reason: SyncFailureSuspect["reason"],
+  message: string,
+  status: number | undefined,
+): SyncFailureDisposition => ({
+  _tag: "retry",
+  delayMillis: undefined,
+  suspect: status === undefined ? { reason, message } : { reason, message, status },
+});
+
+const recoveryRequired = (code: SyncProtocolCode, message: string): SyncFailureDisposition => ({
+  _tag: "suspend",
+  suspension: {
+    reason: "recoveryRequired",
+    message,
+    code,
+    blocks: code === "REPLICA_SEQUENCE_GAP" ? "uploads" : "all",
+    timer: false,
+  },
+});
+
+const protocolSuspension = (
+  reason: "updateRequired" | "protocol",
+  error: SyncProtocolError,
+): SyncFailureDisposition => ({
+  _tag: "suspend",
+  suspension: { reason, message: error.message, code: error.code, blocks: "all", timer: false },
+});
+
 const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition => {
-  if (error.code === "REPLICA_SEQUENCE_GAP") {
-    return { _tag: "recoveryRequired", code: error.code, message: error.message };
+  switch (error.code) {
+    case "EPOCH_MISMATCH":
+    case "INCARNATION_MISMATCH":
+    case "SNAPSHOT_REQUIRED":
+      return { _tag: "recover", code: error.code };
+    case "REPLICA_SEQUENCE_GAP":
+      return recoveryRequired(error.code, error.message);
+    case "SCHEMA_VERSION_UNSUPPORTED":
+      return protocolSuspension("updateRequired", error);
+    default:
+      return protocolSuspension("protocol", error);
   }
-  if (error.code === "SCHEMA_VERSION_UNSUPPORTED") {
-    return { _tag: "updateRequired", message: error.message };
-  }
-  return RECOVERABLE_PROTOCOL_CODES.has(error.code)
-    ? { _tag: "recover", code: error.code }
-    : { _tag: "stop", status: undefined, message: error.message };
 };
 
 export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition => {
@@ -241,19 +288,31 @@ export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition 
     case "IndexedDbQuotaExceeded":
     case "IndexedDbCorruptRecord":
     case "IndexedDbIdentityMismatch":
-      return { _tag: "storageError", message: error.message };
+      return {
+        _tag: "suspend",
+        suspension: { reason: "storage", message: error.message, blocks: "all", timer: true },
+      };
     case "ReplicaCoverageRepairRequired":
       return { _tag: "recover", code: "SNAPSHOT_REQUIRED" };
     case "SyncRecoveryRequired":
-      return { _tag: "recoveryRequired", code: error.code, message: error.message };
+      return recoveryRequired(error.code, error.message);
     case "SyncProtocolError":
       return protocolDisposition(error);
     case "SyncTransportAuthRequired":
-      return { _tag: "pauseForAuth", status: error.status };
-    case "SyncTransportInvalid":
-      return { _tag: "stop", status: error.status, message: error.message };
-    case "SyncTransportUndecodable":
-      return { _tag: "updateRequired", message: error.message };
+      return {
+        _tag: "suspend",
+        suspension: {
+          reason: "auth",
+          message: AUTH_REQUIRED_MESSAGE,
+          status: error.status,
+          blocks: "all",
+          timer: true,
+        },
+      };
+    case "SyncTransportRefused":
+      return suspect("refused", REFUSED_MESSAGE, error.status);
+    case "SyncTransportGarbled":
+      return suspect("garbledResponses", GARBLED_MESSAGE, error.status);
     case "SyncTransportUnavailable":
       return { _tag: "retry", delayMillis: error.retryAfterMillis };
     case "SyncTransportOffline":
@@ -308,7 +367,7 @@ const withDeadline =
       duration: SYNC_REQUEST_TIMEOUT_MILLIS[operation],
       orElse: () =>
         Effect.fail(
-          SyncTransportOffline.make({
+          new SyncTransportOffline({
             message: `The sync ${operation} request did not finish within ${SYNC_REQUEST_TIMEOUT_MILLIS[operation]} ms.`,
           }),
         ),

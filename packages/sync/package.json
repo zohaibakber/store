@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./replica/indexeddb": "./src/replica/indexeddb/store.ts",
     "./sql-client": "./src/sql-client.ts",
-    "./sqlite": "./src/sqlite.ts"
+    "./sqlite": "./src/sqlite.ts",
+    "./web-lock": "./src/web-lock.ts"
   },
   "dependencies": {
     "@effect/platform-browser": "catalog:",

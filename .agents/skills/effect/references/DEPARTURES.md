@@ -22,22 +22,20 @@ Places where the repo does not yet meet the target. They are here so nobody copi
 ## Errors
 
 - **Validation by `throw new Error(message)`.** `packages/client-db/src/{catalog,purchasing,invoice}-projection.ts`, `packages/contracts/src/catalog/rules.ts`, `packages/contracts/src/store/invoice-allocation.ts`, wrapped in `catalog-commands.ts` by `Effect.try` with `catch: (cause) => cause`. User-facing refusals travel as `unknown`. Target: pure code returns `Result` with one tagged refusal, lifted by `Effect.fromResult`.
-- **Plain `Error` in `E`.** `apps/desktop/electron/{replica-sessions,auth-ipc,auth}.ts`, and the `E extends Error` constraint in `packages/client-db/src/replica/proxy-transport.ts`.
+- **Plain `Error` in `E`.** `apps/desktop/electron/{replica-sessions,auth-ipc,auth}.ts`.
 - **`Effect.orDie` on every replica read.** `packages/client-db/src/replica/sql-client-session.ts`. A storage failure reaches the UI as a defect. Target: `ReplicaStorageError` in `E`.
-- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, `packages/sync/src/session.ts`. A new case is silently treated as the generic one.
+- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, and `protocolDisposition` in `packages/sync/src/transport.ts`, where every protocol code without its own rule becomes a `protocol` suspension. A new case is silently treated as the generic one.
 - **Mixed construction and tags.** `X.make({...})` beside `new X({...})`; dotted tags in `apps/auth` and `packages/workspace` beside class-name tags elsewhere. Dotted tags that cross the wire are contracts.
-- **Failures dropped without a log.** A failed replica open becomes `undefined` in `replica-worker-handlers.ts`; the live-frame failure reason is discarded in `packages/sync/src/session.ts`.
+- **Failures dropped without a log.** A failed replica open becomes `undefined` in `replica-worker-handlers.ts`.
 
 ## Hand-rolled
 
-- **Second sync HTTP client.** `packages/client-db/src/replica/proxy-transport.ts` re-declares the sync routes, encoding and error decoding that `HttpApiClient.make(SyncHttpApi)` derives. Target: the proxy is an `HttpClient` whose execution posts to the main process, provided to `SyncTransportService.layer`.
-- **Backoff ladders and `sleepJittered`.** `packages/sync/src/live-socket.ts` and `scheduler.ts` index a delay table by an attempt counter, and each defines `sleepJittered`. Target: one `Schedule`.
-- **Web Locks acquisition, twice.** `packages/sync/src/web-ownership.ts` and `apps/web/src/web/auth-broker.ts`. Target: one scoped `holdWebLock(name)`.
 - **Reply correlation `Map`.** `apps/desktop/electron/replica-pending.ts`. Target: `Rpc`, or a `Deferred` registry in a `Ref`.
 - **Mutable `Map` and `let` state beside Effect primitives.** `packages/client-db/src/replica/collection-sync.ts`, `apps/desktop/electron/{replica-sessions,replica-ownership,replica-backup}.ts`, `packages/inventory-react/src/{lifetime,preferences}.ts`, `apps/web/src/web/app-host.ts`.
-- **The `crypto` global in Effect code.** `apps/server/src/inventory/postgres.ts`, `apps/desktop/electron/{replica-sessions,replica-pending,replica-worker-handlers,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
+- **The `crypto` global in Effect code.** `apps/server/src/inventory/postgres.ts`, `packages/sync/src/engine.ts` (`makeClaimId`), `apps/desktop/electron/{replica-sessions,replica-pending,replica-worker-handlers,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
 - **`Date.now()` and `setTimeout`.** `packages/inventory-react/src/{atoms,live-collection}.ts` and UI code in `apps/web`.
-- **A hand-written cross-tab storage atom** beside `Atom.kvs` in `apps/web/src/lib/preferences.ts`.
+- **A hand-written cross-tab storage atom** beside `Atom.kvs` in `apps/web/src/lib/preferences.ts`. The installed `Atom.kvs` and `KeyValueStore.layerStorage` do not subscribe to storage events; preserve cross-tab adoption and reading current storage before applying an update. `Atom.kvs` alone is not a replacement.
+- **Mobile database lock registry.** `apps/mobile/src/inventory/host.ts` keeps a module-level map of semaphores, one per replica database, and runs them on the default runtime. The map holds one entry per signed-in organization and user, so it is small. `RcMap` needs a scope and a runtime the mobile host does not have, and would add more code than the six lines it replaces; move the locks into a layer when the mobile host gets its own `ManagedRuntime`. `PartitionedSemaphore` is not equivalent: its permit pool is shared across keys.
 
 ## Tests
 

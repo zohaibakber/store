@@ -641,6 +641,9 @@ importers:
       '@store/services':
         specifier: workspace:*
         version: link:../../packages/services
+      '@store/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@store/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace

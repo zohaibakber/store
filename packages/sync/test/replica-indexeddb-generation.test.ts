@@ -14,6 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
+import { applyGroup } from "./lib/authority";
 import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { seedCatalogGroup } from "./lib/pending-fixture";
 
@@ -118,7 +119,7 @@ describe("IndexedDB snapshot activation", () => {
         indexedDB,
         IDBKeyRange,
       });
-      yield* store.applyTransactionGroup(seedCatalogGroup);
+      yield* applyGroup(store, seedCatalogGroup);
       yield* store.beginSnapshotImport(manifest);
       yield* store.importSnapshotPart(manifest, {
         snapshotId,
