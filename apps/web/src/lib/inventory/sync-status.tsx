@@ -38,11 +38,28 @@ const attention = (status: InventorySyncStatus) => {
     case "updateRequired":
       return { icon: DownloadCircle01Icon, tone: "text-warning-foreground" };
     case "recoveryRequired":
+    case "unavailable":
       return { icon: DatabaseRestoreIcon, tone: "text-warning-foreground" };
     case "savedLocally":
     case "pendingConfirmation":
     case "caughtUp":
       return null;
+  }
+};
+
+const retryable = (status: InventorySyncStatus) => {
+  switch (status._tag) {
+    case "recoveryRequired":
+    case "storageError":
+      return true;
+    case "unavailable":
+      return status.reason === "exhausted";
+    case "rejected":
+    case "updateRequired":
+    case "savedLocally":
+    case "pendingConfirmation":
+    case "caughtUp":
+      return false;
   }
 };
 
@@ -181,6 +198,12 @@ function ReadyOnDeviceAction() {
   const { retrySync } = useInventoryActions();
   const { status, label, dismissible, dismiss } = useSyncIssue();
   const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void retrySync()
+      .catch(() => undefined)
+      .finally(() => setRetrying(false));
+  };
   if (dismissible) {
     return (
       <OnDeviceActionButton
@@ -191,13 +214,18 @@ function ReadyOnDeviceAction() {
       />
     );
   }
-  if (status._tag !== "recoveryRequired" && status._tag !== "storageError") return null;
-  const retry = () => {
-    setRetrying(true);
-    void retrySync()
-      .catch(() => undefined)
-      .finally(() => setRetrying(false));
-  };
+  if (status._tag === "unavailable" && !retryable(status)) {
+    return (
+      <OnDeviceActionButton
+        busy
+        icon={RefreshCwIcon}
+        label={label}
+        onClick={retry}
+        tone="text-warning-foreground"
+      />
+    );
+  }
+  if (!retryable(status)) return null;
   return (
     <OnDeviceActionButton
       busy={retrying}
@@ -237,6 +265,7 @@ function ReadySyncButton() {
         return applyUpdate;
       case "recoveryRequired":
       case "storageError":
+      case "unavailable":
         return retry;
       case "rejected":
         return () => {

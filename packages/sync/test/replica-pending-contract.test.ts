@@ -28,16 +28,12 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
-import type { IndexedDbSubsetRow } from "../src/replica/indexeddb/query";
-import { entityStore } from "../src/replica/indexeddb/schema";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   acceptedCatalogReceipt,
   catalogEnvelope,
@@ -66,7 +62,7 @@ import { seedReplicaTenUnits } from "./lib/replica-fixture";
 const EntityCell = Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null]);
 const decodeEntityRow = Schema.decodeUnknownSync(Schema.Record(Schema.String, EntityCell));
 
-type EntityRow = IndexedDbSubsetRow;
+type EntityRow = ReturnType<typeof decodeEntityRow>;
 
 type Harness = {
   readonly store: ReplicaStoreContract;
@@ -91,45 +87,6 @@ const makeSqliteHarness = Effect.fn("harness.sqlite")(function* () {
         Effect.map((rows) => rows.length),
       ),
     close: () => Scope.close(scope, Exit.void),
-  } satisfies Harness;
-});
-
-let databaseCounter = 0;
-
-const makeIndexedHarness = Effect.fn("harness.indexeddb")(function* () {
-  databaseCounter += 1;
-  const databaseName = `replica-pending-${databaseCounter}`;
-  const store = yield* makeIndexedDbReplicaStore({
-    databaseName,
-    databaseIdentity: databaseName,
-    identity: {
-      organizationId: LAST_UNIT_ORGANIZATION_ID,
-      userId: "user-1",
-      replicaId: LAST_UNIT_REPLICA_A,
-    },
-    indexedDB,
-    IDBKeyRange,
-  });
-  yield* applyGroup(store, seedCatalogGroup);
-  yield* applyGroup(store, seedSpareBatchGroup);
-  return {
-    store,
-    rows: (entity: SyncEntity) =>
-      store
-        .querySubset({
-          table: entityStore(entity),
-          scan: { _tag: "generationPrefix", reverse: false },
-          residual: undefined,
-          orderBy: [],
-          limit: 200,
-          offset: 0,
-        })
-        .pipe(Effect.map((result) => result.rows)),
-    overlayCount: () => Effect.succeed(0),
-    close: () =>
-      store
-        .dispose()
-        .pipe(Effect.tap(() => Effect.sync(() => indexedDB.deleteDatabase(databaseName)))),
   } satisfies Harness;
 });
 
@@ -332,10 +289,7 @@ const deleteGroup = (input: {
 const findRow = (rows: ReadonlyArray<EntityRow>, id: string): EntityRow | undefined =>
   rows.find((row) => row["id"] === id);
 
-const adapters = [
-  { name: "sqlite", make: makeSqliteHarness },
-  { name: "indexeddb", make: makeIndexedHarness },
-] as const;
+const adapters = [{ name: "sqlite", make: makeSqliteHarness }] as const;
 
 for (const adapter of adapters) {
   describe(`pending projections on ${adapter.name}`, () => {

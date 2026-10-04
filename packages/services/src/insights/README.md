@@ -10,8 +10,7 @@ The replica does the heavy lifting. `ReplicaHandle.readInsights(window)` returns
 `ReplicaInsightsFacts` (`@store/contracts/sync/replica-insights`): compact product
 and stocked-batch facts plus sales already grouped by product and local day,
 units on order grouped by product, and invoice totals by day and hour. SQLite
-aggregates with `GROUP BY` in the replica worker; IndexedDB walks the
-`byCreatedAt` index once. Every list has a hard cap and the read reports
+aggregates with `GROUP BY` in the replica worker. Every list has a hard cap and the read reports
 `truncated` instead of growing without bound. The window is 180 local days so
 the 90-day period has a comparable previous period.
 
@@ -27,11 +26,9 @@ have no fact.
   sent. Cancelling the draft or removing the line releases the units. This is
   the same number `useProductsOnOrder` shows.
 - A line that received more than it ordered counts as zero, not negative.
-- All three reads use that one definition. SQLite joins open orders to their
-  lines in one grouped query (`onOrderFacts`). IndexedDB reads open orders from
-  `byStatusCreatedAt`, then their lines from `byPurchaseOrder`, and sums with
-  `insightsOnOrderFacts`. The Electron analytics worker runs `onOrderFacts`
-  against its read-only replica connection.
+- Both reads use that one definition. SQLite joins open orders to their lines in
+  one grouped query (`onOrderFacts`), and the Electron analytics worker runs the
+  same `onOrderFacts` against its read-only replica connection.
 
 The analytics worker refreshes on `purchaseOrder` and `purchaseOrderItem`
 commit notices. It does not resolve those keys to products, because a deleted

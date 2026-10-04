@@ -5,6 +5,7 @@ import path from "node:path";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -45,8 +46,7 @@ const makeWorld = (
       const lost = yield* Deferred.make<void>();
       const handlers = ReplicaReaderRpcs.toLayer({
         Engine: () => Effect.succeed("sqlite" as const),
-        ReadSubset: () => Effect.die("unused"),
-        ReadBatch: () => Effect.die("unused"),
+        AttachRenderer: () => Effect.void,
         SummarizeSubset: () => Effect.die("unused"),
       });
       const client = yield* RpcTest.makeClient(ReplicaReaderRpcs).pipe(Effect.provide(handlers));
@@ -64,25 +64,19 @@ const makeWorld = (
       const terminated = yield* Deferred.make<void>();
       const handlers = ReplicaWorkerRpcs.toLayer({
         Engine: () => Effect.succeed("sqlite" as const),
+        AttachRenderer: () => Effect.void,
         Stamp: () => Effect.succeed({ generationId: "1", localCommitVersion: 0 }),
-        ReadInsights: () => Effect.die("unused"),
-        ReadSyncActivity: () => Effect.die("unused"),
-        EnqueueCommand: () => Effect.die("unused"),
-        ReadCommandStatus: () => Effect.die("unused"),
         SetForeground: () => Effect.void,
-        WakeSyncUpload: () => Effect.die("unused"),
         BackUp: () => Effect.die("unused"),
         StageRestore: () => Effect.die("unused"),
         ReleaseForRestore: () => Effect.die("unused"),
         PublishSummary: () => Effect.die("unused"),
         PublishStage: () => Stream.die("unused"),
         PublishCommit: () => Effect.die("unused"),
+        PublishStatus: () => Effect.die("unused"),
         Commits: () => Stream.never,
         SyncHealth: () => Stream.make({ _tag: "running" as const }),
-        ProxyRequests: () => Stream.never,
-        ProxyRespond: () => Effect.void,
-        AccessTokenRequests: () => Stream.never,
-        AccessTokenRespond: () => Effect.void,
+        SetAccessToken: () => Effect.void,
       });
       const client = yield* RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
       if (owners.live > 0) owners.overlaps += 1;
@@ -119,8 +113,10 @@ const makeWorld = (
     userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
-    syncApiRequest: () => Effect.succeed({ ok: true, status: 200, bodyText: "{}" }),
-    liveAccessToken: async () => "access-1",
+    accessTokens: {
+      current: async () => Redacted.make("access-1"),
+      subscribe: () => () => undefined,
+    },
     allowedOrigins: () => allowed,
     backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
     sessions: {
@@ -132,7 +128,6 @@ const makeWorld = (
         bootTimeout: Duration.millis(500),
         requestWait: Duration.millis(1_000),
       },
-      admissionLimits: { turnWait: Duration.millis(2_000), turnRun: Duration.millis(2_000) },
       closeGrace: Duration.millis(50),
       ownershipWait: Duration.millis(150),
     },

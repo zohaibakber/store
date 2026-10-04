@@ -1,3 +1,7 @@
+import * as Result from "effect/Result";
+
+import { CatalogRefusal } from "../catalog/refusal";
+
 export const catalogWriteError = {
   categoryHasProducts: "Move products to another category before deleting this category.",
   productHasStock: "Clear remaining stock before deleting this product.",
@@ -28,38 +32,60 @@ const categoryHasActiveProducts = (
   categoryId: string,
 ) => [...products].some((product) => product.categoryId === categoryId);
 
-export const assertCanDeleteCategory = (
+export const checkCanDeleteCategory = (
   products: Iterable<CatalogCategoryProduct>,
   categoryId: string,
-) => {
-  if (categoryHasActiveProducts(products, categoryId)) {
-    throw new Error(catalogWriteError.categoryHasProducts);
-  }
-};
+) =>
+  Result.gen(function* () {
+    if (categoryHasActiveProducts(products, categoryId)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "categoryHasProducts",
+          message: catalogWriteError.categoryHasProducts,
+        }),
+      );
+    }
+  });
 
-export const assertCanDeleteProduct = (batches: Iterable<CatalogStockBatch>, productId: string) => {
-  if (productHasRemainingStock(batches, productId)) {
-    throw new Error(catalogWriteError.productHasStock);
-  }
-};
+export const checkCanDeleteProduct = (batches: Iterable<CatalogStockBatch>, productId: string) =>
+  Result.gen(function* () {
+    if (productHasRemainingStock(batches, productId)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "productHasStock",
+          message: catalogWriteError.productHasStock,
+        }),
+      );
+    }
+  });
 
-export const assertCanChangeUnitsPerPack = (
+export const checkCanChangeUnitsPerPack = (
   batches: Iterable<CatalogStockBatch>,
   productId: string,
-) => {
-  if (productHasRemainingStock(batches, productId)) {
-    throw new Error(catalogWriteError.unitsPerPackWithStock);
-  }
-};
+) =>
+  Result.gen(function* () {
+    if (productHasRemainingStock(batches, productId)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "unitsPerPackWithStock",
+          message: catalogWriteError.unitsPerPackWithStock,
+          field: "unitsPerPack",
+        }),
+      );
+    }
+  });
 
-export const assertCanDeleteBatch = (batch: {
+export const checkCanDeleteBatch = (batch: {
   readonly packQuantity: number;
   readonly unitQuantity: number;
-}) => {
-  if (batchHasRemainingStock(batch)) {
-    throw new Error(catalogWriteError.batchHasStock);
-  }
-};
+}) =>
+  Result.gen(function* () {
+    if (batchHasRemainingStock(batch)) {
+      return yield* Result.fail(
+        new CatalogRefusal({ reason: "batchHasStock", message: catalogWriteError.batchHasStock }),
+      );
+    }
+  });
 
 export const createdMutationMetadata = (
   actor: {

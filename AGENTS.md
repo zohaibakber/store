@@ -66,10 +66,16 @@ change. It describes the target; existing code that differs from it is listed in
 - Replicas hard-delete. A `delete` change removes the row; client schemas carry
   no `deletedAt`.
 - The shared entrypoint of `packages/sync` (`@store/sync`) must stay native-free.
-  `packages/sync/test/browser-boundary.test.ts` enforces it; SQLite belongs in
-  `@store/sync/sqlite`, IndexedDB in `@store/sync/replica/indexeddb`.
-- Command state never crosses IPC as SQL. The preload bridge carries domain
-  commands, bounded reads, and notices only.
+  `packages/sync/test/browser-boundary.test.ts` enforces it, because the renderer
+  and mobile import that entry; SQLite belongs in `@store/sync/sqlite`. No
+  browser replica exists: outside Electron the renderer has no replica.
+- Command state never crosses process boundaries as SQL or query IR. The
+  renderer reaches the replica only through `InventoryReads` (named bounded
+  reads), `InventoryStore` (domain commands, commit and health streams),
+  `InventoryInsights`, and `DesktopRpcs` (main-owned workspace state), all
+  Effect RPC over MessagePorts. Preload IPC carries open, close, backup,
+  restore, and publish only. Adding a read means adding a named member, not a
+  parameter.
 - The pull digest is requested on the cadence policy only, when the replica
   believes it is caught up and the verification interval has elapsed.
 

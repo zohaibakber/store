@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
@@ -25,7 +25,6 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
@@ -35,7 +34,6 @@ import { openReplicaStore } from "../src/sqlite";
 import { makeSyncTransport, type SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { FIXTURE_USER_ID } from "./lib/replica-fixture";
 
@@ -196,10 +194,6 @@ const survivesUnknownEntities = Effect.fn(function* (
   expect(yield* applied).toBe("4");
 });
 
-afterEach(() => {
-  indexedDB.deleteDatabase(databaseName);
-});
-
 describe("sync engine against an authority that replicates entities this build does not know", () => {
   it.effect("applies a snapshot part, a pull page and a live frame into the SQLite replica", () =>
     Effect.scoped(
@@ -223,24 +217,5 @@ describe("sync engine against an authority that replicates entities this build d
         yield* survivesUnknownEntities(store, incarnation);
       }),
     ),
-  );
-
-  it.effect(
-    "applies a snapshot part, a pull page and a live frame into the IndexedDB replica",
-    () =>
-      Effect.gen(function* () {
-        const store = yield* makeIndexedDbReplicaStore({
-          databaseName,
-          databaseIdentity: databaseName,
-          identity: {
-            organizationId: LAST_UNIT_ORGANIZATION_ID,
-            userId: FIXTURE_USER_ID,
-            replicaId: LAST_UNIT_REPLICA_A,
-          },
-          indexedDB,
-          IDBKeyRange,
-        });
-        yield* survivesUnknownEntities(store, "local").pipe(Effect.ensuring(store.dispose()));
-      }),
   );
 });

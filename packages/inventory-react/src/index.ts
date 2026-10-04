@@ -6,20 +6,25 @@ export type {
   RejectedCommand,
 } from "@store/client-db";
 export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
-export { createAppCatalogLifetime } from "./open";
+export { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
 export { configureInventoryPreferences } from "./preferences";
 export {
-  inventoryScopeId,
   replicaAuthorityOf,
   type InventoryHost,
+  type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
+export { catalogOpenFailure, commandFailureSurface, type FailureSurface } from "./errors";
 export {
-  createCatalogLifetime,
-  type CatalogLease,
-  type CatalogLifetime,
-  type CatalogReplica,
-} from "./lifetime";
+  deliverPorts,
+  desktopServices,
+  forwardedPorts,
+  inProcessWorkspace,
+  makeInventoryServices,
+  type ForwardedPorts,
+  type InventoryServices,
+  type Link,
+} from "./services";
 export {
   InventoryProvider,
   useCatalogIsReady,
@@ -30,6 +35,7 @@ export {
   useInventorySyncing,
   useInventorySyncTransfer,
   useInventorySyncStatus,
+  useReadyInventory,
 } from "./provider";
 export {
   useCatalogCategories,

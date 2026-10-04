@@ -44,7 +44,6 @@ export type SignInBridge = {
 
 export type AppUpdaterBridge = {
   readonly check: () => Promise<void>;
-  readonly download: () => Promise<void>;
   readonly install: () => void;
   readonly onEvent: (listener: (event: UpdaterEvent) => void) => () => void;
 };

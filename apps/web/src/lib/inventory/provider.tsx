@@ -53,6 +53,7 @@ const HALTED_SYNC: ReadonlySet<string> = new Set([
   "storageError",
   "updateRequired",
   "recoveryRequired",
+  "unavailable",
 ]);
 
 export const useFirstSyncPending = () => {

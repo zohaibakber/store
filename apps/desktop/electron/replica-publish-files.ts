@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { detachReplicaFile } from "./replica-restore-files";
-import { ReplicaPublishSeal, ReplicaWorkerFailure } from "./replica-rpc";
+import { ReplicaWorkerFailure } from "./replica-rpc";
 
 const MARKER_SUFFIX = ".publishing";
 
@@ -19,7 +19,6 @@ const ARCHIVE_RETENTION_MILLIS = 30 * 24 * 60 * 60_000;
 export const PublishMarker = Schema.Struct({
   organizationId: Schema.String,
   importId: ImportId,
-  seal: ReplicaPublishSeal,
   startedAt: Schema.Number,
 });
 export type PublishMarker = typeof PublishMarker.Type;

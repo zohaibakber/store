@@ -1,5 +1,4 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
-import { MAX_IMPORT_PARTS } from "@store/contracts";
 import type { CatalogCounts } from "@store/web/host/workspace-backup";
 import type {
   LocalCatalogReport,
@@ -29,7 +28,10 @@ import {
 } from "./replica-rpc";
 import type { ReplicaWorkerClient } from "./replica-supervisor";
 
-type PublishClient = Pick<ReplicaWorkerClient, "PublishSummary" | "PublishStage" | "PublishCommit">;
+type PublishClient = Pick<
+  ReplicaWorkerClient,
+  "PublishSummary" | "PublishStage" | "PublishCommit" | "PublishStatus"
+>;
 
 export type PublishPorts = {
   readonly organizationId: string;
@@ -54,10 +56,6 @@ type Standing =
 export const NO_OFFER: PublishOffer = { _tag: "none" };
 
 const NOTHING_TO_MOVE = "This device has no data to move.";
-
-const IMPORT_CONFLICT = "ENTITY_CONFLICT";
-
-const FILE_CHANGED = "changed";
 
 const MOVED_BEFORE_CHANGES =
   "This device's data was already moved to this organization. Changes made on this device since then are not in the organization and stay under This device.";
@@ -130,20 +128,6 @@ export const readPublishOffer = (ports: PublishPorts): Effect.Effect<PublishOffe
 export const discardPublish = (ports: PublishPorts): Effect.Effect<PublishOffer> =>
   removePublishMarker(ports.databasePath).pipe(Effect.andThen(readPublishOffer(ports)));
 
-const commit = (
-  ports: PublishPorts,
-  marker: Pick<PublishMarker, "importId" | "seal">,
-  acceptChangedFile = false,
-) =>
-  ports.worker((client) =>
-    client.PublishCommit({
-      sourcePath: ports.databasePath,
-      importId: marker.importId,
-      seal: marker.seal,
-      acceptChangedFile,
-    }),
-  );
-
 const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
   ports: PublishPorts,
   counts: CatalogCounts,
@@ -157,38 +141,28 @@ const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
   return { _tag: "published", counts } satisfies PublishOutcome;
 });
 
-const askingWhetherItLanded = (
-  marker: PublishMarker,
-): Pick<PublishMarker, "importId" | "seal"> => ({
-  importId: marker.importId,
-  seal: {
-    ...marker.seal,
-    partCount:
-      marker.seal.partCount < MAX_IMPORT_PARTS
-        ? marker.seal.partCount + 1
-        : marker.seal.partCount - 1,
-  },
-});
-
 const resume = Effect.fn("ReplicaPublish.resume")(function* (
   ports: PublishPorts,
   marker: PublishMarker,
-  counts: CatalogCounts,
+  summary: Summary,
 ) {
-  const sealed = yield* commit(ports, marker);
-  const fileChanged = sealed._tag === "refused" && sealed.code === FILE_CHANGED;
-  const answer = fileChanged ? yield* commit(ports, askingWhetherItLanded(marker), true) : sealed;
-  switch (answer._tag) {
+  const status = yield* ports.worker((client) =>
+    client.PublishStatus({ importId: marker.importId }),
+  );
+  switch (status._tag) {
     case "committed":
-      if (!fileChanged) return Option.some(yield* setAside(ports, counts));
+      if (marker.importId === summary.importId) {
+        return Option.some(yield* setAside(ports, catalogCountsOf(summary)));
+      }
       yield* removePublishMarker(ports.databasePath);
       return Option.some(failed(MOVED_BEFORE_CHANGES));
-    case "unconfirmed":
-      return Option.some(failed(answer.message));
-    case "refused":
-      if (answer.code !== IMPORT_CONFLICT) return Option.none<PublishOutcome>();
+    case "other":
       yield* removePublishMarker(ports.databasePath);
-      return Option.some(failed(answer.message));
+      return Option.some(failed(status.message));
+    case "unconfirmed":
+      return Option.some(failed(status.message));
+    case "none":
+      return Option.none<PublishOutcome>();
   }
 });
 
@@ -228,25 +202,27 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
   summary: Summary,
   pending: Option.Option<PublishMarker>,
 ) {
-  const counts = catalogCountsOf(summary);
   if (Option.isSome(pending)) {
-    const resumed = yield* resume(ports, pending.value, counts);
+    const resumed = yield* resume(ports, pending.value, summary);
     if (Option.isSome(resumed)) return resumed.value;
   }
-  yield* removePublishMarker(ports.databasePath);
-  const seal = yield* stage(ports, summary);
-  if (Option.isNone(seal)) return failed(UNFINISHED);
-  const written: PublishMarker = {
+  yield* writePublishMarker(ports.databasePath, {
     organizationId: ports.organizationId,
     importId: summary.importId,
-    seal: seal.value,
     startedAt: yield* Clock.currentTimeMillis,
-  };
-  yield* writePublishMarker(ports.databasePath, written);
-  const committed = yield* commit(ports, written);
+  });
+  const seal = yield* stage(ports, summary);
+  if (Option.isNone(seal)) return failed(UNFINISHED);
+  const committed = yield* ports.worker((client) =>
+    client.PublishCommit({
+      sourcePath: ports.databasePath,
+      importId: summary.importId,
+      seal: seal.value,
+    }),
+  );
   switch (committed._tag) {
     case "committed":
-      return yield* setAside(ports, counts);
+      return yield* setAside(ports, catalogCountsOf(summary));
     case "refused":
       yield* removePublishMarker(ports.databasePath);
       return failed(committed.message);

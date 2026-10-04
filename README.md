@@ -1,23 +1,25 @@
 # Store
 
 pnpm workspace for offline-first inventory: an Electron desktop app, the same
-renderer as a web app, an Expo Android app, and Cloudflare Worker API and auth
-services. Inventory commands commit in Postgres through Hyperdrive. The system
+renderer as a browser shell without inventory, an Expo Android app, and
+Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
 design is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Workspace boundaries
 
 - `apps/web` owns the product UI: the React app, routes, components, styles,
   and the host contract (`src/host`) that says what a host must provide. It
-  builds and deploys alone as a browser SPA: an HttpOnly refresh cookie, an
-  in-memory access token, and the IndexedDB replica. It never imports from
-  `apps/desktop`.
+  builds and deploys alone as a browser SPA: an HttpOnly refresh cookie and an
+  in-memory access token. The browser has no replica, so it covers sign-in,
+  organizations and settings and points to the desktop app for inventory. It
+  never imports from `apps/desktop`.
 - `apps/desktop` owns the Electron shell: main process, preload, workers,
   updater, tests, and packaging. It uses the web app as its renderer and
   implements the host contract, importing only `@store/web/host/*` and
   `@store/web/vite`. The renderer uses hash history; the main process keeps
-  encrypted refresh credentials and proxies authenticated sync HTTP. Live
-  inventory is the local replica, owned by a main-process worker on
+  encrypted refresh credentials and pushes a short-lived access token to the
+  replica worker, which makes its own sync HTTP calls to the API origin only.
+  Live inventory is the local replica, owned by a main-process worker on
   `@effect/sql-sqlite-node` over `node:sqlite`. The renderer never sees SQL.
 - `apps/mobile` is the Expo Android app. Its replica is op-sqlite through
   `@effect/sql-sqlite-react-native`.
@@ -26,15 +28,15 @@ design is in [`docs/architecture.md`](docs/architecture.md).
 - `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
   in Postgres through Hyperdrive.
 - `packages/contracts` owns shared store and server contracts.
-- `packages/client-db` owns the replica handles hosts open, catalog writes,
-  row models, and the reactive collections the renderer reads.
+- `packages/client-db` owns the replica session hosts open, catalog writes,
+  row models, and the `InventoryReads`, `InventoryStore`, and
+  `InventoryInsights` handlers each host serves.
 - `packages/db` owns the authentication, Postgres authority, and replica
   schemas and their migrations.
 - `packages/sync` owns the host-agnostic replica engine: command outbox,
   pending projections, coverage, the polling scheduler, and the typed
   `SyncHttpApi` client. Its shared entrypoint (`@store/sync`) is native-free;
-  the SQLite adapter lives behind `@store/sync/sqlite` and the IndexedDB
-  adapter behind `@store/sync/replica/indexeddb`.
+  the SQLite adapter lives behind `@store/sync/sqlite`.
 - `packages/inventory-react` owns the React bindings over the replica shared by
   the desktop renderer and mobile.
 - `packages/workspace` owns shared session HTTP and organization clients.
@@ -50,8 +52,9 @@ Web app components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
-Desktop inventory reads come from TanStack DB live queries over the local
-replica. Analytics use one bounded aggregate read instead: the replica groups
+Inventory reads are named, bounded `InventoryReads` RPCs. On desktop the
+renderer calls them over a `MessagePort` to a read-only reader worker, and the
+writer's commit notices invalidate them. Analytics use one bounded aggregate read instead: the replica groups
 sales by product and local day (`readInsights`), and `@store/services/insights`
 turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
 sync commands: they commit locally first, project pending rows, then upload to

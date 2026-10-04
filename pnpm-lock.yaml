@@ -241,8 +241,6 @@ overrides:
   vitest: 5.0.2
 
 patchedDependencies:
-  '@tanstack/db@0.9.2': 6a968bf1ce5426aa8b3246c58ad861d743db3e09ce89b18039d1827fd63ef1f7
-  '@tanstack/react-db@0.4.1': 8479b355dbfd3b257c25ba88b0355fb68fd375ba982cf482998425ed7f19a013
   alchemy: b7154346c6785d2aeef16d19fb9908cce2c9367ac888a3fcf23644e057de6dd5
   drizzle-orm@1.0.0-rc.5-ab785fc: 8017e6dce2177ffd753e084acbabe195ceaa149953f4b816bab699932f45d186
 
@@ -327,6 +325,9 @@ importers:
         specifier: ^6.8.9
         version: 6.8.9(supports-color@10.2.2)
     devDependencies:
+      '@effect/platform-browser':
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       '@effect/platform-node':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
@@ -354,6 +355,9 @@ importers:
       '@store/services':
         specifier: workspace:*
         version: link:../../packages/services
+      '@store/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@store/web':
         specifier: workspace:*
         version: link:../web
@@ -438,9 +442,6 @@ importers:
       '@store/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
-      '@tanstack/react-db':
-        specifier: 0.4.1
-        version: 0.4.1(patch_hash=8479b355dbfd3b257c25ba88b0355fb68fd375ba982cf482998425ed7f19a013)(react@19.3.0)(typescript@7.0.2)
       effect:
         specifier: 4.0.0
         version: 4.0.0
@@ -756,6 +757,9 @@ importers:
       '@store/db':
         specifier: workspace:*
         version: link:../db
+      '@store/services':
+        specifier: workspace:*
+        version: link:../services
       '@store/sync':
         specifier: workspace:*
         version: link:../sync
@@ -766,9 +770,6 @@ importers:
         specifier: 4.0.0
         version: 4.0.0
     devDependencies:
-      '@tanstack/db':
-        specifier: 0.9.2
-        version: 0.9.2(patch_hash=6a968bf1ce5426aa8b3246c58ad861d743db3e09ce89b18039d1827fd63ef1f7)(typescript@7.0.2)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -831,6 +832,9 @@ importers:
       '@effect/atom-react':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)(react@19.3.0)(scheduler@0.27.0)
+      '@effect/platform-browser':
+        specifier: 4.0.0
+        version: 4.0.0(effect@4.0.0)
       '@store/client-db':
         specifier: workspace:*
         version: link:../client-db
@@ -840,9 +844,6 @@ importers:
       '@store/services':
         specifier: workspace:*
         version: link:../services
-      '@tanstack/react-db':
-        specifier: 0.4.1
-        version: 0.4.1(patch_hash=8479b355dbfd3b257c25ba88b0355fb68fd375ba982cf482998425ed7f19a013)(react@19.3.0)(typescript@7.0.2)
       effect:
         specifier: 4.0.0
         version: 4.0.0
@@ -878,9 +879,6 @@ importers:
 
   packages/sync:
     dependencies:
-      '@effect/platform-browser':
-        specifier: 4.0.0
-        version: 4.0.0(effect@4.0.0)
       '@effect/sql-sqlite-node':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)
@@ -903,9 +901,6 @@ importers:
       '@types/node':
         specifier: ^26.6.3
         version: 26.6.3
-      fake-indexeddb:
-        specifier: ^6.2.5
-        version: 6.2.5
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -4382,9 +4377,6 @@ packages:
     resolution: {integrity: sha512-CgB6HHWer/vrKps24ulRIbpcpb7K4xAU7SkZ7YHzBPlwHsvsrCJFEXK421s+cJzX+ZrqtA/TuU5w1HzI7k9N8A==}
     engines: {node: '>=18.0.0'}
 
-  '@standard-schema/spec@1.1.0':
-    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
@@ -4527,16 +4519,6 @@ packages:
       vue:
         optional: true
 
-  '@tanstack/db-ivm@0.1.22':
-    resolution: {integrity: sha512-vpNIY6QnvFiVGPwdMVnh1OAZyFLioFkM5gQAqefghvgDhCMmWUPjYka2gw6w+2TBy742zsGPtLnpxBzUKXo9Jw==}
-    peerDependencies:
-      typescript: '>=4.7'
-
-  '@tanstack/db@0.9.2':
-    resolution: {integrity: sha512-jeyKbppXwjPNHe0GEVIvsvtirDCxjbPR2xphQaNjgteR15Y+Qnm+6IQNcd3zJ+98uJZ3ot9nagV3UNI+ckVRhQ==}
-    peerDependencies:
-      typescript: '>=4.7'
-
   '@tanstack/devtools-event-client@0.4.4':
     resolution: {integrity: sha512-6T5Yop/793YI+H+5J8Hsyj4kCih9sl4t3ElLgKioW5hk3ocn+ZdSJ94tT7vL7uabxSugWYBZlOTMPzEw2puvQw==}
     engines: {node: '>=18'}
@@ -4552,15 +4534,6 @@ packages:
   '@tanstack/pacer-lite@0.1.1':
     resolution: {integrity: sha512-y/xtNPNt/YeyoVxE/JCx+T7yjEzpezmbb+toK8DDD1P4m7Kzs5YR956+7OKexG3f8aXgC3rLZl7b1V+yNUSy5w==}
     engines: {node: '>=18'}
-
-  '@tanstack/pacer-lite@0.2.2':
-    resolution: {integrity: sha512-eQ1MyLKCHyXiH7NbdmB80W77OhiMgGBUb+qDx/8WMGbwg5Lf/NlfD0TfNYAqY77i8V3AxoDoYdICrQE5ADw4Yw==}
-    engines: {node: '>=18'}
-
-  '@tanstack/react-db@0.4.1':
-    resolution: {integrity: sha512-mA/a3TAufm0/AZUHmfyKKYfJnEH0XEzJ1Cymt5ZOLqR90MzzDK9KyaDh/JScYHYEipoRkKeRcmedAnHksP6yrg==}
-    peerDependencies:
-      react: '>=16.8.0'
 
   '@tanstack/react-form@1.33.5':
     resolution: {integrity: sha512-LlRB28qJwO/QCGaHvWnbdh4haBgTFiZVmzA2uzxSBS3YA7/IqrQ6HOBK70CkFQ+DbflZ7NawsmSln13h5iIdTA==}
@@ -6917,10 +6890,6 @@ packages:
   exsolve@1.1.1:
     resolution: {integrity: sha512-9U/jZUgjnSGyntRr6y5Muu1MJcwFl6kPu7k8qLF0IMNfLqvw0NZ4nnVDq0RVoZ0RvCyumib4Ez3KYrVfilrw+g==}
 
-  fake-indexeddb@6.2.5:
-    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
-    engines: {node: '>=18'}
-
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
@@ -7036,10 +7005,6 @@ packages:
   forwarded@0.2.0:
     resolution: {integrity: sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==}
     engines: {node: '>= 0.6'}
-
-  fractional-indexing@3.4.0:
-    resolution: {integrity: sha512-8J3glhz2rrpKG6KmI7wmJo3zH1VjeOpN+vTJSw1fOyO+Viqq3zX6/5NGh6oaZB2qIAYdOYuu5Dz9xp4faOO0Pg==}
-    engines: {node: ^14.13.1 || >=16.0.0}
 
   fresh@0.5.2:
     resolution: {integrity: sha512-zJ2mQYM18rEFOudeV4GShTGIQ7RbzA7ozbU9I/XBpm7kqgMywgmylMwXHxZJmkVoYkna9d2pVXVXPdYTP9ej8Q==}
@@ -9182,9 +9147,6 @@ packages:
   socks@2.8.10:
     resolution: {integrity: sha512-e0VyvkVTwVYViNovRkZ9aodhxVlyoMn7eJhVUPxZ+eK9P/7CBkxvvsBOHqFPEH416726W8tLXXXjKwqgTErrCQ==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
-
-  sorted-btree@1.8.1:
-    resolution: {integrity: sha512-395+XIP+wqNn3USkFSrNz7G3Ss/MXlZEqesxvzCRFwL14h6e8LukDHdLBePn5pwbm5OQ9vGu8mDyz2lLDIqamQ==}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -13641,8 +13603,6 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@standard-schema/spec@1.1.0': {}
-
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
@@ -13742,19 +13702,6 @@ snapshots:
       react-native: 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2)
       react-native-svg: 15.15.5(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.0)(supports-color@10.2.2))(react@19.3.0)
 
-  '@tanstack/db-ivm@0.1.22(typescript@7.0.2)':
-    dependencies:
-      fractional-indexing: 3.4.0
-      sorted-btree: 1.8.1
-      typescript: 7.0.2
-
-  '@tanstack/db@0.9.2(patch_hash=6a968bf1ce5426aa8b3246c58ad861d743db3e09ce89b18039d1827fd63ef1f7)(typescript@7.0.2)':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@tanstack/db-ivm': 0.1.22(typescript@7.0.2)
-      '@tanstack/pacer-lite': 0.2.2
-      typescript: 7.0.2
-
   '@tanstack/devtools-event-client@0.4.4': {}
 
   '@tanstack/form-core@1.33.5':
@@ -13766,16 +13713,6 @@ snapshots:
   '@tanstack/history@1.162.4': {}
 
   '@tanstack/pacer-lite@0.1.1': {}
-
-  '@tanstack/pacer-lite@0.2.2': {}
-
-  '@tanstack/react-db@0.4.1(patch_hash=8479b355dbfd3b257c25ba88b0355fb68fd375ba982cf482998425ed7f19a013)(react@19.3.0)(typescript@7.0.2)':
-    dependencies:
-      '@tanstack/db': 0.9.2(patch_hash=6a968bf1ce5426aa8b3246c58ad861d743db3e09ce89b18039d1827fd63ef1f7)(typescript@7.0.2)
-      react: 19.3.0
-      use-sync-external-store: 1.7.0(react@19.3.0)
-    transitivePeerDependencies:
-      - typescript
 
   '@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
@@ -16851,8 +16788,6 @@ snapshots:
 
   exsolve@1.1.1: {}
 
-  fake-indexeddb@6.2.5: {}
-
   fast-deep-equal@3.1.3: {}
 
   fast-glob@3.3.3:
@@ -16981,8 +16916,6 @@ snapshots:
       mime-types: 2.1.35
 
   forwarded@0.2.0: {}
-
-  fractional-indexing@3.4.0: {}
 
   fresh@0.5.2: {}
 
@@ -19706,8 +19639,6 @@ snapshots:
     dependencies:
       ip-address: 10.7.0
       smart-buffer: 4.2.0
-
-  sorted-btree@1.8.1: {}
 
   source-map-js@1.2.1: {}
 

@@ -1,5 +1,5 @@
 import { InvoiceExtraction } from "@store/contracts/server-api.schema";
-import { receivedStockFromCsv } from "@store/services/invoice-csv";
+import { isCsvFile, mergeReceivedStock, receivedStockFromCsv } from "@store/services/invoice-csv";
 import * as Schema from "effect/Schema";
 
 import { useOnline } from "@/hooks/use-online";
@@ -10,15 +10,20 @@ import { useAuth } from "@/lib/auth";
 
 const decodeExtraction = Schema.decodeUnknownSync(InvoiceExtraction);
 
-const isCsv = (file: InvoiceUploadFile) => file.name.toLowerCase().endsWith(".csv");
-
-const readCsvInvoices = (files: ReadonlyArray<InvoiceUploadFile>): InvoiceExtraction | null => {
-  const csvFiles = files.filter(isCsv);
-  const lines = csvFiles.flatMap((file) =>
-    receivedStockFromCsv(new TextDecoder().decode(file.bytes)),
+export const readInvoices = async (
+  files: ReadonlyArray<InvoiceUploadFile>,
+  extract: (documents: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>,
+): Promise<InvoiceExtraction> => {
+  const csvLines = files.map((file) =>
+    isCsvFile(file) ? receivedStockFromCsv(new TextDecoder().decode(file.bytes)) : null,
   );
-  if (lines.length === 0 && csvFiles.length < files.length) return null;
-  return decodeExtraction({ supplier: null, invoiceNumber: null, lines });
+  const documents = files.filter((file) => !isCsvFile(file));
+  const extracted = documents.length ? await extract(documents) : null;
+  return decodeExtraction({
+    supplier: extracted?.supplier ?? null,
+    invoiceNumber: extracted?.invoiceNumber ?? null,
+    lines: mergeReceivedStock(csvLines, extracted?.lines ?? []),
+  });
 };
 
 const savesOffline = (workspace: Workspace): boolean => {
@@ -37,16 +42,13 @@ export const useInvoiceReading = () => {
   const signedIn = snapshot?.status === "authenticated";
   return {
     isOnline: online || savesOffline(workspace),
-    analyseInvoices: async (
-      files: ReadonlyArray<InvoiceUploadFile>,
-    ): Promise<InvoiceExtraction> => {
-      const read = readCsvInvoices(files);
-      if (read !== null) return read;
-      if (!signedIn) {
-        throw new Error("Reading PDF invoices needs an account. Sign in, or import a CSV file.");
-      }
-      if (!online) throw new Error("You're offline. Connect to read PDF invoices.");
-      return appHost().analyseInvoices(files);
-    },
+    analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>): Promise<InvoiceExtraction> =>
+      readInvoices(files, async (documents) => {
+        if (!signedIn) {
+          throw new Error("Reading PDF invoices needs an account. Sign in, or import a CSV file.");
+        }
+        if (!online) throw new Error("You're offline. Connect to read PDF invoices.");
+        return appHost().analyseInvoices(documents);
+      }),
   };
 };

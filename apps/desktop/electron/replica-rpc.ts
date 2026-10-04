@@ -1,28 +1,20 @@
-import { ReplicaSyncActivity } from "@store/client-db";
+import { InventorySubsetSummary, InventorySubsetSummarySpec } from "@store/client-db/subset-spec";
 import {
-  InventorySubsetBatch,
-  InventorySubsetSpec,
-  InventorySubsetSummary,
-  InventorySubsetSummarySpec,
-} from "@store/client-db/subset-spec";
-import {
-  CommandStatus,
   DeviceLabel,
-  EnqueueCommandRequest,
   ImportId,
   ImportPartNumber,
   LOCAL_ORGANIZATION_ID,
   LOCAL_USER_ID,
   PartitionDigest,
   PositiveInt,
-  ReplicaInsightsFacts,
-  ReplicaInsightsWindow,
 } from "@store/contracts";
+import { Stamp, SyncHealth } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
+import * as Transferable from "effect/workers/Transferable";
 
-const PERMANENT_STREAMS = 4;
+const PERMANENT_STREAMS = 2;
 const CONTROL_SLOTS = 8;
 const FINITE_DATABASE_OPERATIONS = 2;
 export const WORKER_RPC_CONCURRENCY =
@@ -53,43 +45,6 @@ const RemoteReplicaIdentity = Schema.Struct({
 export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
 
 export type ReplicaAuthority = (typeof ReplicaOpenInput.Type)["authority"];
-
-export const ReplicaReadSubsetInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  requestId: NonEmptyString,
-  spec: InventorySubsetSpec,
-});
-
-export const ReplicaReadBatchInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  requestId: NonEmptyString,
-  specs: InventorySubsetBatch,
-});
-
-export const ReplicaCancelReadInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  requestId: NonEmptyString,
-});
-
-export const ReplicaSummarizeSubsetInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  spec: InventorySubsetSummarySpec,
-});
-
-export const ReplicaReadInsightsInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  window: ReplicaInsightsWindow,
-});
-
-export const ReplicaEnqueueInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  request: EnqueueCommandRequest,
-});
-
-export const ReplicaCommandStatusInput = Schema.Struct({
-  workspaceToken: NonEmptyString,
-  operationId: NonEmptyString,
-});
 
 const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_096));
 
@@ -131,6 +86,13 @@ const ReplicaPublishCommit = Schema.Union([
   Schema.TaggedStruct("unconfirmed", { message: Schema.String }),
 ]);
 
+const ReplicaPublishStatus = Schema.Union([
+  Schema.TaggedStruct("committed", {}),
+  Schema.TaggedStruct("other", { message: Schema.String }),
+  Schema.TaggedStruct("none", {}),
+  Schema.TaggedStruct("unconfirmed", { message: Schema.String }),
+]);
+
 export const ReplicaWorkerBoot = Schema.Union([
   Schema.Struct({ ...LocalReplicaIdentity.fields, databasePath: Schema.String }),
   Schema.Struct({
@@ -143,10 +105,7 @@ export const ReplicaWorkerBoot = Schema.Union([
 
 export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
-export const ReplicaCommitStamp = Schema.Struct({
-  generationId: NonEmptyString,
-  localCommitVersion: Schema.Natural,
-});
+export const ReplicaCommitStamp = Stamp;
 
 export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) => ({
   generationId: stamp.generationId,
@@ -161,58 +120,9 @@ export const ReplicaCommitNotice = Schema.Struct({
   overflowedEntities: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
-export const ReplicaSyncHealth = Schema.Union([
-  Schema.TaggedStruct("running", {
-    syncing: Schema.optionalKey(Schema.Boolean),
-    transfer: Schema.optionalKey(
-      Schema.Struct({ partsDone: Schema.Number, partsTotal: Schema.Number }),
-    ),
-  }),
-  Schema.TaggedStruct("storageError", { message: Schema.String }),
-  Schema.TaggedStruct("updateRequired", { message: Schema.String }),
-  Schema.TaggedStruct("recoveryRequired", { message: Schema.String }),
-]);
+export const ReplicaSyncHealth = SyncHealth;
 
-const ReplicaIpcRow = Schema.Record(
-  Schema.String,
-  Schema.Union([Schema.String, Schema.Number, Schema.Null]),
-);
-
-const ReplicaSubsetRows = Schema.Struct({
-  stamp: ReplicaCommitStamp,
-  rows: Schema.Array(ReplicaIpcRow),
-});
-
-const ReplicaBatchRows = Schema.Struct({
-  stamp: ReplicaCommitStamp,
-  reads: Schema.Array(Schema.Array(ReplicaIpcRow)),
-});
-
-const MAX_PROXY_TIMEOUT_MILLIS = 120_000;
-
-export const ProxyFetchRequest = Schema.Struct({
-  requestId: NonEmptyString,
-  method: Schema.Literals(["GET", "POST"]),
-  pathname: Schema.String,
-  bodyText: Schema.NullOr(Schema.String),
-  timeoutMillis: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_PROXY_TIMEOUT_MILLIS)),
-});
-
-export const ProxyFetchResult = Schema.Struct({
-  ok: Schema.Boolean,
-  status: Schema.Natural,
-  bodyText: Schema.String,
-  retryAfter: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
-});
-export type ProxyFetchResult = typeof ProxyFetchResult.Type;
-
-export const AccessTokenRequest = Schema.Struct({
-  requestId: NonEmptyString,
-  force: Schema.Boolean,
-});
-
-export const AccessTokenResult = Schema.NullOr(Schema.String.check(Schema.isMaxLength(8_192)));
-export type AccessTokenResult = typeof AccessTokenResult.Type;
+const AccessToken = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(8_192)));
 
 export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailure>()(
   "ReplicaWorkerFailure",
@@ -221,18 +131,13 @@ export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailur
 
 const EngineRpc = Rpc.make("Engine", { success: Schema.Literals(["sqlite", "unavailable"]) });
 
+export const AttachRendererRpc = Rpc.make("AttachRenderer", {
+  payload: { port: Transferable.MessagePort },
+});
+
 export const ReplicaReaderRpcs = RpcGroup.make(
   EngineRpc,
-  Rpc.make("ReadSubset", {
-    payload: { spec: InventorySubsetSpec },
-    success: ReplicaSubsetRows,
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadBatch", {
-    payload: { specs: InventorySubsetBatch },
-    success: ReplicaBatchRows,
-    error: ReplicaWorkerFailure,
-  }),
+  AttachRendererRpc,
   Rpc.make("SummarizeSubset", {
     payload: { spec: InventorySubsetSummarySpec },
     success: Schema.Struct({ stamp: ReplicaCommitStamp, summary: InventorySubsetSummary }),
@@ -242,33 +147,10 @@ export const ReplicaReaderRpcs = RpcGroup.make(
 
 export const ReplicaWorkerRpcs = RpcGroup.make(
   EngineRpc,
+  AttachRendererRpc,
   Rpc.make("Stamp", { success: ReplicaCommitStamp, error: ReplicaWorkerFailure }),
-  Rpc.make("ReadInsights", {
-    payload: { window: ReplicaInsightsWindow },
-    success: Schema.Struct({ stamp: ReplicaCommitStamp, facts: ReplicaInsightsFacts }),
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadSyncActivity", { success: ReplicaSyncActivity, error: ReplicaWorkerFailure }),
-  Rpc.make("EnqueueCommand", {
-    payload: { request: EnqueueCommandRequest },
-    success: Schema.Struct({
-      operationId: NonEmptyString,
-      status: CommandStatus,
-      stamp: ReplicaCommitStamp,
-    }),
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("ReadCommandStatus", {
-    payload: { operationId: NonEmptyString },
-    success: Schema.NullOr(CommandStatus),
-    error: ReplicaWorkerFailure,
-  }),
   Rpc.make("SetForeground", {
     payload: { visible: Schema.Boolean },
-    error: ReplicaWorkerFailure,
-  }),
-  Rpc.make("WakeSyncUpload", {
-    success: Schema.Struct({ drained: Schema.Boolean, drainCount: Schema.Natural }),
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("BackUp", {
@@ -297,23 +179,16 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
     stream: true,
   }),
   Rpc.make("PublishCommit", {
-    payload: {
-      sourcePath: FilePath,
-      importId: ImportId,
-      seal: ReplicaPublishSeal,
-      acceptChangedFile: Schema.optionalKey(Schema.Boolean),
-    },
+    payload: { sourcePath: FilePath, importId: ImportId, seal: ReplicaPublishSeal },
     success: ReplicaPublishCommit,
+    error: ReplicaWorkerFailure,
+  }),
+  Rpc.make("PublishStatus", {
+    payload: { importId: ImportId },
+    success: ReplicaPublishStatus,
     error: ReplicaWorkerFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),
   Rpc.make("SyncHealth", { success: ReplicaSyncHealth, stream: true }),
-  Rpc.make("ProxyRequests", { success: ProxyFetchRequest, stream: true }),
-  Rpc.make("ProxyRespond", {
-    payload: { requestId: NonEmptyString, result: ProxyFetchResult },
-  }),
-  Rpc.make("AccessTokenRequests", { success: AccessTokenRequest, stream: true }),
-  Rpc.make("AccessTokenRespond", {
-    payload: { requestId: NonEmptyString, token: AccessTokenResult },
-  }),
+  Rpc.make("SetAccessToken", { payload: { token: Schema.NullOr(AccessToken) } }),
 );

@@ -4,15 +4,16 @@ An **edge** is the one place in a process where Effect meets the host. Inside it
 
 ## The edges in this repo
 
-The target is one layer graph per process, launched once. A host that cannot be Effect-first (React, TanStack DB, Electron's event API) gets one `ManagedRuntime` behind a Promise facade. The table is where each edge is today.
+The target is one layer graph per process, launched once. A host that cannot be Effect-first (Electron's event API, a native listener) gets one `ManagedRuntime` behind a Promise facade; React reads through atoms that run effects on the workspace's `AtomRegistry`. The table is where each edge is today.
 
 | Host | Edge | Read |
 | --- | --- | --- |
 | Desktop worker threads (replica, reader, analytics) | `RpcServer.layer(...)` chain, `Layer.launch`, `NodeRuntime.runMain` | `apps/desktop/electron/replica-worker.ts` |
 | Electron main | a broker per concern: one `ManagedRuntime` behind a Promise facade | `apps/desktop/electron/auth.ts` (`makeAuthBroker`) |
-| Electron IPC handlers | a `FiberMap` runtime in a scope the session closes | `apps/desktop/electron/replica-ipc.ts` |
+| Electron IPC handlers | `Effect.runPromise` per `ipcMain.handle` call (a departure; open, close, backup and publish only) | `apps/desktop/electron/replica-ipc.ts` |
+| Renderer to workers | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
 | Web host | one `ManagedRuntime`, every `AppHost` method is `runtime.runPromise(Service.use(...))` | `apps/web/src/web/app-host.ts` |
-| Opened replica (renderer, web, mobile) | one `ManagedRuntime` per opened replica, calls supervised by the replica's scope | `packages/client-db/src/replica/replica-runtime.ts` |
+| Opened replica (mobile) | one `ManagedRuntime` per opened replica, calls supervised by the replica's scope | `packages/client-db/src/replica/replica-runtime.ts` |
 | Cloudflare Workers | Alchemy calls the returned `HttpEffect`; app code never calls `run*` | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts` |
 | React | atoms from `effect/reactivity/Atom` through `@effect/atom-react` | `packages/inventory-react/src/atoms.ts` |
 
@@ -39,7 +40,7 @@ export const host = {
 
 ## Callbacks that re-enter Effect
 
-A host callback (an Electron event, a TanStack DB sync hook, a native listener) runs outside any fiber. Give it the runtime that already exists:
+A host callback (an Electron event, a replica commit notice, a native listener) runs outside any fiber. Give it the runtime that already exists:
 
 - **A source of values** becomes a stream: `Stream.callback((queue) => Effect.acquireRelease(subscribe(...), unsubscribe))`, offering with `Queue.offerUnsafe`. See [concurrency](CONCURRENCY.md).
 - **A sink that starts work** gets a run function captured inside Effect: `const run = yield* FiberSet.makeRuntime<R>()`, or `yield* FiberMap.runtimePromise(fibers)()` when each call is keyed and cancellable. The fibers belong to the surrounding scope.
@@ -59,7 +60,7 @@ When Effect code needs a capability that another package exposes as a Promise fa
 
 ## Electron
 
-- The worker thread that owns SQLite does the work. Main and the renderer send domain commands and bounded reads; command state never crosses IPC as SQL.
+- The worker thread that owns SQLite does the work. The renderer reaches it through `InventoryReads`, `InventoryStore`, `InventoryInsights` and `DesktopRpcs` on forwarded `MessagePort`s; main only brokers the ports. Command state never crosses a process boundary as SQL or query IR.
 - Main talks to workers through `RpcClient.layerProtocolWorker` and `RpcGroup` contracts (`apps/desktop/electron/replica-rpc.ts`), never through hand-written message correlation.
 - Nothing on the path to first paint waits for auth or the network. Defer a dependency with a lazy sub-layer, and start no network machinery the current screen does not need.
 - Measure cold start and command latency before and after a change to an entry point or a layer graph.

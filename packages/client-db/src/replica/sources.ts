@@ -14,8 +14,6 @@ export const INVENTORY_COLLECTION_SOURCES = [
 
 export type InventoryCollectionSource = (typeof INVENTORY_COLLECTION_SOURCES)[number];
 
-export type InventoryCollectionSyncMode = "eager" | "on-demand";
-
 export const SOURCE_ENTITY = {
   categories: "category",
   products: "product",
@@ -114,7 +112,7 @@ export const CASE_INSENSITIVE_ORDER_COLUMNS = {
   purchaseOrderItems: new Set<string>(),
 } satisfies Record<InventoryCollectionSource, ReadonlySet<string>>;
 
-export const MAX_IN_VALUES = 200;
+export { MAX_IN_VALUES } from "@store/contracts/replica";
 
 export const MAX_LIKE_PATTERN_LENGTH = 256;
 

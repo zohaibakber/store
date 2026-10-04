@@ -1,4 +1,3 @@
-import type { ElectronReplicaBridge } from "@store/client-db";
 import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
 import type {
   GlobalProductSearchInput,
@@ -45,10 +44,21 @@ export interface InventoryHttpBridge {
   readonly getConfig: () => Promise<InventoryHttpConfig>;
 }
 
+export type ReplicaWorkspaceBridge = {
+  readonly open: (identity: {
+    readonly authority: "local" | "remote";
+    readonly organizationId: string;
+    readonly userId: string;
+    readonly replicaId: string;
+  }) => Promise<{ readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" }>;
+  readonly close: (workspaceToken: string) => Promise<void>;
+  readonly retryRecovery: (workspaceToken: string) => Promise<void>;
+};
+
 declare global {
   interface Window {
     inventoryHttp?: InventoryHttpBridge;
-    replica?: ElectronReplicaBridge;
+    replica?: ReplicaWorkspaceBridge;
     workspaceBackup?: WorkspaceBackupBridge;
     sharing?: ShareBridge;
     workspacePublish?: WorkspacePublishBridge;

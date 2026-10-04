@@ -1,9 +1,19 @@
-import { ProductScanInput, ProductScanResult } from "@store/contracts/server-api.schema";
+import { honourRetryAfter, isAuthStatus } from "@store/contracts/http-errors";
+import {
+  ServerHttpApi,
+  serverHttpErrorStatus,
+  type BadGateway,
+  type BadRequest,
+  type PayloadTooLarge,
+  type TooManyRequests,
+} from "@store/contracts/server-api";
+import { ProductScanInput } from "@store/contracts/server-api.schema";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import * as Headers from "effect/http/Headers";
 import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -37,7 +47,7 @@ const retryAfterMillis = (header: string | undefined, now: number): number => {
 };
 
 const fallbackMessage = (status: number): string => {
-  if (status === 401 || status === 403) return "Sign in again to auto-fill scans.";
+  if (isAuthStatus(status)) return "Sign in again to auto-fill scans.";
   if (status === 413) return "Too much text on this label to auto-fill.";
   if (status >= 500) return "Could not turn the label into product fields.";
   return "This scan could not be auto-filled.";
@@ -56,44 +66,68 @@ const scanFailureFor = (
   return new ScanRejected({ status, message: text });
 };
 
-const PublicErrorBody = Schema.Struct({
-  error: Schema.Struct({ code: Schema.String, message: Schema.String }),
+const UndeclaredErrorBody = Schema.Struct({
+  error: Schema.Struct({ message: Schema.String }),
 });
 
 const errorMessage = (response: HttpClientResponse.HttpClientResponse) =>
-  HttpClientResponse.schemaBodyJson(PublicErrorBody)(response).pipe(
+  HttpClientResponse.schemaBodyJson(UndeclaredErrorBody)(response).pipe(
     Effect.map((body) => body.error.message),
     Effect.orElseSucceed(() => null),
   );
 
-const productScanUrl = (baseUrl: string): string =>
-  new URL("/api/product-scans", baseUrl).toString();
+const unreadable = () => new ScanFailed({ message: "The auto-fill answer was unreadable." });
+
+const isSuccessStatus = (status: number) => status >= 200 && status < 300;
+
+type ParseFailure =
+  | BadRequest
+  | PayloadTooLarge
+  | TooManyRequests
+  | BadGateway
+  | HttpClientError.HttpClientError
+  | Schema.SchemaError;
+
+const scanFailure = Effect.fnUntraced(function* (failure: ParseFailure) {
+  if (failure instanceof Schema.SchemaError) return unreadable();
+  const now = yield* Clock.currentTimeMillis;
+  if (!HttpClientError.isHttpClientError(failure)) {
+    return scanFailureFor(
+      serverHttpErrorStatus(failure._tag),
+      undefined,
+      now,
+      failure.error.message,
+    );
+  }
+  const response = failure.response;
+  if (response === undefined) return new ScanOffline();
+  if (isSuccessStatus(response.status)) return unreadable();
+  return scanFailureFor(
+    response.status,
+    Option.getOrUndefined(Headers.get(response.headers, "retry-after")),
+    now,
+    response.status === 429 ? null : yield* errorMessage(response),
+  );
+});
+
+const validateInput = Schema.encodeEffect(ProductScanInput);
 
 export const parseProductScan = Effect.fn("ProductScan.parse")(
   function* (baseUrl: string, input: ProductScanInput) {
-    const client = yield* HttpClient.HttpClient;
-    const request = yield* HttpClientRequest.post(productScanUrl(baseUrl)).pipe(
-      HttpClientRequest.acceptJson,
-      HttpClientRequest.schemaBodyJson(ProductScanInput)(input),
+    yield* validateInput(input).pipe(
       Effect.mapError(
         () => new ScanRejected({ status: 400, message: "This scan has no text to auto-fill." }),
       ),
     );
-    const response = yield* client.execute(request).pipe(Effect.mapError(() => new ScanOffline()));
-    if (response.status < 200 || response.status >= 300) {
-      const now = yield* Clock.currentTimeMillis;
-      const message = response.status === 429 ? null : yield* errorMessage(response);
-      return yield* Effect.fail(
-        scanFailureFor(
-          response.status,
-          Option.getOrUndefined(Headers.get(response.headers, "retry-after")),
-          now,
-          message,
-        ),
-      );
-    }
-    return yield* HttpClientResponse.schemaBodyJson(ProductScanResult)(response).pipe(
-      Effect.mapError(() => new ScanFailed({ message: "The auto-fill answer was unreadable." })),
+    const parse = yield* HttpApiClient.endpoint(ServerHttpApi, {
+      group: "productScans",
+      endpoint: "parse",
+      httpClient: yield* HttpClient.HttpClient,
+      transformClient: honourRetryAfter,
+      baseUrl,
+    });
+    return yield* parse({ payload: input }).pipe(
+      Effect.catch((failure) => Effect.flatMap(scanFailure(failure), Effect.fail)),
     );
   },
   Effect.timeoutOrElse({

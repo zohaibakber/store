@@ -78,7 +78,7 @@ export const ApiLive = Api.make(
     const db = yield* openInventoryDrizzle.pipe(
       Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
     );
-    const live = yield* makeInventoryLive(db);
+    const live = makeInventoryLive(db);
     const maintenance = makeInventoryMaintenance(db);
     yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
       maintenance.runScheduled().pipe(

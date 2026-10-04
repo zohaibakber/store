@@ -8,7 +8,10 @@ import { commitNotice } from "./collection-notices";
 import type { ReplicaCommitPublisher } from "./publisher";
 import type { ReplicaCommitNotice } from "./types";
 
-const toClientNotice = (workspaceToken: string, notice: StoreCommitNotice): ReplicaCommitNotice =>
+export const toClientNotice = (
+  workspaceToken: string,
+  notice: StoreCommitNotice,
+): ReplicaCommitNotice =>
   commitNotice({
     workspaceToken,
     generationId: notice.generationId,

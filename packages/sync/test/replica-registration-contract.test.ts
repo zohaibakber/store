@@ -21,7 +21,6 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { SyncRecoveryRequired } from "../src/replica/errors";
@@ -31,7 +30,6 @@ import type { ReplicaStoreContract } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
 import { enqueueRequestOf } from "./lib/enqueue";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
@@ -61,37 +59,10 @@ const makeSqliteHarness = Effect.fn("registration.sqlite")(function* () {
   return { store, close: Scope.close(scope, Exit.void) } satisfies Harness;
 });
 
-let databaseCounter = 0;
-
-const makeIndexedHarness = Effect.fn("registration.indexeddb")(function* () {
-  databaseCounter += 1;
-  const databaseName = `replica-registration-${databaseCounter}`;
-  const store = yield* makeIndexedDbReplicaStore({
-    databaseName,
-    databaseIdentity: databaseName,
-    identity: {
-      organizationId: LAST_UNIT_ORGANIZATION_ID,
-      userId: USER_ID,
-      replicaId: LAST_UNIT_REPLICA_A,
-    },
-    indexedDB,
-    IDBKeyRange,
-  }).pipe(Effect.orDie);
-  return {
-    store,
-    close: store
-      .dispose()
-      .pipe(Effect.andThen(Effect.sync(() => indexedDB.deleteDatabase(databaseName)))),
-  } satisfies Harness;
-});
-
 const harnesses: ReadonlyArray<{
   readonly name: string;
   readonly make: () => Effect.Effect<Harness>;
-}> = [
-  { name: "SQLite", make: makeSqliteHarness },
-  { name: "IndexedDB", make: makeIndexedHarness },
-];
+}> = [{ name: "SQLite", make: makeSqliteHarness }];
 
 const withHarness = <A, E>(
   make: () => Effect.Effect<Harness>,

@@ -57,6 +57,7 @@ import { makeInventoryImports } from "../../src/inventory/imports";
 import type { InventoryActor } from "../../src/inventory/model";
 import type { InventoryDrizzle } from "../../src/inventory/postgres";
 import { makeInventorySnapshots } from "../../src/inventory/snapshots";
+import { claimsFor, TEST_ACCESS_TOKEN, webHandlerFor } from "../lib/app";
 import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
 import { typedCommands } from "./typed-commands";
 
@@ -505,6 +506,7 @@ describe("publishing a local workspace into an empty organization", () => {
         yield* waitingEngine.ensureRegistered();
         yield* waitingEngine.catchUp();
 
+        const unasked = yield* imports.status(owner, importId);
         const receipts = yield* Effect.forEach(local.parts, (part) =>
           imports
             .stagePart(owner, importId, part.partNumber, part.bodyText)
@@ -516,8 +518,13 @@ describe("publishing a local workspace into an empty organization", () => {
           .pipe(Effect.flip);
         const miscounted = { ...request, partCount: request.partCount + 1 };
         const unlanded = yield* imports.commit(owner, importId, miscounted).pipe(Effect.flip);
+        const staged = yield* imports.status(owner, importId);
         const landed = yield* imports.commit(owner, importId, request);
         const committed = decodeResult(landed.json);
+        const settled = yield* imports.status(owner, importId);
+        const later = decodeImportId("import-later");
+        const superseded = yield* imports.status(owner, later);
+        const refused = yield* imports.commit(owner, later, request).pipe(Effect.flip);
         const repeated = decodeResult((yield* imports.commit(owner, importId, request)).json);
         const asked = decodeResult((yield* imports.commit(owner, importId, miscounted)).json);
         const restaged = yield* imports
@@ -594,6 +601,11 @@ describe("publishing a local workspace into an empty organization", () => {
           receipts,
           mismatched,
           unlanded,
+          unasked,
+          staged,
+          settled,
+          superseded,
+          refused,
           fanout: landed.fanout,
           committed,
           repeated,
@@ -636,6 +648,14 @@ describe("publishing a local workspace into an empty organization", () => {
     ).toEqual(LOCAL_ROW_COUNTS);
     expect(outcome.fanout).toMatchObject({ epoch: "1", horizon: "1", group: "" });
     expect(outcome.unlanded).toMatchObject({ code: "INVALID_OPERATION" });
+    expect(outcome.unasked).toEqual({ _tag: "none" });
+    expect(outcome.staged).toEqual({ _tag: "none" });
+    expect(outcome.settled).toStrictEqual({ _tag: "committed", result: outcome.committed });
+    expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
+    expect(outcome.superseded).toEqual({
+      _tag: "other",
+      message: outcome.refused.message,
+    });
     expect(outcome.repeated).toStrictEqual(outcome.committed);
     expect(outcome.asked).toStrictEqual(outcome.committed);
     expect(outcome.restaged.partNumber).toBe(1);
@@ -663,5 +683,65 @@ describe("publishing a local workspace into an empty organization", () => {
     expect(outcome.afterDelivery.owner.digest).toBe(outcome.afterDelivery.clerk.digest);
     expect(outcome.afterDelivery.owner.digest).toBe(outcome.authority);
     expect(outcome.afterDelivery.owner.digest).not.toBe(localDigest);
+  });
+
+  it("answers a status read without writing, and only for an owner", async () => {
+    const outcome = await run(
+      Effect.gen(function* () {
+        const db = yield* openDb;
+        const imports = makeInventoryImports(db);
+        const importId = decodeImportId("import-asked");
+        const ask = (role: "owner" | "member", organizationId: string) =>
+          Effect.promise(async () => {
+            const handler = await webHandlerFor({
+              claims: claimsFor(role, organizationId),
+              imports,
+            });
+            const response = await handler(
+              new Request(`http://localhost/api/sync/imports/${importId}`, {
+                headers: { authorization: `Bearer ${TEST_ACCESS_TOKEN}` },
+              }),
+            );
+            return { status: response.status, body: await response.json() };
+          });
+        const states = (organizationId: string) =>
+          db.execute(
+            sql`select count(*)::int as "rows" from "inventory_state" where "organization_id" = ${organizationId}`,
+            "objects",
+          );
+
+        const member = yield* ask("member", "org-asked");
+        const empty = yield* ask("owner", "org-asked");
+        const untouched = yield* states("org-asked");
+
+        yield* db.execute(
+          sql`insert into "inventory_state" ("organization_id", "incarnation", "epoch", "commit_sequence", "retention_floor")
+              values ('org-stocked', 'incarnation-test', '1', 3, 0)`,
+        );
+        const stocked = yield* ask("owner", "org-stocked");
+        const refused = yield* imports
+          .commit(
+            { organizationId: "org-stocked", userId: OWNER },
+            importId,
+            requestFor(
+              { organizationId: "org-stocked", userId: OWNER },
+              { digest: { digest: "a".repeat(64), version: PARTITION_DIGEST_VERSION } },
+              1,
+            ),
+          )
+          .pipe(Effect.flip);
+        return { member, empty, untouched, stocked, refused };
+      }),
+    );
+
+    expect(outcome.member.status).toBe(403);
+    expect(outcome.member.body).toMatchObject({ error: { code: "OWNER_REQUIRED" } });
+    expect(outcome.empty).toEqual({ status: 200, body: { _tag: "none" } });
+    expect(outcome.untouched).toEqual([{ rows: 0 }]);
+    expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
+    expect(outcome.stocked).toEqual({
+      status: 200,
+      body: { _tag: "other", message: outcome.refused.message },
+    });
   });
 });

@@ -16,7 +16,7 @@
     "./replica/migrations": "./src/replica/migrations.gen.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.postgres.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.replica.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.analytics.config.ts",
+    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.postgres.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.replica.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.analytics.config.ts && node scripts/check-schema-drift.mjs",
     "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.postgres.config.ts",
     "db:bundle": "node scripts/build-migration-bundle.mjs"
   },

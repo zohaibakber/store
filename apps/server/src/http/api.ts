@@ -1,29 +1,18 @@
+import { WorkspaceSnapshot } from "@store/contracts";
 import {
-  GlobalProductSearchInput,
-  GlobalProductSearchResult,
-  InvoiceExtraction,
-  MAX_INVOICE_UPLOAD_BYTES,
-  MAX_INVOICE_UPLOAD_FILES,
-  ProductScanInput,
-  ProductScanResult,
-  WorkspaceSnapshot,
-} from "@store/contracts";
+  BadRequest,
+  globalSearchGroup,
+  productScansGroup,
+  uploadsGroup,
+} from "@store/contracts/server-api";
 import { syncGroup } from "@store/contracts/sync/api";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
-import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
 import * as Schema from "effect/Schema";
 
 import { OrganizationAuth } from "../auth/organization";
-import {
-  BadGateway,
-  BadRequest,
-  PayloadTooLarge,
-  TooManyRequests,
-  UnsupportedMediaType,
-} from "./errors";
 
 export class ProductScanPayloadErrors extends HttpApiMiddleware.Service<ProductScanPayloadErrors>()(
   "@store/server/ProductScanPayloadErrors",
@@ -56,45 +45,11 @@ const auth = HttpApiGroup.make("auth").add(
   HttpApiEndpoint.get("session", "/api/auth/session", { success: WorkspaceSnapshot }),
 );
 
-const uploads = HttpApiGroup.make("uploads").add(
-  HttpApiEndpoint.post("extract", "/api/uploads", {
-    payload: Schema.Unknown.pipe(
-      HttpApiSchema.asMultipartStream({
-        maxParts: MAX_INVOICE_UPLOAD_FILES + 10,
-        maxFileSize: MAX_INVOICE_UPLOAD_BYTES,
-        maxTotalSize: MAX_INVOICE_UPLOAD_BYTES,
-      }),
-    ),
-    success: InvoiceExtraction,
-    error: [BadRequest, PayloadTooLarge, UnsupportedMediaType, TooManyRequests, BadGateway],
-  }).middleware(OrganizationAuth),
-);
-
-const productScans = HttpApiGroup.make("productScans").add(
-  HttpApiEndpoint.post("parse", "/api/product-scans", {
-    payload: ProductScanInput,
-    success: ProductScanResult,
-    error: [BadRequest, PayloadTooLarge, TooManyRequests, BadGateway],
-  })
-    .middleware(OrganizationAuth)
-    .middleware(ProductScanPayloadErrors),
-);
-
-const globalSearch = HttpApiGroup.make("globalSearch").add(
-  HttpApiEndpoint.post("search", "/api/global-search", {
-    payload: GlobalProductSearchInput,
-    success: GlobalProductSearchResult,
-    error: [BadRequest, TooManyRequests, BadGateway],
-  })
-    .middleware(OrganizationAuth)
-    .middleware(GlobalSearchPayloadErrors),
-);
-
 export const StoreApi = HttpApi.make("StoreApi").add(
   system,
   auth,
-  uploads,
-  productScans,
-  globalSearch,
+  uploadsGroup.middleware(OrganizationAuth),
+  productScansGroup.middleware(OrganizationAuth).middleware(ProductScanPayloadErrors),
+  globalSearchGroup.middleware(OrganizationAuth).middleware(GlobalSearchPayloadErrors),
   syncGroup.middleware(OrganizationAuth),
 );

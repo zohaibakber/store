@@ -54,6 +54,7 @@ const TOAST_ICONS = {
 type SwipeDirection = "up" | "down" | "left" | "right";
 
 type ToastData = {
+  dismissLabel?: string;
   progress?: {
     label: string;
     value: number;
@@ -198,6 +199,17 @@ function Toasts({
                       />
                     </div>
                   </div>
+                )}
+                {toastData?.dismissLabel && (
+                  <Button
+                    className="[-webkit-app-region:no-drag]"
+                    data-slot="toast-close"
+                    render={<Toast.Close />}
+                    size="xs"
+                    variant="ghost"
+                  >
+                    {toastData.dismissLabel}
+                  </Button>
                 )}
                 {toast.actionProps && (
                   <Button

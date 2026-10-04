@@ -20,6 +20,8 @@ const inventorySyncStatusLabel = (status: InventorySyncStatus): string => {
       return `Update required. ${status.message}`;
     case "recoveryRequired":
       return status.message;
+    case "unavailable":
+      return status.message;
   }
 };
 
@@ -45,6 +47,7 @@ export const inventorySyncIssueLabel = (
     case "storageError":
     case "updateRequired":
     case "recoveryRequired":
+    case "unavailable":
       return inventorySyncStatusLabel(status);
   }
 };

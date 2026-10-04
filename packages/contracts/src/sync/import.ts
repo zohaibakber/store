@@ -42,3 +42,10 @@ export const ImportCatalogResult = Schema.Struct({
   digestVersion: PositiveInt,
 });
 export type ImportCatalogResult = typeof ImportCatalogResult.Type;
+
+export const ImportStatus = Schema.Union([
+  Schema.TaggedStruct("committed", { result: ImportCatalogResult }),
+  Schema.TaggedStruct("other", { message: Schema.String }),
+  Schema.TaggedStruct("none", {}),
+]);
+export type ImportStatus = typeof ImportStatus.Type;

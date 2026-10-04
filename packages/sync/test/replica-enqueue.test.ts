@@ -6,13 +6,11 @@ import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 type Harness = {
@@ -40,37 +38,10 @@ const makeSqliteHarness = Effect.fn("enqueue.sqlite")(function* () {
   return { store, close: Scope.close(scope, Exit.void) } satisfies Harness;
 });
 
-let databaseCounter = 0;
-
-const makeIndexedHarness = Effect.fn("enqueue.indexeddb")(function* () {
-  databaseCounter += 1;
-  const databaseName = `replica-enqueue-${databaseCounter}`;
-  const store = yield* makeIndexedDbReplicaStore({
-    databaseName,
-    databaseIdentity: databaseName,
-    identity: {
-      organizationId: LAST_UNIT_ORGANIZATION_ID,
-      userId: "user-1",
-      replicaId: LAST_UNIT_REPLICA_A,
-    },
-    indexedDB,
-    IDBKeyRange,
-  }).pipe(Effect.orDie);
-  return {
-    store,
-    close: store
-      .dispose()
-      .pipe(Effect.andThen(Effect.sync(() => indexedDB.deleteDatabase(databaseName)))),
-  } satisfies Harness;
-});
-
 const harnesses: ReadonlyArray<{
   readonly name: string;
   readonly make: () => Effect.Effect<Harness>;
-}> = [
-  { name: "SQLite", make: makeSqliteHarness },
-  { name: "IndexedDB", make: makeIndexedHarness },
-];
+}> = [{ name: "SQLite", make: makeSqliteHarness }];
 
 const categoryWrite = (index: number, name = `Category ${index}`): CatalogRowWrite => ({
   entity: "category",

@@ -4,14 +4,12 @@ import {
   useAtomRefresh,
   useAtomValue,
 } from "@effect/atom-react";
-import { DbClient, DbProvider } from "@tanstack/react-db";
 import * as React from "react";
 
 import type { InventoryHost, InventoryScope } from "./host";
-import type { CatalogLease, CatalogLifetime } from "./lifetime";
-import { createAppCatalogLifetime } from "./open";
 import { closedCatalog, inventoryState, openingCatalog, type CatalogOpening } from "./opening";
 import type { InventoryState } from "./types";
+import { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
 
 const InventoryContext = React.createContext<InventoryState | null>(null);
 
@@ -59,13 +57,12 @@ function InventoryGate({
   const result = useAtomValue(opening);
   const retry = useAtomRefresh(opening);
   const providerRegistry = React.useContext(RegistryContext);
-  const [idleClient] = React.useState(() => new DbClient());
   const state = React.useMemo(() => inventoryState(result, retry), [result, retry]);
   const ready = state._tag === "Ready" ? state.inventory : null;
   return (
     <InventoryContext.Provider value={state}>
       <RegistryContext.Provider value={ready?.atoms.registry ?? providerRegistry}>
-        <DbProvider client={ready?.dbClient ?? idleClient}>{children}</DbProvider>
+        {children}
       </RegistryContext.Provider>
     </InventoryContext.Provider>
   );
@@ -75,6 +72,11 @@ export const useInventoryState = (): InventoryState => {
   const state = React.useContext(InventoryContext);
   if (!state) throw new Error("InventoryProvider is missing.");
   return state;
+};
+
+export const useReadyInventory = () => {
+  const state = React.useContext(InventoryContext);
+  return state?._tag === "Ready" ? state : null;
 };
 
 export const useInventoryActions = () => {

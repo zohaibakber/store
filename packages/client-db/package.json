@@ -6,27 +6,27 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./indexeddb": "./src/replica/indexeddb-handle.ts",
+    "./in-process": "./src/in-process.ts",
+    "./insights": "./src/insights/handlers.ts",
     "./node-analytics": "./src/analytics/node.ts",
     "./node-backup": "./src/replica/node-backup.ts",
     "./node-publish": "./src/replica/node-publish.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
+    "./reads": "./src/reads/handlers.ts",
     "./sql-client": "./src/replica/sql-client.ts",
+    "./store": "./src/store/handlers.ts",
     "./subset-spec": "./src/replica/subset-spec.ts"
   },
   "dependencies": {
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
+    "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@tanstack/db": "0.9.2",
     "typescript": "catalog:",
     "vitest": "5.0.2"
-  },
-  "peerDependencies": {
-    "@tanstack/db": "0.9.2"
   }
 }

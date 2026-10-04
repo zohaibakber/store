@@ -24,7 +24,6 @@ import electronUpdater from "electron-updater";
 
 import {
   UPDATER_CHECK_CHANNEL,
-  UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
 } from "./ipc-channels";
@@ -48,6 +47,7 @@ type AutoUpdaterEvent =
 interface WorkflowState {
   readonly phase: UpdatePhase;
   readonly checkInFlight: boolean;
+  readonly version: string | null;
 }
 
 const PendingUpdateInfo = Schema.Struct({
@@ -140,14 +140,13 @@ const checkForUpdates = Effect.tryPromise({
   catch: providerError,
 });
 
-const downloadUpdate = Effect.tryPromise({
-  try: () => autoUpdater.downloadUpdate().then(() => undefined),
-  catch: providerError,
-});
-
 const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
   Effect.gen(function* () {
-    const state = yield* Ref.make<WorkflowState>({ phase: "idle", checkInFlight: false });
+    const state = yield* Ref.make<WorkflowState>({
+      phase: "idle",
+      checkInFlight: false,
+      version: null,
+    });
     const pendingReleaseRetry = yield* FiberHandle.make<void>();
 
     const transition = (event: UpdaterEvent) =>
@@ -156,7 +155,14 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
         (current) =>
           [
             forwardsToRenderer(current.phase, event),
-            { ...current, phase: nextUpdatePhase(current.phase, event) },
+            {
+              ...current,
+              phase: nextUpdatePhase(current.phase, event),
+              version:
+                event.type === "available" || event.type === "downloaded"
+                  ? event.version
+                  : current.version,
+            },
           ] as const,
       ).pipe(
         Effect.tap((shouldPublish) =>
@@ -206,28 +212,22 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
       Effect.forkScoped,
     );
 
-    const download = Effect.gen(function* () {
-      const claimed = yield* Ref.modify(state, (current) =>
-        current.phase !== "idle"
-          ? ([false, current] as const)
-          : ([true, { ...current, phase: "downloading" } satisfies WorkflowState] as const),
+    const checkNow = Effect.gen(function* () {
+      const { phase, version } = yield* Ref.get(state);
+      if (phase === "idle" || version === null) return yield* check;
+      publish(
+        phase === "downloaded" ? { type: "downloaded", version } : { type: "available", version },
       );
-      if (!claimed) return;
-      yield* downloadUpdate.pipe(
-        Effect.tapError(() =>
-          Ref.update(state, (current) => ({ ...current, phase: "idle" }) satisfies WorkflowState),
-        ),
-      );
-    }).pipe(Effect.withSpan("UpdaterWorkflow.download"));
+    }).pipe(Effect.withSpan("UpdaterWorkflow.checkNow"));
 
-    return { check, download };
+    return { checkNow };
   });
 
 export async function setupUpdater(
   getWindow: () => BrowserWindow | null,
   allowedOrigins: () => ReadonlyArray<string>,
 ) {
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = console;
   autoUpdater.setFeedURL({
@@ -246,11 +246,7 @@ export async function setupUpdater(
 
   ipcMain.handle(
     UPDATER_CHECK_CHANNEL,
-    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.check)),
-  );
-  ipcMain.handle(
-    UPDATER_DOWNLOAD_CHANNEL,
-    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.download)),
+    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.checkNow)),
   );
   const install = (event: IpcMainEvent) => {
     if (!isTrustedIpcSenderFrame(event.senderFrame, allowedOrigins())) return;
@@ -260,7 +256,6 @@ export async function setupUpdater(
 
   return async () => {
     ipcMain.removeHandler(UPDATER_CHECK_CHANNEL);
-    ipcMain.removeHandler(UPDATER_DOWNLOAD_CHANNEL);
     ipcMain.off(UPDATER_INSTALL_CHANNEL, install);
     await Effect.runPromise(Scope.close(scope, Exit.void));
   };

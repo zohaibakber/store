@@ -1,5 +1,10 @@
-import { inventoryReplicaScope, type ReplicaHandle } from "@store/client-db";
 import { LOCAL_ORGANIZATION_ID } from "@store/contracts";
+import type * as Effect from "effect/Effect";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import type * as Scope from "effect/Scope";
+
+import type { CatalogOpenFailure } from "./errors";
+import type { InventoryServices } from "./services";
 
 export type InventoryScope = {
   readonly organizationId: string;
@@ -17,11 +22,17 @@ export type ReplicaOpenIdentity = {
   readonly replicaId: string;
 };
 
+export type OpenedReplica = {
+  readonly replicaId?: string;
+  readonly retryRecovery: Effect.Effect<void>;
+};
+
 export interface InventoryHost {
   readonly apiBaseUrl: string;
   readonly deviceId: string;
-  readonly openReplica: (identity: ReplicaOpenIdentity) => Promise<ReplicaHandle>;
+  readonly services: InventoryServices;
+  readonly open: (
+    identity: ReplicaOpenIdentity,
+    registry: AtomRegistry.AtomRegistry,
+  ) => Effect.Effect<OpenedReplica, CatalogOpenFailure, Scope.Scope>;
 }
-
-export const inventoryScopeId = (host: InventoryHost, scope: InventoryScope) =>
-  inventoryReplicaScope(host.apiBaseUrl, scope.organizationId);

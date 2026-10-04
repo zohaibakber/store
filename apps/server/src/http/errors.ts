@@ -1,28 +1,20 @@
 import { publicErrorSchema } from "@store/contracts/http-errors";
+import {
+  BadGateway,
+  BadRequest,
+  PayloadTooLarge,
+  TooManyRequests,
+  UnsupportedMediaType,
+} from "@store/contracts/server-api";
 import * as Effect from "effect/Effect";
 import * as HttpEffect from "effect/http/HttpEffect";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
-
-export const BadRequest = publicErrorSchema("BadRequest", 400);
-export type BadRequest = typeof BadRequest.Type;
 
 export const Unauthenticated = publicErrorSchema("Unauthenticated", 401);
 export type Unauthenticated = typeof Unauthenticated.Type;
 
 export const Forbidden = publicErrorSchema("Forbidden", 403);
 export type Forbidden = typeof Forbidden.Type;
-
-export const PayloadTooLarge = publicErrorSchema("PayloadTooLarge", 413);
-export type PayloadTooLarge = typeof PayloadTooLarge.Type;
-
-export const UnsupportedMediaType = publicErrorSchema("UnsupportedMediaType", 415);
-export type UnsupportedMediaType = typeof UnsupportedMediaType.Type;
-
-export const TooManyRequests = publicErrorSchema("TooManyRequests", 429);
-export type TooManyRequests = typeof TooManyRequests.Type;
-
-export const BadGateway = publicErrorSchema("BadGateway", 502);
-export type BadGateway = typeof BadGateway.Type;
 
 export const publicError = (code: string, message: string) => ({ error: { code, message } });
 

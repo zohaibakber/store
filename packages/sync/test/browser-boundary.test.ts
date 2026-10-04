@@ -22,12 +22,6 @@ describe("shared entrypoint boundary", () => {
     expect(nativeSpecifiers(graph.bare)).toStrictEqual([]);
   });
 
-  it("reaches no native SQLite driver or node built-in from the IndexedDB entrypoint", () => {
-    const graph = collectGraph(resolve(packageRoot, "src/replica/indexeddb/store.ts"));
-    expect(graph.files.size).toBeGreaterThan(3);
-    expect(nativeSpecifiers(graph.bare)).toStrictEqual([]);
-  });
-
   it("still detects the native driver when it is reachable", () => {
     const graph = collectGraph(resolve(packageRoot, "src/sqlite.ts"));
     expect(nativeSpecifiers(graph.bare)).toContain("@effect/sql-sqlite-node/SqliteClient");

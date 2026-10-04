@@ -1,11 +1,15 @@
+import { InsightsReports, layerInventoryInsights } from "@store/client-db/insights";
 import {
   makeAnalyticsStore,
   openAnalyticsDatabase,
   openInventorySource,
 } from "@store/client-db/node-analytics";
+import { layerNodeSqliteReadonlyReplica } from "@store/client-db/node-sqlite";
+import { InventoryInsights } from "@store/contracts/replica";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
+import * as RpcServer from "effect/rpc/RpcServer";
 
 import {
   analyticsNoticeOf,
@@ -13,12 +17,8 @@ import {
   AnalyticsWorkerRpcs,
   type AnalyticsWorkerBoot,
 } from "./analytics-rpc";
-import { makeAnalyticsScheduler, type AnalyticsScheduler } from "./analytics-scheduler";
-
-const failure = (cause: unknown) =>
-  new AnalyticsWorkerFailure({
-    message: cause instanceof Error ? cause.message : "The insights worker failed.",
-  });
+import { makeAnalyticsScheduler } from "./analytics-scheduler";
+import { makeRendererServers, noRendererServers } from "./renderer-servers";
 
 const unavailable = () =>
   new AnalyticsWorkerFailure({ message: "The insights worker could not open its databases." });
@@ -34,63 +34,42 @@ export const makeAnalyticsWorkerHandlers = <R>(
         const source = yield* openInventorySource(config.replicaDatabasePath);
         const store = makeAnalyticsStore(database);
         const scheduler = yield* makeAnalyticsScheduler({ source, store });
-        return { store, scheduler };
+        const insights = yield* Layer.build(
+          layerInventoryInsights.pipe(
+            Layer.provide(
+              InsightsReports.layerAnalytics({
+                store,
+                observe: scheduler.observe,
+                changes: scheduler.events,
+              }),
+            ),
+            Layer.provide(layerNodeSqliteReadonlyReplica(config.replicaDatabasePath)),
+          ),
+        ).pipe(Effect.catchDefect(Effect.fail));
+        return { store, scheduler, insights };
       }).pipe(
         Effect.tapError((cause) => Effect.logError("AnalyticsWorker.open_failed", cause)),
         Effect.option,
       );
-      const read = <A>(
-        use: (current: {
-          readonly store: ReturnType<typeof makeAnalyticsStore>;
-          readonly scheduler: AnalyticsScheduler;
-        }) => Effect.Effect<A, unknown>,
-      ) =>
-        Option.match(opened, {
-          onNone: () => Effect.fail(unavailable()),
-          onSome: (current) => use(current).pipe(Effect.mapError(failure)),
-        });
-
+      const renderers = Option.isNone(opened)
+        ? noRendererServers
+        : yield* makeRendererServers((protocol) =>
+            RpcServer.layer(InventoryInsights).pipe(
+              Layer.provide(Layer.succeedContext(opened.value.insights)),
+              Layer.provide(protocol),
+            ),
+          );
       return AnalyticsWorkerRpcs.of({
         Ready: () =>
           Option.match(opened, {
             onNone: () => Effect.fail(unavailable()),
             onSome: () => Effect.succeed("ready" as const),
           }),
+        AttachRenderer: ({ port }) => renderers.attach(port),
         Notify: ({ notice }) =>
           Option.match(opened, {
             onNone: () => Effect.void,
             onSome: ({ scheduler }) => scheduler.notify(analyticsNoticeOf(notice)),
-          }),
-        ReadSummary: ({ context }) =>
-          read(({ store, scheduler }) =>
-            Effect.gen(function* () {
-              const status = yield* scheduler.observe(context);
-              const published = yield* Effect.try(() => store.published());
-              return { summary: published?.summary ?? null, status };
-            }),
-          ),
-        ReadProducts: ({ context, ids }) =>
-          read(({ store, scheduler }) =>
-            Effect.gen(function* () {
-              const status = yield* scheduler.observe(context);
-              const found = yield* Effect.try(() => store.products(ids));
-              return { run: found.run ?? null, insights: found.insights, status };
-            }),
-          ),
-        ReadRestockPage: ({ context, request }) =>
-          read(({ store, scheduler }) =>
-            Effect.gen(function* () {
-              const status = yield* scheduler.observe(context);
-              const page = yield* Effect.try(() => store.restockPage(request));
-              return page === undefined
-                ? { run: null, rows: [], nextCursor: null, total: 0, cursorExpired: false, status }
-                : { ...page, status };
-            }),
-          ),
-        Changes: () =>
-          Option.match(opened, {
-            onNone: () => Stream.empty,
-            onSome: ({ scheduler }) => scheduler.events,
           }),
       });
     }),

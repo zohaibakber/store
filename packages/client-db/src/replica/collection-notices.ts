@@ -155,23 +155,6 @@ export const accumulateNotice = (
   };
 };
 
-export const invalidateEverything = (
-  accumulator: NoticeAccumulator | undefined,
-  stamp: {
-    readonly workspaceToken: string;
-    readonly generationId: string;
-    readonly localCommitVersion: number;
-  },
-): NoticeAccumulator => ({
-  workspaceToken: stamp.workspaceToken,
-  generationId: stamp.generationId,
-  version: Math.max(stamp.localCommitVersion, accumulator?.version ?? 0),
-  full: true,
-  entities: new Set(),
-  keys: new Map(),
-  overflowed: new Set(),
-});
-
 export const mergeAccumulators = (
   earlier: NoticeAccumulator,
   later: NoticeAccumulator | undefined,

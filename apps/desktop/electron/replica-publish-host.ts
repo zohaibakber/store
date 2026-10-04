@@ -19,22 +19,28 @@ import {
   type PublishPorts,
 } from "./replica-publish";
 import { ReplicaWorkerFailure } from "./replica-rpc";
-import { sendToRenderer, type ReplicaSession, type ReplicaSessions } from "./replica-sessions";
+import {
+  sendToRenderer,
+  type WorkspaceSession,
+  type WorkspaceSessions,
+} from "./workspace-sessions";
 
 type ReplicaPublishHost = {
   readonly offer: (
-    session: ReplicaSession | undefined,
+    session: WorkspaceSession | undefined,
     organizationId: string,
   ) => Effect.Effect<PublishOffer>;
   readonly publish: (
-    session: ReplicaSession | undefined,
+    session: WorkspaceSession | undefined,
     organizationId: string,
   ) => Effect.Effect<PublishOutcome>;
   readonly discard: (
-    session: ReplicaSession | undefined,
+    session: WorkspaceSession | undefined,
     organizationId: string,
   ) => Effect.Effect<PublishOffer>;
-  readonly localCatalog: (session: ReplicaSession | undefined) => Effect.Effect<LocalCatalogReport>;
+  readonly localCatalog: (
+    session: WorkspaceSession | undefined,
+  ) => Effect.Effect<LocalCatalogReport>;
 };
 
 const PUBLISH_NEEDS_ORGANIZATION = "Open the organization that should receive this device's data.";
@@ -49,10 +55,10 @@ const CATALOG_SOURCES = InventorySubsetSummarySpec.fields.source.literals;
 
 const messageOf = (cause: { readonly message: string }) => cause.message;
 
-export const makeReplicaPublishHost = (sessions: ReplicaSessions): ReplicaPublishHost => {
+export const makeReplicaPublishHost = (sessions: WorkspaceSessions): ReplicaPublishHost => {
   const publishTurn = Semaphore.makeUnsafe(1);
 
-  const portsFor = (session: ReplicaSession, organizationId: string): PublishPorts => ({
+  const portsFor = (session: WorkspaceSession, organizationId: string): PublishPorts => ({
     organizationId,
     databasePath: sessions.localDatabasePath,
     worker: (use) =>
@@ -65,15 +71,13 @@ export const makeReplicaPublishHost = (sessions: ReplicaSessions): ReplicaPublis
       ),
   });
 
-  const readOpenCatalog = (session: ReplicaSession): Effect.Effect<LocalCatalogReport> =>
+  const readOpenCatalog = (session: WorkspaceSession): Effect.Effect<LocalCatalogReport> =>
     sessions
       .whenOpen(session, (current) =>
         Effect.findFirst(CATALOG_SOURCES, (source) =>
-          current.admission
-            .read(
-              current.reader.useIdempotent((reader) =>
-                reader.client.SummarizeSubset({ spec: { source, distinct: [] } }),
-              ),
+          current.reader
+            .useIdempotent((reader) =>
+              reader.client.SummarizeSubset({ spec: { source, distinct: [] } }),
             )
             .pipe(Effect.map((read) => read.summary.count > 0)),
         ),
@@ -86,7 +90,7 @@ export const makeReplicaPublishHost = (sessions: ReplicaSessions): ReplicaPublis
       );
 
   const withLocalReplicaClosed = <A>(
-    session: ReplicaSession | undefined,
+    session: WorkspaceSession | undefined,
     organizationId: string,
     use: (ports: PublishPorts) => Effect.Effect<A>,
     otherwise: (message: string) => A,

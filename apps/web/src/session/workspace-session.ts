@@ -1,5 +1,5 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
-import type { CatalogLifetime, CatalogReplica } from "@store/inventory-react";
+import type { CatalogLifetime } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FiberHandle from "effect/FiberHandle";
@@ -63,7 +63,7 @@ type DeviceChange = Exclude<WorkspaceChange, { readonly _tag: "Session" }>;
 
 type WorkspaceSessionPorts = {
   readonly session: ReplayChannel<WorkspaceSession>;
-  readonly catalog: CatalogLifetime<CatalogReplica>;
+  readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly device?: DeviceWorkspaceStore;
 };

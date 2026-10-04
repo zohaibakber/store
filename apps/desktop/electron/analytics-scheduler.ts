@@ -7,6 +7,7 @@ import {
   type AnalyticsStatus,
   type InsightsContext,
 } from "@store/contracts";
+import type { InsightsChange } from "@store/contracts/replica";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -19,7 +20,6 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { makeChangeJournal, RELEVANT_ENTITIES } from "./analytics-changes";
 import { refreshAnalytics } from "./analytics-pipeline";
-import type { AnalyticsEvent } from "./analytics-rpc";
 
 const PROGRESS_STEPS = 20;
 const CLEANUP_BATCH = 5_000;
@@ -38,7 +38,7 @@ type Activity = "idle" | "scheduled" | "running";
 export type AnalyticsScheduler = {
   readonly notify: (notice: ReplicaCommitNotice) => Effect.Effect<void>;
   readonly observe: (context: InsightsContext) => Effect.Effect<AnalyticsStatus>;
-  readonly events: Stream.Stream<AnalyticsEvent>;
+  readonly events: Stream.Stream<InsightsChange>;
 };
 
 export const makeAnalyticsScheduler = (deps: {
@@ -55,13 +55,13 @@ export const makeAnalyticsScheduler = (deps: {
     const failure = yield* Ref.make<string | null>(null);
     const verify = yield* Ref.make(true);
     const delayed = yield* Ref.make(false);
-    const event = yield* SubscriptionRef.make<AnalyticsEvent>({
+    const event = yield* SubscriptionRef.make<InsightsChange>({
       revision: deps.store.publishedRun()?.revision ?? 0,
       state: "idle",
       progress: null,
     });
 
-    const stateOf = (current: Activity, hasRun: boolean): AnalyticsEvent["state"] =>
+    const stateOf = (current: Activity, hasRun: boolean): InsightsChange["state"] =>
       current === "idle" ? "idle" : hasRun ? "refreshing" : "building";
 
     const publishEvent = Effect.gen(function* () {

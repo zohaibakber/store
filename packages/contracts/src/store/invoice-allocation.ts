@@ -1,3 +1,6 @@
+import * as Result from "effect/Result";
+
+import { CatalogRefusal } from "../catalog/refusal";
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
@@ -50,75 +53,93 @@ export const allocateInvoiceLine = (
   line: CreateInvoiceLineInput,
   product: { readonly name: string; readonly unitsPerPack: number },
   batches: ReadonlyArray<AllocatableBatch>,
-): ReadonlyArray<InvoiceLineTake> => {
-  if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) {
-    throw new Error("Quantities must be whole numbers of 1 or more.");
-  }
-  if (!Number.isSafeInteger(line.salePrice) || line.salePrice < 0) {
-    throw new Error("Sale prices cannot be negative.");
-  }
+): Result.Result<ReadonlyArray<InvoiceLineTake>, CatalogRefusal> =>
+  Result.gen(function* () {
+    if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "invalidInput",
+          message: "Quantities must be whole numbers of 1 or more.",
+        }),
+      );
+    }
+    if (!Number.isSafeInteger(line.salePrice) || line.salePrice < 0) {
+      return yield* Result.fail(
+        new CatalogRefusal({ reason: "invalidInput", message: "Sale prices cannot be negative." }),
+      );
+    }
 
-  const sorted = [...batches].sort(compareBatchesFefo);
-  const candidates = line.batchId
-    ? sorted.filter((batch) => batch.id === line.batchId)
-    : sorted.filter((batch) => availableForLine(batch, product, line.quantityType) > 0);
-  if (line.batchId && candidates.length === 0) {
-    throw new Error(`The selected batch for ${product.name} is gone.`);
-  }
+    const sorted = [...batches].sort(compareBatchesFefo);
+    const candidates = line.batchId
+      ? sorted.filter((batch) => batch.id === line.batchId)
+      : sorted.filter((batch) => availableForLine(batch, product, line.quantityType) > 0);
+    if (line.batchId && candidates.length === 0) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "missingReference",
+          message: `The selected batch for ${product.name} is gone.`,
+        }),
+      );
+    }
 
-  const available = candidates.reduce(
-    (sum, batch) => sum + availableForLine(batch, product, line.quantityType),
-    0,
-  );
-  if (available < line.quantity) {
-    throw new Error(
-      `Not enough stock for ${product.name}: ${available} available, ${line.quantity} requested.`,
+    const available = candidates.reduce(
+      (sum, batch) => sum + availableForLine(batch, product, line.quantityType),
+      0,
     );
-  }
+    if (available < line.quantity) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "insufficientStock",
+          message: `Not enough stock for ${product.name}: ${available} available, ${line.quantity} requested.`,
+        }),
+      );
+    }
 
-  const takes: InvoiceLineTake[] = [];
-  const remainingById = new Map(
-    candidates.map((batch) => [
-      batch.id,
-      { packQuantity: batch.packQuantity, unitQuantity: batch.unitQuantity },
-    ]),
-  );
-  let remaining = line.quantity;
-  for (const batch of candidates) {
-    if (remaining === 0) break;
-    const stock = remainingById.get(batch.id);
-    if (!stock) continue;
-    const batchAvailable =
-      line.quantityType === "pack"
-        ? stock.packQuantity
-        : stock.packQuantity * product.unitsPerPack + stock.unitQuantity;
-    const taken = Math.min(batchAvailable, remaining);
-    remaining -= taken;
-    const packsOpened =
-      line.quantityType === "unit"
-        ? Math.max(0, Math.ceil((taken - stock.unitQuantity) / product.unitsPerPack))
-        : 0;
-    const nextPackQuantity =
-      line.quantityType === "pack" ? stock.packQuantity - taken : stock.packQuantity - packsOpened;
-    const nextUnitQuantity =
-      line.quantityType === "pack"
-        ? stock.unitQuantity
-        : stock.unitQuantity + packsOpened * product.unitsPerPack - taken;
-    remainingById.set(batch.id, {
-      packQuantity: nextPackQuantity,
-      unitQuantity: nextUnitQuantity,
-    });
-    takes.push({
-      batchId: batch.id,
-      batchNumber: batch.batchNumber,
-      quantity: taken,
-      packsOpened,
-      nextPackQuantity,
-      nextUnitQuantity,
-    });
-  }
-  return takes;
-};
+    const takes: InvoiceLineTake[] = [];
+    const remainingById = new Map(
+      candidates.map((batch) => [
+        batch.id,
+        { packQuantity: batch.packQuantity, unitQuantity: batch.unitQuantity },
+      ]),
+    );
+    let remaining = line.quantity;
+    for (const batch of candidates) {
+      if (remaining === 0) break;
+      const stock = remainingById.get(batch.id);
+      if (!stock) continue;
+      const batchAvailable =
+        line.quantityType === "pack"
+          ? stock.packQuantity
+          : stock.packQuantity * product.unitsPerPack + stock.unitQuantity;
+      const taken = Math.min(batchAvailable, remaining);
+      remaining -= taken;
+      const packsOpened =
+        line.quantityType === "unit"
+          ? Math.max(0, Math.ceil((taken - stock.unitQuantity) / product.unitsPerPack))
+          : 0;
+      const nextPackQuantity =
+        line.quantityType === "pack"
+          ? stock.packQuantity - taken
+          : stock.packQuantity - packsOpened;
+      const nextUnitQuantity =
+        line.quantityType === "pack"
+          ? stock.unitQuantity
+          : stock.unitQuantity + packsOpened * product.unitsPerPack - taken;
+      remainingById.set(batch.id, {
+        packQuantity: nextPackQuantity,
+        unitQuantity: nextUnitQuantity,
+      });
+      takes.push({
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        quantity: taken,
+        packsOpened,
+        nextPackQuantity,
+        nextUnitQuantity,
+      });
+    }
+    return takes;
+  });
 
 export const allocationsCoverInput = (
   input: CreateInvoiceInput,

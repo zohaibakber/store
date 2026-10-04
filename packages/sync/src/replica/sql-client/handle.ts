@@ -34,4 +34,10 @@ export class SqliteReplica extends Context.Service<SqliteReplica, SqliteReplicaH
     SqliteReplica,
     SqlClient.use(openReplicaStoreFromClient),
   );
+
+  static readonly layerReadonlyFromClient: Layer.Layer<SqliteReplica, never, SqlClient> =
+    Layer.effect(
+      SqliteReplica,
+      SqlClient.use((sql) => Effect.map(makeReplicaDb(sql), (db) => ({ sql, db }))),
+    );
 }

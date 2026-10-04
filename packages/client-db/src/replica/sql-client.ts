@@ -5,12 +5,17 @@ import {
   type SyncWakeReason,
 } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
+import type * as Context from "effect/Context";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import type { SqlClient } from "effect/sql/SqlClient";
 
 import { replicaSyncActivityOf } from "./activity";
-import { openSqliteReplicaSyncSession, type SqliteReplicaIdentity } from "./sql-client-session";
+import {
+  openSqliteReplicaSyncSession,
+  type SqliteReplicaIdentity,
+  type SqliteReplicaServices,
+} from "./sql-client-session";
 import type { ReplicaHandle } from "./types";
 
 export type { SqliteReplicaIdentity } from "./sql-client-session";
@@ -30,6 +35,7 @@ type OpenSqlClientReplicaInput<E> = {
 
 export type SqlClientReplicaHandle = ReplicaHandle & {
   readonly replicaId: string;
+  readonly services: Context.Context<SqliteReplicaServices>;
   readonly wakeSync: (reason: SyncWakeReason) => Promise<void>;
   readonly setVisible: (visible: boolean) => Promise<void>;
   readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
@@ -60,6 +66,7 @@ export const openSqlClientReplicaHandle = async <E>(
     workspaceToken: input.databaseName,
     engine: "sqlite",
     replicaId: session.replicaId,
+    services: session.services,
     readSyncActivity: async () => replicaSyncActivityOf(await session.readOutboxActivity()),
     readPendingRowIds: session.readPendingRowIds,
     stamp: session.stamp,

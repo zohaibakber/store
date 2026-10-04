@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
@@ -6,16 +6,10 @@ import {
   SyncEpoch,
   type SyncPullResult,
 } from "@store/contracts";
-import {
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_ORGANIZATION_ID,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-} from "@store/contracts/sync/fixtures";
+import { LAST_UNIT_EPOCH, LAST_UNIT_PRODUCT_ID } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { ReplicaOutboxActivity } from "../src/replica/activity";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "../src/replica/sqlite/activity";
@@ -23,12 +17,10 @@ import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   acceptedCatalogReceipt,
   catalogEnvelope,
   renameProductWrite,
-  seedCatalogGroup,
   seedSpareBatchGroup,
 } from "./lib/pending-fixture";
 import { seedReplicaTenUnits } from "./lib/replica-fixture";
@@ -42,12 +34,6 @@ type ActivityHarness = {
   ) => Effect.Effect<ReadonlyArray<string>, unknown>;
   readonly close: () => Effect.Effect<void, unknown>;
 };
-
-const databaseName = "replica-activity";
-
-afterEach(() => {
-  indexedDB.deleteDatabase(databaseName);
-});
 
 const sqliteHarness = Effect.fn("activity.sqlite")(function* () {
   const scope = yield* Scope.make();
@@ -63,33 +49,7 @@ const sqliteHarness = Effect.fn("activity.sqlite")(function* () {
   } satisfies ActivityHarness;
 });
 
-const indexedHarness = Effect.fn("activity.indexeddb")(function* () {
-  const store = yield* makeIndexedDbReplicaStore({
-    databaseName,
-    databaseIdentity: databaseName,
-    identity: {
-      organizationId: LAST_UNIT_ORGANIZATION_ID,
-      userId: "user-1",
-      replicaId: LAST_UNIT_REPLICA_A,
-    },
-    indexedDB,
-    IDBKeyRange,
-  });
-  yield* applyGroup(store, seedCatalogGroup);
-  yield* applyGroup(store, seedSpareBatchGroup);
-  return {
-    store,
-    incarnation: "local",
-    readActivity: () => store.readOutboxActivity(),
-    readPendingRowIds: (entity) => store.readPendingRowIds(entity),
-    close: () => store.dispose(),
-  } satisfies ActivityHarness;
-});
-
-const adapters = [
-  ["SQLite", sqliteHarness],
-  ["IndexedDB", indexedHarness],
-] as const;
+const adapters = [["SQLite", sqliteHarness]] as const;
 
 describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
   const withHarness = <A, E>(use: (harness: ActivityHarness) => Effect.Effect<A, E>) =>

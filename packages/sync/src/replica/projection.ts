@@ -1,8 +1,8 @@
 import {
-  assertCanChangeUnitsPerPack,
-  assertCanDeleteBatch,
-  assertCanDeleteCategory,
-  assertCanDeleteProduct,
+  checkCanChangeUnitsPerPack,
+  checkCanDeleteBatch,
+  checkCanDeleteCategory,
+  checkCanDeleteProduct,
   canCreatePurchaseOrderAs,
   canMovePurchaseOrder,
   isPurchaseOrderOpen,
@@ -16,6 +16,7 @@ import {
   type SyncEntity,
   type SyncProtocolCode,
 } from "@store/contracts";
+import type { CatalogRefusal } from "@store/contracts/catalog-refusal";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -247,23 +248,15 @@ const notInOrganization = (label: string, id: string): Rejection => ({
   message: `${label} ${id} is not available in this organization.`,
 });
 
-const catalogRuleError = (cause: unknown): never => {
-  throw syncProtocolError(
-    "ENTITY_CONFLICT",
-    cause instanceof Error ? cause.message : "The catalog write is not allowed.",
-  );
-};
-
 const refuse = (pass: CatalogPass, rejection: Rejection): void => {
   if (pass.enforce) throw syncProtocolError(rejection.code, rejection.message);
 };
 
-const guard = (pass: CatalogPass, run: () => void): void => {
+const guard = (pass: CatalogPass, run: () => Result.Result<void, CatalogRefusal>): void => {
   if (!pass.enforce) return;
-  try {
-    run();
-  } catch (cause) {
-    catalogRuleError(cause);
+  const result = run();
+  if (Result.isFailure(result)) {
+    throw syncProtocolError("ENTITY_CONFLICT", result.failure.message);
   }
 };
 
@@ -411,7 +404,7 @@ const writeCategory = (pass: CatalogPass, write: WriteOf<"category">): void => {
   switch (write.action) {
     case "delete": {
       const blocking = pass.lookup.productInCategory(write.id);
-      guard(pass, () => assertCanDeleteCategory(blocking ? [blocking] : [], write.id));
+      guard(pass, () => checkCanDeleteCategory(blocking ? [blocking] : [], write.id));
       if (existing) remove(pass, "category", write.id);
       return;
     }
@@ -436,7 +429,7 @@ const writeProduct = (pass: CatalogPass, write: WriteOf<"product">): void => {
   switch (write.action) {
     case "delete": {
       const stocked = pass.lookup.stockedBatchOfProduct(write.id);
-      guard(pass, () => assertCanDeleteProduct(stocked ? [stocked] : [], write.id));
+      guard(pass, () => checkCanDeleteProduct(stocked ? [stocked] : [], write.id));
       if (existing) remove(pass, "product", write.id);
       return;
     }
@@ -444,7 +437,7 @@ const writeProduct = (pass: CatalogPass, write: WriteOf<"product">): void => {
       const stored = pass.lookup.product(write.id);
       if (stored && stored.unitsPerPack !== write.row.unitsPerPack) {
         const stocked = pass.lookup.stockedBatchOfProduct(write.id);
-        guard(pass, () => assertCanChangeUnitsPerPack(stocked ? [stocked] : [], write.id));
+        guard(pass, () => checkCanChangeUnitsPerPack(stocked ? [stocked] : [], write.id));
       }
       const row: SyncEntityRow<"product"> = {
         id: write.id,
@@ -500,7 +493,7 @@ const writeBatch = (pass: CatalogPass, write: WriteOf<"batch">): void => {
   switch (write.action) {
     case "delete": {
       const stored = pass.lookup.batch(write.id);
-      if (stored) guard(pass, () => assertCanDeleteBatch(stored));
+      if (stored) guard(pass, () => checkCanDeleteBatch(stored));
       if (existing) remove(pass, "batch", write.id);
       return;
     }

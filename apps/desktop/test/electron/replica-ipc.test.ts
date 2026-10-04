@@ -4,18 +4,16 @@ import path from "node:path";
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vitest";
 
 import {
-  REPLICA_ACTIVITY_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_STATUS_CHANNEL,
-  REPLICA_ENQUEUE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_READ_SUBSET_CHANNEL,
+  REPLICA_RETRY_CHANNEL,
 } from "../../electron/ipc-channels";
 import { isTrustedIpcSenderFrame } from "../../electron/ipc-sender";
 import {
@@ -30,28 +28,6 @@ const allowed = ["https://app.tabaaq.local"];
 
 const untrusted = "Rejected IPC from an untrusted renderer.";
 
-const enqueueRequest = {
-  operationId: "op-1",
-  occurredAt: 1,
-  command: {
-    _tag: "catalogWrite",
-    payload: {
-      commandId: "op-1",
-      deviceId: "device-1",
-      occurredAt: 1,
-      writes: [
-        {
-          entity: "category",
-          action: "upsert",
-          id: "22222222-2222-4222-8222-222222222222",
-          expectedRowVersion: null,
-          row: { name: "Tea", tracksPacks: true },
-        },
-      ],
-    },
-  },
-};
-
 const openInput = {
   authority: "remote",
   organizationId: "org-1",
@@ -59,40 +35,42 @@ const openInput = {
   replicaId: "device-1",
 };
 
+const MAIN_CHANNELS = [
+  "backup:apply-restore",
+  "backup:choose-restore",
+  "backup:discard-restore",
+  "backup:save",
+  "publish:discard",
+  "publish:local-catalog",
+  "publish:offer",
+  "publish:start",
+  "replica:close",
+  "replica:open",
+  "replica:retry",
+];
+
 const decodeOpened = Schema.decodeUnknownSync(Schema.Struct({ workspaceToken: Schema.String }));
 
 const setupIpc = () => {
-  const workerReads: Array<string> = [];
   const handlers = ReplicaWorkerRpcs.toLayer({
     Engine: () => Effect.succeed("sqlite" as const),
+    AttachRenderer: () => Effect.void,
     Stamp: () => Effect.die("unused"),
-    ReadInsights: () => Effect.die("unused"),
-    ReadSyncActivity: () => Effect.die("unused"),
-    EnqueueCommand: () => Effect.die("unused"),
-    ReadCommandStatus: () => Effect.die("unused"),
     SetForeground: () => Effect.void,
-    WakeSyncUpload: () => Effect.die("unused"),
     BackUp: () => Effect.die("unused"),
     StageRestore: () => Effect.die("unused"),
     ReleaseForRestore: () => Effect.die("unused"),
     PublishSummary: () => Effect.die("unused"),
     PublishStage: () => Stream.die("unused"),
     PublishCommit: () => Effect.die("unused"),
+    PublishStatus: () => Effect.die("unused"),
     Commits: () => Stream.never,
     SyncHealth: () => Stream.never,
-    ProxyRequests: () => Stream.never,
-    ProxyRespond: () => Effect.void,
-    AccessTokenRequests: () => Stream.never,
-    AccessTokenRespond: () => Effect.void,
+    SetAccessToken: () => Effect.void,
   });
   const readerHandlers = ReplicaReaderRpcs.toLayer({
     Engine: () => Effect.succeed("sqlite" as const),
-    ReadSubset: ({ spec }) =>
-      Effect.sync(() => {
-        workerReads.push(spec.source);
-        return { stamp: { generationId: "1", localCommitVersion: 0 }, rows: [] };
-      }),
-    ReadBatch: () => Effect.die("unused"),
+    AttachRenderer: () => Effect.void,
     SummarizeSubset: () => Effect.die("unused"),
   });
   const spawnReader: SpawnReplicaReader = () =>
@@ -130,8 +108,10 @@ const setupIpc = () => {
     userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-test-")),
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
-    syncApiRequest: () => Effect.succeed({ ok: true, status: 200, bodyText: "{}" }),
-    liveAccessToken: async () => "access-1",
+    accessTokens: {
+      current: async () => Redacted.make("access-1"),
+      subscribe: () => () => undefined,
+    },
     allowedOrigins: () => allowed,
     backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
     sessions: { spawnWorker, spawnReader },
@@ -154,7 +134,7 @@ const setupIpc = () => {
   };
   const open = async (event: ReplicaInvokeEvent) =>
     decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, openInput));
-  return { workerReads, listeners, registration, senderEvent, invoke, open };
+  return { listeners, registration, senderEvent, invoke, open };
 };
 
 describe("replica worker IPC contract", () => {
@@ -167,7 +147,7 @@ describe("replica worker IPC contract", () => {
 
     const { listeners, registration, senderEvent, invoke, open } = setupIpc();
     const { workspaceToken } = await open(senderEvent(7));
-    expect(listeners.size).toBeGreaterThan(20);
+    expect(Array.from(listeners.keys()).sort()).toEqual(MAIN_CHANNELS);
     for (const channel of listeners.keys()) {
       expect(() => invoke(channel, senderEvent(7, "https://evil.example"), workspaceToken)).toThrow(
         untrusted,
@@ -179,58 +159,18 @@ describe("replica worker IPC contract", () => {
     await registration.dispose();
   });
 
-  it("rejects malformed subset specs before they reach the worker", async () => {
-    const { workerReads, registration, senderEvent, invoke, open } = setupIpc();
-    const event = senderEvent(7);
-    const { workspaceToken } = await open(event);
-    await expect(
-      invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
-        workspaceToken,
-        requestId: "read-5",
-        spec: {
-          source: "categories",
-          where: { _tag: "compare", column: 'id" OR 1=1 --', op: "eq", value: "x" },
-          orderBy: [],
-          limit: 10,
-          offset: 0,
-        },
-      }),
-    ).rejects.toThrow();
-    await expect(
-      invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
-        workspaceToken,
-        sql: "delete from categories",
-        parameters: [],
-      }),
-    ).rejects.toThrow();
-    expect(workerReads).toEqual([]);
-    await invoke(REPLICA_READ_SUBSET_CHANNEL, event, {
-      workspaceToken,
-      requestId: "read-6",
-      spec: { source: "categories", orderBy: [], limit: 10, offset: 0 },
-    });
-    expect(workerReads).toEqual(["categories"]);
-    await registration.dispose();
-  });
-
   it("rejects replica channels from a different renderer", async () => {
     const { registration, senderEvent, invoke, open } = setupIpc();
     const { workspaceToken } = await open(senderEvent(7));
     const intruder = senderEvent(9);
-    await expect(invoke(REPLICA_ACTIVITY_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
-      "Rejected replica activity read from a different renderer.",
+    await expect(invoke(REPLICA_RETRY_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
+      "Rejected replica recovery retry from a different renderer.",
     );
-    await expect(
-      invoke(REPLICA_COMMAND_STATUS_CHANNEL, intruder, { workspaceToken, operationId: "op-1" }),
-    ).rejects.toThrow("Rejected replica command status from a different renderer.");
-    await expect(
-      invoke(REPLICA_ENQUEUE_CHANNEL, intruder, { workspaceToken, request: enqueueRequest }),
-    ).rejects.toThrow("Rejected replica enqueue from a different renderer.");
     await expect(invoke(REPLICA_CLOSE_CHANNEL, intruder, workspaceToken)).rejects.toThrow(
       "Rejected replica close from a different renderer.",
     );
     await expect(
-      invoke(REPLICA_ACTIVITY_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
+      invoke(REPLICA_RETRY_CHANNEL, senderEvent(7), "00000000-0000-4000-8000-000000000000"),
     ).rejects.toThrow("Unknown replica workspace.");
     await registration.dispose();
   });

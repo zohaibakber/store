@@ -27,7 +27,6 @@
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "@store/workspace": "workspace:*",
-    "@tanstack/react-db": "0.4.1",
     "effect": "catalog:",
     "expo": "58.0.0-preview.7",
     "expo-application": "~58.0.1",

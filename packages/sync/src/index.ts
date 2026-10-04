@@ -2,6 +2,7 @@ export { SyncEngine } from "./engine";
 export type { LiveNetworkSignal } from "./live-socket";
 export { MAX_REJECTED_ACTIVITY_ROWS } from "./replica/activity";
 export type { OutboxActivityRow, ReplicaOutboxActivity } from "./replica/activity";
+export { mapReplicaStoreFailure } from "./replica/errors";
 export { ReplicaStore } from "./replica/store";
 export { SyncScheduler } from "./scheduler";
 export type { SyncSchedulerContract, SyncSchedulerPolicy, SyncWakeReason } from "./scheduler";

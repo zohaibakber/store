@@ -4,7 +4,10 @@ The Tabaaq product UI: React, TanStack Router, and the design system. It ships
 two ways from one source tree and one `index.html`.
 
 - In the browser it is the website. `start-web.tsx` uses browser history and
-  the IndexedDB replica from `@store/sync/replica/indexeddb`. `WebAuthBroker` keeps the
+  mounts the app with no replica (`NO_REPLICA` in
+  `src/lib/inventory/host-inventory.ts`): sign-in, organizations and settings
+  work, and the shell shows "Inventory is in the desktop app" in place of every
+  inventory screen. `WebAuthBroker` keeps the
   access token in memory; the refresh token is the auth Worker's HttpOnly
   cookie. A localStorage hint records that this origin signed in, so a cold
   start without it skips the refresh. Google returns to `/sign-in?code=…`. New
@@ -40,11 +43,8 @@ inside it. `routes/sign-in.tsx` sits outside the layout and renders bare.
 The two hosts split this differently, through `signedInApp` in `vite.app.ts`:
 
 - The website passes `"deferred"`. The shell, and each route's loader together
-  with its component, are separate chunks, and the catalog lifetime opens the
-  workspace through a dynamic import (`createWebCatalogLifetime`). A signed-out
-  visitor downloads none of the query layer. When the session hint is present,
-  `start-web.tsx` starts fetching the replica engine, the workspace and the
-  shell alongside the token refresh.
+  with its component, are separate chunks. When the session hint is present,
+  `start-web.tsx` starts fetching the shell alongside the token refresh.
 - The desktop passes `"eager"`. The shell and the loaders stay in the startup
   bundle, because the local workspace makes the shell the first screen.
 
@@ -59,9 +59,8 @@ from `@store/inventory-react`. It re-reads aggregated replica facts after
 commits that touch stock or sales, settled so a sync burst costs one read.
 Planning settings persist per device through `Atom.kvs` over `localStorage`.
 
-Loading is Suspense-based. Routes read replica data with `useSuspense*`
-hooks (TanStack DB `useLiveSuspenseQuery`) and insights with
-`useAtomSuspense`, so first loads show the router's `PageSkeleton` or a
+Loading is Suspense-based. Routes read replica data and insights with `useSuspense*`
+hooks over atoms (`useAtomSuspense`), so first loads show the router's `PageSkeleton` or a
 section skeleton, and failures reach the route `errorComponent`. After the
 first load, background refreshes keep the current report and show a small
 spinner instead of re-suspending.

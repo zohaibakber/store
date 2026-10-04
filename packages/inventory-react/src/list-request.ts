@@ -1,8 +1,24 @@
-export const MAX_LIST_SEARCH_LENGTH = 120;
+export {
+  INVOICE_SORT_COLUMNS,
+  MAX_LIST_SEARCH_LENGTH,
+  PRODUCT_SORT_COLUMNS,
+  PURCHASE_ORDER_SORT_COLUMNS,
+  PURCHASE_ORDER_TABS,
+  type InvoiceSortColumn,
+  type ProductSortColumn,
+  type PurchaseOrderSortColumn,
+  type PurchaseOrderTab,
+  type SortDirection,
+} from "@store/contracts/replica";
+import {
+  MAX_LIST_PAGE_SIZE,
+  MAX_LIST_SEARCH_LENGTH,
+  type SortDirection,
+} from "@store/contracts/replica";
 
 type ListSort<Column extends string> = {
   readonly column: Column;
-  readonly direction: "asc" | "desc";
+  readonly direction: SortDirection;
 };
 
 export type ListPage<Column extends string> = {
@@ -11,22 +27,11 @@ export type ListPage<Column extends string> = {
   readonly pageSize: number;
 };
 
-export const INVOICE_SORT_COLUMNS = ["createdAt", "invoiceNumber"] as const;
-export type InvoiceSortColumn = (typeof INVOICE_SORT_COLUMNS)[number];
+export const boundedPage = <Column extends string>(page: ListPage<Column>): ListPage<Column> => ({
+  sort: { column: page.sort.column, direction: page.sort.direction },
+  pageIndex: Math.max(0, Math.floor(page.pageIndex)),
+  pageSize: Math.min(MAX_LIST_PAGE_SIZE, Math.max(1, Math.floor(page.pageSize))),
+});
 
-export const PRODUCT_SORT_COLUMNS = [
-  "name",
-  "aisle",
-  "unitsPerPack",
-  "purchasePrice",
-  "retailPrice",
-  "unitPrice",
-  "updatedAt",
-] as const;
-export type ProductSortColumn = (typeof PRODUCT_SORT_COLUMNS)[number];
-
-export const PURCHASE_ORDER_TABS = ["open", "drafts", "closed"] as const;
-export type PurchaseOrderTab = (typeof PURCHASE_ORDER_TABS)[number];
-
-export const PURCHASE_ORDER_SORT_COLUMNS = ["createdAt", "orderNumber"] as const;
-export type PurchaseOrderSortColumn = (typeof PURCHASE_ORDER_SORT_COLUMNS)[number];
+export const boundedText = (text: string | undefined): string =>
+  (text ?? "").slice(0, MAX_LIST_SEARCH_LENGTH);

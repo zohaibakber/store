@@ -1,6 +1,6 @@
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { isWhatsAppUrl } from "@store/services/purchasing";
-import { SessionHttp, sessionFetch } from "@store/workspace";
+import { SessionHttp } from "@store/workspace";
 import * as Effect from "effect/Effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
@@ -127,15 +127,6 @@ export const createWebAppHost = (options: WebAppHostOptions) => {
 
   return {
     host,
-    authenticatedFetch: sessionFetch((effect, runOptions) =>
-      runtime.runPromise(effect, runOptions),
-    ),
-    liveAccessToken: ({ force }: { readonly force: boolean }) =>
-      runtime.runPromise(
-        SessionHttp.use((session) => session.ensureFreshAccess(force)).pipe(
-          Effect.map((access) => access?.accessToken ?? null),
-        ),
-      ),
     sessionExpected: () => runtime.runPromise(WebAuth.use((auth) => auth.sessionExpected)),
     initialize: () => runtime.runPromise(WebAuth.use((auth) => auth.initialize)),
   };
