@@ -7,6 +7,7 @@ import type {
 } from "@store/web/host/workspace-backup";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as Result from "effect/Result";
 
 import {
@@ -26,14 +27,20 @@ export type ReplicaBackupDialogs = {
 type StagedRestores = {
   readonly stage: (workspaceToken: string, stagedPath: string) => void;
   readonly take: (workspaceToken: string) => string | undefined;
-  readonly discard: (workspaceToken: string) => Effect.Effect<void>;
+  readonly discard: (workspaceToken: string) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 export type ReplicaBackup = {
   readonly backUp: (session: WorkspaceSession | undefined) => Effect.Effect<BackupOutcome>;
-  readonly chooseRestore: (session: WorkspaceSession | undefined) => Effect.Effect<RestoreChoice>;
-  readonly applyRestore: (session: WorkspaceSession | undefined) => Effect.Effect<RestoreOutcome>;
-  readonly discardRestore: (session: WorkspaceSession | undefined) => Effect.Effect<void>;
+  readonly chooseRestore: (
+    session: WorkspaceSession | undefined,
+  ) => Effect.Effect<RestoreChoice, never, FileSystem.FileSystem>;
+  readonly applyRestore: (
+    session: WorkspaceSession | undefined,
+  ) => Effect.Effect<RestoreOutcome, never, FileSystem.FileSystem>;
+  readonly discardRestore: (
+    session: WorkspaceSession | undefined,
+  ) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 const RELEASE_LIMIT = "50 seconds";

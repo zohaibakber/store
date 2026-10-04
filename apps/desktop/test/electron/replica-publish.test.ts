@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import {
   commitPublish,
   makeImportClient,
@@ -10,6 +11,7 @@ import {
 } from "@store/client-db/node-publish";
 import { ImportId } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import type * as FileSystem from "effect/FileSystem";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
@@ -39,6 +41,9 @@ const CONFLICT = "This organization already has inventory.";
 const API = "https://api.example.com";
 
 const directories: Array<string> = [];
+
+const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) =>
+  Effect.runPromise(Effect.provide(effect, NodeFileSystem.layer));
 
 afterEach(() => {
   for (const directory of directories.splice(0))
@@ -180,8 +185,10 @@ const move = (organizationId = ORGANIZATION) => {
   };
   const device: Device = { current: FIRST, stage: "completes", commit: "sends" };
   const handlers = scriptedWorker(device, makeImportClient(organizationServer(server), API));
-  const withPorts = <A>(use: (ports: PublishPorts) => Effect.Effect<A>) =>
-    Effect.runPromise(
+  const withPorts = <A>(
+    use: (ports: PublishPorts) => Effect.Effect<A, never, FileSystem.FileSystem>,
+  ) =>
+    run(
       Effect.scoped(
         Effect.gen(function* () {
           const client = yield* RpcTest.makeClient(ReplicaWorkerRpcs).pipe(
@@ -206,12 +213,11 @@ const move = (organizationId = ORGANIZATION) => {
     publish: () => withPorts(publishLocalWorkspace),
     cancel: () => withPorts(discardPublish),
     record: (marker: { readonly organizationId: string; readonly importId: ImportId }) =>
-      Effect.runPromise(writePublishMarker(databasePath, { ...marker, startedAt: 1 })),
+      run(writePublishMarker(databasePath, { ...marker, startedAt: 1 })),
     look: async () => ({
       kept: existsSync(databasePath),
       archived: readdirSync(folder).some((name) => name.includes(".published-")),
-      marker: Option.getOrUndefined(await Effect.runPromise(readPublishMarker(databasePath)))
-        ?.importId,
+      marker: Option.getOrUndefined(await run(readPublishMarker(databasePath)))?.importId,
     }),
   };
 };
@@ -335,7 +341,7 @@ describe("resuming a move to an organization", () => {
         startedAt: 7,
       }),
     );
-    expect(await Effect.runPromise(readPublishMarker(moving.databasePath))).toEqual(
+    expect(await run(readPublishMarker(moving.databasePath))).toEqual(
       Option.some({ organizationId: ORGANIZATION, importId: FIRST, startedAt: 7 }),
     );
     moving.server.committed = FIRST;

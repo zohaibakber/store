@@ -1,4 +1,3 @@
-import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
@@ -11,6 +10,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -100,7 +100,9 @@ type WorkspaceSessionsOptions = WorkspaceSessionTuning & {
   readonly deviceLabel?: DeviceLabel | undefined;
   readonly accessTokens: AccessTokenSource;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
-  readonly onDispose: (session: WorkspaceSession) => Effect.Effect<void>;
+  readonly onDispose: (
+    session: WorkspaceSession,
+  ) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 export type WorkspaceSessions = {
@@ -111,7 +113,8 @@ export type WorkspaceSessions = {
     identity: typeof ReplicaOpenInput.Type,
   ) => Effect.Effect<
     { readonly workspaceToken: string; readonly engine: ReplicaSupervisor["engine"] },
-    ReplicaWorkerFailure | Error
+    ReplicaWorkerFailure | Error,
+    FileSystem.FileSystem
   >;
   readonly owned: (senderId: number, workspaceToken: string, action: string) => WorkspaceSession;
   readonly latestFor: (senderId: number) => WorkspaceSession | undefined;
@@ -129,27 +132,29 @@ export type WorkspaceSessions = {
   readonly closeWorkers: (workers: ReplicaWorkers) => Effect.Effect<void>;
   readonly reopen: (
     session: WorkspaceSession,
-  ) => Effect.Effect<WorkspaceSession, ReplicaWorkerFailure>;
+  ) => Effect.Effect<WorkspaceSession, ReplicaWorkerFailure, FileSystem.FileSystem>;
   readonly forget: (session: WorkspaceSession) => void;
-  readonly close: (senderId: number, workspaceToken: string) => Effect.Effect<void>;
-  readonly disposeAll: Effect.Effect<void>;
+  readonly close: (
+    senderId: number,
+    workspaceToken: string,
+  ) => Effect.Effect<void, never, FileSystem.FileSystem>;
+  readonly disposeAll: Effect.Effect<void, never, FileSystem.FileSystem>;
   readonly setForeground: (visible: boolean) => Effect.Effect<void>;
 };
 
 const prepareReplicaDirectory = Effect.fn("WorkspaceSessions.prepareDirectory")(function* (
   directory: string,
 ) {
-  yield* Effect.promise(() => mkdir(directory, { recursive: true }));
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.orDie);
   const now = yield* Clock.currentTimeMillis;
-  const names = yield* Effect.promise(() => readdir(directory));
+  const names = yield* fs.readDirectory(directory).pipe(Effect.orDie);
   yield* Effect.forEach(
     names.filter(
       (name) => !name.startsWith(REPLICA_STORAGE_PREFIX) || isExpiredReplicaArchive(name, now),
     ),
     (name) =>
-      Effect.tryPromise(() =>
-        rm(path.join(directory, name), { force: true, recursive: true }),
-      ).pipe(Effect.ignore),
+      fs.remove(path.join(directory, name), { force: true, recursive: true }).pipe(Effect.ignore),
     { discard: true, concurrency: "unbounded" },
   );
 });
@@ -244,14 +249,17 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
   const closeWorkers = (workers: ReplicaWorkers) =>
     Effect.gen(function* () {
       const closing = yield* Effect.forkDetach(Scope.close(workers.scope, Exit.void));
-      const graceful = yield* Effect.timeoutOption(Fiber.await(closing), closeGrace);
-      if (Option.isNone(graceful)) {
-        yield* Effect.all([workers.supervisor.terminate, workers.reader.terminate], {
-          discard: true,
-          concurrency: "unbounded",
-        });
-        yield* Fiber.await(closing);
-      }
+      yield* Fiber.await(closing).pipe(
+        Effect.timeoutOrElse({
+          duration: closeGrace,
+          orElse: () =>
+            Effect.all([workers.supervisor.terminate, workers.reader.terminate], {
+              discard: true,
+              concurrency: "unbounded",
+            }).pipe(Effect.andThen(Fiber.await(closing))),
+        }),
+        Effect.asVoid,
+      );
     });
 
   const dispose = (session: WorkspaceSession) =>
@@ -373,13 +381,14 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     identity: typeof ReplicaOpenInput.Type,
   ) {
     const workspaceToken = crypto.randomUUID();
+    const runDispose = Effect.runPromiseWith(yield* Effect.context<FileSystem.FileSystem>());
     const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
     const gone = yield* Deferred.make<void>();
     const release = () => {
       Deferred.doneUnsafe(gone, Exit.void);
       const session = sessions.get(workspaceToken);
-      if (session) void Effect.runPromise(dispose(session));
+      if (session) void runDispose(dispose(session));
     };
     yield* ownership.claim(databasePath);
     const started = yield* startWorkers(
