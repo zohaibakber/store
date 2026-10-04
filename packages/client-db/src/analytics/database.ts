@@ -11,10 +11,11 @@ import { analyticsMigrations } from "@store/db/analytics/migrations";
 import type { Query } from "drizzle-orm";
 import { drizzle, type NodeSQLiteDatabase } from "drizzle-orm/node-sqlite";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
+import * as Scope from "effect/Scope";
 
-import { analyticsFailure, type AnalyticsFailure } from "./errors";
+import { AnalyticsFailure, analyticsFailure } from "./errors";
 
 const PRE_MIGRATION_SCHEMA_VERSIONS = 1;
 const ANALYTICS_SCHEMA_VERSION =
@@ -78,16 +79,6 @@ const removeFiles = (file: string) => {
   for (const suffix of ["", "-wal", "-shm"]) rmSync(`${file}${suffix}`, { force: true });
 };
 
-const openConfigured = (file: string) => {
-  const db = new DatabaseSync(file);
-  db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = NORMAL");
-  db.exec(`PRAGMA wal_autocheckpoint = ${WAL_AUTOCHECKPOINT_PAGES}`);
-  db.exec("PRAGMA temp_store = MEMORY");
-  return db;
-};
-
 const UserVersionRow = Schema.Struct({ user_version: Schema.Number });
 const decodeUserVersion = Schema.decodeUnknownSync(UserVersionRow);
 
@@ -106,37 +97,69 @@ const initialise = (db: DatabaseSync) => {
   }
 };
 
-const openReady = (file: string): DatabaseSync => {
-  const db = openConfigured(file);
-  const version = versionOf(db);
-  if (version === ANALYTICS_SCHEMA_VERSION) return db;
-  db.close();
-  removeFiles(file);
-  const fresh = openConfigured(file);
-  initialise(fresh);
-  return fresh;
-};
+const closeHandle = (db: DatabaseSync) => Effect.try(() => db.close()).pipe(Effect.ignore);
+
+const openConfigured = Effect.fnUntraced(function* (file: string) {
+  const db = yield* Effect.acquireRelease(
+    Effect.try({ try: () => new DatabaseSync(file), catch: analyticsFailure }),
+    closeHandle,
+  );
+  yield* Effect.try({
+    try: () => {
+      db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`);
+      db.exec("PRAGMA journal_mode = WAL");
+      db.exec("PRAGMA synchronous = NORMAL");
+      db.exec(`PRAGMA wal_autocheckpoint = ${WAL_AUTOCHECKPOINT_PAGES}`);
+      db.exec("PRAGMA temp_store = MEMORY");
+    },
+    catch: analyticsFailure,
+  });
+  return db;
+});
+
+const attempt = <A>(open: Effect.Effect<A, AnalyticsFailure, Scope.Scope>) =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.fork(yield* Effect.scope);
+    return yield* open.pipe(
+      Scope.provide(scope),
+      Effect.onError(() => Scope.close(scope, Exit.void)),
+    );
+  });
+
+const openCurrent = (file: string) =>
+  attempt(
+    Effect.gen(function* () {
+      const db = yield* openConfigured(file);
+      const version = yield* Effect.try({ try: () => versionOf(db), catch: analyticsFailure });
+      if (version !== ANALYTICS_SCHEMA_VERSION) {
+        return yield* new AnalyticsFailure({ message: "The insights store is out of date." });
+      }
+      return db;
+    }),
+  );
+
+const openFresh = (file: string) =>
+  attempt(
+    Effect.gen(function* () {
+      yield* Effect.try({ try: () => removeFiles(file), catch: analyticsFailure });
+      const db = yield* openConfigured(file);
+      yield* Effect.try({ try: () => initialise(db), catch: analyticsFailure });
+      return db;
+    }),
+  );
 
 export const analyticsDatabasePath = (replicaDatabasePath: string): string =>
   replicaDatabasePath.endsWith(".sqlite")
     ? `${replicaDatabasePath.slice(0, -".sqlite".length)}.analytics.sqlite`
     : `${replicaDatabasePath}.analytics.sqlite`;
 
-export const openAnalyticsDatabase = (
-  file: string,
-): Effect.Effect<AnalyticsDatabase, AnalyticsFailure, Scope.Scope> =>
-  Effect.acquireRelease(
-    Effect.try({
-      try: () => {
-        mkdirSync(path.dirname(file), { recursive: true });
-        try {
-          return wrap(openReady(file));
-        } catch {
-          removeFiles(file);
-          return wrap(openReady(file));
-        }
-      },
-      catch: analyticsFailure,
-    }),
-    (database) => Effect.try(() => database.close()).pipe(Effect.ignore),
+export const openAnalyticsDatabase = Effect.fn("openAnalyticsDatabase")(function* (file: string) {
+  yield* Effect.try({
+    try: () => mkdirSync(path.dirname(file), { recursive: true }),
+    catch: analyticsFailure,
+  });
+  const db = yield* openCurrent(file).pipe(
+    Effect.catch(() => openFresh(file).pipe(Effect.retry({ times: 1 }))),
   );
+  return wrap(db);
+});

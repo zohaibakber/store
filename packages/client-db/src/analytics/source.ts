@@ -362,15 +362,15 @@ export const openInventorySource = (
   Effect.gen(function* () {
     const db = yield* Effect.acquireRelease(
       Effect.try({
-        try: () => {
-          const opened = new DatabaseSync(path, { readOnly: true });
-          opened.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`);
-          return opened;
-        },
+        try: () => new DatabaseSync(path, { readOnly: true }),
         catch: analyticsFailure,
       }),
       (opened) => Effect.try(() => opened.close()).pipe(Effect.ignore),
     );
+    yield* Effect.try({
+      try: () => db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`),
+      catch: analyticsFailure,
+    });
     const prepared = new Map<string, StatementSync>();
     const turn = yield* Semaphore.make(1);
     return {

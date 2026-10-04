@@ -66,14 +66,14 @@ const withDatabase = <A, E>(
 ): Effect.Effect<A, E | ReplicaFileFailure> =>
   Effect.acquireUseRelease(
     Effect.try({
-      try: () => {
-        const db = new DatabaseSync(path, { readOnly: mode === "read" });
-        db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`);
-        return db;
-      },
+      try: () => new DatabaseSync(path, { readOnly: mode === "read" }),
       catch: storageFailure,
     }),
-    use,
+    (db) =>
+      Effect.try({
+        try: () => db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`),
+        catch: storageFailure,
+      }).pipe(Effect.andThen(use(db))),
     (db) => Effect.try(() => db.close()).pipe(Effect.ignore),
   );
 
