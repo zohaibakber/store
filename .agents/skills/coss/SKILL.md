@@ -1,11 +1,13 @@
 ---
 name: coss
-description: COSS UI components on Base UI in `apps/web`. Choosing a component, composing overlays and forms, styling, finding a particle example, and adding a component. Use when writing or reviewing UI that imports from `@/components/ui`.
+description: COSS UI components on Base UI. Choosing a component, composing overlays and forms, styling, finding a particle example, and adding a component. Use when writing or reviewing UI that composes primitives installed from the `@coss` shadcn registry.
 ---
 
 # COSS UI
 
-The installed component is the authority. Read `apps/web/src/components/ui/<name>.tsx` for the exports, props, variants and `data-slot` names before composing with it; upstream docs describe a version this repo may not have. Typography, icons and the registry rule are in `AGENTS.md`.
+The installed component is the authority. The app's `components.json` says where everything is: `aliases.ui` is the component directory, `iconLibrary` the icon set, `tailwind.css` the stylesheet, and its own directory is where `shadcn` commands run. Read `<ui>/<name>.tsx` for the exports, props, variants and `data-slot` names before composing with it; upstream docs describe a version the app may not have.
+
+The project's own rules (typography, a design lint, who may edit the component directory) are in its `AGENTS.md` or `CLAUDE.md`. Where they differ from this skill, they win.
 
 ## Compose
 
@@ -25,13 +27,13 @@ The installed component is the authority. Read `apps/web/src/components/ui/<name
 
 ## Style
 
-- Reach for `variant` and `size` props before classes. Application code passes layout classes only; `vp run lint:design` rejects restyling, raw colours, arbitrary values and inline styles outside `components/ui`.
+- Reach for `variant` and `size` props before classes. Application code passes layout classes only; restyling, raw colours, arbitrary values and inline styles stay inside the component directory.
 - Colours are semantic tokens (`text-muted-foreground`, `bg-destructive`).
 - Layout is `flex` with `gap-*`; squares are `size-*`; conditional classes go through `cn()`.
-- Icons are Hugeicons. Size and opacity come from the parent component's styles; add a `size-*` class only to override, and never a numeric `size` prop. A decorative icon has `aria-hidden="true"`; an icon that carries the meaning, such as an alert's status icon, stays visible to assistive tech.
+- Icons come from the library `components.json` names. Size and opacity come from the parent component's styles; add a `size-*` class only to override, and never a numeric `size` prop. A decorative icon has `aria-hidden="true"`; an icon that carries the meaning, such as an alert's status icon, stays visible to assistive tech.
 - Hover and state styling keyed to a parent uses `in-[[data-slot=button]:hover]:…` in place of `group`.
 - Cancel and close buttons in overlay footers are `variant="ghost"`. `outline` is for the trigger that opens the overlay.
-- `--alpha(var(--color-black) / 8%)` in `styles.css` is valid Tailwind v4. Leave it as written.
+- `--alpha(var(--color-black) / 8%)` in the stylesheet is valid Tailwind v4. Leave it as written.
 
 ## Find an example
 
@@ -42,13 +44,13 @@ pnpm exec shadcn search @coss -q "combobox"
 pnpm exec shadcn view @coss/p-combobox-7
 ```
 
-Run these from `apps/web`. The search lists every particle for a component with a one-line description; `view` prints the registry item, source included. Adapt the source to the installed components: swap Lucide icons for Hugeicons, fix import paths to `@/components/ui`, and apply the typography rules. Treat it as reading material; adding a particle with `shadcn add` writes files.
+Run these from the directory that holds `components.json`, through the project's package manager. The search lists every particle for a component with a one-line description; `view` prints the registry item, source included. Adapt the source to the installed components: swap its icons for the project's icon library, fix import paths to the `ui` alias, and apply the project's typography rules. Treat it as reading material; adding a particle with `shadcn add` writes files.
 
 Component docs are at `https://coss.com/ui/docs/components/<name>.md`.
 
 ## Add a component
 
-`pnpm exec shadcn add @coss/<name> --dry-run` from `apps/web` shows what would change; drop `--dry-run` to write it. Files under `components/ui` stay as upstream ships them, so a behaviour change belongs in application code that composes the primitive.
+`pnpm exec shadcn add @coss/<name> --dry-run` shows what would change; drop `--dry-run` to write it. Files in the component directory stay as upstream ships them, so a behaviour change belongs in application code that composes the primitive.
 
 ## Reference
 
@@ -56,4 +58,4 @@ Choosing between similar components, and the rules one component needs: [compone
 
 ## Done when
 
-Every component in the change is used with the parts and props its installed file exports, every control has a label and an explicit `type`, and `vp run lint:design` passes.
+Every component in the change is used with the parts and props its installed file exports, every control has a label and an explicit `type`, and the project's lint passes.

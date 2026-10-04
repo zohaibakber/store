@@ -97,9 +97,20 @@ say so in the PR.
 application code. Primitives there may have no importer yet. That is inventory,
 not dead code, so don't delete them for being unused.
 
+Before composing these primitives, read `.agents/skills/coss/SKILL.md`. The skill
+is portable; what is local to this repo is this section, Typography, and
+`apps/web/components.json`, whose directory is where `shadcn` commands run.
+
 After changing UI code in `apps/web`, run `vp run lint:design`. Application code
 must pass the design-system rules with zero errors; registry-owned COSS primitives
 under `apps/web/src/components/ui` stay governed by their upstream definitions.
+
+## Mobile UI
+
+Before writing or reviewing code under `apps/mobile`, read
+`.agents/skills/expo/SKILL.md`, then `docs/expo-profile.md`. The skill is
+portable; the profile holds what is local: Android only, light theme, the
+wrappers in `src/ui` and the tokens.
 
 ## Cursor Cloud instructions
 

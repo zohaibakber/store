@@ -1,6 +1,6 @@
 # Components
 
-Only what the installed source does not make obvious. A component missing from `apps/web/src/components/ui` is added first; see the skill's "Add a component".
+Only what the installed source does not make obvious. A component missing from the component directory is added first; see the skill's "Add a component".
 
 ## Choosing
 
@@ -70,6 +70,6 @@ Only what the installed source does not make obvious. A component missing from `
 
 ## Feedback
 
-- **Toast.** Call `toastManager.add({ title, description, type })`; the provider is already mounted in `routes/__root.tsx`. A stable `id` updates the existing toast in place. A toast tied to an element uses `anchoredToastManager.add` with `positionerProps.anchor`, and needs `AnchoredToastProvider` mounted.
+- **Toast.** Call `toastManager.add({ title, description, type })`; `ToastProvider` is mounted once, at the app root. A stable `id` updates the existing toast in place. A toast tied to an element uses `anchoredToastManager.add` with `positionerProps.anchor`, and needs `AnchoredToastProvider` mounted.
 - **Alert.** Variants are `default`, `info`, `success`, `warning`, `error`. Actions go in `AlertAction`.
 - **Button.** `loading` disables it and shows the spinner. Sizes run `xs` to `xl`, with `icon-sm`, `icon` and `icon-lg` for icon-only. `SelectButton` is a select-style trigger for comboboxes, not a general button.
