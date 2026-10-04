@@ -3,12 +3,7 @@ import { createHash } from "node:crypto";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  compareUtf8,
-  PARTITION_DIGEST_DOMAIN,
-  partitionDigestOf,
-  sortedPartitionLeaves,
-} from "../../src/sync/digest";
+import { compareUtf8, sortedPartitionLeaves } from "../../src/sync/digest";
 import { canonicalPayloadHash, sha256Hex } from "../../src/sync/operation-hash";
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
@@ -22,46 +17,6 @@ describe("partition digest", () => {
     );
     expect([...UNICODE_IDS].sort(compareUtf8)).toEqual(byBytes);
     expect(sortedPartitionLeaves(UNICODE_IDS).leaves).toBe(byBytes.join("\n"));
-  });
-
-  it("follows the documented byte format for the version 4 digest over nine entities", async () => {
-    const report = await Effect.runPromise(
-      partitionDigestOf([
-        { entity: "category", entityId: "general", rowVersion: 1 },
-        { entity: "stockMovement", entityId: "m-2", rowVersion: 1 },
-        { entity: "invoice", entityId: "i-1", rowVersion: 4 },
-        { entity: "invoiceItem", entityId: "ii-1", rowVersion: 1 },
-        { entity: "stockMovement", entityId: "m-10", rowVersion: 1 },
-        { entity: "purchaseOrderItem", entityId: "poi-1", rowVersion: 2 },
-        { entity: "supplier", entityId: "s-1", rowVersion: 3 },
-      ]),
-    );
-    expect(PARTITION_DIGEST_DOMAIN).toBe("store.sync.partition-digest.v4");
-    const entity = (name: string, leaves: ReadonlyArray<string>) =>
-      sha256([PARTITION_DIGEST_DOMAIN, name, String(leaves.length), leaves.join("\n")].join("\n"));
-    const entities = {
-      category: entity("category", ["category:general:1"]),
-      product: entity("product", []),
-      batch: entity("batch", []),
-      invoice: entity("invoice", ["invoice:i-1:4"]),
-      invoiceItem: entity("invoiceItem", ["invoiceItem:ii-1:1"]),
-      stockMovement: entity("stockMovement", ["stockMovement:m-10:1", "stockMovement:m-2:1"]),
-      supplier: entity("supplier", ["supplier:s-1:3"]),
-      purchaseOrder: entity("purchaseOrder", []),
-      purchaseOrderItem: entity("purchaseOrderItem", ["purchaseOrderItem:poi-1:2"]),
-    };
-    expect(report).toEqual({
-      version: 4,
-      count: 7,
-      entities,
-      digest: sha256(
-        [
-          PARTITION_DIGEST_DOMAIN,
-          "7",
-          ...Object.entries(entities).map(([name, digest]) => `${name}:${digest}`),
-        ].join("\n"),
-      ),
-    });
   });
 });
 

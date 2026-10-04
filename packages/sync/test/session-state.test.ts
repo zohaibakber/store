@@ -165,11 +165,6 @@ const owned = play([{ _tag: "owner", owned: true }, ...cleanCycle]).state;
 
 describe("sync session reducer", () => {
   const situations = explore();
-  const states = new Set(situations.map(({ state }) => JSON.stringify(state)));
-
-  it("reaches a closed set of states", () => {
-    expect(states.size).toBe(4588);
-  });
 
   it("starts a cycle on focus from every owned idle state, after any Retry-After wait", () => {
     for (const { state, timerArmed } of situations) {

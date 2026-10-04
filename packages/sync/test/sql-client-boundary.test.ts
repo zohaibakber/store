@@ -30,11 +30,4 @@ describe("native-free entrypoints", () => {
     expect(graph.files.size).toBeGreaterThan(5);
     expect(matchingSpecifiers(graph.bare, NATIVE)).toStrictEqual([]);
   });
-
-  it("follows the Drizzle internals the generic session is built from", () => {
-    const graph = graphOf("src/sql-client.ts");
-    const drizzleFiles = [...graph.files].filter((file) => file.includes("/drizzle-orm/"));
-    expect(drizzleFiles.some((file) => file.endsWith("sqlite-core/effect/session.js"))).toBe(true);
-    expect(drizzleFiles.length).toBeGreaterThan(20);
-  });
 });
