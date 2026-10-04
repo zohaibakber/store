@@ -30,7 +30,6 @@ import type { RpcClientError } from "effect/rpc/RpcClientError";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 export const runtime = Atom.context();
@@ -267,7 +266,6 @@ export const makeInventoryLinks = (services: InventoryServices) => {
   const { Store: StoreService, Insights: InsightsService } = services;
   const commitTick = Atom.make(0).pipe(Atom.keepAlive);
   const lastStamp = Atom.make(Option.none<Stamp>()).pipe(Atom.keepAlive);
-  const turn = Semaphore.makeUnsafe(1);
 
   const commits = StoreService.runtime
     .atom((get) =>
@@ -352,7 +350,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
         );
       }
       return Effect.raceFirst(withStore(registry, send), generationMoved(registry, started.value));
-    }).pipe(turn.withPermits(1));
+    });
 
   const wake = (registry: AtomRegistry.AtomRegistry): Effect.Effect<void> =>
     withStore(registry, (store) => store("WakeSyncUpload", undefined)).pipe(

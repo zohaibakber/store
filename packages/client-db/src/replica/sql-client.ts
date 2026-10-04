@@ -1,26 +1,14 @@
-import {
-  SyncTransportService,
-  type OwnedLiveHost,
-  type SyncSchedulerPolicy,
-  type SyncWakeReason,
-} from "@store/sync";
+import { SyncTransportService, type OwnedLiveHost, type SyncSchedulerPolicy } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
-import type * as Context from "effect/Context";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import { replicaSyncActivityOf } from "./activity";
-import {
-  openSqliteReplicaSyncSession,
-  type SqliteReplicaIdentity,
-  type SqliteReplicaServices,
-} from "./sql-client-session";
-import type { ReplicaHandle } from "./types";
+import { layerSqliteReplicaSync, type SqliteReplicaIdentity } from "./sql-client-session";
 
-export type { SqliteReplicaIdentity } from "./sql-client-session";
+export type { SqliteReplicaIdentity, SqliteReplicaServices } from "./sql-client-session";
 
-type OpenSqlClientReplicaInput<E> = {
+type SqlClientReplicaInput<E> = {
   readonly sqlClient: Layer.Layer<SqlClient, E>;
   readonly databaseName: string;
   readonly identity: SqliteReplicaIdentity;
@@ -33,24 +21,14 @@ type OpenSqlClientReplicaInput<E> = {
   readonly policy?: SyncSchedulerPolicy;
 };
 
-export type SqlClientReplicaHandle = ReplicaHandle & {
-  readonly replicaId: string;
-  readonly services: Context.Context<SqliteReplicaServices>;
-  readonly wakeSync: (reason: SyncWakeReason) => Promise<void>;
-  readonly setVisible: (visible: boolean) => Promise<void>;
-  readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
-};
-
 const layerFetchTransport = (apiBaseUrl: string, fetch: typeof globalThis.fetch) =>
   SyncTransportService.layer(apiBaseUrl).pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
   );
 
-export const openSqlClientReplicaHandle = async <E>(
-  input: OpenSqlClientReplicaInput<E>,
-): Promise<SqlClientReplicaHandle> => {
-  const session = await openSqliteReplicaSyncSession({
+export const layerSqlClientReplicaSync = <E>(input: SqlClientReplicaInput<E>) =>
+  layerSqliteReplicaSync({
     replica: SqliteReplica.layerFromClient.pipe(Layer.provide(input.sqlClient)),
     identity: input.identity,
     databaseIdentity: input.databaseName,
@@ -62,28 +40,3 @@ export const openSqlClientReplicaHandle = async <E>(
     },
     policy: input.policy,
   });
-  return {
-    workspaceToken: input.databaseName,
-    engine: "sqlite",
-    replicaId: session.replicaId,
-    services: session.services,
-    readSyncActivity: async () => replicaSyncActivityOf(await session.readOutboxActivity()),
-    readPendingRowIds: session.readPendingRowIds,
-    stamp: session.stamp,
-    readSubset: session.readSubset,
-    readBatch: session.readBatch,
-    readInsights: session.readInsights,
-    summarizeSubset: session.summarizeSubset,
-    enqueueCommand: session.enqueueCommand,
-    readCommandStatus: session.readCommandStatus,
-    wakeSyncUpload: () => {
-      void session.wake("localWrite").catch(() => undefined);
-    },
-    wakeSync: session.wake,
-    setVisible: session.setVisible,
-    setPullMaxBytes: session.setPullMaxBytes,
-    subscribe: session.subscribe,
-    subscribeSyncHealth: session.subscribeSyncHealth,
-    close: session.close,
-  };
-};

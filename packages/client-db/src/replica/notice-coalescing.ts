@@ -32,9 +32,14 @@ const coalesceNotices = (
 export const offerCoalescing = <E>(
   queue: Queue.Queue<ReplicaCommitNotice, E>,
   notice: ReplicaCommitNotice,
-): void => {
-  if (Queue.offerUnsafe(queue, notice)) return;
-  const dropped = Effect.runSync(Effect.orElseSucceed(Queue.clear(queue), () => []));
-  const merged = coalesceNotices([...dropped, notice]);
-  if (merged !== undefined) Queue.offerUnsafe(queue, merged);
-};
+): Effect.Effect<void> =>
+  Effect.suspend(() => {
+    if (Queue.offerUnsafe(queue, notice)) return Effect.void;
+    return Queue.clear(queue).pipe(
+      Effect.orElseSucceed(() => []),
+      Effect.flatMap((dropped) => {
+        const merged = coalesceNotices([...dropped, notice]);
+        return merged === undefined ? Effect.void : Effect.asVoid(Queue.offer(queue, merged));
+      }),
+    );
+  });

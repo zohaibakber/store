@@ -32,7 +32,7 @@ import {
   makePinnedHttp,
   type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
-import { layerInventoryStore } from "@store/client-db/store";
+import { CommandAdmission, layerInventoryStore } from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
@@ -45,11 +45,9 @@ import type * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as RpcServer from "effect/rpc/RpcServer";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { AdmittedInventoryStore, CommandAdmission, commandAdmission } from "./renderer-admission";
 import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   catalogCountsOf,
@@ -208,12 +206,11 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         )
         .pipe(Stream.changesWith(sameSyncHealth));
 
-      const commandTurn = yield* Semaphore.make(1);
       const renderers = yield* Option.match(opened, {
         onNone: () => Effect.succeed(noRendererServers),
         onSome: (session) =>
           makeRendererServers((protocol) =>
-            RpcServer.layer(AdmittedInventoryStore).pipe(
+            RpcServer.layer(InventoryStore).pipe(
               Layer.provide(
                 Layer.merge(
                   layerInventoryStore,
@@ -221,7 +218,6 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
               Layer.provide(Layer.succeedContext(session)),
-              Layer.provide(Layer.succeed(CommandAdmission, commandAdmission(commandTurn))),
               Layer.provide(protocol),
             ),
           ),
@@ -283,15 +279,17 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         stagedPath: string,
       ) =>
         Effect.gen(function* () {
-          const sealed = yield* commandTurn.withPermits(1)(
-            Effect.gen(function* () {
-              yield* renderers.shutdown;
-              yield* withSession((session) => Context.get(session, SyncScheduler).shutdown);
-              const final = yield* stamp;
-              yield* Ref.set(live, Option.none());
-              yield* Scope.close(sessionScope, Exit.void);
-              return final;
-            }),
+          const sealed = yield* withSession((session) =>
+            Context.get(session, CommandAdmission).exclusive(
+              Effect.gen(function* () {
+                yield* renderers.shutdown;
+                yield* Context.get(session, SyncScheduler).shutdown;
+                const final = yield* Context.get(session, ReplicaStore).readStamp();
+                yield* Ref.set(live, Option.none());
+                yield* Scope.close(sessionScope, Exit.void);
+                return final;
+              }),
+            ),
           );
           yield* settleReplicaFile(local.databasePath);
           yield* sealReplicaFile(stagedPath, sealed.localCommitVersion);
@@ -364,9 +362,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 (queue) =>
                   Context.get(session, ReplicaStore).commits.pipe(
                     Stream.runForEach((notice) =>
-                      Effect.sync(() =>
-                        offerCoalescing(queue, toClientNotice(config.databasePath, notice)),
-                      ),
+                      offerCoalescing(queue, toClientNotice(config.databasePath, notice)),
                     ),
                     Effect.forkScoped({ startImmediately: true }),
                   ),

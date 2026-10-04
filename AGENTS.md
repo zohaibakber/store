@@ -61,6 +61,15 @@ read `.agents/skills/effect/SKILL.md` and the references it points to for the
 change. It describes the target; existing code that differs from it is listed in
 `.agents/skills/effect/references/DEPARTURES.md` and is not a pattern to copy.
 
+Before calling an Effect change done, ask of every piece you wrote: **is there a
+better way to do this in Effect?** Check the skill's module map and the installed
+`effect` package (`node_modules/effect/dist/*.d.ts`, `ai-docs`) for a module or
+combinator that already does it, such as `Effect.timeoutOrElse` instead of
+`timeoutOption` plus a check, `Effect.fn` instead of an unnamed wrapper, or
+`FiberSet`/`Stream.callback` instead of a hand-written runner. Switch to it, or
+keep your version only when you can name why the alternative does not fit, and
+say so in the PR.
+
 ## Sync engine boundaries
 
 - Replicas hard-delete. A `delete` change removes the row; client schemas carry

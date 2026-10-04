@@ -1,6 +1,6 @@
 import { decodeInvoiceId, decodeProductId } from "@store/contracts/ids";
 import { InventoryReads, InventoryStore } from "@store/contracts/replica";
-import { SyncTransportService, type SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncTransportService, type SyncTransport } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,7 +12,7 @@ import { SqlClient } from "effect/sql/SqlClient";
 import { describe, expect, it } from "vitest";
 
 import { layerInventoryReads } from "../src/reads/handlers";
-import { openNodeReplicaSyncSession } from "../src/replica/node-sync";
+import { layerNodeReplicaSync } from "../src/replica/node-sync";
 import { layerInventoryStore } from "../src/store/handlers";
 
 const DAY = 86_400_000;
@@ -27,22 +27,39 @@ const unreachable: SyncTransport = {
 };
 
 const openStore = async (replicaId: string) => {
-  const session = await openNodeReplicaSyncSession({
-    path: ":memory:",
-    identity: { organizationId: "org-1", userId: "user-1", replicaId },
-    databaseIdentity: `store-commands-${replicaId}`,
-    transport: Layer.succeed(SyncTransportService, unreachable),
-    live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
-  });
-  const replica = Context.get(session.services, SqliteReplica);
-  const services = Layer.succeedContext(session.services);
   const scope = Effect.runSync(Scope.make());
-  const store = await Effect.runPromise(
-    RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
-      Effect.provide(Layer.provide(layerInventoryStore, services)),
-      Scope.provide(scope),
+  const session = await Effect.runPromise(
+    Layer.buildWithScope(
+      Layer.fresh(
+        layerNodeReplicaSync({
+          path: ":memory:",
+          identity: { organizationId: "org-1", userId: "user-1", replicaId },
+          databaseIdentity: `store-commands-${replicaId}`,
+          transport: Layer.succeed(SyncTransportService, unreachable),
+          live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
+        }),
+      ),
+      scope,
     ),
   );
+  const replica = Context.get(session, SqliteReplica);
+  const durable = Context.get(session, ReplicaStore);
+  const services = Layer.succeedContext(
+    Context.add(session, ReplicaStore, {
+      ...durable,
+      enqueueCommand: (request) =>
+        Effect.andThen(Effect.sleep("2 millis"), durable.enqueueCommand(request)),
+    }),
+  );
+  const client = () =>
+    Effect.runPromise(
+      RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
+        Effect.provide(Layer.fresh(Layer.provide(layerInventoryStore, services))),
+        Scope.provide(scope),
+      ),
+    );
+  const store = await client();
+  const other = await client();
   const reads = await Effect.runPromise(
     RpcTest.makeClient(InventoryReads, { flatten: true }).pipe(
       Effect.provide(Layer.provide(layerInventoryReads, Layer.succeed(SqlClient, replica.sql))),
@@ -51,7 +68,7 @@ const openStore = async (replicaId: string) => {
   );
   const rows = (statement: string) =>
     Effect.runPromise(replica.sql.unsafe<Record<string, string | number | null>>(statement));
-  const sale = (productId: string, quantity: number, invoiceId?: string) => {
+  const sale = (productId: string, quantity: number, invoiceId?: string, sender = store) => {
     const input = {
       customerName: null,
       items: [
@@ -65,7 +82,7 @@ const openStore = async (replicaId: string) => {
       ],
     };
     return Effect.runPromise(
-      store(
+      sender(
         "IssueInvoice",
         invoiceId === undefined ? { input } : { input, invoiceId: decodeInvoiceId(invoiceId) },
       ),
@@ -113,11 +130,8 @@ const openStore = async (replicaId: string) => {
     ).result;
     return { tablets, panadol, early };
   };
-  const close = async () => {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    await session.close();
-  };
-  return { store, rows, sale, allocations, visiblePacks, stocked, close };
+  const close = () => Effect.runPromise(Scope.close(scope, Exit.void));
+  return { store, other, rows, sale, allocations, visiblePacks, stocked, close };
 };
 
 describe("inventory store commands", () => {
@@ -217,6 +231,22 @@ describe("inventory store commands", () => {
     await expect(sale(panadol.product.id, 1, draftId)).rejects.toThrow();
     expect(await rows(`select id, total from invoices`)).toEqual([{ id: draftId, total: 200 }]);
     expect((await visiblePacks(panadol.product.id)).map(([, packs]) => packs)).toEqual([3]);
+    await close();
+  });
+
+  it("admits one command at a time across clients of one session", async () => {
+    const { store, other, sale, stocked, close } = await openStore("replica-5");
+    const { panadol } = await stocked();
+    const outcomes = await Promise.allSettled([
+      sale(panadol.product.id, 3, undefined, store),
+      sale(panadol.product.id, 3, undefined, other),
+      sale(panadol.product.id, 2, undefined, other),
+    ]);
+    expect(
+      outcomes.map((outcome) =>
+        outcome.status === "fulfilled" ? outcome.value.result.invoiceNumber : outcome.reason._tag,
+      ),
+    ).toEqual([1, "CatalogRefusal", 2]);
     await close();
   });
 });

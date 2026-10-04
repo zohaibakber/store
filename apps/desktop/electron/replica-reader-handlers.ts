@@ -11,7 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as RpcServer from "effect/rpc/RpcServer";
 
-import { ReadDeadline, readDeadline, TimedInventoryReads } from "./renderer-admission";
+import { ReadDeadline, readDeadline, TimedInventoryReads } from "./renderer-read-deadline";
 import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   commitStampOf,
@@ -46,7 +46,7 @@ export const makeReplicaReaderHandlers = <R>(
         : yield* makeRendererServers((protocol) =>
             RpcServer.layer(TimedInventoryReads).pipe(
               Layer.provide(Layer.succeedContext(booted.value.reads)),
-              Layer.provide(Layer.succeed(ReadDeadline, readDeadline())),
+              Layer.provide(Layer.succeed(ReadDeadline, readDeadline)),
               Layer.provide(protocol),
             ),
           );

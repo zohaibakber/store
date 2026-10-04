@@ -11,17 +11,9 @@ import {
   type InventoryCollectionSource,
 } from "./replica/sources";
 import type { InventorySubsetSpec, SubsetPredicate } from "./replica/subset-spec";
-import type { CatalogRows, ReplicaSubsetReader } from "./replica/types";
+import type { CatalogRows } from "./replica/types";
 
 const CONCURRENT = { concurrency: "unbounded" } as const;
-
-const attempt = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
-
-export const subsetReads =
-  (reader: ReplicaSubsetReader): ReadSubset =>
-  (spec) =>
-    attempt(() => reader.readSubset(spec));
 
 const NO_ROWS = Effect.succeed([]);
 

@@ -1,4 +1,3 @@
-import type { SqlClientReplicaHandle } from "@store/client-db/sql-client";
 import { InventoryProvider, type InventoryHost } from "@store/inventory-react";
 import * as React from "react";
 import { AppState } from "react-native";
@@ -6,7 +5,7 @@ import { AppState } from "react-native";
 import { useSession, type SignedInSession } from "@/auth";
 import { mobileConfig } from "@/config";
 
-import { createMobileInventoryHost } from "./host";
+import { createMobileInventoryHost, type MobileReplicaControl } from "./host";
 import {
   applyAppState,
   applyPullMaxBytes,
@@ -41,7 +40,7 @@ function InventoryRoot({
 }) {
   const latestFetch = useLatest(session?.authenticatedFetch ?? unauthenticatedFetch);
   const latestAccessToken = useLatest(session?.liveAccessToken ?? noAccessToken);
-  const active = React.useRef<SqlClientReplicaHandle | undefined>(undefined);
+  const active = React.useRef<MobileReplicaControl | undefined>(undefined);
   const pullMaxBytes = useReplicaScheduling(active);
 
   const host = React.useMemo(

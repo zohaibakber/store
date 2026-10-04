@@ -51,6 +51,7 @@ import {
 } from "../purchasing-projection";
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
+import type { CommandAdmission } from "./admission";
 import {
   importCategory,
   leadingChunks,
@@ -89,10 +90,12 @@ type CommandHandlers = Pick<
 >;
 
 export const makeCommandHandlers = ({
+  admission,
   store,
   scheduler,
   replica,
 }: {
+  readonly admission: CommandAdmission["Service"];
   readonly store: ReplicaStore["Service"];
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
@@ -182,7 +185,7 @@ export const makeCommandHandlers = ({
     const projected = yield* project(context);
     const commit = yield* catalogWrite(context, projected.writes);
     return { commit, row: projected.row };
-  });
+  }, admission.admit);
 
   const catalog = <Row>(
     rows: CatalogRowsRequest,
@@ -264,7 +267,7 @@ export const makeCommandHandlers = ({
         txid: context.occurredAt,
       },
     };
-  });
+  }, admission.admit);
 
   const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fnUntraced(function* ({
     input,
@@ -303,7 +306,7 @@ export const makeCommandHandlers = ({
         invoiceNumber: projection.invoice.invoiceNumber,
       },
     };
-  });
+  }, admission.admit);
 
   return {
     CreateCategory: (input) =>

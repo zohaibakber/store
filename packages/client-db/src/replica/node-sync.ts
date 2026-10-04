@@ -6,9 +6,7 @@ import type * as Layer from "effect/Layer";
 import {
   layerSqliteReplicaLocal,
   layerSqliteReplicaSync,
-  openSqliteReplicaSyncSession,
   type SqliteReplicaIdentity,
-  type SqliteReplicaSyncSession,
 } from "./sql-client-session";
 
 type NodeReplicaInput = {
@@ -41,7 +39,3 @@ export const layerNodeLocalReplica = (input: NodeReplicaInput) =>
     identity: input.identity,
     databaseIdentity: input.databaseIdentity,
   });
-
-export const openNodeReplicaSyncSession = (
-  input: NodeReplicaSyncInput,
-): Promise<SqliteReplicaSyncSession> => openSqliteReplicaSyncSession(syncInput(input));
