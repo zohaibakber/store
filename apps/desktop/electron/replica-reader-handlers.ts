@@ -1,37 +1,24 @@
 import {
+  layerNodeSqliteReadonlyReplica,
   openReadonlySnapshotRunner,
   type NodeSqliteRow,
-  readSnapshotBatch,
-  readSnapshotSubset,
   readSnapshotSummary,
   type ReplicaSnapshotRunner,
 } from "@store/client-db/node-sqlite";
+import { layerInventoryReads } from "@store/client-db/reads";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
+import * as RpcServer from "effect/rpc/RpcServer";
 
+import { ReadDeadline, readDeadline, TimedInventoryReads } from "./renderer-admission";
+import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   commitStampOf,
   ReplicaReaderRpcs,
   ReplicaWorkerFailure,
   type ReplicaReaderBoot,
 } from "./replica-rpc";
-
-const toIpcRows = (
-  rows: ReadonlyArray<NodeSqliteRow>,
-): ReadonlyArray<Record<string, string | number | null>> =>
-  rows.map((row) =>
-    Object.fromEntries(
-      Object.entries(row).map(([key, value]) => [
-        key,
-        value instanceof Uint8Array
-          ? Buffer.from(value).toString("base64")
-          : Predicate.isBigInt(value)
-            ? Number(value)
-            : value,
-      ]),
-    ),
-  );
 
 const readFailure = (error: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: error.message });
@@ -42,10 +29,27 @@ export const makeReplicaReaderHandlers = <R>(
   ReplicaReaderRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
-      const opened = yield* openReadonlySnapshotRunner(config.databasePath).pipe(
+      const booted = yield* Effect.all({
+        snapshot: openReadonlySnapshotRunner(config.databasePath),
+        reads: Layer.build(
+          layerInventoryReads.pipe(
+            Layer.provide(layerNodeSqliteReadonlyReplica(config.databasePath)),
+          ),
+        ).pipe(Effect.catchDefect(Effect.fail)),
+      }).pipe(
         Effect.tapError((cause) => Effect.logError("ReplicaReader.open_failed", cause)),
         Effect.option,
       );
+      const opened = Option.map(booted, (reader) => reader.snapshot);
+      const renderers = Option.isNone(booted)
+        ? noRendererServers
+        : yield* makeRendererServers((protocol) =>
+            RpcServer.layer(TimedInventoryReads).pipe(
+              Layer.provide(Layer.succeedContext(booted.value.reads)),
+              Layer.provide(Layer.succeed(ReadDeadline, readDeadline())),
+              Layer.provide(protocol),
+            ),
+          );
 
       const withSnapshot = <A, E extends { readonly message: string }>(
         use: (
@@ -62,24 +66,7 @@ export const makeReplicaReaderHandlers = <R>(
 
       return ReplicaReaderRpcs.of({
         Engine: () => Effect.succeed(Option.isSome(opened) ? "sqlite" : "unavailable"),
-        ReadSubset: ({ spec }) =>
-          withSnapshot((snapshot, workspaceToken) =>
-            readSnapshotSubset(snapshot, workspaceToken, spec),
-          ).pipe(
-            Effect.map((read) => ({
-              stamp: commitStampOf(read.stamp),
-              rows: toIpcRows(read.rows),
-            })),
-          ),
-        ReadBatch: ({ specs }) =>
-          withSnapshot((snapshot, workspaceToken) =>
-            readSnapshotBatch(snapshot, workspaceToken, specs),
-          ).pipe(
-            Effect.map((read) => ({
-              stamp: commitStampOf(read.stamp),
-              reads: read.reads.map(toIpcRows),
-            })),
-          ),
+        AttachRenderer: ({ port }) => renderers.attach(port),
         SummarizeSubset: ({ spec }) =>
           withSnapshot((snapshot, workspaceToken) =>
             readSnapshotSummary(snapshot, workspaceToken, spec),

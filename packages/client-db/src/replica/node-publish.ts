@@ -35,7 +35,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Struct from "effect/Struct";
 
-import type { ImportClient, ImportFailure } from "./proxy-import";
+import type { ImportClient, ImportFailure } from "./import-client";
 
 class ReplicaPublishFailure extends Schema.TaggedError<ReplicaPublishFailure>()(
   "ReplicaPublishFailure",
@@ -86,6 +86,12 @@ type ReplicaPublishChunk =
 export type ReplicaPublishCommit =
   | { readonly _tag: "committed" }
   | { readonly _tag: "refused"; readonly code: string; readonly message: string }
+  | { readonly _tag: "unconfirmed"; readonly message: string };
+
+export type ReplicaPublishStatus =
+  | { readonly _tag: "committed" }
+  | { readonly _tag: "other"; readonly message: string }
+  | { readonly _tag: "none" }
   | { readonly _tag: "unconfirmed"; readonly message: string };
 
 const OUTSTANDING_STATUSES = ["pending", "sending", "accepted_awaiting_integration"] as const;
@@ -229,16 +235,6 @@ const seal = Effect.fn("ReplicaPublish.seal")(function* (
   } satisfies ReplicaPublishChunk;
 });
 
-const verifySealed = Effect.fn("ReplicaPublish.verifySealed")(function* (
-  handle: SqliteReplicaHandle,
-  importId: string,
-  sealed: ReplicaPublishSeal,
-) {
-  const current = yield* summarize(handle);
-  const digest = yield* sqlitePartitionDigest(handle.db);
-  if (current.importId !== importId || digest?.digest !== sealed.digest) return yield* changed();
-});
-
 const publishParts = (
   path: string,
   importId: string,
@@ -332,23 +328,15 @@ const refused = (failure: {
 });
 
 export const commitPublish = (input: {
-  readonly path: string;
   readonly organizationId: string;
   readonly importId: string;
   readonly seal: ReplicaPublishSeal;
   readonly client: ImportClient;
-  readonly acceptChangedFile?: boolean;
-}): Effect.Effect<ReplicaPublishCommit> => {
-  const sealed = input.acceptChangedFile
-    ? Effect.void
-    : withReplica(input.path, (handle) => verifySealed(handle, input.importId, input.seal));
-  return sealed.pipe(
-    Effect.andThen(decodeImportRequest({ organizationId: input.organizationId, ...input.seal })),
+}): Effect.Effect<ReplicaPublishCommit> =>
+  decodeImportRequest({ organizationId: input.organizationId, ...input.seal }).pipe(
     Effect.flatMap((request) => input.client.commit(input.importId, request)),
     Effect.as<ReplicaPublishCommit>({ _tag: "committed" }),
     Effect.catchTags({
-      ReplicaPublishFailure: (failure) =>
-        Effect.succeed(refused({ code: failure.reason, message: failure.message })),
       SchemaError: () =>
         Effect.succeed(refused({ code: "INVALID_OPERATION", message: "The move is malformed." })),
       ImportRefused: (failure) => Effect.succeed(refused(failure)),
@@ -356,7 +344,31 @@ export const commitPublish = (input: {
         Effect.succeed<ReplicaPublishCommit>({ _tag: "unconfirmed", message: failure.message }),
     }),
   );
-};
 
-export { ImportRefused, makeProxyImportClient } from "./proxy-import";
-export type { ImportClient } from "./proxy-import";
+const unconfirmed = (failure: ImportFailure): ReplicaPublishStatus => ({
+  _tag: "unconfirmed",
+  message: failure.message,
+});
+
+export const readPublishStatus = (input: {
+  readonly importId: string;
+  readonly client: ImportClient;
+}): Effect.Effect<ReplicaPublishStatus> =>
+  input.client.status(input.importId).pipe(
+    Effect.map((status): ReplicaPublishStatus => {
+      switch (status._tag) {
+        case "committed":
+          return { _tag: "committed" };
+        case "other":
+          return { _tag: "other", message: status.message };
+        case "none":
+          return { _tag: "none" };
+      }
+    }),
+    Effect.catchTag(["ImportRefused", "ImportUnavailable"], (failure) =>
+      Effect.succeed(unconfirmed(failure)),
+    ),
+  );
+
+export { ImportRefused, makeImportClient } from "./import-client";
+export type { ImportClient } from "./import-client";

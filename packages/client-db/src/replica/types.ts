@@ -1,17 +1,10 @@
 import type {
   CommandStatus,
   EnqueueCommandRequest,
-  InsightsContext,
-  InsightsSummaryRead,
-  ProductInsightsRead,
   ReplicaInsightsFacts,
-  RestockPageRead,
-  RestockPageRequest,
   ReplicaInsightsWindow,
   SyncEntity,
 } from "@store/contracts";
-import { IR, type CollectionConfig, type LoadSubsetOptions } from "@tanstack/db";
-import type * as Effect from "effect/Effect";
 
 import type {
   BatchRow,
@@ -25,9 +18,6 @@ import type {
   SupplierRow,
 } from "../rows";
 import type { ReplicaSyncActivity } from "./activity";
-import type { InvoiceCoherenceGate } from "./coherence";
-import type { ReplicaRowInvalid } from "./errors";
-import type { InventoryCollectionSource, InventoryCollectionSyncMode } from "./sources";
 import type { ReplicaRow, SqliteResultRow } from "./sqlite-row";
 import type { ReplicaSyncHealth } from "./status";
 import type {
@@ -47,8 +37,6 @@ export type CatalogRows = {
   readonly purchaseOrders: PurchaseOrderRow;
   readonly purchaseOrderItems: PurchaseOrderItemRow;
 };
-
-export type InventoryCollectionRow = CatalogRows[InventoryCollectionSource];
 
 export type SqliteParameter = string | number | bigint | null | Uint8Array;
 
@@ -101,7 +89,7 @@ export interface ReplicaSubsetReader {
     spec: InventorySubsetSpec,
     options?: ReplicaReadOptions,
   ) => Promise<ReplicaSubsetRead>;
-  readonly readBatch?: (
+  readonly readBatch: (
     specs: ReadonlyArray<InventorySubsetSpec>,
     options?: ReplicaReadOptions,
   ) => Promise<ReplicaBatchRead>;
@@ -125,28 +113,9 @@ export interface ReplicaInsightsReader {
   readonly readInsights: (window: ReplicaInsightsWindow) => Promise<ReplicaInsightsRead>;
 }
 
-type ReplicaAnalyticsChange = {
-  readonly revision: number;
-  readonly state: "idle" | "building" | "refreshing";
-  readonly progress: { readonly done: number; readonly total: number } | null;
-};
-
-export interface ReplicaAnalytics {
-  readonly readSummary: (context: InsightsContext) => Promise<InsightsSummaryRead>;
-  readonly readProducts: (
-    context: InsightsContext,
-    ids: ReadonlyArray<string>,
-  ) => Promise<ProductInsightsRead>;
-  readonly readRestockPage: (
-    context: InsightsContext,
-    request: RestockPageRequest,
-  ) => Promise<RestockPageRead>;
-  readonly subscribe: (listener: (change: ReplicaAnalyticsChange) => void) => () => void;
-}
-
 type ReplicaHandleIdentity = {
   readonly workspaceToken: string;
-  readonly engine?: "sqlite" | "indexeddb";
+  readonly engine?: "sqlite";
 };
 
 type ReplicaHandleLifecycle = {
@@ -175,40 +144,11 @@ type ReplicaActivitySurface = {
 export type ReplicaHandle = ReplicaHandleIdentity &
   ReplicaHandleLifecycle &
   ReplicaSubsetReader &
-  ReplicaInsightsReader & { readonly analytics?: ReplicaAnalytics } & ReplicaSummaryReader &
+  ReplicaInsightsReader &
+  ReplicaSummaryReader &
   ReplicaChangeFeed &
   ReplicaSyncHealthFeed &
   ReplicaMutationSurface &
   ReplicaActivitySurface & {
     readonly stamp: () => Promise<ReplicaQueryStamp>;
   };
-
-export type InventoryCollectionDescriptor<Row extends InventoryCollectionRow> = {
-  readonly id: string;
-  readonly source: InventoryCollectionSource;
-  readonly syncMode: InventoryCollectionSyncMode;
-  readonly maximumRows: number;
-  readonly getKey: (row: Row) => string;
-  readonly decodeRows: (
-    rows: ReadonlyArray<ReplicaRow>,
-  ) => Effect.Effect<ReadonlyArray<Row>, ReplicaRowInvalid>;
-};
-
-export type SqliteCollectionDependencies = {
-  readonly executor: ReplicaSubsetReader;
-  readonly changeFeed: ReplicaChangeFeed;
-  readonly coherence?: InvoiceCoherenceGate;
-};
-
-export type SqliteCollectionConfig<Row extends InventoryCollectionRow> = CollectionConfig<
-  Row,
-  string
->;
-
-export type CompileSubsetInput = {
-  readonly where?: IR.BasicExpression<boolean>;
-  readonly orderBy?: IR.OrderBy;
-  readonly limit?: number;
-  readonly offset?: number;
-  readonly cursor?: LoadSubsetOptions["cursor"];
-};

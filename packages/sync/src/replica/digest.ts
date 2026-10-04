@@ -34,7 +34,7 @@ const leafTable = (entity: PartitionEntity) => {
   };
 };
 
-export const partitionEntityDigests = <E, R>(
+const partitionEntityDigests = <E, R>(
   digestOf: (entity: PartitionEntity) => Effect.Effect<PartitionEntityDigest, E, R>,
 ): Effect.Effect<Readonly<Record<PartitionEntity, PartitionEntityDigest>>, E, R> =>
   Effect.all(partitionEntityRecord(digestOf));

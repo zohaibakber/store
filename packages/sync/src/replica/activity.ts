@@ -2,7 +2,7 @@ import type { CommandStatus } from "@store/contracts/sync/replica-model";
 
 export const CAUGHT_UP_RECORD_INTERVAL_MILLIS = 60_000;
 
-export const MAX_REJECTED_ACTIVITY_ROWS = 20;
+export { MAX_REJECTED_ACTIVITY_ROWS } from "@store/contracts/replica";
 
 export const ACTIVITY_COMMAND_STATUSES: ReadonlyArray<CommandStatus> = [
   "pending",

@@ -1,33 +1,11 @@
-import type { LoadSubsetOptions } from "@tanstack/db";
 import * as Effect from "effect/Effect";
 import * as Predicate from "effect/Predicate";
 
 import type { InventoryCollectionSource } from "./sources";
-import { planInventoryRead } from "./subset-ir";
 import type { InventorySubsetSpec, SubsetPredicate } from "./subset-spec";
-import type {
-  InventoryCollectionDescriptor,
-  InventoryCollectionRow,
-  ReplicaQueryStamp,
-  ReplicaRow,
-  ReplicaSubsetRead,
-  ReplicaSubsetReader,
-} from "./types";
-
-export type PlannedRead<Row extends InventoryCollectionRow> = {
-  readonly stamp: ReplicaQueryStamp;
-  readonly rows: ReadonlyArray<Row>;
-};
+import type { ReplicaQueryStamp, ReplicaRow, ReplicaSubsetRead } from "./types";
 
 export type ReadSubset = (spec: InventorySubsetSpec) => Effect.Effect<ReplicaSubsetRead, unknown>;
-
-export const interruptibleReads =
-  (reader: ReplicaSubsetReader): ReadSubset =>
-  (spec) =>
-    Effect.tryPromise({
-      try: (signal) => reader.readSubset(spec, { signal }),
-      catch: (cause) => cause,
-    });
 
 const afterKey = (where: SubsetPredicate | undefined, after: string | undefined) => {
   if (after === undefined) return where;
@@ -72,31 +50,3 @@ export const drainSubset = Effect.fnUntraced(function* (
     after = last;
   }
 });
-
-const decoded = <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  read: ReplicaSubsetRead,
-): Effect.Effect<PlannedRead<Row>, unknown> =>
-  Effect.map(descriptor.decodeRows(read.rows), (rows) => ({ stamp: read.stamp, rows }));
-
-export const readCollectionSubset = <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  read: ReadSubset,
-  options: LoadSubsetOptions,
-): Effect.Effect<PlannedRead<Row>, unknown> =>
-  planInventoryRead(descriptor, options).pipe(
-    Effect.flatMap((plan) =>
-      plan._tag === "window"
-        ? read(plan.spec)
-        : drainSubset(read, descriptor.source, plan.where, descriptor.maximumRows),
-    ),
-    Effect.flatMap((subset) => decoded(descriptor, subset)),
-  );
-
-export const readCollectionSource = <Row extends InventoryCollectionRow>(
-  descriptor: InventoryCollectionDescriptor<Row>,
-  read: ReadSubset,
-): Effect.Effect<PlannedRead<Row>, unknown> =>
-  drainSubset(read, descriptor.source, undefined, descriptor.maximumRows).pipe(
-    Effect.flatMap((subset) => decoded(descriptor, subset)),
-  );

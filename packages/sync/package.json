@@ -6,13 +6,11 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./replica/indexeddb": "./src/replica/indexeddb/store.ts",
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts",
     "./web-lock": "./src/web-lock.ts"
   },
   "dependencies": {
-    "@effect/platform-browser": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
@@ -22,7 +20,6 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "^26.6.3",
-    "fake-indexeddb": "^6.2.5",
     "typescript": "catalog:",
     "vitest": "5.0.2"
   }

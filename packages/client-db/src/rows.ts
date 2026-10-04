@@ -114,13 +114,3 @@ export type PurchaseOrderRow = SyncEntityRow<"purchaseOrder">;
 
 export const PurchaseOrderItemRow = syncEntityRows.purchaseOrderItem.schema;
 export type PurchaseOrderItemRow = SyncEntityRow<"purchaseOrderItem">;
-
-const TANSTACK_DB_VIRTUAL_KEYS = ["$synced", "$origin", "$key", "$collectionId"] as const;
-
-export const persistableRow = <T extends object>(row: T): T => {
-  const copy = { ...row };
-  for (const key of TANSTACK_DB_VIRTUAL_KEYS) {
-    Reflect.deleteProperty(copy, key);
-  }
-  return copy;
-};

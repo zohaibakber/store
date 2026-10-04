@@ -1,41 +1,12 @@
 import type { ReplicaCommitNotice as CatalogCommitNotice } from "@store/client-db";
-import {
-  InsightsContext,
-  InsightsSummaryRead,
-  ProductInsightIds,
-  ProductInsightsRead,
-  RestockPageRead,
-  RestockPageRequest,
-  SyncEntity,
-} from "@store/contracts";
+import { SyncEntity } from "@store/contracts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
-import { ReplicaCommitNotice, ReplicaWorkspaceToken } from "./replica-rpc";
+import { AttachRendererRpc, ReplicaCommitNotice } from "./replica-rpc";
 
-export const ReplicaInsightsSummaryInput = Schema.Struct({
-  workspaceToken: ReplicaWorkspaceToken,
-  context: InsightsContext,
-});
-
-export const ReplicaProductInsightsInput = Schema.Struct({
-  workspaceToken: ReplicaWorkspaceToken,
-  context: InsightsContext,
-  ids: ProductInsightIds,
-});
-
-export const ReplicaRestockPageInput = Schema.Struct({
-  workspaceToken: ReplicaWorkspaceToken,
-  context: InsightsContext,
-  request: RestockPageRequest,
-});
-
-const ANALYTICS_PERMANENT_STREAMS = 1;
-const ANALYTICS_CONTROL_SLOTS = 4;
-const ANALYTICS_FINITE_READS = 4;
-export const ANALYTICS_WORKER_RPC_CONCURRENCY =
-  ANALYTICS_PERMANENT_STREAMS + ANALYTICS_CONTROL_SLOTS + ANALYTICS_FINITE_READS;
+export const ANALYTICS_WORKER_RPC_CONCURRENCY = 4;
 
 export const AnalyticsWorkerBoot = Schema.Struct({
   replicaDatabasePath: Schema.String,
@@ -46,18 +17,6 @@ export class AnalyticsWorkerFailure extends Schema.TaggedError<AnalyticsWorkerFa
   "AnalyticsWorkerFailure",
   { message: Schema.String },
 ) {}
-
-export const AnalyticsEvent = Schema.Struct({
-  revision: Schema.Natural,
-  state: Schema.Literals(["idle", "building", "refreshing"]),
-  progress: Schema.NullOr(
-    Schema.Struct({
-      done: Schema.Natural,
-      total: Schema.Natural,
-    }),
-  ),
-});
-export type AnalyticsEvent = typeof AnalyticsEvent.Type;
 
 const ANALYTICS_NOTICE_TOKEN = "analytics";
 
@@ -80,21 +39,6 @@ export const analyticsNoticeOf = ({
 
 export const AnalyticsWorkerRpcs = RpcGroup.make(
   Rpc.make("Ready", { success: Schema.Literal("ready"), error: AnalyticsWorkerFailure }),
+  AttachRendererRpc,
   Rpc.make("Notify", { payload: { notice: ReplicaCommitNotice } }),
-  Rpc.make("ReadSummary", {
-    payload: { context: InsightsContext },
-    success: InsightsSummaryRead,
-    error: AnalyticsWorkerFailure,
-  }),
-  Rpc.make("ReadProducts", {
-    payload: { context: InsightsContext, ids: ProductInsightIds },
-    success: ProductInsightsRead,
-    error: AnalyticsWorkerFailure,
-  }),
-  Rpc.make("ReadRestockPage", {
-    payload: { context: InsightsContext, request: RestockPageRequest },
-    success: RestockPageRead,
-    error: AnalyticsWorkerFailure,
-  }),
-  Rpc.make("Changes", { success: AnalyticsEvent, stream: true }),
 );

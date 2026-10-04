@@ -5,15 +5,14 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./workspace": "./src/open.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@effect/atom-react": "catalog:",
+    "@effect/platform-browser": "catalog:",
     "@store/client-db": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/services": "workspace:*",
-    "@tanstack/react-db": "0.4.1",
     "effect": "catalog:"
   },
   "devDependencies": {

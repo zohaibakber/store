@@ -15,12 +15,10 @@ import type * as RpcClient from "effect/rpc/RpcClient";
 import { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 
 import {
   analyticsNoticeOf,
   AnalyticsWorkerFailure,
-  type AnalyticsEvent,
   type AnalyticsWorkerBoot,
   type AnalyticsWorkerRpcs,
 } from "./analytics-rpc";
@@ -65,7 +63,7 @@ const unavailable = (message: string) => new AnalyticsWorkerFailure({ message })
 
 export const makeAnalyticsController = (options: {
   readonly launch: AnalyticsWorkerLaunch;
-  readonly onEvent: (event: AnalyticsEvent) => Effect.Effect<void>;
+  readonly onLost: Effect.Effect<void>;
 }): Effect.Effect<AnalyticsController, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parent = yield* Effect.scope;
@@ -112,11 +110,6 @@ export const makeAnalyticsController = (options: {
           Effect.tapError(() => noteFailure(undefined)),
         );
         const startedAt = yield* Clock.currentTimeMillis;
-        yield* process.client.Changes().pipe(
-          Stream.runForEach(options.onEvent),
-          Effect.catchCause(() => Effect.void),
-          Effect.forkScoped,
-        );
         yield* Ref.set(warm, Option.some(process));
         const retired = yield* Deferred.make<void>();
         yield* Effect.addFinalizer(() => Deferred.succeed(retired, undefined));
@@ -125,6 +118,7 @@ export const makeAnalyticsController = (options: {
           Effect.andThen(Ref.set(warm, Option.none())),
           Effect.andThen(RcRef.invalidate(worker)),
           Effect.andThen(Deferred.succeed(retired, undefined)),
+          Effect.andThen(options.onLost),
           Effect.forkIn(parent),
         );
         return { ...process, retired: Deferred.await(retired) };

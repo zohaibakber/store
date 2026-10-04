@@ -1,4 +1,3 @@
-import * as IndexedDb from "@effect/platform-browser/IndexedDb";
 import { describe, expect, it } from "@effect/vitest";
 import {
   BatchId,
@@ -26,12 +25,8 @@ import {
   suppliers,
 } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { sqlitePartitionDigest } from "../src/replica/digest";
-import { indexedDbPartitionDigest } from "../src/replica/indexeddb/digest";
-import { ReplicaIndexedDb, storedProduct } from "../src/replica/indexeddb/schema";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { openReplicaStore } from "../src/sqlite";
 
@@ -109,11 +104,6 @@ const unicode = across(UNICODE_IDS);
 const sqliteFixtures: ReadonlyArray<readonly [string, Fixture]> = [
   ["unicode", unicode],
   ["random ids beyond one page", across(randomIds(4_500))],
-];
-
-const indexedFixtures: ReadonlyArray<readonly [string, Fixture]> = [
-  ["unicode", unicode],
-  ["random ids beyond one chunk", across(randomIds(1_500))],
 ];
 
 const managed = (rowVersion: number) => ({
@@ -276,57 +266,6 @@ const seedSqlite = (fixture: Fixture) =>
     return store;
   });
 
-let databaseCounter = 0;
-
-const seedIndexed = (fixture: Fixture) =>
-  Effect.gen(function* () {
-    databaseCounter += 1;
-    const database = yield* Layer.build(
-      ReplicaIndexedDb.layer(`digest-streaming-${databaseCounter}`).pipe(
-        Layer.provide(
-          Layer.succeed(IndexedDb.IndexedDb, IndexedDb.make({ indexedDB, IDBKeyRange })),
-        ),
-      ),
-    );
-    const api = yield* ReplicaIndexedDb.getQueryBuilder.pipe(Effect.provideContext(database));
-    yield* api.from("replica_state").upsert({
-      id: "singleton",
-      organizationId: ORG,
-      userId: "user-1",
-      replicaId: "replica-1",
-      epoch: "e",
-      incarnation: "i",
-      appliedCommitSequence: "0",
-      nextClientSequence: "1",
-      localCommitVersion: 0,
-      activeGeneration: 1,
-      caughtUpAt: null,
-      registeredAt: null,
-    });
-    const generation = { generation: 1 };
-    for (const part of chunks(categoryRows(fixture), 500))
-      yield* api.from("categories").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(productRows(fixture), 500))
-      yield* api.from("products").insertAll(part.map((row) => storedProduct(1, row)));
-    for (const part of chunks(batchRows(fixture), 500))
-      yield* api.from("batches").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(invoiceRows(fixture), 500))
-      yield* api.from("invoices").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(invoiceItemRows(fixture), 500))
-      yield* api.from("invoice_items").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(stockMovementRows(fixture), 500))
-      yield* api.from("stock_movements").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(supplierRows(fixture), 500))
-      yield* api.from("suppliers").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(purchaseOrderRows(fixture), 500))
-      yield* api.from("purchase_orders").insertAll(part.map((row) => ({ ...generation, ...row })));
-    for (const part of chunks(purchaseOrderItemRows(fixture), 500))
-      yield* api
-        .from("purchase_order_items")
-        .insertAll(part.map((row) => ({ ...generation, ...row })));
-    return api;
-  });
-
 describe("streamed replica digest", () => {
   for (const [name, fixture] of sqliteFixtures) {
     it.effect(`sqlite ${name}`, () =>
@@ -334,18 +273,6 @@ describe("streamed replica digest", () => {
         Effect.gen(function* () {
           const store = yield* seedSqlite(fixture);
           const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx));
-          expect(local).toEqual(yield* partitionDigestOf(fixture));
-        }),
-      ),
-    );
-  }
-
-  for (const [name, fixture] of indexedFixtures) {
-    it.effect(`indexeddb ${name}`, () =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const api = yield* seedIndexed(fixture);
-          const local = yield* indexedDbPartitionDigest(api);
           expect(local).toEqual(yield* partitionDigestOf(fixture));
         }),
       ),

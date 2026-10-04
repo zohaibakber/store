@@ -24,7 +24,8 @@ export const syncNeedsAttention = (status: InventorySyncStatus) =>
   status._tag === "rejected" ||
   status._tag === "storageError" ||
   status._tag === "updateRequired" ||
-  status._tag === "recoveryRequired";
+  status._tag === "recoveryRequired" ||
+  status._tag === "unavailable";
 
 export const syncHealthView = (status: InventorySyncStatus): SyncHealthView => {
   switch (status._tag) {
@@ -62,6 +63,8 @@ export const syncHealthView = (status: InventorySyncStatus): SyncHealthView => {
       return { tone: "error", title: "Update required", detail: status.message, canFix: false };
     case "recoveryRequired":
       return { tone: "error", title: "Needs recovery", detail: status.message, canFix: false };
+    case "unavailable":
+      return { tone: "error", title: "Catalog unavailable", detail: status.message, canFix: false };
   }
 };
 

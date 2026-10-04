@@ -1,9 +1,11 @@
 import {
   ImportCatalogRequest,
+  ImportCatalogResult,
   MAX_IMPORT_PART_BYTES,
   MAX_IMPORT_PART_ROWS,
   MAX_IMPORT_PARTS,
   type ImportId,
+  type ImportStatus,
 } from "@store/contracts";
 import { sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
@@ -14,6 +16,7 @@ import * as Schema from "effect/Schema";
 import type { InventoryError } from "./errors";
 import type { EncodedCommit, EncodedJsonBody, InventoryActor } from "./model";
 import {
+  databaseError,
   isDataException,
   protocol,
   randomHex,
@@ -40,6 +43,10 @@ export interface InventoryImportsContract {
     importId: ImportId,
     request: ImportCatalogRequest,
   ) => Effect.Effect<EncodedCommit, InventoryError>;
+  readonly status: (
+    actor: InventoryActor,
+    importId: ImportId,
+  ) => Effect.Effect<ImportStatus, InventoryError>;
 }
 
 const committedRow = syncFunctionRow(
@@ -49,6 +56,15 @@ const committedRow = syncFunctionRow(
     ...syncFunctionReply,
   }),
 );
+
+const statusRow = syncFunctionRow(
+  Schema.Struct({
+    committed: Schema.NullOr(Schema.String),
+    refusal: Schema.NullOr(Schema.String),
+  }),
+);
+
+const decodeResult = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportCatalogResult));
 
 const encodeRequest = Schema.encodeSync(Schema.fromJsonString(ImportCatalogRequest));
 
@@ -117,5 +133,26 @@ export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsCont
               originReplicaId: NO_ORIGIN_REPLICA,
             };
       return { json, fanout } satisfies EncodedCommit;
+    }),
+    status: Effect.fn("InventoryImports.status")(function* (actor, importId) {
+      const row = yield* statusRow(
+        db.execute(
+          sql`select
+            (
+              select "i"."result_json" from "catalog_imports" as "i"
+              where "i"."organization_id" = ${actor.organizationId}
+                and "i"."import_id" = ${importId}
+            ) as "committed",
+            sync.import_refusal(${actor.organizationId}::text) as "refusal"`,
+          "objects",
+        ),
+      );
+      if (row.committed !== null) {
+        const result = yield* decodeResult(row.committed).pipe(Effect.mapError(databaseError));
+        return { _tag: "committed", result } satisfies ImportStatus;
+      }
+      return row.refusal === null
+        ? ({ _tag: "none" } satisfies ImportStatus)
+        : ({ _tag: "other", message: row.refusal } satisfies ImportStatus);
     }),
   });

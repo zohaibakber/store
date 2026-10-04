@@ -7,6 +7,7 @@ import { installAppHost } from "@/host";
 import { electronAppHost } from "@/host/electron";
 import { bootstrapAuth } from "@/lib/auth";
 import { createElectronInventoryHost } from "@/lib/inventory/host-electron";
+import { hostInventoryOf } from "@/lib/inventory/host-inventory";
 import { browserStorage } from "@/lib/preferences";
 import { reportError } from "@/lib/report-error";
 import { deviceWorkspaceStore } from "@/session/device-workspace";
@@ -30,7 +31,7 @@ export const startElectron = async () => {
     history: createHashHistory(),
     access: hostAccess({ localWorkspace: device }),
     catalog: createAppCatalogLifetime(),
-    inventory,
+    inventory: hostInventoryOf(inventory),
     device,
   });
 };

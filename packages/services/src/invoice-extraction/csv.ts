@@ -75,3 +75,16 @@ const parseCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> => {
 
 export const receivedStockFromCsv = (contents: string): ReadonlyArray<InvoiceExtractionLine> =>
   parseCsv(contents).filter(hasReceivedStock);
+
+export const isCsvFile = (file: { readonly name: string }): boolean =>
+  file.name.toLowerCase().endsWith(".csv");
+
+export const mergeReceivedStock = (
+  csvLinesByFile: ReadonlyArray<ReadonlyArray<InvoiceExtractionLine> | null>,
+  documentLines: ReadonlyArray<InvoiceExtractionLine>,
+): ReadonlyArray<InvoiceExtractionLine> => {
+  const firstDocument = csvLinesByFile.indexOf(null);
+  return csvLinesByFile.flatMap(
+    (lines, index) => lines ?? (index === firstDocument ? documentLines : []),
+  );
+};

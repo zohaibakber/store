@@ -1,3 +1,4 @@
+import type { WorkerPhase } from "@store/contracts/replica";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -101,7 +102,16 @@ export type ReplicaSupervisor<Client = ReplicaWorkerClient> = {
   ) => Effect.Effect<A, E | ReplicaWorkerFailure | ReplicaWorkerLost, R>;
   readonly retry: Effect.Effect<void>;
   readonly terminate: Effect.Effect<void>;
+  readonly phases: Stream.Stream<WorkerPhase>;
 };
+
+const PHASES = {
+  Starting: "starting",
+  Running: "running",
+  Recovering: "recovering",
+  Exhausted: "exhausted",
+  Unavailable: "unavailable",
+} satisfies Record<ReplicaSupervisorState<unknown>["_tag"], WorkerPhase>;
 
 export const isWorkerLost = Predicate.or(
   Predicate.isTagged("ReplicaWorkerLost"),
@@ -127,7 +137,6 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
     worker: LiveWorker<Client>,
     recovered: boolean,
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly onExhausted: Effect.Effect<void>;
 }): Effect.Effect<ReplicaSupervisor<Client>, ReplicaWorkerFailure, Scope.Scope> =>
   Effect.gen(function* () {
     const { policy } = options;
@@ -204,7 +213,6 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
       );
 
     const awaitExhaustion = SubscriptionRef.set(state, { _tag: "Exhausted" }).pipe(
-      Effect.andThen(options.onExhausted),
       Effect.andThen(Queue.take(retryRequests)),
       Effect.andThen(SubscriptionRef.set(state, { _tag: "Recovering" })),
     );
@@ -286,6 +294,10 @@ export const startReplicaSupervisor = <Client extends EngineClient, Boot>(option
       ).pipe(Effect.asVoid),
       terminate: Effect.flatMap(SubscriptionRef.get(state), (current) =>
         current._tag === "Running" ? current.worker.terminate : Effect.void,
+      ),
+      phases: SubscriptionRef.changes(state).pipe(
+        Stream.map((current) => PHASES[current._tag]),
+        Stream.changes,
       ),
     } satisfies ReplicaSupervisor<Client>;
   });

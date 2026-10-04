@@ -26,7 +26,7 @@ type StoredOutboxRow = {
   readonly envelopeJson: string;
 };
 
-export const decodeOutboxEnvelope = <E>(
+const decodeOutboxEnvelope = <E>(
   row: StoredOutboxRow,
   onError: (message: string) => E,
 ): Effect.Effect<SyncCommandEnvelope, E | SyncProtocolError> =>

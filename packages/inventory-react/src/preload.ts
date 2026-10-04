@@ -8,46 +8,24 @@ import type { InvoiceListRequest } from "./invoice-list";
 import { PURCHASE_ORDER_TABS } from "./list-request";
 import type { ProductListRequest } from "./product-list";
 import type { PurchaseOrderListRequest } from "./purchasing";
-import {
-  livePurchaseOrder,
-  livePurchaseOrderDeliveries,
-  livePurchaseOrdersById,
-  liveSuppliers,
-} from "./purchasing-queries";
-import {
-  HISTORY_PAGE_SIZE,
-  liveBatchesOfProducts,
-  liveCategories,
-  liveInvoice,
-  liveInvoicesById,
-  liveProduct,
-  liveProductsById,
-  liveRecentInvoices,
-  liveStockMovementsFirstPage,
-} from "./queries";
+import { HISTORY_PAGE_SIZE } from "./queries";
 import type { Inventory } from "./types";
 
 const STILL_COMPUTING_GRACE = "120 millis";
 
 type Preload = Effect.Effect<void, unknown>;
 
-const warmQuery = (collection: { readonly preload: () => Promise<void> }): Preload =>
-  Effect.tryPromise(() => collection.preload());
-
-const readAtom = <A, E>(inventory: Inventory, atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
-  AtomRegistry.getResult(inventory.atoms.registry, atom);
-
 const warmAtom = <A, E>(inventory: Inventory, atom: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
-  Effect.asVoid(readAtom(inventory, atom));
+  Effect.asVoid(AtomRegistry.getResult(inventory.atoms.registry, atom));
 
 export const preloadAll = (preloads: ReadonlyArray<Preload>): Preload =>
   Effect.all(preloads, { concurrency: "unbounded", discard: true });
 
 export const preloadCatalogCategories = (inventory: Inventory): Preload =>
-  warmQuery(liveCategories(inventory));
+  warmAtom(inventory, inventory.atoms.categories);
 
 export const preloadSuppliers = (inventory: Inventory): Preload =>
-  warmQuery(liveSuppliers(inventory));
+  warmAtom(inventory, inventory.atoms.suppliers);
 
 export const preloadProductFacets = (inventory: Inventory): Preload =>
   warmAtom(inventory, inventory.atoms.productFacets);
@@ -61,30 +39,18 @@ export const preloadProductList = (inventory: Inventory, request: ProductListReq
   ]);
 
 export const preloadCatalogProduct = (inventory: Inventory, productId: string): Preload =>
-  warmQuery(liveProduct(inventory, productId));
+  warmAtom(inventory, inventory.atoms.product(productId));
 
 export const preloadCatalogProductsById = (
   inventory: Inventory,
   productIds: ReadonlyArray<string>,
-): Preload => warmQuery(liveProductsById(inventory, productIds));
+): Preload => warmAtom(inventory, inventory.atoms.productsById(productIds));
 
 export const preloadProductSearch = (inventory: Inventory, query: string, limit: number): Preload =>
-  preloadAll([
-    preloadCatalogCategories(inventory),
-    readAtom(inventory, inventory.atoms.productSearch(limit)(query)).pipe(
-      Effect.flatMap((rows) =>
-        warmQuery(
-          liveBatchesOfProducts(
-            inventory,
-            rows.map((row) => row.id),
-          ),
-        ),
-      ),
-    ),
-  ]);
+  warmAtom(inventory, inventory.atoms.productSearch(limit)(query));
 
 export const preloadStockMovementHistory = (inventory: Inventory, productId: string): Preload =>
-  warmQuery(liveStockMovementsFirstPage(inventory, productId, HISTORY_PAGE_SIZE));
+  warmAtom(inventory, inventory.atoms.stockMovementHistory(productId, HISTORY_PAGE_SIZE).window);
 
 export const preloadProductStockPlan = (inventory: Inventory, productId: string): Preload =>
   preloadAll([
@@ -97,18 +63,16 @@ export const preloadProductStockPlan = (inventory: Inventory, productId: string)
   ]);
 
 export const preloadInventoryInvoices = (inventory: Inventory, limit: number): Preload =>
-  warmQuery(liveRecentInvoices(inventory, limit));
+  warmAtom(inventory, inventory.atoms.recentInvoices(limit));
 
 export const preloadInvoiceList = (inventory: Inventory, request: InvoiceListRequest): Preload =>
   preloadAll([
     warmAtom(inventory, inventory.atoms.invoiceCount(request.filters)),
-    readAtom(inventory, inventory.atoms.invoicePage(request)).pipe(
-      Effect.flatMap((ids) => warmQuery(liveInvoicesById(inventory, ids))),
-    ),
+    warmAtom(inventory, inventory.atoms.invoicePage(request)),
   ]);
 
 export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: string): Preload =>
-  warmQuery(liveInvoice(inventory, invoiceId));
+  warmAtom(inventory, inventory.atoms.invoice(invoiceId));
 
 export const preloadInventoryInsights = (inventory: Inventory): Preload =>
   warmAtom(inventory, inventory.atoms.insights);
@@ -132,14 +96,11 @@ export const preloadPurchaseOrderList = (
     preloadSuppliers(inventory),
     preloadPurchaseOrderTabs(inventory),
     warmAtom(inventory, inventory.atoms.purchaseOrderListCount(request.filters)),
-    readAtom(inventory, inventory.atoms.purchaseOrderPage(request)).pipe(
-      Effect.flatMap((ids) => warmQuery(livePurchaseOrdersById(inventory, ids))),
-    ),
+    warmAtom(inventory, inventory.atoms.purchaseOrderPage(request)),
   ]);
 
 export const preloadPurchaseOrder = (inventory: Inventory, orderId: string): Preload =>
   preloadAll([
     preloadSuppliers(inventory),
-    warmQuery(livePurchaseOrder(inventory, orderId)),
-    warmQuery(livePurchaseOrderDeliveries(inventory, orderId)),
+    warmAtom(inventory, inventory.atoms.purchaseOrderDetail(orderId)),
   ]);

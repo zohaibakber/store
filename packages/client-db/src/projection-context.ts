@@ -1,3 +1,6 @@
+import { CatalogRefusal } from "@store/contracts/catalog-refusal";
+import * as Result from "effect/Result";
+
 export type CatalogActor = {
   readonly organizationId: string;
   readonly userId: string;
@@ -25,10 +28,17 @@ export type ProjectionContext<Tables> = {
   readonly tables: Tables;
 };
 
-export const requiredRow = <Row>(row: Row | undefined, label: string): Row => {
-  if (!row) throw new Error(`${label} no longer exists.`);
-  return row;
-};
+export const requiredRow = <Row>(
+  row: Row | undefined,
+  label: string,
+): Result.Result<Row, CatalogRefusal> =>
+  Result.gen(function* () {
+    if (!row)
+      return yield* Result.fail(
+        new CatalogRefusal({ reason: "missingReference", message: `${label} no longer exists.` }),
+      );
+    return row;
+  });
 
 export const commandIds = (context: ProjectionContext<unknown>) => ({
   now: () => context.occurredAt,

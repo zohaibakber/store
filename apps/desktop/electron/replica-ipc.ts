@@ -1,66 +1,34 @@
-import type { ElectronReplicaBridge } from "@store/client-db";
 import type { DeviceLabel } from "@store/contracts";
+import type { ReplicaWorkspaceBridge } from "@store/web/host/electron";
 import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
 import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as FiberMap from "effect/FiberMap";
 import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
+import type { MessageChannelMain } from "electron";
 
-import {
-  ReplicaInsightsSummaryInput,
-  ReplicaProductInsightsInput,
-  ReplicaRestockPageInput,
-} from "./analytics-rpc";
 import {
   BACKUP_SAVE_CHANNEL,
   PUBLISH_DISCARD_CHANNEL,
   PUBLISH_LOCAL_CATALOG_CHANNEL,
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_START_CHANNEL,
-  REPLICA_ACTIVITY_CHANNEL,
-  REPLICA_CANCEL_READ_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_STATUS_CHANNEL,
-  REPLICA_ENQUEUE_CHANNEL,
-  REPLICA_INSIGHTS_SUMMARY_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_PRODUCT_INSIGHTS_CHANNEL,
-  REPLICA_READ_BATCH_CHANNEL,
-  REPLICA_READ_INSIGHTS_CHANNEL,
-  REPLICA_READ_SUBSET_CHANNEL,
-  REPLICA_RESTOCK_PAGE_CHANNEL,
   REPLICA_RETRY_CHANNEL,
-  REPLICA_STAMP_CHANNEL,
-  REPLICA_SUMMARIZE_SUBSET_CHANNEL,
-  REPLICA_WAKE_CHANNEL,
   RESTORE_APPLY_CHANNEL,
   RESTORE_CHOOSE_CHANNEL,
   RESTORE_DISCARD_CHANNEL,
 } from "./ipc-channels";
 import { trustedIpcListener, type TrustedIpcSenderFrame } from "./ipc-sender";
-import { makeReplicaAuthorityHost, type ReplicaSyncApiRequest } from "./replica-authority-host";
 import { makeReplicaBackup, makeStagedRestores, type ReplicaBackupDialogs } from "./replica-backup";
 import { makeReplicaPublishHost } from "./replica-publish-host";
+import { ReplicaOpenInput, ReplicaWorkspaceToken } from "./replica-rpc";
 import {
-  ReplicaCancelReadInput,
-  ReplicaCommandStatusInput,
-  ReplicaEnqueueInput,
-  ReplicaOpenInput,
-  ReplicaReadBatchInput,
-  ReplicaReadInsightsInput,
-  ReplicaReadSubsetInput,
-  ReplicaSummarizeSubsetInput,
-  ReplicaWorkspaceToken,
-} from "./replica-rpc";
-import {
-  makeReplicaSessions,
+  makeWorkspaceSessions,
+  type AccessTokenSource,
   type ReplicaSender,
-  type ReplicaSession,
-  type ReplicaSessionTuning,
-} from "./replica-sessions";
-import { isWorkerLost } from "./replica-supervisor";
+  type WorkspaceSessionTuning,
+} from "./workspace-sessions";
 
 export type ReplicaInvokeEvent = {
   readonly senderFrame: TrustedIpcSenderFrame | null;
@@ -74,24 +42,11 @@ type BridgeResult<Method> = Method extends (...args: never) => Promise<infer Res
 const CHANNEL_METHODS = {
   [REPLICA_OPEN_CHANNEL]: "open",
   [REPLICA_CLOSE_CHANNEL]: "close",
-  [REPLICA_STAMP_CHANNEL]: "stamp",
-  [REPLICA_READ_SUBSET_CHANNEL]: "readSubset",
-  [REPLICA_READ_BATCH_CHANNEL]: "readBatch",
-  [REPLICA_CANCEL_READ_CHANNEL]: "cancelRead",
   [REPLICA_RETRY_CHANNEL]: "retryRecovery",
-  [REPLICA_READ_INSIGHTS_CHANNEL]: "readInsights",
-  [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: "summarizeSubset",
-  [REPLICA_INSIGHTS_SUMMARY_CHANNEL]: "readInsightsSummary",
-  [REPLICA_PRODUCT_INSIGHTS_CHANNEL]: "readProductInsights",
-  [REPLICA_RESTOCK_PAGE_CHANNEL]: "readRestockPage",
-  [REPLICA_ACTIVITY_CHANNEL]: "readSyncActivity",
-  [REPLICA_ENQUEUE_CHANNEL]: "enqueueCommand",
-  [REPLICA_COMMAND_STATUS_CHANNEL]: "readCommandStatus",
-  [REPLICA_WAKE_CHANNEL]: "wakeSyncUpload",
-} satisfies Record<string, keyof ElectronReplicaBridge>;
+} satisfies Record<string, keyof ReplicaWorkspaceBridge>;
 
 type ChannelMethod<Channel extends keyof typeof CHANNEL_METHODS> =
-  ElectronReplicaBridge[(typeof CHANNEL_METHODS)[Channel]];
+  ReplicaWorkspaceBridge[(typeof CHANNEL_METHODS)[Channel]];
 
 type ReplicaIpcInput = Parameters<ChannelMethod<keyof typeof CHANNEL_METHODS>>[0];
 
@@ -149,54 +104,9 @@ export type ReplicaIpcListener = (
 
 const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
-const decodeReadSubsetInput = Schema.decodeUnknownSync(ReplicaReadSubsetInput);
-const decodeReadBatchInput = Schema.decodeUnknownSync(ReplicaReadBatchInput);
-const decodeCancelReadInput = Schema.decodeUnknownSync(ReplicaCancelReadInput);
-const decodeReadInsightsInput = Schema.decodeUnknownSync(ReplicaReadInsightsInput);
-const decodeSummarizeSubsetInput = Schema.decodeUnknownSync(ReplicaSummarizeSubsetInput);
-const decodeInsightsSummaryInput = Schema.decodeUnknownSync(ReplicaInsightsSummaryInput);
-const decodeProductInsightsInput = Schema.decodeUnknownSync(ReplicaProductInsightsInput);
-const decodeRestockPageInput = Schema.decodeUnknownSync(ReplicaRestockPageInput);
-const decodeEnqueueInput = Schema.decodeUnknownSync(ReplicaEnqueueInput);
-const decodeCommandStatusInput = Schema.decodeUnknownSync(ReplicaCommandStatusInput);
 const decodeOrganizationId = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 
 const run = Effect.runPromise;
-
-const readKey = (workspaceToken: string, requestId: string) => `${workspaceToken}:${requestId}`;
-
-const makeReadFibers = (scope: Scope.Scope) =>
-  Effect.runSync(
-    Effect.gen(function* () {
-      const fibers = yield* FiberMap.make<string>();
-      return { fibers, run: yield* FiberMap.runtimePromise(fibers)() };
-    }).pipe(Scope.provide(scope)),
-  );
-
-const enqueue = (session: ReplicaSession, input: ReturnType<typeof decodeEnqueueInput>) =>
-  session.admission.write(
-    session.supervisor
-      .use((worker) => worker.client.EnqueueCommand({ request: input.request }))
-      .pipe(
-        Effect.catchIf(isWorkerLost, () =>
-          session.supervisor.use((worker) =>
-            worker.client.ReadCommandStatus({ operationId: input.request.operationId }).pipe(
-              Effect.flatMap((status) =>
-                status === null
-                  ? worker.client.EnqueueCommand({ request: input.request })
-                  : worker.client.Stamp().pipe(
-                      Effect.map((stamp) => ({
-                        operationId: input.request.operationId,
-                        status,
-                        stamp,
-                      })),
-                    ),
-              ),
-            ),
-          ),
-        ),
-      ),
-  );
 
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {
@@ -207,17 +117,20 @@ export const registerReplicaWorkerIpc = (options: {
   readonly workerPath: string;
   readonly apiBaseUrl: string;
   readonly deviceLabel?: DeviceLabel | undefined;
-  readonly syncApiRequest: ReplicaSyncApiRequest;
-  readonly liveAccessToken: (force: boolean) => Promise<string | null>;
+  readonly accessTokens: AccessTokenSource;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly backupDialogs: ReplicaBackupDialogs;
-  readonly sessions?: ReplicaSessionTuning;
+  readonly rendererChannel?: (() => MessageChannelMain) | undefined;
+  readonly sessions?: WorkspaceSessionTuning;
 }) => {
   const stagedRestores = makeStagedRestores();
-  const sessions = makeReplicaSessions({
+  const sessions = makeWorkspaceSessions({
     userDataPath: options.userDataPath,
     workerPath: options.workerPath,
-    authority: makeReplicaAuthorityHost(options),
+    apiBaseUrl: options.apiBaseUrl,
+    deviceLabel: options.deviceLabel,
+    accessTokens: options.accessTokens,
+    rendererChannel: options.rendererChannel,
     onDispose: (session) => stagedRestores.discard(session.workspaceToken),
     ...options.sessions,
   });
@@ -229,29 +142,6 @@ export const registerReplicaWorkerIpc = (options: {
   const publish = makeReplicaPublishHost(sessions);
 
   const currentSession = (event: ReplicaInvokeEvent) => sessions.latestFor(event.sender.id);
-
-  const scope = Scope.makeUnsafe();
-  let reads: ReturnType<typeof makeReadFibers> | undefined;
-
-  const withSession = async <A, E>(
-    event: ReplicaInvokeEvent,
-    input: ReplicaIpcInput,
-    action: string,
-    use: (session: ReplicaSession) => Effect.Effect<A, E>,
-  ): Promise<A> =>
-    run(sessions.whenOwnedOpen(event.sender.id, decodeWorkspaceToken(input), action, use));
-
-  const cancellableRead = async <A, E>(
-    event: ReplicaInvokeEvent,
-    workspaceToken: string,
-    requestId: string,
-    action: string,
-    use: (session: ReplicaSession) => Effect.Effect<A, E>,
-  ): Promise<A> =>
-    (reads ??= makeReadFibers(scope)).run(
-      readKey(workspaceToken, requestId),
-      sessions.whenOwnedOpen(event.sender.id, workspaceToken, action, use),
-    );
 
   const backupHandlers: BackupIpcHandlers = {
     [BACKUP_SAVE_CHANNEL]: async (event) => run(backup.backUp(currentSession(event))),
@@ -276,103 +166,15 @@ export const registerReplicaWorkerIpc = (options: {
       run(sessions.open(event.sender, decodeOpenInput(input))),
     [REPLICA_CLOSE_CHANNEL]: async (event, input) =>
       run(sessions.close(event.sender.id, decodeWorkspaceToken(input))),
-    [REPLICA_STAMP_CHANNEL]: (event, input) =>
-      withSession(event, input, "stamp", (session) =>
-        session.supervisor.useIdempotent((worker) => worker.client.Stamp()),
-      ),
-    [REPLICA_READ_SUBSET_CHANNEL]: async (event, input) => {
-      const read = decodeReadSubsetInput(input);
-      return cancellableRead(event, read.workspaceToken, read.requestId, "subset read", (session) =>
-        session.admission.read(
-          session.reader.useIdempotent((reader) => reader.client.ReadSubset({ spec: read.spec })),
+    [REPLICA_RETRY_CHANNEL]: async (event, input) =>
+      run(
+        sessions.whenOwnedOpen(
+          event.sender.id,
+          decodeWorkspaceToken(input),
+          "recovery retry",
+          (session) =>
+            Effect.all([session.supervisor.retry, session.reader.retry], { discard: true }),
         ),
-      );
-    },
-    [REPLICA_READ_BATCH_CHANNEL]: async (event, input) => {
-      const read = decodeReadBatchInput(input);
-      return cancellableRead(event, read.workspaceToken, read.requestId, "batch read", (session) =>
-        session.admission.read(
-          session.reader.useIdempotent((reader) => reader.client.ReadBatch({ specs: read.specs })),
-        ),
-      );
-    },
-    [REPLICA_CANCEL_READ_CHANNEL]: async (event, input) => {
-      const cancel = decodeCancelReadInput(input);
-      sessions.owned(event.sender.id, cancel.workspaceToken, "read cancel");
-      if (reads === undefined) return;
-      return run(FiberMap.remove(reads.fibers, readKey(cancel.workspaceToken, cancel.requestId)));
-    },
-    [REPLICA_RETRY_CHANNEL]: (event, input) =>
-      withSession(event, input, "recovery retry", (session) =>
-        Effect.all([session.supervisor.retry, session.reader.retry], { discard: true }),
-      ),
-    [REPLICA_READ_INSIGHTS_CHANNEL]: async (event, input) => {
-      const read = decodeReadInsightsInput(input);
-      return withSession(event, read.workspaceToken, "insights read", (session) =>
-        session.admission.read(
-          session.supervisor.useIdempotent((worker) =>
-            worker.client.ReadInsights({ window: read.window }),
-          ),
-        ),
-      );
-    },
-    [REPLICA_SUMMARIZE_SUBSET_CHANNEL]: async (event, input) => {
-      const read = decodeSummarizeSubsetInput(input);
-      return withSession(event, read.workspaceToken, "subset summary", (session) =>
-        session.admission.read(
-          session.reader.useIdempotent((reader) =>
-            reader.client.SummarizeSubset({ spec: read.spec }),
-          ),
-        ),
-      );
-    },
-    [REPLICA_INSIGHTS_SUMMARY_CHANNEL]: async (event, input) => {
-      const read = decodeInsightsSummaryInput(input);
-      return withSession(event, read.workspaceToken, "insights summary", (session) =>
-        session.analytics.use((client) => client.ReadSummary({ context: read.context })),
-      );
-    },
-    [REPLICA_PRODUCT_INSIGHTS_CHANNEL]: async (event, input) => {
-      const read = decodeProductInsightsInput(input);
-      return withSession(event, read.workspaceToken, "product insights", (session) =>
-        session.analytics.use((client) =>
-          client.ReadProducts({ context: read.context, ids: read.ids }),
-        ),
-      );
-    },
-    [REPLICA_RESTOCK_PAGE_CHANNEL]: async (event, input) => {
-      const read = decodeRestockPageInput(input);
-      return withSession(event, read.workspaceToken, "restock page", (session) =>
-        session.analytics.use((client) =>
-          client.ReadRestockPage({ context: read.context, request: read.request }),
-        ),
-      );
-    },
-    [REPLICA_ACTIVITY_CHANNEL]: (event, input) =>
-      withSession(event, input, "activity read", (session) =>
-        session.admission.read(
-          session.supervisor.useIdempotent((worker) => worker.client.ReadSyncActivity()),
-        ),
-      ),
-    [REPLICA_ENQUEUE_CHANNEL]: async (event, input) => {
-      const request = decodeEnqueueInput(input);
-      return withSession(event, request.workspaceToken, "enqueue", (session) =>
-        enqueue(session, request),
-      );
-    },
-    [REPLICA_COMMAND_STATUS_CHANNEL]: async (event, input) => {
-      const status = decodeCommandStatusInput(input);
-      return withSession(event, status.workspaceToken, "command status", (session) =>
-        session.supervisor.useIdempotent((worker) =>
-          worker.client.ReadCommandStatus({ operationId: status.operationId }),
-        ),
-      );
-    },
-    [REPLICA_WAKE_CHANNEL]: (event, input) =>
-      withSession(event, input, "wake", (session) =>
-        session.supervisor
-          .use((worker) => worker.client.WakeSyncUpload())
-          .pipe(Effect.orElseSucceed(() => ({ drained: false, drainCount: 0 }))),
       ),
   };
 
@@ -389,7 +191,7 @@ export const registerReplicaWorkerIpc = (options: {
     setForeground: (visible: boolean) => run(sessions.setForeground(visible)),
     dispose: () => {
       for (const channel of Object.keys(registered)) options.ipcMain.removeHandler(channel);
-      return run(Effect.ensuring(sessions.disposeAll, Scope.close(scope, Exit.void)));
+      return run(sessions.disposeAll);
     },
   };
 };

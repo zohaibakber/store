@@ -21,7 +21,7 @@ const unused = () => Effect.die("unused");
 const unusedInventory = {
   commands: { register: unused, submitRaw: unused, receipt: unused, pullEncoded: unused },
   snapshots: { acquireSnapshot: unused, readSnapshotPartEncoded: unused },
-  imports: { stagePart: unused, commit: unused },
+  imports: { stagePart: unused, commit: unused, status: unused },
   devices: { list: unused, command: unused },
 } satisfies Pick<WorkerServices, "commands" | "snapshots" | "imports" | "devices">;
 

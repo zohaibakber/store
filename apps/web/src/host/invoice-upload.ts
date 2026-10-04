@@ -1,14 +1,9 @@
 import { invoiceUploadRejection } from "@store/contracts";
-import { InvoiceExtraction } from "@store/contracts/server-api.schema";
-import {
-  SessionHttp,
-  asRequestError,
-  decodeResponse,
-  isInvalidResponse,
-  type RequestError,
-} from "@store/workspace";
+import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
+import type { RequestError, SessionHttp } from "@store/workspace";
 import * as Effect from "effect/Effect";
-import * as HttpBody from "effect/http/HttpBody";
+
+import { asServerRequestError, serverApi } from "./server-api";
 
 export type InvoiceUploadFile = {
   readonly name: string;
@@ -28,13 +23,8 @@ export const analyseInvoiceUpload = Effect.fn("analyseInvoiceUpload")(function* 
     const inferredType = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "text/csv";
     body.append("files", new File([file.bytes], file.name, { type: file.type || inferredType }));
   }
-  const session = yield* SessionHttp;
-  const response = yield* asRequestError(
-    session.http.post(`${session.apiBaseUrl}/api/uploads`, { body: HttpBody.formData(body) }),
-  );
-  return yield* decodeResponse(InvoiceExtraction)(response).pipe(
-    Effect.catchIf(isInvalidResponse, () =>
-      Effect.fail(new Error("Invoice analysis returned an unexpected response.")),
-    ),
-  );
+  const api = yield* serverApi;
+  return yield* api.uploads
+    .extract({ payload: body })
+    .pipe(asServerRequestError("Invoice analysis returned an unexpected response."));
 });

@@ -102,8 +102,8 @@ The host owns secure token storage. Electron uses `safeStorage`, Android uses
 Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
 browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
-scope for Postgres mutations and replica sync. TanStack DB owns each
-client's persisted inventory collections independently of the auth lifecycle.
+scope for Postgres mutations and replica sync. The replica owns each
+client's persisted inventory independently of the auth lifecycle.
 
 ## Shape
 

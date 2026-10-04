@@ -12,24 +12,22 @@ import type {
   SyncSubmitCommandResult,
 } from "@store/contracts";
 import { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
+import { honourRetryAfter, isAuthStatus } from "@store/contracts/http-errors";
 import { SyncHttpApi } from "@store/contracts/sync/api";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import * as Headers from "effect/http/Headers";
-import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientError from "effect/http/HttpClientError";
-import type * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
-  isReplicaStorageFailure,
   ReplicaCoverageRepairRequired,
+  ReplicaStorageError,
   SyncRecoveryRequired,
-  type ReplicaStorageFailure,
 } from "./replica/errors";
 import type { Suspension } from "./sync-state";
 
@@ -86,7 +84,7 @@ export type SyncFailure = SyncTransportError | SyncProtocolError;
 
 type SyncCycleFailure =
   | SyncFailure
-  | ReplicaStorageFailure
+  | ReplicaStorageError
   | ReplicaCoverageRepairRequired
   | SyncRecoveryRequired;
 
@@ -157,8 +155,6 @@ export type SyncFailureCause =
   | Schema.SchemaError
   | SyncHttpErrorBody
   | Error;
-
-const isAuthStatus = (status: number): boolean => status === 401 || status === 403;
 
 export const failureFromStatus = (
   status: number,
@@ -231,7 +227,7 @@ export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailur
 };
 
 export const classifySyncFailure = (error: SyncFailureCause, now: number): SyncCycleFailure =>
-  isReplicaStorageFailure(error) ||
+  error instanceof ReplicaStorageError ||
   error instanceof ReplicaCoverageRepairRequired ||
   error instanceof SyncRecoveryRequired
     ? error
@@ -284,10 +280,6 @@ const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition =
 export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition => {
   switch (error._tag) {
     case "ReplicaStorageError":
-    case "IndexedDbUnavailable":
-    case "IndexedDbQuotaExceeded":
-    case "IndexedDbCorruptRecord":
-    case "IndexedDbIdentityMismatch":
       return {
         _tag: "suspend",
         suspension: { reason: "storage", message: error.message, blocks: "all", timer: true },
@@ -382,23 +374,6 @@ export const withRequestDeadlines = (transport: SyncTransport): SyncTransport =>
   readSnapshotPart: (snapshotId, partNumber) =>
     withDeadline("readSnapshotPart")(transport.readSnapshotPart(snapshotId, partNumber)),
 });
-
-const retryLaterFailure = (response: HttpClientResponse.HttpClientResponse) =>
-  response.status >= 300 &&
-  !isAuthStatus(response.status) &&
-  Option.isSome(Headers.get(response.headers, "retry-after"))
-    ? Effect.fail(
-        new HttpClientError.HttpClientError({
-          reason: new HttpClientError.StatusCodeError({
-            request: response.request,
-            response,
-            description: "The sync authority asked the client to retry later.",
-          }),
-        }),
-      )
-    : Effect.succeed(response);
-
-const honourRetryAfter = HttpClient.transformResponse(Effect.flatMap(retryLaterFailure));
 
 export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (baseUrl: string) {
   const client = yield* HttpApiClient.make(SyncHttpApi, {

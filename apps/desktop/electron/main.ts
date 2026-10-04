@@ -14,6 +14,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  MessageChannelMain,
   nativeTheme,
   session,
   shell,
@@ -23,7 +24,7 @@ import { makeAuthBroker } from "./auth";
 import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
-import { makeReplicaSyncApiRequest, registerInventoryHttpIpc } from "./inventory-http";
+import { registerInventoryHttpIpc } from "./inventory-http";
 import {
   AUTH_SESSION_CHANGED_CHANNEL,
   OAUTH_CALLBACK_CHANNEL,
@@ -387,10 +388,13 @@ void app.whenReady().then(async () => {
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
     deviceLabel: hostDeviceLabel(),
-    syncApiRequest: makeReplicaSyncApiRequest(API_BASE_URL, authBroker.apiFetch),
-    liveAccessToken: (force) => authBroker.liveAccessToken(force),
+    accessTokens: {
+      current: (force) => authBroker.liveAccessToken(force),
+      subscribe: authBroker.onAccessToken,
+    },
     allowedOrigins: allowedRendererOrigins,
     backupDialogs,
+    rendererChannel: () => new MessageChannelMain(),
   });
   publishSession(await authBroker.initialize());
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);

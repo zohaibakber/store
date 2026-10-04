@@ -11,6 +11,7 @@ import {
   ImportCatalogResult,
   ImportId,
   ImportPartReceipt,
+  ImportStatus,
   MAX_IMPORT_PARTS,
 } from "./import";
 import {
@@ -118,6 +119,13 @@ export const syncGroup = HttpApiGroup.make("sync")
       params: Schema.Struct({ importId: ImportId }),
       payload: ImportCatalogRequest,
       success: ImportCatalogResult,
+      error: SyncHttpErrors,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("readImportStatus", "/api/sync/imports/:importId", {
+      params: Schema.Struct({ importId: ImportId }),
+      success: ImportStatus,
       error: SyncHttpErrors,
     }),
   )

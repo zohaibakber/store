@@ -1,15 +1,11 @@
 import { init } from "@sentry/react";
+import { createAppCatalogLifetime } from "@store/inventory-react";
 import { createBrowserHistory } from "@tanstack/react-router";
 
 import { installAppHost } from "@/host";
 import { bootstrapAuth } from "@/lib/auth";
 import { authBaseUrl } from "@/lib/first-party-auth";
-import {
-  createWebCatalogLifetime,
-  createWebInventoryHost,
-  warmWebWorkspace,
-} from "@/lib/inventory/host-web";
-import { reportError } from "@/lib/report-error";
+import { NO_REPLICA } from "@/lib/inventory/host-inventory";
 import { createWebAppHost } from "@/web/app-host";
 
 import { hostAccess } from "./host-access";
@@ -33,7 +29,6 @@ const initSentry = () => {
 };
 
 const warmSignedInApp = () => {
-  warmWebWorkspace();
   void import("@/components/app/shell").catch(() => undefined);
 };
 
@@ -46,17 +41,6 @@ export const startWeb = async () => {
     history: window.history,
   });
   installAppHost(web.host);
-  let inventory: ReturnType<typeof createWebInventoryHost> | undefined;
-  try {
-    inventory = createWebInventoryHost({
-      apiBaseUrl,
-      authenticatedFetch: web.authenticatedFetch,
-      liveAccessToken: web.liveAccessToken,
-    });
-  } catch (cause) {
-    reportError(cause, { op: "web-inventory-host" });
-    inventory = undefined;
-  }
   void web.sessionExpected().then((expected) => {
     if (expected) warmSignedInApp();
   });
@@ -65,7 +49,7 @@ export const startWeb = async () => {
     snapshot: await bootstrapAuth(),
     history: createBrowserHistory(),
     access: hostAccess(),
-    catalog: createWebCatalogLifetime(),
-    inventory,
+    catalog: createAppCatalogLifetime(),
+    inventory: NO_REPLICA,
   });
 };

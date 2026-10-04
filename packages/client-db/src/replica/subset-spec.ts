@@ -40,25 +40,6 @@ export const SubsetLeafPredicate = Schema.Union([
 ]);
 export type SubsetLeafPredicate = typeof SubsetLeafPredicate.Type;
 
-const LIKE_WILDCARDS = new Set(["%", "_", LIKE_ESCAPE]);
-
-const escapedLikeText = (text: string): string => {
-  let escaped = "";
-  for (const character of text) {
-    const next = LIKE_WILDCARDS.has(character) ? `${LIKE_ESCAPE}${character}` : character;
-    if (escaped.length + next.length > MAX_LIKE_PATTERN_LENGTH - 2) break;
-    escaped += next;
-  }
-  return escaped;
-};
-
-export const containsText = (column: string, text: string): SubsetLeafPredicate => ({
-  _tag: "like",
-  column,
-  pattern: `%${escapedLikeText(text)}%`,
-  escape: LIKE_ESCAPE,
-});
-
 export type SubsetPredicate =
   | SubsetLeafPredicate
   | { readonly _tag: "and"; readonly predicates: ReadonlyArray<SubsetPredicate> }

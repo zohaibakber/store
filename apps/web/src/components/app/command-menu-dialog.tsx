@@ -125,7 +125,11 @@ export function InventoryCommandDialog({
         portalProps={{ keepMounted: true }}
       >
         <Activity mode={presented ? "visible" : "hidden"}>
-          {!inventory ? (
+          {inventory._tag === "NoReplica" ? (
+            <p className="p-6 text-sm text-muted-foreground">
+              Search is available in the desktop app.
+            </p>
+          ) : inventory._tag === "Unavailable" ? (
             <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
           ) : !scope ? (
             <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>

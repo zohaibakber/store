@@ -1,7 +1,7 @@
 # Architecture
 
-Tabaaq is offline-first inventory and sales. Every client keeps a local replica
-of its organization's catalog, writes commands to it first, and syncs with one
+Tabaaq is offline-first inventory and sales. The desktop and mobile clients keep
+a local replica of their organization's catalog, writes commands to it first, and syncs with one
 authoritative Postgres database through a stateless Cloudflare Worker.
 
 ## Clients
@@ -9,16 +9,21 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 - `apps/web`: the product UI and the website. One React app with two hosts,
   chosen at startup by whether the preload bridges are present. It defines the
   host contract in `src/host` and never imports from `apps/desktop`. In the
-  browser it keeps the replica in IndexedDB (`@store/sync/replica/indexeddb`),
-  the access token in memory, and the refresh token in the auth Worker's
-  HttpOnly cookie.
+  browser it keeps the access token in memory and the refresh token in the auth
+  Worker's HttpOnly cookie, and holds no replica: sign-in, organizations and
+  settings work, and inventory screens point to the desktop app.
   Prod serves it on `PRODUCTION_DOMAIN`.
 - `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
   implements the host contract. The replica lives in a main-process Node worker
   on `@effect/sql-sqlite-node` over `node:sqlite`. The renderer reaches it
-  through preload IPC that carries domain commands, bounded reads, and change
-  notices only, never SQL. The main process keeps the encrypted refresh token
-  and proxies authenticated sync HTTP.
+  over `MessagePort`s that main forwards once per attach: `InventoryReads`
+  (named bounded reads, served by a read-only reader worker), `InventoryStore`
+  (domain commands, commit and health streams, served by the writer),
+  `InventoryInsights` (the analytics worker), and `DesktopRpcs` (main). No SQL
+  or query IR crosses a process boundary. Preload IPC carries open, close,
+  backup, restore, and publish only. The main process keeps the encrypted
+  refresh token and pushes a short-lived access token to the writer, which
+  makes its own sync HTTP calls.
 - `apps/mobile`: Expo Android app. The replica is op-sqlite through
   `@effect/sql-sqlite-react-native`.
 - `packages/inventory-react` holds the React bindings (atoms, queries, sync
@@ -27,8 +32,7 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 ## Local replica (`packages/sync`)
 
 - The shared entrypoint (`@store/sync`) is host-agnostic and native-free.
-  SQLite adapters live behind `@store/sync/sqlite`, IndexedDB behind
-  `@store/sync/replica/indexeddb`.
+  SQLite adapters live behind `@store/sync/sqlite`.
 - Commands (`issueInvoice`, `catalogWrite`) commit to a local outbox and write
   pending projections: provisional rows tagged with the operation id and
   journalled so a rejection restores the prior image. Pending stock changes

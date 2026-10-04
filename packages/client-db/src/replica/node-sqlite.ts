@@ -21,28 +21,21 @@ import {
   sqliteReplicaReads,
   type SqliteReplicaIdentity,
 } from "./sql-client-session";
-import type {
-  ReplicaCommitNotice,
-  ReplicaHandle,
-  ReplicaSubsetReader,
-  SqliteParameter,
-  SqliteResultRow,
-} from "./types";
+import type { ReplicaCommitNotice, ReplicaHandle, SqliteParameter, SqliteResultRow } from "./types";
 
 type NodeReplicaIdentity = SqliteReplicaIdentity;
 
-type NodeReplicaSqlite = ReplicaHandle &
-  Required<ReplicaSubsetReader> & {
-    readonly query: (
-      sql: string,
-      parameters: ReadonlyArray<SqliteParameter>,
-    ) => Promise<ReadonlyArray<SqliteResultRow>>;
-    readonly withWrite: (
-      write: (handle: SqliteReplicaHandle) => Effect.Effect<void, unknown>,
-      touchedEntities: ReadonlyArray<SyncEntity>,
-      touchedKeys: ReadonlyArray<string>,
-    ) => Promise<ReplicaCommitNotice>;
-  };
+type NodeReplicaSqlite = ReplicaHandle & {
+  readonly query: (
+    sql: string,
+    parameters: ReadonlyArray<SqliteParameter>,
+  ) => Promise<ReadonlyArray<SqliteResultRow>>;
+  readonly withWrite: (
+    write: (handle: SqliteReplicaHandle) => Effect.Effect<void, unknown>,
+    touchedEntities: ReadonlyArray<SyncEntity>,
+    touchedKeys: ReadonlyArray<string>,
+  ) => Promise<ReplicaCommitNotice>;
+};
 
 export const layerSeededSqliteReplica = (
   path: string,
@@ -108,10 +101,10 @@ export const openNodeReplicaSqlite = async (
   };
 };
 
-export { openNodeLocalReplicaSession, openNodeReplicaSyncSession } from "./node-sync";
+export { layerNodeLocalReplica, layerNodeReplicaSync } from "./node-sync";
 export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly";
 export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
 export type { ReplicaSnapshotRunner } from "./snapshot-read";
-export type { NodeReplicaSyncSession } from "./node-sync";
-export { layerProxySyncTransport } from "./proxy-transport";
-export type { SyncProxyRequest } from "./proxy-transport";
+export type { SqliteReplicaServices } from "./sql-client-session";
+export { makePinnedHttp, type PinnedHttp } from "./pinned-http";
+export { layerNodeSqliteReadonlyReplica } from "@store/sync/sqlite";

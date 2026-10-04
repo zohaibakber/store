@@ -1,4 +1,4 @@
-import type { CatalogLifetime, InventoryHost } from "@store/inventory-react";
+import type { CatalogLifetime } from "@store/inventory-react";
 import { createRootRouteWithContext, Outlet, redirect } from "@tanstack/react-router";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { Suspense } from "react";
@@ -10,13 +10,14 @@ import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
 import type { ReplayChannel } from "@/host/replay-channel";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import type { HostInventory } from "@/lib/inventory/host-inventory";
 import { publishedWorkspaceSnapshot, type WorkspaceSession } from "@/session/workspace-session";
 
 interface RouterContext {
   readonly session: ReplayChannel<WorkspaceSession>;
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
-  readonly inventory: InventoryHost | null;
+  readonly inventory: HostInventory;
   readonly registry: AtomRegistry.AtomRegistry;
 }
 

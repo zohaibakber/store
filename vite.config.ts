@@ -87,7 +87,6 @@ export default defineConfig({
           "apps/web/src/start-electron.tsx",
           "apps/desktop/electron/inventory-http.ts",
           "apps/desktop/electron/ipc-channels.ts",
-          "apps/desktop/test/electron/inventory-http.test.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",

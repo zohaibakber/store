@@ -29,8 +29,11 @@ import {
   type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
+import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { readSqliteInsightsFacts } from "./insights-sqlite";
 import { replicaStampQuery } from "./replica-queries";
@@ -43,7 +46,7 @@ import {
   type ReplicaSnapshotRunner,
 } from "./snapshot-read";
 import { decodeReplicaStampRow, decodeSqliteResultRow, type ReplicaRow } from "./sqlite-row";
-import type { ReplicaSyncHealth } from "./status";
+import { syncHealthOf, type ReplicaSyncHealth } from "./status";
 import { subscribeSchedulerHealth } from "./sync-health";
 import type {
   EnqueuedCommand,
@@ -139,9 +142,12 @@ type SqliteReplicaReads = Required<ReplicaSubsetReader> &
     readonly readPendingRowIds: (entity: SyncEntity) => Promise<ReadonlyArray<string>>;
   };
 
+export type SqliteReplicaServices = ReplicaStore | SyncScheduler | SqliteReplica;
+
 export type SqliteReplicaSyncSession = SqliteReplicaReads & {
   readonly engine: "sqlite";
   readonly replicaId: string;
+  readonly services: Context.Context<SqliteReplicaServices>;
   readonly readOutboxActivity: () => Promise<ReplicaOutboxActivity>;
   readonly enqueueCommand: (request: EnqueueCommandRequest) => Promise<EnqueuedCommand>;
   readonly readCommandStatus: (operationId: string) => Promise<CommandStatus | undefined>;
@@ -154,6 +160,7 @@ export type SqliteReplicaSyncSession = SqliteReplicaReads & {
   readonly setPullMaxBytes: (maxBytes: number | undefined) => Promise<void>;
   readonly subscribe: (listener: (notice: ReplicaCommitNotice) => void) => () => void;
   readonly subscribeSyncHealth: (listener: (health: ReplicaSyncHealth) => void) => () => void;
+  readonly syncHealth: Stream.Stream<ReplicaSyncHealth>;
   readonly close: () => Promise<void>;
 };
 
@@ -206,8 +213,42 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
 type SqliteReplicaAuthority<SyncError> = {
   readonly sync: Layer.Layer<SyncEngine | SyncScheduler, SyncError, ReplicaStore | SqliteReplica>;
   readonly store: SqliteReplicaStoreOptions;
-  readonly wakesOnEnqueue: boolean;
 };
+
+const layerSqliteReplicaSession = <ReplicaError, SyncError>(
+  input: SqliteReplicaSessionInput<ReplicaError>,
+  authority: SqliteReplicaAuthority<SyncError>,
+  observers: Layer.Layer<never, never, ReplicaStore> = Layer.empty,
+) =>
+  Layer.mergeAll(authority.sync, observers).pipe(
+    Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity, authority.store)),
+    Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
+  );
+
+const httpAuthority = <ReplicaError, TransportError>(
+  input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
+) => ({
+  sync: layerOwnedHttpSync({
+    databaseIdentity: input.databaseIdentity,
+    live: input.live,
+    policy: input.policy,
+    deviceLabel: input.deviceLabel,
+  }).pipe(Layer.provide(input.transport)),
+  store: {},
+});
+
+const localAuthority = () => ({
+  sync: layerOwnedLocalSync.pipe(Layer.provide(LocalAuthority.layer)),
+  store: { authority: LocalAuthority.submitWithin },
+});
+
+export const layerSqliteReplicaSync = <ReplicaError, TransportError>(
+  input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
+) => layerSqliteReplicaSession(input, httpAuthority(input));
+
+export const layerSqliteReplicaLocal = <ReplicaError>(
+  input: SqliteReplicaSessionInput<ReplicaError>,
+) => layerSqliteReplicaSession(input, localAuthority());
 
 const openSqliteReplicaSession = async <ReplicaError, SyncError>(
   input: SqliteReplicaSessionInput<ReplicaError>,
@@ -216,11 +257,7 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
   const workspaceToken = input.databaseIdentity;
   const { booted, run, subscribe, scope, close } = await openReplicaRuntime(
     workspaceToken,
-    (commitForwarding) =>
-      Layer.mergeAll(authority.sync, commitForwarding).pipe(
-        Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity, authority.store)),
-        Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
-      ),
+    (commitForwarding) => layerSqliteReplicaSession(input, authority, commitForwarding),
     Effect.gen(function* () {
       const store = yield* ReplicaStore;
       return {
@@ -228,10 +265,11 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
         scheduler: yield* SyncScheduler,
         engine: yield* SyncEngine,
         replicaId: (yield* store.readSyncCursor()).replicaId,
+        services: yield* Effect.context<SqliteReplicaServices>(),
       };
     }),
   );
-  const { store, scheduler, engine, replicaId } = booted;
+  const { store, scheduler, engine, replicaId, services } = booted;
   const { reads, readOutboxActivity } = sqliteReplicaReads(run, workspaceToken);
 
   let drainCount = 0;
@@ -240,15 +278,10 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
     ...reads,
     engine: "sqlite",
     replicaId,
+    services,
     readOutboxActivity,
     enqueueCommand: async (request) => {
-      const queued = await run(
-        authority.wakesOnEnqueue
-          ? Effect.tap(store.enqueueCommand(request), (committed) =>
-              committed.value.status === "pending" ? scheduler.wake("localWrite") : Effect.void,
-            )
-          : store.enqueueCommand(request),
-      );
+      const queued = await run(store.enqueueCommand(request));
       return enqueuedCommand(workspaceToken, queued.value);
     },
     readCommandStatus: (operationId) => run(store.readCommandStatus(operationId)),
@@ -262,29 +295,11 @@ const openSqliteReplicaSession = async <ReplicaError, SyncError>(
     setPullMaxBytes: (maxBytes) => run(engine.setPullMaxBytes(maxBytes)),
     subscribe,
     subscribeSyncHealth: subscribeSchedulerHealth(scheduler, scope),
+    syncHealth: SubscriptionRef.changes(scheduler.state).pipe(Stream.map(syncHealthOf)),
     close,
   };
 };
 
 export const openSqliteReplicaSyncSession = <ReplicaError, TransportError>(
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
-): Promise<SqliteReplicaSyncSession> =>
-  openSqliteReplicaSession(input, {
-    sync: layerOwnedHttpSync({
-      databaseIdentity: input.databaseIdentity,
-      live: input.live,
-      policy: input.policy,
-      deviceLabel: input.deviceLabel,
-    }).pipe(Layer.provide(input.transport)),
-    store: {},
-    wakesOnEnqueue: false,
-  });
-
-export const openSqliteReplicaLocalSession = <ReplicaError>(
-  input: SqliteReplicaSessionInput<ReplicaError>,
-): Promise<SqliteReplicaSyncSession> =>
-  openSqliteReplicaSession(input, {
-    sync: layerOwnedLocalSync.pipe(Layer.provide(LocalAuthority.layer)),
-    store: { authority: LocalAuthority.submitWithin },
-    wakesOnEnqueue: true,
-  });
+): Promise<SqliteReplicaSyncSession> => openSqliteReplicaSession(input, httpAuthority(input));

@@ -37,7 +37,6 @@ import {
   layerSessionHttp,
   renewSessionSnapshot,
   resumeSessionSnapshot,
-  sessionFetch,
   type RequestError,
   type SessionSnapshotHooks,
 } from "@store/workspace";
@@ -150,7 +149,9 @@ interface DesktopAuthApi {
   readonly commandDevice: (
     command: DeviceCommand,
   ) => Effect.Effect<OrganizationDevices, RequestError>;
-  readonly liveAccessToken: (force: boolean) => Effect.Effect<string | null, RequestError>;
+  readonly liveAccessToken: (
+    force: boolean,
+  ) => Effect.Effect<Redacted.Redacted<string> | null, RequestError>;
   readonly withSession: <A, E>(effect: Effect.Effect<A, E, SessionHttp>) => Effect.Effect<A, E>;
 }
 
@@ -162,6 +163,7 @@ interface DesktopAuthOptions {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
   readonly publishSession: (snapshot: WorkspaceSnapshot) => void;
+  readonly publishAccessToken: (token: Redacted.Redacted<string> | null) => void;
 }
 
 const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
@@ -189,10 +191,15 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
         authBaseUrl: options.authBaseUrl,
         credential: "refreshToken",
         onRefreshed: (refreshed, tokens) =>
-          adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(Effect.asVoid),
-        onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
-          Effect.andThen(forgetPersisted),
-        ),
+          adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
+            Effect.andThen(
+              Effect.sync(() => options.publishAccessToken(Redacted.make(tokens.accessToken))),
+            ),
+          ),
+        onRejected: Effect.sync(() => {
+          hooks.publish(unauthenticated(true));
+          options.publishAccessToken(null);
+        }).pipe(Effect.andThen(forgetPersisted)),
       }).pipe(Layer.provide(netHttp)),
       scope,
     ).pipe(Effect.uninterruptible),
@@ -284,6 +291,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
           yield* session.setTokens(null);
           yield* session.logout(tokens).pipe(Effect.ignore);
           hooks.publish(unauthenticated(true));
+          options.publishAccessToken(null);
           yield* forgetPersisted;
         }),
       ),
@@ -296,31 +304,44 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     commandDevice: (command) => withSession(commandOrganizationDevice(command)),
     liveAccessToken: (force) =>
       withSession(SessionHttp.use((session) => session.ensureFreshAccess(force))).pipe(
-        Effect.map((access) => access?.accessToken ?? null),
+        Effect.map((access) => (access === null ? null : Redacted.make(access.accessToken))),
       ),
     withSession,
   });
 });
+
+type AccessTokenListener = (token: Redacted.Redacted<string> | null) => void;
 
 export const makeAuthBroker = (
   apiBaseUrl: string,
   authBaseUrl: string,
   publishSession: (snapshot: WorkspaceSnapshot) => void,
 ) => {
+  const tokenListeners = new Set<AccessTokenListener>();
   const runtime = ManagedRuntime.make(
-    Layer.effect(DesktopAuth, makeDesktopAuth({ apiBaseUrl, authBaseUrl, publishSession })),
+    Layer.effect(
+      DesktopAuth,
+      makeDesktopAuth({
+        apiBaseUrl,
+        authBaseUrl,
+        publishSession,
+        publishAccessToken: (token) => {
+          for (const listen of tokenListeners) listen(token);
+        },
+      }),
+    ),
   );
   return {
+    onAccessToken: (listen: AccessTokenListener) => {
+      tokenListeners.add(listen);
+      return () => {
+        tokenListeners.delete(listen);
+      };
+    },
     run: <A, E>(effect: Effect.Effect<A, E, DesktopAuth>) => runtime.runPromise(effect),
     initialize: () => runtime.runPromise(DesktopAuth.use((auth) => auth.initialize)),
     liveAccessToken: (force: boolean) =>
       runtime.runPromise(DesktopAuth.use((auth) => auth.liveAccessToken(force))),
-    apiFetch: sessionFetch((effect, options) =>
-      runtime.runPromise(
-        DesktopAuth.use((auth) => auth.withSession(effect)),
-        options,
-      ),
-    ),
   };
 };
 

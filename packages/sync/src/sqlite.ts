@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
+import type { SqlClient } from "effect/sql/SqlClient";
 
 import {
   openReplicaStoreFromClient,
@@ -30,3 +31,10 @@ export const openReplicaStore = (
 
 export const layerNodeSqliteReplica = (path?: string): Layer.Layer<SqliteReplica> =>
   Layer.effect(SqliteReplica, openReplicaStore(path));
+
+export const layerNodeSqliteReadonlyReplica = (
+  path: string,
+): Layer.Layer<SqliteReplica | SqlClient> =>
+  SqliteReplica.layerReadonlyFromClient.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: path, readonly: true, disableWAL: true })),
+  );

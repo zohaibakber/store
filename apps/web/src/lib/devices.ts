@@ -1,6 +1,6 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { DeviceCommand, OrganizationDevice } from "@store/contracts";
-import { useInventoryState } from "@store/inventory-react";
+import { useReadyInventory } from "@store/inventory-react";
 import { Effect } from "effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -26,8 +26,8 @@ type OrganizationDevicesState = {
 export const useOrganizationDevices = () => {
   const result = useAtomValue(organizationDevicesAtom);
   const reload = useAtomRefresh(organizationDevicesAtom);
-  const inventory = useInventoryState();
-  const syncNow = inventory._tag === "Ready" ? inventory.actions.syncNow : undefined;
+  const inventory = useReadyInventory();
+  const syncNow = inventory?.actions.syncNow;
 
   const command = React.useCallback(
     async (deviceCommand: DeviceCommand) => {
@@ -53,7 +53,7 @@ export const useOrganizationDevices = () => {
 
   return {
     ...state,
-    thisDeviceId: inventory._tag === "Ready" ? inventory.inventory.deviceId : null,
+    thisDeviceId: inventory?.inventory.deviceId ?? null,
     reload,
     command,
   };

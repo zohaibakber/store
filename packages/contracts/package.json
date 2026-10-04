@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./catalog-refusal": "./src/catalog/refusal.ts",
     "./catalog-rules": "./src/catalog/rules.ts",
     "./catalog-write": "./src/catalog/write.ts",
     "./entity-rows": "./src/sync/entity-rows.ts",
@@ -16,6 +17,8 @@
     "./ids": "./src/ids.ts",
     "./workspace": "./src/workspace.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
+    "./replica": "./src/replica/index.ts",
+    "./server-api": "./src/server/api.ts",
     "./server-api.schema": "./src/server/schema.ts",
     "./store-helpers": "./src/store/helpers.ts",
     "./store.schema": "./src/store/schema.ts",

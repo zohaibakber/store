@@ -1,5 +1,3 @@
-import type { ElectronReplicaBridge } from "@store/client-db";
-
 export const AUTH_GET_SESSION_CHANNEL = "auth:get-session";
 export const AUTH_IDENTIFY_CHANNEL = "auth:identify";
 export const AUTH_AUTHENTICATE_CHANNEL = "auth:authenticate";
@@ -21,23 +19,7 @@ export const INVENTORY_HTTP_CONFIG_CHANNEL = "inventory:http-config";
 
 export const REPLICA_OPEN_CHANNEL = "replica:open";
 export const REPLICA_CLOSE_CHANNEL = "replica:close";
-export const REPLICA_STAMP_CHANNEL = "replica:stamp";
-export const REPLICA_READ_SUBSET_CHANNEL = "replica:read-subset";
-export const REPLICA_READ_BATCH_CHANNEL = "replica:read-batch";
-export const REPLICA_CANCEL_READ_CHANNEL = "replica:cancel-read";
 export const REPLICA_RETRY_CHANNEL = "replica:retry";
-export const REPLICA_READ_INSIGHTS_CHANNEL = "replica:read-insights";
-export const REPLICA_SUMMARIZE_SUBSET_CHANNEL = "replica:summarize-subset";
-export const REPLICA_WAKE_CHANNEL = "replica:wake";
-export const REPLICA_ACTIVITY_CHANNEL = "replica:activity";
-export const REPLICA_COMMAND_STATUS_CHANNEL = "replica:command-status";
-export const REPLICA_ENQUEUE_CHANNEL = "replica:enqueue";
-export const REPLICA_INSIGHTS_SUMMARY_CHANNEL = "replica:insights-summary";
-export const REPLICA_PRODUCT_INSIGHTS_CHANNEL = "replica:product-insights";
-export const REPLICA_RESTOCK_PAGE_CHANNEL = "replica:restock-page";
-export const REPLICA_ANALYTICS_CHANNEL = "replica:analytics";
-export const REPLICA_COMMIT_CHANNEL = "replica:commit";
-export const REPLICA_SYNC_HEALTH_CHANNEL = "replica:sync-health";
 
 export const BACKUP_SAVE_CHANNEL = "backup:save";
 export const RESTORE_CHOOSE_CHANNEL = "backup:choose-restore";
@@ -67,14 +49,3 @@ export const UPDATER_CHECK_CHANNEL = "updater:check";
 export const UPDATER_DOWNLOAD_CHANNEL = "updater:download";
 export const UPDATER_INSTALL_CHANNEL = "updater:install";
 export const UPDATER_EVENT_CHANNEL = "updater:event";
-
-export type ReplicaCommitEvent = Parameters<Parameters<ElectronReplicaBridge["onCommit"]>[0]>[0];
-
-export type ReplicaAnalyticsEvent = Parameters<
-  Parameters<ElectronReplicaBridge["onAnalytics"]>[0]
->[0];
-
-export type ReplicaSyncHealthEvent = {
-  readonly workspaceToken: string;
-  readonly health: Parameters<Parameters<ElectronReplicaBridge["onSyncHealth"]>[1]>[0];
-};

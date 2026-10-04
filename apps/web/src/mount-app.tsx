@@ -1,10 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import {
-  configureInventoryPreferences,
-  type CatalogLifetime,
-  type InventoryHost,
-} from "@store/inventory-react";
+import { configureInventoryPreferences, type CatalogLifetime } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import React from "react";
@@ -17,6 +13,7 @@ import { ThemeProvider } from "@/components/theme/provider";
 import { appHost } from "@/host";
 import type { HostAccessPolicy } from "@/host-access";
 import { makeReplayChannel } from "@/host/replay-channel";
+import type { HostInventory } from "@/lib/inventory/host-inventory";
 import { preferenceStore } from "@/lib/preferences";
 import type { DeviceWorkspaceStore } from "@/session/device-workspace";
 import {
@@ -32,7 +29,7 @@ export const mountApp = (input: {
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
   readonly catalog: CatalogLifetime;
-  readonly inventory?: InventoryHost;
+  readonly inventory: HostInventory;
   readonly device?: DeviceWorkspaceStore;
 }) => {
   configureInventoryPreferences(preferenceStore());

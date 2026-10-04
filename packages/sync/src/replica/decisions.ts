@@ -81,7 +81,7 @@ const withOverlays = (
 
 export const EMPTY_STOCK: VisibleStock = { packQuantity: 0, unitQuantity: 0 };
 
-export type SequencedOverlay = {
+type SequencedOverlay = {
   readonly packDelta: number;
   readonly unitDelta: number;
   readonly clientSequence: string | undefined;
@@ -215,18 +215,6 @@ export const settledOutboxFields = (receipt: CommandReceipt, receiptJson: string
   claimId: null,
   claimedAt: null,
   outcomeUncertain: false,
-});
-
-const AWAITING_SNAPSHOT_FIELDS = {
-  state: "awaiting_snapshot",
-  throughCommitSequence: null,
-  digest: null,
-  verifiedAt: null,
-} as const;
-
-export const awaitingSnapshotCoverage = (subscription: string) => ({
-  subscription,
-  ...AWAITING_SNAPSHOT_FIELDS,
 });
 
 export const RELEASED_CLAIM_FIELDS = {

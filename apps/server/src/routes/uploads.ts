@@ -1,4 +1,5 @@
 import { MAX_INVOICE_UPLOAD_BYTES, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import type { BadRequest, PayloadTooLarge } from "@store/contracts/server-api";
 import { extractInvoice } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -8,8 +9,6 @@ import * as Stream from "effect/Stream";
 import { CurrentOrganization } from "../auth/organization";
 import { StoreApi } from "../http/api";
 import {
-  type BadRequest,
-  type PayloadTooLarge,
   badGateway,
   badRequest,
   payloadTooLarge,

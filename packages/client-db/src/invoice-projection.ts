@@ -4,16 +4,17 @@ import {
   withAllocationIds,
   type AllocatableBatch,
 } from "@store/contracts";
+import { CatalogRefusal } from "@store/contracts/catalog-refusal";
 import { decodeInvoiceId } from "@store/contracts/ids";
 import type {
   CreateInvoiceInput,
   InvoiceAllocation,
   IssueInvoiceCommand,
 } from "@store/contracts/store.schema";
+import * as Result from "effect/Result";
 
 import type { CatalogActor, CatalogWriteIds } from "./projection-context";
 import {
-  persistableRow,
   type BatchRow,
   type InvoiceItemRow,
   type InvoiceRow,
@@ -61,65 +62,81 @@ export const projectIssuedInvoice = (input: {
   readonly products: ProductSource;
   readonly batches: BatchSource;
   readonly ids: CatalogWriteIds;
-}): SaleProjection => {
-  if (input.sale.items.length === 0) {
-    throw new Error("Add at least one item to the sale.");
-  }
-
-  const working = new Map(
-    [...input.batches.state.values()].map((batch) => [batch.id, { ...batch }]),
-  );
-  const allocations: InvoiceAllocation[] = [];
-  const items: InvoiceItemRow[] = [];
-  const movements: StockMovementRow[] = [];
-  const invoiceId = decodeInvoiceId(input.commandId);
-  const total = input.sale.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
-  const meta = {
-    organizationId: input.actor.organizationId,
-    createdByUserId: input.actor.userId,
-    updatedByUserId: input.actor.userId,
-    deviceId: input.actor.deviceId,
-    operationId: input.commandId,
-    rowVersion: 1,
-    createdAt: input.occurredAt,
-    updatedAt: input.occurredAt,
-  } as const;
-
-  for (const line of input.sale.items) {
-    const product = input.products.state.get(line.productId);
-    if (!product) {
-      throw new Error("One of the products no longer exists.");
+}): Result.Result<SaleProjection, CatalogRefusal> =>
+  Result.gen(function* () {
+    if (input.sale.items.length === 0) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "emptyCommand",
+          message: "Add at least one item to the sale.",
+        }),
+      );
     }
-    const takes = allocateInvoiceLine(
-      line,
-      product,
-      activeBatchesForProduct(working.values(), product.id),
+
+    const working = new Map(
+      [...input.batches.state.values()].map((batch) => [batch.id, { ...batch }]),
     );
-    const stamped = withAllocationIds(
-      takes.map((take) => ({ ...take, productId: product.id })),
-      line,
-      input.ids.rowId,
-    );
-    allocations.push(...stamped);
-    for (let index = 0; index < takes.length; index += 1) {
-      const take = takes[index];
-      const allocation = stamped[index];
-      if (!take || !allocation) continue;
-      const current = working.get(take.batchId);
-      if (!current) throw new Error(`The selected batch for ${product.name} is gone.`);
-      const next: BatchRow = persistableRow({
-        ...current,
-        packQuantity: take.nextPackQuantity,
-        unitQuantity: take.nextUnitQuantity,
-        updatedByUserId: input.actor.userId,
-        deviceId: input.actor.deviceId,
-        operationId: input.commandId,
-        rowVersion: current.rowVersion + 1,
-        updatedAt: input.occurredAt,
-      });
-      working.set(take.batchId, next);
-      items.push(
-        persistableRow({
+    const allocations: InvoiceAllocation[] = [];
+    const items: InvoiceItemRow[] = [];
+    const movements: StockMovementRow[] = [];
+    const invoiceId = decodeInvoiceId(input.commandId);
+    const total = input.sale.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
+    const meta = {
+      organizationId: input.actor.organizationId,
+      createdByUserId: input.actor.userId,
+      updatedByUserId: input.actor.userId,
+      deviceId: input.actor.deviceId,
+      operationId: input.commandId,
+      rowVersion: 1,
+      createdAt: input.occurredAt,
+      updatedAt: input.occurredAt,
+    } as const;
+
+    for (const line of input.sale.items) {
+      const product = input.products.state.get(line.productId);
+      if (!product) {
+        return yield* Result.fail(
+          new CatalogRefusal({
+            reason: "missingReference",
+            message: "One of the products no longer exists.",
+          }),
+        );
+      }
+      const takes = yield* allocateInvoiceLine(
+        line,
+        product,
+        activeBatchesForProduct(working.values(), product.id),
+      );
+      const stamped = withAllocationIds(
+        takes.map((take) => ({ ...take, productId: product.id })),
+        line,
+        input.ids.rowId,
+      );
+      allocations.push(...stamped);
+      for (let index = 0; index < takes.length; index += 1) {
+        const take = takes[index];
+        const allocation = stamped[index];
+        if (!take || !allocation) continue;
+        const current = working.get(take.batchId);
+        if (!current)
+          return yield* Result.fail(
+            new CatalogRefusal({
+              reason: "missingReference",
+              message: `The selected batch for ${product.name} is gone.`,
+            }),
+          );
+        const next: BatchRow = {
+          ...current,
+          packQuantity: take.nextPackQuantity,
+          unitQuantity: take.nextUnitQuantity,
+          updatedByUserId: input.actor.userId,
+          deviceId: input.actor.deviceId,
+          operationId: input.commandId,
+          rowVersion: current.rowVersion + 1,
+          updatedAt: input.occurredAt,
+        };
+        working.set(take.batchId, next);
+        items.push({
           id: allocation.invoiceItemId,
           invoiceId,
           productId: product.id,
@@ -132,19 +149,35 @@ export const projectIssuedInvoice = (input: {
             take.quantity * (line.quantityType === "pack" ? product.unitsPerPack : 1),
           salePrice: line.salePrice,
           ...meta,
-        }),
-      );
-      if (take.packsOpened > 0 && allocation.openPackMovementId) {
+        });
+        if (take.packsOpened > 0 && allocation.openPackMovementId) {
+          movements.push({
+            id: allocation.openPackMovementId,
+            productId: product.id,
+            batchId: take.batchId,
+            invoiceId,
+            purchaseOrderId: null,
+            type: "open_pack",
+            packDelta: -take.packsOpened,
+            unitDelta: take.packsOpened * product.unitsPerPack,
+            note: `Opened for invoice #${input.invoiceNumber}`,
+            organizationId: input.actor.organizationId,
+            actorUserId: input.actor.userId,
+            deviceId: input.actor.deviceId,
+            operationId: input.commandId,
+            createdAt: input.occurredAt,
+          });
+        }
         movements.push({
-          id: allocation.openPackMovementId,
+          id: allocation.saleMovementId,
           productId: product.id,
           batchId: take.batchId,
           invoiceId,
           purchaseOrderId: null,
-          type: "open_pack",
-          packDelta: -take.packsOpened,
-          unitDelta: take.packsOpened * product.unitsPerPack,
-          note: `Opened for invoice #${input.invoiceNumber}`,
+          type: "sale",
+          packDelta: line.quantityType === "pack" ? -take.quantity : 0,
+          unitDelta: line.quantityType === "unit" ? -take.quantity : 0,
+          note: `Invoice #${input.invoiceNumber}`,
           organizationId: input.actor.organizationId,
           actorUserId: input.actor.userId,
           deviceId: input.actor.deviceId,
@@ -152,59 +185,47 @@ export const projectIssuedInvoice = (input: {
           createdAt: input.occurredAt,
         });
       }
-      movements.push({
-        id: allocation.saleMovementId,
-        productId: product.id,
-        batchId: take.batchId,
-        invoiceId,
-        purchaseOrderId: null,
-        type: "sale",
-        packDelta: line.quantityType === "pack" ? -take.quantity : 0,
-        unitDelta: line.quantityType === "unit" ? -take.quantity : 0,
-        note: `Invoice #${input.invoiceNumber}`,
-        organizationId: input.actor.organizationId,
-        actorUserId: input.actor.userId,
-        deviceId: input.actor.deviceId,
-        operationId: input.commandId,
-        createdAt: input.occurredAt,
-      });
     }
-  }
 
-  const command: IssueInvoiceCommand = {
-    commandId: input.commandId,
-    deviceId: input.actor.deviceId,
-    occurredAt: input.occurredAt,
-    invoiceId,
-    invoiceNumber: input.invoiceNumber,
-    input: {
-      customerName: input.sale.customerName?.trim() || null,
-      items: allocations.map((take) => ({
-        productId: take.productId,
-        batchId: take.batchId,
-        quantity: take.quantity,
-        quantityType: take.quantityType,
-        salePrice: take.salePrice,
-      })),
-    },
-    allocations,
-  };
-  if (!allocationsCoverInput(command.input, command.allocations)) {
-    throw new Error("The sale could not be allocated.");
-  }
-
-  const touched = new Set(allocations.map((take) => take.batchId));
-  return {
-    command,
-    invoice: persistableRow({
-      id: invoiceId,
+    const command: IssueInvoiceCommand = {
+      commandId: input.commandId,
+      deviceId: input.actor.deviceId,
+      occurredAt: input.occurredAt,
+      invoiceId,
       invoiceNumber: input.invoiceNumber,
-      customerName: input.sale.customerName?.trim() || null,
-      total,
-      ...meta,
-    }),
-    items,
-    batchUpdates: [...working.values()].filter((batch) => touched.has(batch.id)),
-    movements,
-  };
-};
+      input: {
+        customerName: input.sale.customerName?.trim() || null,
+        items: allocations.map((take) => ({
+          productId: take.productId,
+          batchId: take.batchId,
+          quantity: take.quantity,
+          quantityType: take.quantityType,
+          salePrice: take.salePrice,
+        })),
+      },
+      allocations,
+    };
+    if (!allocationsCoverInput(command.input, command.allocations)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "allocationFailed",
+          message: "The sale could not be allocated.",
+        }),
+      );
+    }
+
+    const touched = new Set(allocations.map((take) => take.batchId));
+    return {
+      command,
+      invoice: {
+        id: invoiceId,
+        invoiceNumber: input.invoiceNumber,
+        customerName: input.sale.customerName?.trim() || null,
+        total,
+        ...meta,
+      },
+      items,
+      batchUpdates: [...working.values()].filter((batch) => touched.has(batch.id)),
+      movements,
+    };
+  });

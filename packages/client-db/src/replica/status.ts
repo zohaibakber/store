@@ -1,4 +1,5 @@
 import type { CommandStatus } from "@store/contracts";
+import type { ReplicaUnavailableReason } from "@store/contracts/replica";
 import type { SyncPhase, SyncState } from "@store/sync";
 
 export type InventorySyncStatus =
@@ -8,15 +9,26 @@ export type InventorySyncStatus =
   | { readonly _tag: "rejected"; readonly message: string }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recoveryRequired"; readonly message: string };
+  | { readonly _tag: "recoveryRequired"; readonly message: string }
+  | {
+      readonly _tag: "unavailable";
+      readonly reason: ReplicaUnavailableReason;
+      readonly message: string;
+    };
 
 export type SyncTransfer = NonNullable<SyncState["transfer"]>;
 
-export type ReplicaSyncHealth =
+export type ReplicaSyncHealth = (
   | { readonly _tag: "running"; readonly syncing?: boolean; readonly transfer?: SyncTransfer }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recoveryRequired"; readonly message: string };
+  | { readonly _tag: "recoveryRequired"; readonly message: string }
+) & { readonly auth?: "refreshing" };
+
+export const withAuthRefreshing = (
+  health: ReplicaSyncHealth,
+  refreshing: boolean,
+): ReplicaSyncHealth => (refreshing ? { ...health, auth: "refreshing" } : health);
 
 const UPDATE_REQUIRED_MESSAGE =
   "This version of the app is too old to sync. Update it to continue. Pending changes are saved on this device.";
@@ -64,6 +76,7 @@ export const syncHealthOf = (state: SyncState): ReplicaSyncHealth => {
 };
 
 export const sameSyncHealth = (left: ReplicaSyncHealth, right: ReplicaSyncHealth): boolean => {
+  if (left.auth !== right.auth) return false;
   if (left._tag === "running") {
     return (
       right._tag === "running" &&

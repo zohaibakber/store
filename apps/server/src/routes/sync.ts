@@ -184,6 +184,11 @@ export const SyncHandlers = HttpApiBuilder.group(
             ),
         ).pipe(Effect.map((committed) => encodedJsonResponse(committed.json))),
       )
+      .handle("readImportStatus", ({ params }) =>
+        asOwner("readImportStatus", publishOwnerRequired, (actor) =>
+          imports.status(actor, params.importId),
+        ),
+      )
       .handle("listDevices", () =>
         asOwner("listDevices", devicesOwnerRequired, (actor) => devices.list(actor)),
       )

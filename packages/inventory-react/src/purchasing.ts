@@ -1,37 +1,14 @@
-import {
-  MAX_IN_VALUES,
-  readLearnedSuppliers,
-  readOpenOrderLines,
-  type OpenOrderLines,
-  type PurchaseOrderItemRow,
-  type PurchaseOrderRow,
-  type ReplicaSubsetReader,
-  type ReplicaSummaryReader,
-  type SubsetPredicate,
-} from "@store/client-db";
+import type { PurchaseOrderItemRow, PurchaseOrderRow } from "@store/client-db";
 import {
   isPurchaseOrderOpen,
   purchaseOrderLineRemaining,
+  type PurchaseOrder,
   type PurchaseOrderStatus,
+  type StockMovement,
   type SupplierId,
 } from "@store/contracts";
-import * as Arr from "effect/Array";
-import * as Effect from "effect/Effect";
 
-import { WorkspaceReadFailure } from "./errors";
-import { allOf, countRows, readPageIds } from "./list-page";
 import type { ListPage, PurchaseOrderSortColumn, PurchaseOrderTab } from "./list-request";
-
-const purchaseOrderTabStatuses = (tab: PurchaseOrderTab): ReadonlyArray<PurchaseOrderStatus> => {
-  switch (tab) {
-    case "open":
-      return ["sent"];
-    case "drafts":
-      return ["draft"];
-    case "closed":
-      return ["closed", "cancelled"];
-  }
-};
 
 type ProductOrderLine = {
   readonly orderId: PurchaseOrderRow["id"];
@@ -54,6 +31,11 @@ export type ProductOnOrder = {
 };
 
 export const NOTHING_ON_ORDER: ProductOnOrder = { onOrderBaseUnits: 0, lines: [] };
+
+type OpenOrderLines = {
+  readonly orders: ReadonlyArray<PurchaseOrderRow>;
+  readonly lines: ReadonlyArray<PurchaseOrderItemRow>;
+};
 
 export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<string, ProductOnOrder> => {
   const openOrders = new Map(
@@ -97,27 +79,6 @@ export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<string, Produ
   );
 };
 
-const readFailure = () =>
-  new WorkspaceReadFailure({ message: "Could not read purchase orders on this device." });
-
-export const readProductsOnOrder = (
-  reader: ReplicaSubsetReader,
-  productIds: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyMap<string, ProductOnOrder>, WorkspaceReadFailure> =>
-  readOpenOrderLines(reader, productIds).pipe(
-    Effect.mapBoth({ onFailure: readFailure, onSuccess: productsOnOrder }),
-    Effect.withSpan("Purchasing.readProductsOnOrder"),
-  );
-
-export const readLearnedSupplierIds = (
-  reader: ReplicaSubsetReader,
-  productIds: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyMap<string, SupplierId>, WorkspaceReadFailure> =>
-  readLearnedSuppliers(reader, productIds).pipe(
-    Effect.mapError(readFailure),
-    Effect.withSpan("Purchasing.readLearnedSuppliers"),
-  );
-
 export type PurchaseOrderListFilters = {
   readonly tab: PurchaseOrderTab;
   readonly supplierIds?: ReadonlyArray<string>;
@@ -127,54 +88,7 @@ export type PurchaseOrderListRequest = ListPage<PurchaseOrderSortColumn> & {
   readonly filters: PurchaseOrderListFilters;
 };
 
-const statusIs = (statuses: ReadonlyArray<PurchaseOrderStatus>): SubsetPredicate => {
-  const [only, ...others] = statuses;
-  return only !== undefined && others.length === 0
-    ? { _tag: "compare", column: "status", op: "eq", value: only }
-    : { _tag: "in", column: "status", values: statuses };
+export type PurchaseOrderDetail = {
+  readonly order: PurchaseOrder | undefined;
+  readonly deliveries: ReadonlyArray<StockMovement>;
 };
-
-const supplierIn = (supplierIds: ReadonlyArray<string>): SubsetPredicate => {
-  const inChunk = (values: ReadonlyArray<string>): SubsetPredicate => ({
-    _tag: "in",
-    column: "supplierId",
-    values,
-  });
-  const [first = [], ...rest] = Arr.chunksOf(supplierIds, MAX_IN_VALUES);
-  return rest.length === 0
-    ? inChunk(first)
-    : { _tag: "or", predicates: [first, ...rest].map(inChunk) };
-};
-
-const purchaseOrderListWhere = (filters: PurchaseOrderListFilters): SubsetPredicate | undefined =>
-  allOf([
-    statusIs(purchaseOrderTabStatuses(filters.tab)),
-    ...(filters.supplierIds === undefined ? [] : [supplierIn(filters.supplierIds)]),
-  ]);
-
-export const readPurchaseOrderPageIds = (
-  reader: ReplicaSubsetReader,
-  request: PurchaseOrderListRequest,
-): Effect.Effect<ReadonlyArray<string>, WorkspaceReadFailure> =>
-  readPageIds(
-    reader,
-    "purchaseOrders",
-    purchaseOrderListWhere(request.filters),
-    request,
-    readFailure,
-  ).pipe(Effect.withSpan("Purchasing.readOrderPage"));
-
-export const countPurchaseOrders = (
-  reader: ReplicaSummaryReader,
-  filters: PurchaseOrderListFilters,
-): Effect.Effect<number, WorkspaceReadFailure> =>
-  countRows(reader, "purchaseOrders", purchaseOrderListWhere(filters), readFailure).pipe(
-    Effect.withSpan("Purchasing.countOrders"),
-  );
-
-export const countSuppliers = (
-  reader: ReplicaSummaryReader,
-): Effect.Effect<number, WorkspaceReadFailure> =>
-  countRows(reader, "suppliers", undefined, readFailure).pipe(
-    Effect.withSpan("Purchasing.countSuppliers"),
-  );

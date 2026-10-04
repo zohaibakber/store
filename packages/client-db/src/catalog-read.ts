@@ -1,4 +1,4 @@
-import { nextInvoiceNumber, OPEN_PURCHASE_ORDER_STATUSES, type SupplierId } from "@store/contracts";
+import { nextInvoiceNumber } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
@@ -7,21 +7,18 @@ import { drainSubset, type ReadSubset } from "./replica/collection-read";
 import { decodeSourceRows } from "./replica/decode";
 import {
   DEFAULT_COLLECTION_MAXIMUM_ROWS,
-  MAX_BATCH_SPECS,
   MAX_IN_VALUES,
   type InventoryCollectionSource,
 } from "./replica/sources";
-import type { ReplicaRow } from "./replica/sqlite-row";
 import type { InventorySubsetSpec, SubsetPredicate } from "./replica/subset-spec";
 import type { CatalogRows, ReplicaSubsetReader } from "./replica/types";
-import type { PurchaseOrderItemRow, PurchaseOrderRow } from "./rows";
 
 const CONCURRENT = { concurrency: "unbounded" } as const;
 
 const attempt = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
   Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
 
-const subsetReads =
+export const subsetReads =
   (reader: ReplicaSubsetReader): ReadSubset =>
   (spec) =>
     attempt(() => reader.readSubset(spec));
@@ -92,12 +89,11 @@ const readable = <Row extends { readonly id: string }>(
 };
 
 export const readCatalogRows = (
-  reader: ReplicaSubsetReader,
+  read: ReadSubset,
   request: CatalogRowsRequest,
 ): Effect.Effect<CatalogProjectionTables, unknown> =>
-  Effect.suspend(() => {
-    const read = subsetReads(reader);
-    return Effect.all(
+  Effect.suspend(() =>
+    Effect.all(
       [
         request.allCategories ? readAll(read, "categories") : NO_ROWS,
         readWhereIn(read, "categories", "id", request.categoryIds),
@@ -119,8 +115,8 @@ export const readCatalogRows = (
         readWhereIn(read, "batches", "productId", request.batchesOfProductIds),
       ],
       CONCURRENT,
-    );
-  }).pipe(
+    ),
+  ).pipe(
     Effect.map(
       ([allCategories, categories, products, categoryProducts, batches, productBatches]) => ({
         categories: readable(allCategories, categories),
@@ -131,23 +127,23 @@ export const readCatalogRows = (
   );
 
 const readLatest = <Source extends "invoices" | "purchaseOrders">(
-  reader: ReplicaSubsetReader,
+  read: ReadSubset,
   source: Source,
   column: string,
   organizationId: string,
 ): Effect.Effect<ReadonlyArray<CatalogRows[Source]>, unknown> =>
   readFirst(
-    subsetReads(reader),
+    read,
     source,
     { _tag: "compare", column: "organizationId", op: "eq", value: organizationId },
     [{ column, direction: "desc" }],
   );
 
 export const readNextInvoiceNumber = (
-  reader: ReplicaSubsetReader,
+  read: ReadSubset,
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
-  readLatest(reader, "invoices", "invoiceNumber", organizationId).pipe(
+  readLatest(read, "invoices", "invoiceNumber", organizationId).pipe(
     Effect.map((latest) => nextInvoiceNumber(latest.map((invoice) => invoice.invoiceNumber))),
   );
 
@@ -162,10 +158,9 @@ export type PurchasingRowsRequest = {
 };
 
 export const readPurchasingRows = Effect.fnUntraced(function* (
-  reader: ReplicaSubsetReader,
+  read: ReadSubset,
   request: PurchasingRowsRequest,
 ): Effect.fn.Return<PurchasingProjectionTables, unknown> {
-  const read = subsetReads(reader);
   const [allSuppliers, suppliers, orders, supplierOrders, items] = yield* Effect.all(
     [
       request.allSuppliers ? readAll(read, "suppliers") : NO_ROWS,
@@ -201,98 +196,9 @@ export const readPurchasingRows = Effect.fnUntraced(function* (
 });
 
 export const readNextPurchaseOrderNumber = (
-  reader: ReplicaSubsetReader,
+  read: ReadSubset,
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
-  readLatest(reader, "purchaseOrders", "orderNumber", organizationId).pipe(
+  readLatest(read, "purchaseOrders", "orderNumber", organizationId).pipe(
     Effect.map((latest) => nextInvoiceNumber(latest.map((order) => order.orderNumber))),
   );
-
-export type OpenOrderLines = {
-  readonly orders: ReadonlyArray<PurchaseOrderRow>;
-  readonly lines: ReadonlyArray<PurchaseOrderItemRow>;
-};
-
-export const readOpenOrderLines = Effect.fnUntraced(function* (
-  reader: ReplicaSubsetReader,
-  productIds: Iterable<string>,
-): Effect.fn.Return<OpenOrderLines, unknown> {
-  const products = inChunks("productId", productIds);
-  if (products.length === 0) return { orders: [], lines: [] };
-  const read = subsetReads(reader);
-  const orders = yield* readAll(read, "purchaseOrders", {
-    _tag: "in",
-    column: "status",
-    values: OPEN_PURCHASE_ORDER_STATUSES,
-  });
-  const lines = yield* Effect.forEach(
-    inChunks(
-      "purchaseOrderId",
-      orders.map((order) => order.id),
-    ).flatMap((ofOrders) =>
-      products.map((ofProducts): SubsetPredicate => ({
-        _tag: "and",
-        predicates: [ofProducts, ofOrders],
-      })),
-    ),
-    (where) => readAll(read, "purchaseOrderItems", where),
-    CONCURRENT,
-  );
-  return { orders, lines: lines.flat() };
-});
-
-const latestLineSpec = (productId: string): InventorySubsetSpec => ({
-  source: "purchaseOrderItems",
-  where: { _tag: "compare", column: "productId", op: "eq", value: productId },
-  orderBy: [
-    { column: "createdAt", direction: "desc" },
-    { column: "id", direction: "desc" },
-  ],
-  limit: 1,
-  offset: 0,
-});
-
-const specBatches = (specs: ReadonlyArray<InventorySubsetSpec>) => {
-  const batches: Array<ReadonlyArray<InventorySubsetSpec>> = [];
-  for (let start = 0; start < specs.length; start += MAX_BATCH_SPECS) {
-    batches.push(specs.slice(start, start + MAX_BATCH_SPECS));
-  }
-  return batches;
-};
-
-const readSpecs = (
-  reader: ReplicaSubsetReader,
-  specs: ReadonlyArray<InventorySubsetSpec>,
-): Effect.Effect<ReadonlyArray<ReplicaRow>, unknown> => {
-  const readBatch = reader.readBatch;
-  return readBatch === undefined
-    ? Effect.forEach(specs, subsetReads(reader), CONCURRENT).pipe(
-        Effect.map((reads) => reads.flatMap((read) => read.rows)),
-      )
-    : Effect.forEach(
-        specBatches(specs),
-        (batch) => attempt(() => readBatch.call(reader, batch)),
-        CONCURRENT,
-      ).pipe(Effect.map((batches) => batches.flatMap((batch) => batch.reads.flat())));
-};
-
-export const readLearnedSuppliers = Effect.fnUntraced(function* (
-  reader: ReplicaSubsetReader,
-  productIds: Iterable<string>,
-): Effect.fn.Return<ReadonlyMap<string, SupplierId>, unknown> {
-  const rows = yield* readSpecs(reader, [...new Set(productIds)].map(latestLineSpec));
-  const lines = yield* decodeSourceRows("purchaseOrderItems")(rows);
-  const orders = yield* readWhereIn(
-    subsetReads(reader),
-    "purchaseOrders",
-    "id",
-    lines.map((line) => line.purchaseOrderId),
-  );
-  const supplierOf = new Map(orders.map((order) => [order.id, order.supplierId]));
-  const learned = new Map<string, SupplierId>();
-  for (const line of lines) {
-    const supplierId = supplierOf.get(line.purchaseOrderId);
-    if (supplierId !== undefined) learned.set(line.productId, supplierId);
-  }
-  return learned;
-});

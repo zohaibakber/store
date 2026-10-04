@@ -1,7 +1,10 @@
 import {
   NOTICE_BUFFER_CAPACITY,
   offerCoalescing,
-  replicaSyncActivityOf,
+  sameSyncHealth,
+  syncHealthOf,
+  toClientNotice,
+  withAuthRefreshing,
   type ReplicaCommitNotice,
   type ReplicaSyncHealth,
 } from "@store/client-db";
@@ -16,65 +19,51 @@ import {
 import {
   commitPublish,
   ImportRefused,
-  makeProxyImportClient,
+  makeImportClient,
+  readPublishStatus,
   readPublishSummary,
   stagePublish,
   type ImportClient,
   type ReplicaPublishCommit,
 } from "@store/client-db/node-publish";
 import {
-  layerProxySyncTransport,
-  openNodeLocalReplicaSession,
-  openNodeReplicaSyncSession,
-  type NodeReplicaSyncSession,
-  type SyncProxyRequest,
+  layerNodeLocalReplica,
+  layerNodeReplicaSync,
+  makePinnedHttp,
+  type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
-import * as Duration from "effect/Duration";
+import { layerInventoryStore } from "@store/client-db/store";
+import { InventoryStore } from "@store/contracts/replica";
+import { ReplicaStore, SyncScheduler } from "@store/sync";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import { identity } from "effect/Function";
-import * as Queue from "effect/Queue";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import type * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
-import type * as Scope from "effect/Scope";
+import * as RpcServer from "effect/rpc/RpcServer";
+import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { PROXY_CONCURRENCY, SNAPSHOT_DOWNLOAD_CONCURRENCY } from "./replica-admission";
-import { makePendingReplies, makeSharedFlight } from "./replica-pending";
+import { AdmittedInventoryStore, CommandAdmission, commandAdmission } from "./renderer-admission";
+import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   catalogCountsOf,
   commitStampOf,
   RESTORE_LOCAL_ONLY,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
-  type AccessTokenRequest,
-  type AccessTokenResult,
-  type ProxyFetchRequest,
-  type ProxyFetchResult,
   type ReplicaWorkerBoot,
 } from "./replica-rpc";
-
-const PROXY_QUEUE_CAPACITY = 16;
-const TOKEN_QUEUE_CAPACITY = 2;
-
-const PROXY_REPLY_GRACE = Duration.seconds(5);
-const TOKEN_REPLY_LIMIT = Duration.seconds(30);
-
-const SNAPSHOT_PART = /^\/api\/sync\/snapshots\/[^/]+\/parts\/\d+$/u;
-
-const isSnapshotDownload = (request: SyncProxyRequest) =>
-  request.method === "GET" && SNAPSHOT_PART.test(request.pathname);
 
 const workerFailure = (cause: unknown) =>
   new ReplicaWorkerFailure({
     message: cause instanceof Error ? cause.message : "Replica worker failed.",
   });
-
-const timedOutProxy = (): ProxyFetchResult => ({
-  ok: false,
-  status: 504,
-  bodyText: "The sync proxy did not answer in time.",
-});
 
 type WorkerBoot = typeof ReplicaWorkerBoot.Type;
 
@@ -88,14 +77,16 @@ const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this devi
 const fileFailure = (failure: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: failure.message });
 
+type Session = Context.Context<SqliteReplicaServices>;
+
 type AuthorityLink = {
-  readonly open: () => Promise<NodeReplicaSyncSession>;
-  readonly proxyRequests: Stream.Stream<typeof ProxyFetchRequest.Type>;
-  readonly respondProxy: (requestId: string, result: ProxyFetchResult) => Effect.Effect<void>;
-  readonly tokenRequests: Stream.Stream<typeof AccessTokenRequest.Type>;
-  readonly respondToken: (requestId: string, token: AccessTokenResult) => Effect.Effect<void>;
-  readonly setForeground: (session: NodeReplicaSyncSession, visible: boolean) => Promise<void>;
-  readonly healthOf: (health: ReplicaSyncHealth) => ReplicaSyncHealth;
+  readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
+  readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
+  readonly setForeground: (
+    scheduler: SyncScheduler["Service"],
+    visible: boolean,
+  ) => Effect.Effect<void>;
+  readonly healthOf: (health: Stream.Stream<ReplicaSyncHealth>) => Stream.Stream<ReplicaSyncHealth>;
   readonly imports: ImportClient;
 };
 
@@ -109,62 +100,32 @@ const sessionInput = (config: WorkerBoot) => ({
   databaseIdentity: config.databasePath,
 });
 
-const linkRemoteAuthority = (
+const linkRemoteAuthority = Effect.fnUntraced(function* (
   config: Extract<WorkerBoot, { readonly authority: "remote" }>,
-): Effect.Effect<AuthorityLink, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    const proxyRequests = yield* Queue.bounded<typeof ProxyFetchRequest.Type>(PROXY_QUEUE_CAPACITY);
-    const proxyReplies = makePendingReplies<ProxyFetchResult>();
-    const tokenRequests =
-      yield* Queue.bounded<typeof AccessTokenRequest.Type>(TOKEN_QUEUE_CAPACITY);
-    const tokenReplies = makePendingReplies<AccessTokenResult>();
-    const proxyTurns = yield* Semaphore.make(PROXY_CONCURRENCY);
-    const snapshotTurns = yield* Semaphore.make(SNAPSHOT_DOWNLOAD_CONCURRENCY);
-
-    const proxyFetch = (request: SyncProxyRequest): Effect.Effect<ProxyFetchResult> => {
-      const requestId = crypto.randomUUID();
-      const exchange = proxyTurns.withPermits(1)(
-        proxyReplies.ask(requestId, Queue.offer(proxyRequests, { requestId, ...request })),
-      );
-      const admitted = isSnapshotDownload(request)
-        ? snapshotTurns.withPermits(1)(exchange)
-        : exchange;
-      return admitted.pipe(
-        Effect.timeoutOption(
-          Duration.sum(Duration.millis(request.timeoutMillis), PROXY_REPLY_GRACE),
-        ),
-        Effect.map((reply) => (reply._tag === "Some" ? reply.value : timedOutProxy())),
-      );
-    };
-
-    const sharedToken = yield* makeSharedFlight(tokenReplies, (force: boolean, requestId) =>
-      Queue.offer(tokenRequests, { requestId, force }),
-    );
-
-    return {
-      open: () =>
-        openNodeReplicaSyncSession({
-          ...sessionInput(config),
-          transport: layerProxySyncTransport(proxyFetch),
-          live: {
-            apiBaseUrl: config.apiBaseUrl,
-            accessToken: ({ force }) =>
-              Effect.runPromise(sharedToken(force, null, TOKEN_REPLY_LIMIT)),
-          },
-          deviceLabel: config.deviceLabel,
-        }),
-      proxyRequests: Stream.fromQueue(proxyRequests),
-      respondProxy: proxyReplies.respond,
-      tokenRequests: Stream.fromQueue(tokenRequests),
-      respondToken: tokenReplies.respond,
-      setForeground: async (session, visible) => {
-        await session.setVisible(visible);
-        if (visible) await session.wake("focus");
+) {
+  const http = yield* makePinnedHttp(config.apiBaseUrl);
+  return {
+    session: layerNodeReplicaSync({
+      ...sessionInput(config),
+      transport: http.syncTransport,
+      live: {
+        apiBaseUrl: config.apiBaseUrl,
+        accessToken: (options) => Effect.runPromise(http.liveAccessToken(options)),
       },
-      healthOf: identity,
-      imports: makeProxyImportClient(proxyFetch),
-    };
-  });
+      deviceLabel: config.deviceLabel,
+    }),
+    setToken: http.setToken,
+    setForeground: (scheduler, visible) =>
+      scheduler
+        .setVisible(visible)
+        .pipe(Effect.andThen(visible ? scheduler.wake("focus") : Effect.void)),
+    healthOf: (health) =>
+      Stream.zipLatest(health, http.refreshing).pipe(
+        Stream.map(([current, refreshing]) => withAuthRefreshing(current, refreshing)),
+      ),
+    imports: makeImportClient(http.client, config.apiBaseUrl),
+  } satisfies AuthorityLink;
+});
 
 const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
   switch (health._tag) {
@@ -184,22 +145,20 @@ const needsOrganization = Effect.fail(
 const localImports: ImportClient = {
   stagePart: () => needsOrganization,
   commit: () => needsOrganization,
+  status: () => needsOrganization,
 };
 
 const linkLocalAuthority = (
   config: Extract<WorkerBoot, { readonly authority: "local" }>,
 ): AuthorityLink => ({
-  open: () => openNodeLocalReplicaSession(sessionInput(config)),
-  proxyRequests: Stream.never,
-  respondProxy: () => Effect.void,
-  tokenRequests: Stream.never,
-  respondToken: () => Effect.void,
-  setForeground: () => Promise.resolve(),
-  healthOf: onDeviceHealth,
+  session: layerNodeLocalReplica(sessionInput(config)),
+  setToken: () => Effect.void,
+  setForeground: () => Effect.void,
+  healthOf: Stream.map(onDeviceHealth),
   imports: localImports,
 });
 
-const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
+const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink> => {
   switch (config.authority) {
     case "local":
       return Effect.succeed(linkLocalAuthority(config));
@@ -208,45 +167,82 @@ const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, 
   }
 };
 
+const openSession = (
+  session: Layer.Layer<SqliteReplicaServices, unknown>,
+  scope: Scope.Scope,
+): Effect.Effect<Session, unknown> =>
+  Layer.buildWithScope(Layer.fresh(session), scope).pipe(
+    Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()),
+  );
+
 export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
-      const syncHealth = yield* SubscriptionRef.make<ReplicaSyncHealth>({ _tag: "running" });
       const link = yield* linkAuthority(config);
 
-      const live = yield* Ref.make<NodeReplicaSyncSession | undefined>(undefined);
-
-      const opened = yield* Effect.acquireRelease(
-        Effect.tryPromise(link.open).pipe(
-          Effect.map((session): NodeReplicaSyncSession | undefined => session),
-          Effect.orElseSucceed((): NodeReplicaSyncSession | undefined => undefined),
-          Effect.tap((session) => Ref.set(live, session)),
+      const sessionScope = yield* Scope.fork(yield* Effect.scope);
+      const opened = yield* openSession(link.session, sessionScope).pipe(
+        Effect.map(Option.some),
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.interrupt
+            : Effect.logError("ReplicaWorker.open_failed", cause).pipe(
+                Effect.andThen(Scope.close(sessionScope, Exit.void)),
+                Effect.as(Option.none<Session>()),
+              ),
         ),
-        () =>
-          Ref.getAndSet(live, undefined).pipe(
-            Effect.flatMap((session) =>
-              session === undefined
-                ? Effect.void
-                : Effect.promise(() => session.close()).pipe(Effect.ignore),
+      );
+      const live = yield* Ref.make(opened);
+
+      const health = link
+        .healthOf(
+          Option.match(opened, {
+            onNone: () =>
+              Stream.concat(Stream.succeed<ReplicaSyncHealth>({ _tag: "running" }), Stream.never),
+            onSome: (session) =>
+              SubscriptionRef.changes(Context.get(session, SyncScheduler).state).pipe(
+                Stream.map(syncHealthOf),
+              ),
+          }),
+        )
+        .pipe(Stream.changesWith(sameSyncHealth));
+
+      const commandTurn = yield* Semaphore.make(1);
+      const renderers = yield* Option.match(opened, {
+        onNone: () => Effect.succeed(noRendererServers),
+        onSome: (session) =>
+          makeRendererServers((protocol) =>
+            RpcServer.layer(AdmittedInventoryStore).pipe(
+              Layer.provide(
+                Layer.merge(
+                  layerInventoryStore,
+                  InventoryStore.toLayerHandler("Health", () => health),
+                ),
+              ),
+              Layer.provide(Layer.succeedContext(session)),
+              Layer.provide(Layer.succeed(CommandAdmission, commandAdmission(commandTurn))),
+              Layer.provide(protocol),
             ),
           ),
-      );
+      });
 
-      if (opened !== undefined) {
-        const unsubscribe = opened.subscribeSyncHealth((health) => {
-          Effect.runSync(SubscriptionRef.set(syncHealth, link.healthOf(health)));
-        });
-        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-      }
-
-      const withSession = <A>(use: (current: NodeReplicaSyncSession) => Promise<A>) =>
+      const withSession = <A, E>(use: (session: Session) => Effect.Effect<A, E>) =>
         Ref.get(live).pipe(
-          Effect.flatMap((current) =>
-            current === undefined
-              ? Effect.fail(new ReplicaWorkerFailure({ message: "Replica worker is not booted." }))
-              : Effect.tryPromise({ try: () => use(current), catch: workerFailure }),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(new ReplicaWorkerFailure({ message: "Replica worker is not booted." })),
+              onSome: (session) => Effect.mapError(use(session), workerFailure),
+            }),
           ),
+        );
+
+      const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp());
+
+      const wake = (reason: "focus" | "reconnect") =>
+        withSession((session) => Context.get(session, SyncScheduler).wake(reason)).pipe(
+          Effect.ignore,
         );
 
       const stageRestore = (
@@ -259,22 +255,21 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
           if (backup.organizationId !== local.organizationId || backup.userId !== local.userId) {
             return yield* new ReplicaWorkerFailure({ message: ORGANIZATION_BACKUP_MESSAGE });
           }
-          yield* Effect.acquireUseRelease(
-            Effect.tryPromise({
-              try: () =>
-                openNodeLocalReplicaSession({
-                  ...sessionInput(local),
-                  path: stagedPath,
-                  databaseIdentity: stagedPath,
-                }),
-              catch: () => new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE }),
-            }),
-            (trial) =>
-              Effect.tryPromise({
-                try: () => trial.stamp(),
-                catch: () => new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE }),
+          yield* Effect.scopedWith((trial) =>
+            openSession(
+              layerNodeLocalReplica({
+                ...sessionInput(local),
+                path: stagedPath,
+                databaseIdentity: stagedPath,
               }),
-            (trial) => Effect.tryPromise(() => trial.close()).pipe(Effect.ignore),
+              trial,
+            ),
+          ).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause)
+                ? Effect.interrupt
+                : Effect.fail(new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE })),
+            ),
           );
           const current = yield* readReplicaFileSummary(local.databasePath);
           return { current: catalogCountsOf(current), backup: catalogCountsOf(backup) };
@@ -288,22 +283,18 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         stagedPath: string,
       ) =>
         Effect.gen(function* () {
-          const stamp = yield* withSession((current) => current.stamp());
-          const closing = yield* Ref.getAndSet(live, undefined);
-          if (closing !== undefined) {
-            yield* Effect.tryPromise({ try: () => closing.close(), catch: workerFailure });
-          }
+          const sealed = yield* stamp;
+          yield* commandTurn.withPermits(1)(renderers.shutdown);
+          yield* Ref.set(live, Option.none());
+          yield* Scope.close(sessionScope, Exit.void);
           yield* settleReplicaFile(local.databasePath);
-          yield* sealReplicaFile(stagedPath, stamp.localCommitVersion);
+          yield* sealReplicaFile(stagedPath, sealed.localCommitVersion);
         }).pipe(Effect.mapError(fileFailure));
 
       const afterPublish = (sourcePath: string, outcome: ReplicaPublishCommit) => {
         switch (outcome._tag) {
           case "committed":
-            return settleReplicaFile(sourcePath).pipe(
-              Effect.ignore,
-              Effect.andThen(withSession((current) => current.wake("focus")).pipe(Effect.ignore)),
-            );
+            return settleReplicaFile(sourcePath).pipe(Effect.ignore, Effect.andThen(wake("focus")));
           case "refused":
           case "unconfirmed":
             return Effect.void;
@@ -311,36 +302,15 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
       };
 
       return ReplicaWorkerRpcs.of({
-        Engine: () => Effect.succeed(opened === undefined ? "unavailable" : "sqlite"),
-        Stamp: () => withSession((current) => current.stamp()).pipe(Effect.map(commitStampOf)),
-        ReadInsights: ({ window }) =>
-          withSession((current) => current.readInsights(window)).pipe(
-            Effect.map((read) => ({ stamp: commitStampOf(read.stamp), facts: read.facts })),
-          ),
-        ReadSyncActivity: () =>
-          withSession((current) => current.readOutboxActivity()).pipe(
-            Effect.map(replicaSyncActivityOf),
-          ),
-        EnqueueCommand: ({ request }) =>
-          withSession((current) => current.enqueueCommand(request)).pipe(
-            Effect.map((queued) => ({
-              operationId: queued.operationId,
-              status: queued.status,
-              stamp: commitStampOf(queued.stamp),
-            })),
-          ),
-        ReadCommandStatus: ({ operationId }) =>
-          withSession((current) => current.readCommandStatus(operationId)).pipe(
-            Effect.map((status) => status ?? null),
-          ),
+        Engine: () => Effect.succeed(Option.isNone(opened) ? "unavailable" : "sqlite"),
+        AttachRenderer: ({ port }) => renderers.attach(port),
+        Stamp: () => stamp,
         SetForeground: ({ visible }) =>
-          opened === undefined
+          Option.isNone(opened)
             ? Effect.void
-            : withSession((current) => link.setForeground(current, visible)),
-        WakeSyncUpload: () =>
-          opened === undefined
-            ? Effect.succeed({ drained: false, drainCount: 0 })
-            : withSession((current) => current.wakeSyncUpload()),
+            : withSession((session) =>
+                link.setForeground(Context.get(session, SyncScheduler), visible),
+              ),
         BackUp: ({ destinationPath }) =>
           backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
             Effect.mapError(
@@ -372,23 +342,27 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
           stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
             Stream.mapError(fileFailure),
           ),
-        PublishCommit: ({ sourcePath, importId, seal, acceptChangedFile }) =>
+        PublishCommit: ({ sourcePath, importId, seal }) =>
           commitPublish({
-            path: sourcePath,
             organizationId: config.organizationId,
             importId,
             seal,
             client: link.imports,
-            acceptChangedFile,
           }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
+        PublishStatus: ({ importId }) => readPublishStatus({ importId, client: link.imports }),
         Commits: () =>
-          opened === undefined
-            ? Stream.empty
-            : Stream.callback<ReplicaCommitNotice>(
+          Option.match(opened, {
+            onNone: () => Stream.empty,
+            onSome: (session) =>
+              Stream.callback<ReplicaCommitNotice>(
                 (queue) =>
-                  Effect.acquireRelease(
-                    Effect.sync(() => opened.subscribe((notice) => offerCoalescing(queue, notice))),
-                    (unsubscribe) => Effect.sync(unsubscribe),
+                  Context.get(session, ReplicaStore).commits.pipe(
+                    Stream.runForEach((notice) =>
+                      Effect.sync(() =>
+                        offerCoalescing(queue, toClientNotice(config.databasePath, notice)),
+                      ),
+                    ),
+                    Effect.forkScoped({ startImmediately: true }),
                   ),
                 { bufferSize: NOTICE_BUFFER_CAPACITY, strategy: "suspend" },
               ).pipe(
@@ -408,11 +382,12 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                   ),
                 ),
               ),
-        SyncHealth: () => SubscriptionRef.changes(syncHealth).pipe(Stream.changes),
-        ProxyRequests: () => link.proxyRequests,
-        ProxyRespond: ({ requestId, result }) => link.respondProxy(requestId, result),
-        AccessTokenRequests: () => link.tokenRequests,
-        AccessTokenRespond: ({ requestId, token }) => link.respondToken(requestId, token),
+          }),
+        SyncHealth: () => health,
+        SetAccessToken: ({ token }) =>
+          link
+            .setToken(token)
+            .pipe(Effect.andThen(token === null ? Effect.void : wake("reconnect"))),
       });
     }),
   );

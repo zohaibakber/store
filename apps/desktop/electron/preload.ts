@@ -1,14 +1,15 @@
 import "@sentry/electron/preload";
-import type { ElectronReplicaBridge } from "@store/client-db";
+import { REPLICA_PORTS_CHANNEL, type ReplicaPortsMessage } from "@store/contracts/replica";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import type {
   AuthIpcBridge,
   InventoryHttpBridge,
+  ReplicaWorkspaceBridge,
   ServerApiIpcBridge,
 } from "@store/web/host/electron";
 import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "@store/web/host/index";
-import { makeReplayChannel, type ReplayChannel } from "@store/web/host/replay-channel";
+import { makeReplayChannel } from "@store/web/host/replay-channel";
 import type { ShareBridge } from "@store/web/host/share";
 import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
 import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
@@ -34,25 +35,9 @@ import {
   PUBLISH_OFFER_CHANNEL,
   PUBLISH_PROGRESS_CHANNEL,
   PUBLISH_START_CHANNEL,
-  REPLICA_ACTIVITY_CHANNEL,
-  REPLICA_ANALYTICS_CHANNEL,
-  REPLICA_CANCEL_READ_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
-  REPLICA_COMMAND_STATUS_CHANNEL,
-  REPLICA_COMMIT_CHANNEL,
-  REPLICA_ENQUEUE_CHANNEL,
-  REPLICA_INSIGHTS_SUMMARY_CHANNEL,
   REPLICA_OPEN_CHANNEL,
-  REPLICA_PRODUCT_INSIGHTS_CHANNEL,
-  REPLICA_READ_BATCH_CHANNEL,
-  REPLICA_READ_INSIGHTS_CHANNEL,
-  REPLICA_READ_SUBSET_CHANNEL,
-  REPLICA_RESTOCK_PAGE_CHANNEL,
   REPLICA_RETRY_CHANNEL,
-  REPLICA_STAMP_CHANNEL,
-  REPLICA_SUMMARIZE_SUBSET_CHANNEL,
-  REPLICA_SYNC_HEALTH_CHANNEL,
-  REPLICA_WAKE_CHANNEL,
   RESTORE_APPLY_CHANNEL,
   RESTORE_CHOOSE_CHANNEL,
   RESTORE_DISCARD_CHANNEL,
@@ -73,11 +58,12 @@ import {
   WINDOW_MAXIMIZED_CHANNEL,
   WINDOW_MINIMIZE_CHANNEL,
   WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-  type ReplicaAnalyticsEvent,
-  type ReplicaCommitEvent,
-  type ReplicaSyncHealthEvent,
 } from "./ipc-channels";
 import { isOAuthCallbackUrl } from "./oauth-callback";
+
+ipcRenderer.on(REPLICA_PORTS_CHANNEL, (event, message: ReplicaPortsMessage) => {
+  window.postMessage(message, "*", event.ports);
+});
 
 const inventoryHttp: InventoryHttpBridge = {
   getConfig: () => ipcRenderer.invoke(INVENTORY_HTTP_CONFIG_CHANNEL),
@@ -85,54 +71,10 @@ const inventoryHttp: InventoryHttpBridge = {
 
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
-const syncHealthReplays = new Map<string, ReplayChannel<ReplicaSyncHealthEvent["health"]>>();
-
-const syncHealthReplay = (workspaceToken: string) => {
-  const existing = syncHealthReplays.get(workspaceToken);
-  if (existing) return existing;
-  const created = makeReplayChannel<ReplicaSyncHealthEvent["health"]>();
-  syncHealthReplays.set(workspaceToken, created);
-  return created;
-};
-
-ipcRenderer.on(REPLICA_SYNC_HEALTH_CHANNEL, (_event, notice: ReplicaSyncHealthEvent) => {
-  syncHealthReplay(notice.workspaceToken).publish(notice.health);
-});
-
-const replica: ElectronReplicaBridge = {
+const replica: ReplicaWorkspaceBridge = {
   open: (input) => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL, input),
-  close: (workspaceToken) => {
-    syncHealthReplays.delete(workspaceToken);
-    return ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken);
-  },
-  stamp: (workspaceToken) => ipcRenderer.invoke(REPLICA_STAMP_CHANNEL, workspaceToken),
-  readSubset: (input) => ipcRenderer.invoke(REPLICA_READ_SUBSET_CHANNEL, input),
-  readBatch: (input) => ipcRenderer.invoke(REPLICA_READ_BATCH_CHANNEL, input),
-  cancelRead: (input) => ipcRenderer.invoke(REPLICA_CANCEL_READ_CHANNEL, input),
+  close: (workspaceToken) => ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken),
   retryRecovery: (workspaceToken) => ipcRenderer.invoke(REPLICA_RETRY_CHANNEL, workspaceToken),
-  readInsights: (input) => ipcRenderer.invoke(REPLICA_READ_INSIGHTS_CHANNEL, input),
-  summarizeSubset: (input) => ipcRenderer.invoke(REPLICA_SUMMARIZE_SUBSET_CHANNEL, input),
-  readInsightsSummary: (input) => ipcRenderer.invoke(REPLICA_INSIGHTS_SUMMARY_CHANNEL, input),
-  readProductInsights: (input) => ipcRenderer.invoke(REPLICA_PRODUCT_INSIGHTS_CHANNEL, input),
-  readRestockPage: (input) => ipcRenderer.invoke(REPLICA_RESTOCK_PAGE_CHANNEL, input),
-  onAnalytics(callback) {
-    const listener = (_event: Electron.IpcRendererEvent, event: ReplicaAnalyticsEvent) =>
-      callback(event);
-    ipcRenderer.on(REPLICA_ANALYTICS_CHANNEL, listener);
-    return () => ipcRenderer.off(REPLICA_ANALYTICS_CHANNEL, listener);
-  },
-  readSyncActivity: (workspaceToken) =>
-    ipcRenderer.invoke(REPLICA_ACTIVITY_CHANNEL, workspaceToken),
-  enqueueCommand: (input) => ipcRenderer.invoke(REPLICA_ENQUEUE_CHANNEL, input),
-  readCommandStatus: (input) => ipcRenderer.invoke(REPLICA_COMMAND_STATUS_CHANNEL, input),
-  wakeSyncUpload: (workspaceToken) => ipcRenderer.invoke(REPLICA_WAKE_CHANNEL, workspaceToken),
-  onCommit(callback) {
-    const listener = (_event: Electron.IpcRendererEvent, event: ReplicaCommitEvent) =>
-      callback(event);
-    ipcRenderer.on(REPLICA_COMMIT_CHANNEL, listener);
-    return () => ipcRenderer.off(REPLICA_COMMIT_CHANNEL, listener);
-  },
-  onSyncHealth: (workspaceToken, callback) => syncHealthReplay(workspaceToken).subscribe(callback),
 };
 
 contextBridge.exposeInMainWorld("replica", replica);

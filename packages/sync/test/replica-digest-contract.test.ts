@@ -13,14 +13,12 @@ import {
   LAST_UNIT_EPOCH,
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
 } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
-import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
@@ -38,7 +36,6 @@ import {
   type PostgresPartitionTables,
 } from "./lib/authority-digest";
 import { enqueueRequestOf } from "./lib/enqueue";
-import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 import {
   catalogEnvelope,
   FIXTURE_NOW,
@@ -71,32 +68,6 @@ const makeSqliteHarness = Effect.fn("digest.sqlite")(function* () {
     store,
     incarnation: "incarnation-test",
     close: () => Scope.close(scope, Exit.void),
-  } satisfies StoreHarness;
-});
-
-let databaseCounter = 0;
-
-const makeIndexedHarness = Effect.fn("digest.indexeddb")(function* () {
-  databaseCounter += 1;
-  const databaseName = `replica-digest-${databaseCounter}`;
-  const store = yield* makeIndexedDbReplicaStore({
-    databaseName,
-    databaseIdentity: databaseName,
-    identity: {
-      organizationId: LAST_UNIT_ORGANIZATION_ID,
-      userId: "user-1",
-      replicaId: LAST_UNIT_REPLICA_A,
-    },
-    indexedDB,
-    IDBKeyRange,
-  });
-  return {
-    store,
-    incarnation: "local",
-    close: () =>
-      store
-        .dispose()
-        .pipe(Effect.tap(() => Effect.sync(() => indexedDB.deleteDatabase(databaseName)))),
   } satisfies StoreHarness;
 });
 
@@ -358,10 +329,7 @@ const withEngine = <A, E>(
     return yield* use(engine);
   });
 
-const harnesses = [
-  ["sqlite", makeSqliteHarness],
-  ["indexeddb", makeIndexedHarness],
-] as const;
+const harnesses = [["sqlite", makeSqliteHarness]] as const;
 
 describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
   it.effect("requests a digest on the first pull and then only after the interval", () =>

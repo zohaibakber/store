@@ -8,7 +8,7 @@ import {
   type GenerateModelJson,
   type ModelRequestError,
 } from "../model-json";
-import { receivedStockFromCsv } from "./csv";
+import { isCsvFile, mergeReceivedStock, receivedStockFromCsv } from "./csv";
 import { normalizeLine, nullableString } from "./line";
 
 class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
@@ -99,51 +99,63 @@ const readableMarkdown = (converted: ReadonlyArray<ConvertedDocument>) =>
     .filter((document) => document.data.trim())
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 
-const isCsv = (file: File) => file.name.toLowerCase().endsWith(".csv");
-
-const readCsvFiles = (files: ReadonlyArray<File>) =>
+const readCsvLines = (files: ReadonlyArray<File>) =>
   Effect.tryPromise({
-    try: () => Promise.all(files.map((file) => file.text())),
+    try: () =>
+      Promise.all(
+        files.map(async (file) =>
+          isCsvFile(file) ? receivedStockFromCsv(await file.text()) : null,
+        ),
+      ),
     catch: (cause) =>
       new AttachmentsUnreadable({ message: "A CSV attachment could not be read.", cause }),
   });
 
+const NO_DOCUMENTS = { supplier: null, invoiceNumber: null, lines: [] };
+
+const extractDocuments = Effect.fn("InvoiceExtraction.extractDocuments")(function* (
+  ai: InvoiceAiClient,
+  files: ReadonlyArray<File>,
+) {
+  const converted = yield* ai
+    .toMarkdown(files.map((file) => ({ name: file.name, blob: file })))
+    .pipe(Effect.timeout("15 seconds"));
+  const failures = converted.filter(isFailure);
+  for (const failure of failures) {
+    yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
+      Effect.annotateLogs({ name: failure.name, error: failure.error }),
+    );
+  }
+  if (failures.length === converted.length)
+    return yield* new AttachmentsUnreadable({ message: unreadableMessage(failures) });
+  const documents = readableMarkdown(converted);
+  if (!documents.length)
+    return yield* new AttachmentsUnreadable({
+      message: "No readable text could be extracted from the attachments.",
+    });
+
+  const raw = yield* ai
+    .generate({
+      messages: [
+        { role: "system", content: instructions },
+        { role: "user", content: documents.join("\n\n") },
+      ],
+      jsonSchema: invoiceExtractionJsonSchema,
+    })
+    .pipe(Effect.timeout("30 seconds"));
+  return normalizeExtraction(yield* decodeInvoiceModelOutput(raw));
+});
+
 export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
   function* (ai: InvoiceAiClient, files: ReadonlyArray<File>) {
-    const csvContents = yield* readCsvFiles(files.filter(isCsv));
-    const csvLines = csvContents.flatMap(receivedStockFromCsv);
-    const aiFiles = files.filter((file) => !isCsv(file));
-    if (csvLines.length > 0 || !aiFiles.length)
-      return yield* decodeExtraction({ supplier: null, invoiceNumber: null, lines: csvLines });
-
-    const converted = yield* ai
-      .toMarkdown(aiFiles.map((file) => ({ name: file.name, blob: file })))
-      .pipe(Effect.timeout("15 seconds"));
-    const failures = converted.filter(isFailure);
-    for (const failure of failures) {
-      yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
-        Effect.annotateLogs({ name: failure.name, error: failure.error }),
-      );
-    }
-    if (failures.length === converted.length)
-      return yield* new AttachmentsUnreadable({ message: unreadableMessage(failures) });
-    const documents = readableMarkdown(converted);
-    if (!documents.length)
-      return yield* new AttachmentsUnreadable({
-        message: "No readable text could be extracted from the attachments.",
-      });
-
-    const raw = yield* ai
-      .generate({
-        messages: [
-          { role: "system", content: instructions },
-          { role: "user", content: documents.join("\n\n") },
-        ],
-        jsonSchema: invoiceExtractionJsonSchema,
-      })
-      .pipe(Effect.timeout("30 seconds"));
-    const output = yield* decodeInvoiceModelOutput(raw);
-    return yield* decodeExtraction(normalizeExtraction(output));
+    const csvLines = yield* readCsvLines(files);
+    const documents = files.filter((file) => !isCsvFile(file));
+    const extracted = documents.length ? yield* extractDocuments(ai, documents) : NO_DOCUMENTS;
+    return yield* decodeExtraction({
+      supplier: extracted.supplier,
+      invoiceNumber: extracted.invoiceNumber,
+      lines: mergeReceivedStock(csvLines, extracted.lines),
+    });
   },
   (effect) =>
     effect.pipe(

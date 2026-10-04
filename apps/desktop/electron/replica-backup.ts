@@ -16,7 +16,7 @@ import {
   swapReplicaFile,
 } from "./replica-restore-files";
 import { RESTORE_LOCAL_ONLY } from "./replica-rpc";
-import type { ReplicaSession, ReplicaSessions } from "./replica-sessions";
+import type { WorkspaceSession, WorkspaceSessions } from "./workspace-sessions";
 
 export type ReplicaBackupDialogs = {
   readonly chooseDestination: (suggestedName: string) => Promise<string | null>;
@@ -30,11 +30,15 @@ type StagedRestores = {
 };
 
 export type ReplicaBackup = {
-  readonly backUp: (session: ReplicaSession | undefined) => Effect.Effect<BackupOutcome>;
-  readonly chooseRestore: (session: ReplicaSession | undefined) => Effect.Effect<RestoreChoice>;
-  readonly applyRestore: (session: ReplicaSession | undefined) => Effect.Effect<RestoreOutcome>;
-  readonly discardRestore: (session: ReplicaSession | undefined) => Effect.Effect<void>;
+  readonly backUp: (session: WorkspaceSession | undefined) => Effect.Effect<BackupOutcome>;
+  readonly chooseRestore: (session: WorkspaceSession | undefined) => Effect.Effect<RestoreChoice>;
+  readonly applyRestore: (session: WorkspaceSession | undefined) => Effect.Effect<RestoreOutcome>;
+  readonly discardRestore: (session: WorkspaceSession | undefined) => Effect.Effect<void>;
 };
+
+const RELEASE_LIMIT = "50 seconds";
+
+const RELEASE_TOO_LONG = "The local database took too long to close.";
 
 const NO_WORKSPACE = "Open a workspace before using backups.";
 
@@ -65,13 +69,13 @@ export const makeStagedRestores = (): StagedRestores => {
 };
 
 export const makeReplicaBackup = (deps: {
-  readonly sessions: ReplicaSessions;
+  readonly sessions: WorkspaceSessions;
   readonly stagedRestores: StagedRestores;
   readonly dialogs: ReplicaBackupDialogs;
 }): ReplicaBackup => {
   const { sessions, stagedRestores, dialogs } = deps;
 
-  const resumeUnchanged = (session: ReplicaSession, reason: string) =>
+  const resumeUnchanged = (session: WorkspaceSession, reason: string) =>
     sessions.reopen(session).pipe(
       Effect.as(failed(`${reason} Your workspace is unchanged.`)),
       Effect.catch(() =>
@@ -82,7 +86,7 @@ export const makeReplicaBackup = (deps: {
       ),
     );
 
-  const backUp = (session: ReplicaSession, chooser: ReplicaBackupDialogs) =>
+  const backUp = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
     Effect.gen(function* () {
       const now = new Date(yield* Clock.currentTimeMillis);
       const destination = yield* Effect.tryPromise(() =>
@@ -99,7 +103,7 @@ export const makeReplicaBackup = (deps: {
       };
     }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
 
-  const stageRestore = (session: ReplicaSession, chooser: ReplicaBackupDialogs) =>
+  const stageRestore = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
     Effect.gen(function* () {
       const source = yield* Effect.tryPromise(() => chooser.chooseSource());
       if (source === null) return { _tag: "cancelled" as const };
@@ -122,21 +126,22 @@ export const makeReplicaBackup = (deps: {
       };
     }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
 
-  const replaceWorkspace = (session: ReplicaSession, stagedPath: string) =>
+  const replaceWorkspace = (session: WorkspaceSession, stagedPath: string) =>
     Effect.scoped(
       Effect.gen(function* () {
         const previousPath = `${session.databasePath}.before-restore-${yield* Clock.currentTimeMillis}`;
         yield* Effect.acquireRelease(session.gate.close, () => session.gate.open);
         yield* sessions.ownership.hold(session.databasePath);
-        const released = yield* session.admission
-          .read(
-            session.admission.write(
-              session.supervisor
-                .use((worker) => worker.client.ReleaseForRestore({ stagedPath }))
-                .pipe(Effect.ensuring(sessions.closeWorkers(session))),
-            ),
-          )
-          .pipe(Effect.result);
+        const released = yield* session.supervisor
+          .use((worker) => worker.client.ReleaseForRestore({ stagedPath }))
+          .pipe(
+            Effect.timeoutOrElse({
+              duration: RELEASE_LIMIT,
+              orElse: () => Effect.fail({ message: RELEASE_TOO_LONG }),
+            }),
+            Effect.ensuring(sessions.closeWorkers(session)),
+            Effect.result,
+          );
         if (Result.isFailure(released)) {
           yield* sessions.closeWorkers(session);
           yield* removeReplicaFile(stagedPath);
@@ -166,7 +171,6 @@ export const makeReplicaBackup = (deps: {
           );
         }
         yield* removeReplicaFile(previousPath);
-        yield* sessions.invalidate(reopened.success.session, reopened.success.stamp);
         return { _tag: "restored" as const };
       }),
     );
