@@ -462,7 +462,7 @@ describe("postgres catalog writes", () => {
           replicaId: LAST_UNIT_REPLICA_A,
           schemaVersion: 2,
         });
-        const live = yield* makeInventoryLive(db);
+        const live = makeInventoryLive(db);
         yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
@@ -486,8 +486,7 @@ describe("postgres catalog writes", () => {
         const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
         const listedRemoved = yield* standingOf;
         yield* Effect.sleep("5 millis");
-        const relive = yield* makeInventoryLive(db);
-        yield* relive.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
+        yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
         const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
         const listedReturned = yield* standingOf;
         yield* db
