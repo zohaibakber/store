@@ -4,7 +4,10 @@ import * as Schema from "effect/Schema";
 export const ParseState = Schema.Union([
   Schema.TaggedStruct("Waiting", {}),
   Schema.TaggedStruct("Deferred", {}),
-  Schema.TaggedStruct("RateLimited", { retryAt: Schema.Finite }),
+  Schema.TaggedStruct("RateLimited", {
+    retryAt: Schema.Finite,
+    attempts: Schema.optionalKey(Schema.Int),
+  }),
   Schema.TaggedStruct("Failed", { attempts: Schema.Int, reason: Schema.String }),
   Schema.TaggedStruct("Parsed", { result: ProductScanResult, parsedAt: Schema.Finite }),
   Schema.TaggedStruct("Manual", {}),
@@ -39,6 +42,7 @@ export const ScanDraftJson = Schema.fromJsonString(ScanDraft);
 
 export const LOW_CONFIDENCE = 0.6;
 export const MAX_PARSE_ATTEMPTS = 2;
+export const MAX_RATE_LIMIT_ATTEMPTS = 4;
 
 export const isAwaitingParse = (parse: ParseState): boolean =>
   parse._tag === "Waiting" || parse._tag === "Deferred" || parse._tag === "RateLimited";

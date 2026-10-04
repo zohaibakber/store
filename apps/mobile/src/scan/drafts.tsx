@@ -1,14 +1,9 @@
 import type { ProductScanMode } from "@store/contracts/server-api.schema";
-import * as Clock from "effect/Clock";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Queue from "effect/Queue";
-import * as Schedule from "effect/Schedule";
 import { randomUUID } from "expo-crypto";
 import { useNetworkState } from "expo-network";
 import * as React from "react";
@@ -18,15 +13,13 @@ import { mobileConfig } from "@/config";
 
 import { DraftStore, fileDraftStore } from "./draft-store";
 import { sameEdits } from "./fields";
+import type { ParseState, ReviewEdits, ScanDraft } from "./model";
 import {
-  MAX_PARSE_ATTEMPTS,
-  type ParseState,
-  type ReviewEdits,
-  type ScanDraft,
-  canRetryParse,
-  isAwaitingParse,
-} from "./model";
-import { type ScanParseError, parseProductScan } from "./parse-client";
+  type ParseEnvironment,
+  eligibleForParse,
+  makeScanQueues,
+  runScanWorker,
+} from "./parse-worker";
 
 type NewDraft = {
   readonly mode: ProductScanMode;
@@ -53,11 +46,6 @@ type ScanDrafts = {
 
 const ScanDraftsContext = React.createContext<ScanDrafts | null>(null);
 
-type ParseEnvironment = {
-  readonly online: boolean;
-  readonly fetch: typeof globalThis.fetch | null;
-};
-
 const runtime = ManagedRuntime.make(Layer.merge(fileDraftStore, FetchHttpClient.layer));
 
 const persist = (draft: ScanDraft) =>
@@ -68,34 +56,6 @@ const persist = (draft: ScanDraft) =>
     ),
   );
 
-const eligibleForParse = (draft: ScanDraft, now: number): boolean => {
-  const { parse } = draft;
-  if (parse._tag === "RateLimited") return parse.retryAt <= now;
-  return isAwaitingParse(parse) || canRetryParse(parse);
-};
-
-const parseStateAfter = (
-  exit: Exit.Exit<ParseState, ScanParseError>,
-  previous: ParseState,
-): ParseState => {
-  if (Exit.isSuccess(exit)) return exit.value;
-  const failure = exit.cause.reasons.find((reason) => reason._tag === "Fail");
-  const attempts = previous._tag === "Failed" ? previous.attempts + 1 : 1;
-  if (failure?._tag !== "Fail") {
-    return { _tag: "Failed", attempts, reason: "Auto-fill stopped unexpectedly." };
-  }
-  switch (failure.error._tag) {
-    case "ScanOffline":
-      return { _tag: "Deferred" };
-    case "ScanRateLimited":
-      return { _tag: "RateLimited", retryAt: failure.error.retryAt };
-    case "ScanFailed":
-      return { _tag: "Failed", attempts, reason: failure.error.message };
-    case "ScanRejected":
-      return { _tag: "Failed", attempts: MAX_PARSE_ATTEMPTS, reason: failure.error.message };
-  }
-};
-
 export function ScanDraftsProvider({ children }: { readonly children: React.ReactNode }) {
   const session = useSession();
   const network = useNetworkState();
@@ -105,12 +65,11 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
   const [drafts, setDrafts] = React.useState<ReadonlyMap<string, ScanDraft>>(() => new Map());
   const [loaded, setLoaded] = React.useState(false);
   const [parsing, setParsing] = React.useState<ReadonlySet<string>>(() => new Set());
-  const [pausedUntil, setPausedUntil] = React.useState<number | null>(null);
   const [lastCommit, setLastCommit] = React.useState<string | null>(null);
 
   const draftsRef = React.useRef(drafts);
   const environmentRef = React.useRef<ParseEnvironment>({ online, fetch });
-  const [queue] = React.useState(() => Effect.runSync(Queue.unbounded<string>()));
+  const [queues] = React.useState(makeScanQueues);
 
   React.useEffect(() => {
     environmentRef.current = { online, fetch };
@@ -120,8 +79,9 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
     (next: (current: ReadonlyMap<string, ScanDraft>) => ReadonlyMap<string, ScanDraft>) => {
       draftsRef.current = next(draftsRef.current);
       setDrafts(draftsRef.current);
+      queues.changed();
     },
-    [],
+    [queues],
   );
 
   const writeDraft = React.useCallback(
@@ -142,9 +102,9 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
 
   const requestParse = React.useCallback(
     (draftId: string) => {
-      Queue.offerUnsafe(queue, draftId);
+      queues.request(draftId);
     },
-    [queue],
+    [queues],
   );
 
   React.useEffect(() => {
@@ -169,88 +129,29 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
   }, [commitDrafts]);
 
   React.useEffect(() => {
-    const rateLimitRetry = Schedule.recurs(3).pipe(
-      Schedule.setInputType<ScanParseError>(),
-      Schedule.modifyDelay(({ input, now }) =>
-        Effect.succeed(
-          input._tag === "ScanRateLimited" ? Duration.millis(Math.max(0, input.retryAt - now)) : 0,
-        ),
-      ),
-      Schedule.tap(({ input }) =>
-        Effect.sync(() => {
-          if (input._tag !== "ScanRateLimited") return;
-          setPausedUntil(input.retryAt);
-        }),
-      ),
-    );
-
-    const parseDraft = (draftId: string) =>
-      Effect.gen(function* () {
-        const draft = draftsRef.current.get(draftId);
-        if (!draft || !eligibleForParse(draft, yield* Clock.currentTimeMillis)) return;
-        const environment = environmentRef.current;
-        if (!environment.online || environment.fetch === null) {
-          setParse(draftId, { _tag: "Deferred" });
-          return;
-        }
-        if (!draft.recognizedText.trim()) {
-          setParse(draftId, { _tag: "Manual" });
-          return;
-        }
-        setParsing((current) => new Set(current).add(draftId));
-        const exit = yield* parseProductScan(mobileConfig.apiBaseUrl, {
-          recognizedText: draft.recognizedText,
-          mode: draft.mode,
-        }).pipe(
-          Effect.tapError((error) =>
-            error._tag === "ScanRateLimited"
-              ? Effect.sync(() =>
-                  setParse(draftId, { _tag: "RateLimited", retryAt: error.retryAt }),
-                )
-              : Effect.void,
-          ),
-          Effect.retry({
-            schedule: rateLimitRetry,
-            while: (error) => error._tag === "ScanRateLimited",
-          }),
-          Effect.flatMap((result) =>
-            Effect.map(Clock.currentTimeMillis, (parsedAt): ParseState => ({
-              _tag: "Parsed",
-              result,
-              parsedAt,
-            })),
-          ),
-          Effect.provideService(FetchHttpClient.Fetch, environment.fetch),
-          Effect.exit,
-          Effect.ensuring(
-            Effect.sync(() => {
-              setPausedUntil(null);
-              setParsing((current) => {
-                const next = new Set(current);
-                next.delete(draftId);
-                return next;
-              });
-            }),
-          ),
-        );
-        const latest = draftsRef.current.get(draftId);
-        if (latest) setParse(draftId, parseStateAfter(exit, latest.parse));
-      });
-
     const worker = runtime.runFork(
-      Effect.forever(
-        Queue.take(queue).pipe(
-          Effect.flatMap(parseDraft),
-          Effect.catchCause((cause) =>
-            Effect.logError("Scan auto-fill stopped for a draft", cause),
-          ),
-        ),
+      runScanWorker(
+        {
+          apiBaseUrl: mobileConfig.apiBaseUrl,
+          drafts: () => draftsRef.current,
+          environment: () => environmentRef.current,
+          setParse,
+          setParsing: (draftId, active) =>
+            setParsing((current) => {
+              if (current.has(draftId) === active) return current;
+              const next = new Set(current);
+              if (active) next.add(draftId);
+              else next.delete(draftId);
+              return next;
+            }),
+        },
+        queues,
       ),
     );
     return () => {
       Effect.runFork(Fiber.interrupt(worker));
     };
-  }, [queue, setParse]);
+  }, [queues, setParse]);
 
   React.useEffect(() => {
     if (!loaded || !online || fetch === null) return;
@@ -329,6 +230,16 @@ export function ScanDraftsProvider({ children }: { readonly children: React.Reac
     () => [...drafts.values()].sort((left, right) => right.capturedAt - left.capturedAt),
     [drafts],
   );
+
+  const pausedUntil = React.useMemo(() => {
+    let earliest: number | null = null;
+    for (const { parse } of drafts.values()) {
+      if (parse._tag === "RateLimited" && (earliest === null || parse.retryAt < earliest)) {
+        earliest = parse.retryAt;
+      }
+    }
+    return earliest;
+  }, [drafts]);
 
   const value = React.useMemo<ScanDrafts>(
     () => ({

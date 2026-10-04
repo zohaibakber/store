@@ -129,9 +129,10 @@ function StatusBanner({
           tone="warning"
           message={
             seconds > 0
-              ? `Too many scans. Auto-fill resumes in ${seconds} s, or fill in by hand.`
-              : "Auto-fill resumes shortly."
+              ? `Too many scans. Auto-fill retries in ${seconds} s while the app is open, or fill in by hand.`
+              : "Auto-fill is about to retry."
           }
+          action={seconds === 0 && online && !inFlight ? retry : undefined}
         />
       );
     }
