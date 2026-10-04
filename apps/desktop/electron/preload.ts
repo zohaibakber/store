@@ -51,7 +51,6 @@ import {
   SHARE_SAVE_PDF_CHANNEL,
   THEME_SET_SOURCE_CHANNEL,
   UPDATER_CHECK_CHANNEL,
-  UPDATER_DOWNLOAD_CHANNEL,
   UPDATER_EVENT_CHANNEL,
   UPDATER_INSTALL_CHANNEL,
   WINDOW_CLOSE_CHANNEL,
@@ -212,7 +211,6 @@ contextBridge.exposeInMainWorld("desktopShell", desktopShell);
 if (import.meta.env.PROD) {
   const updater: AppUpdaterBridge = {
     check: () => ipcRenderer.invoke(UPDATER_CHECK_CHANNEL),
-    download: () => ipcRenderer.invoke(UPDATER_DOWNLOAD_CHANNEL),
     install() {
       ipcRenderer.send(UPDATER_INSTALL_CHANNEL);
     },

@@ -17,6 +17,7 @@ export type UpdatePhase = "idle" | "downloading" | "downloaded";
 
 export const nextUpdatePhase = (phase: UpdatePhase, event: UpdaterEvent): UpdatePhase => {
   switch (event.type) {
+    case "available":
     case "progress":
       return "downloading";
     case "downloaded":
@@ -24,7 +25,6 @@ export const nextUpdatePhase = (phase: UpdatePhase, event: UpdaterEvent): Update
     case "error":
       return "idle";
     case "checking":
-    case "available":
     case "not-available":
       return phase;
     default: {

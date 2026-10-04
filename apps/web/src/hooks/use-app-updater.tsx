@@ -7,8 +7,7 @@ import { useContext, useEffect } from "react";
 import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
 
-const UPDATE_AVAILABLE_TOAST_ID = "app-update-available";
-const UPDATE_DOWNLOAD_TOAST_ID = "app-update-download";
+const UPDATE_READY_TOAST_ID = "app-update-ready";
 const UPDATE_CHECK_TOAST_ID = "app-update-check";
 
 const toastManualUpdateCheckAtom = Atom.make(false).pipe(Atom.keepAlive);
@@ -19,57 +18,22 @@ const claimManualUpdateCheck = (registry: AtomRegistry.AtomRegistry) => {
   return true;
 };
 
-const showDownloadProgress = (value: number, description: string) => {
-  toastManager.add({
-    data: {
-      progress: {
-        label: "Downloading update…",
-        value,
-      },
-    },
-    description,
-    id: UPDATE_DOWNLOAD_TOAST_ID,
-    timeout: 0,
-    title: "Downloading update…",
-    type: "loading",
-  });
-};
-
-const startDownload = (version: string) => {
+const showUpdateReady = (version: string) => {
   const updater = appHost().updater;
   if (!updater) return;
-  showDownloadProgress(0, `Downloading version ${version}.`);
-  void updater
-    .download()
-    .then(() => {
-      toastManager.add({
-        actionProps: {
-          children: "Restart now",
-          onClick: () => updater.install(),
-        },
-        data: {},
-        description: `Restart to install version ${version}.`,
-        id: UPDATE_DOWNLOAD_TOAST_ID,
-        timeout: 0,
-        title: "Update ready",
-        type: "success",
-      });
-    })
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : "";
-      const offline = classifyUpdateFailure(message) === "network";
-      toastManager.add({
-        data: {},
-        description: offline
-          ? "The download will continue when you're back online."
-          : updateFailureMessage(message),
-        id: UPDATE_DOWNLOAD_TOAST_ID,
-        priority: offline ? undefined : "high",
-        title: offline ? "You're offline" : "Update failed",
-        type: offline ? "info" : "error",
-        timeout: offline ? undefined : 0,
-      });
-    });
+  toastManager.close(UPDATE_CHECK_TOAST_ID);
+  toastManager.add({
+    actionProps: {
+      children: "Restart",
+      onClick: () => updater.install(),
+    },
+    data: { dismissLabel: "Later" },
+    description: `Version ${version} installs when you restart Tabaaq.`,
+    id: UPDATE_READY_TOAST_ID,
+    timeout: 0,
+    title: "Update ready",
+    type: "success",
+  });
 };
 
 export const canCheckForAppUpdate = () => Boolean(appHost().updater);
@@ -114,21 +78,18 @@ export function useAppUpdater() {
     const unsubscribe = updater.onEvent((event) => {
       switch (event.type) {
         case "available":
+          if (claimManualUpdateCheck(registry)) {
+            toastManager.add({
+              description: `Version ${event.version} is downloading in the background. You can keep working.`,
+              id: UPDATE_CHECK_TOAST_ID,
+              title: "Update available",
+              type: "info",
+            });
+          }
+          break;
+        case "downloaded":
           registry.set(toastManualUpdateCheckAtom, false);
-          toastManager.close(UPDATE_CHECK_TOAST_ID);
-          toastManager.add({
-            id: UPDATE_AVAILABLE_TOAST_ID,
-            title: "Update available",
-            description: `Version ${event.version} is ready to download.`,
-            timeout: 0,
-            actionProps: {
-              children: "Download",
-              onClick: () => {
-                toastManager.close(UPDATE_AVAILABLE_TOAST_ID);
-                startDownload(event.version);
-              },
-            },
-          });
+          showUpdateReady(event.version);
           break;
         case "not-available":
           if (claimManualUpdateCheck(registry)) {
@@ -139,9 +100,6 @@ export function useAppUpdater() {
               type: "success",
             });
           }
-          break;
-        case "progress":
-          showDownloadProgress(event.percent, "Almost ready to install.");
           break;
         case "error":
           if (!claimManualUpdateCheck(registry)) break;
@@ -163,7 +121,7 @@ export function useAppUpdater() {
           });
           break;
         case "checking":
-        case "downloaded":
+        case "progress":
           break;
         default: {
           const _exhaustive: never = event;
