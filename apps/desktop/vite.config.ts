@@ -79,7 +79,8 @@ export default defineConfig(({ command }) => ({
                 "analytics-worker": path.join(electronSource, "analytics-worker.ts"),
               },
               external: ["electron", "electron-updater"],
-              output: { entryFileNames: "[name].js" },
+              // Run the Schema JIT enable import before any chunk that builds parsers.
+              output: { entryFileNames: "[name].js", strictExecutionOrder: true },
             },
           },
         },
