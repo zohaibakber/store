@@ -14,7 +14,6 @@ import { admitCommand } from "./admission";
 import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
 import { stampOf } from "./commit-hub";
 import {
-  checkIncarnation,
   decideReceipt,
   isStaleClaim,
   RELEASED_CLAIM_FIELDS,
@@ -41,6 +40,7 @@ type OutboxRow = typeof commandOutbox.$inferSelect;
 export type ClaimNextUploadInput = {
   readonly claimId: string;
   readonly claimedAt: number;
+  readonly staleBefore: number;
 };
 
 export type UploadClaim = {
@@ -183,12 +183,15 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
   tx: ReplicaDb,
   input: ClaimNextUploadInput,
 ) {
-  const outstanding = yield* tx
-    .select({ operationId: commandOutbox.operationId })
+  const sending = yield* tx
+    .select()
     .from(commandOutbox)
     .where(eq(commandOutbox.status, "sending"))
-    .get();
-  if (outstanding) return undefined;
+    .all();
+  if (sending.some((claim) => !isStaleClaim(claim, input.staleBefore))) return undefined;
+  for (const claim of sending) {
+    yield* updateOutbox(tx, claim.operationId, RELEASED_CLAIM_FIELDS);
+  }
   const row = yield* tx
     .select()
     .from(commandOutbox)
@@ -272,13 +275,6 @@ export const releaseUploadClaim = Effect.fn("ReplicaCommands.releaseUploadClaim"
   return RELEASED_CLAIM_FIELDS.status;
 });
 
-export const verifyReplicaIncarnation = Effect.fn("ReplicaCommands.verifyReplicaIncarnation")(
-  function* (tx: ReplicaDb, incarnation: string) {
-    const state = yield* loadReplicaState(tx);
-    yield* Effect.fromResult(checkIncarnation(state.incarnation, incarnation));
-  },
-);
-
 export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaRegistration")(
   function* (tx: ReplicaDb, authority: RegisterReplicaResult, registeredAt: number) {
     const state = yield* loadReplicaState(tx);
@@ -322,21 +318,5 @@ export const adoptReplicaRegistration = Effect.fn("ReplicaCommands.adoptReplicaR
       .set(announcementFields(authority))
       .where(eq(replicaState.id, state.id));
     return { _tag: "registered" } satisfies ReplicaRegistrationOutcome;
-  },
-);
-
-export const recoverStaleUploadClaims = Effect.fn("ReplicaCommands.recoverStaleUploadClaims")(
-  function* (tx: ReplicaDb, staleBefore: number) {
-    const sending = yield* tx
-      .select()
-      .from(commandOutbox)
-      .where(eq(commandOutbox.status, "sending"))
-      .all();
-    const stale = sending.filter((row) => isStaleClaim(row, staleBefore));
-    for (const row of stale) {
-      yield* updateOutbox(tx, row.operationId, RELEASED_CLAIM_FIELDS);
-    }
-    if (stale.length > 0) yield* bumpLocalCommitVersion(tx);
-    return stale.length;
   },
 );

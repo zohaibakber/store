@@ -85,6 +85,7 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
   const requests = Effect.runSync(
     FiberMap.make<number, void, unknown>().pipe(Scope.provide(lifetime)),
   );
+  const runRequest = Effect.runSync(FiberMap.runtime(requests)());
   const acquisitions = new Map<string, Acquisition<Row>>();
   const owners = new WeakMap<LoadSubsetOptions, Acquisition<Row>>();
   const released = new WeakSet<LoadSubsetOptions>();
@@ -388,10 +389,6 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     settle();
   };
 
-  const interruptRequest = (id: number): void => {
-    Effect.runFork(FiberMap.remove(requests, id));
-  };
-
   const loadSubset: LoadSubsetFn = (options) => {
     if (disposed || released.has(options) || options.signal?.aborted === true) return true;
     const key = getLoadSubsetDemandKey(options) ?? UNCONSTRAINED_DEMAND;
@@ -432,13 +429,9 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     );
     return new Promise<void>((resolve, reject) => {
       inflight.set(options, id);
-      const fiber = Effect.runSync(FiberMap.run(requests, id, body));
-      const abort = () => interruptRequest(id);
-      options.signal?.addEventListener("abort", abort, { once: true });
-      fiber.addObserver((exit) => {
-        options.signal?.removeEventListener("abort", abort);
-        settleRequest(options, exit, resolve, reject);
-      });
+      runRequest(id, body, { signal: options.signal }).addObserver((exit) =>
+        settleRequest(options, exit, resolve, reject),
+      );
     });
   };
 
@@ -461,28 +454,23 @@ export const startCollectionSync = <Row extends InventoryCollectionRow>(
     if (released.has(options)) return;
     released.add(options);
     const id = inflight.get(options);
-    if (id !== undefined) interruptRequest(id);
+    if (id !== undefined) Effect.runFork(FiberMap.remove(requests, id));
     enqueueDetached("ReplicaCollection.unload_failed", release(options));
   };
 
   if (descriptor.syncMode === "eager") {
     startListening();
-    const id = (nextRequest += 1);
-    const fiber = Effect.runSync(
-      FiberMap.run(
-        requests,
-        id,
-        serialized(
-          acquire(
-            SOURCE_DEMAND,
-            readers.source,
-            () => undefined,
-            () => undefined,
-          ),
+    runRequest(
+      (nextRequest += 1),
+      serialized(
+        acquire(
+          SOURCE_DEMAND,
+          readers.source,
+          () => undefined,
+          () => undefined,
         ),
       ),
-    );
-    fiber.addObserver((exit) => {
+    ).addObserver((exit) => {
       if (disposed) return;
       if (Exit.isSuccess(exit)) params.markReady();
       else if (!Cause.hasInterrupts(exit.cause)) params.markError(Cause.squash(exit.cause));

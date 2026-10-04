@@ -142,7 +142,7 @@ class DigestFenceMoved extends Schema.TaggedError<DigestFenceMoved>()("DigestFen
 
 const DIGEST_SCAN_ATTEMPTS = 3;
 
-const UNVERIFIED: PulledCoverage = { repairRequired: false, digestVerified: false };
+export const UNVERIFIED: PulledCoverage = { repairRequired: false, digestVerified: false };
 
 export const readDigestFence = Effect.fn("ReplicaCoverage.readDigestFence")(function* (
   tx: ReplicaDb,

@@ -224,9 +224,11 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
         ...cursor,
         digestVersion: PARTITION_DIGEST_VERSION,
       });
-      const digest = yield* store.applyRemotePage({
-        ...postgresPage,
-        incarnation: localPage.incarnation,
+      const digest = yield* store.integrateAuthority({
+        payload: {
+          _tag: "pullPage",
+          page: { ...postgresPage, incarnation: localPage.incarnation },
+        },
       });
       return { decisions, repeated, localPage, postgresPage, digest: digest.value };
     }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped),

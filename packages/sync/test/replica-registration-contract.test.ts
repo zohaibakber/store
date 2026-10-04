@@ -279,7 +279,11 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
     withHarness(make, (store) =>
       Effect.gen(function* () {
         yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
-        yield* store.claimNextUpload({ claimId: "claim-1", claimedAt: FIXTURE_NOW });
+        yield* store.claimNextUpload({
+          claimId: "claim-1",
+          claimedAt: FIXTURE_NOW,
+          staleBefore: 0,
+        });
         yield* store.releaseUploadClaim("op-1", "claim-1");
         const authority = makeAuthority({
           epoch: "1",

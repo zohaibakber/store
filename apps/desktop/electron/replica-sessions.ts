@@ -323,7 +323,7 @@ export const makeReplicaSessions = (options: ReplicaSessionsOptions): ReplicaSes
       const onExhausted = Effect.sync(() =>
         sendToRenderer(sender, REPLICA_SYNC_HEALTH_CHANNEL, {
           workspaceToken,
-          health: { _tag: "recoveryRequired", message: EXHAUSTED_MESSAGE, retryable: true },
+          health: { _tag: "recoveryRequired", message: EXHAUSTED_MESSAGE },
         }),
       );
       const supervisor = yield* startReplicaSupervisor({

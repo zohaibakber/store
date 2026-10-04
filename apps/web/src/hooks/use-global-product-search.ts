@@ -1,62 +1,31 @@
+import { useAtom } from "@effect/atom-react";
 import {
   MAX_GLOBAL_SEARCH_QUERY_LENGTH,
   MIN_GLOBAL_SEARCH_QUERY_LENGTH,
   type GlobalProduct,
 } from "@store/contracts/server-api.schema";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import * as Effect from "effect/Effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+import { useCallback, useMemo } from "react";
 
 import { useOnline } from "@/hooks/use-online";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
 import { storeErrorMessage } from "@/lib/errors";
 
-const MAX_REMEMBERED_SEARCHES = 50;
 const SEARCH_FAILED = "Could not search the web. Try again.";
 
-type SearchState =
-  | { readonly _tag: "Searching" }
-  | { readonly _tag: "Found"; readonly products: ReadonlyArray<GlobalProduct> }
-  | { readonly _tag: "Failed"; readonly message: string };
-
-const SEARCHING: SearchState = { _tag: "Searching" };
-
-const searches = new Map<string, SearchState>();
-const listeners = new Set<() => void>();
-
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
-
-const record = (key: string, state: SearchState) => {
-  searches.delete(key);
-  searches.set(key, state);
-  for (const oldest of searches.keys()) {
-    if (searches.size <= MAX_REMEMBERED_SEARCHES) break;
-    searches.delete(oldest);
-  }
-  for (const listener of listeners) listener();
-};
-
-const start = (key: string, query: string) => {
-  const current = searches.get(key);
-  if (current?._tag === "Searching" || current?._tag === "Found") return;
-  record(key, SEARCHING);
-  appHost()
-    .searchGlobalProducts(query)
-    .then(
-      (result) => record(key, { _tag: "Found", products: result.products }),
-      (cause: unknown) =>
-        record(key, { _tag: "Failed", message: storeErrorMessage(cause, SEARCH_FAILED) }),
-    );
-};
+const searchAtom = Atom.family((_key: string) =>
+  Atom.fn((query: string) =>
+    Effect.tryPromise({
+      try: () => appHost().searchGlobalProducts(query),
+      catch: (cause) => storeErrorMessage(cause, SEARCH_FAILED),
+    }),
+  ).pipe(Atom.setIdleTTL("10 minutes")),
+);
 
 const searchKey = (query: string) => query.trim().replace(/\s+/gu, " ").toLowerCase();
-
-const searchable = (text: string) =>
-  text.length >= MIN_GLOBAL_SEARCH_QUERY_LENGTH && text.length <= MAX_GLOBAL_SEARCH_QUERY_LENGTH;
 
 export type GlobalSearchView =
   | { readonly _tag: "SignedOut" }
@@ -88,8 +57,7 @@ export const useGlobalProductSearch = (query: string) => {
   const online = useOnline();
   const signedIn = snapshot?.status === "authenticated";
   const trimmed = query.trim();
-  const key = searchKey(trimmed);
-  const state = useSyncExternalStore(subscribe, () => searches.get(key));
+  const [result, submit] = useAtom(searchAtom(searchKey(trimmed)));
 
   const view = useMemo((): GlobalSearchView => {
     if (!signedIn) return { _tag: "SignedOut" };
@@ -97,24 +65,18 @@ export const useGlobalProductSearch = (query: string) => {
     if (trimmed === "") return { _tag: "Empty" };
     if (trimmed.length < MIN_GLOBAL_SEARCH_QUERY_LENGTH) return { _tag: "TooShort" };
     if (trimmed.length > MAX_GLOBAL_SEARCH_QUERY_LENGTH) return { _tag: "TooLong" };
-    if (state === undefined) return { _tag: "Ready", failure: null };
-    switch (state._tag) {
-      case "Found":
-        return { _tag: "Results", products: state.products };
-      case "Searching":
-        return { _tag: "Searching" };
-      case "Failed":
-        return { _tag: "Ready", failure: state.message };
-    }
-  }, [online, signedIn, state, trimmed]);
+    if (result.waiting) return { _tag: "Searching" };
+    return AsyncResult.matchWithError(result, {
+      onInitial: () => ({ _tag: "Ready", failure: null }),
+      onSuccess: ({ value }) => ({ _tag: "Results", products: value.products }),
+      onError: (failure) => ({ _tag: "Ready", failure }),
+      onDefect: () => ({ _tag: "Ready", failure: SEARCH_FAILED }),
+    });
+  }, [online, result, signedIn, trimmed]);
 
-  const search = useCallback(
-    (requested: string) => {
-      const text = requested.trim();
-      if (signedIn && online && searchable(text)) start(searchKey(text), text);
-    },
-    [online, signedIn],
-  );
+  const search = useCallback(() => {
+    if (view._tag === "Ready") submit(trimmed);
+  }, [submit, trimmed, view]);
 
   return { view, search };
 };

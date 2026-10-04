@@ -9,6 +9,7 @@ import {
   type ReplicaChangeFeed,
   type ReplicaCommitNotice,
   type ReplicaHandle,
+  type SyncTransfer,
 } from "@store/client-db";
 import {
   MAX_PRODUCT_INSIGHT_IDS,
@@ -206,6 +207,7 @@ export type WorkspaceAtoms = {
   readonly syncStatus: Atom.Writable<InventorySyncStatus>;
   readonly syncActivity: Atom.Writable<InventorySyncActivity>;
   readonly syncing: Atom.Writable<boolean>;
+  readonly syncTransfer: Atom.Writable<SyncTransfer | undefined>;
   readonly pendingRowIds: (
     entity: SyncEntity,
   ) => Atom.Atom<AsyncResult.AsyncResult<ReadonlySet<string>, WorkspaceReadError>>;
@@ -332,6 +334,7 @@ export const createWorkspaceAtoms = (
     syncStatus: Atom.make(initialSync).pipe(Atom.keepAlive),
     syncActivity: Atom.make(initialActivity).pipe(Atom.keepAlive),
     syncing: Atom.make(false).pipe(Atom.keepAlive),
+    syncTransfer: Atom.make<SyncTransfer | undefined>(undefined).pipe(Atom.keepAlive),
     pendingRowIds: Atom.family((entity: SyncEntity) =>
       readAfter(commitsTouching(replica, new Set([entity])))(() =>
         readPendingRowIds(replica, entity),

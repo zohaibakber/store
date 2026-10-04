@@ -18,6 +18,7 @@ import type {
   ReplicaStoreError,
   SnapshotActivation,
 } from "./replica/store";
+import type { SyncTransfer } from "./sync-state";
 import { SyncTransportUnavailable, type SyncTransport, type SyncTransportError } from "./transport";
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
@@ -120,8 +121,12 @@ const importCandidate = (
   store: ReplicaSnapshotImportStore,
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
+  onTransfer: (transfer: SyncTransfer) => Effect.Effect<void>,
 ) =>
   store.beginSnapshotImport(manifest).pipe(
+    Effect.tap((progress) =>
+      onTransfer({ partsDone: progress.partsImported, partsTotal: manifest.parts.length }),
+    ),
     Effect.flatMap((progress) =>
       Stream.fromIterable(
         Arr.sort(
@@ -133,7 +138,15 @@ const importCandidate = (
           (partRef) => transport.readSnapshotPart(manifest.snapshotId, partRef.partNumber),
           { concurrency: SNAPSHOT_PART_FETCH_CONCURRENCY },
         ),
-        Stream.runForEach((part) => store.importSnapshotPart(manifest, part)),
+        Stream.runForEach((part) =>
+          store
+            .importSnapshotPart(manifest, part)
+            .pipe(
+              Effect.andThen(
+                onTransfer({ partsDone: part.partNumber, partsTotal: manifest.parts.length }),
+              ),
+            ),
+        ),
       ),
     ),
     Effect.andThen(activateCandidate(transport, store, request, manifest)),
@@ -143,10 +156,11 @@ export const recoverRequiredSnapshot = (
   transport: SyncTransport,
   store: ReplicaSnapshotImportStore,
   request: AcquireSnapshotRequest,
+  onTransfer: (transfer: SyncTransfer) => Effect.Effect<void> = () => Effect.void,
 ): Effect.Effect<void, SnapshotRecoveryError> =>
   transport.acquireSnapshot(request).pipe(
     Effect.flatMap(({ manifest }) =>
-      importCandidate(transport, store, request, manifest).pipe(
+      importCandidate(transport, store, request, manifest, onTransfer).pipe(
         Effect.scoped,
         Effect.catch((error: SnapshotRecoveryError) =>
           abandonOnInvalidCandidate(store, manifest, error),

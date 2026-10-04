@@ -191,7 +191,7 @@ function ReadyOnDeviceAction() {
       />
     );
   }
-  if (status._tag !== "recoveryRequired" || status.retryable !== true) return null;
+  if (status._tag !== "recoveryRequired" && status._tag !== "storageError") return null;
   const retry = () => {
     setRetrying(true);
     void retrySync()
@@ -236,13 +236,13 @@ function ReadySyncButton() {
       case "updateRequired":
         return applyUpdate;
       case "recoveryRequired":
-        return status.retryable === true ? retry : syncNow;
+      case "storageError":
+        return retry;
       case "rejected":
         return () => {
           dismiss();
           syncNow();
         };
-      case "storageError":
       case "savedLocally":
       case "pendingConfirmation":
       case "caughtUp":

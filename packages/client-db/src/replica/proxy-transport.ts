@@ -1,30 +1,10 @@
-import {
-  AcquireSnapshotRequest,
-  AcquireSnapshotResult,
-  CommandReceipt,
-  RegisterReplicaRequest,
-  RegisterReplicaResult,
-  SnapshotPartPayload,
-  SyncProtocolError,
-  SyncPullRequest,
-  SyncPullResult,
-  SyncSubmitCommandRequest,
-  SyncSubmitCommandResult,
-} from "@store/contracts";
-import {
-  failureFromStatus,
-  mapSyncFailure,
-  retryAfterMillis,
-  SYNC_REQUEST_TIMEOUT_MILLIS,
-  SyncTransportOffline,
-  withRequestDeadlines,
-  type SyncFailure,
-  type SyncTransport,
-} from "@store/sync";
-import * as Clock from "effect/Clock";
+import { SYNC_REQUEST_TIMEOUT_MILLIS, SyncTransportService } from "@store/sync";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
+import type * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Layer from "effect/Layer";
 
 export type SyncProxyRequest = {
   readonly method: "GET" | "POST";
@@ -40,137 +20,84 @@ export type SyncProxyResponse = {
   readonly retryAfter?: string;
 };
 
-type SyncProxyFetch = (request: SyncProxyRequest) => Promise<SyncProxyResponse>;
+type SyncProxyFetch<E> = (request: SyncProxyRequest) => Effect.Effect<SyncProxyResponse, E>;
 
-type SyncOperation = keyof typeof SYNC_REQUEST_TIMEOUT_MILLIS;
+const PROXY_ORIGIN = "http://sync-proxy.invalid";
 
-type SyncProxyPostBody =
-  | RegisterReplicaRequest
-  | SyncSubmitCommandRequest
-  | SyncPullRequest
-  | AcquireSnapshotRequest;
+const PROXY_TIMEOUT_MILLIS = Math.max(...Object.values(SYNC_REQUEST_TIMEOUT_MILLIS));
 
-const SyncHttpErrorBody = Schema.Struct({
-  error: Schema.Struct({
-    code: Schema.String,
-    message: Schema.String,
-  }),
-});
+const BODILESS_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
 
-export const decodeHttpErrorBody = Schema.decodeUnknownOption(
-  Schema.fromJsonString(SyncHttpErrorBody),
-);
+const utf8 = new TextDecoder();
 
-const mapHttpFailure = (response: SyncProxyResponse, now: number) => {
-  const { status, bodyText } = response;
-  const delay =
-    response.retryAfter === undefined ? undefined : retryAfterMillis(response.retryAfter, now);
-  if (delay !== undefined) {
-    return failureFromStatus(status, `Sync request failed with status ${status}.`, delay);
+const unsendable = (request: HttpClientRequest.HttpClientRequest, description: string) =>
+  new HttpClientError.HttpClientError({
+    reason: new HttpClientError.EncodeError({ request, description }),
+  });
+
+const unreachable = (
+  request: HttpClientRequest.HttpClientRequest,
+  description: string,
+  cause: unknown,
+) =>
+  new HttpClientError.HttpClientError({
+    reason: new HttpClientError.TransportError({ request, description, cause }),
+  });
+
+const proxyRequestOf = (
+  request: HttpClientRequest.HttpClientRequest,
+  url: URL,
+): Effect.Effect<SyncProxyRequest, HttpClientError.HttpClientError> => {
+  if (request.method !== "GET" && request.method !== "POST") {
+    return Effect.fail(unsendable(request, "The sync proxy carries GET and POST requests only."));
   }
-  const parsed = decodeHttpErrorBody(bodyText);
-  if (Option.isSome(parsed)) {
-    const decoded = Schema.decodeUnknownOption(SyncProtocolError)({
-      _tag: "SyncProtocolError",
-      code: parsed.value.error.code,
-      message: parsed.value.error.message,
-    });
-    if (Option.isSome(decoded)) return decoded.value;
+  const route = {
+    method: request.method,
+    pathname: `${url.pathname}${url.search}`,
+    timeoutMillis: PROXY_TIMEOUT_MILLIS,
+  };
+  switch (request.body._tag) {
+    case "Empty":
+      return Effect.succeed({ ...route, bodyText: null });
+    case "Uint8Array":
+      return Effect.succeed({ ...route, bodyText: utf8.decode(request.body.body) });
+    default:
+      return Effect.fail(unsendable(request, "The sync proxy carries text bodies only."));
   }
-  return failureFromStatus(status, `Sync request failed with status ${status}.`);
 };
 
-const encodeJsonBody = Schema.encodeEffect(Schema.fromJsonString(Schema.Json));
+const responseOf = (request: HttpClientRequest.HttpClientRequest, reply: SyncProxyResponse) =>
+  Effect.try({
+    try: () =>
+      HttpClientResponse.fromWeb(
+        request,
+        new Response(BODILESS_STATUSES.has(reply.status) ? null : reply.bodyText, {
+          status: reply.status,
+          headers:
+            reply.retryAfter === undefined
+              ? { "content-type": "application/json" }
+              : { "content-type": "application/json", "retry-after": reply.retryAfter },
+        }),
+      ),
+    catch: (cause) =>
+      unreachable(request, "The sync proxy answered with a status HTTP cannot carry.", cause),
+  });
 
-const asJsonPayload = Schema.decodeUnknownEffect(Schema.Json);
-
-const readJson =
-  <A, I>(schema: Schema.Codec<A, I>) =>
-  (response: SyncProxyResponse): Effect.Effect<A, Schema.SchemaError | SyncFailure> =>
-    response.ok
-      ? Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(response.bodyText)
-      : Effect.flatMap(Clock.currentTimeMillis, (now) =>
-          Effect.fail(mapHttpFailure(response, now)),
-        );
-
-const toTransportFailure = <A, E extends Error>(
-  effect: Effect.Effect<A, E>,
-): Effect.Effect<A, SyncFailure> =>
-  Effect.flatMap(Clock.currentTimeMillis, (now) =>
-    Effect.mapError(effect, (cause) => mapSyncFailure(cause, now)),
+const makeProxyHttpClient = <E>(proxyFetch: SyncProxyFetch<E>): HttpClient.HttpClient =>
+  HttpClient.make((request, url) =>
+    proxyRequestOf(request, url).pipe(
+      Effect.flatMap((proxied) =>
+        Effect.mapError(proxyFetch(proxied), (cause) =>
+          unreachable(request, "The sync proxy did not carry the request.", cause),
+        ),
+      ),
+      Effect.flatMap((reply) => responseOf(request, reply)),
+    ),
   );
 
-export const makeProxySyncTransport = (proxyFetch: SyncProxyFetch): SyncTransport => {
-  const exchange = (
-    operation: SyncOperation,
-    method: "GET" | "POST",
-    pathname: string,
-    bodyText: string | null,
-  ) =>
-    Effect.tryPromise({
-      try: () =>
-        proxyFetch({
-          method,
-          pathname,
-          bodyText,
-          timeoutMillis: SYNC_REQUEST_TIMEOUT_MILLIS[operation],
-        }),
-      catch: (cause) =>
-        cause instanceof Error
-          ? cause
-          : SyncTransportOffline.make({ message: "The sync transport is unavailable." }),
-    });
-
-  const postJson = <A, I>(
-    operation: SyncOperation,
-    pathname: string,
-    schema: Schema.Codec<A, I>,
-    payload: SyncProxyPostBody,
-  ) =>
-    asJsonPayload(payload).pipe(
-      Effect.flatMap(encodeJsonBody),
-      Effect.flatMap((bodyText) => exchange(operation, "POST", pathname, bodyText)),
-      Effect.flatMap(readJson(schema)),
-      toTransportFailure,
-    );
-
-  const getJson = <A, I>(operation: SyncOperation, pathname: string, schema: Schema.Codec<A, I>) =>
-    exchange(operation, "GET", pathname, null).pipe(
-      Effect.flatMap(readJson(schema)),
-      toTransportFailure,
-    );
-
-  const getOptionalJson = <A, I>(
-    operation: SyncOperation,
-    pathname: string,
-    schema: Schema.Codec<A, I>,
-  ) =>
-    exchange(operation, "GET", pathname, null).pipe(
-      Effect.flatMap((response) =>
-        response.status === 404 ? Effect.succeed(undefined) : readJson(schema)(response),
-      ),
-      toTransportFailure,
-    );
-
-  return withRequestDeadlines({
-    registerReplica: (request) =>
-      postJson("registerReplica", "/api/sync/replicas", RegisterReplicaResult, request),
-    submitCommand: (request) =>
-      postJson("submitCommand", "/api/sync/commands", SyncSubmitCommandResult, request),
-    getReceipt: (operationId) =>
-      getOptionalJson(
-        "getReceipt",
-        `/api/sync/receipts/${encodeURIComponent(operationId)}`,
-        CommandReceipt,
-      ),
-    pull: (request) => postJson("pull", "/api/sync/pull", SyncPullResult, request),
-    acquireSnapshot: (request) =>
-      postJson("acquireSnapshot", "/api/sync/snapshots", AcquireSnapshotResult, request),
-    readSnapshotPart: (snapshotId, partNumber) =>
-      getJson(
-        "readSnapshotPart",
-        `/api/sync/snapshots/${encodeURIComponent(snapshotId)}/parts/${partNumber}`,
-        SnapshotPartPayload,
-      ),
-  });
-};
+export const layerProxySyncTransport = <E>(
+  proxyFetch: SyncProxyFetch<E>,
+): Layer.Layer<SyncTransportService> =>
+  SyncTransportService.layer(PROXY_ORIGIN).pipe(
+    Layer.provide(Layer.succeed(HttpClient.HttpClient, makeProxyHttpClient(proxyFetch))),
+  );

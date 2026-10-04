@@ -39,6 +39,7 @@ import {
   type ReplicaOutboxActivity,
 } from "../activity";
 import { admitCommand } from "../admission";
+import { admitAuthority, APPLIED, outcomeOfUnapplied } from "../admission-authority";
 import {
   decodeEntity,
   decodeOutboxEnvelope,
@@ -47,6 +48,7 @@ import {
 } from "../codecs";
 import type { ClaimNextUploadInput, UploadClaim } from "../commands";
 import {
+  EMPTY_TOUCHED,
   generationResetNotice,
   makeReplicaCommitHub,
   mergeTouched,
@@ -57,14 +59,12 @@ import {
 } from "../commit-hub";
 import {
   awaitingSnapshotCoverage,
-  checkIncarnation,
   decideCoverageAfterPull,
   decideReceipt,
   isStaleClaim,
   OUTSTANDING_COMMAND_STATUSES,
   RELEASED_CLAIM_FIELDS,
   settledOutboxFields,
-  shouldApplyCommitSequence,
 } from "../decisions";
 import { logPartitionDivergence } from "../digest";
 import {
@@ -91,7 +91,8 @@ import {
 } from "../registration";
 import {
   ReplicaStore,
-  type AppliedCursor,
+  type IntegrateAuthorityInput,
+  type Integrated,
   type QueuedCommand,
   type ReplicaStoreContract,
   type ReplicaStoreError,
@@ -174,6 +175,8 @@ const mapIndexedDbFailure = (cause: unknown): ReplicaStoreError => {
   }
   return mapReplicaStoreFailure(cause);
 };
+
+const UNVERIFIED = { repairRequired: false, digestVerified: false };
 
 const missingState = () => ReplicaStorageError.make({ message: "Replica state is missing." });
 
@@ -444,8 +447,13 @@ const makeScopedIndexedDbReplicaStore = (
     const claimNextUpload = (claimInput: ClaimNextUploadInput) =>
       commit<UploadClaim | undefined>(ENTITY_TABLES, (api) =>
         Effect.gen(function* () {
-          const sending = yield* outboxWithStatus(api, "sending").limit(1);
-          if (sending.length > 0) return { value: undefined, notice: undefined };
+          const sending = yield* outboxWithStatus(api, "sending");
+          if (sending.some((claim) => !isStaleClaim(claim, claimInput.staleBefore))) {
+            return { value: undefined, notice: undefined };
+          }
+          for (const claim of sending) {
+            yield* api.from("command_outbox").upsert({ ...claim, ...RELEASED_CLAIM_FIELDS });
+          }
           const state = yield* requireState(api);
           const [next] = yield* outboxWithStatus(api, "pending").limit(1);
           if (!next) return { value: undefined, notice: undefined };
@@ -473,37 +481,47 @@ const makeScopedIndexedDbReplicaStore = (
         }),
       );
 
+    const settleWithin = (api: ReplicaQueryBuilder, claimId: string, receipt: CommandReceipt) =>
+      Effect.gen(function* () {
+        const row = yield* outboxRow(api, receipt.operationId);
+        if (!row) return { status: undefined, after: undefined, touched: EMPTY_TOUCHED };
+        const envelope = yield* decodeOutboxRow(row);
+        const claimMatches = row.status === "sending" && row.claimId === claimId;
+        const decision = yield* Effect.fromResult(
+          decideReceipt(row.status, envelope, receipt, claimMatches),
+        );
+        if (decision._tag === "noop") {
+          return { status: decision.status, after: undefined, touched: EMPTY_TOUCHED };
+        }
+        const settled = settledOutboxFields(receipt, encodeReceiptJson(receipt));
+        if (decision._tag === "refreshIntegrated") {
+          yield* api.from("command_outbox").upsert({ ...row, ...settled });
+          return { status: decision.status, after: undefined, touched: EMPTY_TOUCHED };
+        }
+        const state = yield* requireState(api);
+        const restored =
+          decision._tag === "rejected"
+            ? yield* undoLocalEffects(
+                indexedDbPendingRows(api, state.activeGeneration),
+                receipt.operationId,
+              )
+            : undefined;
+        yield* api.from("command_outbox").upsert({ ...row, ...settled, status: decision.status });
+        return {
+          status: decision.status,
+          after: yield* bumpCommitVersion(api, state),
+          touched: restored ?? EMPTY_TOUCHED,
+        };
+      });
+
     const settleUploadClaim = (claimId: string, receipt: CommandReceipt) =>
       commit<CommandStatus | undefined>(ENTITY_TABLES, (api) =>
-        Effect.gen(function* () {
-          const row = yield* outboxRow(api, receipt.operationId);
-          if (!row) return { value: undefined, notice: undefined };
-          const envelope = yield* decodeOutboxRow(row);
-          const claimMatches = row.status === "sending" && row.claimId === claimId;
-          const decision = yield* Effect.fromResult(
-            decideReceipt(row.status, envelope, receipt, claimMatches),
-          );
-          if (decision._tag === "noop") return { value: decision.status, notice: undefined };
-          const settled = settledOutboxFields(receipt, encodeReceiptJson(receipt));
-          if (decision._tag === "refreshIntegrated") {
-            yield* api.from("command_outbox").upsert({ ...row, ...settled });
-            return { value: decision.status, notice: undefined };
-          }
-          const state = yield* requireState(api);
-          const restored =
-            decision._tag === "rejected"
-              ? yield* undoLocalEffects(
-                  indexedDbPendingRows(api, state.activeGeneration),
-                  receipt.operationId,
-                )
-              : undefined;
-          yield* api.from("command_outbox").upsert({ ...row, ...settled, status: decision.status });
-          const after = yield* bumpCommitVersion(api, state);
-          return {
-            value: decision.status,
-            notice: notice(after, restored?.touchedEntities, restored?.touchedKeys),
-          };
-        }),
+        settleWithin(api, claimId, receipt).pipe(
+          Effect.map(({ status, after, touched }) => ({
+            value: status,
+            notice: after && notice(after, touched.touchedEntities, touched.touchedKeys),
+          })),
+        ),
       );
 
     const releaseUploadClaim = (operationId: string, claimId: string) =>
@@ -518,20 +536,6 @@ const makeScopedIndexedDbReplicaStore = (
           const after = yield* bumpCommitVersion(api, state);
           const status = RELEASED_CLAIM_FIELDS.status;
           return { value: status, notice: notice(after) };
-        }),
-      );
-
-    const recoverStaleUploadClaims = (staleBefore: number) =>
-      commit<number>(["replica_state", "command_outbox"], (api) =>
-        Effect.gen(function* () {
-          const sending = yield* outboxWithStatus(api, "sending");
-          const stale = sending.filter((row) => isStaleClaim(row, staleBefore));
-          if (stale.length === 0) return { value: 0, notice: undefined };
-          for (const row of stale) {
-            yield* api.from("command_outbox").upsert({ ...row, ...RELEASED_CLAIM_FIELDS });
-          }
-          const after = yield* bumpCommitVersion(api, yield* requireState(api));
-          return { value: stale.length, notice: notice(after) };
         }),
       );
 
@@ -604,43 +608,60 @@ const makeScopedIndexedDbReplicaStore = (
         return mergeTouched(...touched);
       });
 
-    const applyGroups = (groups: ReadonlyArray<SyncTransactionGroup>, incarnation?: string) =>
-      commit<string>(
+    const applyGroups = (
+      api: ReplicaQueryBuilder,
+      generation: number,
+      groups: ReadonlyArray<SyncTransactionGroup>,
+    ) =>
+      Effect.gen(function* () {
+        const rows = indexedDbPendingRows(api, generation);
+        return (yield* hasPendingProjection(api))
+          ? mergeTouched(
+              ...(yield* Effect.forEach(groups, (group) => applyGroupWithin(api, rows, group))),
+            )
+          : yield* applySettledGroups(api, generation, rows, groups);
+      });
+
+    type IntegratedGroups = Pick<Integrated, "outcome" | "appliedThrough">;
+
+    const integrateGroups = (input: IntegrateAuthorityInput) =>
+      commit<IntegratedGroups>(
         ENTITY_TABLES,
         (api) =>
           Effect.gen(function* () {
+            const admission = admitAuthority(yield* requireState(api), input.payload);
+            const settled =
+              input.receipt === undefined
+                ? undefined
+                : yield* settleWithin(api, input.receipt.claimId, input.receipt.receipt);
+            const settledTouched = settled?.touched ?? EMPTY_TOUCHED;
             const state = yield* requireState(api);
-            if (incarnation !== undefined) {
-              yield* Effect.fromResult(checkIncarnation(state.incarnation, incarnation));
+            if (admission._tag !== "apply") {
+              return {
+                value: {
+                  outcome: outcomeOfUnapplied(admission),
+                  appliedThrough: state.appliedCommitSequence,
+                },
+                notice:
+                  settled?.after &&
+                  notice(settled.after, settledTouched.touchedEntities, settledTouched.touchedKeys),
+              };
             }
-            const due: Array<SyncTransactionGroup> = [];
-            let appliedThrough = state.appliedCommitSequence;
-            for (const group of groups) {
-              if (!shouldApplyCommitSequence(appliedThrough, group.commitSequence)) continue;
-              due.push(group);
-              appliedThrough = group.commitSequence;
-            }
-            if (due.length === 0) return { value: appliedThrough, notice: undefined };
-            const generation = state.activeGeneration;
-            const rows = indexedDbPendingRows(api, generation);
-            const applied = (yield* hasPendingProjection(api))
-              ? mergeTouched(
-                  ...(yield* Effect.forEach(due, (group) => applyGroupWithin(api, rows, group))),
-                )
-              : yield* applySettledGroups(api, generation, rows, due);
+            const applied = mergeTouched(
+              settledTouched,
+              yield* applyGroups(api, state.activeGeneration, admission.groups),
+            );
             const after = yield* bumpCommitVersion(api, {
               ...state,
-              appliedCommitSequence: appliedThrough,
+              appliedCommitSequence: admission.through,
             });
             return {
-              value: appliedThrough,
+              value: { outcome: APPLIED, appliedThrough: admission.through },
               notice: notice(after, applied.touchedEntities, applied.touchedKeys),
             };
           }),
-        "relaxed",
+        input.receipt === undefined ? "relaxed" : "strict",
       );
-
-    const applyTransactionGroup = (group: SyncTransactionGroup) => applyGroups([group]);
 
     const recordPulledCoverage = (page: SyncPullResult, appliedThrough: string) =>
       withQuery((api) =>
@@ -686,32 +707,20 @@ const makeScopedIndexedDbReplicaStore = (
         }),
       );
 
-    const applyRemotePage = Effect.fn("IndexedDbReplicaStore.applyRemotePage")(function* (
-      page: SyncPullResult,
+    const integrateAuthority = Effect.fn("IndexedDbReplicaStore.integrateAuthority")(function* (
+      input: IntegrateAuthorityInput,
     ) {
-      const applied = yield* applyGroups(page.transactions, page.incarnation);
-      const coverage = yield* recordPulledCoverage(page, applied.value);
+      const integrated = yield* integrateGroups(input);
+      const coverage =
+        input.payload._tag === "liveFrame" ||
+        integrated.value.outcome._tag === "pull" ||
+        integrated.value.outcome._tag === "refused"
+          ? UNVERIFIED
+          : yield* recordPulledCoverage(input.payload.page, integrated.value.appliedThrough);
       return {
-        value: {
-          appliedThrough: applied.value,
-          repairRequired: coverage.repairRequired,
-          digestVerified: coverage.digestVerified,
-        },
-        notice: applied.notice,
-      } satisfies Committed<AppliedCursor>;
-    });
-
-    const settleUploadWithPage = Effect.fn("IndexedDbReplicaStore.settleUploadWithPage")(function* (
-      claimId: string,
-      receipt: CommandReceipt,
-      page: SyncPullResult,
-    ) {
-      const settled = yield* settleUploadClaim(claimId, receipt);
-      const applied = yield* applyRemotePage(page);
-      return {
-        value: applied.value,
-        notice: applied.notice ?? settled.notice,
-      } satisfies Committed<AppliedCursor>;
+        value: { ...integrated.value, ...coverage },
+        notice: integrated.notice,
+      } satisfies Committed<Integrated>;
     });
 
     const readStateWith = <A>(project: (state: ReplicaStateRow) => A) =>
@@ -886,11 +895,8 @@ const makeScopedIndexedDbReplicaStore = (
       enqueueCommand,
       claimNextUpload,
       settleUploadClaim,
-      settleUploadWithPage,
       releaseUploadClaim,
-      recoverStaleUploadClaims,
-      applyRemotePage,
-      applyTransactionGroup,
+      integrateAuthority,
       beginSnapshotImport: (manifest: SnapshotManifest) =>
         clearAbandonedImport(manifest.snapshotId).pipe(
           Effect.andThen(

@@ -241,24 +241,6 @@ export const isStaleClaim = (
   staleBefore: number,
 ): boolean => row.claimedAt === null || row.claimedAt <= staleBefore;
 
-export const shouldApplyCommitSequence = (
-  appliedCommitSequence: string,
-  commitSequence: string,
-): boolean => compareDecimalSequence(commitSequence, appliedCommitSequence) > 0;
-
-export const checkIncarnation = (
-  local: string,
-  received: string,
-): Result.Result<void, SyncProtocolError> =>
-  local === received
-    ? Result.void
-    : Result.fail(
-        syncProtocolError(
-          "INCARNATION_MISMATCH",
-          `Expected incarnation ${local}, received ${received}.`,
-        ),
-      );
-
 type CoverageAfterPull =
   | { readonly _tag: "unchanged" }
   | { readonly _tag: "repair"; readonly diverged: ReadonlyArray<PartitionEntity> }

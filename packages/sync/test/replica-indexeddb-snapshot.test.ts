@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import { IDBKeyRange, indexedDB } from "fake-indexeddb";
 
 import type { IndexedDbSubsetPlan } from "../src/replica/indexeddb/query";
+import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { makeIndexedDbReplicaStore } from "./lib/indexeddb-store";
 
@@ -111,7 +112,7 @@ describe("IndexedDB staged snapshot activation", () => {
           IDBKeyRange,
         });
 
-        yield* store.applyTransactionGroup({
+        yield* applyGroup(store, {
           commitSequence: OrgCommitSequence.make("1"),
           operationId: "seed-batch",
           decision: "accepted",

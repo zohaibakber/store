@@ -1,6 +1,5 @@
 import {
   compareDecimalSequence,
-  incrementDecimalSequence,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
@@ -8,6 +7,7 @@ import {
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
   SyncProtocolError,
+  type AcquireSnapshotRequest,
   type CommandReceipt,
   type DeviceLabel,
   type EnqueueCommandRequest,
@@ -33,7 +33,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { isSnapshotRequired, recoverRequiredSnapshot } from "./recovery";
 import { CAUGHT_UP_RECORD_INTERVAL_MILLIS } from "./replica/activity";
-import { feedAfterPull, type ReplicaFeedMode } from "./replica/apply";
+import type { IntegrationOutcome } from "./replica/admission-authority";
 import {
   DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
   dueSince,
@@ -48,18 +48,31 @@ import { shouldAnnounce } from "./replica/registration";
 import {
   ReplicaStore,
   type AppliedCursor,
+  type Integrated,
   type QueuedCommand,
   type ReplicaStoreContract,
   type ReplicaStoreError,
 } from "./replica/store";
 import type { SyncCatchUpOutcome } from "./scheduler";
-import { SyncTransportService, type SyncTransport, type SyncTransportError } from "./transport";
-
-type SyncEngineProgress = {
-  readonly uploading: boolean;
-  readonly downloading: boolean;
-  readonly feed: ReplicaFeedMode;
-};
+import {
+  initialSyncState,
+  isFollowing,
+  restingPhase,
+  withCursor,
+  withRecovering,
+  withRecoveryEnded,
+  withTransfer,
+  type SyncCursor,
+  type SyncState,
+} from "./sync-state";
+import {
+  SYNC_REQUEST_TIMEOUT_MILLIS,
+  SyncTransportGarbled,
+  SyncTransportService,
+  type RecoverableCode,
+  type SyncTransport,
+  type SyncTransportError,
+} from "./transport";
 
 type SyncEngineError =
   | SyncTransportError
@@ -74,7 +87,6 @@ type LiveFrameOutcome =
 
 type PulledPage = { readonly pulled: SyncPullResult; readonly pulledAt: number };
 
-const LIVE_APPLIED: LiveFrameOutcome = { _tag: "applied" };
 const LIVE_CURRENT: LiveFrameOutcome = { _tag: "current" };
 
 const livePull = (epoch: SyncEpoch, horizon: OrgCommitSequence): LiveFrameOutcome => ({
@@ -84,20 +96,22 @@ const livePull = (epoch: SyncEpoch, horizon: OrgCommitSequence): LiveFrameOutcom
 
 const LIVE_RESUME: LiveFrameOutcome = { _tag: "pull" };
 
+type AdmittedOutcome = Exclude<IntegrationOutcome, { readonly _tag: "refused" }>;
+
+const admitted = (
+  integrated: Integrated,
+): Effect.Effect<Integrated & { readonly outcome: AdmittedOutcome }, SyncProtocolError> =>
+  integrated.outcome._tag === "refused"
+    ? Effect.fail(integrated.outcome.error)
+    : Effect.succeed({ ...integrated, outcome: integrated.outcome });
+
 type TransactionsFrame = Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>;
 
-const contiguousFrom = (frame: TransactionsFrame, appliedCommitSequence: string): boolean => {
-  if (frame.fromCommitSequence !== incrementDecimalSequence(appliedCommitSequence)) return false;
-  let expected: string = frame.fromCommitSequence;
-  for (const group of frame.transactions) {
-    if (group.commitSequence !== expected) return false;
-    expected = incrementDecimalSequence(expected);
-  }
-  return frame.transactions.at(-1)?.commitSequence === frame.toCommitSequence;
-};
+const STALE_CLAIM_MILLIS =
+  SYNC_REQUEST_TIMEOUT_MILLIS.getReceipt + SYNC_REQUEST_TIMEOUT_MILLIS.submitCommand + 15_000;
 
 interface SyncEngineContract {
-  readonly progress: SubscriptionRef.SubscriptionRef<SyncEngineProgress>;
+  readonly state: SubscriptionRef.SubscriptionRef<SyncState>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
   readonly awaitRegistered: Effect.Effect<void>;
   readonly saveCommand: (
@@ -107,6 +121,9 @@ interface SyncEngineContract {
   readonly drainUploads: () => Effect.Effect<number, SyncEngineError>;
   readonly downloadOnce: (request: SyncPullRequest) => Effect.Effect<string, SyncEngineError>;
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncEngineError>;
+  readonly recover: (
+    code: RecoverableCode,
+  ) => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
   readonly hintApplied: (hint: SyncLiveWakeHint) => Effect.Effect<boolean, ReplicaStoreError>;
   readonly applyLiveFrame: (
     frame: SyncLiveServerFrame,
@@ -123,7 +140,7 @@ export const cursorFromStore = (store: ReplicaStoreContract) =>
   store.readSyncCursor().pipe(
     Effect.flatMap((cursor) =>
       decodeEpoch(cursor.epoch).pipe(
-        Effect.mapError((error) => ReplicaStorageError.make({ message: error.message })),
+        Effect.mapError((error) => new ReplicaStorageError({ message: error.message })),
         Effect.map((epoch) => ({ ...cursor, epoch })),
       ),
     ),
@@ -156,18 +173,37 @@ export const makeSyncEngineFromReplicaStore = (
 ): Effect.Effect<SyncEngineContract> =>
   Effect.gen(function* () {
     const mutex = yield* Semaphore.make(1);
+    const firstClaimAt = yield* Ref.make<number | undefined>(undefined);
     const digestIntervalMillis =
       options.digestVerificationIntervalMillis ?? DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS;
     const believesCaughtUp = yield* Ref.make(true);
     const pullMaxBytes = yield* Ref.make(options.pullMaxBytes);
     const uploadReachedHorizon = yield* Ref.make<string | undefined>(undefined);
     const caughtUpRecordedAt = yield* Ref.make<number | undefined>(undefined);
-    const progress = yield* SubscriptionRef.make<SyncEngineProgress>({
-      uploading: false,
-      downloading: false,
-      feed: { _tag: "catchingUp", targetCommitSequence: "0" },
-    });
+    const state = yield* SubscriptionRef.make(initialSyncState);
     const withPermit = <A, E>(effect: Effect.Effect<A, E>) => mutex.withPermits(1)(effect);
+
+    const setCursor = (cursor: SyncCursor) =>
+      SubscriptionRef.update(state, (current) => withCursor(current, cursor));
+
+    const recoverSnapshot = (request: AcquireSnapshotRequest) =>
+      Effect.acquireUseRelease(
+        SubscriptionRef.modify(state, (current) => [current.phase, withRecovering(current)]),
+        () =>
+          recoverRequiredSnapshot(transport, store, request, (transfer) =>
+            SubscriptionRef.update(state, (current) => withTransfer(current, transfer)),
+          ),
+        (previous) =>
+          SubscriptionRef.update(state, (current) => withRecoveryEnded(current, previous)),
+      ).pipe(
+        Effect.andThen(withPermit(cursorFromStore(store))),
+        Effect.flatMap((cursor) =>
+          setCursor({
+            epoch: cursor.epoch,
+            applied: OrgCommitSequence.make(cursor.appliedCommitSequence),
+          }),
+        ),
+      );
 
     const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
       request: EnqueueCommandRequest,
@@ -187,9 +223,7 @@ export const makeSyncEngineFromReplicaStore = (
       const registeredAt = yield* Clock.currentTimeMillis;
       const outcome = yield* withPermit(store.adoptRegistration(authority, registeredAt));
       if (outcome._tag === "refused") {
-        return yield* Effect.fail(
-          SyncRecoveryRequired.make({ code: outcome.code, message: outcome.message }),
-        );
+        return yield* new SyncRecoveryRequired({ code: outcome.code, message: outcome.message });
       }
       yield* Ref.set(
         heldBack,
@@ -222,10 +256,17 @@ export const makeSyncEngineFromReplicaStore = (
         Effect.gen(function* () {
           const claimedAt = yield* Clock.currentTimeMillis;
           const claimId = yield* makeClaimId;
-          const claimed = yield* withPermit(store.claimNextUpload({ claimId, claimedAt }));
-          if (claimed.value) {
-            yield* SubscriptionRef.update(progress, (current) => ({ ...current, uploading: true }));
-          }
+          const firstAt = yield* Ref.modify(firstClaimAt, (at) => {
+            const first = at ?? claimedAt;
+            return [first, first] as const;
+          });
+          const claimed = yield* withPermit(
+            store.claimNextUpload({
+              claimId,
+              claimedAt,
+              staleBefore: Math.max(firstAt - 1, claimedAt - STALE_CLAIM_MILLIS),
+            }),
+          );
           return claimed.value;
         }),
         (activeClaim) =>
@@ -249,16 +290,7 @@ export const makeSyncEngineFromReplicaStore = (
           }),
         (activeClaim) =>
           activeClaim
-            ? withPermit(
-                store.releaseUploadClaim(activeClaim.operationId, activeClaim.claimId),
-              ).pipe(
-                Effect.ensuring(
-                  SubscriptionRef.update(progress, (current) => ({
-                    ...current,
-                    uploading: false,
-                  })),
-                ),
-              )
+            ? withPermit(store.releaseUploadClaim(activeClaim.operationId, activeClaim.claimId))
             : Effect.void,
       );
     });
@@ -281,20 +313,20 @@ export const makeSyncEngineFromReplicaStore = (
     ) {
       if (applied.repairRequired) {
         yield* withPermit(store.markCoverageRepair(pulled.subscription));
-        return yield* Effect.fail(
-          ReplicaCoverageRepairRequired.make({ subscription: pulled.subscription }),
-        );
+        return yield* new ReplicaCoverageRepairRequired({ subscription: pulled.subscription });
       }
-      const nextFeed = feedAfterPull(pulled, applied.appliedThrough);
-      yield* SubscriptionRef.update(progress, (current) => ({
-        ...current,
-        feed: nextFeed,
-      }));
-      yield* Ref.set(believesCaughtUp, nextFeed._tag === "following");
+      const cursor: SyncCursor = {
+        epoch: pulled.epoch,
+        applied: OrgCommitSequence.make(applied.appliedThrough),
+        horizon: pulled.horizon,
+      };
+      yield* setCursor(cursor);
+      const following = restingPhase(cursor) === "following";
+      yield* Ref.set(believesCaughtUp, following);
       if (pulled.digest !== undefined && applied.digestVerified !== false) {
         yield* withPermit(store.recordDigestVerification(pulled.subscription, pulledAt));
       }
-      if (nextFeed._tag === "following") {
+      if (following) {
         const caughtUpAt = yield* Clock.currentTimeMillis;
         const lastCaughtUpAt = yield* Ref.get(caughtUpRecordedAt);
         if (dueSince(lastCaughtUpAt, caughtUpAt, CAUGHT_UP_RECORD_INTERVAL_MILLIS)) {
@@ -302,7 +334,7 @@ export const makeSyncEngineFromReplicaStore = (
           yield* Ref.set(caughtUpRecordedAt, caughtUpAt);
         }
       }
-      return nextFeed;
+      return following;
     });
 
     const submitRequestFor = Effect.fn("SyncEngine.submitRequestFor")(function* (
@@ -326,15 +358,16 @@ export const makeSyncEngineFromReplicaStore = (
         return receipt;
       }
       const pulledAt = yield* Clock.currentTimeMillis;
-      const applied = yield* withPermit(store.settleUploadWithPage(claimId, receipt, page)).pipe(
-        Effect.map((committed) => committed.value),
-        Effect.catch(() =>
-          withPermit(store.settleUploadClaim(claimId, receipt)).pipe(Effect.as(undefined)),
-        ),
+      const committed = yield* withPermit(
+        store.integrateAuthority({
+          payload: { _tag: "submitPage", page },
+          receipt: { claimId, receipt },
+        }),
       );
-      if (applied === undefined) return receipt;
-      const feed = yield* recordAppliedPage(page, applied, pulledAt);
-      if (feed._tag === "following") yield* Ref.set(uploadReachedHorizon, page.horizon);
+      const integrated = yield* admitted(committed.value);
+      if (integrated.outcome._tag === "pull") return receipt;
+      const following = yield* recordAppliedPage(page, integrated, pulledAt);
+      if (following) yield* Ref.set(uploadReachedHorizon, page.horizon);
       return receipt;
     });
 
@@ -349,7 +382,7 @@ export const makeSyncEngineFromReplicaStore = (
         Effect.catchIf(isSnapshotRequired, () =>
           Effect.gen(function* () {
             const cursor = yield* withPermit(store.readSyncCursor());
-            yield* recoverRequiredSnapshot(transport, store, {
+            yield* recoverSnapshot({
               epoch: request.epoch,
               subscription: request.subscription,
               replicaId: cursor.replicaId,
@@ -373,25 +406,22 @@ export const makeSyncEngineFromReplicaStore = (
       pulled: SyncPullResult,
       pulledAt: number,
     ) {
-      const applied = yield* withPermit(store.applyRemotePage(pulled));
-      yield* recordAppliedPage(pulled, applied.value, pulledAt);
-      return applied.value.appliedThrough;
+      const committed = yield* withPermit(
+        store.integrateAuthority({ payload: { _tag: "pullPage", page: pulled } }),
+      );
+      const integrated = yield* admitted(committed.value);
+      if (integrated.outcome._tag === "pull") {
+        return yield* new SyncTransportGarbled({
+          message: `The pulled page did not continue from the replica position ${integrated.appliedThrough}.`,
+        });
+      }
+      yield* recordAppliedPage(pulled, integrated, pulledAt);
+      return integrated.appliedThrough;
     });
 
-    const downloading = <A, E>(effect: Effect.Effect<A, E>) =>
-      SubscriptionRef.update(progress, (current) => ({ ...current, downloading: true })).pipe(
-        Effect.andThen(effect),
-        Effect.ensuring(
-          SubscriptionRef.update(progress, (current) => ({ ...current, downloading: false })),
-        ),
-      );
-
     const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
-      return yield* downloading(
-        pullPage(request).pipe(
-          Effect.flatMap(({ pulled, pulledAt }) => applyPage(pulled, pulledAt)),
-        ),
-      );
+      const { pulled, pulledAt } = yield* pullPage(request);
+      return yield* applyPage(pulled, pulledAt);
     });
 
     const followingPage = (request: SyncPullRequest, pulled: SyncPullResult) =>
@@ -430,7 +460,7 @@ export const makeSyncEngineFromReplicaStore = (
     const bootstrapFromSnapshot = Effect.fn("SyncEngine.bootstrapFromSnapshot")(function* () {
       const cursor = yield* withPermit(cursorFromStore(store));
       if (cursor.bootstrapped || cursor.appliedCommitSequence !== "0") return;
-      yield* recoverRequiredSnapshot(transport, store, {
+      yield* recoverSnapshot({
         epoch: cursor.epoch,
         subscription: OPERATIONAL_SUBSCRIPTION,
         replicaId: cursor.replicaId,
@@ -438,39 +468,55 @@ export const makeSyncEngineFromReplicaStore = (
       yield* Ref.set(believesCaughtUp, false);
     });
 
+    const recover = Effect.fn("SyncEngine.recover")(function* (code: RecoverableCode) {
+      switch (code) {
+        case "SNAPSHOT_REQUIRED": {
+          const cursor = yield* withPermit(cursorFromStore(store));
+          return yield* recoverSnapshot({
+            epoch: cursor.epoch,
+            subscription: OPERATIONAL_SUBSCRIPTION,
+            replicaId: cursor.replicaId,
+          });
+        }
+        case "EPOCH_MISMATCH":
+        case "INCARNATION_MISMATCH":
+          return yield* new SyncRecoveryRequired({
+            code,
+            message: "The sync authority was restored or re-keyed; unsent commands are preserved.",
+          });
+      }
+    });
+
     const catchUp = Effect.fn("SyncEngine.catchUp")(function* () {
       if (yield* uploadLeftReplicaCaughtUp()) return "advanced";
-      return yield* downloading(
-        Effect.gen(function* () {
-          yield* bootstrapFromSnapshot();
-          let outcome: SyncCatchUpOutcome = "unchanged";
-          let ahead:
-            | { readonly from: string; readonly fiber: Fiber.Fiber<PulledPage, SyncEngineError> }
-            | undefined;
-          while (true) {
-            const request = yield* withPermit(pullRequestFromStore(store));
-            const page =
-              ahead !== undefined && ahead.from === request.afterCommitSequence
-                ? yield* Fiber.join(ahead.fiber).pipe(Effect.catch(() => pullPage(request)))
-                : yield* (ahead === undefined ? Effect.void : Fiber.interrupt(ahead.fiber)).pipe(
-                    Effect.andThen(pullPage(request)),
-                  );
-            const next = followingPage(request, page.pulled);
-            ahead =
-              next === undefined
-                ? undefined
-                : {
-                    from: next.afterCommitSequence,
-                    fiber: yield* Effect.forkScoped(prefetch(next)),
-                  };
-            const appliedThrough = yield* applyPage(page.pulled, page.pulledAt);
-            const moved = compareDecimalSequence(appliedThrough, request.afterCommitSequence) > 0;
-            if (moved) outcome = "advanced";
-            const { feed } = yield* SubscriptionRef.get(progress);
-            if (!moved || feed._tag === "following") return outcome;
-          }
-        }).pipe(Effect.scoped),
-      );
+      return yield* Effect.gen(function* () {
+        yield* bootstrapFromSnapshot();
+        let outcome: SyncCatchUpOutcome = "unchanged";
+        let ahead:
+          | { readonly from: string; readonly fiber: Fiber.Fiber<PulledPage, SyncEngineError> }
+          | undefined;
+        while (true) {
+          const request = yield* withPermit(pullRequestFromStore(store));
+          const page =
+            ahead !== undefined && ahead.from === request.afterCommitSequence
+              ? yield* Fiber.join(ahead.fiber).pipe(Effect.catch(() => pullPage(request)))
+              : yield* (ahead === undefined ? Effect.void : Fiber.interrupt(ahead.fiber)).pipe(
+                  Effect.andThen(pullPage(request)),
+                );
+          const next = followingPage(request, page.pulled);
+          ahead =
+            next === undefined
+              ? undefined
+              : {
+                  from: next.afterCommitSequence,
+                  fiber: yield* Effect.forkScoped(prefetch(next)),
+                };
+          const appliedThrough = yield* applyPage(page.pulled, page.pulledAt);
+          const moved = compareDecimalSequence(appliedThrough, request.afterCommitSequence) > 0;
+          if (moved) outcome = "advanced";
+          if (!moved || isFollowing(yield* SubscriptionRef.get(state))) return outcome;
+        }
+      }).pipe(Effect.scoped);
     });
 
     const hintApplied = Effect.fn("SyncEngine.hintApplied")(function* (hint: SyncLiveWakeHint) {
@@ -481,23 +527,22 @@ export const makeSyncEngineFromReplicaStore = (
       );
     });
 
-    const applyTransactionsFrame = (frame: TransactionsFrame) =>
-      withPermit(
-        Effect.gen(function* () {
-          const cursor = yield* cursorFromStore(store);
-          if (cursor.epoch !== frame.epoch) return livePull(frame.epoch, frame.toCommitSequence);
-          if (compareDecimalSequence(frame.toCommitSequence, cursor.appliedCommitSequence) <= 0) {
-            return LIVE_CURRENT;
-          }
-          if (!contiguousFrom(frame, cursor.appliedCommitSequence)) {
-            return livePull(frame.epoch, frame.toCommitSequence);
-          }
-          for (const group of frame.transactions) {
-            yield* store.applyTransactionGroup(group);
-          }
-          return LIVE_APPLIED;
-        }),
+    const applyTransactionsFrame = Effect.fn("SyncEngine.applyTransactionsFrame")(function* (
+      frame: TransactionsFrame,
+    ) {
+      const committed = yield* withPermit(
+        store.integrateAuthority({ payload: { _tag: "liveFrame", frame } }),
       );
+      const integrated = yield* admitted(committed.value);
+      if (integrated.outcome._tag === "applied") {
+        const applied = OrgCommitSequence.make(integrated.appliedThrough);
+        yield* SubscriptionRef.update(state, (current) =>
+          withCursor(current, { ...current.cursor, epoch: frame.epoch, applied }),
+        );
+      }
+      const outcome: LiveFrameOutcome = integrated.outcome;
+      return outcome;
+    });
 
     const applyLiveFrameEffect = Effect.fn("SyncEngine.applyLiveFrame")(function* (
       frame: SyncLiveServerFrame,
@@ -515,15 +560,16 @@ export const makeSyncEngineFromReplicaStore = (
           return (yield* hintApplied(hint)) ? LIVE_CURRENT : livePull(frame.epoch, frame.horizon);
         }
         case "transactions": {
-          const { feed } = yield* SubscriptionRef.get(progress);
-          if (feed._tag !== "following") return livePull(frame.epoch, frame.toCommitSequence);
+          if (!isFollowing(yield* SubscriptionRef.get(state))) {
+            return livePull(frame.epoch, frame.toCommitSequence);
+          }
           return yield* applyTransactionsFrame(frame);
         }
       }
     });
 
     return {
-      progress,
+      state,
       ensureRegistered,
       awaitRegistered: Deferred.await(registered),
       saveCommand,
@@ -531,6 +577,7 @@ export const makeSyncEngineFromReplicaStore = (
       drainUploads,
       downloadOnce,
       catchUp,
+      recover,
       hintApplied,
       applyLiveFrame: applyLiveFrameEffect,
       setPullMaxBytes: (maxBytes) => Ref.set(pullMaxBytes, maxBytes),

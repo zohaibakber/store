@@ -442,7 +442,7 @@ function PaletteResults({
             icon: GlobalSearchIcon,
             run: () => {
               onScopeChange("global");
-              searchWeb(trimmed);
+              searchWeb();
             },
           }
         : null,

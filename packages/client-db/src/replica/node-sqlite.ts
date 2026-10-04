@@ -113,5 +113,5 @@ export { openReadonlySnapshotRunner, type NodeSqliteRow } from "./node-readonly"
 export { readSnapshotBatch, readSnapshotSubset, readSnapshotSummary } from "./snapshot-read";
 export type { ReplicaSnapshotRunner } from "./snapshot-read";
 export type { NodeReplicaSyncSession } from "./node-sync";
-export { makeProxySyncTransport } from "./proxy-transport";
+export { layerProxySyncTransport } from "./proxy-transport";
 export type { SyncProxyRequest } from "./proxy-transport";

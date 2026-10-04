@@ -83,7 +83,7 @@ import {
 import {
   SyncTransportService,
   SyncTransportUnavailable,
-  SyncTransportUndecodable,
+  SyncTransportGarbled,
   type SyncTransport,
   type SyncTransportError,
 } from "./transport";
@@ -1468,12 +1468,12 @@ const readFailure = <E>(cause: E): SyncProtocolError | SyncTransportError => {
   if (
     cause instanceof SyncProtocolError ||
     cause instanceof SyncTransportUnavailable ||
-    cause instanceof SyncTransportUndecodable
+    cause instanceof SyncTransportGarbled
   ) {
     return cause;
   }
   if (cause instanceof Schema.SchemaError) {
-    return SyncTransportUndecodable.make({ message: cause.message });
+    return SyncTransportGarbled.make({ message: cause.message });
   }
   return SyncTransportUnavailable.make({
     message: cause instanceof Error ? cause.message : "The local replica could not be read.",

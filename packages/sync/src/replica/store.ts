@@ -8,7 +8,6 @@ import type {
   SyncEntity,
   SyncPullResult,
   SyncSubscription,
-  SyncTransactionGroup,
 } from "@store/contracts";
 import type {
   CommandStatus,
@@ -21,6 +20,7 @@ import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import type * as Stream from "effect/Stream";
 
+import type { AuthorityPayload, IntegrationOutcome } from "./admission-authority";
 import type { ClaimNextUploadInput, UploadClaim } from "./commands";
 import type { ReplicaStoreError } from "./errors";
 import type { ReplicaAnnouncement, ReplicaRegistrationOutcome } from "./registration";
@@ -31,6 +31,15 @@ export type AppliedCursor = {
   readonly appliedThrough: string;
   readonly repairRequired: boolean;
   readonly digestVerified?: boolean;
+};
+
+export type Integrated = AppliedCursor & {
+  readonly outcome: IntegrationOutcome;
+};
+
+export type IntegrateAuthorityInput = {
+  readonly payload: Exclude<AuthorityPayload, { readonly _tag: "candidatePage" }>;
+  readonly receipt?: { readonly claimId: string; readonly receipt: CommandReceipt };
 };
 
 type PendingRowMarkEntry = {
@@ -81,30 +90,16 @@ interface ReplicaUploadClaimStore {
     receipt: CommandReceipt,
   ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
 
-  readonly settleUploadWithPage: (
-    claimId: string,
-    receipt: CommandReceipt,
-    page: SyncPullResult,
-  ) => Effect.Effect<Committed<AppliedCursor>, ReplicaStoreError>;
-
   readonly releaseUploadClaim: (
     operationId: string,
     claimId: string,
   ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
-
-  readonly recoverStaleUploadClaims: (
-    staleBefore: number,
-  ) => Effect.Effect<Committed<number>, ReplicaStoreError>;
 }
 
-interface ReplicaRemoteApplyStore {
-  readonly applyRemotePage: (
-    page: SyncPullResult,
-  ) => Effect.Effect<Committed<AppliedCursor>, ReplicaStoreError>;
-
-  readonly applyTransactionGroup: (
-    group: SyncTransactionGroup,
-  ) => Effect.Effect<Committed<string>, ReplicaStoreError>;
+interface ReplicaAuthorityStore {
+  readonly integrateAuthority: (
+    input: IntegrateAuthorityInput,
+  ) => Effect.Effect<Committed<Integrated>, ReplicaStoreError>;
 }
 
 type SnapshotImportProgress = {
@@ -176,7 +171,7 @@ interface ReplicaCommitFeed {
 export type ReplicaStoreContract = ReplicaRegistrationStore &
   ReplicaCommandStore &
   ReplicaUploadClaimStore &
-  ReplicaRemoteApplyStore &
+  ReplicaAuthorityStore &
   ReplicaSnapshotImportStore &
   ReplicaCoverageStore &
   ReplicaPendingMarkStore &

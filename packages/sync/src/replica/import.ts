@@ -20,9 +20,10 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import { admitAuthority } from "./admission-authority";
 import { applyGroupRows } from "./apply";
 import { decodeEntity, decodeStoredEnvelope, decodeSubscription } from "./codecs";
-import { loadReplicaState, verifyReplicaIncarnation } from "./commands";
+import { loadReplicaState } from "./commands";
 import { recordSnapshotCoverage } from "./coverage";
 import {
   byEntityDependency,
@@ -670,24 +671,27 @@ export const applyCandidateAuthority = Effect.fn("ReplicaImport.applyCandidateAu
     if (!importRow || importRow.stage !== "caught_up") {
       return yield* Effect.fail(unavailable("The snapshot candidate is not catching up."));
     }
-    yield* verifyReplicaIncarnation(tx, page.incarnation);
     const state = yield* loadReplicaState(tx);
-    const groups = page.transactions.filter(
-      (group) => compareDecimalSequence(group.commitSequence, importRow.candidateThrough) > 0,
+    const admission = admitAuthority(
+      {
+        epoch: state.epoch,
+        incarnation: state.incarnation,
+        appliedCommitSequence: importRow.candidateThrough,
+      },
+      { _tag: "candidatePage", page },
     );
-    const candidateThrough = yield* withStandbyActive(
+    if (admission._tag === "refuse") return yield* admission.error;
+    if (admission._tag !== "apply") return importRow.candidateThrough;
+    yield* withStandbyActive(
       tx,
-      Effect.reduce(
-        groups,
-        () => importRow.candidateThrough,
-        (_, group) =>
-          applyGroupRows(tx, state.organizationId, group).pipe(Effect.as(group.commitSequence)),
-      ),
+      Effect.forEach(admission.groups, (group) => applyGroupRows(tx, state.organizationId, group), {
+        discard: true,
+      }),
     );
     yield* tx
       .update(snapshotImports)
-      .set({ candidateThrough })
+      .set({ candidateThrough: admission.through })
       .where(eq(snapshotImports.snapshotId, snapshotId));
-    return candidateThrough;
+    return admission.through;
   },
 );

@@ -28,6 +28,7 @@ export {
   useInventoryState,
   useInventorySyncActivity,
   useInventorySyncing,
+  useInventorySyncTransfer,
   useInventorySyncStatus,
 } from "./provider";
 export {

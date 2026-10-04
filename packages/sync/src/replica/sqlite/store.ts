@@ -12,7 +12,6 @@ import {
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
   type SyncSubscription,
-  type SyncTransactionGroup,
 } from "@store/contracts";
 import type {
   CommandStatus,
@@ -31,7 +30,7 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
-import { applyPullResult, applyTransactionGroup } from "../apply";
+import { admitAuthorityWithin, applyAdmission } from "../apply";
 import {
   adoptReplicaRegistration,
   claimNextUpload,
@@ -39,14 +38,12 @@ import {
   loadReplicaState,
   recordCaughtUp,
   recordCommandReceipt,
-  recoverStaleUploadClaims,
   releaseUploadClaim,
   projectAdmittedCommand,
   pruneIntegratedCommands,
   queueAdmittedCommand,
   admitLocalCommand,
   settleUploadClaim,
-  verifyReplicaIncarnation,
   type ClaimNextUploadInput,
 } from "../commands";
 import {
@@ -62,8 +59,8 @@ import {
   loadDigestVerification,
   markCoverageRepair,
   recordDigestVerification,
+  UNVERIFIED,
   verifyPulledDigest,
-  type DigestFence,
 } from "../coverage";
 import { isStorageFullFailure, mapReplicaStoreFailure } from "../errors";
 import {
@@ -84,6 +81,8 @@ import {
 } from "../sql-client/handle";
 import {
   ReplicaStore,
+  type IntegrateAuthorityInput,
+  type Integrated,
   type ReplicaStoreContract,
   type ReplicaStoreError,
   type SnapshotActivation,
@@ -239,20 +238,24 @@ const makeSqliteReplicaStoreInternals = (
         ),
       );
 
-    const settleWithPage = (
+    const integrateWithin = (
       tx: ReplicaDb,
-      receipt: CommandReceipt,
-      page: SyncPullResult,
-      claimId: string | undefined,
+      payload: IntegrateAuthorityInput["payload"],
+      receipt:
+        | { readonly claimId: string | undefined; readonly receipt: CommandReceipt }
+        | undefined,
     ) =>
       Effect.gen(function* () {
-        yield* verifyReplicaIncarnation(tx, page.incarnation);
-        const settled = yield* settleAndJournal(tx, receipt, claimId);
-        const applied = yield* applyPullResult(tx, page);
+        const admission = yield* admitAuthorityWithin(tx, payload);
+        const settled =
+          receipt === undefined
+            ? undefined
+            : yield* settleAndJournal(tx, receipt.receipt, receipt.claimId);
+        const applied = yield* applyAdmission(tx, payload, admission);
         return { settled, applied };
       });
 
-    const touchedBySettling = (value: Effect.Success<ReturnType<typeof settleWithPage>>) =>
+    const touchedByIntegrating = (value: Effect.Success<ReturnType<typeof integrateWithin>>) =>
       mergeTouched(value.settled?.restored ?? EMPTY_TOUCHED, value.applied);
 
     const decideWithin = (
@@ -312,12 +315,19 @@ const makeSqliteReplicaStoreInternals = (
             if (decided === undefined) {
               return { status: "pending", stamp, touched: projected } satisfies EnqueuedCommand;
             }
-            const settled = yield* settleWithPage(tx, decided.receipt, decided.page, undefined);
+            const integrated = yield* integrateWithin(
+              tx,
+              { _tag: "submitPage", page: decided.page },
+              { claimId: undefined, receipt: decided.receipt },
+            );
+            if (integrated.applied.outcome._tag === "refused") {
+              return yield* integrated.applied.outcome.error;
+            }
             yield* pruneIntegratedCommands(tx, admission.envelope.clientSequence);
             return {
               status: (yield* commandStatus(tx, request.operationId)) ?? "pending",
               stamp,
-              touched: touchedBySettling(settled),
+              touched: touchedByIntegrating(integrated),
             } satisfies EnqueuedCommand;
           }),
         touchedNotice((queued) => queued.touched),
@@ -355,23 +365,29 @@ const makeSqliteReplicaStoreInternals = (
         Effect.map((committed) => ({ value: committed.value?.status, notice: committed.notice })),
       );
 
-    const verifyDigest = (page: SyncPullResult, fence: DigestFence | undefined) =>
-      verifyPulledDigest(withTx, page, fence);
-
-    const settleClaimWithPage = (claimId: string, receipt: CommandReceipt, page: SyncPullResult) =>
+    const integrateAuthority = (input: IntegrateAuthorityInput) =>
       commit(
-        "SqliteReplicaStore.settleUploadWithPage",
-        (tx) => settleWithPage(tx, receipt, page, claimId),
-        touchedNotice(touchedBySettling),
+        "SqliteReplicaStore.integrateAuthority",
+        (tx) => integrateWithin(tx, input.payload, input.receipt),
+        touchedNotice(touchedByIntegrating),
       ).pipe(
-        Effect.flatMap((committed) =>
-          verifyDigest(page, committed.value.applied.digestFence).pipe(
-            Effect.map((coverage) => ({
-              value: { appliedThrough: committed.value.applied.appliedThrough, ...coverage },
+        Effect.flatMap((committed) => {
+          const { applied } = committed.value;
+          return (
+            input.payload._tag === "liveFrame"
+              ? Effect.succeed(UNVERIFIED)
+              : verifyPulledDigest(withTx, input.payload.page, applied.digestFence)
+          ).pipe(
+            Effect.map((coverage): Committed<Integrated> => ({
+              value: {
+                outcome: applied.outcome,
+                appliedThrough: applied.appliedThrough,
+                ...coverage,
+              },
               notice: committed.notice,
             })),
-          ),
-        ),
+          );
+        }),
       );
 
     const releaseClaim = (operationId: string, claimId: string) =>
@@ -379,45 +395,6 @@ const makeSqliteReplicaStoreInternals = (
         "SqliteReplicaStore.releaseUploadClaim",
         (tx) => releaseUploadClaim(tx, operationId, claimId),
         (status, after) => status && noticeFromState(databaseIdentity, after),
-      );
-
-    const recoverStale = (staleBefore: number) =>
-      commit(
-        "SqliteReplicaStore.recoverStaleUploadClaims",
-        (tx) => recoverStaleUploadClaims(tx, staleBefore),
-        (recovered, after) =>
-          recovered > 0 ? noticeFromState(databaseIdentity, after) : undefined,
-      );
-
-    const applyRemotePage = (page: SyncPullResult) =>
-      commit(
-        "SqliteReplicaStore.applyRemotePage",
-        (tx) =>
-          verifyReplicaIncarnation(tx, page.incarnation).pipe(
-            Effect.andThen(applyPullResult(tx, page)),
-          ),
-        touchedNotice((applied) => applied),
-      ).pipe(
-        Effect.flatMap((committed) =>
-          verifyDigest(page, committed.value.digestFence).pipe(
-            Effect.map((coverage) => ({
-              value: { appliedThrough: committed.value.appliedThrough, ...coverage },
-              notice: committed.notice,
-            })),
-          ),
-        ),
-      );
-
-    const applyGroup = (group: SyncTransactionGroup) =>
-      commit(
-        "SqliteReplicaStore.applyTransactionGroup",
-        (tx) => applyTransactionGroup(tx, group),
-        touchedNotice((applied) => applied),
-      ).pipe(
-        Effect.map((committed) => ({
-          value: committed.value.appliedThrough,
-          notice: committed.notice,
-        })),
       );
 
     const checkpointWindow = yield* SynchronizedRef.make<CheckpointWindow>({
@@ -636,11 +613,8 @@ const makeSqliteReplicaStoreInternals = (
       enqueueCommand,
       claimNextUpload: claimUpload,
       settleUploadClaim: settleClaim,
-      settleUploadWithPage: settleClaimWithPage,
       releaseUploadClaim: releaseClaim,
-      recoverStaleUploadClaims: recoverStale,
-      applyRemotePage,
-      applyTransactionGroup: applyGroup,
+      integrateAuthority,
       beginSnapshotImport: (manifest: SnapshotManifest) =>
         Ref.update(bufferedParts, (buffered) =>
           buffered?.manifest.snapshotId === manifest.snapshotId ? buffered : undefined,

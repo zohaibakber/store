@@ -1,48 +1,30 @@
-import {
-  compareDecimalSequence,
-  type SyncPullResult,
-  type SyncTransactionGroup,
-} from "@store/contracts";
+import { type SyncTransactionGroup } from "@store/contracts";
 import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
+import {
+  admitAuthority,
+  APPLIED,
+  outcomeOfUnapplied,
+  type Admission,
+  type AuthorityPayload,
+  type IntegrationOutcome,
+} from "./admission-authority";
 import { loadReplicaState } from "./commands";
 import { EMPTY_TOUCHED, mergeTouched, touchedOfChange, type TouchedSet } from "./commit-hub";
 import { readDigestFence, type DigestFence } from "./coverage";
-import { shouldApplyCommitSequence } from "./decisions";
 import { integrateGroupOverPending } from "./pending";
 import { removeEntityRow, writeEntityRow } from "./rows";
 import type { ReplicaDb } from "./sql-client/drizzle";
 import { encodeGroupJson, recordActiveMutation } from "./sqlite/generation";
 import { hasPendingProjection, sqlitePendingRows } from "./sqlite/pending-rows";
+import type { IntegrateAuthorityInput } from "./store";
 
-type PullApplyResult = TouchedSet & {
+type AuthorityApplyResult = TouchedSet & {
+  readonly outcome: IntegrationOutcome;
   readonly appliedThrough: string;
   readonly digestFence: DigestFence | undefined;
-};
-
-type GroupApplyResult = TouchedSet & {
-  readonly appliedThrough: string;
-};
-
-export type ReplicaFeedMode =
-  | {
-      readonly _tag: "catchingUp";
-      readonly targetCommitSequence: string;
-    }
-  | {
-      readonly _tag: "following";
-    };
-
-export const feedAfterPull = (pulled: SyncPullResult, appliedThrough: string): ReplicaFeedMode => {
-  if (compareDecimalSequence(appliedThrough, pulled.horizon) >= 0) {
-    return { _tag: "following" };
-  }
-  return {
-    _tag: "catchingUp",
-    targetCommitSequence: pulled.horizon,
-  };
 };
 
 const applySettledRows = Effect.fn("ReplicaApply.applySettledRows")(function* (
@@ -75,18 +57,19 @@ export const applyGroupRows = Effect.fn("ReplicaApply.applyGroupRows")(function*
     : yield* applySettledRows(tx, organizationId, group);
 });
 
-export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGroup")(function* (
+export const admitAuthorityWithin = Effect.fn("ReplicaApply.admitAuthorityWithin")(function* (
   tx: ReplicaDb,
+  payload: AuthorityPayload,
+) {
+  return admitAuthority(yield* loadReplicaState(tx), payload);
+});
+
+const integrateGroup = Effect.fn("ReplicaApply.integrateGroup")(function* (
+  tx: ReplicaDb,
+  organizationId: string,
   group: SyncTransactionGroup,
 ) {
-  const state = yield* loadReplicaState(tx);
-  if (!shouldApplyCommitSequence(state.appliedCommitSequence, group.commitSequence)) {
-    return {
-      appliedThrough: state.appliedCommitSequence,
-      ...EMPTY_TOUCHED,
-    } satisfies GroupApplyResult;
-  }
-  const touched = yield* applyGroupRows(tx, state.organizationId, group);
+  const touched = yield* applyGroupRows(tx, organizationId, group);
   const outbox = yield* tx
     .select()
     .from(commandOutbox)
@@ -98,40 +81,49 @@ export const applyTransactionGroup = Effect.fn("ReplicaApply.applyTransactionGro
       .set({ status: "integrated" })
       .where(eq(commandOutbox.operationId, group.operationId));
   }
-  yield* tx
-    .update(replicaState)
-    .set({
-      appliedCommitSequence: group.commitSequence,
-      localCommitVersion: state.localCommitVersion + 1,
-    })
-    .where(eq(replicaState.id, state.id));
   yield* recordActiveMutation(tx, () => ({
     kind: "group",
     operationId: group.operationId,
     commitSequence: group.commitSequence,
     payloadJson: encodeGroupJson(group),
   }));
-  return {
-    appliedThrough: group.commitSequence,
-    ...touched,
-  } satisfies GroupApplyResult;
+  return touched;
 });
 
-export const applyPullResult = Effect.fn("ReplicaApply.applyPullResult")(function* (
+export const applyAdmission = Effect.fn("ReplicaApply.applyAdmission")(function* (
   tx: ReplicaDb,
-  pulled: SyncPullResult,
+  payload: IntegrateAuthorityInput["payload"],
+  admission: Admission,
 ) {
   const state = yield* loadReplicaState(tx);
-  let appliedThrough = state.appliedCommitSequence;
+  if (admission._tag === "pull" || admission._tag === "refuse") {
+    return {
+      outcome: outcomeOfUnapplied(admission),
+      appliedThrough: state.appliedCommitSequence,
+      digestFence: undefined,
+      ...EMPTY_TOUCHED,
+    } satisfies AuthorityApplyResult;
+  }
   const touched: Array<TouchedSet> = [];
-  for (const group of pulled.transactions) {
-    const applied = yield* applyTransactionGroup(tx, group);
-    appliedThrough = applied.appliedThrough;
-    touched.push(applied);
+  if (admission._tag === "apply") {
+    for (const group of admission.groups) {
+      touched.push(yield* integrateGroup(tx, state.organizationId, group));
+    }
+    yield* tx
+      .update(replicaState)
+      .set({
+        appliedCommitSequence: admission.through,
+        localCommitVersion: state.localCommitVersion + 1,
+      })
+      .where(eq(replicaState.id, state.id));
   }
   return {
-    appliedThrough,
-    digestFence: pulled.digest === undefined ? undefined : yield* readDigestFence(tx),
+    outcome: admission._tag === "apply" ? APPLIED : outcomeOfUnapplied(admission),
+    appliedThrough: admission._tag === "apply" ? admission.through : state.appliedCommitSequence,
+    digestFence:
+      payload._tag === "liveFrame" || payload.page.digest === undefined
+        ? undefined
+        : yield* readDigestFence(tx),
     ...mergeTouched(...touched),
-  } satisfies PullApplyResult;
+  } satisfies AuthorityApplyResult;
 });

@@ -60,7 +60,7 @@ export type {
   RejectedCommandSubject,
   RejectedCommandTarget,
 } from "./replica/activity";
-export type { InventorySyncStatus, ReplicaSyncHealth } from "./replica/status";
+export type { InventorySyncStatus, ReplicaSyncHealth, SyncTransfer } from "./replica/status";
 export type {
   ReplicaAnalytics,
   ReplicaChangeFeed,
