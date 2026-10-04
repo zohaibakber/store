@@ -46,13 +46,13 @@ const commitNoticeOf = (notice: ReplicaCommitNotice): CommitNotice => ({
   touchedKeys: touchedKeysOfCommit(notice),
 });
 
-const isBehind = (after: Stamp, current: Stamp): boolean =>
-  after.generationId !== current.generationId ||
-  after.localCommitVersion < current.localCommitVersion;
+const isSameStamp = (after: Stamp, current: Stamp): boolean =>
+  after.generationId === current.generationId &&
+  after.localCommitVersion === current.localCommitVersion;
 
 export const openingNotice = (current: Stamp, after: Stamp | undefined): CommitNotice => ({
   stamp: current,
-  touchedKeys: after !== undefined && isBehind(after, current) ? EVERYTHING : [],
+  touchedKeys: after !== undefined && !isSameStamp(after, current) ? EVERYTHING : [],
 });
 
 const newerStamp = (earlier: Stamp, later: Stamp): Stamp =>

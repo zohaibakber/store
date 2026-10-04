@@ -283,10 +283,16 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         stagedPath: string,
       ) =>
         Effect.gen(function* () {
-          const sealed = yield* stamp;
-          yield* commandTurn.withPermits(1)(renderers.shutdown);
-          yield* Ref.set(live, Option.none());
-          yield* Scope.close(sessionScope, Exit.void);
+          const sealed = yield* commandTurn.withPermits(1)(
+            Effect.gen(function* () {
+              yield* renderers.shutdown;
+              yield* withSession((session) => Context.get(session, SyncScheduler).shutdown);
+              const final = yield* stamp;
+              yield* Ref.set(live, Option.none());
+              yield* Scope.close(sessionScope, Exit.void);
+              return final;
+            }),
+          );
           yield* settleReplicaFile(local.databasePath);
           yield* sealReplicaFile(stagedPath, sealed.localCommitVersion);
         }).pipe(Effect.mapError(fileFailure));
