@@ -57,6 +57,7 @@ const fakeSocket = (): FakeSocket => {
 const makeHarness = () => {
   const accepted: Array<{ readonly socket: FakeSocket; readonly tags: ReadonlyArray<string> }> = [];
   let next: FakeSocket | undefined;
+  let alarmAt: number | null = null;
   const state: HubState = {
     setWebSocketAutoResponse: () => Effect.void,
     acceptWebSocket: (socket, tags) =>
@@ -70,8 +71,20 @@ const makeHarness = () => {
       Effect.sync(() =>
         accepted
           .filter((entry) => tag === undefined || entry.tags.includes(tag))
+          .filter((entry) => entry.socket.closed.length === 0)
           .map((entry) => entry.socket.socket),
       ),
+    storage: {
+      getAlarm: () => Effect.sync(() => alarmAt),
+      setAlarm: (at) =>
+        Effect.sync(() => {
+          alarmAt = new Date(at).getTime();
+        }),
+      deleteAlarm: () =>
+        Effect.sync(() => {
+          alarmAt = null;
+        }),
+    },
   };
   const platform: HubPlatform = {
     autoResponse: () => ({ request: "ping", response: "pong" }),
@@ -86,7 +99,7 @@ const makeHarness = () => {
         headers: { "sec-websocket-protocol": LIVE_SOCKET_PROTOCOL },
       }),
   };
-  return { state, platform, accepted };
+  return { state, platform, accepted, alarm: () => alarmAt };
 };
 
 const admission = (overrides: Partial<HubAdmission> = {}): HubAdmission => ({
@@ -194,6 +207,53 @@ describe("OrgHub", () => {
       LIVE_SOCKET_CLOSE.revoked,
       LIVE_SOCKET_CLOSE.revoked,
       undefined,
+    ]);
+  });
+
+  it("keeps the alarm at the earliest expiry and closes idle sockets when it fires", async () => {
+    const harness = makeHarness();
+    const now = Date.now();
+    const later = now + 2 * 60 * 60_000;
+    const sooner = now + 60 * 60_000;
+    const scheduled = await run(
+      Effect.gen(function* () {
+        const hub = yield* makeOrgHub(harness.state, harness.platform);
+        yield* connect(
+          hub,
+          admission({ replicaId: "replica-later", userId: "user-1", expiresAt: later }),
+        );
+        const first = harness.alarm();
+        yield* connect(
+          hub,
+          admission({ replicaId: "replica-sooner", userId: "user-1", expiresAt: sooner }),
+        );
+        const pulled = harness.alarm();
+        yield* connect(
+          hub,
+          admission({ replicaId: "replica-idle", userId: "user-2", expiresAt: 1 }),
+        );
+        const idle = harness.alarm();
+        yield* hub.alarm();
+        const afterSweep = harness.alarm();
+        yield* hub.alarm();
+        const afterRepeat = harness.alarm();
+        yield* hub.revoke("user-1");
+        yield* hub.alarm();
+        return { first, pulled, idle, afterSweep, afterRepeat, empty: harness.alarm() };
+      }),
+    );
+    expect(scheduled).toEqual({
+      first: later,
+      pulled: sooner,
+      idle: 1,
+      afterSweep: sooner,
+      afterRepeat: sooner,
+      empty: null,
+    });
+    expect(harness.accepted.map((entry) => entry.socket.closed)).toEqual([
+      [[LIVE_SOCKET_CLOSE.revoked, "membership revoked"]],
+      [[LIVE_SOCKET_CLOSE.revoked, "membership revoked"]],
+      [[LIVE_SOCKET_CLOSE.tokenExpired, "token expired"]],
     ]);
   });
 });

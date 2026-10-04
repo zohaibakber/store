@@ -14,6 +14,7 @@ export interface OrgHubContract {
   >;
   readonly publish: (input: CommitFanout) => Effect.Effect<number, never, RuntimeContext>;
   readonly revoke: (userId: string) => Effect.Effect<number, never, RuntimeContext>;
+  readonly alarm: () => Effect.Effect<void, never, RuntimeContext>;
   readonly webSocketMessage: (
     socket: Cloudflare.WebSocket,
     message: string | ArrayBuffer,

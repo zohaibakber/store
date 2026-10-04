@@ -19,6 +19,7 @@ import type { CommitFanout } from "../inventory/model";
 import {
   admissionFromHeaders,
   advanceCursor,
+  closeExpiredSockets,
   closeIfExpired,
   closeSockets,
   decodeHubAttachment,
@@ -73,7 +74,9 @@ const workerdHubPlatform: HubPlatform = {
 export type HubState = Pick<
   Cloudflare.DurableObjectState["Service"],
   "acceptWebSocket" | "getWebSockets" | "setWebSocketAutoResponse"
->;
+> & {
+  readonly storage: Pick<Cloudflare.DurableObjectStorage, "getAlarm" | "setAlarm" | "deleteAlarm">;
+};
 
 export const makeOrgHub = Effect.fnUntraced(function* (
   state: HubState,
@@ -88,6 +91,12 @@ export const makeOrgHub = Effect.fnUntraced(function* (
     });
   const socketsTagged = (tag?: string) =>
     state.getWebSockets(tag).pipe(Effect.map((sockets) => sockets.map(hubSocket)));
+  const alarmBy = Effect.fn("OrgHub.alarmBy")(function* (expiresAt: number) {
+    const scheduled = yield* state.storage.getAlarm();
+    if (scheduled === null || scheduled > expiresAt) {
+      yield* state.storage.setAlarm(expiresAt);
+    }
+  });
 
   return {
     fetch: Effect.gen(function* () {
@@ -113,6 +122,7 @@ export const makeOrgHub = Effect.fnUntraced(function* (
         maxBytes: admission.maxBytes,
         epoch: admission.epoch,
       });
+      yield* alarmBy(admission.expiresAt);
       const greeting = yield* advance({ epoch: admission.epoch, horizon: admission.horizon });
       server.ws.send(helloFrame(greeting));
       return platform.upgrade(client);
@@ -128,6 +138,15 @@ export const makeOrgHub = Effect.fnUntraced(function* (
           closeSockets(sockets, LIVE_SOCKET_CLOSE.revoked, "membership revoked"),
         ),
       ),
+    alarm: Effect.fn("OrgHub.alarm")(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const earliest = closeExpiredSockets(yield* socketsTagged(), now);
+      if (earliest === undefined) {
+        yield* state.storage.deleteAlarm();
+      } else {
+        yield* state.storage.setAlarm(Math.max(earliest, now + 1));
+      }
+    }),
     webSocketMessage: (socket: Cloudflare.WebSocket) =>
       Clock.currentTimeMillis.pipe(
         Effect.map((now) => {
