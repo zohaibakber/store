@@ -14,9 +14,9 @@ export class InvalidQuantity extends Schema.TaggedError<InvalidQuantity>()("Inva
 ```
 
 - Every error in `E` is a `Schema.TaggedError` class. A plain `Error`, a string or `unknown` in `E` is a bug in the signature.
-- Fields are data a caller can branch on. A domain refusal carries a closed reason (`reason: Schema.Literals([...])`, as `AuthRefusal` does) instead of free text.
+- Fields are data a caller can branch on. A domain refusal carries a closed reason (`reason: Schema.Literals([...])`) instead of free text.
 - An infrastructure error carries `operation` and `cause: Schema.Defect()`, so it stays serializable and keeps the original failure for logs.
-- The tag is the class name, and the class name is specific enough to be unique in the workspace (`ReplicaStorageError`, not `StorageError`). A tag that already crosses a process boundary or is persisted is a contract: check every consumer before renaming it.
+- The tag is the class name, and the class name is specific enough to be unique in the workspace (`InvoiceStorageError`, not `StorageError`). A tag that already crosses a process boundary or is persisted is a contract: check every consumer before renaming it.
 - One error with a tagged `reason` union replaces a family of near-identical classes. Handle a single reason with `Effect.catchReason("Parent", "Reason", ...)`. See `node_modules/effect/ai-docs/src/01_effect/04_errors/20_reason-errors.ts`.
 - Keep distinct failure modes as distinct classes and union them at the operation: `export type QuoteFailure = PriceFeedError | UnknownProduct | InvalidQuantity`. Merge two only when every caller handles them the same way and the fields still say which one happened. A broad `AppError` belongs at an entry point, never on a service method.
 - Every known failure is in the signature, even when the immediate caller cannot recover. It is handled or passed upward until a boundary turns it into an outcome: a response, a retry decision, a startup message.
@@ -62,7 +62,7 @@ export const quoteLine = Effect.fn("Checkout.quoteLine")(function* (
 });
 ```
 
-`throw new Error(message)` in a projection, wrapped later by `Effect.try`, turns a user-facing refusal into `unknown`. `apps/desktop/electron/replica-admission.ts` and `decideCatalogRow` in `packages/sync/src/replica/projection.ts` show the `Result` form.
+`throw new Error(message)` in pure code, wrapped later by `Effect.try`, turns a user-facing refusal into `unknown`.
 
 ## Catching
 
@@ -101,13 +101,13 @@ const wireStatus = (failure: QuoteFailure): number => {
 ```
 
 - The `never` guard makes a new error class a compile error at every boundary. A `default:` that returns a generic answer absorbs new cases silently.
-- Wire errors are their own schemas in `@store/contracts` and `@store/auth` (`Schema.Struct` with `HttpApiSchema.status`), separate from the internal error, so internals and causes never reach a client.
-- `apps/auth/src/failures.ts` is the model: a `REFUSALS` table plus an exhaustive switch, applied once per handler with `Effect.mapError`.
+- Wire errors are their own schemas in the contract package (`Schema.Struct` with `HttpApiSchema.status`), separate from the internal error, so internals and causes never reach a client.
+- A boundary with many refusals keeps one table from reason to wire outcome plus the exhaustive switch, applied once per handler with `Effect.mapError`.
 - Schema decode failures are transformed once, by `HttpApiMiddleware.layerSchemaErrorTransform`.
 
 ## Defects
 
-- A failure the caller can act on stays typed. In this app that includes storage and network failures: the UI shows offline, retries, or asks the user to free space.
+- A failure the caller can act on stays typed. Where a UI can show offline, retry, or ask the user to free space, that includes storage and network failures.
 - `Effect.orDie` belongs at the owner of an infrastructure call when no caller could do anything except log, such as a startup invariant or a query whose only failure is a broken deployment. It keeps `SqlError` out of every signature above.
 - `Effect.die` marks an impossible state: a violated internal invariant or an unreachable branch.
 - A known configuration failure is a value; the composition root reports it and stops startup.
@@ -129,4 +129,4 @@ export const lastResort = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   );
 ```
 
-`Effect.catchCause` appears at a supervisor and at the outermost handler of a process. It re-raises interruption, logs the full cause, and answers with a safe public body. `recoverUnexpected` in `apps/server/src/http/app.ts` is the house version.
+`Effect.catchCause` appears at a supervisor and at the outermost handler of a process. It re-raises interruption, logs the full cause, and answers with a safe public body.

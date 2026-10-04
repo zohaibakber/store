@@ -17,7 +17,7 @@ external input -> inbound adapter -> application service -> domain module
 
 Domain modules are the functional core; services and adapters are the shell. An inbound adapter may call a domain module directly when the operation is pure.
 
-For each operation you change, trace it from ingress to every effect and observable result, and give each decision and effect exactly one owner. `packages/contracts/src/catalog/rules.ts` is domain, `apps/auth/src/login.ts` is an application service, `packages/sync/src/transport.ts` is an outbound adapter, `apps/auth/infra.ts` is a composition root.
+For each operation you change, trace it from ingress to every effect and observable result, and give each decision and effect exactly one owner. The project profile lists an exemplar of each kind.
 
 ## Service or value
 
@@ -64,7 +64,7 @@ A helper extracted to shorten a function keeps the exact inputs, failure union, 
 
 ## Authentication and authorization
 
-- An inbound adapter verifies credentials and produces a parsed actor (`CurrentOrganization`, a session).
+- An inbound adapter verifies credentials and produces a parsed actor (`CurrentUser`, a session).
 - A domain module holds the pure permission decision over parsed values.
 - The application service gathers context and enforces the decision while it does the work.
 - The adapter turns "no credentials" and "denied" into the protocol's outcome.

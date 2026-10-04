@@ -1,6 +1,6 @@
 # Alchemy and Cloudflare Workers
 
-`apps/server` and `apps/auth` are Alchemy Workers. Read the installed Alchemy source for the constructor you are changing before choosing a shape; a resource's name, its physical identity and its serialized state are three separate facts.
+For Cloudflare Workers defined with Alchemy's Effect constructors. Read the installed Alchemy source (`node_modules/alchemy`) for the constructor you are changing before choosing a shape; a resource's name, its physical identity and its serialized state are three separate facts.
 
 ## Two phases
 
@@ -10,20 +10,20 @@ Provide infrastructure-backed layers to the outer effect, yield the services by 
 
 ```ts
 Effect.gen(function* () {
-  const commands = yield* InventoryCommands;
+  const commands = yield* OrderCommands;
 
   return {
     fetch: requestHandler(commands),
   };
-}).pipe(Effect.provide(InventoryLive));
+}).pipe(Effect.provide(OrdersLive));
 ```
 
 - The composition root uses a service's layer. Yielding the service's `make` effect directly skips the layer's wiring, memoization and substitution.
 - Bindings are resolved in the outer effect, so the plan can discover them. A layer provided only inside the returned effect registers its bindings too late.
-- When an inner layer needs a service the outer effect already built, bridge the value: `Layer.provide(Layer.succeed(InventoryCommands, commands))`, or `Layer.succeedContext(context)` for several. Providing the infrastructure layer again would build it twice.
-- The layer graph is built once per isolate (`buildOncePerIsolate` in `apps/server/src/runtime/isolate.ts`), and each request runs the resulting effect. A request handler never calls `Effect.provide(layer)`.
-- Request-derived values (the actor, the organization, the access token) are provided by middleware with `Effect.provideService`.
-- Work that outlives the response goes through the execution context's `waitUntil`, passed in as an effect-returning function (`apps/server/src/global-search/cache.ts`).
+- When an inner layer needs a service the outer effect already built, bridge the value: `Layer.provide(Layer.succeed(OrderCommands, commands))`, or `Layer.succeedContext(context)` for several. Providing the infrastructure layer again would build it twice.
+- The layer graph is built once per isolate, and each request runs the resulting effect. A request handler never calls `Effect.provide(layer)`.
+- Request-derived values (the actor, the tenant, the access token) are provided by middleware with `Effect.provideService`.
+- Work that outlives the response goes through the execution context's `waitUntil`, passed in as an effect-returning function.
 - Configuration and secrets are read with `Config` in the outer effect and stay `Redacted`. See [configuration](CONFIG.md).
 
 ## Durable Object state
@@ -36,12 +36,12 @@ A Durable Object stub, and any HTTP client generated over one, is valid only ins
 
 ## Values cached across requests
 
-A value an isolate keeps between requests is stored complete, in a `Ref`. `Cache`, `Effect.cached` and `Effect.cachedWithTTL` share one in-flight lookup between callers, and in a Worker that lookup's I/O belongs to the request that started it: when that request ends first, the other requests waiting on the entry can hang. Each request does its own fetch and the last one to finish writes the `Ref`. `apps/auth/src/google.ts` keeps Google's signing keys this way.
+A value an isolate keeps between requests is stored complete, in a `Ref`. `Cache`, `Effect.cached` and `Effect.cachedWithTTL` share one in-flight lookup between callers, and in a Worker that lookup's I/O belongs to the request that started it: when that request ends first, the other requests waiting on the entry can hang. Each request does its own fetch and the last one to finish writes the `Ref`. An identity provider's signing keys are kept this way.
 
 ## Drizzle
 
-Yield every Drizzle chain directly: `const rows = yield* db.select().from(table)`. Alchemy's Drizzle handle is a lazy proxy that becomes an effect only when yielded. t3code found that handing an unyielded builder to `Effect.all` spins the isolate at full CPU.
+Yield every Drizzle chain directly: `const rows = yield* db.select().from(table)`. Alchemy's Drizzle handle is a lazy proxy that becomes an effect only when yielded. Handing an unyielded builder to `Effect.all` spins the isolate at full CPU.
 
 ## Verifying
 
-A local run shows that planning needs no native storage and that repeated invocations reuse no stale client. It does not show that a deploy, a resource adoption or a namespace transfer is safe; those are verified against the dev stage. `alchemy dev` binds real dev-stage resources, as `AGENTS.md` describes.
+A local run shows that planning needs no native storage and that repeated invocations reuse no stale client. It does not show that a deploy, a resource adoption or a namespace transfer is safe; those are verified against a deployed dev stage.

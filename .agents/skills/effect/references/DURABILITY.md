@@ -2,7 +2,7 @@
 
 Read this when work must survive a restart or when changing a persisted command queue, receipt, replay or checkpoint. A scope owns live resources. Persistence records what the next process must recover. Ordinary scoped work needs no journal.
 
-These lessons come from [Tardigrade core at `6f47172`](https://github.com/clavia-labs/tardigrade/tree/6f47172d3f3adbef2740a864e76c02a51ac214dd/packages/core), which uses `effect@4.0.0-rc.115`. Apply them through Store's existing services and sync contracts. Keep Store's namespace imports, `Context.Service` layers, `Schema.TaggedError`, boundary decoders and runtime edges, and verify API spellings against the installed `effect@4.0.0`. Adding Tardigrade or another workflow engine is a separate architecture decision.
+These lessons come from [Tardigrade core at `6f47172`](https://github.com/clavia-labs/tardigrade/tree/6f47172d3f3adbef2740a864e76c02a51ac214dd/packages/core), which uses `effect@4.0.0-rc.115`. Apply them through the project's existing services and contracts, in this skill's target form, and verify API spellings against the installed package. Adding Tardigrade or another workflow engine is a separate architecture decision.
 
 ## Commit before publishing or executing
 
@@ -16,7 +16,7 @@ parse input -> prepare transition -> commit acceptance and intent
 
 - Derive candidate state and follow-up records without mutating the committed view or doing external I/O. A projection may run again during validation or replay.
 - Commit the state change and its required outbox or receipt records atomically. An in-process `Semaphore` orders local callers; a transaction, unique constraint or expected-version check must enforce the storage invariant across writers.
-- Publish an accepted status, binding or completion only after its supporting commit succeeds. Store may show a separate optimistic state, but that state cannot claim server acceptance.
+- Publish an accepted status, binding or completion only after its supporting commit succeeds. A UI may show a separate optimistic state, but that state cannot claim acceptance.
 - A rejected commit discards the candidate. If the storage result is uncertain, reconcile or rebuild from persisted state before accepting more work against the in-memory view. A later notification failure leaves the successful commit intact; recover required delivery through the outbox.
 
 Tardigrade's [commit path](https://github.com/clavia-labs/tardigrade/blob/6f47172d3f3adbef2740a864e76c02a51ac214dd/packages/core/src/runtime/execution.ts) prepares records, persists them, then publishes state and schedules work. Its [acceptance property](https://github.com/clavia-labs/tardigrade/blob/6f47172d3f3adbef2740a864e76c02a51ac214dd/packages/platform/test/properties/runtime/reference-acceptance-atomicity.ts) pauses the commit and checks that neither the accepted reference nor execution appears early.

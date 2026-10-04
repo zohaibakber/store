@@ -58,8 +58,11 @@ other weights or sizes. Follow the rules anyway.
 
 Before writing, reviewing or refactoring code that imports `effect` or `@effect/*`,
 read `.agents/skills/effect/SKILL.md` and the references it points to for the
-change. It describes the target; existing code that differs from it is listed in
-`.agents/skills/effect/references/DEPARTURES.md` and is not a pattern to copy.
+change, then `docs/effect-profile.md`. The skill is the portable target and
+carries nothing about this repo. The profile holds what is local: the service id
+prefix, each host's edge, where contracts live and the exemplar files. Existing
+code that differs from the target is listed in `docs/effect-departures.md` and is
+not a pattern to copy.
 
 Before calling an Effect change done, ask of every piece you wrote: **is there a
 better way to do this in Effect?** Check the skill's module map and the installed

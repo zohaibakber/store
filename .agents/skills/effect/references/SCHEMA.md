@@ -18,11 +18,10 @@ Everything that crosses a process, the network, storage or JSON text has a Schem
 
 ## Where contracts live
 
-- `packages/contracts/src`: wire contracts shared by every process. `ids.ts` holds branded IDs, `sync/` the sync protocol and API, `http-errors.ts` the wire errors.
-- `packages/auth/src/model.ts` and `http-api.ts`: the auth wire model and API.
-- IPC and RPC schemas sit beside their protocol: `apps/desktop/electron/replica-rpc.ts`, `ipc-channels.ts`.
+- Wire contracts shared by several processes live in a contract package with no server or client code: branded IDs, protocol payloads, the API definition, the wire errors.
+- IPC and RPC schemas that serve one protocol sit beside that protocol.
 
-A new wire shape goes in the contract package its consumers already import. The server and the client import the same definition.
+A new wire shape goes in the contract package its consumers already import. The server and the client import the same definition. The project profile names the packages.
 
 ## Records
 
@@ -52,9 +51,9 @@ export type ProductId = typeof ProductId.Type;
 export const decodeProductId = Schema.decodeUnknownSync(ProductId);
 ```
 
-Every identifier is a branded string from `packages/contracts/src/ids.ts`. A function that takes a `ProductId` cannot be handed an `OrderId` or a raw string. Brand names are unique across the workspace.
+Every identifier is a branded string, defined once in the contract package. A function that takes a `ProductId` cannot be handed an `OrderId` or a raw string. Brand names are unique across the workspace.
 
-Brand whatever could be mixed up or carries a rule: units (`Milliseconds`, `Paisa`), and strings and numbers with real constraints (`EmailAddress`, `Slug`, `PositiveInt`). Apply the checks, then `Schema.brand`. Display text, local counters and indexes stay primitives until they gain a rule.
+Brand whatever could be mixed up or carries a rule: units (`Milliseconds`, `Cents`), and strings and numbers with real constraints (`EmailAddress`, `Slug`, `PositiveInt`). Apply the checks, then `Schema.brand`. Display text, local counters and indexes stay primitives until they gain a rule.
 
 ## Unions
 

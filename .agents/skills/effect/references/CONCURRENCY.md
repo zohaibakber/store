@@ -11,7 +11,7 @@ export class Watcher extends Context.Service<
     readonly unwatch: (id: ProductId) => Effect.Effect<void>;
     readonly priceOf: (id: ProductId) => Effect.Effect<number, PriceFeedError>;
   }
->()("@store/services/Watcher") {
+>()("@acme/pricing/Watcher") {
   static readonly layer = Layer.effect(
     Watcher,
     Effect.gen(function* () {

@@ -1,6 +1,6 @@
 # Testing
 
-The repo's testing policy is in `AGENTS.md`: write tests freely to verify a change, delete them afterwards, and commit one only when it guards an invariant nothing else covers. This file is how a test of Effect code is written, kept or not.
+Which tests a project commits is its own policy. This file is how a test of Effect code is written, kept or not.
 
 ## Shape
 
@@ -41,7 +41,7 @@ Test at the highest real interface that runs reliably: the public entry point (a
 
 Assert what a caller or operator can observe: returned values and typed failures by tag, persisted state, emitted events, the rendered response. A spy on an internal method asserts the implementation; a recording double's public record asserts the behaviour.
 
-Worth asserting: what happens on interruption and at scope close, retry bounds, idempotency of a replayed command, convergence of two replicas, and that a rejected import or migration wrote nothing. Assertions that mirror the implementation line by line are the throwaway kind.
+Worth asserting: what happens on interruption and at scope close, retry bounds, idempotency of a replayed command, and that a rejected import or migration wrote nothing. Assertions that mirror the implementation line by line are the throwaway kind.
 
 For durable work, pause execution with `Deferred` at the commit boundaries. Exercise a failed acceptance, a committed request with no execution yet, a remote success with no local receipt yet, and cancellation racing a late result. Reopen over the persisted state and check identity, visible state and external effects. Compare full replay with checkpoint plus suffix, including state first read after recovery. The [durability reference](DURABILITY.md) defines the expected outcomes. A formal model can check the abstract transitions; the implementation still needs these checks through its real storage and service boundaries.
 
@@ -51,7 +51,7 @@ For durable work, pause execution with `Deferred` at the commit boundaries. Exer
 - Replacement goes through layers. `vi.mock` and other module mocking are out: they bypass the interface the production caller uses.
 - `Layer.mock(Service, { method })` supplies the methods a test uses; any other method dies if called, which catches an unexpected dependency.
 - A service whose dependency should be replaceable leaves it open on its layer (see [services and layers](SERVICES_LAYERS.md)); the test provides the double, production provides the real one.
-- Storage is real: SQLite in memory with the real migrations, or the Postgres harness in `apps/server/test`. Rebuilding a service over the same database shows persistence; it does not show recovery from a real process restart.
+- Storage is real: SQLite in memory with the real migrations, or the project's database harness. Rebuilding a service over the same database shows persistence; it does not show recovery from a real process restart.
 - HTTP handlers are tested in process through the typed client from `HttpApiTest`, and RPC handlers through `RpcTest.makeClient(Rpcs)`, against the real handler layer.
 - Configuration comes from `ConfigProvider.layer(ConfigProvider.fromUnknown({...}))`.
 - A double is named for what it does: `layerMemory`, `RecordingMailer`, `FailingMailer`. "In-memory" is claimed only by one that keeps the whole observable contract.
@@ -68,7 +68,7 @@ export class MailerTest extends Context.Service<
     readonly sent: Effect.Effect<ReadonlyArray<Message>>;
     readonly failNext: (error: MailError) => Effect.Effect<void>;
   }
->()("@store/services/MailerTest") {
+>()("@acme/mail/MailerTest") {
   static readonly layer = Layer.effectContext(
     Effect.gen(function* () {
       const sent = yield* Ref.make<ReadonlyArray<Message>>([]);

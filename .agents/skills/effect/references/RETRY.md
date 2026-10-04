@@ -91,7 +91,7 @@ Fork the worker with `Effect.forkScoped` from a `Layer.effectDiscard`, and expos
 
 A retry is correct only when running the operation twice is safe. Name the guarantee before adding the retry, and put it at the layer that owns the duplication:
 
-- an **idempotency key** the caller supplies for the repeated request (a sync command's `operationId`);
+- an **idempotency key** the caller supplies for the repeated request (a command's `operationId`);
 - a **unique constraint** that already forbids the duplicate;
 - a **deduplication record** for a redelivered message with a stable identity;
 - a **state-machine guard**, where the current state decides whether the mutation may run;
@@ -102,7 +102,7 @@ Retry at the narrowest place that has the guarantee. `HttpClient.retryTransient`
 
 ## Uncertain outcomes
 
-A timeout, an interruption or a lost response does not show that a remote mutation failed. Model "unknown" as its own outcome and resolve it by reconciliation or by a retry the idempotency guarantee makes safe. The sync engine does this with receipts: a command whose response was lost is resolved by asking for its receipt.
+A timeout, an interruption or a lost response does not show that a remote mutation failed. Model "unknown" as its own outcome and resolve it by reconciliation or by a retry the idempotency guarantee makes safe. A receipt is one such design: a command whose response was lost is resolved by asking for its receipt.
 
 When undoing a remote commit must stay possible, persist the identity and the intent before the call. Receipts, outboxes, leases and checkpoints carry that evidence; a smaller workflow is no reason to remove one. Define the point of no return, so a failure in required work after the commit does not trigger a compensation that is no longer valid.
 
@@ -110,6 +110,6 @@ When undoing a remote commit must stay possible, persist the identity and the in
 
 - No atomic change needed: an ordinary call.
 - Changes in one datastore that commit or roll back together: `sql.withTransaction`. Close it before any network call or long-running work.
-- Progress that must survive process loss, redelivery, long delays or several transaction boundaries: persisted state that a worker resumes, as the sync engine's command queue does, or `effect/workflow` after the user agrees to adopt it.
+- Progress that must survive process loss, redelivery, long delays or several transaction boundaries: persisted state that a worker resumes, such as a durable command queue, or `effect/workflow` where the project has adopted it.
 
 An in-memory `Schedule`, `Deferred` or scoped fiber carries no progress across a restart. Persist the operation identity, accepted input and recovery state when that is part of the contract. See [durability](DURABILITY.md) for commit ordering, recovery and cancellation.

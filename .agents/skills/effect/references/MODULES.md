@@ -1,6 +1,6 @@
 # Module map
 
-Find the need in the left column before writing the code yourself. Every module here ships in `effect@4.0.0`; open `node_modules/effect/dist/<path>.d.ts` for its JSDoc and examples. Modules marked unstable upstream are welcome when they remove hand-rolled code.
+Find the need in the left column before writing the code yourself. Every module here ships in Effect 4; open `node_modules/effect/dist/<path>.d.ts` for its JSDoc and examples. Modules marked unstable upstream are welcome when they remove hand-rolled code.
 
 ## Control flow and resilience
 
@@ -90,6 +90,6 @@ Find the need in the left column before writing the code yourself. Every module 
 | Counters and gauges | `Metric` |
 | Exporters | `effect/observability` (`Otlp`), `ErrorReporter` for Sentry-style reporting |
 
-## Worth knowing, not yet used here
+## Whole subsystems
 
-`effect/eventlog` (typed event journal with replication), `effect/cluster`, `effect/ai`, `effect/cli`. Read the module before proposing one; adopting any of them is an architecture decision for the user, not a refactor.
+`effect/workflow`, `effect/eventlog` (typed event journal with replication), `effect/cluster`, `effect/ai`, `effect/cli`. Read the module before proposing one. Adopting one the project does not already use is an architecture decision for the user, not a refactor; check the project's departures for one already evaluated.

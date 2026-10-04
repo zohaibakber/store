@@ -14,7 +14,7 @@ The refactor is a substantial improvement. Named replica RPC operations, transac
 
 The remaining work is mainly resource ownership, recovery, and validation. The existing organization DO is well placed. Drizzle and Effect are already doing more of the work than a superficial search for custom classes suggests.
 
-The earlier [Effect audit](effect-audit-2026-10-04.md) describes the architecture before this refactor. Its deleted query machinery and proposed Workflow/EventLog migrations are not a current implementation plan. Read the current [known departures](../.agents/skills/effect/references/DEPARTURES.md) before reopening those decisions.
+The earlier [Effect audit](effect-audit-2026-10-04.md) describes the architecture before this refactor. Its deleted query machinery and proposed Workflow/EventLog migrations are not a current implementation plan. Read the current [known departures](effect-departures.md) before reopening those decisions.
 
 ## Work order
 
@@ -189,7 +189,7 @@ Drizzle ORM and Kit are pinned together at `1.0.0-rc.5-ab785fc`. Distinguish an 
 
 ## Agent execution and verification
 
-1. Read [AGENTS.md](../AGENTS.md), the [Effect skill](../.agents/skills/effect/SKILL.md), its relevant references, and the current source for the task. Reproduce the stated behavior before editing.
+1. Read [AGENTS.md](../AGENTS.md), the [Effect skill](../.agents/skills/effect/SKILL.md), its relevant references, the [Effect profile](effect-profile.md), and the current source for the task. Reproduce the stated behavior before editing.
 2. State the invariant and the owner. For a replacement, list the old files/adapters that should disappear and prove the native facility covers their semantics.
 3. Fix A1–A2 first. Keep independently reviewable changes; do not combine the sync protocol, auth policy and platform experiments into a single rewrite.
 4. Run `vp install` as required, `vp check`, `vp run -r check`, and `vp test`. Run `vp run lint:design` for web UI changes. Use temporary reproduction tests or extend existing suites; retain tests only for otherwise unguarded invariants under the repository's test policy.

@@ -25,7 +25,7 @@ export class PriceFeed extends Context.Service<
     readonly priceOf: (id: ProductId) => Effect.Effect<number, PriceFeedError | UnknownProduct>;
     readonly refresh: Effect.Effect<void, PriceFeedError>;
   }
->()("@store/services/PriceFeed") {
+>()("@acme/pricing/PriceFeed") {
   static readonly layer = (baseUrl: string) =>
     Layer.effect(
       PriceFeed,
@@ -54,9 +54,9 @@ export class PriceFeed extends Context.Service<
 }
 ```
 
-- The id is `@store/<package>/<Name>`, unique in the workspace.
+- The id is `<scope>/<package>/<Name>`, unique in the workspace. The project profile gives the scope.
 - The interface is inline. Refer to it as `PriceFeed["Service"]`, and to one method as `PriceFeed["Service"]["priceOf"]`.
-- Every method lists its failures explicitly and has `R = never`. A request-scoped value such as `CurrentOrganization` is the exception: it is provided per request by middleware with `Effect.provideService`.
+- Every method lists its failures explicitly and has `R = never`. A request-scoped value such as `CurrentUser` is the exception: it is provided per request by middleware with `Effect.provideService`.
 - Stable dependencies are yielded while the layer builds and closed over. A value scoped to one request, fiber or operation is yielded inside the method that uses it, or passed as an argument when it is part of the request.
 - Each method is `Effect.fn("PriceFeed.priceOf")`. The name is the service and the method, which is what a trace and a log line show.
 - A nullary member is an effect value (`refresh`). Give it its span with `Effect.withSpan("PriceFeed.refresh")` when it does I/O.
@@ -97,7 +97,7 @@ The generator stays the operation; one or two transforms carry the policy. A hel
 | A layer that is not one service (a bundle, a worker) | a free `layerX` function or constant |
 | A wired sub-graph in a composition root | `PascalCaseLive`, such as `OperationsLive` |
 
-Older files spell layers `xLayer` or `XLive` on the service itself and declare a separate `XApi` or `XContract` interface. When you change such a service's definition, move it to this table and inline the interface in the same change.
+Older code may spell layers `xLayer` or `XLive` on the service itself and declare a separate `XApi` or `XContract` interface. When you change such a service's definition, move it to this table and inline the interface in the same change.
 
 ## Choosing a constructor
 
@@ -154,12 +154,12 @@ Layer.provide(Layer.succeed(SqlClient.SqlClient, sql))
 Layer.provide(Layer.succeedContext(dependencies))
 ```
 
-`apps/auth/infra.ts` builds `DependenciesLive` once with `Layer.build` and hands the resulting context on with `Layer.succeedContext`. Alchemy constructors need this; see [Alchemy](ALCHEMY.md).
+A composition root that builds its dependencies once with `Layer.build` hands the resulting context on with `Layer.succeedContext`. Alchemy constructors need this; see [Alchemy](ALCHEMY.md).
 
 ## Deferring and keying
 
-- **Lazy sub-layer.** When a dependency must not cost startup time, build it on first use and keep it: `yield* Effect.cached(Layer.buildWithScope(layer, scope))`. `apps/desktop/electron/auth.ts` does this so first paint does not pay for the HTTP session.
-- **Per-session sub-graph.** `Layer.build(layer)` builds into the current scope and returns the context. `apps/desktop/electron/worker-process.ts` builds the RPC client transport once per worker incarnation this way.
+- **Lazy sub-layer.** When a dependency must not cost startup time, build it on first use and keep it: `yield* Effect.cached(Layer.buildWithScope(layer, scope))`. A desktop app defers its HTTP session this way so first paint does not pay for it.
+- **Per-session sub-graph.** `Layer.build(layer)` builds into the current scope and returns the context. A supervisor builds an RPC client transport once per worker incarnation this way.
 - **One instance per key.** `LayerMap.Service` builds a layer per key and releases it after `idleTimeToLive`; `RcMap` does the same for a single scoped resource; `ScopedCache` for a keyed value that owns a scope. Select the instance with `Effect.provide(Map.get(key))`: that is a lookup, not a rebuild. `node_modules/effect/ai-docs/src/01_effect/05_resources/30_layer-map.ts` is the worked example.
 
 ## Background work
@@ -196,13 +196,6 @@ export const PriceRefreshLive = Layer.effectDiscard(
 
 `Context.Reference` is for a value with a real, safe default (a log level, a feature flag). Credentials, persistence, transports and anything that grants authority are ordinary services with no default, so a missing one is a type error.
 
-## Closest to the target
+## Worked examples
 
-These files are the nearest the repo has to the target. Read them for the idea each is listed for; where one differs from this document, the document wins.
-
-- `apps/auth/src/crypto.ts`: a small complete service that yields `Crypto.Crypto` instead of touching globals.
-- `apps/auth/src/login.ts`: an application service with many dependencies and yieldable errors.
-- `packages/sync/src/transport.ts`: a typed HTTP client behind a service, with a pure failure classifier.
-- `apps/auth/src/service.ts`: `mergeAll` plus `provideMerge` used deliberately.
-- `apps/desktop/electron/replica-supervisor.ts`: state machine, restart and retry.
-- `node_modules/effect/ai-docs/src/01_effect/03_services/` and `05_resources/`: Effect's own worked examples of every shape above.
+`node_modules/effect/ai-docs/src/01_effect/03_services/` and `05_resources/` are Effect's own worked examples of every shape above. The project profile lists the repo's exemplars; where one differs from this document, the document wins.

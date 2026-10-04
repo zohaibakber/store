@@ -36,7 +36,7 @@ export const changes = (source: Source) =>
 - Bounded parallel work: `Stream.mapEffect(f, { concurrency: 8 })`. Add `unordered: true` when order is irrelevant and latency matters.
 - One input to many outputs: `Stream.flatMap`, with `{ concurrency }` to run inner streams together.
 - Carrying state: `Stream.mapAccum`, `Stream.mapAccumEffect`.
-- An inner stream that lives only while the outer value holds: `Stream.switchMap` ("sync only while this replica owns the network").
+- An inner stream that lives only while the outer value holds: `Stream.switchMap` ("poll only while this session is online").
 - Repeats: `Stream.changes`. Bursts: `Stream.debounce` for a quiet period, `Stream.throttle` for a rate.
 - Encoded frames: `Stream.pipeThroughChannel(Ndjson.decode())`, `Sse.encode()`.
 

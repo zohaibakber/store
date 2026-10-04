@@ -30,7 +30,7 @@ Providers:
 - `ConfigProvider.layerAdd(provider)` adds a fallback; `{ asPrimary: true }` makes it override.
 - `ConfigProvider.nested("prefix")` scopes a provider; `ConfigProvider.constantCase` maps camelCase keys to `SCREAMING_SNAKE_CASE`.
 
-In a Worker, bindings and secrets are read in the Alchemy init effect. See [Alchemy](ALCHEMY.md).
+In an Alchemy Worker, bindings and secrets are read in the constructor's outer effect. See [Alchemy](ALCHEMY.md).
 
 ## Secrets
 
@@ -43,7 +43,7 @@ A token, API key, password, pepper or client secret is `Redacted.Redacted<string
 - Log through `Effect.log*` with a stable event name and structured fields: `Effect.logWarning("prices.refresh_failed").pipe(Effect.annotateLogs({ operation }))`. The name is searchable; the data is in the annotations.
 - Useful fields: opaque ids approved for diagnostics, the operation, the provider, a state tag, a retry count, the error tag, a bounded summary built from allowlisted fields.
 - `Effect.fn("Service.method")` gives every method a span. Add attributes with `Effect.annotateCurrentSpan`. Trace context is carried by the fiber, so keep work inside Effect across a boundary and it stays connected.
-- Personal data is private by default. Record only the fields the repo already records for that purpose.
+- Personal data is private by default. Record only the fields the project already records for that purpose.
 - Errors, logs, spans, reports and snapshots contain redacted secrets only.
-- Automatic instrumentation captures things application code never logs: HTTP spans can hold full URLs, headers, redirect locations and causes. Redact at the owner that creates or reports the event (the HTTP client layer, the Sentry reporter), and check the emitted event with a representative sensitive input.
+- Automatic instrumentation captures things application code never logs: HTTP spans can hold full URLs, headers, redirect locations and causes. Redact at the owner that creates or reports the event (the HTTP client layer, the error reporter), and check the emitted event with a representative sensitive input.
 - Keep the existing logging, tracing and error-reporting hooks connected when you move code.
