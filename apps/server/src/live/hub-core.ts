@@ -146,6 +146,21 @@ export const closeIfExpired = (socket: HubSocket, now: number): boolean => {
   return true;
 };
 
+export const closeExpiredSockets = (
+  sockets: ReadonlyArray<HubSocket>,
+  now: number,
+): number | undefined => {
+  let earliest: number | undefined;
+  for (const socket of sockets) {
+    if (closeIfExpired(socket, now)) continue;
+    const expiresAt = socket.attachment()?.expiresAt;
+    if (expiresAt !== undefined && (earliest === undefined || expiresAt < earliest)) {
+      earliest = expiresAt;
+    }
+  }
+  return earliest;
+};
+
 export const publishToSockets = (
   sockets: ReadonlyArray<HubSocket>,
   publish: CommitFanout,
