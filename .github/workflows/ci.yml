@@ -33,6 +33,9 @@ jobs:
       - name: Check (format, lint, typecheck)
         run: vp check
 
+      - name: Design lint
+        run: vp run lint:design
+
       - name: Schema checks
         run: vp run -r check
 
