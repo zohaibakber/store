@@ -10,12 +10,20 @@ export const HistoryLimit = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: MAX_HISTORY_ROWS }),
 );
 
+export const HistoryCursor = Schema.Struct({ createdAt: Schema.Number, id: Schema.String });
+export type HistoryCursor = typeof HistoryCursor.Type;
+
+export const HistoryPage = {
+  limit: HistoryLimit,
+  before: Schema.optionalKey(HistoryCursor),
+};
+
 export const HistoryWindow = <Row extends Schema.Top>(row: Row) =>
   Schema.Struct({
     stamp: Stamp,
     rows: Schema.Array(row),
     hasMore: Schema.Boolean,
-    limit: HistoryLimit,
+    next: Schema.NullOr(HistoryCursor),
   });
 
 export const Count = Schema.Struct({ stamp: Stamp, count: Schema.Natural });

@@ -49,6 +49,7 @@ import {
   PRODUCT_FACET_COLUMNS,
   ReplicaStorageError,
   rowKey,
+  type HistoryCursor,
   type IssuedInvoice,
   type PurchaseOrderTab,
   type ReadFailure,
@@ -97,7 +98,7 @@ import {
 } from "./purchasing";
 import { canonicalSearchQuery, type ProductSearchStock } from "./search";
 import type { InventoryLinks, InventoryServices } from "./services";
-import { byLocaleName, historyLimit, type HistoryWindow } from "./sorting";
+import { byLocaleName, type HistoryWindow } from "./sorting";
 
 export const stockPolicyAtom = Atom.kvs({
   runtime: preferencesRuntime,
@@ -197,8 +198,68 @@ const encodeRestockKey = Schema.encodeSync(Schema.fromJsonString(RestockPageRequ
 
 type MovementHistoryKey = { readonly productId: string; readonly pageSize: number };
 
-const boundedHistory = (pageSize: number, pages: number) =>
-  Math.min(MAX_HISTORY_ROWS, historyLimit(pageSize, pages));
+const boundedHistoryPage = (pageSize: number) =>
+  Math.min(MAX_HISTORY_ROWS, Math.max(1, Math.floor(pageSize)));
+
+type HistoryPageRead<Row> = {
+  readonly rows: ReadonlyArray<Row>;
+  readonly hasMore: boolean;
+  readonly next: HistoryCursor | null;
+};
+
+const historyPayload = (limit: number, before: HistoryCursor | undefined) =>
+  before === undefined ? { limit } : { limit, before };
+
+const chainHistory = <Row>(
+  requested: Atom.Atom<number>,
+  page: (before: HistoryCursor | undefined) => Read<HistoryPageRead<Row>>,
+): Read<HistoryWindow<Row>> =>
+  Atom.make((get) => {
+    const previous = get.self<AsyncResult.AsyncResult<HistoryWindow<Row>, ReadError>>();
+    const count = get(requested);
+    const rows: Array<Row> = [];
+    let before: HistoryCursor | undefined;
+    let loaded = 0;
+    let hasMore = false;
+    let refreshing = false;
+    for (let index = 0; index < count; index++) {
+      const result = get(page(before));
+      const read = AsyncResult.value(result);
+      if (Option.isNone(read)) {
+        if (index === 0) {
+          return AsyncResult.map(result, (first) => ({
+            rows: first.rows,
+            hasMore: first.hasMore,
+            pages: 1,
+          }));
+        }
+        const stale = Option.filter(
+          Option.flatMap(previous, AsyncResult.value),
+          (window) => window.rows.length > rows.length,
+        );
+        const shown: HistoryWindow<Row> = Option.getOrElse(stale, () => ({
+          rows,
+          hasMore: true,
+          pages: loaded,
+        }));
+        return AsyncResult.isFailure(result)
+          ? AsyncResult.failure(result.cause, {
+              previousSuccess: Option.some(AsyncResult.success(shown)),
+            })
+          : AsyncResult.waiting(AsyncResult.success(shown));
+      }
+      rows.push(...read.value.rows);
+      loaded = index + 1;
+      hasMore = read.value.hasMore;
+      refreshing = refreshing || AsyncResult.isWaiting(result);
+      if (read.value.next === null) break;
+      before = read.value.next;
+    }
+    const window: HistoryWindow<Row> = { rows, hasMore, pages: loaded };
+    return refreshing
+      ? AsyncResult.waiting(AsyncResult.success(window))
+      : AsyncResult.success(window);
+  });
 
 const boundedPageSize = (limit: number) =>
   Math.min(MAX_LIST_PAGE_SIZE, Math.max(1, Math.floor(limit)));
@@ -511,19 +572,14 @@ export const createWorkspaceAtoms = (
   const invoiceHistoryPages = Atom.family((_pageSize: number) =>
     Atom.make(1).pipe(Atom.setIdleTTL(IDLE_CACHE)),
   );
-  const invoiceHistoryAtom = Atom.family((pageSize: number): Read<HistoryWindow<Invoice>> =>
-    Atom.make((get) =>
-      get(
-        Reads.query(
-          "InvoiceHistory",
-          { limit: boundedHistory(pageSize, get(invoiceHistoryPages(pageSize))) },
-          INVOICE_LINES,
-        ),
-      ),
-    ),
-  );
+  const invoiceHistoryAtom = Atom.family((pageSize: number): Read<HistoryWindow<Invoice>> => {
+    const limit = boundedHistoryPage(pageSize);
+    return chainHistory(invoiceHistoryPages(pageSize), (before) =>
+      Reads.query("InvoiceHistory", historyPayload(limit, before), INVOICE_LINES),
+    );
+  });
 
-  const NO_MOVEMENTS: HistoryWindow<StockMovement> = { rows: [], hasMore: false, limit: 1 };
+  const NO_MOVEMENTS: HistoryWindow<StockMovement> = { rows: [], hasMore: false, pages: 1 };
 
   const movementHistoryPages = Atom.family((_key: MovementHistoryKey) =>
     Atom.make(1).pipe(Atom.setIdleTTL(IDLE_CACHE)),
@@ -532,13 +588,12 @@ export const createWorkspaceAtoms = (
     (key: MovementHistoryKey): Read<HistoryWindow<StockMovement>> => {
       const [productId] = productIdsOf([key.productId]);
       if (productId === undefined) return Atom.make(AsyncResult.success(NO_MOVEMENTS));
-      return Atom.make((get) =>
-        get(
-          Reads.query(
-            "StockMovementHistory",
-            { productId, limit: boundedHistory(key.pageSize, get(movementHistoryPages(key))) },
-            MOVEMENTS,
-          ),
+      const limit = boundedHistoryPage(key.pageSize);
+      return chainHistory(movementHistoryPages(key), (before) =>
+        Reads.query(
+          "StockMovementHistory",
+          { productId, ...historyPayload(limit, before) },
+          MOVEMENTS,
         ),
       );
     },
@@ -708,7 +763,7 @@ export const createWorkspaceAtoms = (
     invoice: invoiceAtom,
     recentInvoices: Atom.family((limit: number) =>
       Atom.mapResult(
-        Reads.query("InvoiceHistory", { limit: boundedHistory(limit, 1) }, INVOICE_LINES),
+        Reads.query("InvoiceHistory", { limit: boundedHistoryPage(limit) }, INVOICE_LINES),
         (read) => read.rows,
       ),
     ),

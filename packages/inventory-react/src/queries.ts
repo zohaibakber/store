@@ -22,7 +22,6 @@ import {
   type CatalogProductSearchResult,
   type ProductSearchStock,
 } from "./search";
-import { historyLimit } from "./sorting";
 
 export const HISTORY_PAGE_SIZE = 50;
 
@@ -42,22 +41,21 @@ const NO_CATEGORIES: ReadonlyArray<Category> = [];
 export const useCatalogCategories = () =>
   useRead(useCatalogReplica().atoms.categories, NO_CATEGORIES);
 
-const useHistory = <Row>(history: HistoryAtoms<Row>, pageSize: number) => {
+const useHistory = <Row>(history: HistoryAtoms<Row>) => {
   const result = useAtomValue(history.window);
-  const pages = useAtomValue(history.pages);
+  const requested = useAtomValue(history.pages);
   const setPages = useAtomSet(history.pages);
   const loaded = Option.getOrUndefined(AsyncResult.value(result));
   const hasNextPage = loaded?.hasMore ?? false;
-  const loadedLimit = loaded?.limit ?? 0;
+  const loadedPages = loaded?.pages ?? 0;
   const data: ReadonlyArray<Row> = loaded?.rows ?? [];
   return {
     ...readState(result),
     data,
     hasNextPage,
-    isFetchingNextPage:
-      AsyncResult.isWaiting(result) && historyLimit(pageSize, pages) > loadedLimit,
+    isFetchingNextPage: AsyncResult.isWaiting(result) && loadedPages < requested,
     fetchNextPage: async () => {
-      if (hasNextPage) setPages(Math.floor(loadedLimit / historyLimit(pageSize, 1)) + 1);
+      if (hasNextPage && loadedPages >= requested) setPages(requested + 1);
     },
   };
 };
@@ -66,7 +64,7 @@ export const useCatalogProduct = (productId: string) =>
   useRead(useCatalogReplica().atoms.product(productId), undefined);
 
 export const useStockMovementHistory = (productId: string, pageSize = HISTORY_PAGE_SIZE) =>
-  useHistory(useCatalogReplica().atoms.stockMovementHistory(productId, pageSize), pageSize);
+  useHistory(useCatalogReplica().atoms.stockMovementHistory(productId, pageSize));
 
 const NO_INVOICES: ReadonlyArray<Invoice> = [];
 
@@ -74,7 +72,7 @@ export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) =>
   useRead(useCatalogReplica().atoms.recentInvoices(limit), NO_INVOICES);
 
 export const useInvoiceHistory = (pageSize = HISTORY_PAGE_SIZE) =>
-  useHistory(useCatalogReplica().atoms.invoiceHistory(pageSize), pageSize);
+  useHistory(useCatalogReplica().atoms.invoiceHistory(pageSize));
 
 export const useInventoryInvoice = (invoiceId: string) =>
   useRead(useCatalogReplica().atoms.invoice(invoiceId), undefined);
@@ -106,7 +104,7 @@ export const useSuspenseStockMovementHistory = (
 ) => {
   const history = useCatalogReplica().atoms.stockMovementHistory(productId, pageSize);
   useAtomSuspense(history.window);
-  return useHistory(history, pageSize);
+  return useHistory(history);
 };
 
 export const useSuspenseInventoryInvoices = (limit = HISTORY_PAGE_SIZE): ReadonlyArray<Invoice> =>

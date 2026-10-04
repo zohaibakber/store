@@ -10,7 +10,7 @@ import {
   stockMovements,
   suppliers,
 } from "@store/db/replica.schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import { SqlClient } from "effect/sql/SqlClient";
@@ -31,6 +31,7 @@ import {
   nameStartsWith,
   newestFirst,
   OPEN_ORDERS,
+  olderThan,
   openLinesOf,
   openOrdersOf,
   productOrder,
@@ -65,11 +66,19 @@ const pageWindow = (page: { readonly pageIndex: number; readonly pageSize: numbe
   offset: page.pageIndex * page.pageSize,
 });
 
-const historyWindow = <Row>(found: ReadonlyArray<Row>, limit: number) => ({
-  rows: found.slice(0, limit),
-  hasMore: found.length > limit,
-  limit,
-});
+const historyWindow = <Row extends { readonly createdAt: number; readonly id: string }>(
+  found: ReadonlyArray<Row>,
+  limit: number,
+) => {
+  const rows = found.slice(0, limit);
+  const last = rows.at(-1);
+  const hasMore = found.length > limit;
+  return {
+    rows,
+    hasMore,
+    next: hasMore && last !== undefined ? { createdAt: last.createdAt, id: last.id } : null,
+  };
+};
 
 export const layerInventoryReads = InventoryReads.toLayer(
   Effect.gen(function* () {
@@ -176,11 +185,12 @@ export const layerInventoryReads = InventoryReads.toLayer(
       StockMovementHistory: Effect.fn("InventoryReads.StockMovementHistory")(function* ({
         productId,
         limit,
+        before,
       }) {
         return historyWindow(
           yield* rows(
             "stockMovements",
-            eq(stockMovements.productId, productId),
+            and(eq(stockMovements.productId, productId), olderThan(stockMovements, before)),
             newestFirst(stockMovements),
             { limit: limit + 1 },
           ),
@@ -207,9 +217,11 @@ export const layerInventoryReads = InventoryReads.toLayer(
         return { invoice: (yield* invoicesWithItems(found)).at(0) ?? null };
       }, snapshot),
 
-      InvoiceHistory: Effect.fn("InventoryReads.InvoiceHistory")(function* ({ limit }) {
+      InvoiceHistory: Effect.fn("InventoryReads.InvoiceHistory")(function* ({ limit, before }) {
         const recent = historyWindow(
-          yield* rows("invoices", undefined, newestFirst(invoices), { limit: limit + 1 }),
+          yield* rows("invoices", olderThan(invoices, before), newestFirst(invoices), {
+            limit: limit + 1,
+          }),
           limit,
         );
         return { ...recent, rows: yield* invoicesWithItems(recent.rows) };

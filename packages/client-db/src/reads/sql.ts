@@ -1,6 +1,7 @@
 import { OPEN_PURCHASE_ORDER_STATUSES, type PurchaseOrderStatus } from "@store/contracts";
 import {
   ReplicaStorageError,
+  type HistoryCursor,
   type InvoiceListFilters,
   type InvoiceSortColumn,
   type ProductFacetColumn,
@@ -31,6 +32,7 @@ import {
   inArray,
   isNotNull,
   like,
+  lt,
   or,
   sql,
   type SQL,
@@ -212,6 +214,14 @@ export const PRODUCTS_BY_NAME = [asc(PRODUCT_NAME), asc(products.id)];
 type Dated = { readonly createdAt: SQLiteColumn; readonly id: SQLiteColumn };
 
 export const newestFirst = (table: Dated) => [desc(table.createdAt), desc(table.id)];
+
+export const olderThan = (table: Dated, before: HistoryCursor | undefined) =>
+  before === undefined
+    ? undefined
+    : or(
+        lt(table.createdAt, before.createdAt),
+        and(eq(table.createdAt, before.createdAt), lt(table.id, before.id)),
+      );
 
 const SEARCH_COLUMNS = [products.name, products.composition, products.strength];
 

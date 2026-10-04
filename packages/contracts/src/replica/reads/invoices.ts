@@ -8,7 +8,7 @@ import { Invoice } from "../../store/schema";
 import { ReadFailure } from "../errors";
 import { InvoiceListFilters, InvoiceListRequest } from "../list-request";
 import { Stamp } from "../notices";
-import { Count, HistoryLimit, HistoryWindow, IdList } from "./shared";
+import { Count, HistoryPage, HistoryWindow, IdList } from "./shared";
 
 export const IssuedInvoice = Schema.Struct(Struct.pick(Invoice.fields, ["id", "invoiceNumber"]));
 export type IssuedInvoice = typeof IssuedInvoice.Type;
@@ -30,7 +30,7 @@ export class InvoiceReads extends RpcGroup.make(
     error: ReadFailure,
   }),
   Rpc.make("InvoiceHistory", {
-    payload: { limit: HistoryLimit },
+    payload: HistoryPage,
     success: HistoryWindow(Invoice),
     error: ReadFailure,
   }),

@@ -10,7 +10,7 @@ import { ReadFailure } from "../errors";
 import { MAX_IN_VALUES } from "../limits";
 import { PRODUCT_FACET_COLUMNS, ProductListFilters, ProductListRequest } from "../list-request";
 import { Stamp } from "../notices";
-import { HistoryLimit, HistoryWindow, IdList } from "./shared";
+import { HistoryPage, HistoryWindow, IdList } from "./shared";
 
 const ProductFacetColumn = Schema.Literals(PRODUCT_FACET_COLUMNS);
 
@@ -57,7 +57,7 @@ export class ProductReads extends RpcGroup.make(
     error: ReadFailure,
   }),
   Rpc.make("StockMovementHistory", {
-    payload: { productId: ProductId, limit: HistoryLimit },
+    payload: { productId: ProductId, ...HistoryPage },
     success: HistoryWindow(StockMovement),
     error: ReadFailure,
   }),

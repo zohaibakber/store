@@ -17,8 +17,5 @@ export const byLocaleName = <Row extends Named>(rows: ReadonlyArray<Row>): Reado
 export type HistoryWindow<Row> = {
   readonly rows: ReadonlyArray<Row>;
   readonly hasMore: boolean;
-  readonly limit: number;
+  readonly pages: number;
 };
-
-export const historyLimit = (pageSize: number, pages: number) =>
-  Math.max(1, Math.floor(pageSize)) * Math.max(1, Math.floor(pages));
