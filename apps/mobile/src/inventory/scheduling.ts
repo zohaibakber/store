@@ -1,8 +1,9 @@
-import type { SqlClientReplicaHandle } from "@store/client-db/sql-client";
 import type { LiveNetworkSignal } from "@store/sync";
 import * as Network from "expo-network";
 import * as React from "react";
 import { AppState } from "react-native";
+
+import type { MobileReplicaControl } from "./host";
 
 const isReachable = (state: Network.NetworkState): boolean =>
   state.isInternetReachable ?? state.isConnected ?? false;
@@ -33,7 +34,7 @@ const ignoreFailure = (work: Promise<void>) => {
   work.catch(() => undefined);
 };
 
-export const applyAppState = (handle: SqlClientReplicaHandle, state: string) => {
+export const applyAppState = (handle: MobileReplicaControl, state: string) => {
   if (state === "active") {
     ignoreFailure(handle.setVisible(true).then(() => handle.wakeSync("focus")));
   } else if (state === "background") {
@@ -41,12 +42,12 @@ export const applyAppState = (handle: SqlClientReplicaHandle, state: string) => 
   }
 };
 
-export const applyPullMaxBytes = (handle: SqlClientReplicaHandle, maxBytes: number | undefined) => {
+export const applyPullMaxBytes = (handle: MobileReplicaControl, maxBytes: number | undefined) => {
   ignoreFailure(handle.setPullMaxBytes(maxBytes));
 };
 
 export const useReplicaScheduling = (
-  active: React.RefObject<SqlClientReplicaHandle | undefined>,
+  active: React.RefObject<MobileReplicaControl | undefined>,
 ): React.RefObject<number | undefined> => {
   const pullMaxBytes = React.useRef<number | undefined>(undefined);
   React.useEffect(() => {

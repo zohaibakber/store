@@ -15,6 +15,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { replicaSyncActivityOf } from "../replica/activity";
 import { sameSyncHealth, syncHealthOf } from "../replica/status";
+import { CommandAdmission } from "./admission";
 import { makeCommandHandlers } from "./commands";
 import { coalescedNotices, openingNotice } from "./commit-notices";
 import { readFailure } from "./failures";
@@ -22,9 +23,10 @@ import { readFailure } from "./failures";
 export const layerInventoryStore: Layer.Layer<
   Rpc.ToHandler<RpcGroup.Rpcs<typeof InventoryStore>>,
   never,
-  ReplicaStore | SyncScheduler | SqliteReplica
+  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica
 > = InventoryStore.toLayer(
   Effect.gen(function* () {
+    const admission = yield* CommandAdmission;
     const store = yield* ReplicaStore;
     const scheduler = yield* SyncScheduler;
     const replica = yield* SqliteReplica;
@@ -33,7 +35,7 @@ export const layerInventoryStore: Layer.Layer<
     const stamp = Effect.mapError(store.readStamp(), readFailure);
 
     return InventoryStore.of({
-      ...makeCommandHandlers({ store, scheduler, replica }),
+      ...makeCommandHandlers({ admission, store, scheduler, replica }),
       Commits: ({ after }) =>
         Stream.unwrap(
           Effect.gen(function* () {
@@ -63,3 +65,5 @@ export const layerInventoryStore: Layer.Layer<
     });
   }),
 );
+
+export { CommandAdmission } from "./admission";

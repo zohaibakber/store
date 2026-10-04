@@ -13,7 +13,7 @@ The target is one layer graph per process, launched once. A host that cannot be 
 | Electron IPC handlers | `Effect.runPromise` per `ipcMain.handle` call (a departure; open, close, backup and publish only) | `apps/desktop/electron/replica-ipc.ts` |
 | Renderer to workers | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
 | Web host | one `ManagedRuntime`, every `AppHost` method is `runtime.runPromise(Service.use(...))` | `apps/web/src/web/app-host.ts` |
-| Opened replica (mobile) | one `ManagedRuntime` per opened replica, calls supervised by the replica's scope | `packages/client-db/src/replica/replica-runtime.ts` |
+| Mobile host | one `ManagedRuntime` per host that owns the database locks; each session's SQLite layers are built into the workspace scope under that context, and native callbacks enter through a session-scoped `FiberSet.makeRuntimePromise` | `apps/mobile/src/inventory/host.ts` |
 | Cloudflare Workers | Alchemy calls the returned `HttpEffect`; app code never calls `run*` | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts` |
 | React | atoms from `effect/reactivity/Atom` through `@effect/atom-react` | `packages/inventory-react/src/atoms.ts` |
 
