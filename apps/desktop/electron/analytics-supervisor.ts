@@ -94,13 +94,10 @@ export const makeAnalyticsController = (options: {
         }
         const process = yield* spawnNodeAnalyticsWorker(options.launch);
         yield* process.client.Ready().pipe(
-          Effect.timeoutOption(ANALYTICS_POLICY.bootTimeout),
-          Effect.flatMap(
-            Option.match({
-              onNone: () => Effect.fail(unavailable("The worker did not boot.")),
-              onSome: Effect.succeed,
-            }),
-          ),
+          Effect.timeoutOrElse({
+            duration: ANALYTICS_POLICY.bootTimeout,
+            orElse: () => Effect.fail(unavailable("The worker did not boot.")),
+          }),
           Effect.raceFirst(
             process.lost.pipe(
               Effect.andThen(Effect.fail(unavailable("The worker stopped booting."))),

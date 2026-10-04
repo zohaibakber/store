@@ -1,7 +1,6 @@
 import * as Deferred from "effect/Deferred";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import type * as Scope from "effect/Scope";
 
 import { ReplicaWorkerFailure } from "./replica-rpc";
@@ -41,18 +40,15 @@ export const makeReplicaOwnership = (wait: Duration.Input): ReplicaOwnership => 
         { discard: true },
       ),
     ).pipe(
-      Effect.timeoutOption(wait),
-      Effect.flatMap(
-        Option.match({
-          onNone: () =>
-            Effect.fail(
-              new ReplicaWorkerFailure({
-                message: "The previous workspace is still closing. Try again shortly.",
-              }),
-            ),
-          onSome: () => Effect.void,
-        }),
-      ),
+      Effect.timeoutOrElse({
+        duration: wait,
+        orElse: () =>
+          Effect.fail(
+            new ReplicaWorkerFailure({
+              message: "The previous workspace is still closing. Try again shortly.",
+            }),
+          ),
+      }),
     );
 
   return {
