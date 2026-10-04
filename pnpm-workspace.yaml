@@ -44,6 +44,7 @@ overrides:
 
 allowBuilds:
   "@embedded-postgres/linux-x64": true
+  "@embedded-postgres/windows-x64": true
   better-sqlite3: false
   electron: true
   electron-winstaller: false
