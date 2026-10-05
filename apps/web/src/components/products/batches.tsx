@@ -443,10 +443,12 @@ function ExpiryCell({ expiresAt, now }: { expiresAt: number | null; now: number 
 
 function BatchRow({
   batch,
+  editable,
   now,
   tracksPacks,
 }: {
   batch: Batch;
+  editable: boolean;
   now: number;
   tracksPacks: boolean;
 }) {
@@ -476,15 +478,17 @@ function BatchRow({
           {formatDate(batch.createdAt)}
         </div>
       </TableCell>
-      <TableCell>
-        <div className="flex justify-end">
-          <EditStockSheet
-            batch={batch}
-            key={tracksPacks ? "pack" : "unit"}
-            tracksPacks={tracksPacks}
-          />
-        </div>
-      </TableCell>
+      {editable ? (
+        <TableCell>
+          <div className="flex justify-end">
+            <EditStockSheet
+              batch={batch}
+              key={tracksPacks ? "pack" : "unit"}
+              tracksPacks={tracksPacks}
+            />
+          </div>
+        </TableCell>
+      ) : null}
     </TableRow>
   );
 }
@@ -497,7 +501,13 @@ function EndHead({ children }: { children: ReactNode }) {
   );
 }
 
-export function ProductBatchesCard({ product }: { product: Product }) {
+export function ProductBatchesCard({
+  editable = true,
+  product,
+}: {
+  editable?: boolean;
+  product: Product;
+}) {
   const tracksPacks = product.category.tracksPacks;
   const [now] = useState(() => Date.now());
   const stock = formatStock(productStock(product), product.unitsPerPack, tracksPacks);
@@ -516,7 +526,12 @@ export function ProductBatchesCard({ product }: { product: Product }) {
             </EmptyMedia>
             <EmptyTitle>Nothing in stock yet</EmptyTitle>
             <EmptyDescription>
-              Press <Kbd>A</Kbd> to add stock. Sales draw from the earliest expiry first.
+              {editable ? (
+                <>
+                  Press <Kbd>A</Kbd> to add stock.{" "}
+                </>
+              ) : null}
+              Sales draw from the earliest expiry first.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -528,14 +543,22 @@ export function ProductBatchesCard({ product }: { product: Product }) {
               <TableHead>Expiry</TableHead>
               <EndHead>Quantity</EndHead>
               <EndHead>Added</EndHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
+              {editable ? (
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {product.batches.map((batch) => (
-              <BatchRow batch={batch} key={batch.id} now={now} tracksPacks={tracksPacks} />
+              <BatchRow
+                batch={batch}
+                editable={editable}
+                key={batch.id}
+                now={now}
+                tracksPacks={tracksPacks}
+              />
             ))}
           </TableBody>
         </Table>

@@ -19,7 +19,7 @@ import {
   ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Invoice } from "@store/contracts";
+import { permits, type Invoice, type StaffState } from "@store/contracts";
 import type { GlobalProduct } from "@store/contracts/server-api.schema";
 import { useCatalogIsReady, useInventoryInvoices, useProductSearch } from "@store/inventory-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -33,6 +33,7 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import { useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,12 @@ import {
 import { EntryRow, FooterHints, Hint } from "./command-menu-rows";
 
 const isModified = (event: KeyboardEvent) => event.ctrlKey || event.metaKey || event.altKey;
+
+const allowed = (
+  staff: StaffState,
+  actions: ReadonlyArray<ActionEntry>,
+): ReadonlyArray<ActionEntry> =>
+  actions.filter((action) => action.permission === undefined || permits(staff, action.permission));
 
 const isGlobalToggleChord = (event: KeyboardEvent) =>
   (event.key === "g" || event.key === "G") &&
@@ -183,13 +190,14 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
   const { theme, setTheme } = useTheme();
   const newSaleLabel = newSaleShortcut.label;
   const startSale = useStartSale();
+  const staff = useStaffAccess();
 
   return useMemo(() => {
     const go = (to: "/" | "/restock" | "/products" | "/invoices" | "/settings") => () => {
       close();
       void navigate({ to });
     };
-    return [
+    const actions: ReadonlyArray<ActionEntry> = [
       {
         kind: "action",
         id: "new-sale",
@@ -205,6 +213,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "add-product",
+        permission: "manageStock",
         label: "Add product",
         keywords: "new create product",
         icon: Add01Icon,
@@ -216,6 +225,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "import-products",
+        permission: "manageStock",
         label: "Import products",
         keywords: "upload file invoice purchase bulk",
         icon: FileImportIcon,
@@ -227,6 +237,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "new-purchase-order",
+        permission: "manageStock",
         label: "New purchase order",
         keywords: "supplier buy restock order draft purchase",
         icon: ShoppingBasket01Icon,
@@ -238,6 +249,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-home",
+        permission: "viewReports",
         label: "Go to Home",
         keywords: "dashboard overview",
         icon: HomeIcon,
@@ -254,6 +266,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-categories",
+        permission: "manageStock",
         label: "Go to Categories",
         keywords: "category groups",
         icon: TagsIcon,
@@ -265,6 +278,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-purchases",
+        permission: "manageStock",
         label: "Go to Purchases",
         keywords: "purchase orders supplier deliveries",
         icon: ShoppingBasket01Icon,
@@ -276,6 +290,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-suppliers",
+        permission: "manageStock",
         label: "Suppliers",
         keywords: "go to suppliers wholesaler distributor vendor",
         icon: UserMultipleIcon,
@@ -287,6 +302,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-restock",
+        permission: "manageStock",
         label: "Go to Restock",
         keywords: "reorder order low stock",
         icon: PackageIcon,
@@ -303,6 +319,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
       {
         kind: "action",
         id: "go-settings",
+        permission: "manageShop",
         label: "Go to Settings",
         keywords: "preferences account organization",
         icon: SettingsIcon,
@@ -316,8 +333,9 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         icon: SunMoonIcon,
         run: () => setTheme(theme === "dark" ? "light" : "dark"),
       },
-    ] satisfies ReadonlyArray<ActionEntry>;
-  }, [close, navigate, newSaleLabel, setTheme, startSale, theme]);
+    ];
+    return allowed(staff, actions);
+  }, [close, navigate, newSaleLabel, setTheme, staff, startSale, theme]);
 }
 
 type ProductActions = Readonly<
@@ -349,6 +367,7 @@ const productPageActions = (
   {
     kind: "action",
     id: "product-add-stock",
+    permission: "manageStock",
     label: "Add stock",
     keywords: "batch receive restock",
     icon: PackageAddIcon,
@@ -357,6 +376,7 @@ const productPageActions = (
   {
     kind: "action",
     id: "product-edit",
+    permission: "manageStock",
     label: "Edit product",
     keywords: "change update price",
     icon: PencilEdit02Icon,
@@ -422,6 +442,8 @@ function PaletteResults({
   const inputRef = useRef<HTMLInputElement>(null);
   const [highlighted, setHighlighted] = useState<Entry | undefined>(undefined);
   const close = useMemo(() => () => onOpenChange(false), [onOpenChange]);
+  const staff = useStaffAccess();
+  const canManageStock = permits(staff, "manageStock");
   const actions = useActions(close);
   const productActions = useProductActions(close);
   const recents = useRecentProducts();
@@ -430,7 +452,7 @@ function PaletteResults({
   const { data: invoices, isReady: invoicesReady } = useInventoryInvoices(INVOICE_WINDOW);
   const awaitingInvoices = searchesInvoices(page, scope, trimmed) && !invoicesReady;
   const { view: globalView, search: searchWeb } = useGlobalProductSearch(trimmed);
-  const searchesWeb = canSearchGlobally(globalView);
+  const searchesWeb = canManageStock && canSearchGlobally(globalView);
 
   const webSearch = useMemo(
     (): ActionEntry | null =>
@@ -482,7 +504,7 @@ function PaletteResults({
   const groups = useMemo(
     (): ReadonlyArray<EntryGroup> =>
       page.kind === "product"
-        ? pageGroups(productPageActions(page.target, productActions), query)
+        ? pageGroups(allowed(staff, productPageActions(page.target, productActions)), query)
         : rootGroups({
             scope,
             trimmed,
@@ -503,6 +525,7 @@ function PaletteResults({
       query,
       recents,
       scope,
+      staff,
       trimmed,
       webSearch,
     ],
@@ -543,7 +566,9 @@ function PaletteResults({
     if (next) onScopeChange(next.value);
   };
 
-  const toggleGlobal = () => onScopeChange(scope === "global" ? "all" : "global");
+  const toggleGlobal = () => {
+    if (canManageStock) onScopeChange(scope === "global" ? "all" : "global");
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -623,7 +648,7 @@ function PaletteResults({
             ref={inputRef}
           />
         </div>
-        {page.kind === "root" ? (
+        {page.kind === "root" && canManageStock ? (
           <Tooltip>
             <TooltipTrigger
               render={

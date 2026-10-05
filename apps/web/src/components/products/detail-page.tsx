@@ -7,6 +7,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
+import { useStaffPermission } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
@@ -55,7 +56,13 @@ const text = (value: string | null) => (value ? value : muted);
 
 const price = (value: number | null) => (value === null ? muted : formatPrice(value));
 
-function DetailsCard({ product }: { readonly product: Product }) {
+function DetailsCard({
+  editable,
+  product,
+}: {
+  readonly editable: boolean;
+  readonly product: Product;
+}) {
   const tracksPacks = product.category.tracksPacks;
   const details: ReadonlyArray<{ readonly label: string; readonly value: React.ReactNode }> = [
     { label: "Category", value: product.category.name },
@@ -79,7 +86,10 @@ function DetailsCard({ product }: { readonly product: Product }) {
   ];
 
   return (
-    <FrameCard action={<ProductVisibilitySelect product={product} />} title="Details">
+    <FrameCard
+      action={editable ? <ProductVisibilitySelect product={product} /> : undefined}
+      title="Details"
+    >
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 xl:grid-cols-6">
         {details.map((detail) => (
           <div className="flex min-w-0 flex-col gap-0.5" key={detail.label}>
@@ -127,7 +137,8 @@ export function ProductDetailPage({
     rememberRecentProduct({ id, name, strength, category: { name: categoryName } });
   }, [rememberRecentProduct, id, name, strength, categoryName]);
 
-  usePageShortcuts({ e: onEdit, a: () => onAddStockOpenChange(true) });
+  const canManageStock = useStaffPermission("manageStock");
+  usePageShortcuts(canManageStock ? { e: onEdit, a: () => onAddStockOpenChange(true) } : {});
 
   return (
     <PageLayout>
@@ -138,34 +149,40 @@ export function ProductDetailPage({
             {summary}
           </p>
         </div>
-        <PageAction>
-          <ShortcutButton
-            label="Edit product"
-            render={<Link params={{ productId: product.id }} to="/products/$productId/edit" />}
-            shortcut="E"
-            variant="outline"
-          >
-            <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
-            Edit
-          </ShortcutButton>
-          <ShortcutButton label="Add stock" onClick={() => onAddStockOpenChange(true)} shortcut="A">
-            <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-            Add stock
-          </ShortcutButton>
-          <Menu>
-            <MenuTrigger
-              render={<Button aria-label="More actions" size="icon-sm" variant="ghost" />}
+        {canManageStock ? (
+          <PageAction>
+            <ShortcutButton
+              label="Edit product"
+              render={<Link params={{ productId: product.id }} to="/products/$productId/edit" />}
+              shortcut="E"
+              variant="outline"
             >
-              <HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} />
-            </MenuTrigger>
-            <MenuPopup align="end">
-              <MenuItem onClick={() => setDeleteOpen(true)} variant="destructive">
-                <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
-                Delete product
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        </PageAction>
+              <HugeiconsIcon aria-hidden="true" icon={PencilEdit02Icon} />
+              Edit
+            </ShortcutButton>
+            <ShortcutButton
+              label="Add stock"
+              onClick={() => onAddStockOpenChange(true)}
+              shortcut="A"
+            >
+              <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+              Add stock
+            </ShortcutButton>
+            <Menu>
+              <MenuTrigger
+                render={<Button aria-label="More actions" size="icon-sm" variant="ghost" />}
+              >
+                <HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem onClick={() => setDeleteOpen(true)} variant="destructive">
+                  <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
+                  Delete product
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          </PageAction>
+        ) : null}
       </PageHeader>
 
       <AlertDialog onOpenChange={setDeleteOpen} open={deleteOpen}>
@@ -187,14 +204,16 @@ export function ProductDetailPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AddStockSheet onOpenChange={onAddStockOpenChange} open={addStockOpen} product={product} />
+      {canManageStock ? (
+        <AddStockSheet onOpenChange={onAddStockOpenChange} open={addStockOpen} product={product} />
+      ) : null}
 
       <PageContent>
-        <DetailsCard product={product} />
+        <DetailsCard editable={canManageStock} product={product} />
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-4">
-            <ProductBatchesCard product={product} />
-            <ProductStockPlan productId={product.id} />
+            <ProductBatchesCard editable={canManageStock} product={product} />
+            {canManageStock ? <ProductStockPlan productId={product.id} /> : null}
           </div>
           <ProductStockMovementsCard
             hasMore={movements.hasNextPage}

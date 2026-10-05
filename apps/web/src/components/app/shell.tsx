@@ -13,6 +13,7 @@ import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/componen
 import { WindowControls } from "@/components/app/window-controls";
 import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
+import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -63,9 +64,11 @@ export function AppShell() {
                 <InventoryReady>
                   <PublishOffer />
                   <ReceiptPrintHost />
-                  <Suspense fallback={<PageLoading />}>
-                    <Outlet />
-                  </Suspense>
+                  <StaffRouteGuard>
+                    <Suspense fallback={<PageLoading />}>
+                      <Outlet />
+                    </Suspense>
+                  </StaffRouteGuard>
                 </InventoryReady>
               ) : (
                 <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
@@ -80,7 +83,7 @@ export function AppShell() {
   if (!host || !lease) return shell;
   return (
     <InventoryProvider catalog={catalog} host={host} lease={lease}>
-      {shell}
+      <StaffGate>{shell}</StaffGate>
     </InventoryProvider>
   );
 }
