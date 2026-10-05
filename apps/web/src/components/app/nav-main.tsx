@@ -13,10 +13,9 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
-import { useParkedSaleCountIn } from "@/hooks/use-sale-drafts";
+import { useParkedSaleCount } from "@/hooks/use-sale-drafts";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { formatCount } from "@/lib/format";
-import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 type AppRoute =
   | "/"
@@ -41,7 +40,7 @@ const isWithin = (pathname: string, url: string) =>
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const parkedSales = useParkedSaleCountIn(useWorkspaceStorageKey(), pathname === "/invoices/new");
+  const parkedSales = useParkedSaleCount(pathname === "/invoices/new");
   const parkedLabel = `${formatCount(parkedSales, "sale")} in progress`;
 
   const closeMobileSidebar = () => {

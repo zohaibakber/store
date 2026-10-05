@@ -1,4 +1,4 @@
-import { decodeInvoiceId, type InvoiceId } from "@store/contracts/ids";
+import { decodeInvoiceId, type InvoiceId, type StaffId } from "@store/contracts/ids";
 import * as Option from "effect/Option";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as Atom from "effect/reactivity/Atom";
@@ -6,7 +6,14 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { DEFAULT_RECEIPT_FORMAT, ReceiptFormat } from "@/lib/receipt-format";
-import { initialSaleDrafts, SaleDrafts } from "@/lib/sale-drafts";
+import {
+  adoptSaleDrafts,
+  initialSaleDrafts,
+  saleDraftMemberKeyPrefix,
+  saleDraftOwnerKey,
+  SaleDrafts,
+  type SaleDraftOwner,
+} from "@/lib/sale-drafts";
 
 export const browserStorage = (): Storage | null => {
   try {
@@ -135,13 +142,58 @@ const sharedAtom = <A, I>(options: {
 
 export const newSaleId = (): InvoiceId => decodeInvoiceId(crypto.randomUUID());
 
-export const saleDraftsAtom = Atom.family((workspace: string) =>
+const SALE_DRAFTS_KEY = "store.sale-drafts.";
+
+type SaleDraftsAtom = Atom.Writable<SaleDrafts, (current: SaleDrafts) => SaleDrafts>;
+
+const blankSaleDrafts = () => initialSaleDrafts(newSaleId());
+
+const storedSaleDraftsAtom = Atom.family((key: string): SaleDraftsAtom =>
   sharedAtom({
-    key: `store.sale-drafts.${workspace}`,
+    key: `${SALE_DRAFTS_KEY}${key}`,
     schema: SaleDrafts,
-    defaultValue: () => initialSaleDrafts(newSaleId()),
+    defaultValue: blankSaleDrafts,
   }).pipe(Atom.keepAlive),
 );
+
+const adoptingSaleDraftsAtom = Atom.family((workspace: string) =>
+  Atom.family((member: StaffId): SaleDraftsAtom => {
+    const own = storedSaleDraftsAtom(saleDraftOwnerKey(workspace, member));
+    const unowned = storedSaleDraftsAtom(workspace);
+    return Atom.writable(
+      (get) => adoptSaleDrafts(get(own), get(unowned)),
+      (ctx, change) => {
+        const loose = ctx.get(unowned);
+        let adopted = false;
+        ctx.set(own, (current) => {
+          const from = adoptSaleDrafts(current, loose);
+          adopted = from !== current;
+          return change(from);
+        });
+        if (adopted) ctx.set(unowned, blankSaleDrafts);
+      },
+    );
+  }),
+);
+
+export const saleDraftsAtom = ({ workspace, member }: SaleDraftOwner): SaleDraftsAtom => {
+  if (member === null) return storedSaleDraftsAtom(workspace);
+  return member.role === "owner"
+    ? adoptingSaleDraftsAtom(workspace)(member.id)
+    : storedSaleDraftsAtom(saleDraftOwnerKey(workspace, member.id));
+};
+
+export const storedSaleDraftAtoms = (workspace: string): ReadonlyArray<SaleDraftsAtom> => {
+  const storage = browserStorage();
+  const members = `${SALE_DRAFTS_KEY}${saleDraftMemberKeyPrefix(workspace)}`;
+  const stored = storage === null ? [] : Object.keys(storage);
+  return [
+    workspace,
+    ...stored
+      .filter((key) => key.startsWith(members))
+      .map((key) => key.slice(SALE_DRAFTS_KEY.length)),
+  ].map(storedSaleDraftsAtom);
+};
 
 export const publishOfferDismissedAtom = Atom.kvs({
   runtime: preferencesRuntime,

@@ -38,6 +38,7 @@ import { useReceiptFormat } from "@/hooks/use-receipt-format";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import {
   useCompletingSale,
+  useSaleDraftOwner,
   useSaleDraftsIn,
   useSaleDraftStoreIn,
   useSaleSearchFocusRequest,
@@ -61,7 +62,6 @@ import {
   updateSaleLine,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
-import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 type SaleLineEdits = Partial<Pick<SaleLine, "batchId" | "quantity" | "salePrice">>;
 
@@ -194,9 +194,9 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const rememberRecentProduct = useRememberRecentProduct();
   const printReceipt = usePrintReceipt();
   const receiptFormat = useReceiptFormat();
-  const workspace = useWorkspaceStorageKey();
-  const drafts = useSaleDraftsIn(workspace);
-  const store = useSaleDraftStoreIn(workspace);
+  const owner = useSaleDraftOwner();
+  const drafts = useSaleDraftsIn(owner);
+  const store = useSaleDraftStoreIn(owner);
   const { lookup, seed } = useDraftProducts(drafts);
   const draft = activeSaleDraft(drafts);
   const isSubmitting = useCompletingSale(draft.id);

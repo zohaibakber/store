@@ -1,4 +1,5 @@
-import { BatchId, InvoiceId, ProductId } from "@store/contracts/ids";
+import { roleAllows, type StaffMember, type StaffState } from "@store/contracts";
+import { BatchId, InvoiceId, ProductId, type StaffId } from "@store/contracts/ids";
 import * as Schema from "effect/Schema";
 
 export const MAX_SALE_DRAFTS = 9;
@@ -86,6 +87,9 @@ export const activeSaleDraft = (state: SaleDrafts): SaleDraft =>
 export const hasHeldSale = (state: SaleDrafts) =>
   state.drafts.some((draft) => !isBlankDraft(draft));
 
+export const heldSaleDrafts = (state: SaleDrafts): ReadonlyArray<SaleDraft> =>
+  state.drafts.filter((draft) => !isBlankDraft(draft));
+
 export const saleDraftLabel = (draft: SaleDraft) =>
   draft.customerName.trim() || `Sale ${draft.ordinal}`;
 
@@ -136,6 +140,54 @@ export const closeSaleDraft = (
   const neighbour = drafts[index] ?? drafts[index - 1] ?? drafts[0];
   return { ...state, activeId: neighbour?.id ?? state.activeId, drafts };
 };
+
+export const receiveSaleDraft = (state: SaleDrafts, draft: SaleDraft): SaleDrafts => {
+  if (state.drafts.some((open) => open.id === draft.id) || !canOpenSaleDraft(state)) return state;
+  const active = activeSaleDraft(state);
+  const blank = isBlankDraft(active) ? active : state.drafts.find(isBlankDraft);
+  const received: SaleDraft = {
+    ...draft,
+    ordinal: blank?.ordinal ?? nextOrdinal(state.drafts),
+    lines: draft.lines.map((line, index) => ({ ...line, key: state.sequence + index })),
+  };
+  return {
+    sequence: state.sequence + draft.lines.length,
+    activeId: draft.id,
+    drafts: blank
+      ? state.drafts.map((open) => (open.id === blank.id ? received : open))
+      : [...state.drafts, received],
+  };
+};
+
+export const adoptSaleDrafts = (own: SaleDrafts, unowned: SaleDrafts): SaleDrafts =>
+  hasHeldSale(own) || !hasHeldSale(unowned) ? own : unowned;
+
+export type SaleDraftOwner = {
+  readonly workspace: string;
+  readonly member: StaffMember | null;
+};
+
+export type SaleDraftMember = SaleDraftOwner & { readonly member: StaffMember };
+
+export const saleDraftOwner = (
+  workspace: string,
+  staff: StaffState | undefined,
+): SaleDraftOwner => ({ workspace, member: staff?._tag === "unlocked" ? staff.actor : null });
+
+export const otherSaleDraftOwners = (
+  workspace: string,
+  staff: StaffState | undefined,
+): ReadonlyArray<SaleDraftMember> =>
+  staff?._tag === "unlocked" && roleAllows(staff.actor.role, "manageStock")
+    ? staff.staff
+        .filter((member) => member.id !== staff.actor.id)
+        .map((member) => ({ workspace, member }))
+    : [];
+
+export const saleDraftMemberKeyPrefix = (workspace: string) => `${workspace}.staff.`;
+
+export const saleDraftOwnerKey = (workspace: string, member: StaffId | null) =>
+  member === null ? workspace : `${saleDraftMemberKeyPrefix(workspace)}${member}`;
 
 const mapDraft = (
   state: SaleDrafts,

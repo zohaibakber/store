@@ -7,7 +7,7 @@ import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { saleDraftStore } from "@/hooks/use-sale-drafts";
+import { clearSaleDrafts } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import type { CatalogCounts } from "@/host/workspace-backup";
 import type { PublishOffer, PublishProgress } from "@/host/workspace-publish";
@@ -69,7 +69,7 @@ const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: P
           case "published":
             registry.set(phase, IDLE);
             registry.refresh(offerAtom(organization.id));
-            saleDraftStore(registry, workspaceStorageKey({ _tag: "Local" })).clear();
+            clearSaleDrafts(registry, workspaceStorageKey({ _tag: "Local" }));
             toastManager.add({
               title: `Moved to ${organization.name}`,
               description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,
