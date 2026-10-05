@@ -4,6 +4,7 @@ import {
   useSuspenseCatalogCategories,
   useSuspenseProductCount,
   useSuspenseProductFacets,
+  useStaffPermission,
   useSuspenseProductPage,
   type ProductListRequest,
 } from "@store/inventory-react";
@@ -31,6 +32,8 @@ export function ProductsPage({
 }) {
   const navigate = useNavigate();
   const router = useRouter();
+  const canManageStock = useStaffPermission("manageStock");
+  const canViewReports = useStaffPermission("viewReports");
   const categories = useSuspenseCatalogCategories();
   const facets = useSuspenseProductFacets();
   const page = useSuspenseProductPage(request);
@@ -57,16 +60,20 @@ export function ProductsPage({
           <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
           <ProductTableFilters categories={categories} facets={facets} />
           <DataTableViewOptions />
-          <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
-            <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-            Import
-          </Button>
-          <Button render={<Link to="/products/new" />} size="sm">
-            <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
-            Add product
-          </Button>
+          {canManageStock ? (
+            <>
+              <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
+                <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
+                Import
+              </Button>
+              <Button render={<Link to="/products/new" />} size="sm">
+                <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
+                Add product
+              </Button>
+            </>
+          ) : null}
         </PageToolbar>
-        <ProductAnalytics />
+        {canViewReports ? <ProductAnalytics /> : null}
         <ListTableContent loading={loading} />
       </PageLayout>
     </DataTable>

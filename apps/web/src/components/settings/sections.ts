@@ -1,6 +1,14 @@
+import type { StaffState } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
-export const settingsSections = ["account", "organization", "receipts", "data", "general"] as const;
+export const settingsSections = [
+  "staff",
+  "account",
+  "organization",
+  "receipts",
+  "data",
+  "general",
+] as const;
 
 export const SettingsSection = Schema.Literals(settingsSections);
 export type SettingsSection = typeof SettingsSection.Type;
@@ -11,6 +19,8 @@ const decodeSettingsSection = Schema.decodeUnknownOption(SettingsSection);
 
 export const settingsSectionTitle = (section: SettingsSection): string => {
   switch (section) {
+    case "staff":
+      return "Staff";
     case "account":
       return "Account";
     case "organization":
@@ -29,5 +39,33 @@ export const settingsBreadcrumb = (section: string | undefined): string => {
   return decoded._tag === "Some" ? settingsSectionTitle(decoded.value) : "Settings";
 };
 
-export const availableSettingsSections = (signedIn: boolean): ReadonlyArray<SettingsSection> =>
-  settingsSections.filter((section) => section !== "organization" || signedIn);
+export type StaffSectionPlace = "hidden" | "first" | "last";
+
+export const staffSectionPlace = (staff: StaffState): StaffSectionPlace => {
+  switch (staff._tag) {
+    case "disabled":
+    case "locked":
+      return "hidden";
+    case "solo":
+      return "last";
+    case "unlocked":
+      return staff.actor.role === "owner" ? "first" : "hidden";
+  }
+};
+
+export const availableSettingsSections = (
+  signedIn: boolean,
+  staff: StaffSectionPlace,
+): ReadonlyArray<SettingsSection> => {
+  const rest = settingsSections.filter(
+    (section) => section !== "staff" && (section !== "organization" || signedIn),
+  );
+  switch (staff) {
+    case "hidden":
+      return rest;
+    case "first":
+      return ["staff", ...rest];
+    case "last":
+      return [...rest, "staff"];
+  }
+};

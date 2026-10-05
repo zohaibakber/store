@@ -1,5 +1,6 @@
 import {
   ComputerIcon,
+  LockIcon,
   Login01Icon,
   LogoutIcon,
   Moon02Icon,
@@ -8,10 +9,13 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { permits, type StaffMember } from "@store/contracts";
+import { useStaffActions } from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 
+import { staffFailure, staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -21,12 +25,15 @@ import {
   MenuItem,
   MenuPopup,
   MenuSeparator,
+  MenuShortcut,
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { toastManager } from "@/components/ui/toast";
 import { signOut, useAuth } from "@/lib/auth";
 import { OnDeviceStatus } from "@/lib/inventory/sync-status";
 import { usePublishInProgress } from "@/lib/local-publish";
+import { useWindowKeydown } from "@/lib/shortcuts";
 
 type Identity = {
   readonly name: string;
@@ -66,6 +73,54 @@ const accountIdentity = (user: {
     avatar: <Avatar className="size-8 shrink-0">{face}</Avatar>,
   };
 };
+
+const staffIdentity = (member: StaffMember): Identity => {
+  const face = <AvatarFallback>{initials(member.name)}</AvatarFallback>;
+  return {
+    name: member.name,
+    detail: staffRoleLabel(member.role),
+    mark: <Avatar className="-mx-0.5 size-5 shrink-0">{face}</Avatar>,
+    avatar: <Avatar className="size-8 shrink-0">{face}</Avatar>,
+  };
+};
+
+const useLock = () => {
+  const { lock } = useStaffActions();
+  return () => {
+    lock().catch((cause: unknown) =>
+      toastManager.add({ title: staffFailure(cause).message, type: "error" }),
+    );
+  };
+};
+
+const isLockChord = (event: KeyboardEvent) =>
+  (event.key === "l" || event.key === "L") &&
+  (event.ctrlKey || event.metaKey) &&
+  !event.altKey &&
+  !event.shiftKey;
+
+function LockShortcut() {
+  const lock = useLock();
+  useWindowKeydown((event) => {
+    if (!isLockChord(event)) return;
+    event.preventDefault();
+    if (!event.repeat) lock();
+  }, true);
+  return null;
+}
+
+function LockGroup() {
+  const lock = useLock();
+  return (
+    <MenuGroup>
+      <MenuItem aria-keyshortcuts="Control+L" onClick={lock}>
+        <HugeiconsIcon aria-hidden="true" icon={LockIcon} />
+        Lock
+        <MenuShortcut>Ctrl+L</MenuShortcut>
+      </MenuItem>
+    </MenuGroup>
+  );
+}
 
 function IdentityRow({
   mark,
@@ -123,11 +178,19 @@ export function NavUser() {
   const { snapshot, workspace } = useAuth();
   const moving = usePublishInProgress();
   const signedIn = snapshot?.status === "authenticated";
-  const identity = signedIn ? accountIdentity(snapshot.user) : DEVICE_IDENTITY;
+  const staff = useStaffAccess();
+  const actor = staff._tag === "unlocked" ? staff.actor : null;
+  const canManageShop = permits(staff, "manageShop");
+  const identity = actor
+    ? staffIdentity(actor)
+    : signedIn
+      ? accountIdentity(snapshot.user)
+      : DEVICE_IDENTITY;
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
+        {actor ? <LockShortcut /> : null}
         <Menu>
           <MenuTrigger
             render={<SidebarMenuButton aria-label="Account menu" tooltip={identity.name} />}
@@ -141,7 +204,7 @@ export function NavUser() {
                 <span className="flex w-full items-center gap-2">
                   <IdentityRow
                     detail={
-                      workspace._tag === "Local" ? (
+                      actor === null && workspace._tag === "Local" ? (
                         <OnDeviceStatus />
                       ) : (
                         <span className="truncate text-xs text-muted-foreground">
@@ -155,23 +218,35 @@ export function NavUser() {
                 </span>
               </MenuGroupLabel>
             </MenuGroup>
-            <MenuSeparator />
-            <MenuGroup>
-              {signedIn ? (
-                <MenuItem render={<Link params={{ section: "account" }} to="/settings/$section" />}>
-                  <HugeiconsIcon aria-hidden="true" icon={SettingsIcon} />
-                  Account settings
-                </MenuItem>
-              ) : (
-                <MenuItem render={<Link to="/sign-in" />}>
-                  <HugeiconsIcon aria-hidden="true" icon={Login01Icon} />
-                  Sign in to sync
-                </MenuItem>
-              )}
-            </MenuGroup>
+            {actor ? (
+              <>
+                <MenuSeparator />
+                <LockGroup />
+              </>
+            ) : null}
+            {canManageShop ? (
+              <>
+                <MenuSeparator />
+                <MenuGroup>
+                  {signedIn ? (
+                    <MenuItem
+                      render={<Link params={{ section: "account" }} to="/settings/$section" />}
+                    >
+                      <HugeiconsIcon aria-hidden="true" icon={SettingsIcon} />
+                      Account settings
+                    </MenuItem>
+                  ) : (
+                    <MenuItem render={<Link to="/sign-in" />}>
+                      <HugeiconsIcon aria-hidden="true" icon={Login01Icon} />
+                      Sign in to sync
+                    </MenuItem>
+                  )}
+                </MenuGroup>
+              </>
+            ) : null}
             <MenuSeparator />
             <ThemeGroup />
-            {signedIn ? (
+            {signedIn && canManageShop ? (
               <>
                 <MenuSeparator />
                 <MenuGroup>

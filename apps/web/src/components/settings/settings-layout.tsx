@@ -4,6 +4,7 @@ import {
   Invoice03Icon,
   Settings01Icon,
   UserCircleIcon,
+  UserGroupIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { Link, Outlet, useParams } from "@tanstack/react-router";
@@ -11,9 +12,11 @@ import { Link, Outlet, useParams } from "@tanstack/react-router";
 import {
   availableSettingsSections,
   settingsSectionTitle,
+  staffSectionPlace,
   type SettingsSection,
 } from "@/components/settings/sections";
 import { PageLayout } from "@/components/shared/page-layout";
+import { useStaffAccess } from "@/components/staff/access";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -25,6 +28,8 @@ const ROOM_BESIDE_COLLAPSED_SIDEBAR = "(min-width: 61rem)";
 
 const sectionIcon = (section: SettingsSection): IconSvgElement => {
   switch (section) {
+    case "staff":
+      return UserGroupIcon;
     case "account":
       return UserCircleIcon;
     case "organization":
@@ -40,7 +45,7 @@ const sectionIcon = (section: SettingsSection): IconSvgElement => {
 
 export const useSettingsSections = (): ReadonlyArray<SettingsSection> => {
   const signedIn = useAuth().snapshot?.status === "authenticated";
-  return availableSettingsSections(signedIn);
+  return availableSettingsSections(signedIn, staffSectionPlace(useStaffAccess()));
 };
 
 export function SettingsLayout() {

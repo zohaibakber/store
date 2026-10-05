@@ -6,10 +6,13 @@ import { OrganizationSettings } from "@/components/settings/organization-setting
 import { PublishSettings } from "@/components/settings/publish-settings";
 import { ReceiptSettings } from "@/components/settings/receipt-settings";
 import type { SettingsSection } from "@/components/settings/sections";
+import { StaffSettings } from "@/components/settings/staff-settings";
 import { FrameCard } from "@/components/shared/frame-card";
 
 export function SettingsPage({ section }: { readonly section: SettingsSection }) {
   switch (section) {
+    case "staff":
+      return <StaffSettings />;
     case "account":
       return <AccountSettings />;
     case "organization":

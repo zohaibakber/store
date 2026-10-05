@@ -1,5 +1,5 @@
 import type { IconSvgElement } from "@hugeicons/react";
-import type { Invoice, Product } from "@store/contracts";
+import type { Invoice, Product, StaffPermission } from "@store/contracts";
 import {
   MAX_GLOBAL_SEARCH_QUERY_LENGTH,
   MIN_GLOBAL_SEARCH_QUERY_LENGTH,
@@ -49,6 +49,7 @@ export type ActionEntry = {
   readonly keywords: string;
   readonly icon: IconSvgElement;
   readonly shortcut?: string;
+  readonly permission?: StaffPermission;
   readonly run: () => void;
 };
 

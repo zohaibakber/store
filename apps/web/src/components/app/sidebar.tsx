@@ -9,6 +9,7 @@ import {
   UserMultipleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { permits } from "@store/contracts";
 import { useCatalogIsReady, useInventoryInsights } from "@store/inventory-react";
 import type * as React from "react";
 
@@ -17,6 +18,7 @@ import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
 import { WorkspaceLogo } from "@/components/app/workspace-logo";
 import { restockActionCount } from "@/components/insights/presentation";
+import { routePermission, useStaffAccess } from "@/components/staff/access";
 import {
   Sidebar,
   SidebarContent,
@@ -97,6 +99,9 @@ const navMain = [
 ] satisfies NavMainItem[];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const staff = useStaffAccess();
+  const items = navMain.filter((item) => permits(staff, routePermission(item.url)));
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="-mb-2">
@@ -105,7 +110,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
+        <NavMain items={items} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />

@@ -2,6 +2,7 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, InvoiceItem } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { useInvoiceStaff } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
@@ -47,6 +48,17 @@ function InvoiceDetailError({ error }: { error: unknown }) {
   );
 }
 
+function InvoiceStaffLine({ invoiceId }: { readonly invoiceId: string }) {
+  const { soldBy, startedBy } = useInvoiceStaff(invoiceId);
+  if (soldBy === null) return null;
+  return (
+    <span data-testid="invoice-staff">
+      {` · Sold by ${soldBy}`}
+      {startedBy === null ? null : ` · Started by ${startedBy}`}
+    </span>
+  );
+}
+
 const itemTotal = (item: InvoiceItem) => item.quantity * item.salePrice;
 
 function AmountCell({ children, strong = false }: { children: string; strong?: boolean }) {
@@ -78,6 +90,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
         <PageDescription>
           {invoice.customerName ?? "Walk-in customer"} · {format(invoice.createdAt, "d MMM yyyy")} ·{" "}
           {format(invoice.createdAt, "h:mm a")}
+          <InvoiceStaffLine invoiceId={invoice.id} />
         </PageDescription>
         <PageAction>
           <PrintReceiptAction invoiceId={invoice.id} />
