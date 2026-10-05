@@ -36,6 +36,7 @@ import {
   type ReplicaSupervisorPolicy,
   type SpawnReplicaReader,
   type SpawnReplicaWorker,
+  type ReplicaWorkerClient,
 } from "./replica-supervisor";
 import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
 

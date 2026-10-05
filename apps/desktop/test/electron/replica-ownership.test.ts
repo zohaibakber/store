@@ -76,6 +76,8 @@ const makeWorld = (
         Commits: () => Stream.never,
         SyncHealth: () => Stream.make({ _tag: "running" as const }),
         SetAccessToken: () => Effect.void,
+        SetLicence: () => Effect.void,
+        DatabaseShop: () => Effect.succeed({ shopId: null }),
       });
       const client = yield* RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
       if (owners.live > 0) owners.overlaps += 1;
