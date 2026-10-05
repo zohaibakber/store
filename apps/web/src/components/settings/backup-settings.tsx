@@ -112,7 +112,7 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
         case "restored":
           clearSaleDrafts();
           toastManager.add({
-            title: "Workspace restored",
+            title: "Backup restored",
             description: `This device now holds the contents of ${fileName}.`,
             type: "success",
           });
