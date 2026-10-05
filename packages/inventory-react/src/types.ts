@@ -13,7 +13,6 @@ export type Inventory = {
 export interface InventoryActions extends CatalogCommands {
   readonly retrySync: () => Promise<void>;
   readonly staff: StaffActions;
-  readonly syncNow: () => void;
 }
 
 export type InventoryState =

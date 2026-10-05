@@ -256,8 +256,6 @@ const unavailableReason = (
   return Option.none();
 };
 
-const WAKE_WAIT = "5 seconds";
-
 const RUNNING_HEALTH: SyncHealth = { _tag: "running" };
 
 export type InventoryLinks = ReturnType<typeof makeInventoryLinks>;
@@ -360,14 +358,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
       return Effect.raceFirst(withStore(registry, send), generationMoved(registry, started.value));
     });
 
-  const wake = (registry: AtomRegistry.AtomRegistry): Effect.Effect<void> =>
-    withStore(registry, (store) => store("WakeSyncUpload", undefined)).pipe(
-      Effect.timeout(WAKE_WAIT),
-      Effect.ignore,
-    );
-
   return {
-    wake,
     commits,
     insightChanges,
     commitTick,
