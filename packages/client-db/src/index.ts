@@ -28,7 +28,6 @@ export {
   syncHealthOf,
   syncStatusFromOutbox,
   syncStatusWithHealth,
-  withAuthRefreshing,
 } from "./replica/status";
 export {
   EMPTY_SYNC_ACTIVITY,
@@ -45,7 +44,7 @@ export type {
   RejectedCommandSubject,
   RejectedCommandTarget,
 } from "./replica/activity";
-export type { InventorySyncStatus, ReplicaSyncHealth, SyncTransfer } from "./replica/status";
+export type { InventorySyncStatus, ReplicaSyncHealth } from "./replica/status";
 export type { ReplicaCommitNotice } from "./replica/types";
 export {
   canonicalSearchLimit,

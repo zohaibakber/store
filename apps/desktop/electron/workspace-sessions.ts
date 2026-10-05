@@ -24,9 +24,8 @@ import {
   type RendererPorts,
   type RendererPortsTarget,
 } from "./renderer-ports";
-import { LOCAL_REPLICA_KEY } from "./replica-admission";
 import { makeReplicaOwnership, type ReplicaOwnership } from "./replica-ownership";
-import { ReplicaWorkerFailure, type ReplicaOpenInput } from "./replica-rpc";
+import { ReplicaWorkerFailure } from "./replica-rpc";
 import {
   DEFAULT_SUPERVISOR_POLICY,
   startReplicaSupervisor,
@@ -39,6 +38,8 @@ import {
   type ReplicaWorkerClient,
 } from "./replica-supervisor";
 import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
+
+const LOCAL_REPLICA_KEY = `${LOCAL_ORGANIZATION_ID}-${LOCAL_USER_ID}`;
 
 type ReplicaSenderListener = {
   (event: "did-navigate", listener: () => void): void;
@@ -57,7 +58,6 @@ export type ReplicaSender = {
 export type WorkspaceSession = {
   readonly senderId: number;
   readonly sender: ReplicaSender;
-  readonly identity: typeof ReplicaOpenInput.Type;
   readonly release: () => void;
   readonly gate: Latch.Latch;
   readonly workspaceToken: string;
@@ -120,7 +120,6 @@ export type WorkspaceSessions = {
     workspaceToken: string,
   ) => Effect.Effect<void, never, FileSystem.FileSystem>;
   readonly disposeAll: Effect.Effect<void, never, FileSystem.FileSystem>;
-  readonly setForeground: (visible: boolean) => Effect.Effect<void>;
 };
 
 const prepareReplicaDirectory = Effect.fn("WorkspaceSessions.prepareDirectory")(function* (
@@ -161,9 +160,6 @@ const forwardStream = <A, E>(
     Effect.catchCause(() => Effect.void),
     Effect.forkScoped,
   );
-
-const applyForeground = (worker: LiveReplicaWorker, visible: boolean) =>
-  worker.client.SetForeground({ visible }).pipe(Effect.ignore);
 
 const tellLicence = (licence: LicenceService["Service"], client: ReplicaWorkerClient) =>
   Effect.flatMap(licence.current, (state) => client.SetLicence({ state })).pipe(Effect.ignore);
@@ -209,14 +205,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     "replicas",
     sqliteReplicaFileName(LOCAL_REPLICA_KEY),
   );
-  const identity = {
-    authority: "local",
-    organizationId: LOCAL_ORGANIZATION_ID,
-    userId: LOCAL_USER_ID,
-    replicaId: options.replicaId,
-  } as const satisfies typeof ReplicaOpenInput.Type;
   const sessions = new Map<string, WorkspaceSession>();
-  let foreground = true;
 
   const closeWorkers = (workers: ReplicaWorkers) =>
     Effect.gen(function* () {
@@ -283,7 +272,6 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       Effect.gen(function* () {
         const { client } = worker;
         yield* forwardStream(client.Commits(), analytics.notify);
-        if (!foreground) yield* applyForeground(worker, false);
         const { licence } = options;
         if (licence !== undefined) {
           yield* tellLicence(licence, client);
@@ -336,7 +324,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,
-          boot: { ...identity, databasePath },
+          boot: { replicaId: options.replicaId, databasePath },
         },
         policy,
         attach: attachWriter(analytics, ports),
@@ -377,7 +365,6 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     sessions.set(workspaceToken, {
       senderId: sender.id,
       sender,
-      identity,
       release,
       gate: yield* Latch.make(true),
       workspaceToken,
@@ -452,18 +439,5 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
         concurrency: "unbounded",
       }),
     ),
-    setForeground: (visible) =>
-      Effect.suspend(() => {
-        if (visible === foreground) return Effect.void;
-        foreground = visible;
-        return Effect.forEach(
-          [...sessions.values()],
-          (session) =>
-            session.supervisor
-              .use((worker) => applyForeground(worker, visible))
-              .pipe(Effect.ignore),
-          { discard: true },
-        );
-      }),
   };
 };

@@ -16,19 +16,13 @@ export type InventorySyncStatus =
       readonly message: string;
     };
 
-export type SyncTransfer = NonNullable<SyncState["transfer"]>;
+type SyncTransfer = NonNullable<SyncState["transfer"]>;
 
-export type ReplicaSyncHealth = (
+export type ReplicaSyncHealth =
   | { readonly _tag: "running"; readonly syncing?: boolean; readonly transfer?: SyncTransfer }
   | { readonly _tag: "storageError"; readonly message: string }
   | { readonly _tag: "updateRequired"; readonly message: string }
-  | { readonly _tag: "recoveryRequired"; readonly message: string }
-) & { readonly auth?: "refreshing" };
-
-export const withAuthRefreshing = (
-  health: ReplicaSyncHealth,
-  refreshing: boolean,
-): ReplicaSyncHealth => (refreshing ? { ...health, auth: "refreshing" } : health);
+  | { readonly _tag: "recoveryRequired"; readonly message: string };
 
 const UPDATE_REQUIRED_MESSAGE =
   "This version of the app is too old to sync. Update it to continue. Pending changes are saved on this device.";
@@ -76,7 +70,6 @@ export const syncHealthOf = (state: SyncState): ReplicaSyncHealth => {
 };
 
 export const sameSyncHealth = (left: ReplicaSyncHealth, right: ReplicaSyncHealth): boolean => {
-  if (left.auth !== right.auth) return false;
   if (left._tag === "running") {
     return (
       right._tag === "running" &&

@@ -1,13 +1,11 @@
 import type { CatalogCommands } from "@store/client-db";
 
 import type { WorkspaceAtoms } from "./atoms";
-import type { ReplicaAuthority } from "./host";
 import type { StaffActions } from "./staff";
 
 export type Inventory = {
   readonly actions: InventoryActions;
   readonly atoms: WorkspaceAtoms;
-  readonly authority: ReplicaAuthority;
   readonly deviceId: string;
   readonly dispose: () => Promise<void>;
 };

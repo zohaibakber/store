@@ -8,7 +8,6 @@ import {
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
-  type SyncTransfer,
 } from "@store/client-db";
 import {
   MAX_PRODUCT_INSIGHT_IDS,
@@ -282,7 +281,6 @@ export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Atom<InventorySyncStatus>;
   readonly syncActivity: Atom.Atom<InventorySyncActivity>;
-  readonly syncTransfer: Atom.Atom<SyncTransfer | undefined>;
   readonly storageFull: Atom.Writable<boolean>;
   readonly syncSnapshot: Read<ReplicaSyncActivity>;
   readonly pendingRowIds: (entity: SyncEntity) => Read<ReadonlySet<string>>;
@@ -636,10 +634,6 @@ export const createWorkspaceAtoms = (
     registry,
     syncStatus,
     syncActivity,
-    syncTransfer: Atom.make((get) => {
-      const health = get(links.sync);
-      return health._tag === "running" ? health.transfer : undefined;
-    }),
     storageFull,
     syncSnapshot,
     pendingRowIds: Atom.family((entity: SyncEntity) =>

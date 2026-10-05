@@ -13,12 +13,7 @@ import {
   type RestockView,
   type StockStatus,
 } from "@store/contracts";
-import {
-  useInventoryInsights,
-  usePurchasingGate,
-  useRestockExport,
-  useRestockPage,
-} from "@store/inventory-react";
+import { useInventoryInsights, useRestockExport, useRestockPage } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
@@ -34,7 +29,6 @@ import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
 import * as React from "react";
 
-import { PurchasingGateNotice } from "@/components/purchases/gate-notice";
 import { OrderBuilderSheet } from "@/components/purchases/order-builder";
 import type { DraftLine } from "@/components/purchases/presentation";
 import {
@@ -328,7 +322,6 @@ function RestockBody({
   const { summary } = useInventoryInsights();
   const navigate = useNavigate();
   const router = useRouter();
-  const gate = usePurchasingGate();
   const [selected, setSelected] = React.useState<ReadonlyMap<string, DraftLine>>(new Map());
   const [builderOpen, setBuilderOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
@@ -437,11 +430,7 @@ function RestockBody({
               <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
             </Button>
           ) : null}
-          <Button
-            disabled={gate.blocked || selected.size === 0}
-            onClick={() => setBuilderOpen(true)}
-            size="sm"
-          >
+          <Button disabled={selected.size === 0} onClick={() => setBuilderOpen(true)} size="sm">
             <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />
             Order selected
             {selected.size > 0 ? (
@@ -451,7 +440,6 @@ function RestockBody({
             ) : null}
           </Button>
         </PageToolbar>
-        <PurchasingGateNotice gate={gate} />
         <div className="flex items-center gap-2">
           <div className="min-w-0 overflow-x-auto">
             <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>

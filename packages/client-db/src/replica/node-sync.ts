@@ -1,4 +1,3 @@
-import type { DeviceLabel } from "@store/contracts";
 import type { OwnedLiveHost, SyncTransportService } from "@store/sync";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import type * as Layer from "effect/Layer";
@@ -18,7 +17,6 @@ type NodeReplicaInput = {
 type NodeReplicaSyncInput = NodeReplicaInput & {
   readonly transport: Layer.Layer<SyncTransportService>;
   readonly live: OwnedLiveHost;
-  readonly deviceLabel?: DeviceLabel | undefined;
 };
 
 const syncInput = (input: NodeReplicaSyncInput) => ({
@@ -27,7 +25,6 @@ const syncInput = (input: NodeReplicaSyncInput) => ({
   databaseIdentity: input.databaseIdentity,
   transport: input.transport,
   live: input.live,
-  deviceLabel: input.deviceLabel,
 });
 
 export const layerNodeReplicaSync = (input: NodeReplicaSyncInput) =>

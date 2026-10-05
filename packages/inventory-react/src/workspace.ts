@@ -153,11 +153,9 @@ const openWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       Effect.timeout(FIRST_READ_WAIT),
       Effect.mapError(() => catalogOpenFailure(undefined)),
     );
-    const authority = replicaAuthorityOf(scope);
     return {
       atoms,
-      actions: makeActions(registry, links, atoms, opened, authority),
-      authority,
+      actions: makeActions(registry, links, atoms, opened, replicaAuthorityOf(scope)),
       deviceId: opened.replicaId ?? host.deviceId,
     };
   });

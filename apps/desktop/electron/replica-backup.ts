@@ -16,7 +16,6 @@ import {
   restorePreviousReplicaFile,
   swapReplicaFile,
 } from "./replica-restore-files";
-import { RESTORE_LOCAL_ONLY } from "./replica-rpc";
 import type { WorkspaceSession, WorkspaceSessions } from "./workspace-sessions";
 
 export type ReplicaBackupDialogs = {
@@ -185,26 +184,14 @@ export const makeReplicaBackup = (deps: {
   return {
     backUp: (session) =>
       session === undefined ? Effect.succeed(failed(NO_WORKSPACE)) : backUp(session, dialogs),
-    chooseRestore: (session) => {
-      if (session === undefined) return Effect.succeed(failed(NO_WORKSPACE));
-      switch (session.identity.authority) {
-        case "local":
-          return stageRestore(session, dialogs);
-        case "remote":
-          return Effect.succeed(failed(RESTORE_LOCAL_ONLY));
-      }
-    },
+    chooseRestore: (session) =>
+      session === undefined ? Effect.succeed(failed(NO_WORKSPACE)) : stageRestore(session, dialogs),
     applyRestore: (session) =>
       Effect.suspend(() => {
         if (session === undefined) return Effect.succeed(failed(NO_WORKSPACE));
         const stagedPath = stagedRestores.take(session.workspaceToken);
         if (stagedPath === undefined) return Effect.succeed(failed("Choose a backup file first."));
-        switch (session.identity.authority) {
-          case "local":
-            return replaceWorkspace(session, stagedPath);
-          case "remote":
-            return Effect.succeed(failed(RESTORE_LOCAL_ONLY));
-        }
+        return replaceWorkspace(session, stagedPath);
       }),
     discardRestore: (session) =>
       session === undefined ? Effect.void : stagedRestores.discard(session.workspaceToken),

@@ -5,7 +5,6 @@ import {
   useInventoryActions,
   useLearnedSuppliers,
   useProductsOnOrder,
-  usePurchasingGate,
   useSuspenseProductSearch,
   useSuspenseSuppliers,
 } from "@store/inventory-react";
@@ -47,7 +46,6 @@ import { toastStoreError } from "@/lib/errors";
 import { EMPTY, formatCount, pluralize } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 
-import { PurchasingGateNotice } from "./gate-notice";
 import { draftLineCost, quantityNoun, type DraftLine } from "./presentation";
 import { SupplierPicker } from "./supplier-picker";
 
@@ -153,7 +151,6 @@ function ProductSearch({ onPick }: { readonly onPick: (product: Product) => void
 }
 
 function BuilderLineRow({
-  canCreateSupplier,
   line,
   onChange,
   onOrderUnits,
@@ -161,7 +158,6 @@ function BuilderLineRow({
   supplier,
   suppliers,
 }: {
-  readonly canCreateSupplier: boolean;
   readonly line: BuilderLine;
   readonly onChange: (patch: Partial<BuilderLine>) => void;
   readonly onOrderUnits: number;
@@ -250,7 +246,6 @@ function BuilderLineRow({
       <TableCell>
         <div className="w-40">
           <SupplierPicker
-            canCreate={canCreateSupplier}
             label={`Supplier for ${line.name}`}
             onChange={(supplierId) => onChange({ supplierId })}
             suppliers={suppliers}
@@ -284,7 +279,6 @@ export function OrderBuilderBody({
 }) {
   const navigate = useNavigate();
   const { saveOrderDraft } = useInventoryActions();
-  const gate = usePurchasingGate();
   const suppliers = useSuspenseSuppliers();
   const [lines, setLines] = React.useState<ReadonlyArray<BuilderLine>>(seed);
   const [pending, setPending] = React.useState(false);
@@ -320,7 +314,7 @@ export function OrderBuilderBody({
   const unassigned = groups.find((group) => group.supplier === null)?.lines.length ?? 0;
   const orderCount = groups.length - (unassigned > 0 ? 1 : 0);
   const invalid = lines.some((line) => !isOrderable(line.quantity));
-  const canCreate = !gate.blocked && !pending && lines.length > 0 && unassigned === 0 && !invalid;
+  const canCreate = !pending && lines.length > 0 && unassigned === 0 && !invalid;
 
   const change = (productId: string, patch: Partial<BuilderLine>) =>
     setLines((current) =>
@@ -409,7 +403,6 @@ export function OrderBuilderBody({
     <>
       <SheetPanel>
         <div className="flex flex-col gap-4">
-          <PurchasingGateNotice gate={gate} />
           <React.Suspense fallback={<LoadingSpinner className="h-9" />}>
             <ProductSearch onPick={add} />
           </React.Suspense>
@@ -435,7 +428,6 @@ export function OrderBuilderBody({
                   group.supplier === null ? (
                     <div className="w-56">
                       <SupplierPicker
-                        canCreate={!gate.blocked}
                         label="Supplier for all unassigned lines"
                         onChange={(supplierId) => assign(group, supplierId)}
                         placeholder="Assign all to…"
@@ -462,7 +454,6 @@ export function OrderBuilderBody({
                   <TableBody>
                     {group.lines.map((line) => (
                       <BuilderLineRow
-                        canCreateSupplier={!gate.blocked}
                         key={line.productId}
                         line={line}
                         onChange={(patch) => change(line.productId, patch)}

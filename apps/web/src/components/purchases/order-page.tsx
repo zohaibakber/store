@@ -9,7 +9,7 @@ import {
   type StockMovement,
   type Supplier,
 } from "@store/contracts";
-import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
+import { useInventoryActions } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
@@ -53,7 +53,6 @@ import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";
 
-import { PurchasingGateNotice } from "./gate-notice";
 import {
   byProductName,
   formatLineQuantity,
@@ -263,15 +262,14 @@ export function PurchaseOrderPage({
   readonly supplier: Supplier | undefined;
 }) {
   const { cancelOrder, closeOrder } = useInventoryActions();
-  const gate = usePurchasingGate();
   const [confirming, setConfirming] = React.useState(false);
   const [pending, run] = useStoreCommand();
 
   const open = isPurchaseOrderOpen(order.status);
   const canMove = (to: PurchaseOrder["status"]) =>
-    !gate.blocked && order.status !== to && canMovePurchaseOrder(order.status, to);
+    order.status !== to && canMovePurchaseOrder(order.status, to);
   const canSend = canMove("sent");
-  const canReceive = !gate.blocked && open && order.items.length > 0;
+  const canReceive = open && order.items.length > 0;
   const units = orderUnits(order.items);
   const number = formatOrderNumber(order.orderNumber);
   const closing: Closing = units.received > 0 ? "close" : "cancel";
@@ -372,7 +370,6 @@ export function PurchaseOrderPage({
       />
 
       <PageContent>
-        <PurchasingGateNotice gate={gate} />
         {order.note ? (
           <p className="text-sm whitespace-pre-wrap text-muted-foreground">{order.note}</p>
         ) : null}

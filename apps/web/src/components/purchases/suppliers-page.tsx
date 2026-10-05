@@ -6,7 +6,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Supplier } from "@store/contracts";
-import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
+import { useInventoryActions } from "@store/inventory-react";
 import * as React from "react";
 
 import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
@@ -56,8 +56,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useStoreCommand } from "@/hooks/use-store-command";
 import { toastStoreError } from "@/lib/errors";
 import { EMPTY } from "@/lib/format";
-
-import { PurchasingGateNotice } from "./gate-notice";
 
 const MAX_NAME = 200;
 const MAX_PHONE = 20;
@@ -162,13 +160,7 @@ function SupplierForm({
   );
 }
 
-function DeleteSupplierDialog({
-  disabled,
-  supplier,
-}: {
-  readonly disabled: boolean;
-  readonly supplier: Supplier;
-}) {
+function DeleteSupplierDialog({ supplier }: { readonly supplier: Supplier }) {
   const { deleteSupplier } = useInventoryActions();
   const remove = async () => {
     try {
@@ -182,14 +174,7 @@ function DeleteSupplierDialog({
   return (
     <AlertDialog>
       <AlertDialogTrigger
-        render={
-          <Button
-            aria-label={`Delete ${supplier.name}`}
-            disabled={disabled}
-            size="icon-xs"
-            variant="ghost"
-          />
-        }
+        render={<Button aria-label={`Delete ${supplier.name}`} size="icon-xs" variant="ghost" />}
       >
         <HugeiconsIcon aria-hidden="true" icon={Delete02Icon} />
       </AlertDialogTrigger>
@@ -211,15 +196,9 @@ function DeleteSupplierDialog({
   );
 }
 
-function AddSupplierButton({
-  disabled,
-  onClick,
-}: {
-  readonly disabled: boolean;
-  readonly onClick: () => void;
-}) {
+function AddSupplierButton({ onClick }: { readonly onClick: () => void }) {
   return (
-    <Button disabled={disabled} onClick={onClick} size="sm">
+    <Button onClick={onClick} size="sm">
       <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
       Add supplier
     </Button>
@@ -227,7 +206,6 @@ function AddSupplierButton({
 }
 
 export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray<Supplier> }) {
-  const gate = usePurchasingGate();
   const [editing, setEditing] = React.useState<Supplier | null>(null);
   const [open, setOpen] = React.useState(false);
   const taken = React.useMemo(
@@ -244,9 +222,8 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
     <PageLayout>
       <PageToolbar>
         <PageHeading className="me-auto">Suppliers</PageHeading>
-        <AddSupplierButton disabled={gate.blocked} onClick={() => edit(null)} />
+        <AddSupplierButton onClick={() => edit(null)} />
       </PageToolbar>
-      <PurchasingGateNotice gate={gate} />
       <Frame className="w-full">
         {suppliers.length === 0 ? (
           <Empty>
@@ -260,7 +237,7 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <AddSupplierButton disabled={gate.blocked} onClick={() => edit(null)} />
+              <AddSupplierButton onClick={() => edit(null)} />
             </EmptyContent>
           </Empty>
         ) : (
@@ -310,7 +287,6 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
                           render={
                             <Button
                               aria-label={`Edit ${supplier.name}`}
-                              disabled={gate.blocked}
                               onClick={() => edit(supplier)}
                               size="icon-xs"
                               variant="ghost"
@@ -321,7 +297,7 @@ export function SuppliersPage({ suppliers }: { readonly suppliers: ReadonlyArray
                         </TooltipTrigger>
                         <TooltipPopup>Edit</TooltipPopup>
                       </Tooltip>
-                      <DeleteSupplierDialog disabled={gate.blocked} supplier={supplier} />
+                      <DeleteSupplierDialog supplier={supplier} />
                     </div>
                   </TableCell>
                 </TableRow>

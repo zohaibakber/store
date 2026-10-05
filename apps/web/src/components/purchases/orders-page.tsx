@@ -3,7 +3,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder } from "@store/contracts";
 import {
   PURCHASE_ORDER_TABS,
-  usePurchasingGate,
   useSuspensePurchaseOrderCount,
   useSuspensePurchaseOrderListCount,
   useSuspensePurchaseOrderPage,
@@ -40,7 +39,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDateTime, formatInvoiceTime } from "@/lib/format-date";
 
-import { PurchasingGateNotice } from "./gate-notice";
 import { OrderBuilderSheet } from "./order-builder";
 import { purchaseOrderList, type PurchaseOrderListView } from "./order-list";
 import {
@@ -150,15 +148,9 @@ function TabCount({ tab }: { readonly tab: PurchaseOrderTab }) {
   return <span className="tabular-nums">{formatNumber(useSuspensePurchaseOrderCount(tab))}</span>;
 }
 
-function NewOrderButton({
-  disabled,
-  onClick,
-}: {
-  readonly disabled: boolean;
-  readonly onClick: () => void;
-}) {
+function NewOrderButton({ onClick }: { readonly onClick: () => void }) {
   return (
-    <Button disabled={disabled} onClick={onClick} size="sm">
+    <Button onClick={onClick} size="sm">
       <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
       New order
     </Button>
@@ -184,7 +176,6 @@ export function PurchaseOrdersPage({
 }) {
   const navigate = useNavigate();
   const router = useRouter();
-  const gate = usePurchasingGate();
   const orders = useSuspensePurchaseOrderPage(request);
   const total = useSuspensePurchaseOrderListCount(request.filters);
   const rows = React.useMemo(
@@ -229,9 +220,8 @@ export function PurchaseOrdersPage({
           <Button render={<Link to="/suppliers" />} size="sm" variant="outline">
             Suppliers
           </Button>
-          <NewOrderButton disabled={gate.blocked} onClick={() => onBuilderOpenChange(true)} />
+          <NewOrderButton onClick={() => onBuilderOpenChange(true)} />
         </PageToolbar>
-        <PurchasingGateNotice gate={gate} />
         <Tabs
           onValueChange={(next: PurchaseOrderTab) => onViewChange({ ...view, tab: next, page: 0 })}
           value={view.tab}
@@ -261,10 +251,7 @@ export function PurchaseOrdersPage({
               </EmptyHeader>
               <EmptyContent>
                 <div className="flex items-center gap-2">
-                  <NewOrderButton
-                    disabled={gate.blocked}
-                    onClick={() => onBuilderOpenChange(true)}
-                  />
+                  <NewOrderButton onClick={() => onBuilderOpenChange(true)} />
                   <Button render={<Link to="/restock" />} size="sm" variant="outline">
                     Order from Restock
                   </Button>

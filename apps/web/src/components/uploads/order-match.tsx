@@ -1,10 +1,6 @@
 import { PackageReceiveIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  usePurchasingGate,
-  useSuspenseOpenPurchaseOrders,
-  useSuspenseSuppliers,
-} from "@store/inventory-react";
+import { useSuspenseOpenPurchaseOrders, useSuspenseSuppliers } from "@store/inventory-react";
 import * as React from "react";
 
 import {
@@ -38,7 +34,6 @@ function UploadOrderMatch() {
   } = useUpload();
   const suppliers = useSuspenseSuppliers();
   const orders = useSuspenseOpenPurchaseOrders();
-  const gate = usePurchasingGate();
   const [chosenId, setChosenId] = React.useState<string | null>(null);
   const [receiving, setReceiving] = React.useState(false);
 
@@ -121,7 +116,7 @@ function UploadOrderMatch() {
         {match ? (
           <AlertAction>
             <Button
-              disabled={gate.blocked || processing}
+              disabled={processing}
               onClick={() => setReceiving(true)}
               size="sm"
               type="button"
