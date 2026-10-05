@@ -1,5 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 
+import { useShopName } from "@/components/licence/status";
 import { receiptFormatAtom } from "@/lib/preferences";
 import { receiptStoreName, type ReceiptFormat } from "@/lib/receipt-format";
 import { WORKSPACE_STORAGE_KEY } from "@/lib/workspace";
@@ -12,4 +13,7 @@ export const useEditReceiptFormat = () => {
   return (changes: Partial<ReceiptFormat>) => set((current) => ({ ...current, ...changes }));
 };
 
-export const useReceiptStoreName = (): string | null => receiptStoreName(useReceiptFormat());
+export const useReceiptStoreName = (): string | null => {
+  const shopName = useShopName();
+  return receiptStoreName(useReceiptFormat()) ?? shopName ?? null;
+};

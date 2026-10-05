@@ -11,7 +11,6 @@ import { useStaffActions } from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import type * as React from "react";
 
-import { LicenceStatus, useShopName } from "@/components/licence/status";
 import { staffFailure, staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { toastManager } from "@/components/ui/toast";
-import { OnDeviceStatus } from "@/lib/inventory/storage-status";
 import { useWindowKeydown } from "@/lib/shortcuts";
 
 type Identity = {
@@ -36,19 +34,6 @@ type Identity = {
   readonly mark: React.ReactNode;
   readonly avatar: React.ReactNode;
 };
-
-const deviceIdentity = (shopName: string | undefined): Identity => ({
-  name: shopName ?? "This device",
-  detail: <OnDeviceStatus />,
-  mark: <HugeiconsIcon aria-hidden="true" icon={ComputerIcon} />,
-  avatar: (
-    <Avatar className="size-8 shrink-0">
-      <AvatarFallback>
-        <HugeiconsIcon aria-hidden="true" className="size-4" icon={ComputerIcon} />
-      </AvatarFallback>
-    </Avatar>
-  ),
-});
 
 const staffIdentity = (member: StaffMember): Identity => {
   const face = <AvatarFallback>{initials(member.name)}</AvatarFallback>;
@@ -154,14 +139,13 @@ function ThemeGroup() {
 
 export function NavUser() {
   const staff = useStaffAccess();
-  const actor = staff._tag === "unlocked" ? staff.actor : null;
-  const shopName = useShopName();
-  const identity = actor ? staffIdentity(actor) : deviceIdentity(shopName);
+  if (staff._tag !== "unlocked") return null;
+  const identity = staffIdentity(staff.actor);
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        {actor ? <LockShortcut /> : null}
+        <LockShortcut />
         <Menu>
           <MenuTrigger
             render={<SidebarMenuButton aria-label="User menu" tooltip={identity.name} />}
@@ -181,18 +165,8 @@ export function NavUser() {
                 </span>
               </MenuGroupLabel>
             </MenuGroup>
-            {actor ? (
-              <>
-                <MenuSeparator />
-                <MenuGroup>
-                  <MenuGroupLabel>
-                    <LicenceStatus />
-                  </MenuGroupLabel>
-                </MenuGroup>
-                <MenuSeparator />
-                <LockGroup />
-              </>
-            ) : null}
+            <MenuSeparator />
+            <LockGroup />
             <MenuSeparator />
             <ThemeGroup />
           </MenuPopup>

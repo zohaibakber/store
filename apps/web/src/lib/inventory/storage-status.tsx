@@ -61,11 +61,6 @@ export function StorageRecoveryAction() {
   return <ReadyRecoveryAction />;
 }
 
-export function OnDeviceStatus() {
-  if (!useCatalogIsReady()) return null;
-  return <ReadyOnDeviceStatus />;
-}
-
 function ReadyRecoveryAction() {
   const { retrySync } = useInventoryActions();
   const { status, issue, label } = useStorageIssue();
@@ -101,18 +96,5 @@ function ReadyRecoveryAction() {
       </TooltipTrigger>
       <TooltipPopup side="bottom">{text}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-function ReadyOnDeviceStatus() {
-  const { issue, label } = useStorageIssue();
-  return (
-    <span
-      className={cn("truncate text-xs", issue?.tone ?? "text-muted-foreground")}
-      role="status"
-      title={issue ? label : undefined}
-    >
-      {issue ? label : "Saved on this device"}
-    </span>
   );
 }
