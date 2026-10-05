@@ -122,6 +122,20 @@ export const clearSaleDrafts = (registry: AtomRegistry.AtomRegistry, workspace: 
   }
 };
 
+export const releaseSaleDrafts = (registry: AtomRegistry.AtomRegistry, workspace: string) => {
+  const [unowned, ...members] = storedSaleDraftAtoms(workspace);
+  if (unowned === undefined) return 0;
+  let dropped = 0;
+  for (const member of members) {
+    for (const draft of heldSaleDrafts(registry.get(member))) {
+      registry.set(unowned, (state) => receiveSaleDraft(state, draft));
+      if (!registry.get(unowned).drafts.some((open) => open.id === draft.id)) dropped += 1;
+    }
+    registry.set(member, () => initialSaleDrafts(newSaleId()));
+  }
+  return dropped;
+};
+
 const NO_STAFF: Atom.Atom<Option.Option<StaffState>> = Atom.make(Option.none<StaffState>());
 
 export const useSaleDraftOwner = (): SaleDraftOwner => {
@@ -141,6 +155,12 @@ export const useClearSaleDrafts = () => {
   const registry = useContext(RegistryContext);
   const workspace = useWorkspaceStorageKey();
   return () => clearSaleDrafts(registry, workspace);
+};
+
+export const useReleaseSaleDrafts = () => {
+  const registry = useContext(RegistryContext);
+  const workspace = useWorkspaceStorageKey();
+  return () => releaseSaleDrafts(registry, workspace);
 };
 
 export const useSaleSearchFocusRequest = (): number => useAtomValue(searchFocusAtom);

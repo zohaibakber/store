@@ -57,10 +57,15 @@ const EDIT_SUFFIX = "/edit";
 const isWithin = (pathname: string, prefix: string) =>
   prefix === "/" ? pathname === "/" : pathname === prefix || pathname.startsWith(`${prefix}/`);
 
-export const routePermission = (pathname: string): StaffPermission =>
-  pathname.endsWith(EDIT_SUFFIX)
+const withoutTrailingSlash = (pathname: string) =>
+  pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+
+export const routePermission = (location: string): StaffPermission => {
+  const pathname = withoutTrailingSlash(location);
+  return pathname.endsWith(EDIT_SUFFIX)
     ? "manageStock"
     : (ROUTE_PERMISSIONS.find(([prefix]) => isWithin(pathname, prefix))?.[1] ?? "sell");
+};
 
 export const ownerFirst = (staff: ReadonlyArray<StaffMember>): ReadonlyArray<StaffMember> => [
   ...staff.filter((member) => member.role === "owner"),

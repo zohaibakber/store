@@ -56,6 +56,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { useReleaseSaleDrafts } from "@/hooks/use-sale-drafts";
+import { formatCount } from "@/lib/format";
 import { formatInvoiceTime } from "@/lib/format-date";
 
 const toastFailure = (cause: unknown) =>
@@ -554,6 +556,7 @@ function AccessCard({
   readonly onRecoveryCode: (code: string) => void;
 }) {
   const { renewRecoveryCode, turnOff } = useStaffActions();
+  const releaseSaleDrafts = useReleaseSaleDrafts();
   const [renewing, setRenewing] = useState(false);
   const [turningOff, setTurningOff] = useState(false);
   const [busy, setBusy] = useState<"idle" | "renew" | "turnOff">("idle");
@@ -578,7 +581,15 @@ function AccessCard({
   const stop = () =>
     during("turnOff", async () => {
       await turnOff();
-      toastManager.add({ title: "Staff PINs are off", type: "success" });
+      const dropped = releaseSaleDrafts();
+      toastManager.add({
+        title: "Staff PINs are off",
+        description:
+          dropped > 0
+            ? `${formatCount(dropped, "parked sale")} did not fit and ${dropped === 1 ? "was" : "were"} discarded.`
+            : undefined,
+        type: dropped > 0 ? "warning" : "success",
+      });
     });
 
   return (
@@ -643,7 +654,7 @@ function AccessCard({
         title="Turn off staff PINs?"
       >
         Every staff member is removed, including you as owner, and the app will no longer lock.
-        Finish or discard the parked sales of your staff first.
+        Sales your staff have parked stay open on New Sale.
       </Confirm>
     </FrameCard>
   );

@@ -11,6 +11,7 @@ import {
   type ListTableFeatures,
 } from "@/components/shared/data-table";
 import { useListTable } from "@/components/shared/list-view";
+import { useStaffAllows } from "@/components/staff/access";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 
@@ -126,6 +127,10 @@ const columns = columnHelper.columns([
   }),
 ]);
 
+const columnsWithoutCost = columns.filter(
+  (column) => !("accessorKey" in column && column.accessorKey === "purchasePrice"),
+);
+
 export function useProductsTable(input: {
   readonly rows: ReadonlyArray<ProductListRow>;
   readonly total: number;
@@ -135,9 +140,10 @@ export function useProductsTable(input: {
   readonly loading: boolean;
 }): ReactTable<ListTableFeatures, ProductListRow> {
   const { view, categories } = input;
+  const seesCost = useStaffAllows("manageStock");
   return useListTable({
     list: productList,
-    columns,
+    columns: seesCost ? columns : columnsWithoutCost,
     rows: input.rows,
     total: input.total,
     getRowId: (product) => product.id,

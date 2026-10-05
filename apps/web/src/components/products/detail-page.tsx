@@ -77,7 +77,7 @@ function DetailsCard({
           { label: "Retail price", value: price(product.retailPrice) },
         ]
       : [{ label: "Retail price", value: price(product.unitPrice) }]),
-    { label: "Purchase price", value: price(product.purchasePrice) },
+    ...(editable ? [{ label: "Purchase price", value: price(product.purchasePrice) }] : []),
     { label: "Composition", value: text(product.composition) },
     { label: "Strength", value: text(product.strength) },
     { label: "Aisle", value: text(product.aisle) },

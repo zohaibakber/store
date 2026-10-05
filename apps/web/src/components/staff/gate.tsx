@@ -99,7 +99,9 @@ function ReadyStaffGate({ children }: { readonly children: ReactNode }) {
 
 export function StaffRouteGuard({ children }: { readonly children: ReactNode }) {
   const state = useStaffAccess();
-  const pathname = useRouterState({ select: (router) => router.location.pathname });
+  const pathname = useRouterState({
+    select: (router) => router.matches.at(-1)?.pathname ?? router.location.pathname,
+  });
   if (permits(state, routePermission(pathname))) return children;
   const landing = stateLandingPath(state);
 
