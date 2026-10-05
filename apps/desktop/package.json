@@ -25,6 +25,7 @@
     "@store/auth": "workspace:*",
     "@store/client-db": "workspace:*",
     "@store/contracts": "workspace:*",
+    "@store/licence": "workspace:*",
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "@store/web": "workspace:*",

@@ -193,6 +193,12 @@ export const staffSettings = sqliteTable("staff_settings", {
   recoveryLockedUntil: integer({ mode: "number" }).notNull().default(0),
 });
 
+export const shopIdentity = sqliteTable("shop_identity", {
+  id: text().primaryKey().notNull(),
+  shopId: text().notNull(),
+  claimedAt: integer({ mode: "number" }).notNull(),
+});
+
 export const staffEvents = sqliteTable(
   "staff_events",
   {
