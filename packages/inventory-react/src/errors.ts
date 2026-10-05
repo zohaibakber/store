@@ -1,4 +1,4 @@
-import type { StaffRefusalReason } from "@store/contracts";
+import type { LicenceRefusal, LicenceRefusalReason, StaffRefusalReason } from "@store/contracts";
 import type { CatalogRefusalReason } from "@store/contracts/catalog-refusal";
 import type {
   CommandFailure,
@@ -34,7 +34,12 @@ export const catalogOpenFailure = (cause: unknown) =>
       cause instanceof Error && cause.message ? cause.message : "Catalog storage is unavailable.",
   });
 
-export type InventoryFailure = CommandFailure | ReadFailure | StaffFailure | RpcClientError;
+export type InventoryFailure =
+  | CommandFailure
+  | ReadFailure
+  | StaffFailure
+  | LicenceRefusal
+  | RpcClientError;
 
 export type FailureSurface =
   | {
@@ -54,6 +59,11 @@ export type FailureSurface =
       readonly _tag: "staff";
       readonly reason: StaffRefusalReason;
       readonly retryAfterMillis: number | undefined;
+      readonly message: string;
+    }
+  | {
+      readonly _tag: "licence";
+      readonly reason: LicenceRefusalReason;
       readonly message: string;
     }
   | { readonly _tag: "sync"; readonly message: string }
@@ -120,6 +130,25 @@ export const staffRefusalCopy = (reason: StaffRefusalReason, retryAfterMillis?: 
   }
 };
 
+export const licenceRefusalCopy = (reason: LicenceRefusalReason): string => {
+  switch (reason) {
+    case "missing":
+      return "This computer has no licence yet. Enter your licence to continue.";
+    case "expired":
+      return "The licence has expired. Renew it to record sales and changes again.";
+    case "malformed":
+      return "That is not a complete licence. Paste all of it, or open the licence file.";
+    case "badSignature":
+      return "That licence is not genuine or was changed. Ask for it again.";
+    case "unknownKey":
+      return "This version of the app cannot read that licence. Update the app and try again.";
+    case "otherShop":
+      return "That licence belongs to a different shop than the data on this computer.";
+    case "notNewer":
+      return "That licence does not run longer than the one already here.";
+  }
+};
+
 export const failureSurface = (failure: InventoryFailure): FailureSurface => {
   switch (failure._tag) {
     case "CatalogRefusal":
@@ -145,6 +174,12 @@ export const failureSurface = (failure: InventoryFailure): FailureSurface => {
         reason: failure.reason,
         retryAfterMillis: failure.retryAfterMillis,
         message: staffRefusalCopy(failure.reason, failure.retryAfterMillis),
+      };
+    case "LicenceRefusal":
+      return {
+        _tag: "licence",
+        reason: failure.reason,
+        message: licenceRefusalCopy(failure.reason),
       };
     case "SyncProtocolError":
       return { _tag: "sync", message: failure.message };

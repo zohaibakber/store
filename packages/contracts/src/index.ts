@@ -1,5 +1,6 @@
 export * from "./ids";
 export * from "./catalog/purchasing";
+export * from "./licence";
 export * from "./local-workspace";
 export * from "./catalog/rules";
 export * from "./catalog/write";

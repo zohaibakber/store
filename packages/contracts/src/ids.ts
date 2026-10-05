@@ -43,3 +43,9 @@ export const decodeUserId = Schema.decodeUnknownSync(UserId);
 export const StaffId = Schema.NonEmptyString.pipe(Schema.brand("StaffId"));
 export type StaffId = typeof StaffId.Type;
 export const decodeStaffId = Schema.decodeUnknownSync(StaffId);
+
+export const LicenceId = Schema.NonEmptyString.pipe(Schema.brand("LicenceId"));
+export type LicenceId = typeof LicenceId.Type;
+
+export const ShopId = Schema.NonEmptyString.pipe(Schema.brand("ShopId"));
+export type ShopId = typeof ShopId.Type;

@@ -34,7 +34,12 @@ import {
   type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
 import { layerNodeStaffGate } from "@store/client-db/node-staff";
-import { CommandAdmission, layerInventoryStore, StaffGate } from "@store/client-db/store";
+import {
+  CommandAdmission,
+  layerInventoryStore,
+  LicenceGate,
+  StaffGate,
+} from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
@@ -81,7 +86,7 @@ const OWNER_ONLY_MESSAGE = "Only the owner can do this. Unlock as the owner and 
 
 const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer));
 
-type Session = Context.Context<SqliteReplicaServices | StaffGate>;
+type Session = Context.Context<SqliteReplicaServices | StaffGate | LicenceGate>;
 
 type AuthorityLink = {
   readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
@@ -175,9 +180,10 @@ const openSession = (
   session: Layer.Layer<SqliteReplicaServices, unknown>,
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
-  Layer.buildWithScope(Layer.fresh(Layer.provideMerge(StaffGateLive, session)), scope).pipe(
-    Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()),
-  );
+  Layer.buildWithScope(
+    Layer.fresh(Layer.provideMerge(Layer.merge(StaffGateLive, LicenceGate.layerOpen), session)),
+    scope,
+  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
 
 export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(

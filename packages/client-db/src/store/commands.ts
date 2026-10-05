@@ -59,6 +59,7 @@ import {
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
+import type { LicenceGate } from "./licence-gate";
 import {
   importCategory,
   leadingChunks,
@@ -107,12 +108,14 @@ export const makeCommandHandlers = ({
   scheduler,
   replica,
   gate,
+  licence,
 }: {
   readonly admission: CommandAdmission["Service"];
   readonly store: ReplicaStore["Service"];
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
   readonly gate: StaffGate["Service"];
+  readonly licence: LicenceGate["Service"];
 }): CommandHandlers => {
   const snapshot = snapshotRunnerFromHandle(replica);
   const subset: ReadSubset = (spec) => readSnapshotSubset(snapshot, READER, spec);
@@ -204,6 +207,7 @@ export const makeCommandHandlers = ({
     read: Effect.Effect<Tables, unknown>,
     project: (context: ProjectionContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
   ) {
+    yield* licence.permit;
     const staff = yield* gate.authorize(MANAGE_STOCK);
     const context = yield* begin(read);
     const projected = yield* project(context);
@@ -252,6 +256,7 @@ export const makeCommandHandlers = ({
     );
 
   const importInventory = Effect.fnUntraced(function* (input: ImportInventoryRequest) {
+    yield* licence.permit;
     const staff = yield* gate.authorize(MANAGE_STOCK);
     const productIds = input.lines.flatMap((line) => (line.productId ? [line.productId] : []));
     const context = yield* begin(
@@ -299,6 +304,7 @@ export const makeCommandHandlers = ({
     input,
     invoiceId,
   }) {
+    yield* licence.permit;
     const staff = yield* gate.authorize(SELL);
     const productIds = input.items.map((line) => line.productId);
     const context = yield* begin(

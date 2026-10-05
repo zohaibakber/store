@@ -12,6 +12,7 @@ import { InsightsReports, layerInventoryInsights } from "./insights/handlers";
 import { layerInventoryReads } from "./reads/handlers";
 import type { SqliteReplicaServices } from "./replica/sql-client-session";
 import { layerInventoryStore } from "./store/handlers";
+import { LicenceGate } from "./store/licence-gate";
 import { StaffGate } from "./store/staff-gate";
 
 export type InProcessReplica = Context.Context<SqliteReplicaServices>;
@@ -27,7 +28,10 @@ const layerReads = layerInventoryReads.pipe(
 
 const layerInsights = layerInventoryInsights.pipe(Layer.provide(InsightsReports.layerReplica));
 
-const layerStore = Layer.provide(layerInventoryStore, StaffGate.layerDisabled);
+const layerStore = Layer.provide(
+  layerInventoryStore,
+  Layer.merge(StaffGate.layerDisabled, LicenceGate.layerOpen),
+);
 
 const closed = Layer.effectContext(Effect.never);
 

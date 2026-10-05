@@ -17,9 +17,11 @@ export {
 export {
   catalogOpenFailure,
   commandFailureSurface,
+  licenceRefusalCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";
+export { useEnterLicence, useLicenceState } from "./licence";
 export {
   useInvoiceStaff,
   useStaffActions,

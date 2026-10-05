@@ -2,6 +2,8 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
+import { Licence, LicenceRefusal, LicenceState, MAX_LICENCE_TEXT_LENGTH } from "../licence";
+
 export const REPLICA_PORTS_CHANNEL = "replica:ports";
 
 export const REPLICA_PORT_ROLES = ["reads", "store", "desktop", "insights"] as const;
@@ -29,4 +31,10 @@ export type WorkspaceState = typeof WorkspaceState.Type;
 
 export class DesktopRpcs extends RpcGroup.make(
   Rpc.make("WorkspaceState", { success: WorkspaceState, stream: true }),
+  Rpc.make("LicenceState", { success: LicenceState, stream: true }),
+  Rpc.make("EnterLicence", {
+    payload: { text: Schema.String.check(Schema.isMaxLength(MAX_LICENCE_TEXT_LENGTH)) },
+    success: Licence,
+    error: LicenceRefusal,
+  }),
 ) {}
