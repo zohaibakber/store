@@ -172,7 +172,6 @@ export const rootGroups = (input: {
         }));
       case "Ready":
         return webSearchEntries;
-      case "SignedOut":
       case "Offline":
       case "Empty":
       case "TooShort":
@@ -225,8 +224,6 @@ export const rootGroups = (input: {
 
 const globalEmptyMessage = (global: GlobalSearchView, trimmed: string): string | null => {
   switch (global._tag) {
-    case "SignedOut":
-      return "Sign in to search products on the web.";
     case "Offline":
       return "You're offline. Connect to search the web.";
     case "Empty":

@@ -12,8 +12,7 @@ import { preloadInventory } from "@/lib/inventory/preload";
 import { saleDraftsAtom } from "@/lib/preferences";
 import { SALE_SEARCH_LIMIT, saleDraftOwner, saleProductIds } from "@/lib/sale-drafts";
 import { lenientSearchParam } from "@/lib/search-param";
-import { workspaceStorageKey } from "@/lib/workspace";
-import { publishedWorkspaceSnapshot } from "@/session/workspace-session";
+import { WORKSPACE_STORAGE_KEY } from "@/lib/workspace";
 
 const newInvoiceSearch = Schema.toStandardSchemaV1(
   Schema.Struct({ add: lenientSearchParam(Schema.NonEmptyString) }),
@@ -21,20 +20,16 @@ const newInvoiceSearch = Schema.toStandardSchemaV1(
 
 export const Route = createFileRoute("/_app/invoices/new")({
   validateSearch: newInvoiceSearch,
-  loader: ({ context }) => {
-    const workspace = context.access.workspace(
-      publishedWorkspaceSnapshot(context.session.current()),
-    );
-    return preloadInventory(context, (inventory) => {
+  loader: ({ context }) =>
+    preloadInventory(context, (inventory) => {
       const staff = inventory.atoms.registry.get(inventory.atoms.staff);
-      const owner = saleDraftOwner(workspaceStorageKey(workspace), Option.getOrUndefined(staff));
+      const owner = saleDraftOwner(WORKSPACE_STORAGE_KEY, Option.getOrUndefined(staff));
       const drafts = context.registry.get(saleDraftsAtom(owner));
       return preloadAll([
         preloadCatalogProductsById(inventory, saleProductIds(drafts)),
         preloadProductSearch(inventory, "", SALE_SEARCH_LIMIT),
       ]);
-    });
-  },
+    }),
   component: NewInvoiceRoute,
   staticData: { breadcrumb: "New sale" },
 });

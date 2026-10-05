@@ -1,22 +1,15 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 
-import { useAuth } from "@/lib/auth";
 import { receiptFormatAtom } from "@/lib/preferences";
 import { receiptStoreName, type ReceiptFormat } from "@/lib/receipt-format";
-import { useWorkspaceStorageKey } from "@/lib/workspace";
+import { WORKSPACE_STORAGE_KEY } from "@/lib/workspace";
 
 export const useReceiptFormat = (): ReceiptFormat =>
-  useAtomValue(receiptFormatAtom(useWorkspaceStorageKey()));
+  useAtomValue(receiptFormatAtom(WORKSPACE_STORAGE_KEY));
 
 export const useEditReceiptFormat = () => {
-  const set = useAtomSet(receiptFormatAtom(useWorkspaceStorageKey()));
+  const set = useAtomSet(receiptFormatAtom(WORKSPACE_STORAGE_KEY));
   return (changes: Partial<ReceiptFormat>) => set((current) => ({ ...current, ...changes }));
 };
 
-export const useOrganizationName = (): string | null => {
-  const { workspace } = useAuth();
-  return workspace._tag === "Organization" ? workspace.organization.name : null;
-};
-
-export const useReceiptStoreName = (): string | null =>
-  receiptStoreName(useReceiptFormat(), useOrganizationName());
+export const useReceiptStoreName = (): string | null => receiptStoreName(useReceiptFormat());

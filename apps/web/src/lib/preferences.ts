@@ -194,17 +194,3 @@ export const storedSaleDraftAtoms = (workspace: string): ReadonlyArray<SaleDraft
       .map((key) => key.slice(SALE_DRAFTS_KEY.length)),
   ].map(storedSaleDraftsAtom);
 };
-
-export const publishOfferDismissedAtom = Atom.kvs({
-  runtime: preferencesRuntime,
-  key: "store.publish-offer-dismissed",
-  schema: Schema.Array(Schema.String),
-  defaultValue: (): ReadonlyArray<string> => [],
-}).pipe(Atom.keepAlive);
-
-export const acknowledgedRejectionsAtom = Atom.kvs({
-  runtime: preferencesRuntime,
-  key: "store.acknowledged-rejections",
-  schema: Schema.Array(Schema.String),
-  defaultValue: (): ReadonlyArray<string> => [],
-}).pipe(Atom.keepAlive);

@@ -16,7 +16,7 @@ import type * as React from "react";
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
-import { WorkspaceLogo } from "@/components/app/workspace-logo";
+import { BrandMark } from "@/components/brand-mark";
 import { restockActionCount } from "@/components/insights/presentation";
 import { routePermission, useStaffAccess } from "@/components/staff/access";
 import {
@@ -27,7 +27,6 @@ import {
   SidebarMenuBadge,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;
@@ -42,11 +41,6 @@ function RestockCountReady() {
 
 function RestockCount() {
   if (!useCatalogIsReady()) return null;
-  return <RestockCountSynced />;
-}
-
-function RestockCountSynced() {
-  if (useFirstSyncPending()) return null;
   return (
     <AsyncBoundary fallback={null}>
       <RestockCountReady />
@@ -106,7 +100,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="-mb-2">
         <div className="flex h-8 items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <WorkspaceLogo />
+          <span className="flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
+            <BrandMark className="size-6 shrink-0 rounded-sm" />
+            <span className="truncate font-medium group-data-[collapsible=icon]:hidden">
+              Tabaaq
+            </span>
+          </span>
         </div>
       </SidebarHeader>
       <SidebarContent>

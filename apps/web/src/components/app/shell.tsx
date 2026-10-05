@@ -4,9 +4,7 @@ import { Suspense } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { PageLoading } from "@/components/app/loading-spinner";
-import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NavHistory } from "@/components/app/nav-history";
-import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
@@ -17,16 +15,14 @@ import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
-import { WorkspaceSyncAction } from "@/lib/inventory/sync-status";
+import { StorageRecoveryAction } from "@/lib/inventory/storage-status";
 import { sidebarOpenAtom } from "@/lib/preferences";
 
 const route = getRouteApi("/_app");
 
 export function AppShell() {
   const { inventory, catalog } = route.useRouteContext();
-  const { workspace } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
 
   const lease = catalog.lease();
@@ -49,7 +45,7 @@ export function AppShell() {
             <TitleBarSearch />
             <TitleBarEnd>
               <TitleBarInsightsFreshness />
-              <WorkspaceSyncAction />
+              <StorageRecoveryAction />
               <WindowControls />
             </TitleBarEnd>
           </TitleBar>
@@ -59,10 +55,8 @@ export function AppShell() {
               className="min-h-0 scrollbar-none overflow-y-auto"
               data-scroll-restoration-id="app-content"
             >
-              <LocalCatalogWitness workspace={workspace} />
               {host && lease ? (
                 <InventoryReady>
-                  <PublishOffer />
                   <ReceiptPrintHost />
                   <StaffRouteGuard>
                     <Suspense fallback={<PageLoading />}>

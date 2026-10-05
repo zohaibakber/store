@@ -59,8 +59,8 @@ import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
-import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
+import { useOnlineHelpers } from "@/lib/online-helpers";
 import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
 
@@ -110,9 +110,7 @@ export function InventoryCommandDialog({
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
 }) {
-  const auth = useAuth();
-  const { access, inventory } = RootRoute.useRouteContext();
-  const scope = access.inventoryScope(auth.snapshot);
+  const { inventory } = RootRoute.useRouteContext();
   const [session, setSession] = useState(0);
   const [presented, setPresented] = useState(open);
   if (open && !presented) setPresented(true);
@@ -135,8 +133,6 @@ export function InventoryCommandDialog({
         <Activity mode={presented ? "visible" : "hidden"}>
           {inventory._tag === "Unavailable" ? (
             <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
-          ) : !scope ? (
-            <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
           ) : (
             <LiveCommandMenu key={session} onOpenChange={onOpenChange} />
           )}
@@ -321,7 +317,7 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         id: "go-settings",
         permission: "manageShop",
         label: "Go to Settings",
-        keywords: "preferences account organization",
+        keywords: "preferences staff receipts backup",
         icon: SettingsIcon,
         run: go("/settings"),
       },
@@ -452,7 +448,8 @@ function PaletteResults({
   const { data: invoices, isReady: invoicesReady } = useInventoryInvoices(INVOICE_WINDOW);
   const awaitingInvoices = searchesInvoices(page, scope, trimmed) && !invoicesReady;
   const { view: globalView, search: searchWeb } = useGlobalProductSearch(trimmed);
-  const searchesWeb = canManageStock && canSearchGlobally(globalView);
+  const canSearchWeb = useOnlineHelpers().available && canManageStock;
+  const searchesWeb = canSearchWeb && canSearchGlobally(globalView);
 
   const webSearch = useMemo(
     (): ActionEntry | null =>
@@ -567,7 +564,7 @@ function PaletteResults({
   };
 
   const toggleGlobal = () => {
-    if (canManageStock) onScopeChange(scope === "global" ? "all" : "global");
+    if (canSearchWeb) onScopeChange(scope === "global" ? "all" : "global");
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -642,13 +639,17 @@ function PaletteResults({
       <div className="flex items-center">
         <div className="min-w-0 flex-1">
           <CommandInput
-            aria-keyshortcuts="Tab Shift+Tab Control+Enter Control+Period Control+G"
+            aria-keyshortcuts={
+              canSearchWeb
+                ? "Tab Shift+Tab Control+Enter Control+Period Control+G"
+                : "Tab Shift+Tab Control+Enter Control+Period"
+            }
             onKeyDown={onKeyDown}
             placeholder={page.kind === "product" ? "Search actions…" : PLACEHOLDERS[scope]}
             ref={inputRef}
           />
         </div>
-        {page.kind === "root" && canManageStock ? (
+        {page.kind === "root" && canSearchWeb ? (
           <Tooltip>
             <TooltipTrigger
               render={

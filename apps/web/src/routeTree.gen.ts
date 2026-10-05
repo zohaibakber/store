@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppCategoriesRouteImport } from './routes/_app/categories'
@@ -35,11 +34,6 @@ import { Route as AppProductsProductIdEditRouteImport } from './routes/_app/prod
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignInRoute = SignInRouteImport.update({
-  id: '/sign-in',
-  path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -151,7 +145,6 @@ const AppProductsProductIdEditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
-  '/sign-in': typeof SignInRoute
   '/$': typeof AppSplatRoute
   '/categories': typeof AppCategoriesRoute
   '/invoices': typeof AppInvoicesRouteWithChildren
@@ -174,7 +167,6 @@ export interface FileRoutesByFullPath {
   '/products/$productId/edit': typeof AppProductsProductIdEditRoute
 }
 export interface FileRoutesByTo {
-  '/sign-in': typeof SignInRoute
   '/$': typeof AppSplatRoute
   '/categories': typeof AppCategoriesRoute
   '/restock': typeof AppRestockRoute
@@ -196,7 +188,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
-  '/sign-in': typeof SignInRoute
   '/_app/$': typeof AppSplatRoute
   '/_app/categories': typeof AppCategoriesRoute
   '/_app/invoices': typeof AppInvoicesRouteWithChildren
@@ -223,7 +214,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/sign-in'
     | '/$'
     | '/categories'
     | '/invoices'
@@ -246,7 +236,6 @@ export interface FileRouteTypes {
     | '/products/$productId/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/sign-in'
     | '/$'
     | '/categories'
     | '/restock'
@@ -267,7 +256,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
-    | '/sign-in'
     | '/_app/$'
     | '/_app/categories'
     | '/_app/invoices'
@@ -293,7 +281,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
-  SignInRoute: typeof SignInRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -303,13 +290,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in': {
-      id: '/sign-in'
-      path: '/sign-in'
-      fullPath: '/sign-in'
-      preLoaderRoute: typeof SignInRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -554,7 +534,6 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
-  SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

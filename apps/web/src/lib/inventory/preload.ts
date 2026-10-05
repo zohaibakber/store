@@ -12,14 +12,8 @@ export const preloadInventory = (
   const lease = context.catalog.lease();
   if (lease === null || context.inventory._tag !== "Replica") return Promise.resolve();
   return Effect.runPromise(
-    context.catalog.open(lease, context.inventory.host).pipe(
-      Effect.flatMap((inventory) =>
-        inventory.atoms.registry.get(inventory.atoms.syncActivity).firstSyncPending
-          ? Effect.void
-          : preload(inventory),
-      ),
-      Effect.timeout(PRELOAD_BUDGET),
-      Effect.ignore,
-    ),
+    context.catalog
+      .open(lease, context.inventory.host)
+      .pipe(Effect.flatMap(preload), Effect.timeout(PRELOAD_BUDGET), Effect.ignore),
   );
 };

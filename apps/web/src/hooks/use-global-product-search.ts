@@ -11,7 +11,6 @@ import { useCallback, useMemo } from "react";
 
 import { useOnline } from "@/hooks/use-online";
 import { appHost } from "@/host";
-import { useAuth } from "@/lib/auth";
 import { storeErrorMessage } from "@/lib/errors";
 
 const SEARCH_FAILED = "Could not search the web. Try again.";
@@ -28,7 +27,6 @@ const searchAtom = Atom.family((_key: string) =>
 const searchKey = (query: string) => query.trim().replace(/\s+/gu, " ").toLowerCase();
 
 export type GlobalSearchView =
-  | { readonly _tag: "SignedOut" }
   | { readonly _tag: "Offline" }
   | { readonly _tag: "Empty" }
   | { readonly _tag: "TooShort" }
@@ -43,7 +41,6 @@ export const canSearchGlobally = (view: GlobalSearchView): boolean => {
     case "Searching":
     case "Results":
       return true;
-    case "SignedOut":
     case "Offline":
     case "Empty":
     case "TooShort":
@@ -53,14 +50,11 @@ export const canSearchGlobally = (view: GlobalSearchView): boolean => {
 };
 
 export const useGlobalProductSearch = (query: string) => {
-  const { snapshot } = useAuth();
   const online = useOnline();
-  const signedIn = snapshot?.status === "authenticated";
   const trimmed = query.trim();
   const [result, submit] = useAtom(searchAtom(searchKey(trimmed)));
 
   const view = useMemo((): GlobalSearchView => {
-    if (!signedIn) return { _tag: "SignedOut" };
     if (!online) return { _tag: "Offline" };
     if (trimmed === "") return { _tag: "Empty" };
     if (trimmed.length < MIN_GLOBAL_SEARCH_QUERY_LENGTH) return { _tag: "TooShort" };
@@ -72,7 +66,7 @@ export const useGlobalProductSearch = (query: string) => {
       onError: (failure) => ({ _tag: "Ready", failure }),
       onDefect: () => ({ _tag: "Ready", failure: SEARCH_FAILED }),
     });
-  }, [online, result, signedIn, trimmed]);
+  }, [online, result, trimmed]);
 
   const search = useCallback(() => {
     if (view._tag === "Ready") submit(trimmed);

@@ -39,7 +39,5 @@ export type ReceiptFormat = typeof ReceiptFormat.Type;
 
 export const DEFAULT_RECEIPT_FORMAT: ReceiptFormat = Schema.decodeUnknownSync(ReceiptFormat)({});
 
-export const receiptStoreName = (
-  format: Pick<ReceiptFormat, "storeName">,
-  organizationName: string | null,
-): string | null => format.storeName.trim() || organizationName;
+export const receiptStoreName = (format: Pick<ReceiptFormat, "storeName">): string | null =>
+  format.storeName.trim() || null;

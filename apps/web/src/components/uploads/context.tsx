@@ -52,7 +52,7 @@ interface UploadActions {
 
 interface UploadMeta {
   processing: boolean;
-  isOnline: boolean;
+  readsDocuments: boolean;
 }
 
 interface UploadContextValue {
@@ -68,7 +68,9 @@ const fileDescription = (file: File) => {
   return `${kind} · ${Math.max(1, Math.ceil(file.size / 1024))} KB`;
 };
 
-const isInvoice = (file: File) => /\.(csv|pdf)$/i.test(file.name);
+const isCsv = (file: File) => /\.csv$/i.test(file.name);
+
+const isDocument = (file: File) => /\.pdf$/i.test(file.name);
 
 const QUOTED_NAME_LENGTH = 60;
 
@@ -116,7 +118,7 @@ function UploadProvider({
 }) {
   const inventory = useInventoryActions();
   const lookupProducts = useCatalogProductLookup();
-  const { analyseInvoices, isOnline } = useInvoiceReading();
+  const { analyseInvoices, readsDocuments } = useInvoiceReading();
   const busyRef = useRef(false);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
@@ -127,10 +129,14 @@ function UploadProvider({
   const category = importCategoryOf(categories, chosenCategoryId, categoryName);
 
   const addFiles = (incoming: FileList | File[]) => {
-    const valid = Array.from(incoming).filter(isInvoice);
+    const valid = Array.from(incoming).filter(
+      (file) => isCsv(file) || (readsDocuments && isDocument(file)),
+    );
     if (valid.length !== Array.from(incoming).length)
       toastManager.add({
-        title: "Only PDF and CSV invoice files can be uploaded.",
+        title: readsDocuments
+          ? "Only PDF and CSV invoice files can be uploaded."
+          : "Only CSV files can be imported.",
         type: "error",
       });
     setFiles((current) => {
@@ -153,13 +159,6 @@ function UploadProvider({
 
   const analyse = async () => {
     if (busyRef.current) return;
-    if (!isOnline) {
-      toastManager.add({
-        title: "You're offline. Connect before analysing invoices.",
-        type: "error",
-      });
-      return;
-    }
     if (!files.length) {
       toastManager.add({ title: "Add at least one invoice first.", type: "error" });
       return;
@@ -215,13 +214,6 @@ function UploadProvider({
 
   const applyChanges = async () => {
     if (busyRef.current) return;
-    if (!isOnline) {
-      toastManager.add({
-        title: "You're offline. Reconnect, then apply the changes.",
-        type: "error",
-      });
-      return;
-    }
     if (category._tag === "New" && category.name.trim() === "") {
       toastManager.add({ title: "Name the category for the new products.", type: "error" });
       return;
@@ -287,7 +279,7 @@ function UploadProvider({
           chooseCategory: setChosenCategoryId,
           nameCategory: setCategoryName,
         },
-        meta: { processing, isOnline },
+        meta: { processing, readsDocuments },
       }}
     >
       {children}

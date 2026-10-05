@@ -3,7 +3,6 @@ import {
   deliverPorts,
   desktopServices,
   forwardedPorts,
-  replicaAuthorityOf,
   type InventoryHost,
 } from "@store/inventory-react";
 import * as Deferred from "effect/Deferred";
@@ -28,7 +27,7 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost | und
     apiBaseUrl: config.apiBaseUrl,
     deviceId: config.deviceId,
     services: desktopServices,
-    open: (identity, registry) =>
+    open: (_identity, registry) =>
       Effect.gen(function* () {
         const arrived = yield* Deferred.make<void>();
         const token = yield* Deferred.make<string>();
@@ -47,7 +46,7 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost | und
         );
         const opened = yield* Effect.acquireRelease(
           Effect.tryPromise({
-            try: () => replica.open({ ...identity, authority: replicaAuthorityOf(identity) }),
+            try: () => replica.open(),
             catch: catalogOpenFailure,
           }),
           (workspaceOpened) =>

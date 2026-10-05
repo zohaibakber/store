@@ -1,23 +1,12 @@
-const liveSocketOrigin = (apiOrigin: string): string => {
-  const url = new URL(apiOrigin);
-  return `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
-};
-
 export const makeDesktopContentSecurityPolicy = (input: {
   readonly scheme: string;
-  readonly apiOrigin: string;
   readonly development: boolean;
 }) => {
   const scriptSources = [
     "'self'",
     ...(input.development ? ["'unsafe-eval'", "'unsafe-inline'"] : []),
   ];
-  const connectSources = [
-    "'self'",
-    input.apiOrigin,
-    liveSocketOrigin(input.apiOrigin),
-    ...(input.development ? ["ws:", "http://localhost:*"] : []),
-  ];
+  const connectSources = ["'self'", ...(input.development ? ["ws:", "http://localhost:*"] : [])];
 
   return [
     "default-src 'self'",

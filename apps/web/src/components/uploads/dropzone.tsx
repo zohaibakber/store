@@ -11,13 +11,13 @@ function UploadDropzone() {
   const [isDragging, setIsDragging] = useState(false);
   const {
     actions: { addFiles },
-    meta: { processing },
+    meta: { processing, readsDocuments },
   } = useUpload();
 
   return (
     <>
       <input
-        accept=".csv,application/pdf"
+        accept={readsDocuments ? ".csv,application/pdf" : ".csv"}
         className="sr-only"
         multiple
         onChange={(event) => event.target.files && addFiles(event.target.files)}
@@ -49,8 +49,12 @@ function UploadDropzone() {
           className="size-5 text-muted-foreground"
           icon={Upload01Icon}
         />
-        <span className="font-medium">Drop invoices here, or browse</span>
-        <span className="text-xs text-muted-foreground">PDF and CSV files</span>
+        <span className="font-medium">
+          {readsDocuments ? "Drop invoices here, or browse" : "Drop CSV files here, or browse"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {readsDocuments ? "PDF and CSV files" : "CSV files"}
+        </span>
       </button>
     </>
   );

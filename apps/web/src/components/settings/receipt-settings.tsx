@@ -4,16 +4,12 @@ import { ReceiptSheet } from "@/components/receipts/document";
 import { SAMPLE_RECEIPT } from "@/components/receipts/receipt";
 import { FrameCard } from "@/components/shared/frame-card";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  useEditReceiptFormat,
-  useOrganizationName,
-  useReceiptFormat,
-} from "@/hooks/use-receipt-format";
+import { useEditReceiptFormat, useReceiptFormat } from "@/hooks/use-receipt-format";
 import {
   RECEIPT_TEXT_LIMITS,
   receiptStoreName,
@@ -60,7 +56,6 @@ export function ReceiptSettings() {
   const id = useId();
   const format = useReceiptFormat();
   const edit = useEditReceiptFormat();
-  const organizationName = useOrganizationName();
   const [preview, setPreview] = useState<ReceiptPaper>(format.paper);
 
   return (
@@ -73,12 +68,9 @@ export function ReceiptSettings() {
               id={`${id}-store-name`}
               maxLength={RECEIPT_TEXT_LIMITS.storeName}
               onChange={(event) => edit({ storeName: event.target.value })}
-              placeholder={organizationName ?? "e.g. Ali's Pharmacy"}
+              placeholder="e.g. Ali's Pharmacy"
               value={format.storeName}
             />
-            {organizationName === null ? null : (
-              <FieldDescription>Leave blank to print the organization name.</FieldDescription>
-            )}
           </Field>
           <Field>
             <FieldLabel htmlFor={`${id}-phone`}>Phone</FieldLabel>
@@ -184,7 +176,7 @@ export function ReceiptSettings() {
             format={format}
             paper={preview}
             receipt={SAMPLE_RECEIPT}
-            storeName={receiptStoreName(format, organizationName)}
+            storeName={receiptStoreName(format)}
           />
         </div>
       </div>

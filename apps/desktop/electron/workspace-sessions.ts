@@ -2,9 +2,7 @@ import path from "node:path";
 
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
-import type { DeviceLabel } from "@store/contracts";
-import type { PublishProgress } from "@store/web/host/workspace-publish";
-import * as Clock from "effect/Clock";
+import { LOCAL_ORGANIZATION_ID, LOCAL_USER_ID } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -13,9 +11,6 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
-import type * as Redacted from "effect/Redacted";
-import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
@@ -27,15 +22,9 @@ import {
   type RendererPorts,
   type RendererPortsTarget,
 } from "./renderer-ports";
-import { admitReplicaKey, LOCAL_REPLICA_KEY } from "./replica-admission";
+import { LOCAL_REPLICA_KEY } from "./replica-admission";
 import { makeReplicaOwnership, type ReplicaOwnership } from "./replica-ownership";
-import { isExpiredReplicaArchive } from "./replica-publish-files";
-import {
-  ReplicaWorkerFailure,
-  type ReplicaAuthority,
-  type ReplicaOpenInput,
-  type ReplicaWorkerBoot,
-} from "./replica-rpc";
+import { ReplicaWorkerFailure, type ReplicaOpenInput } from "./replica-rpc";
 import {
   DEFAULT_SUPERVISOR_POLICY,
   startReplicaSupervisor,
@@ -43,7 +32,6 @@ import {
   type ReplicaReaderClient,
   type ReplicaSupervisor,
   type ReplicaSupervisorPolicy,
-  type ReplicaWorkerClient,
   type SpawnReplicaReader,
   type SpawnReplicaWorker,
 } from "./replica-supervisor";
@@ -58,7 +46,6 @@ type ReplicaSenderListener = {
 export type ReplicaSender = {
   readonly id: number;
   readonly isDestroyed: () => boolean;
-  readonly send: (channel: string, event: PublishProgress) => void;
   readonly postMessage?: RendererPortsTarget["postMessage"];
   readonly on: ReplicaSenderListener;
   readonly removeListener: ReplicaSenderListener;
@@ -88,17 +75,10 @@ export type WorkspaceSessionTuning = {
   readonly ownershipWait?: Duration.Input;
 };
 
-export type AccessTokenSource = {
-  readonly current: (force: boolean) => Promise<Redacted.Redacted<string> | null>;
-  readonly subscribe: (listen: (token: Redacted.Redacted<string> | null) => void) => () => void;
-};
-
 type WorkspaceSessionsOptions = WorkspaceSessionTuning & {
   readonly userDataPath: string;
   readonly workerPath: string;
-  readonly apiBaseUrl: string;
-  readonly deviceLabel?: DeviceLabel | undefined;
-  readonly accessTokens: AccessTokenSource;
+  readonly replicaId: string;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
   readonly onDispose: (
     session: WorkspaceSession,
@@ -106,11 +86,9 @@ type WorkspaceSessionsOptions = WorkspaceSessionTuning & {
 };
 
 export type WorkspaceSessions = {
-  readonly localDatabasePath: string;
   readonly ownership: ReplicaOwnership;
   readonly open: (
     sender: ReplicaSender,
-    identity: typeof ReplicaOpenInput.Type,
   ) => Effect.Effect<
     { readonly workspaceToken: string; readonly engine: ReplicaSupervisor["engine"] },
     ReplicaWorkerFailure | Error,
@@ -118,7 +96,6 @@ export type WorkspaceSessions = {
   >;
   readonly owned: (senderId: number, workspaceToken: string, action: string) => WorkspaceSession;
   readonly latestFor: (senderId: number) => WorkspaceSession | undefined;
-  readonly holdsDatabase: (databasePath: string) => boolean;
   readonly whenOwnedOpen: <A, E>(
     senderId: number,
     workspaceToken: string,
@@ -147,21 +124,14 @@ const prepareReplicaDirectory = Effect.fn("WorkspaceSessions.prepareDirectory")(
 ) {
   const fs = yield* FileSystem.FileSystem;
   yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.orDie);
-  const now = yield* Clock.currentTimeMillis;
   const names = yield* fs.readDirectory(directory).pipe(Effect.orDie);
   yield* Effect.forEach(
-    names.filter(
-      (name) => !name.startsWith(REPLICA_STORAGE_PREFIX) || isExpiredReplicaArchive(name, now),
-    ),
+    names.filter((name) => !name.startsWith(REPLICA_STORAGE_PREFIX)),
     (name) =>
       fs.remove(path.join(directory, name), { force: true, recursive: true }).pipe(Effect.ignore),
     { discard: true, concurrency: "unbounded" },
   );
 });
-
-export const sendToRenderer = (sender: ReplicaSender, channel: string, event: PublishProgress) => {
-  if (!sender.isDestroyed()) sender.send(channel, event);
-};
 
 const releaseWithSender = (sender: ReplicaSender, release: () => void) =>
   Effect.acquireRelease(
@@ -188,45 +158,6 @@ const forwardStream = <A, E>(
     Effect.forkScoped,
   );
 
-const TOKEN_RETRY = Schedule.min([Schedule.exponential("1 second"), Schedule.spaced("30 seconds")]);
-
-const pushAccessTokens = (source: AccessTokenSource, client: ReplicaWorkerClient) => {
-  const mint = (force: boolean) =>
-    Effect.tryPromise(() => source.current(force)).pipe(Effect.retry(TOKEN_RETRY));
-  const refreshed = Stream.callback<Redacted.Redacted<string> | null>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => source.subscribe((token) => Queue.offerUnsafe(queue, token))),
-      (unsubscribe) => Effect.sync(unsubscribe),
-    ),
-  );
-  const requested = client.SyncHealth().pipe(
-    Stream.map((health) => health.auth === "refreshing"),
-    Stream.changes,
-    Stream.switchMap((refreshing) => (refreshing ? Stream.fromEffect(mint(true)) : Stream.empty)),
-  );
-  return Stream.mergeAll([Stream.fromEffect(mint(false)), refreshed, requested], {
-    concurrency: "unbounded",
-  }).pipe(Stream.runForEach((token) => client.SetAccessToken({ token })));
-};
-
-const bootFor = (
-  options: Pick<WorkspaceSessionsOptions, "apiBaseUrl" | "deviceLabel">,
-  identity: typeof ReplicaOpenInput.Type,
-  databasePath: string,
-): typeof ReplicaWorkerBoot.Type => {
-  switch (identity.authority) {
-    case "local":
-      return { ...identity, databasePath };
-    case "remote":
-      return {
-        ...identity,
-        databasePath,
-        apiBaseUrl: options.apiBaseUrl,
-        ...(options.deviceLabel === undefined ? undefined : { deviceLabel: options.deviceLabel }),
-      };
-  }
-};
-
 const applyForeground = (worker: LiveReplicaWorker, visible: boolean) =>
   worker.client.SetForeground({ visible }).pipe(Effect.ignore);
 
@@ -241,8 +172,17 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
   };
   const closeGrace = options.closeGrace ?? Duration.seconds(8);
   const ownership = makeReplicaOwnership(options.ownershipWait ?? Duration.seconds(15));
-  const replicaDatabasePath = (key: string) =>
-    path.join(options.userDataPath, "replicas", sqliteReplicaFileName(key));
+  const databasePath = path.join(
+    options.userDataPath,
+    "replicas",
+    sqliteReplicaFileName(LOCAL_REPLICA_KEY),
+  );
+  const identity = {
+    authority: "local",
+    organizationId: LOCAL_ORGANIZATION_ID,
+    userId: LOCAL_USER_ID,
+    replicaId: options.replicaId,
+  } as const satisfies typeof ReplicaOpenInput.Type;
   const sessions = new Map<string, WorkspaceSession>();
   let foreground = true;
 
@@ -304,17 +244,11 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
   };
 
   const attachWriter =
-    (analytics: AnalyticsController, authority: ReplicaAuthority, ports: RendererPorts) =>
+    (analytics: AnalyticsController, ports: RendererPorts) =>
     (worker: LiveReplicaWorker, recovered: boolean) =>
       Effect.gen(function* () {
         const { client } = worker;
         yield* forwardStream(client.Commits(), analytics.notify);
-        if (authority === "remote") {
-          yield* pushAccessTokens(options.accessTokens, client).pipe(
-            Effect.catchCause(() => Effect.void),
-            Effect.forkScoped,
-          );
-        }
         if (!foreground) yield* applyForeground(worker, false);
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
@@ -332,9 +266,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
 
   const startWorkers = (
     sender: ReplicaSender,
-    identity: typeof ReplicaOpenInput.Type,
     workspaceToken: string,
-    databasePath: string,
     scope: Scope.Closeable,
     release: () => void,
   ) =>
@@ -356,10 +288,10 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,
-          boot: bootFor(options, identity, databasePath),
+          boot: { ...identity, databasePath },
         },
         policy,
-        attach: attachWriter(analytics, identity.authority, ports),
+        attach: attachWriter(analytics, ports),
       });
       const reader = yield* startReplicaSupervisor({
         spawn: spawnReader,
@@ -376,13 +308,9 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       Effect.onError(() => Scope.close(scope, Exit.void)),
     );
 
-  const open = Effect.fn("WorkspaceSessions.open")(function* (
-    sender: ReplicaSender,
-    identity: typeof ReplicaOpenInput.Type,
-  ) {
+  const open = Effect.fn("WorkspaceSessions.open")(function* (sender: ReplicaSender) {
     const workspaceToken = crypto.randomUUID();
     const runDispose = Effect.runPromiseWith(yield* Effect.context<FileSystem.FileSystem>());
-    const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
     const gone = yield* Deferred.make<void>();
     const release = () => {
@@ -391,14 +319,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       if (session) void runDispose(dispose(session));
     };
     yield* ownership.claim(databasePath);
-    const started = yield* startWorkers(
-      sender,
-      identity,
-      workspaceToken,
-      databasePath,
-      scope,
-      release,
-    );
+    const started = yield* startWorkers(sender, workspaceToken, scope, release);
     if (Deferred.isDoneUnsafe(gone) || sender.isDestroyed()) {
       yield* Scope.close(scope, Exit.void);
       return yield* Effect.fail(
@@ -426,9 +347,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       const scope = yield* Scope.make();
       const started = yield* startWorkers(
         session.sender,
-        session.identity,
         session.workspaceToken,
-        session.databasePath,
         scope,
         session.release,
       );
@@ -455,14 +374,11 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     });
 
   return {
-    localDatabasePath: replicaDatabasePath(LOCAL_REPLICA_KEY),
     ownership,
     open,
     owned,
     latestFor: (senderId) =>
       [...sessions.values()].filter((session) => session.senderId === senderId).at(-1),
-    holdsDatabase: (databasePath) =>
-      [...sessions.values()].some((session) => session.databasePath === databasePath),
     whenOwnedOpen: (senderId, workspaceToken, action, use) =>
       owned(senderId, workspaceToken, action).gate.whenOpen(
         Effect.suspend(() => use(owned(senderId, workspaceToken, action))),

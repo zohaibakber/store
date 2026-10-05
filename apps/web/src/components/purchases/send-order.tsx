@@ -31,9 +31,9 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
+import { useReceiptStoreName } from "@/hooks/use-receipt-format";
 import { useStoreCommand } from "@/hooks/use-store-command";
 import { appHost } from "@/host";
-import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import { formatDate } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";
@@ -162,10 +162,9 @@ function OrderPrintView({
 
 export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActionProps) {
   const { sendOrder } = useInventoryActions();
-  const { workspace } = useAuth();
+  const storeName = useReceiptStoreName();
   const [pending, run] = useStoreCommand();
 
-  const storeName = workspace._tag === "Organization" ? workspace.organization.name : null;
   const lines = [...order.items].sort(byProductName);
   const text = purchaseOrderText({ storeName, order, lines, supplier, format: ORDER_TEXT_FORMAT });
   const link = whatsAppLink(supplier?.phone, text);
