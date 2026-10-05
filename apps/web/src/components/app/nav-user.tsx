@@ -11,6 +11,7 @@ import { useStaffActions } from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import type * as React from "react";
 
+import { LicenceStatus, useShopName } from "@/components/licence/status";
 import { staffFailure, staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -36,8 +37,8 @@ type Identity = {
   readonly avatar: React.ReactNode;
 };
 
-const DEVICE_IDENTITY: Identity = {
-  name: "This device",
+const deviceIdentity = (shopName: string | undefined): Identity => ({
+  name: shopName ?? "This device",
   detail: <OnDeviceStatus />,
   mark: <HugeiconsIcon aria-hidden="true" icon={ComputerIcon} />,
   avatar: (
@@ -47,7 +48,7 @@ const DEVICE_IDENTITY: Identity = {
       </AvatarFallback>
     </Avatar>
   ),
-};
+});
 
 const staffIdentity = (member: StaffMember): Identity => {
   const face = <AvatarFallback>{initials(member.name)}</AvatarFallback>;
@@ -154,7 +155,8 @@ function ThemeGroup() {
 export function NavUser() {
   const staff = useStaffAccess();
   const actor = staff._tag === "unlocked" ? staff.actor : null;
-  const identity = actor ? staffIdentity(actor) : DEVICE_IDENTITY;
+  const shopName = useShopName();
+  const identity = actor ? staffIdentity(actor) : deviceIdentity(shopName);
 
   return (
     <SidebarMenu>
@@ -181,6 +183,12 @@ export function NavUser() {
             </MenuGroup>
             {actor ? (
               <>
+                <MenuSeparator />
+                <MenuGroup>
+                  <MenuGroupLabel>
+                    <LicenceStatus />
+                  </MenuGroupLabel>
+                </MenuGroup>
                 <MenuSeparator />
                 <LockGroup />
               </>

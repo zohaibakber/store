@@ -10,6 +10,8 @@ import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
 import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
+import { LicenceGate } from "@/components/licence/gate";
+import { LicenceNotice } from "@/components/licence/notice";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
 import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
 import { Separator } from "@/components/ui/separator";
@@ -57,6 +59,9 @@ export function AppShell() {
             >
               {host && lease ? (
                 <InventoryReady>
+                  <div className="sticky top-0 z-10">
+                    <LicenceNotice />
+                  </div>
                   <ReceiptPrintHost />
                   <StaffRouteGuard>
                     <Suspense fallback={<PageLoading />}>
@@ -77,7 +82,9 @@ export function AppShell() {
   if (!host || !lease) return shell;
   return (
     <InventoryProvider catalog={catalog} host={host} lease={lease}>
-      <StaffGate>{shell}</StaffGate>
+      <LicenceGate>
+        <StaffGate>{shell}</StaffGate>
+      </LicenceGate>
     </InventoryProvider>
   );
 }

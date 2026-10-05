@@ -1,4 +1,5 @@
 import {
+  Certificate01Icon,
   Database01Icon,
   Invoice03Icon,
   Settings01Icon,
@@ -31,6 +32,8 @@ const sectionIcon = (section: SettingsSection): IconSvgElement => {
       return Invoice03Icon;
     case "data":
       return Database01Icon;
+    case "licence":
+      return Certificate01Icon;
     case "general":
       return Settings01Icon;
   }

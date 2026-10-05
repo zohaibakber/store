@@ -18,6 +18,7 @@ import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
 import { BrandMark } from "@/components/brand-mark";
 import { restockActionCount } from "@/components/insights/presentation";
+import { useShopName } from "@/components/licence/status";
 import { routePermission, useStaffAccess } from "@/components/staff/access";
 import {
   Sidebar,
@@ -94,6 +95,7 @@ const navMain = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const staff = useStaffAccess();
+  const shopName = useShopName();
   const items = navMain.filter((item) => permits(staff, routePermission(item.url)));
 
   return (
@@ -103,7 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <span className="flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
             <BrandMark className="size-6 shrink-0 rounded-sm" />
             <span className="truncate font-medium group-data-[collapsible=icon]:hidden">
-              Tabaaq
+              {shopName ?? "Tabaaq"}
             </span>
           </span>
         </div>

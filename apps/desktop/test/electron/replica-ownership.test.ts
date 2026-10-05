@@ -5,7 +5,6 @@ import path from "node:path";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -112,11 +111,7 @@ const makeWorld = (
     },
     userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
     workerPath: "/tmp/replica-worker.js",
-    apiBaseUrl: "https://api.tabaaq.local",
-    accessTokens: {
-      current: async () => Redacted.make("access-1"),
-      subscribe: () => () => undefined,
-    },
+    replicaId: "device-1",
     allowedOrigins: () => allowed,
     backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
     sessions: {
@@ -138,7 +133,6 @@ const makeWorld = (
     sender: {
       id,
       isDestroyed: () => false,
-      send: () => undefined,
       on: () => undefined,
       removeListener: () => undefined,
     },
@@ -150,14 +144,7 @@ const makeWorld = (
     return listener(event, input as never);
   };
   const open = async (event: ReplicaInvokeEvent) =>
-    decodeOpened(
-      await invoke(REPLICA_OPEN_CHANNEL, event, {
-        authority: "remote",
-        organizationId: "org-1",
-        userId: "user-1",
-        replicaId: "device-1",
-      }),
-    );
+    decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, undefined));
 
   return { workers, owners, registration, senderEvent, invoke, open };
 };

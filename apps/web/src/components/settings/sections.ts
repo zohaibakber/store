@@ -1,7 +1,7 @@
 import type { StaffState } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
-export const settingsSections = ["staff", "receipts", "data", "general"] as const;
+export const settingsSections = ["staff", "receipts", "data", "licence", "general"] as const;
 
 export const SettingsSection = Schema.Literals(settingsSections);
 export type SettingsSection = typeof SettingsSection.Type;
@@ -18,6 +18,8 @@ export const settingsSectionTitle = (section: SettingsSection): string => {
       return "Receipts";
     case "data":
       return "Data";
+    case "licence":
+      return "Licence";
     case "general":
       return "General";
   }

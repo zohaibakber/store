@@ -8,7 +8,6 @@ import { isAllowedRendererNavigation } from "../../electron/renderer-navigation"
 const policyFor = (options: { readonly development?: boolean } = {}) =>
   makeDesktopContentSecurityPolicy({
     scheme: "com.tabaaq.desktop",
-    apiOrigin: options.development ? "http://localhost:8787" : "https://api.tabaaq.app",
     development: options.development ?? false,
   });
 
@@ -27,9 +26,7 @@ describe("desktop content security policy", () => {
     const policy = policyFor();
     const connectSources = directive(policy, "connect-src");
     expect(policy).not.toContain("sentry.io");
-    expect(connectSources).toContain("wss://api.tabaaq.app");
-    expect(connectSources).not.toContain("https:");
-    expect(connectSources).not.toContain("wss:");
+    expect(connectSources).toEqual(["connect-src", "'self'"]);
     expect(policy).not.toContain("challenges.cloudflare.com");
     expect(directive(policy, "frame-src")).toEqual(["frame-src", "'self'"]);
     expect(directive(policy, "worker-src")).toEqual(["worker-src", "'self'"]);
