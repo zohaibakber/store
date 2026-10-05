@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
 
-import { LICENCE_PUBLIC_KEYS, verifyLicenceText, type LicenceTrust } from "../src/index";
+import { verifyLicenceText, type LicenceTrust } from "../src/index";
 import {
   deriveBackupKey,
   generateSigningKey,
@@ -93,10 +93,6 @@ describe("licence text", () => {
     const { text } = signLicence(grant, development, Option.none());
     expect(reasonOf(text, false)).toBe("accepted");
     expect(reasonOf(text, true)).toBe("unknownKey");
-  });
-
-  it("ships no key that a packaged app accepts until a production key is added", () => {
-    expect(LICENCE_PUBLIC_KEYS.filter((key) => !key.developmentOnly)).toEqual([]);
   });
 
   it("refuses a backup key that is missing, swapped or unexpected", () => {
