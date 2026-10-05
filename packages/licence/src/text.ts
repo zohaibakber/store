@@ -27,6 +27,12 @@ export type LicenceText = {
 
 const malformed = () => new LicenceRefusal({ reason: "malformed" });
 
+const decodeCanonical = (encoded: string): Option.Option<Uint8Array> =>
+  Option.filter(
+    Result.getSuccess(Base64Url.decode(encoded)),
+    (bytes) => Base64Url.encode(bytes) === encoded,
+  );
+
 export const backupKeyHash = (key: Uint8Array) =>
   Hex.encode(createHash("sha256").update(key).digest());
 
@@ -54,15 +60,15 @@ const backupKeyOf = (
     return encoded === undefined ? Result.succeed(Option.none()) : Result.fail(malformed());
   }
   if (encoded === undefined) return Result.fail(malformed());
-  const key = Base64Url.decode(encoded);
+  const key = decodeCanonical(encoded);
   if (
-    Result.isFailure(key) ||
-    key.success.length !== BACKUP_KEY_BYTES ||
-    backupKeyHash(key.success) !== licence.backup.keyHash
+    Option.isNone(key) ||
+    key.value.length !== BACKUP_KEY_BYTES ||
+    backupKeyHash(key.value) !== licence.backup.keyHash
   ) {
     return Result.fail(malformed());
   }
-  return Result.succeed(Option.some(key.success));
+  return Result.succeed(key);
 };
 
 export const parseLicenceText = (text: string): Result.Result<LicenceText, LicenceRefusal> => {
@@ -78,21 +84,21 @@ export const parseLicenceText = (text: string): Result.Result<LicenceText, Licen
   ) {
     return Result.fail(malformed());
   }
-  const payload = Base64Url.decode(encodedPayload);
-  const signature = Base64Url.decode(encodedSignature);
+  const payload = decodeCanonical(encodedPayload);
+  const signature = decodeCanonical(encodedSignature);
   if (
-    Result.isFailure(payload) ||
-    Result.isFailure(signature) ||
-    signature.success.length !== SIGNATURE_BYTES
+    Option.isNone(payload) ||
+    Option.isNone(signature) ||
+    signature.value.length !== SIGNATURE_BYTES
   ) {
     return Result.fail(malformed());
   }
-  const licence = decodeLicenceJson(new TextDecoder().decode(payload.success));
+  const licence = decodeLicenceJson(new TextDecoder().decode(payload.value));
   if (Result.isFailure(licence)) return Result.fail(malformed());
   return Result.map(backupKeyOf(licence.success, encodedBackupKey), (backupKey) => ({
     licence: licence.success,
-    payload: payload.success,
-    signature: signature.success,
+    payload: payload.value,
+    signature: signature.value,
     backupKey,
   }));
 };

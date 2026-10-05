@@ -23,7 +23,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { LICENCE_PUBLIC_KEYS } from "./keys";
-import { OperatorFailure, OperatorStore } from "./operator";
+import { OperatorFailure, OperatorStore, PRIVATE_FILE } from "./operator";
 import {
   deriveBackupKey,
   generateSigningKey,
@@ -137,7 +137,7 @@ const issueAndRecord = Effect.fn("LicenceCli.issue")(function* (
   yield* store.record(issued);
   if (Option.isSome(file)) {
     yield* fs
-      .writeFileString(file.value, `${issued.text}\n`)
+      .writeFileString(file.value, `${issued.text}\n`, { mode: PRIVATE_FILE })
       .pipe(
         Effect.mapError(
           (cause) => new OperatorFailure({ message: `Could not write the file. ${cause.message}` }),
@@ -307,13 +307,6 @@ Command.make("licence").pipe(
   Command.withSubcommands([keygen, issue, renew, list, show]),
   Command.run({ version: "1" }),
   Effect.provide(OperatorStore.layer.pipe(Layer.provideMerge(NodeServices.layer))),
-  Effect.catchTag("OperatorFailure", (failure) =>
-    Effect.andThen(
-      Console.error(failure.message),
-      Effect.sync(() => {
-        process.exitCode = 1;
-      }),
-    ),
-  ),
+  Effect.tapErrorTag("OperatorFailure", (failure) => Console.error(failure.message)),
   NodeRuntime.runMain,
 );

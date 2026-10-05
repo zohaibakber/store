@@ -42,13 +42,13 @@ export const verifyLicenceText = (
   trust: LicenceTrust,
 ): Result.Result<VerifiedLicence, LicenceRefusal> =>
   Result.flatMap(parseLicenceText(text), (parsed) => {
-    const key = trust.keys.find(
+    const named = trust.keys.filter(
       (candidate) =>
         candidate.id === parsed.licence.signingKeyId &&
         !(candidate.developmentOnly && trust.packaged),
     );
-    if (key === undefined) return Result.fail(new LicenceRefusal({ reason: "unknownKey" }));
-    if (!signedBy(key, parsed.payload, parsed.signature)) {
+    if (named.length === 0) return Result.fail(new LicenceRefusal({ reason: "unknownKey" }));
+    if (!named.some((key) => signedBy(key, parsed.payload, parsed.signature))) {
       return Result.fail(new LicenceRefusal({ reason: "badSignature" }));
     }
     return Result.succeed({

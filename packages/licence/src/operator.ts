@@ -12,17 +12,20 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
+import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 
 import { LicenceSigningKey } from "./sign";
 import { BACKUP_KEY_BYTES } from "./text";
 
-const PRIVATE_FILE = 0o600;
+export const PRIVATE_FILE = 0o600;
 const PRIVATE_DIRECTORY = 0o700;
 
 export class OperatorFailure extends Schema.TaggedError<OperatorFailure>()("OperatorFailure", {
   message: Schema.String,
-}) {}
+}) {
+  readonly [Runtime.errorReported] = false;
+}
 
 export const IssuedLicence = Schema.Struct({ licence: Licence, text: Schema.String });
 export type IssuedLicence = typeof IssuedLicence.Type;

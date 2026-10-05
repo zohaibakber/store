@@ -92,7 +92,10 @@ export function LicenceSettings() {
           <Row handle="licence-issued" label="Issued">
             {formatDate(held.licence.issuedAt)}
           </Row>
-          <Row handle="licence-expires" label={held.licence.expiresAt > now ? "Ends" : "Ended"}>
+          <Row
+            handle="licence-expires"
+            label={held._tag === "grace" || held._tag === "expired" ? "Ended" : "Ends"}
+          >
             {formatDate(held.licence.expiresAt)}
           </Row>
           <Row handle="licence-days-left" label="Days left">
