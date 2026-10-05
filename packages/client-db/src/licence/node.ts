@@ -1,4 +1,4 @@
-import { LicenceRefusal, ShopId, type LicenceState } from "@store/contracts";
+import { LicenceRefusal, licenceStateOf, ShopId, type LicenceState } from "@store/contracts";
 import type { ReplicaStorageError } from "@store/contracts/replica";
 import { shopIdentity } from "@store/db/replica.schema";
 import { SqliteReplica } from "@store/sync/sql-client";
@@ -63,14 +63,23 @@ export const layerNodeLicenceGate: Layer.Layer<
     });
 
     const accept = Effect.fn("ShopLicence.accept")(function* (next: LicenceState) {
-      yield* Ref.set(state, next);
       if (next._tag !== "missing" && Option.isNone(yield* Ref.get(shop))) {
-        yield* claim(next.licence.shopId);
+        yield* Effect.onError(claim(next.licence.shopId), () =>
+          Ref.set(state, { _tag: "missing" }),
+        );
       }
+      yield* Ref.set(state, next);
     }, oneAtATime);
 
     const permit = Effect.gen(function* () {
-      const refusal = licenceRefusalFor(yield* Ref.get(state), yield* Ref.get(shop));
+      const told = yield* Ref.get(state);
+      const owner = yield* Ref.get(shop);
+      const now = yield* Clock.currentTimeMillis;
+      const refusal = Option.orElse(licenceRefusalFor(told, owner), () =>
+        told._tag === "missing"
+          ? Option.none()
+          : licenceRefusalFor(licenceStateOf(told.licence, now), owner),
+      );
       if (Option.isSome(refusal)) return yield* new LicenceRefusal({ reason: refusal.value });
     });
 

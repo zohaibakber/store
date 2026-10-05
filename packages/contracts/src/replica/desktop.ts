@@ -3,6 +3,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
 import { Licence, LicenceRefusal, LicenceState, MAX_LICENCE_TEXT_LENGTH } from "../licence";
+import { ReplicaStorageError, ReplicaUnavailable } from "./errors";
 
 export const REPLICA_PORTS_CHANNEL = "replica:ports";
 
@@ -35,6 +36,6 @@ export class DesktopRpcs extends RpcGroup.make(
   Rpc.make("EnterLicence", {
     payload: { text: Schema.String.check(Schema.isMaxLength(MAX_LICENCE_TEXT_LENGTH)) },
     success: Licence,
-    error: LicenceRefusal,
+    error: Schema.Union([LicenceRefusal, ReplicaStorageError, ReplicaUnavailable]),
   }),
 ) {}

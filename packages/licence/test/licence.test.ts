@@ -51,6 +51,29 @@ const flipFirstByte = (part: string) => {
   return Base64Url.encode(bytes.map((byte, index) => (index === 0 ? byte ^ 1 : byte)));
 };
 
+const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+const loosenLastCharacter = (part: string) => {
+  const unused = part.length % 4 === 2 ? 4 : part.length % 4 === 3 ? 2 : 0;
+  if (unused === 0) return `${part}A`;
+  const last = BASE64URL.indexOf(part.at(-1)!);
+  return `${part.slice(0, -1)}${BASE64URL[last ^ 1]}`;
+};
+
+const ED25519_GROUP_ORDER = 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3edn;
+
+const addGroupOrder = (part: string) => {
+  const bytes = Result.getOrThrow(Base64Url.decode(part));
+  let s = ED25519_GROUP_ORDER;
+  for (let index = 63; index >= 32; index -= 1)
+    s += BigInt(bytes[index]!) << BigInt(8 * (index - 32));
+  return Base64Url.encode(
+    bytes.map((byte, index) =>
+      index < 32 ? byte : Number((s >> BigInt(8 * (index - 32))) & 0xffn),
+    ),
+  );
+};
+
 describe("licence text", () => {
   it("round-trips a signed licence with and without a backup key", () => {
     const plain = signLicence(grant, production, Option.none());
@@ -65,6 +88,12 @@ describe("licence text", () => {
     expect(restored.text).toBe(backed.text);
     expect(restored.licence.backup?.keyVersion).toBe(1);
     expect(Option.map(restored.backupKey, Redacted.value)).toEqual(Option.some(backupKey));
+
+    const rotated: LicenceTrust = {
+      keys: [publicKeyOf(stranger), publicKeyOf(production)],
+      packaged: true,
+    };
+    expect(Result.isSuccess(verifyLicenceText(plain.text, rotated))).toBe(true);
   });
 
   it("refuses a changed payload", () => {
@@ -87,6 +116,10 @@ describe("licence text", () => {
   it("refuses a key id that is not in the list", () => {
     const unknown = generateSigningKey("never-shipped", false);
     expect(reasonOf(signLicence(grant, unknown, Option.none()).text)).toBe("unknownKey");
+    for (const id of ["__proto__", "constructor", "toString", "0", "length"]) {
+      const named = generateSigningKey(id, false);
+      expect(reasonOf(signLicence(grant, named, Option.none()).text)).toBe("unknownKey");
+    }
   });
 
   it("accepts a development key only when the app is not packaged", () => {
@@ -111,5 +144,27 @@ describe("licence text", () => {
     expect(reasonOf(withPart(text, 0, () => "tabaaq-licence-2"))).toBe("malformed");
     expect(reasonOf(withPart(text, 1, () => Base64Url.encode("{}")))).toBe("malformed");
     expect(reasonOf(`${text}.a.b`)).toBe("malformed");
+    expect(reasonOf(`${text}.`)).toBe("malformed");
+    expect(reasonOf(`${text}.${text.split(".")[2]}`)).toBe("malformed");
+    expect(reasonOf(`${"tabaaq-licence-1."}${"A".repeat(1_000_000)}`)).toBe("malformed");
+  });
+
+  it("refuses text whose parts are not the one canonical encoding of their bytes", () => {
+    const backed = signLicence(grant, production, backup).text;
+    for (const index of [1, 2, 3]) {
+      expect(reasonOf(withPart(backed, index, (part) => `${part}=`))).toBe("malformed");
+      expect(reasonOf(withPart(backed, index, loosenLastCharacter))).toBe("malformed");
+    }
+    expect(reasonOf(backed)).toBe("accepted");
+  });
+
+  it("refuses a signed payload that was re-encoded, extended or re-signed with a second S", () => {
+    const { text } = signLicence(grant, production, Option.none());
+    const json = new TextDecoder().decode(Result.getOrThrow(Base64Url.decode(text.split(".")[1]!)));
+    const spaced = Base64Url.encode(json.replace(",", ", "));
+    const later = Base64Url.encode(json.replace(/\}$/u, ',"expiresAt":9999999999999}'));
+    expect(reasonOf(withPart(text, 1, () => spaced))).toBe("badSignature");
+    expect(reasonOf(withPart(text, 1, () => later))).toBe("badSignature");
+    expect(reasonOf(withPart(text, 2, addGroupOrder))).toBe("badSignature");
   });
 });

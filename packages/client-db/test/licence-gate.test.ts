@@ -30,7 +30,7 @@ const unreachable: SyncTransport = {
 };
 
 const DAY = 86_400_000;
-const NOW = Date.UTC(2026, 9, 5);
+const NOW = Date.now();
 
 const licenceFor = (shop: string, expiresAt: number): Licence => ({
   format: 1,
@@ -94,6 +94,12 @@ describe("licence gate", () => {
         expect((yield* createCategory("Syrups")).result.name).toBe("Syrups");
 
         yield* licence.accept(licenceStateOf(licenceFor("shop-a", NOW - 15 * DAY), NOW));
+        expect(yield* reasonOf(createCategory("Drops"))).toBe("expired");
+
+        yield* licence.accept({
+          _tag: "valid",
+          licence: licenceFor("shop-a", NOW - 15 * DAY),
+        });
         expect(yield* reasonOf(createCategory("Drops"))).toBe("expired");
 
         yield* licence.accept({ _tag: "missing" });

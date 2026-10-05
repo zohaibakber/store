@@ -145,6 +145,33 @@ describe("licence service", () => {
       }),
     ));
 
+  it("counts the time the app runs while the clock is held back, and saves it on close", () =>
+    run(
+      Effect.gen(function* () {
+        const directory = yield* temporaryDirectory;
+        const fs = yield* FileSystem.FileSystem;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const service = yield* launch(directory);
+            yield* service.enter(licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
+            yield* advance(service, "20 days", "expiring");
+            yield* TestClock.setTime(NOW - 300 * DAY);
+            yield* advance(service, "25 days", "grace");
+            expect(yield* tagOf(service)).toBe("grace");
+            yield* TestClock.setTime(NOW - 300 * DAY);
+            yield* advance(service, "15 days", "expired");
+            expect(yield* tagOf(service)).toBe("expired");
+            yield* TestClock.setTime(NOW - 300 * DAY);
+            yield* TestClock.adjust("3 minutes");
+          }),
+        );
+        expect(Number(yield* fs.readFileString(`${directory}/last-seen`))).toBeGreaterThanOrEqual(
+          NOW + 60 * DAY + 3 * 60_000,
+        );
+        expect(yield* tagOf(yield* launch(directory))).toBe("expired");
+      }),
+    ));
+
   it("keeps the stored licence across restarts and refuses one that is not newer or for another shop", () =>
     run(
       Effect.gen(function* () {

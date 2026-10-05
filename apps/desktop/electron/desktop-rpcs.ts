@@ -1,5 +1,10 @@
 import { LicenceRefusal, type Licence, type LicenceState } from "@store/contracts";
-import { DesktopRpcs, type WorkspaceState } from "@store/contracts/replica";
+import {
+  DesktopRpcs,
+  type ReplicaStorageError,
+  type ReplicaUnavailable,
+  type WorkspaceState,
+} from "@store/contracts/replica";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as RpcServer from "effect/rpc/RpcServer";
@@ -10,7 +15,9 @@ import { layerMessagePortMain } from "./message-port-main-runner";
 
 export type DesktopLicence = {
   readonly states: Stream.Stream<LicenceState>;
-  readonly enter: (text: string) => Effect.Effect<Licence, LicenceRefusal>;
+  readonly enter: (
+    text: string,
+  ) => Effect.Effect<Licence, LicenceRefusal | ReplicaStorageError | ReplicaUnavailable>;
 };
 
 export const noDesktopLicence: DesktopLicence = {
