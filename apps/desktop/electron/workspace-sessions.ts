@@ -21,6 +21,8 @@ import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
 
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
+import type { DesktopLicence } from "./desktop-rpcs";
+import type { LicenceService } from "./licence/service";
 import {
   makeRendererPorts,
   noRendererPorts,
@@ -86,6 +88,7 @@ export type WorkspaceSessionTuning = {
   readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
   readonly closeGrace?: Duration.Input;
   readonly ownershipWait?: Duration.Input;
+  readonly licence?: LicenceService["Service"];
 };
 
 export type AccessTokenSource = {
@@ -230,6 +233,34 @@ const bootFor = (
 const applyForeground = (worker: LiveReplicaWorker, visible: boolean) =>
   worker.client.SetForeground({ visible }).pipe(Effect.ignore);
 
+const tellLicence = (licence: LicenceService["Service"], client: ReplicaWorkerClient) =>
+  Effect.flatMap(licence.current, (state) => client.SetLicence({ state })).pipe(Effect.ignore);
+
+const sessionLicence = (
+  licence: LicenceService["Service"],
+  writer: () => ReplicaSupervisor,
+): DesktopLicence => ({
+  states: licence.states,
+  enter: (text) =>
+    licence
+      .enter(
+        text,
+        writer()
+          .use((worker) => worker.client.DatabaseShop())
+          .pipe(
+            Effect.map((database) => Option.fromNullishOr(database.shopId)),
+            Effect.orDie,
+          ),
+      )
+      .pipe(
+        Effect.tap(() =>
+          writer()
+            .use((worker) => tellLicence(licence, worker.client))
+            .pipe(Effect.ignore),
+        ),
+      ),
+});
+
 export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): WorkspaceSessions => {
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const spawnReader = options.spawnReader ?? spawnNodeReplicaReader;
@@ -286,6 +317,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     sender: ReplicaSender,
     workspaceToken: string,
     analytics: AnalyticsController,
+    licence: DesktopLicence | undefined,
   ) => {
     const { rendererChannel } = options;
     if (rendererChannel === undefined || sender.postMessage === undefined) {
@@ -300,6 +332,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       workspaceToken,
       channel: rendererChannel,
       attachInsights: (port) => analytics.use((client) => client.AttachRenderer({ port })),
+      licence,
     });
   };
 
@@ -316,6 +349,13 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
           );
         }
         if (!foreground) yield* applyForeground(worker, false);
+        const { licence } = options;
+        if (licence !== undefined) {
+          yield* tellLicence(licence, client);
+          yield* forwardStream(licence.states, (state) =>
+            client.SetLicence({ state }).pipe(Effect.ignore),
+          );
+        }
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
           if (Option.isSome(stamp)) {
@@ -351,8 +391,15 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
         },
         onLost: Effect.suspend(() => ports.reattach),
       });
-      const ports: RendererPorts = yield* rendererPorts(sender, workspaceToken, analytics);
-      const supervisor = yield* startReplicaSupervisor({
+      const ports: RendererPorts = yield* rendererPorts(
+        sender,
+        workspaceToken,
+        analytics,
+        options.licence === undefined
+          ? undefined
+          : sessionLicence(options.licence, () => supervisor),
+      );
+      const supervisor: ReplicaSupervisor = yield* startReplicaSupervisor({
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,

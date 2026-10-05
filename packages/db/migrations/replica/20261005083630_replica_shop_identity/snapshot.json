@@ -2,9 +2,7 @@
   "version": "7",
   "dialect": "sqlite",
   "id": "97370276-daae-49ec-8dd9-71f293dba417",
-  "prevIds": [
-    "2075cdf3-51c5-4f23-918e-2f3e0cbe450a"
-  ],
+  "prevIds": ["2075cdf3-51c5-4f23-918e-2f3e0cbe450a"],
   "ddl": [
     {
       "name": "batches",
@@ -2363,231 +2361,168 @@
       "table": "suppliers"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "batches_organization_id_id_pk",
       "entityType": "pks",
       "table": "batches"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "categories_organization_id_id_pk",
       "entityType": "pks",
       "table": "categories"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "invoice_items_organization_id_id_pk",
       "entityType": "pks",
       "table": "invoice_items"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "invoices_organization_id_id_pk",
       "entityType": "pks",
       "table": "invoices"
     },
     {
-      "columns": [
-        "operationId",
-        "entity",
-        "entityId"
-      ],
+      "columns": ["operationId", "entity", "entityId"],
       "nameExplicit": true,
       "name": "pending_row_journal_pk",
       "entityType": "pks",
       "table": "pending_row_journal"
     },
     {
-      "columns": [
-        "entity",
-        "entityId"
-      ],
+      "columns": ["entity", "entityId"],
       "nameExplicit": true,
       "name": "pending_row_marks_pk",
       "entityType": "pks",
       "table": "pending_row_marks"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "products_organization_id_id_pk",
       "entityType": "pks",
       "table": "products"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "purchase_order_items_organization_id_id_pk",
       "entityType": "pks",
       "table": "purchase_order_items"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "purchase_orders_organization_id_id_pk",
       "entityType": "pks",
       "table": "purchase_orders"
     },
     {
-      "columns": [
-        "snapshotId",
-        "entity",
-        "entityId"
-      ],
+      "columns": ["snapshotId", "entity", "entityId"],
       "nameExplicit": true,
       "name": "snapshot_staged_rows_pk",
       "entityType": "pks",
       "table": "snapshot_staged_rows"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "stock_movements_organization_id_id_pk",
       "entityType": "pks",
       "table": "stock_movements"
     },
     {
-      "columns": [
-        "commandId",
-        "batchId"
-      ],
+      "columns": ["commandId", "batchId"],
       "nameExplicit": true,
       "name": "stock_overlays_command_id_batch_id_pk",
       "entityType": "pks",
       "table": "stock_overlays"
     },
     {
-      "columns": [
-        "organizationId",
-        "id"
-      ],
+      "columns": ["organizationId", "id"],
       "nameExplicit": true,
       "name": "suppliers_organization_id_id_pk",
       "entityType": "pks",
       "table": "suppliers"
     },
     {
-      "columns": [
-        "operationId"
-      ],
+      "columns": ["operationId"],
       "nameExplicit": false,
       "name": "command_outbox_pk",
       "table": "command_outbox",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "operationId"
-      ],
+      "columns": ["operationId"],
       "nameExplicit": false,
       "name": "command_staff_pk",
       "table": "command_staff",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "seq"
-      ],
+      "columns": ["seq"],
       "nameExplicit": false,
       "name": "generation_journal_pk",
       "table": "generation_journal",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "generation_state_pk",
       "table": "generation_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "subscription"
-      ],
+      "columns": ["subscription"],
       "nameExplicit": false,
       "name": "replica_coverage_pk",
       "table": "replica_coverage",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "replica_state_pk",
       "table": "replica_state",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "shop_identity_pk",
       "table": "shop_identity",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "snapshotId"
-      ],
+      "columns": ["snapshotId"],
       "nameExplicit": false,
       "name": "snapshot_imports_pk",
       "table": "snapshot_imports",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "staff_pk",
       "table": "staff",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "seq"
-      ],
+      "columns": ["seq"],
       "nameExplicit": false,
       "name": "staff_events_pk",
       "table": "staff_events",
       "entityType": "pks"
     },
     {
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "nameExplicit": false,
       "name": "staff_settings_pk",
       "table": "staff_settings",

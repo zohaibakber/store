@@ -68,7 +68,7 @@ export const signLicence = (
   grant: LicenceGrant,
   key: LicenceSigningKey,
   backup: Option.Option<LicenceBackupKey>,
-): { readonly licence: Licence; readonly text: string } => {
+) => {
   const licence: Licence = {
     format: LICENCE_FORMAT,
     ...grant,

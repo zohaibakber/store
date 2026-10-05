@@ -18,9 +18,7 @@ import { licenceRefusalFor } from "./refusal";
 
 const SHOP_ROW_ID = "singleton";
 
-const decodeShopRows = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ shopId: ShopId })),
-);
+const decodeShopRows = Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ shopId: ShopId })));
 
 export class ShopLicence extends Context.Service<
   ShopLicence,
@@ -38,6 +36,7 @@ export const layerNodeLicenceGate: Layer.Layer<
   Effect.gen(function* () {
     const replica = yield* SqliteReplica;
     const turn = yield* Semaphore.make(1);
+    const oneAtATime = <A, E>(work: Effect.Effect<A, E>) => turn.withPermit(work);
 
     const readShop = replica.db
       .select({ shopId: shopIdentity.shopId })
@@ -68,7 +67,7 @@ export const layerNodeLicenceGate: Layer.Layer<
       if (next._tag !== "missing" && Option.isNone(yield* Ref.get(shop))) {
         yield* claim(next.licence.shopId);
       }
-    }, turn.withPermit);
+    }, oneAtATime);
 
     const permit = Effect.gen(function* () {
       const refusal = licenceRefusalFor(yield* Ref.get(state), yield* Ref.get(shop));

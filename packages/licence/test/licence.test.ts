@@ -48,7 +48,7 @@ const withPart = (text: string, index: number, change: (part: string) => string)
 
 const flipFirstByte = (part: string) => {
   const bytes = Result.getOrThrow(Base64Url.decode(part));
-  return Base64Url.encode(bytes.with(0, bytes[0]! ^ 1));
+  return Base64Url.encode(bytes.map((byte, index) => (index === 0 ? byte ^ 1 : byte)));
 };
 
 describe("licence text", () => {
@@ -69,7 +69,11 @@ describe("licence text", () => {
 
   it("refuses a changed payload", () => {
     const { text } = signLicence(grant, production, Option.none());
-    const later = signLicence({ ...grant, expiresAt: grant.expiresAt * 2 }, stranger, Option.none());
+    const later = signLicence(
+      { ...grant, expiresAt: grant.expiresAt * 2 },
+      stranger,
+      Option.none(),
+    );
     const swapped = withPart(text, 1, () => later.text.split(".")[1]!);
     expect(reasonOf(swapped)).toBe("badSignature");
   });

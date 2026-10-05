@@ -103,7 +103,8 @@ const readLicence = Effect.fn("LicenceCli.readLicence")(function* (textOrFile: s
         .readFileString(textOrFile)
         .pipe(
           Effect.mapError(
-            (cause) => new OperatorFailure({ message: `Could not read the file. ${cause.message}` }),
+            (cause) =>
+              new OperatorFailure({ message: `Could not read the file. ${cause.message}` }),
           ),
         )
     : textOrFile;
@@ -237,7 +238,9 @@ const renew = Command.make(
       Flag.withDescription("The shop's current licence, as text or a file path"),
     ),
     days: Flag.Int("days").pipe(
-      Flag.withDescription("Days added after the current expiry, or after today when it has passed"),
+      Flag.withDescription(
+        "Days added after the current expiry, or after today when it has passed",
+      ),
       Flag.withSchema(Days),
       Flag.withDefault(365),
     ),

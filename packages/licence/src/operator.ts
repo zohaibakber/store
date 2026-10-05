@@ -78,7 +78,10 @@ export class OperatorStore extends Context.Service<
       const saveKey = Effect.fn("OperatorStore.saveKey")(function* (key: LicenceSigningKey) {
         const file = path.join(keyDirectory, `${key.id}.json`);
         yield* prepare(keyDirectory);
-        const text = yield* encodeSigningKey({ ...key, privateKey: Redacted.value(key.privateKey) });
+        const text = yield* encodeSigningKey({
+          ...key,
+          privateKey: Redacted.value(key.privateKey),
+        });
         yield* fs.writeFileString(file, `${text}\n`, { flag: "wx", mode: PRIVATE_FILE });
         return file;
       }, failed("write the private key"));
