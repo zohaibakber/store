@@ -3,6 +3,7 @@ import path from "node:path";
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import { LOCAL_ORGANIZATION_ID, LOCAL_USER_ID } from "@store/contracts";
+import { ReplicaStorageError, ReplicaUnavailable } from "@store/contracts/replica";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -177,7 +178,13 @@ const sessionLicence = (
           .use((worker) => worker.client.DatabaseShop())
           .pipe(
             Effect.map((database) => Option.fromNullishOr(database.shopId)),
-            Effect.orDie,
+            Effect.catchTags({
+              ReplicaWorkerLost: () =>
+                Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
+              RpcClientError: () => Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
+              ReplicaWorkerFailure: ({ message }) =>
+                Effect.fail(new ReplicaStorageError({ message })),
+            }),
           ),
       )
       .pipe(
