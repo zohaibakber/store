@@ -12,6 +12,7 @@
     "./node-backup": "./src/replica/node-backup.ts",
     "./node-publish": "./src/replica/node-publish.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
+    "./node-staff": "./src/staff/node.ts",
     "./reads": "./src/reads/handlers.ts",
     "./sql-client": "./src/replica/sql-client.ts",
     "./store": "./src/store/handlers.ts",
