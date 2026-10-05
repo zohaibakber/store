@@ -5,6 +5,7 @@ import { formatPrice } from "@store/services/format";
 import { useEffect, useId, useRef } from "react";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
+import { ParkedElsewhereMenu } from "@/components/invoices/parked-elsewhere";
 import { PageToolbar } from "@/components/shared/page-layout";
 import {
   AlertDialog,
@@ -18,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { saleDraftLimitMessage } from "@/hooks/use-sale-drafts";
+import { saleDraftLimitMessage, useParkedElsewhere } from "@/hooks/use-sale-drafts";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { formatCount } from "@/lib/format";
 import { MAX_SALE_DRAFTS } from "@/lib/sale-drafts";
@@ -121,6 +122,7 @@ function SaleDraftTabs() {
     state: { customerName, draftId, lines },
     meta: { tabs },
   } = useInvoiceCreate();
+  const { parked, takeOver } = useParkedElsewhere();
   const stripRef = useRef<HTMLDivElement>(null);
   const hintId = useId();
   const several = tabs.length > 1;
@@ -132,7 +134,7 @@ function SaleDraftTabs() {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [draftId]);
 
-  if (!several && !started) return null;
+  if (!several && !started && parked.length === 0) return null;
 
   return (
     <PageToolbar className="justify-between">
@@ -156,7 +158,14 @@ function SaleDraftTabs() {
           Press Delete to discard this sale.
         </span>
       </div>
-      <HoldSaleButton started={started} />
+      {parked.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <ParkedElsewhereMenu parked={parked} takeOver={takeOver} />
+          <HoldSaleButton started={started} />
+        </div>
+      ) : (
+        <HoldSaleButton started={started} />
+      )}
     </PageToolbar>
   );
 }

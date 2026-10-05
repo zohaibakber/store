@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
-import { useSaleDraftStore } from "@/hooks/use-sale-drafts";
+import { useClearSaleDrafts } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
 import type { RestoreChoice, WorkspaceBackupBridge } from "@/host/workspace-backup";
@@ -72,7 +72,7 @@ const failure = (title: string, cause: unknown) =>
 
 function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) {
   const offer = backupOffer(useAuth().workspace);
-  const { clear: clearSaleDrafts } = useSaleDraftStore();
+  const clearSaleDrafts = useClearSaleDrafts();
   const [activity, setActivity] = useState<Activity>("idle");
   const [staged, setStaged] = useState<StagedRestore | null>(null);
   const [confirming, setConfirming] = useState(false);
