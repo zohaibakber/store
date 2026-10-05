@@ -18,19 +18,11 @@ const devSplash = (): Plugin => ({
   },
 });
 
-const signedInApp = {
-  deferred: {
-    defaultBehavior: [["loader", "component"], ["errorComponent"], ["notFoundComponent"]],
-  },
-  eager: {
-    splitBehavior: ({ routeId }) => (routeId === "/_app" ? [] : undefined),
-  },
-} satisfies Record<string, CodeSplittingOptions>;
+const keepShellInStartupBundle: CodeSplittingOptions = {
+  splitBehavior: ({ routeId }) => (routeId === "/_app" ? [] : undefined),
+};
 
-export const webAppConfig = (input: {
-  readonly version: string;
-  readonly signedInApp: keyof typeof signedInApp;
-}) => ({
+export const webAppConfig = (input: { readonly version: string }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(input.version),
     __SENTRY_DEBUG__: false,
@@ -47,7 +39,7 @@ export const webAppConfig = (input: {
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,
-      codeSplittingOptions: signedInApp[input.signedInApp],
+      codeSplittingOptions: keepShellInStartupBundle,
       routesDirectory: path.join(webRoot, "src/routes"),
       generatedRouteTree: path.join(webRoot, "src/routeTree.gen.ts"),
     }),

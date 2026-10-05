@@ -45,7 +45,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   React.useEffect(() => {
-    appHost().theme?.setSource(preference);
+    appHost().theme.setSource(preference);
   }, [preference]);
 
   const value = React.useMemo(

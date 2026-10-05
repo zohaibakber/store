@@ -5,7 +5,7 @@ import {
   PasswordLoginCommand,
   RegisterPasswordCommand,
 } from "@store/auth";
-import { DeviceCommand, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import {
   GlobalProductSearchInput,
   type GlobalProductSearchResult,
@@ -28,8 +28,6 @@ import {
   AUTH_ORGANIZE_CHANNEL,
   AUTH_RENEW_SESSION_CHANNEL,
   AUTH_SIGN_OUT_CHANNEL,
-  SERVER_DEVICE_COMMAND_CHANNEL,
-  SERVER_DEVICES_CHANNEL,
   SERVER_GLOBAL_SEARCH_CHANNEL,
   SERVER_UPLOADS_CHANNEL,
 } from "./ipc-channels";
@@ -76,7 +74,6 @@ const decodeSignInCredentials = decodeOrReject(SignInCredentials, CREDENTIALS_IN
 const decodeCallbackUrl = decodeOrReject(CallbackUrl, GOOGLE_CALLBACK_INVALID);
 const decodeOrganizationCommand = Schema.decodeUnknownEffect(OrganizationCommand);
 const decodeInvoiceUpload = Schema.decodeUnknownEffect(InvoiceUpload);
-const decodeDeviceCommand = Schema.decodeUnknownEffect(DeviceCommand);
 const decodeGlobalSearch = Schema.decodeUnknownEffect(GlobalProductSearchInput);
 
 const googleAuthorizationUrl = (candidate: string) => {
@@ -226,23 +223,6 @@ export const registerAuthIpc = (options: {
           return yield* Effect.tap(auth.searchGlobalProducts(search.query), (result) =>
             Effect.sync(() => options.rememberSourceLinks(result)),
           );
-        }),
-      ),
-    ),
-  );
-  ipcMain.handle(
-    SERVER_DEVICES_CHANNEL,
-    trustedIpcListener(allowedOrigins, () =>
-      run(DesktopAuth.use((auth) => auth.organizationDevices)),
-    ),
-  );
-  ipcMain.handle(
-    SERVER_DEVICE_COMMAND_CHANNEL,
-    trustedIpcListener(allowedOrigins, (_event, input) =>
-      run(
-        Effect.gen(function* () {
-          const auth = yield* DesktopAuth;
-          return yield* auth.commandDevice(yield* decodeDeviceCommand(input));
         }),
       ),
     ),

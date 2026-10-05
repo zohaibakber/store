@@ -1,4 +1,3 @@
-import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
 import type {
   GlobalProductSearchInput,
   GlobalProductSearchResult,
@@ -15,13 +14,12 @@ import type {
   ThemeBridge,
 } from "./index";
 import type { InvoiceUploadFile } from "./invoice-upload";
-import { controlNewSaleShortcut } from "./new-sale-shortcut";
 import { remoteFailureMessage } from "./remote-failure";
 import { decodedShareBridge, type ShareBridge } from "./share";
 import { decodedBackupBridge, type WorkspaceBackupBridge } from "./workspace-backup";
 import { decodedPublishBridge, type WorkspacePublishBridge } from "./workspace-publish";
 
-export type AuthIpcBridge = AuthSessionBridge & Omit<SignInBridge, "hasPendingOAuthCallback">;
+export type AuthIpcBridge = AuthSessionBridge & SignInBridge;
 
 export type ServerApiIpcBridge = {
   readonly analyseInvoices: (input: {
@@ -30,8 +28,6 @@ export type ServerApiIpcBridge = {
   readonly searchGlobalProducts: (
     input: GlobalProductSearchInput,
   ) => Promise<GlobalProductSearchResult>;
-  readonly organizationDevices: () => Promise<OrganizationDevices>;
-  readonly commandDevice: (command: DeviceCommand) => Promise<OrganizationDevices>;
 };
 
 export const InventoryHttpConfig = Schema.Struct({
@@ -90,9 +86,21 @@ type PreloadBridges = Pick<
 >;
 
 export const electronAppHost = (bridges: PreloadBridges): AppHost => {
-  const { auth, serverApi, sharing } = bridges;
+  const {
+    auth,
+    serverApi,
+    sharing,
+    desktopShell,
+    electronTheme,
+    workspaceBackup,
+    workspacePublish,
+  } = bridges;
   if (!auth || !serverApi) throw new Error("Desktop authentication bridge is unavailable.");
   if (!sharing) throw new Error("Desktop sharing bridge is unavailable.");
+  if (!desktopShell || !electronTheme) throw new Error("Desktop shell bridge is unavailable.");
+  if (!workspaceBackup || !workspacePublish) {
+    throw new Error("Desktop workspace bridge is unavailable.");
+  }
   return {
     ...decodedShareBridge(sharing),
     auth,
@@ -105,15 +113,10 @@ export const electronAppHost = (bridges: PreloadBridges): AppHost => {
     },
     analyseInvoices: (files) => serverApi.analyseInvoices({ files: [...files] }),
     searchGlobalProducts: (query) => withServerMessage(serverApi.searchGlobalProducts({ query })),
-    devices: {
-      list: () => withServerMessage(serverApi.organizationDevices()),
-      command: (command) => withServerMessage(serverApi.commandDevice(command)),
-    },
-    newSaleShortcut: controlNewSaleShortcut,
-    shell: bridges.desktopShell,
+    shell: desktopShell,
     updater: bridges.updater,
-    theme: bridges.electronTheme,
-    backup: bridges.workspaceBackup && decodedBackupBridge(bridges.workspaceBackup),
-    publish: bridges.workspacePublish && decodedPublishBridge(bridges.workspacePublish),
+    theme: electronTheme,
+    backup: decodedBackupBridge(workspaceBackup),
+    publish: decodedPublishBridge(workspacePublish),
   };
 };

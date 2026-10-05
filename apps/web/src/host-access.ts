@@ -37,8 +37,6 @@ export type OpenWorkspace = LocalWorkspace | OrganizationWorkspace;
 export type Workspace = { readonly _tag: "None" } | OpenWorkspace;
 
 export interface HostAccessPolicy {
-  readonly localWorkspace: boolean;
-
   readonly workspace: (snapshot: WorkspaceSnapshot | null) => Workspace;
 
   readonly workspaces: (snapshot: WorkspaceSnapshot | null) => ReadonlyArray<OpenWorkspace>;
@@ -88,10 +86,9 @@ const inventoryScopeOf = (workspace: Workspace): HostInventoryScope | null => {
 type DeviceRecord = { readonly current: () => DeviceWorkspace | null };
 
 const resolving =
-  (device: DeviceRecord | undefined) =>
+  (device: DeviceRecord) =>
   (snapshot: WorkspaceSnapshot | null): Workspace => {
     const organization = organizationWorkspace(snapshot);
-    if (device === undefined) return organization ?? NONE;
     const record = device.current();
     if (organization !== null) return record?.active === "local" ? LOCAL : organization;
     return record === null || record.active === "local" || record.localCatalog === "stocked"
@@ -99,18 +96,14 @@ const resolving =
       : NONE;
   };
 
-export const hostAccess = (
-  options: { readonly localWorkspace?: DeviceRecord } = {},
-): HostAccessPolicy => {
-  const device = options.localWorkspace;
+export const hostAccess = (device: DeviceRecord): HostAccessPolicy => {
   const workspace = resolving(device);
   return {
-    localWorkspace: device !== undefined,
     workspace,
     workspaces: (snapshot) => {
       const organization = organizationWorkspace(snapshot);
       const offersLocal =
-        workspace(snapshot)._tag === "Local" || device?.current()?.localCatalog === "stocked";
+        workspace(snapshot)._tag === "Local" || device.current()?.localCatalog === "stocked";
       return [...(organization === null ? [] : [organization]), ...(offersLocal ? [LOCAL] : [])];
     },
     inventoryScope: (snapshot) => inventoryScopeOf(workspace(snapshot)),

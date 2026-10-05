@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { saleDraftLimitMessage } from "@/hooks/use-sale-drafts";
-import { appHost } from "@/host";
+import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { formatCount } from "@/lib/format";
 import { MAX_SALE_DRAFTS } from "@/lib/sale-drafts";
 import { cn } from "@/lib/utils";
@@ -84,14 +84,13 @@ function HoldSaleButton({ started }: { readonly started: boolean }) {
     actions: { openDraft },
     meta: { canOpenDraft },
   } = useInvoiceCreate();
-  const shortcut = appHost().newSaleShortcut;
   const enabled = started && canOpenDraft;
 
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <Button
-          aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+          aria-keyshortcuts={newSaleShortcut.ariaKeyShortcuts}
           disabled={!enabled}
           onClick={openDraft}
           size="sm"
@@ -105,7 +104,7 @@ function HoldSaleButton({ started }: { readonly started: boolean }) {
         {enabled ? (
           <span className="inline-flex items-center gap-2">
             Keep this sale open and start another
-            <Kbd>{shortcut.label}</Kbd>
+            <Kbd>{newSaleShortcut.label}</Kbd>
           </span>
         ) : started ? (
           saleDraftLimitMessage

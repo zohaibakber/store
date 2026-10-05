@@ -16,7 +16,6 @@ import {
   type OrganizationCommandResult,
   type OrganizationRoster,
 } from "@store/auth";
-import type { DeviceCommand, OrganizationDevices } from "@store/contracts";
 import type {
   GlobalProductSearchResult,
   InvoiceExtraction,
@@ -26,7 +25,6 @@ import {
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
-import { commandOrganizationDevice, listOrganizationDevices } from "@store/web/host/devices";
 import { searchGlobalProducts } from "@store/web/host/global-search";
 import type { SignInCredentials } from "@store/web/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "@store/web/host/invoice-upload";
@@ -145,10 +143,6 @@ interface DesktopAuthApi {
   readonly searchGlobalProducts: (
     query: string,
   ) => Effect.Effect<GlobalProductSearchResult, Error | RequestError>;
-  readonly organizationDevices: Effect.Effect<OrganizationDevices, RequestError>;
-  readonly commandDevice: (
-    command: DeviceCommand,
-  ) => Effect.Effect<OrganizationDevices, RequestError>;
   readonly liveAccessToken: (
     force: boolean,
   ) => Effect.Effect<Redacted.Redacted<string> | null, RequestError>;
@@ -300,8 +294,6 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
     analyseInvoices: (files) => withSession(analyseInvoiceUpload(files)),
     searchGlobalProducts: (query) => withSession(searchGlobalProducts(query)),
-    organizationDevices: withSession(listOrganizationDevices),
-    commandDevice: (command) => withSession(commandOrganizationDevice(command)),
     liveAccessToken: (force) =>
       withSession(SessionHttp.use((session) => session.ensureFreshAccess(force))).pipe(
         Effect.map((access) => (access === null ? null : Redacted.make(access.accessToken))),

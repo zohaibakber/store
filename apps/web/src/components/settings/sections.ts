@@ -29,19 +29,5 @@ export const settingsBreadcrumb = (section: string | undefined): string => {
   return decoded._tag === "Some" ? settingsSectionTitle(decoded.value) : "Settings";
 };
 
-export const availableSettingsSections = (device: {
-  readonly signedIn: boolean;
-  readonly keepsDataOnDevice: boolean;
-}): ReadonlyArray<SettingsSection> =>
-  settingsSections.filter((section) => {
-    switch (section) {
-      case "account":
-      case "receipts":
-      case "general":
-        return true;
-      case "organization":
-        return device.signedIn;
-      case "data":
-        return device.keepsDataOnDevice;
-    }
-  });
+export const availableSettingsSections = (signedIn: boolean): ReadonlyArray<SettingsSection> =>
+  settingsSections.filter((section) => section !== "organization" || signedIn);

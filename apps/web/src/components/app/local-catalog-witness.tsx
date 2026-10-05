@@ -8,10 +8,9 @@ import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { witnessBoundLocalCatalog } from "@/session/workspace-session";
 
 const witnessLocalFile = () => {
-  const read = appHost().publish?.localCatalog;
-  if (!read) return;
   let current = true;
-  void read()
+  void appHost()
+    .publish.localCatalog()
     .then((report) => {
       if (!current || report._tag === "unknown") return;
       return witnessBoundLocalCatalog(report._tag);

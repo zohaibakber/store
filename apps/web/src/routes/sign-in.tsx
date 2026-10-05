@@ -25,14 +25,13 @@ function ContinueWithoutAccount() {
 }
 
 function SignInRoute() {
-  const { access } = Route.useRouteContext();
   const callback = useGoogleCallback();
   if (callback.completing) return <AppLoading label="Signing in" />;
   return (
     <AuthScreen>
       <div className="flex flex-col gap-6">
         <AuthForm callbackError={callback.error} />
-        {access.localWorkspace ? <ContinueWithoutAccount /> : null}
+        <ContinueWithoutAccount />
       </div>
     </AuthScreen>
   );

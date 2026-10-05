@@ -29,7 +29,7 @@ export const startElectron = async () => {
   mountApp({
     snapshot,
     history: createHashHistory(),
-    access: hostAccess({ localWorkspace: device }),
+    access: hostAccess(device),
     catalog: createAppCatalogLifetime(),
     inventory: hostInventoryOf(inventory),
     device,

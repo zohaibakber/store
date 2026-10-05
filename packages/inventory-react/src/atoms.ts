@@ -280,7 +280,6 @@ export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Atom<InventorySyncStatus>;
   readonly syncActivity: Atom.Atom<InventorySyncActivity>;
-  readonly syncing: Atom.Atom<boolean>;
   readonly syncTransfer: Atom.Atom<SyncTransfer | undefined>;
   readonly storageFull: Atom.Writable<boolean>;
   readonly syncSnapshot: Read<ReplicaSyncActivity>;
@@ -622,10 +621,6 @@ export const createWorkspaceAtoms = (
     registry,
     syncStatus,
     syncActivity,
-    syncing: Atom.make((get) => {
-      const health = get(links.sync);
-      return health._tag === "running" && health.syncing === true;
-    }),
     syncTransfer: Atom.make((get) => {
       const health = get(links.sync);
       return health._tag === "running" ? health.transfer : undefined;

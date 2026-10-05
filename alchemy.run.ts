@@ -9,7 +9,6 @@ import * as Layer from "effect/Layer";
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Api } from "./apps/server/api.ts";
 import { ApiLive } from "./apps/server/infra.ts";
-import { Website } from "./apps/web/infra.ts";
 import { Edge } from "./infra/edge.ts";
 import { InventoryDatabaseId, stageUsesNeonInventory } from "./packages/db/src/postgres/infra.ts";
 
@@ -36,12 +35,10 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const auth = yield* Auth;
     const api = yield* Api;
-    const websiteUrl = stage === "prod" ? (yield* Website).url : undefined;
     const edge = yield* Edge;
     const inventoryDatabaseId = yield* InventoryDatabaseId;
     return {
       stage,
-      websiteUrl,
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,

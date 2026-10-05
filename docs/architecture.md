@@ -6,13 +6,9 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 
 ## Clients
 
-- `apps/web`: the product UI and the website. One React app with two hosts,
-  chosen at startup by whether the preload bridges are present. It defines the
-  host contract in `src/host` and never imports from `apps/desktop`. In the
-  browser it keeps the access token in memory and the refresh token in the auth
-  Worker's HttpOnly cookie, and holds no replica: sign-in, organizations and
-  settings work, and inventory screens point to the desktop app.
-  Prod serves it on `PRODUCTION_DOMAIN`.
+- `apps/web`: the product UI, a React app that runs only as the desktop
+  renderer. It defines the host contract in `src/host` and never imports from
+  `apps/desktop`. It is not deployed on its own; there is no website.
 - `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
   implements the host contract. The replica lives in a main-process Node worker
   on `@effect/sql-sqlite-node` over `node:sqlite`. The renderer reaches it
@@ -110,9 +106,9 @@ pulls.
 Alchemy declares everything in `alchemy.run.ts` and the `infra.ts` modules next
 to the code they deploy. There are two stages:
 
-- `dev`: inventory Postgres on Neon, no web app deployment.
-- `prod`: inventory on PlanetScale Postgres, web app on `PRODUCTION_DOMAIN`,
-  API on `api.<domain>`, auth on `auth.<domain>`, and zone WAF rules
+- `dev`: inventory Postgres on Neon.
+- `prod`: inventory on PlanetScale Postgres, API on `api.<domain>` and on
+  `/api/*` of `PRODUCTION_DOMAIN`, auth on `auth.<domain>`, and zone WAF rules
   (`infra/edge.ts`) that block paths outside each host's surface and rate-limit
   `/api/` per IP.
 

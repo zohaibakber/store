@@ -102,6 +102,4 @@ export const useInventorySyncStatus = () => useAtomValue(useCatalogReplica().ato
 
 export const useInventorySyncActivity = () => useAtomValue(useCatalogReplica().atoms.syncActivity);
 
-export const useInventorySyncing = () => useAtomValue(useCatalogReplica().atoms.syncing);
-
 export const useInventorySyncTransfer = () => useAtomValue(useCatalogReplica().atoms.syncTransfer);

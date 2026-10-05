@@ -1,20 +1,17 @@
 # Store
 
-pnpm workspace for offline-first inventory: an Electron desktop app, the same
-renderer as a browser shell without inventory, an Expo Android app, and
-Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
+pnpm workspace for offline-first inventory: an Electron desktop app, an Expo
+Android app, and Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
 design is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Workspace boundaries
 
 - `apps/web` owns the product UI: the React app, routes, components, styles,
-  and the host contract (`src/host`) that says what a host must provide. It
-  builds and deploys alone as a browser SPA: an HttpOnly refresh cookie and an
-  in-memory access token. The browser has no replica, so it covers sign-in,
-  organizations and settings and points to the desktop app for inventory. It
-  never imports from `apps/desktop`.
+  and the host contract (`src/host`) that says what the desktop shell must
+  provide. It is the renderer of the desktop app and is not deployed on its
+  own. It never imports from `apps/desktop`.
 - `apps/desktop` owns the Electron shell: main process, preload, workers,
-  updater, tests, and packaging. It uses the web app as its renderer and
+  updater, tests, and packaging. It uses `apps/web` as its renderer and
   implements the host contract, importing only `@store/web/host/*` and
   `@store/web/vite`. The renderer uses hash history; the main process keeps
   encrypted refresh credentials and pushes a short-lived access token to the
@@ -71,16 +68,9 @@ vp run dev
 ```
 
 `vp run` starts the API/auth Workers and the desktop workspace in parallel. The
-desktop's plain `vp dev` task serves the web app as its renderer on `:5174`,
+desktop's plain `vp dev` task serves `apps/web` as its renderer on `:5174`,
 builds main and preload, and launches Electron. Use `vp run @store/desktop#dev` when you only
 need one workspace.
-
-```sh
-vp run dev:web
-```
-
-That starts the same Workers and serves `apps/web` in the browser on
-`http://localhost:5174`.
 
 Cloudflare infrastructure is declared with [Alchemy](https://alchemy.run) in
 `alchemy.run.ts` and the `infra.ts` modules beside the code that owns each
@@ -133,8 +123,8 @@ The `Production` environment must also define these variables. There is no
 domain baked into source. Published deploys fail if `PRODUCTION_DOMAIN` is
 missing.
 
-- `PRODUCTION_DOMAIN`. Base hostname (example: `tabaaq.app`). It serves the web
-  app and derives the API and auth hostnames.
+- `PRODUCTION_DOMAIN`. Base hostname (example: `tabaaq.app`). It derives the API
+  and auth hostnames, and `/api/*` on it routes to the API.
 - `VITE_API_URL`. API origin (example: `https://api.tabaaq.app`) baked into the
   desktop release. If unset, the API hostname is `api.<PRODUCTION_DOMAIN>`.
 - `VITE_AUTH_URL`. Auth origin (example: `https://auth.tabaaq.app`). If unset,
@@ -145,8 +135,7 @@ missing.
 
 Configure the Google OAuth client callback as
 `https://auth.<domain>/v1/oauth/google/callback`. The auth Worker redirects back
-to the desktop custom scheme, or to the web app's `/sign-in`, after PKCE
-verification.
+to the desktop custom scheme after PKCE verification.
 
 The admin profile can mint API tokens. Use it only for this bootstrap stack.
 
@@ -161,10 +150,8 @@ infrastructure.
 Run all workspace checks with `vp check`, `vp run -r check` (Drizzle schema
 and migration bundle), and `vp test`, or produce the packaged
 desktop app with `vp run build:desktop` (electron-builder). Production
-deploys run `pnpm exec alchemy deploy`, which serves the web app from
-`PRODUCTION_DOMAIN`, the API from `api.<PRODUCTION_DOMAIN>`, and auth at
-`auth.<PRODUCTION_DOMAIN>`. The `dev` stage has no web app deployment; use
-`vp run dev:web`.
+deploys run `pnpm exec alchemy deploy`, which serves the API from
+`api.<PRODUCTION_DOMAIN>` and auth at `auth.<PRODUCTION_DOMAIN>`.
 
 ## Install
 

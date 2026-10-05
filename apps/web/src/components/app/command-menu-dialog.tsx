@@ -57,6 +57,7 @@ import { canSearchGlobally, useGlobalProductSearch } from "@/hooks/use-global-pr
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
+import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import { isSubmitChord } from "@/lib/shortcuts";
@@ -125,11 +126,7 @@ export function InventoryCommandDialog({
         portalProps={{ keepMounted: true }}
       >
         <Activity mode={presented ? "visible" : "hidden"}>
-          {inventory._tag === "NoReplica" ? (
-            <p className="p-6 text-sm text-muted-foreground">
-              Search is available in the desktop app.
-            </p>
-          ) : inventory._tag === "Unavailable" ? (
+          {inventory._tag === "Unavailable" ? (
             <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
           ) : !scope ? (
             <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
@@ -184,7 +181,7 @@ function CommandPalette({ onOpenChange }: { readonly onOpenChange: (open: boolea
 function useActions(close: () => void): ReadonlyArray<ActionEntry> {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
-  const newSaleLabel = appHost().newSaleShortcut.label;
+  const newSaleLabel = newSaleShortcut.label;
   const startSale = useStartSale();
 
   return useMemo(() => {

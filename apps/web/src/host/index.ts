@@ -13,9 +13,7 @@ import type {
 } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
-import type { DevicesBridge } from "./devices";
 import type { InvoiceUploadFile } from "./invoice-upload";
-import type { NewSaleShortcut } from "./new-sale-shortcut";
 import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
@@ -39,7 +37,6 @@ export type SignInBridge = {
   readonly beginGoogle: () => Promise<void>;
   readonly completeGoogle: (callbackUrl: string) => Promise<WorkspaceSnapshot | null>;
   readonly onOAuthCallback: (listener: (url: string) => void) => () => void;
-  readonly hasPendingOAuthCallback?: () => boolean;
 };
 
 export type AppUpdaterBridge = {
@@ -70,17 +67,15 @@ export interface AppHost {
   readonly signIn: SignInBridge;
   readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
   readonly searchGlobalProducts: (query: string) => Promise<GlobalProductSearchResult>;
-  readonly devices: DevicesBridge;
-  readonly newSaleShortcut: NewSaleShortcut;
-  readonly shell?: DesktopShellBridge;
+  readonly shell: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;
-  readonly theme?: ThemeBridge;
-  readonly backup?: WorkspaceBackupBridge;
+  readonly theme: ThemeBridge;
+  readonly backup: WorkspaceBackupBridge;
   readonly openExternal: (url: string) => Promise<void>;
   readonly copyText: (text: string) => Promise<void>;
   readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
   readonly print: (page: PrintPage) => Promise<PrintOutcome>;
-  readonly publish?: WorkspacePublishBridge;
+  readonly publish: WorkspacePublishBridge;
 }
 
 let installed: AppHost | null = null;

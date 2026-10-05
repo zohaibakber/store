@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent } from "react";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useSaleDraftStore } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
+import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { hasOpenModal } from "@/lib/shortcuts";
 
 const NEW_SALE_PATH = "/invoices/new";
@@ -28,18 +29,17 @@ export function useNewSaleShortcut(): void {
   });
 
   useEffect(() => {
-    const host = appHost();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!host.newSaleShortcut.matches(event)) return;
+      if (!newSaleShortcut.matches(event)) return;
       event.preventDefault();
       go();
     };
 
     window.addEventListener("keydown", onKeyDown, true);
-    const stopShell = host.shell?.onNewSale(() => go());
+    const stopShell = appHost().shell.onNewSale(() => go());
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
-      stopShell?.();
+      stopShell();
     };
   }, []);
 }

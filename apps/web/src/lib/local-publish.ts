@@ -40,9 +40,9 @@ const IDLE: PublishPhase = { _tag: "Idle" };
 
 const offerAtom = Atom.family((organizationId: string) =>
   Atom.make(
-    Effect.tryPromise(
-      () => appHost().publish?.offer(organizationId) ?? Promise.resolve(NO_OFFER),
-    ).pipe(Effect.orElseSucceed(() => NO_OFFER)),
+    Effect.tryPromise(() => appHost().publish.offer(organizationId)).pipe(
+      Effect.orElseSucceed(() => NO_OFFER),
+    ),
   ),
 );
 
@@ -57,7 +57,7 @@ const ANOTHER_ORGANIZATION = "another organization";
 const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
   const bridge = appHost().publish;
   const phase = phaseAtom(organization.id);
-  if (!bridge || registry.get(movingAtom)) return;
+  if (registry.get(movingAtom)) return;
   registry.set(movingAtom, true);
   registry.set(phase, { _tag: "Moving", progress: null });
   const stop = bridge.onProgress((progress) => registry.set(phase, { _tag: "Moving", progress }));
@@ -91,10 +91,9 @@ const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: P
 };
 
 const cancelMoveElsewhere = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
-  const bridge = appHost().publish;
-  if (!bridge || registry.get(movingAtom)) return;
-  void bridge
-    .discard(organization.id)
+  if (registry.get(movingAtom)) return;
+  void appHost()
+    .publish.discard(organization.id)
     .catch(toastStoreError)
     .finally(() => registry.refresh(offerAtom(organization.id)));
 };
@@ -103,7 +102,7 @@ export const usePublishInProgress = (): boolean => useAtomValue(movingAtom);
 
 export const usePublishTarget = (): PublishTarget | null => {
   const { workspace, workspaces } = useAuth();
-  if (appHost().publish === undefined || workspace._tag !== "Organization") return null;
+  if (workspace._tag !== "Organization") return null;
   if (workspace.organization.role !== "owner") return null;
   if (!workspaces.some((open) => open._tag === "Local")) return null;
   return workspace.organization;

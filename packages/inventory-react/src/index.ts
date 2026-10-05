@@ -32,7 +32,6 @@ export {
   useInventoryActions,
   useInventoryState,
   useInventorySyncActivity,
-  useInventorySyncing,
   useInventorySyncTransfer,
   useInventorySyncStatus,
   useReadyInventory,

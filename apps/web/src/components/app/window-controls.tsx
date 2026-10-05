@@ -42,8 +42,7 @@ function WindowControlButtons({ controls }: { readonly controls: WindowControlsB
 }
 
 export function WindowControls() {
-  const controls = appHost().shell?.window;
-  return controls ? <WindowControlButtons controls={controls} /> : null;
+  return <WindowControlButtons controls={appHost().shell.window} />;
 }
 
 export function WindowDragStrip({ className }: { readonly className?: string }) {

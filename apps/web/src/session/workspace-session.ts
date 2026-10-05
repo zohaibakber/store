@@ -65,7 +65,7 @@ type WorkspaceSessionPorts = {
   readonly session: ReplayChannel<WorkspaceSession>;
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
-  readonly device?: DeviceWorkspaceStore;
+  readonly device: DeviceWorkspaceStore;
 };
 
 type ApplyWorkspaceSnapshotPorts = WorkspaceSessionPorts & {
@@ -93,21 +93,17 @@ const deviceChangeOf = (
 };
 
 const recordFor = (
-  device: DeviceWorkspaceStore | undefined,
+  device: DeviceWorkspaceStore,
   change: DeviceWorkspaceChange,
 ): DeviceWorkspace | null => {
-  if (device === undefined) return null;
   const before = device.current();
   const after = deviceWorkspaceAfter(before, change);
   return after === before ? null : after;
 };
 
-const recordOnDevice = (
-  device: DeviceWorkspaceStore | undefined,
-  change: DeviceWorkspaceChange,
-): void => {
+const recordOnDevice = (device: DeviceWorkspaceStore, change: DeviceWorkspaceChange): void => {
   const record = recordFor(device, change);
-  if (record !== null) device?.write(record);
+  if (record !== null) device.write(record);
 };
 
 export const startWorkspaceSession = (

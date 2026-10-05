@@ -30,7 +30,7 @@ export const mountApp = (input: {
   readonly access: HostAccessPolicy;
   readonly catalog: CatalogLifetime;
   readonly inventory: HostInventory;
-  readonly device?: DeviceWorkspaceStore;
+  readonly device: DeviceWorkspaceStore;
 }) => {
   configureInventoryPreferences(preferenceStore());
   const session = makeReplayChannel<WorkspaceSession>();

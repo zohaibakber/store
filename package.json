@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp run --parallel --filter '!@store/web' dev",
-    "dev:web": "vp run --parallel --filter @store/server --filter @store/web dev",
+    "dev": "vp run --parallel dev",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "vp run -r build",
     "lint:design": "oxlint -c .oxlintrc.design.json apps/web/src",

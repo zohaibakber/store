@@ -2,18 +2,13 @@
   "name": "@store/web",
   "version": "0.3.105",
   "private": true,
-  "description": "Tabaaq inventory web app",
+  "description": "Tabaaq product UI, the renderer of the desktop app",
   "homepage": "https://github.com/zohaibakber/store",
   "author": "Zohaib Akber <zohaibakber99@gmail.com>",
   "type": "module",
   "exports": {
     "./host/*": "./src/host/*.ts",
     "./vite": "./vite.app.ts"
-  },
-  "scripts": {
-    "dev": "vp dev",
-    "build": "tsc && vp build",
-    "preview": "vp preview"
   },
   "devDependencies": {
     "@base-ui/react": "^1.8.0",
@@ -25,11 +20,9 @@
     "@sentry/electron": "7.20.0",
     "@sentry/react": "10.75.0",
     "@store/auth": "workspace:*",
-    "@store/auth-worker": "workspace:*",
     "@store/client-db": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/inventory-react": "workspace:*",
-    "@store/server": "workspace:*",
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "@store/workspace": "workspace:*",
@@ -43,7 +36,6 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "alchemy": "catalog:",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3-shape": "^3.2.0",

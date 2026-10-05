@@ -54,8 +54,6 @@ To run only the desktop workspace against an already-running backend:
 vp run @store/desktop#dev
 ```
 
-For the browser host, see `apps/web/README.md`.
-
 ## Build
 
 ```sh

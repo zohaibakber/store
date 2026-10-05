@@ -1,7 +1,5 @@
 import { useAtom } from "@effect/atom-react";
-import { ComputerIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { getRouteApi, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { getRouteApi, Outlet } from "@tanstack/react-router";
 import { Suspense } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
@@ -15,13 +13,6 @@ import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/componen
 import { WindowControls } from "@/components/app/window-controls";
 import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,32 +22,6 @@ import { WorkspaceSyncAction } from "@/lib/inventory/sync-status";
 import { sidebarOpenAtom } from "@/lib/preferences";
 
 const route = getRouteApi("/_app");
-
-function InventoryOnDesktop() {
-  return (
-    <Empty className="min-h-[calc(100svh-4rem)]">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <HugeiconsIcon aria-hidden="true" icon={ComputerIcon} />
-        </EmptyMedia>
-        <EmptyTitle>Inventory is in the desktop app</EmptyTitle>
-        <EmptyDescription>
-          Products, sales and purchases are available in the Tabaaq desktop app.
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
-function ReplicaFreeContent() {
-  const onSettings = useMatchRoute()({ to: "/settings", fuzzy: true }) !== false;
-  if (!onSettings) return <InventoryOnDesktop />;
-  return (
-    <Suspense fallback={<PageLoading />}>
-      <Outlet />
-    </Suspense>
-  );
-}
 
 export function AppShell() {
   const { inventory, catalog } = route.useRouteContext();
@@ -83,7 +48,7 @@ export function AppShell() {
             <TitleBarSearch />
             <TitleBarEnd>
               <TitleBarInsightsFreshness />
-              <WorkspaceSyncAction workspace={workspace} />
+              <WorkspaceSyncAction />
               <WindowControls />
             </TitleBarEnd>
           </TitleBar>
@@ -94,9 +59,7 @@ export function AppShell() {
               data-scroll-restoration-id="app-content"
             >
               <LocalCatalogWitness workspace={workspace} />
-              {inventory._tag === "NoReplica" ? (
-                <ReplicaFreeContent />
-              ) : host && lease ? (
+              {host && lease ? (
                 <InventoryReady>
                   <PublishOffer />
                   <ReceiptPrintHost />

@@ -80,7 +80,7 @@ say so in the PR.
 - The shared entrypoint of `packages/sync` (`@store/sync`) must stay native-free.
   `packages/sync/test/browser-boundary.test.ts` enforces it, because the renderer
   and mobile import that entry; SQLite belongs in `@store/sync/sqlite`. No
-  browser replica exists: outside Electron the renderer has no replica.
+  browser replica exists.
 - Command state never crosses process boundaries as SQL or query IR. The
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
@@ -127,8 +127,7 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
 - **Desktop app.** `vp run dev` from the repo root starts the API/auth workers
   and `apps/desktop` in parallel. Its `vp dev` command serves `apps/web` as the
-  renderer on `:5174`, builds main/preload, and launches Electron. `vp run dev:web`
-  serves `apps/web` in the browser instead. Unpackaged/dev keeps an
+  renderer on `:5174`, builds main/preload, and launches Electron. Unpackaged/dev keeps an
   escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
   can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
   Electron Fuses in electron-builder's `afterPack` hook and keep

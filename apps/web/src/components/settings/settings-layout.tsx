@@ -17,7 +17,6 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -41,10 +40,7 @@ const sectionIcon = (section: SettingsSection): IconSvgElement => {
 
 export const useSettingsSections = (): ReadonlyArray<SettingsSection> => {
   const signedIn = useAuth().snapshot?.status === "authenticated";
-  return availableSettingsSections({
-    signedIn,
-    keepsDataOnDevice: appHost().backup !== undefined,
-  });
+  return availableSettingsSections(signedIn);
 };
 
 export function SettingsLayout() {

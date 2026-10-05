@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 import { useParkedSaleCountIn } from "@/hooks/use-sale-drafts";
-import { appHost } from "@/host";
+import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { formatCount } from "@/lib/format";
 import { useWorkspaceStorageKey } from "@/lib/workspace";
 
@@ -40,7 +40,6 @@ const isWithin = (pathname: string, url: string) =>
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
   const { isMobile, setOpenMobile } = useSidebar();
-  const newSaleShortcut = appHost().newSaleShortcut;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const parkedSales = useParkedSaleCountIn(useWorkspaceStorageKey(), pathname === "/invoices/new");
   const parkedLabel = `${formatCount(parkedSales, "sale")} in progress`;

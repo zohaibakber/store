@@ -312,7 +312,7 @@ type GoogleCallback = { readonly completing: boolean; readonly error: string | n
 
 export function useGoogleCallback(): GoogleCallback {
   const [state, setState] = React.useState<GoogleCallback>(() => ({
-    completing: appHost().signIn.hasPendingOAuthCallback?.() ?? false,
+    completing: false,
     error: null,
   }));
 

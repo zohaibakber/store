@@ -19,7 +19,7 @@ const electronDefines = {
   "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(process.env["VITE_SENTRY_DSN"] ?? ""),
 };
 
-const app = webAppConfig({ version: packageJson.version, signedInApp: "eager" });
+const app = webAppConfig({ version: packageJson.version });
 
 type ElectronStart = NonNullable<ElectronOptions["onstart"]>;
 

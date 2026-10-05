@@ -228,6 +228,5 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
 }
 
 export function BackupSettings() {
-  const [bridge] = useState(() => appHost().backup);
-  return bridge ? <BackupControls bridge={bridge} /> : null;
+  return <BackupControls bridge={appHost().backup} />;
 }
