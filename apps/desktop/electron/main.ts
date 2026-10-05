@@ -29,6 +29,7 @@ import {
   WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from "./ipc-channels";
 import { isTrustedIpcSenderFrame } from "./ipc-sender";
+import { makeLicenceHost } from "./licence/host";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
@@ -70,6 +71,7 @@ let win: BrowserWindow | null;
 let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
 let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
+let licenceHost: ReturnType<typeof makeLicenceHost> | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
 const unpackagedDevMarkPath = () =>
@@ -272,6 +274,7 @@ const shutdown = makeShutdownCoordinator({
       disposeUpdater?.(),
       Promise.resolve(disposeInventoryHttp?.()),
       Promise.resolve(replicaWorker?.dispose()),
+      licenceHost?.dispose(),
     ]);
     const failures = results.filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -326,6 +329,10 @@ void app.whenReady().then(async () => {
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
   });
+  licenceHost = makeLicenceHost({
+    userDataPath: app.getPath("userData"),
+    packaged: app.isPackaged,
+  });
   replicaWorker = registerReplicaWorkerIpc({
     ipcMain,
     userDataPath: app.getPath("userData"),
@@ -334,6 +341,7 @@ void app.whenReady().then(async () => {
     allowedOrigins: allowedRendererOrigins,
     backupDialogs,
     rendererChannel: () => new MessageChannelMain(),
+    sessions: { licence: licenceHost.service },
   });
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
 });

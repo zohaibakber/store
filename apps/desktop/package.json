@@ -24,6 +24,7 @@
     "@sentry/electron": "7.20.0",
     "@store/client-db": "workspace:*",
     "@store/contracts": "workspace:*",
+    "@store/licence": "workspace:*",
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "@store/web": "workspace:*",
