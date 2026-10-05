@@ -210,6 +210,7 @@ export const staffEvents = sqliteTable(
         "autoLockChanged",
         "draftHandedOver",
         "unlockThrottled",
+        "staffTurnedOff",
       ],
     }).notNull(),
     actorId: text(),

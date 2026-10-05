@@ -60,7 +60,7 @@ export type StaffMember = typeof StaffMember.Type;
 
 export const StaffState = Schema.TaggedUnion({
   disabled: {},
-  setupRequired: {},
+  solo: {},
   locked: { staff: Schema.Array(StaffMember) },
   unlocked: {
     actor: StaffMember,
@@ -73,8 +73,8 @@ export type StaffState = typeof StaffState.Type;
 export const permits = (state: StaffState, permission: StaffPermission): boolean => {
   switch (state._tag) {
     case "disabled":
+    case "solo":
       return true;
-    case "setupRequired":
     case "locked":
       return false;
     case "unlocked":
@@ -113,6 +113,7 @@ export const StaffEventKind = Schema.Literals([
   "autoLockChanged",
   "draftHandedOver",
   "unlockThrottled",
+  "staffTurnedOff",
 ]);
 export type StaffEventKind = typeof StaffEventKind.Type;
 

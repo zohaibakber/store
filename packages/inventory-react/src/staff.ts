@@ -50,6 +50,7 @@ export type StaffActions = {
   readonly renewRecoveryCode: () => Promise<{ readonly recoveryCode: string }>;
   readonly setAutoLock: (minutes: number) => Promise<void>;
   readonly events: () => Promise<ReadonlyArray<StaffEvent>>;
+  readonly turnOff: () => Promise<void>;
   readonly handOverDraft: (draftId: InvoiceId, from: StaffId) => Promise<void>;
 };
 
@@ -93,6 +94,7 @@ export const makeStaffActions = (
     renewRecoveryCode: () => request((store) => store("RenewRecoveryCode", undefined)),
     setAutoLock: (minutes) => request((store) => store("SetAutoLock", { minutes })),
     events: () => request((store) => store("StaffEvents", undefined)),
+    turnOff: () => request((store) => store("TurnOffStaff", undefined)),
     handOverDraft: (draftId, from) => request((store) => store("HandOverDraft", { draftId, from })),
   };
 };

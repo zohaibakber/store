@@ -67,6 +67,7 @@ export class StaffRpcs extends RpcGroup.make(
     success: Schema.Array(StaffEvent).check(Schema.isMaxLength(MAX_STAFF_EVENTS)),
     error: StaffFailure,
   }),
+  Rpc.make("TurnOffStaff", { error: StaffFailure }),
   Rpc.make("HandOverDraft", {
     payload: { draftId: InvoiceId, from: StaffId },
     error: StaffFailure,

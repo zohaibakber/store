@@ -40,6 +40,7 @@ export class StaffGate extends Context.Service<
         RenewRecoveryCode: disabled,
         SetAutoLock: disabled,
         StaffEvents: disabled,
+        TurnOffStaff: disabled,
         HandOverDraft: disabled,
       },
       authorize: () => Effect.succeed(Option.none()),
