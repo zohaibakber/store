@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { layerInventoryReads } from "../src/reads/handlers";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
-import { layerInventoryStore } from "../src/store/handlers";
+import { layerInventoryStore, StaffGate } from "../src/store/handlers";
 
 const DAY = 86_400_000;
 
@@ -54,7 +54,11 @@ const openStore = async (replicaId: string) => {
   const client = () =>
     Effect.runPromise(
       RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
-        Effect.provide(Layer.fresh(Layer.provide(layerInventoryStore, services))),
+        Effect.provide(
+          Layer.fresh(
+            Layer.provide(layerInventoryStore, Layer.merge(services, StaffGate.layerDisabled)),
+          ),
+        ),
         Scope.provide(scope),
       ),
     );

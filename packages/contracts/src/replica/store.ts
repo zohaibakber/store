@@ -36,6 +36,7 @@ import { CommandStatus } from "../sync/replica-model";
 import { SyncEntity } from "../sync/schema";
 import { CommandFailure, ReadFailure } from "./errors";
 import { CommitNotice, Stamp } from "./notices";
+import { StaffRpcs } from "./staff";
 import { ReplicaSyncActivity, SyncHealth } from "./sync-status";
 
 export const BatchDraft = Schema.Struct(Struct.omit(CreateBatchInput.fields, ["productId"]));
@@ -245,4 +246,4 @@ export class InventoryStore extends RpcGroup.make(
     error: ReadFailure,
   }),
   Rpc.make("WakeSyncUpload", { success: UploadWake, error: ReadFailure }),
-) {}
+).merge(StaffRpcs) {}

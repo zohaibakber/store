@@ -36,6 +36,7 @@ import {
   type ReplicaAuthority,
 } from "./host";
 import { makeInventoryLinks, type InventoryLinks, type StoreClient } from "./services";
+import { makeStaffActions } from "./staff";
 import type { Inventory, InventoryActions } from "./types";
 
 const FIRST_READ_WAIT = "20 seconds";
@@ -124,6 +125,7 @@ const makeActions = (
 
   return {
     ...commands,
+    staff: makeStaffActions(registry, links),
     retrySync: async () => {
       await Effect.runPromise(opened.retryRecovery);
       wake();

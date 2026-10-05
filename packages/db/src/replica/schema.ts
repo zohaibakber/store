@@ -172,3 +172,55 @@ export const pendingRowJournal = sqliteTable(
     index("pending_row_journal_entity_idx").on(table.entity, table.entityId),
   ],
 );
+
+export const staff = sqliteTable("staff", {
+  id: text().primaryKey().notNull(),
+  name: text().notNull(),
+  role: text({ enum: ["owner", "manager", "cashier"] }).notNull(),
+  pinVerifier: text().notNull(),
+  failedAttempts: integer({ mode: "number" }).notNull().default(0),
+  lockedUntil: integer({ mode: "number" }).notNull().default(0),
+  active: integer({ mode: "boolean" }).notNull().default(true),
+  createdAt: integer({ mode: "number" }).notNull(),
+  updatedAt: integer({ mode: "number" }).notNull(),
+});
+
+export const staffSettings = sqliteTable("staff_settings", {
+  id: text().primaryKey().notNull(),
+  autoLockMinutes: integer({ mode: "number" }).notNull(),
+  recoveryVerifier: text().notNull(),
+  recoveryFailedAttempts: integer({ mode: "number" }).notNull().default(0),
+  recoveryLockedUntil: integer({ mode: "number" }).notNull().default(0),
+});
+
+export const staffEvents = sqliteTable(
+  "staff_events",
+  {
+    seq: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+    at: integer({ mode: "number" }).notNull(),
+    kind: text({
+      enum: [
+        "ownerSetUp",
+        "staffAdded",
+        "staffUpdated",
+        "pinChanged",
+        "staffRemoved",
+        "ownerRecovered",
+        "recoveryCodeRenewed",
+        "autoLockChanged",
+        "draftHandedOver",
+        "unlockThrottled",
+      ],
+    }).notNull(),
+    actorId: text(),
+    subjectId: text(),
+    fromStaffId: text(),
+  },
+  (table) => [index("staff_events_kind_subject_idx").on(table.kind, table.subjectId)],
+);
+
+export const commandStaff = sqliteTable("command_staff", {
+  operationId: text().primaryKey().notNull(),
+  staffId: text().notNull(),
+  at: integer({ mode: "number" }).notNull(),
+});

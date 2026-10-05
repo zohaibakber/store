@@ -5,6 +5,7 @@ export * from "./catalog/rules";
 export * from "./catalog/write";
 export { INT4_MAX, PositiveInt, Sha256Hex, SyncIdentifier } from "./schema-primitives";
 export * from "./server/schema";
+export * from "./staff";
 export * from "./store/helpers";
 export * from "./store/invoice-allocation";
 export * from "./store/schema";

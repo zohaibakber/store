@@ -12,6 +12,7 @@ import { InsightsReports, layerInventoryInsights } from "./insights/handlers";
 import { layerInventoryReads } from "./reads/handlers";
 import type { SqliteReplicaServices } from "./replica/sql-client-session";
 import { layerInventoryStore } from "./store/handlers";
+import { StaffGate } from "./store/staff-gate";
 
 export type InProcessReplica = Context.Context<SqliteReplicaServices>;
 
@@ -25,6 +26,8 @@ const layerReads = layerInventoryReads.pipe(
 );
 
 const layerInsights = layerInventoryInsights.pipe(Layer.provide(InsightsReports.layerReplica));
+
+const layerStore = Layer.provide(layerInventoryStore, StaffGate.layerDisabled);
 
 const closed = Layer.effectContext(Effect.never);
 
@@ -42,7 +45,7 @@ export const inProcessLinks = (session: Atom.Atom<Option.Option<InProcessReplica
       makeEffect: RpcTest.makeClient(InventoryReads, { flatten: true }),
     },
     store: {
-      protocol: within(layerInventoryStore),
+      protocol: within(layerStore),
       makeEffect: RpcTest.makeClient(InventoryStore, { flatten: true }),
     },
     insights: {

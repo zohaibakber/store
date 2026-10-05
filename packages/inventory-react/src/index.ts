@@ -14,7 +14,19 @@ export {
   type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
-export { catalogOpenFailure, commandFailureSurface, type FailureSurface } from "./errors";
+export {
+  catalogOpenFailure,
+  commandFailureSurface,
+  staffRefusalCopy,
+  type FailureSurface,
+} from "./errors";
+export {
+  useInvoiceStaff,
+  useStaffActions,
+  useStaffPermission,
+  useStaffState,
+  type StaffActions,
+} from "./staff";
 export {
   deliverPorts,
   desktopServices,

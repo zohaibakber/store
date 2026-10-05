@@ -2,6 +2,7 @@ import { CatalogRefusal } from "../catalog/refusal";
 export { CatalogRefusal, CatalogRefusalReason } from "../catalog/refusal";
 import * as Schema from "effect/Schema";
 
+import { StaffRefusal } from "../staff";
 import { SyncProtocolError } from "../sync/protocol";
 
 export class ReplicaStorageError extends Schema.TaggedError<ReplicaStorageError>()(
@@ -35,6 +36,7 @@ export const CommandFailure = Schema.Union([
   ReplicaStorageError,
   ReplicaUnavailable,
   CatalogRefusal,
+  StaffRefusal,
   SyncProtocolError,
 ]);
 export type CommandFailure = typeof CommandFailure.Type;

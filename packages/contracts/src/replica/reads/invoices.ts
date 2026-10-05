@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import { InvoiceId } from "../../ids";
+import { InvoiceStaff } from "../../staff";
 import { Invoice } from "../../store/schema";
 import { ReadFailure } from "../errors";
 import { InvoiceListFilters, InvoiceListRequest } from "../list-request";
@@ -32,6 +33,11 @@ export class InvoiceReads extends RpcGroup.make(
   Rpc.make("InvoiceHistory", {
     payload: HistoryPage,
     success: HistoryWindow(Invoice),
+    error: ReadFailure,
+  }),
+  Rpc.make("InvoiceStaff", {
+    payload: { id: InvoiceId },
+    success: Schema.Struct({ stamp: Stamp, staff: InvoiceStaff }),
     error: ReadFailure,
   }),
   Rpc.make("IssuedInvoices", {

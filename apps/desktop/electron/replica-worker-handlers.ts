@@ -32,7 +32,7 @@ import {
   makePinnedHttp,
   type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
-import { CommandAdmission, layerInventoryStore } from "@store/client-db/store";
+import { CommandAdmission, layerInventoryStore, StaffGate } from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
@@ -218,6 +218,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
               Layer.provide(Layer.succeedContext(session)),
+              Layer.provide(StaffGate.layerDisabled),
               Layer.provide(protocol),
             ),
           ),

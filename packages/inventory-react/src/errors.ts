@@ -1,8 +1,10 @@
+import type { StaffRefusalReason } from "@store/contracts";
 import type { CatalogRefusalReason } from "@store/contracts/catalog-refusal";
 import type {
   CommandFailure,
   ReadFailure,
   ReplicaUnavailableReason,
+  StaffFailure,
 } from "@store/contracts/replica";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -32,7 +34,7 @@ export const catalogOpenFailure = (cause: unknown) =>
       cause instanceof Error && cause.message ? cause.message : "Catalog storage is unavailable.",
   });
 
-export type InventoryFailure = CommandFailure | ReadFailure | RpcClientError;
+export type InventoryFailure = CommandFailure | ReadFailure | StaffFailure | RpcClientError;
 
 export type FailureSurface =
   | {
@@ -46,6 +48,12 @@ export type FailureSurface =
   | {
       readonly _tag: "unavailable";
       readonly reason: ReplicaUnavailableReason;
+      readonly message: string;
+    }
+  | {
+      readonly _tag: "staff";
+      readonly reason: StaffRefusalReason;
+      readonly retryAfterMillis: number | undefined;
       readonly message: string;
     }
   | { readonly _tag: "sync"; readonly message: string }
@@ -77,6 +85,41 @@ export const replicaUnavailableCopy = (reason: ReplicaUnavailableReason): string
   }
 };
 
+const waitCopy = (retryAfterMillis: number | undefined): string => {
+  if (retryAfterMillis === undefined) return "Wait a moment, then try again.";
+  const seconds = Math.ceil(retryAfterMillis / 1_000);
+  return seconds < 90
+    ? `Try again in ${seconds} seconds.`
+    : `Try again in ${Math.ceil(seconds / 60)} minutes.`;
+};
+
+export const staffRefusalCopy = (reason: StaffRefusalReason, retryAfterMillis?: number): string => {
+  switch (reason) {
+    case "disabled":
+      return "Staff access is not available on this device.";
+    case "locked":
+      return "The app is locked. Enter your PIN to continue.";
+    case "forbidden":
+      return "Your role does not allow this. Ask the owner or a manager.";
+    case "wrongPin":
+      return "That PIN is not correct.";
+    case "wrongRecoveryCode":
+      return "That recovery code is not correct.";
+    case "throttled":
+      return `Too many wrong attempts. ${waitCopy(retryAfterMillis)}`;
+    case "alreadySetUp":
+      return "An owner is already set up on this device.";
+    case "unknownStaff":
+      return "That staff member no longer exists.";
+    case "nameTaken":
+      return "Another staff member already has that name.";
+    case "ownerIsFixed":
+      return "The owner cannot be removed or given another role.";
+    case "tooManyStaff":
+      return "This shop has reached the staff limit. Remove someone first.";
+  }
+};
+
 export const failureSurface = (failure: InventoryFailure): FailureSurface => {
   switch (failure._tag) {
     case "CatalogRefusal":
@@ -95,6 +138,13 @@ export const failureSurface = (failure: InventoryFailure): FailureSurface => {
         _tag: "unavailable",
         reason: failure.reason,
         message: replicaUnavailableCopy(failure.reason),
+      };
+    case "StaffRefusal":
+      return {
+        _tag: "staff",
+        reason: failure.reason,
+        retryAfterMillis: failure.retryAfterMillis,
+        message: staffRefusalCopy(failure.reason, failure.retryAfterMillis),
       };
     case "SyncProtocolError":
       return { _tag: "sync", message: failure.message };

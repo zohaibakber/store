@@ -293,6 +293,14 @@ export const makeInventoryLinks = (services: InventoryServices) => {
     .atom(Stream.unwrap(StoreService.use((store) => Effect.succeed(store("Health", undefined)))))
     .pipe(Atom.keepAlive);
 
+  const staffState = StoreService.runtime
+    .atom(
+      Stream.unwrap(StoreService.use((store) => Effect.succeed(store("StaffState", undefined)))),
+    )
+    .pipe(Atom.keepAlive);
+
+  const staff = Atom.make((get) => AsyncResult.value(get(staffState)));
+
   const unavailable = Atom.make((get) =>
     unavailableReason(get(services.generation), get(services.workspace)),
   );
@@ -367,6 +375,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
     healthTag,
     unavailable,
     health,
+    staff,
     command,
   };
 };

@@ -1,4 +1,10 @@
-import type { CreateBatchInput, SyncCommandEnvelope } from "@store/contracts";
+import type {
+  CreateBatchInput,
+  StaffId,
+  StaffPermission,
+  SyncCommandEnvelope,
+} from "@store/contracts";
+import type { StaffRefusal } from "@store/contracts";
 import { CatalogRefusal } from "@store/contracts/catalog-refusal";
 import type { CatalogRowWrite } from "@store/contracts/catalog-write";
 import {
@@ -8,12 +14,13 @@ import {
   type ImportInventoryRequest,
   type InventoryStore,
 } from "@store/contracts/replica";
-import { replicaState } from "@store/db/replica.schema";
+import { commandStaff, replicaState } from "@store/db/replica.schema";
 import { mapReplicaStoreFailure, type ReplicaStore, type SyncScheduler } from "@store/sync";
 import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 
@@ -59,10 +66,15 @@ import {
   withProjectedProduct,
   type Projected,
 } from "./projected";
+import type { StaffGate } from "./staff-gate";
 
 const READER = "store";
 
-type CommandFailure = CatalogRefusal | ReturnType<typeof mapReplicaStoreFailure>;
+const SELL: StaffPermission = "sell";
+
+const MANAGE_STOCK: StaffPermission = "manageStock";
+
+type CommandFailure = CatalogRefusal | StaffRefusal | ReturnType<typeof mapReplicaStoreFailure>;
 
 type Command = SyncCommandEnvelope["command"];
 
@@ -94,11 +106,13 @@ export const makeCommandHandlers = ({
   store,
   scheduler,
   replica,
+  gate,
 }: {
   readonly admission: CommandAdmission["Service"];
   readonly store: ReplicaStore["Service"];
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
+  readonly gate: StaffGate["Service"];
 }): CommandHandlers => {
   const snapshot = snapshotRunnerFromHandle(replica);
   const subset: ReadSubset = (spec) => readSnapshotSubset(snapshot, READER, spec);
@@ -145,7 +159,14 @@ export const makeCommandHandlers = ({
     operationId: string,
     command: Command,
     occurredAt: number,
+    staff: Option.Option<StaffId>,
   ) {
+    if (Option.isSome(staff)) {
+      yield* replica.db
+        .insert(commandStaff)
+        .values({ operationId, staffId: staff.value, at: occurredAt })
+        .onConflictDoNothing();
+    }
     const committed = yield* store.enqueueCommand({ operationId, command, occurredAt });
     yield* scheduler.wake("localWrite");
     return committed.value satisfies Commit;
@@ -160,6 +181,7 @@ export const makeCommandHandlers = ({
   const catalogWrite = (
     context: ProjectionContext<unknown>,
     writes: ReadonlyArray<CatalogRowWrite>,
+    staff: Option.Option<StaffId>,
   ): Effect.Effect<Commit, CommandFailure> =>
     writes.length === 0
       ? unchanged(context.commandId)
@@ -175,15 +197,17 @@ export const makeCommandHandlers = ({
             },
           },
           context.occurredAt,
+          staff,
         );
 
   const write = Effect.fnUntraced(function* <Tables, Row>(
     read: Effect.Effect<Tables, unknown>,
     project: (context: ProjectionContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
   ) {
+    const staff = yield* gate.authorize(MANAGE_STOCK);
     const context = yield* begin(read);
     const projected = yield* project(context);
-    const commit = yield* catalogWrite(context, projected.writes);
+    const commit = yield* catalogWrite(context, projected.writes, staff);
     return { commit, row: projected.row };
   }, admission.admit);
 
@@ -228,6 +252,7 @@ export const makeCommandHandlers = ({
     );
 
   const importInventory = Effect.fnUntraced(function* (input: ImportInventoryRequest) {
+    const staff = yield* gate.authorize(MANAGE_STOCK);
     const productIds = input.lines.flatMap((line) => (line.productId ? [line.productId] : []));
     const context = yield* begin(
       readCatalogRows(
@@ -254,6 +279,7 @@ export const makeCommandHandlers = ({
       catalogWrite(
         { ...context, commandId: index === 0 ? context.commandId : crypto.randomUUID() },
         chunk,
+        staff,
       ),
     );
     const last = commits.at(-1) ?? (yield* unchanged(context.commandId));
@@ -273,6 +299,7 @@ export const makeCommandHandlers = ({
     input,
     invoiceId,
   }) {
+    const staff = yield* gate.authorize(SELL);
     const productIds = input.items.map((line) => line.productId);
     const context = yield* begin(
       readCatalogRows(subset, { productIds, batchesOfProductIds: productIds }),
@@ -298,6 +325,7 @@ export const makeCommandHandlers = ({
       context.commandId,
       { _tag: "issueInvoice", payload: projection.command },
       context.occurredAt,
+      staff,
     );
     return {
       ...commit,
