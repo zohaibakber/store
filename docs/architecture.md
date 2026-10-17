@@ -87,8 +87,7 @@ Other routes: `/api/health`, `/api/auth/session`, `/api/uploads`, and
   deciders the local authority runs (`@store/sync/authority`) over the settled
   catalog, so a local workspace and an organization decide alike.
 - Pull returns whole transaction groups within a row and encoded-byte budget
-  (`maxBytes`). A client asks for the digest by sending `digestVersion`; v4
-  and v3 are answered.
+  (`maxBytes`). A client asks for the digest by sending `digestVersion` 4.
 - Snapshots are built on demand into parts of at most 2,000 rows or 768 KiB
   and served with a content ETag and immutable caching.
 - Maintenance runs on the object's own alarm, armed after writes: it expires
@@ -96,12 +95,6 @@ Other routes: `/api/health`, `/api/auth/session`, `/api/uploads`, and
   the change log within a time budget, then re-arms only while work remains.
 - Statements bind at most about 100 parameters (the Durable Object SQLite
   limit), so multi-row writes and `in (...)` reads are chunked.
-- An organization that still lives in Postgres is adopted on first touch: the
-  object locks the organization's `inventory_state` row, copies the catalog,
-  replicas, receipts, retained history and import record, and fences Postgres
-  by changing its epoch so an old Worker version can no longer commit there.
-  Epoch, incarnation and commit sequence carry over, so caught-up replicas
-  continue without a snapshot.
 
 ## Live fan-out
 
@@ -125,8 +118,6 @@ pulls.
 
 - `migrations/auth`: D1 schema.
 - `migrations/authority`: the `OrgAuthority` Durable Object SQLite schema.
-- `migrations/postgres`: the former inventory authority, read only to adopt
-  organizations into their Durable Object.
 - `migrations/replica`: the local SQLite replica schema.
 
 ## Infrastructure and stages
@@ -134,9 +125,8 @@ pulls.
 Alchemy declares everything in `alchemy.run.ts` and the `infra.ts` modules next
 to the code they deploy. There are two stages:
 
-- `dev`: legacy inventory Postgres on Neon (adoption source), no web app
-  deployment.
-- `prod`: legacy inventory on PlanetScale Postgres (adoption source), web app on `PRODUCTION_DOMAIN`,
+- `dev`: no web app deployment.
+- `prod`: web app on `PRODUCTION_DOMAIN`,
   API on `api.<domain>`, auth on `auth.<domain>`, and zone WAF rules
   (`infra/edge.ts`) that block paths outside each host's surface and rate-limit
   `/api/` per IP.

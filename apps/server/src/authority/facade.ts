@@ -8,7 +8,7 @@ import {
   type SyncProtocolCode,
   type SyncPullRequest,
 } from "@store/contracts";
-import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
+import { makeReplicaDb } from "@store/sync/authority";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -149,11 +149,10 @@ export type MaintenanceAlarm = {
   readonly scheduleAt: (at: number) => Effect.Effect<void>;
 };
 
-export type OrgAuthorityDependencies<R> = {
+export type OrgAuthorityDependencies = {
   readonly sql: SqlClient;
   readonly mintId: Effect.Effect<string>;
   readonly alarm: MaintenanceAlarm;
-  readonly adopt: (actor: AuthorityActor, db: ReplicaDb) => Effect.Effect<boolean, never, R>;
 };
 
 const isProtocolError = Schema.is(SyncProtocolError);
@@ -178,10 +177,10 @@ const replyOf = <A, E, R>(
     Effect.orDie,
   );
 
-export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
-  dependencies: OrgAuthorityDependencies<R>,
-): Effect.fn.Return<OrgAuthorityApi<R>> {
-  const { sql, mintId, alarm, adopt } = dependencies;
+export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* (
+  dependencies: OrgAuthorityDependencies,
+): Effect.fn.Return<OrgAuthorityApi> {
+  const { sql, mintId, alarm } = dependencies;
   yield* migrateAuthority(sql).pipe(Effect.orDie);
   const db = yield* makeReplicaDb(sql);
   const engine = makeAuthorityEngine(sql, db);
@@ -193,24 +192,12 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
     alarm.scheduleBy(now + MAINTENANCE_INTERVAL_MILLIS),
   );
 
-  const serve = <A, E, R>(actor: AuthorityActor, effect: Effect.Effect<A, E, R>) =>
-    replyOf(
-      Effect.andThen(
-        Effect.flatMap(adopt(actor, db), (adopted) => (adopted ? soon : Effect.void)),
-        effect,
-      ),
-    );
-
-  const serveWrite = <A, E, R>(actor: AuthorityActor, effect: Effect.Effect<A, E, R>) =>
-    serve(
-      actor,
-      Effect.tap(effect, () => soon),
-    );
+  const serveWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    replyOf(Effect.tap(effect, () => soon));
 
   return {
     register: (actor, request) =>
       serveWrite(
-        actor,
         Effect.gen(function* () {
           return yield* engine.register(
             actor,
@@ -222,7 +209,6 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
       ),
     submit: (actor, bodyText) =>
       serveWrite(
-        actor,
         Effect.gen(function* () {
           return yield* engine.submit(
             actor,
@@ -232,10 +218,9 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
           );
         }),
       ),
-    receipt: (actor, operationId) => serve(actor, engine.receipt(actor, operationId)),
+    receipt: (actor, operationId) => replyOf(engine.receipt(actor, operationId)),
     pull: (actor, request) =>
-      serve(
-        actor,
+      replyOf(
         engine.pull(actor, {
           epoch: request.epoch,
           subscription: request.subscription,
@@ -247,7 +232,6 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
       ),
     acquireSnapshot: (actor, request) =>
       serveWrite(
-        actor,
         Effect.gen(function* () {
           return yield* snapshots.acquire(
             actor,
@@ -263,32 +247,25 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
         }),
       ),
     readSnapshotPart: (actor, snapshotId, partNumber) =>
-      serve(actor, snapshots.readPart(actor, snapshotId, partNumber)),
+      replyOf(snapshots.readPart(actor, snapshotId, partNumber)),
     devices: (actor) =>
-      serve(
-        actor,
-        Effect.flatMap(Clock.currentTimeMillis, (now) => engine.devices(actor, now)),
-      ),
+      replyOf(Effect.flatMap(Clock.currentTimeMillis, (now) => engine.devices(actor, now))),
     deviceCommand: (actor, command) =>
-      serve(
-        actor,
+      replyOf(
         Effect.flatMap(Clock.currentTimeMillis, (now) => engine.deviceCommand(actor, command, now)),
       ),
     liveHorizon: (actor, replicaId) =>
-      serve(
-        actor,
+      replyOf(
         Effect.flatMap(Clock.currentTimeMillis, (now) => engine.liveHorizon(actor, replicaId, now)),
       ),
-    stageImportPart: (actor, importId, partNumber, bodyText) =>
+    stageImportPart: (_actor, importId, partNumber, bodyText) =>
       serveWrite(
-        actor,
         Effect.flatMap(Clock.currentTimeMillis, (now) =>
           imports.stagePart(importId, partNumber, bodyText, now, IMPORT_LIMITS),
         ),
       ),
     commitImport: (actor, importId, request) =>
       serveWrite(
-        actor,
         Effect.gen(function* () {
           return yield* imports.commit(
             actor,
@@ -299,7 +276,7 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
           );
         }),
       ),
-    importStatus: (actor, importId) => serve(actor, imports.status(importId)),
+    importStatus: (_actor, importId) => replyOf(imports.status(importId)),
     maintain: () =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
@@ -316,5 +293,5 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
         }
         return report;
       }).pipe(Effect.orDie),
-  } satisfies OrgAuthorityApi<R>;
+  } satisfies OrgAuthorityApi;
 });

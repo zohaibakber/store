@@ -11,7 +11,7 @@ const sha256 = (text: string) => createHash("sha256").update(text, "utf8").diges
 const UNICODE_IDS = ["z", "a", "é", "😀", "", "�", "日本", "A", "a:1", "á"];
 
 describe("partition digest", () => {
-  it("orders leaves by UTF-8 bytes, which is Postgres COLLATE C and SQLite BINARY", () => {
+  it("orders leaves by UTF-8 bytes, which is SQLite BINARY", () => {
     const byBytes = [...UNICODE_IDS].sort((left, right) =>
       Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")),
     );

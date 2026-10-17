@@ -11,16 +11,13 @@ behaviour on top of these layouts.
 | `./store.schema`     | SQLite      | Shared catalog tables (categories → stock movements) and managed-column names | Re-exported by the replica schema; contracts `entity-rows` |
 | `./replica.schema`   | SQLite      | Client replica control tables + catalog via `store.schema`                    | Electron / sync SQLite adapter                             |
 | `./authority.schema` | SQLite (DO) | Organization authority: catalog via `store.schema` + log, receipts, snapshots | `OrgAuthority` Durable Object                              |
-| `./postgres/schema`  | Postgres    | Legacy authority, read only when an organization is adopted                   | `OrgAuthority` adoption                                    |
 | `./auth.schema`      | SQLite (D1) | Auth identity, orgs, sessions                                                 | Auth worker                                                |
 
 ## Rules
 
-1. Catalog column meaning is shared across SQLite `store.schema` and Postgres
-   `postgres/schema`, but the layouts are not generated from each other. The
-   authority schema re-exports `store.schema` and must not redefine those tables.
-   Dialects differ (boolean, bigint timestamps, snake_case names). Change both
-   when the catalog shape changes, then generate migrations separately.
+1. The authority schema re-exports the catalog tables from `store.schema` and
+   must not redefine them. When the catalog shape changes, generate the replica
+   and authority migrations separately.
 2. Do not add domain Effect Schemas here; put those in `@store/contracts`.
 3. Migrations stay append-only. Prefer additive columns with defaults over
    rewrites. Never edit applied migration SQL.

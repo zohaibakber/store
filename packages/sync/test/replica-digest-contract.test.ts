@@ -33,7 +33,7 @@ import {
   serverChangeLog,
   serverPartitionDigest,
   type AuthorityPartition,
-  type PostgresPartitionTables,
+  type ServerPartitionTables,
 } from "./lib/authority-digest";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
@@ -418,7 +418,7 @@ const serverMetadata = (operationId: string, rowVersion: number) => ({
   rowVersion,
 });
 
-const serverTables: PostgresPartitionTables = {
+const serverTables: ServerPartitionTables = {
   categories: [
     {
       id: "general",

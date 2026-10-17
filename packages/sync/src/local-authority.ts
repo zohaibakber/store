@@ -172,23 +172,13 @@ const upsertOf = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Reje
     case "product": {
       const { row } = projected;
       return fitsInt4(row.unitsPerPack, row.purchasePrice, row.retailPrice, row.unitPrice)
-        ? Result.succeed(
-            changeOf("product", "upsert", projected.entityId, row.rowVersion, {
-              ...row,
-              deletedAt: null,
-            }),
-          )
+        ? Result.succeed(changeOf("product", "upsert", projected.entityId, row.rowVersion, row))
         : OUT_OF_RANGE;
     }
     case "batch": {
       const { row } = projected;
       return fitsInt4(row.packQuantity, row.unitQuantity)
-        ? Result.succeed(
-            changeOf("batch", "upsert", projected.entityId, row.rowVersion, {
-              ...row,
-              deletedAt: null,
-            }),
-          )
+        ? Result.succeed(changeOf("batch", "upsert", projected.entityId, row.rowVersion, row))
         : OUT_OF_RANGE;
     }
     case "invoice": {
@@ -455,7 +445,6 @@ const decideCatalogWrite = (
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
-              deletedAt: payload.occurredAt,
             };
             staged.product.set(write.id, undefined);
             return Result.succeed([
@@ -510,7 +499,6 @@ const decideCatalogWrite = (
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
-              deletedAt: payload.occurredAt,
             };
             staged.batch.set(write.id, undefined);
             return Result.succeed([changeOf("batch", "delete", write.id, image.rowVersion, image)]);
@@ -691,10 +679,7 @@ const decideIssueInvoice = (
         take.invoiceItemId,
         facts.recordedItemIds.has(take.invoiceItemId),
       );
-      changes.push(
-        changeOf("batch", "upsert", batch.id, batch.rowVersion, { ...batch, deletedAt: null }),
-        item,
-      );
+      changes.push(changeOf("batch", "upsert", batch.id, batch.rowVersion, batch), item);
       if (opened > 0) {
         const openPackId = take.openPackMovementId ?? `${take.saleMovementId}:open-pack`;
         changes.push(

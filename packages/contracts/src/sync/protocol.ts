@@ -52,15 +52,7 @@ export type PartitionDigest = typeof PartitionDigest.Type;
 
 export const PARTITION_DIGEST_VERSION = 4 as const;
 
-export const PARTITION_DIGEST_VERSION_V3 = 3 as const;
-
 const PartitionDigestVersion = Schema.Literal(PARTITION_DIGEST_VERSION);
-
-export const RequestedPartitionDigestVersion = Schema.Literals([
-  PARTITION_DIGEST_VERSION_V3,
-  PARTITION_DIGEST_VERSION,
-]);
-export type RequestedPartitionDigestVersion = typeof RequestedPartitionDigestVersion.Type;
 
 export const PartitionDigestReport = Schema.Struct({
   version: PartitionDigestVersion,
@@ -207,7 +199,7 @@ export const deviceLabelOf = (name: string): DeviceLabel | undefined =>
 export const RegisterReplicaRequest = Schema.Struct({
   replicaId: SyncIdentifier,
   deviceLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
-  schemaVersion: Schema.optionalKey(SyncSchemaVersion),
+  schemaVersion: SyncSchemaVersion,
 });
 export type RegisterReplicaRequest = typeof RegisterReplicaRequest.Type;
 
@@ -227,7 +219,7 @@ export const SyncPullRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
   afterCommitSequence: OrgCommitSequence,
-  digestVersion: Schema.optionalKey(RequestedPartitionDigestVersion),
+  digestVersion: Schema.optionalKey(PartitionDigestVersion),
   maxBytes: Schema.optionalKey(PullByteBudget),
 });
 export type SyncPullRequest = typeof SyncPullRequest.Type;

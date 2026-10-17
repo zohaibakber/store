@@ -6,8 +6,8 @@
   `InventoryReads`, `InventoryStore`, and `InventoryInsights` handlers.
 - `contracts`. Public data contracts grouped into `server`, `store`, and catalog
   write domains.
-- `db`. Drizzle schemas and migrations for authentication, the Postgres
-  authority, and the SQLite replica.
+- `db`. Drizzle schemas and migrations for authentication, the organization
+  authority, the SQLite replica, and analytics.
 - `sync`. Host-agnostic replica engine: command outbox, pending projections,
   coverage and digest cadence, the polling scheduler with typed transport
   failures, and the typed `SyncHttpApi` client. The shared entrypoint

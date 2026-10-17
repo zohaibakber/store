@@ -1,7 +1,6 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION_V3,
   partitionDigestOf,
   SnapshotPartPayload,
   SYNC_SCHEMA_VERSION,
@@ -195,11 +194,11 @@ describe("durable object history snapshots", () => {
         return {
           manifest: acquired.manifest,
           parts,
-          digest: yield* partitionDigest(db, PARTITION_DIGEST_VERSION),
+          digest: yield* partitionDigest(db),
         };
       }).pipe(Effect.orDie),
     );
-    expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION_V3);
+    expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
     expect(outcome.manifest.horizon).toBe("2");
     expect(outcome.manifest.parts.map((part) => part.objectKey)).toEqual(
       outcome.manifest.parts.map(
@@ -216,6 +215,9 @@ describe("durable object history snapshots", () => {
       { entity: "invoice", rowCount: 40 },
       { entity: "invoiceItem", rowCount: 80 },
       { entity: "stockMovement", rowCount: 80 },
+      { entity: "supplier", rowCount: 0 },
+      { entity: "purchaseOrder", rowCount: 0 },
+      { entity: "purchaseOrderItem", rowCount: 0 },
     ]);
     const rows = outcome.parts.flatMap((part) => part.payload.rows);
     expect(rows.map((row) => row.entity)).toEqual([

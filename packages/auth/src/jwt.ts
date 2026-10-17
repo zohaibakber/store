@@ -67,7 +67,6 @@ const JwtPayload = Schema.Struct({
   sid: SessionId,
   org: OrganizationId,
   org_name: Schema.String,
-  org_slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: OrganizationRole,
   email: EmailAddress,
   name: Schema.String,
@@ -76,8 +75,6 @@ const JwtPayload = Schema.Struct({
   exp: Schema.Number,
   jti: Schema.String,
 });
-
-const LEGACY_ORG_SLUG_CLAIM = { org_slug: null } as const;
 
 const JwtHeader = Schema.Struct({
   alg: Schema.Literal("ES256"),
@@ -224,7 +221,6 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     sid: input.sessionId,
     org: input.activeOrganizationId,
     org_name: input.organizationName,
-    ...LEGACY_ORG_SLUG_CLAIM,
     role: input.role,
     email: input.email,
     name: input.name,

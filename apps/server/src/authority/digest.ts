@@ -1,9 +1,8 @@
 import {
   compareUtf8,
+  PARTITION_DIGEST_DOMAIN,
   PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION_V3,
   PARTITION_ENTITIES,
-  PARTITION_ENTITIES_V3,
   partitionLeafOf,
   STOCK_MOVEMENT_ROW_VERSION,
   type PartitionEntity,
@@ -14,15 +13,7 @@ import type { ReplicaDb } from "@store/sync/authority";
 import { sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
-export type DigestVersion = typeof PARTITION_DIGEST_VERSION | typeof PARTITION_DIGEST_VERSION_V3;
-
-export const isDigestVersion = (version: number): version is DigestVersion =>
-  version === PARTITION_DIGEST_VERSION || version === PARTITION_DIGEST_VERSION_V3;
-
 const SEPARATOR = "\n";
-
-const entitiesOf = (version: DigestVersion): ReadonlyArray<PartitionEntity> =>
-  version === PARTITION_DIGEST_VERSION ? PARTITION_ENTITIES : PARTITION_ENTITIES_V3;
 
 const leavesOf = Effect.fnUntraced(function* (db: ReplicaDb, entity: PartitionEntity) {
   const { table } = syncEntityRows[entity];
@@ -35,21 +26,17 @@ const leavesOf = Effect.fnUntraced(function* (db: ReplicaDb, entity: PartitionEn
 });
 
 export type DigestReport = {
-  readonly version: DigestVersion;
+  readonly version: typeof PARTITION_DIGEST_VERSION;
   readonly digest: string;
   readonly count: number;
   readonly entities: Readonly<Record<string, string>>;
 };
 
-export const partitionDigest = Effect.fn("Authority.partitionDigest")(function* (
-  db: ReplicaDb,
-  version: DigestVersion,
-) {
-  const domain = `store.sync.partition-digest.v${version}`;
-  const entities = entitiesOf(version);
+export const partitionDigest = Effect.fn("Authority.partitionDigest")(function* (db: ReplicaDb) {
+  const domain = PARTITION_DIGEST_DOMAIN;
   const digests: Array<{ readonly entity: PartitionEntity; readonly digest: string }> = [];
   let count = 0;
-  for (const entity of entities) {
+  for (const entity of PARTITION_ENTITIES) {
     const leaves = yield* leavesOf(db, entity);
     count += leaves.length;
     digests.push({
@@ -60,7 +47,7 @@ export const partitionDigest = Effect.fn("Authority.partitionDigest")(function* 
     });
   }
   return {
-    version,
+    version: PARTITION_DIGEST_VERSION,
     digest: yield* sha256Hex(
       [domain, String(count), ...digests.map(({ entity, digest }) => `${entity}:${digest}`)].join(
         SEPARATOR,

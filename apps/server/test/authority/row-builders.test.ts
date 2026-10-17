@@ -1,8 +1,6 @@
 import {
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION_V3,
-  PARTITION_ENTITIES_V3,
   partitionDigestOf,
   PURCHASE_ORDER_STATUSES,
   SnapshotPartPayload,
@@ -243,10 +241,9 @@ describe("durable object row builders and partition digests", () => {
         const sources = yield* seed(db, organizationId);
         const empty = yield* authorities.open("org-without-rows");
         return {
-          history: yield* partitionDigest(db, PARTITION_DIGEST_VERSION),
-          legacy: yield* partitionDigest(db, PARTITION_DIGEST_VERSION_V3),
+          history: yield* partitionDigest(db),
           clientHistory: yield* partitionDigestOf(sources),
-          empty: yield* partitionDigest(empty.db, PARTITION_DIGEST_VERSION),
+          empty: yield* partitionDigest(empty.db),
           emptyClient: yield* partitionDigestOf([]),
         };
       }).pipe(Effect.orDie),
@@ -254,9 +251,6 @@ describe("durable object row builders and partition digests", () => {
     expect(outcome.history).toEqual(outcome.clientHistory);
     expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 9 - 2);
     expect(outcome.empty).toEqual(outcome.emptyClient);
-    expect(outcome.legacy.version).toBe(PARTITION_DIGEST_VERSION_V3);
-    expect(new Set(Object.keys(outcome.legacy.entities))).toEqual(new Set(PARTITION_ENTITIES_V3));
-    expect(outcome.legacy.digest).not.toBe(outcome.history.digest);
   });
 
   it("serves snapshot rows that decode to the stored rows and hash to the authority digest", async () => {
@@ -290,7 +284,7 @@ describe("durable object row builders and partition digests", () => {
           manifest,
           rows: parts.flatMap((part) => decodePart(part.json).rows),
           stored,
-          digest: yield* partitionDigest(db, PARTITION_DIGEST_VERSION),
+          digest: yield* partitionDigest(db),
         };
       }).pipe(Effect.orDie),
     );
