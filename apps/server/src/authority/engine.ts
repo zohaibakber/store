@@ -2,6 +2,7 @@ import {
   ACTIVE_REPLICA_WINDOW_MILLIS,
   MAX_ORGANIZATION_DEVICES,
   OPERATIONAL_SUBSCRIPTION,
+  PARTITION_DIGEST_VERSION,
   staleReplicaRejection,
   SYNC_SCHEMA_VERSION,
   SyncSubmitCommandRequest,
@@ -37,7 +38,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import { isDigestVersion, partitionDigest } from "./digest";
+import { partitionDigest } from "./digest";
 import {
   groupByteLength,
   groupFrame,
@@ -227,12 +228,10 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
       held.push(change);
       byCommit.set(change.commitSequence, held);
     }
-    const digestVersion = request.digestVersion;
     const digestJson =
-      digestVersion !== undefined &&
-      isDigestVersion(digestVersion) &&
+      request.digestVersion === PARTITION_DIGEST_VERSION &&
       (last?.commitSequence ?? after) >= state.commitSequence
-        ? JSON.stringify(yield* partitionDigest(db, digestVersion))
+        ? JSON.stringify(yield* partitionDigest(db))
         : undefined;
     return pageFrame({
       epoch: state.epoch,
@@ -522,7 +521,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
       return yield* transact(
         Effect.gen(function* () {
           const state = yield* ensureState(actor, now, incarnation);
-          const schemaVersion = request.schemaVersion ?? 1;
+          const schemaVersion = request.schemaVersion;
           const existing = yield* db
             .select()
             .from(replicas)

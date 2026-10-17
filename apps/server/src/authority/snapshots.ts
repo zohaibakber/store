@@ -1,4 +1,5 @@
 import {
+  PARTITION_DIGEST_VERSION,
   PARTITION_ENTITIES,
   STOCK_MOVEMENT_ROW_VERSION,
   type PartitionEntity,
@@ -27,18 +28,6 @@ const SCAN_ROWS = 1_000;
 const SNAPSHOT_SUBSCRIPTION = "operational";
 
 const SOFT_DELETED_ENTITIES: ReadonlySet<PartitionEntity> = new Set(["product", "batch"]);
-
-const SINCE_VERSION = {
-  category: 3,
-  product: 3,
-  batch: 3,
-  invoice: 3,
-  invoiceItem: 3,
-  stockMovement: 3,
-  supplier: 4,
-  purchaseOrder: 4,
-  purchaseOrderItem: 4,
-} as const satisfies Record<PartitionEntity, number>;
 
 type Snapshot = typeof snapshots.$inferSelect;
 
@@ -170,14 +159,6 @@ export const makeAuthoritySnapshots = (
       .orderBy(asc(snapshotParts.partNumber))
       .all();
     const stored = yield* decodeEntityCounts(snapshot.entityCountsJson).pipe(Effect.orDie);
-    const counted = PARTITION_ENTITIES.map((entity) => ({
-      entity,
-      rowCount: stored[entity] ?? 0,
-    }));
-    const digestVersion = Math.max(
-      3,
-      ...counted.filter((count) => count.rowCount > 0).map((count) => SINCE_VERSION[count.entity]),
-    );
     return {
       snapshotId: snapshot.snapshotId,
       epoch: state.epoch,
@@ -190,8 +171,11 @@ export const makeAuthoritySnapshots = (
         byteLength: part.byteLength,
         sha256: part.sha256,
       })),
-      entityCounts: counted.filter((count) => SINCE_VERSION[count.entity] <= digestVersion),
-      digestVersion,
+      entityCounts: PARTITION_ENTITIES.map((entity) => ({
+        entity,
+        rowCount: stored[entity] ?? 0,
+      })),
+      digestVersion: PARTITION_DIGEST_VERSION,
     };
   });
 

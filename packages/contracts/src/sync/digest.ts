@@ -14,17 +14,13 @@ const utf8 = new TextEncoder();
 
 export const STOCK_MOVEMENT_ROW_VERSION = 1;
 
-export const PARTITION_ENTITIES_V3 = [
+export const PARTITION_ENTITIES = [
   "category",
   "product",
   "batch",
   "invoice",
   "invoiceItem",
   "stockMovement",
-] as const satisfies ReadonlyArray<SyncEntity>;
-
-export const PARTITION_ENTITIES = [
-  ...PARTITION_ENTITIES_V3,
   "supplier",
   "purchaseOrder",
   "purchaseOrderItem",

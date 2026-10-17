@@ -615,7 +615,7 @@ describe("publishing a local workspace into an empty organization", () => {
           leftovers,
           tombstones,
           owners,
-          authority: (yield* partitionDigest(db, PARTITION_DIGEST_VERSION)).digest,
+          authority: (yield* partitionDigest(db)).digest,
         };
       }),
     );

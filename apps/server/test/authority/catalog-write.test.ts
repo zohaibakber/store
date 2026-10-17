@@ -4,8 +4,6 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
-  PARTITION_DIGEST_VERSION_V3,
-  PARTITION_ENTITIES_V3,
   partitionDigestOf,
   ReplicaClientSequence,
   staleReplicaRejection,
@@ -14,7 +12,6 @@ import {
   type CatalogWriteCommand,
   type PartitionLeafSource,
   type PurchaseOrderStatus,
-  type RequestedPartitionDigestVersion,
   type SyncCommandEnvelope,
   type SyncPullRequest,
 } from "@store/contracts";
@@ -77,7 +74,7 @@ const actorFor = (organizationId: string): InventoryActor => ({
 
 const pullFrom = (
   afterCommitSequence: string,
-  withDigest: boolean | RequestedPartitionDigestVersion = false,
+  withDigest = false,
 ): SyncPullRequest => {
   const request: SyncPullRequest = {
     epoch: LAST_UNIT_EPOCH,
@@ -85,20 +82,8 @@ const pullFrom = (
     afterCommitSequence: OrgCommitSequence.make(afterCommitSequence),
   };
   if (withDigest === false) return request;
-  return { ...request, digestVersion: withDigest === true ? PARTITION_DIGEST_VERSION : withDigest };
+  return { ...request, digestVersion: PARTITION_DIGEST_VERSION };
 };
-
-const LegacyDigestPage = Schema.fromJsonString(
-  Schema.Struct({
-    digest: Schema.Struct({
-      version: Schema.Literal(PARTITION_DIGEST_VERSION_V3),
-      digest: Schema.String,
-      count: Schema.Number,
-      entities: Schema.Record(Schema.String, Schema.String),
-    }),
-  }),
-);
-const decodeLegacyDigestPage = Schema.decodeUnknownEffect(LegacyDigestPage);
 
 const catalogCommand = (
   commandId: string,
@@ -500,35 +485,24 @@ describe("durable object catalog writes", () => {
     expect(outcome.upgraded).toMatchObject(ACCEPTED);
   });
 
-  it("answers a version 3 digest over six entities unchanged by purchasing rows, and version 4 over nine", async () => {
+  it("answers a digest that covers purchasing rows", async () => {
     const organizationId = decodeOrganizationId("org-purchasing-digest");
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
         const { commands, db, write } = yield* openCatalog(organizationId);
-        const legacyDigest = (afterCommitSequence: string) =>
-          commands
-            .pullEncoded(actor, pullFrom(afterCommitSequence, PARTITION_DIGEST_VERSION_V3))
-            .pipe(Effect.flatMap((page) => decodeLegacyDigestPage(page.json)));
         yield* write("cmd-seed", seedCatalog().writes);
-        const legacyBefore = yield* legacyDigest("1");
         const currentBefore = yield* commands.pull(actor, pullFrom("1", true));
         yield* write("cmd-purchasing", [
           supplierWrite("sup-1", null, "Acme"),
           orderWrite("po-1", null),
           lineWrite("line-1", null),
         ]);
-        const legacyAfter = yield* legacyDigest("2");
         const currentAfter = yield* commands.pull(actor, pullFrom("2", true));
         const expected = yield* partitionDigestOf(yield* activePartitionRows(db));
-        return { legacyBefore, currentBefore, legacyAfter, currentAfter, expected };
+        return { currentBefore, currentAfter, expected };
       }),
     );
-    expect(outcome.legacyAfter).toEqual(outcome.legacyBefore);
-    expect(new Set(Object.keys(outcome.legacyAfter.digest.entities))).toEqual(
-      new Set(PARTITION_ENTITIES_V3),
-    );
-    expect(outcome.legacyAfter.digest.count).toBe(4);
     expect(outcome.currentBefore.digest?.count).toBe(4);
     expect(outcome.currentAfter.digest).toEqual(outcome.expected);
     expect(outcome.currentAfter.digest?.count).toBe(7);

@@ -1,4 +1,9 @@
-import { INT4_MAX, type SyncEntity, type SyncProtocolCode } from "@store/contracts";
+import {
+  INT4_MAX,
+  PARTITION_DIGEST_VERSION,
+  type SyncEntity,
+  type SyncProtocolCode,
+} from "@store/contracts";
 import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import { sha256Hex } from "@store/contracts/operation-hash";
 import {
@@ -22,7 +27,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import { isDigestVersion, partitionDigest } from "./digest";
+import { partitionDigest } from "./digest";
 import { refuse, type AuthorityActor, type AuthorityEngine, type CommitFanout } from "./engine";
 import { byteLengthOf } from "./frames";
 import type { AuthoritySnapshots } from "./snapshots";
@@ -448,16 +453,8 @@ export const makeAuthorityImports = (
     return IMPORT_ENTITIES.map((entity) => ({ entity, rowCount: rows[entity].length }));
   });
 
-  const verified = Effect.fn("AuthorityImports.verified")(function* (digestVersion: number) {
-    if (!isDigestVersion(digestVersion)) return undefined;
-    if (digestVersion === 3) {
-      for (const table of [suppliers, purchaseOrders, purchaseOrderItems]) {
-        const held = yield* db.select({ id: table.id }).from(table).limit(1).get();
-        if (held !== undefined) return undefined;
-      }
-    }
-    return yield* partitionDigest(db, digestVersion);
-  });
+  const verified = (digestVersion: number) =>
+    digestVersion === PARTITION_DIGEST_VERSION ? partitionDigest(db) : Effect.undefined;
 
   return {
     refusal,
