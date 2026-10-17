@@ -5,8 +5,6 @@ import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import { NO_ADOPTION, settleAdoption, type AdoptionSource } from "../../src/authority/adopt";
-import type { AuthorityActor } from "../../src/authority/engine";
 import { makeOrgAuthority, type OrgAuthorityApi } from "../../src/authority/facade";
 import type { AuthorityNamespace } from "../../src/inventory/authority-client";
 
@@ -29,11 +27,8 @@ export type TestAuthorities = AuthorityNamespace & {
   readonly of: (organizationId: string) => TestAuthority;
 };
 
-export const makeTestAuthorities = (
-  options: { readonly adoption?: AdoptionSource } = {},
-): TestAuthorities => {
+export const makeTestAuthorities = (): TestAuthorities => {
   const authorities = new Map<string, TestAuthority>();
-  const adoption = options.adoption ?? NO_ADOPTION;
   const of = (organizationId: string) => {
     const found = authorities.get(organizationId);
     if (found === undefined) throw new Error(`No test authority for ${organizationId}.`);
@@ -49,7 +44,6 @@ export const makeTestAuthorities = (
       );
       const db = yield* makeReplicaDb(sql);
       const alarms: Array<number> = [];
-      let adopted = false;
       const api = yield* makeOrgAuthority({
         sql,
         mintId,
@@ -57,17 +51,6 @@ export const makeTestAuthorities = (
           scheduleAt: (at) => Effect.sync(() => void alarms.push(at)),
           scheduleBy: (at) => Effect.sync(() => void alarms.push(at)),
         },
-        adopt: (actor: AuthorityActor, db: ReplicaDb) =>
-          adopted
-            ? Effect.succeed(false)
-            : settleAdoption(adoption, actor, sql, db).pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    adopted = true;
-                  }),
-                ),
-                Effect.orDie,
-              ),
       });
       const authority = { api, db, sql, alarms } satisfies TestAuthority;
       authorities.set(organizationId, authority);

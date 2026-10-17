@@ -12,7 +12,6 @@
     "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev"
   },
   "dependencies": {
-    "@effect/sql-pg": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
@@ -20,14 +19,12 @@
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
-    "effect": "catalog:",
-    "pg": "^8.23.1"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/sql-sqlite-node": "catalog:",
     "@types/node": "^26.6.5",
     "alchemy": "catalog:",
-    "embedded-postgres": "18.4.0-beta.17",
     "typescript": "catalog:",
     "vitest": "5.0.5"
   }

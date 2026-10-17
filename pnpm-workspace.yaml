@@ -8,7 +8,6 @@ catalog:
   "@effect/platform-bun": 4.0.5
   "@effect/platform-node": 4.0.5
   "@effect/sql-d1": 4.0.5
-  "@effect/sql-pg": 4.0.5
   "@effect/sql-sqlite-do": 4.0.5
   "@effect/sql-sqlite-node": 4.0.5
   "@effect/sql-sqlite-react-native": 4.0.5
@@ -44,8 +43,6 @@ overrides:
   vitest: 5.0.5
 
 allowBuilds:
-  "@embedded-postgres/linux-x64": true
-  "@embedded-postgres/windows-x64": true
   better-sqlite3: false
   electron: true
   electron-winstaller: false

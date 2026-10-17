@@ -5,11 +5,8 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import * as Ref from "effect/Ref";
-import * as Semaphore from "effect/Semaphore";
 
 import { OrgAuthority, type OrgAuthorityContract } from "../../api";
-import { openInventoryDrizzle } from "../inventory/postgres";
-import { postgresAdoption, settleAdoption } from "./adopt";
 import { makeOrgAuthority } from "./facade";
 
 const mintId = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(
@@ -20,15 +17,10 @@ const mintId = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).
 export const OrgAuthorityLive = OrgAuthority.make(
   Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState;
-    const source = postgresAdoption(
-      yield* openInventoryDrizzle.pipe(Effect.provide(Cloudflare.Hyperdrive.ConnectBinding)),
-    );
     const crypto = yield* Crypto.Crypto;
     return Effect.gen(function* () {
       const storage = state.raw.storage;
       const sql = yield* SqliteClient.make({ storage }).pipe(Effect.provide(Reactivity.layer));
-      const settled = yield* Ref.make(false);
-      const adoption = yield* Semaphore.make(1);
       const armedAt = yield* Ref.make<number | null | undefined>(undefined);
       const alarmAt = (at: number) =>
         Effect.andThen(
@@ -53,25 +45,6 @@ export const OrgAuthorityLive = OrgAuthority.make(
               scheduled === null || scheduled > at ? alarmAt(at) : Effect.void,
             ),
         },
-        adopt: (actor, db) =>
-          Effect.gen(function* () {
-            if (yield* Ref.get(settled)) return false;
-            return yield* adoption.withPermits(1)(
-              Effect.gen(function* () {
-                if (yield* Ref.get(settled)) return false;
-                const adopted = yield* settleAdoption(source, actor, sql, db);
-                yield* Ref.set(settled, true);
-                return adopted;
-              }),
-            );
-          }).pipe(
-            Effect.tapCause((cause) =>
-              Effect.logError("authority.adoption_failed").pipe(
-                Effect.annotateLogs({ organizationId: actor.organizationId, cause }),
-              ),
-            ),
-            Effect.orDie,
-          ),
       });
       return {
         ...authority,
