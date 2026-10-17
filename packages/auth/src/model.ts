@@ -1,5 +1,4 @@
 import * as Schema from "effect/Schema";
-import * as SchemaTransformation from "effect/SchemaTransformation";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const Identifier = NonEmptyString.check(Schema.isMaxLength(128));
@@ -218,26 +217,11 @@ const AuthUser = Schema.Struct({
 });
 interface AuthUser extends Schema.Schema.Type<typeof AuthUser> {}
 
-const MembershipWithLegacySlug = Schema.Struct({
-  id: Schema.String,
+export const AuthOrganizationMembership = Schema.Struct({
+  id: OrganizationId,
   name: Schema.String,
-  slug: Schema.optionalKey(Schema.NullOr(Schema.String)),
   role: OrganizationRole,
 });
-
-export const AuthOrganizationMembership = MembershipWithLegacySlug.pipe(
-  Schema.decodeTo(
-    Schema.Struct({
-      id: OrganizationId,
-      name: Schema.String,
-      role: OrganizationRole,
-    }),
-    SchemaTransformation.transform({
-      decode: ({ id, name, role }) => ({ id, name, role }),
-      encode: ({ id, name, role }) => ({ id, name, slug: null, role }),
-    }),
-  ),
-);
 export interface AuthOrganizationMembership extends Schema.Schema.Type<
   typeof AuthOrganizationMembership
 > {}
