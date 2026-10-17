@@ -25,20 +25,22 @@ export function SegmentedRadio<Value extends string>({
   readonly onValueChange: (value: Value) => void;
 }) {
   return (
-    <RadioGroupPrimitive
-      aria-label={label}
-      render={<div className={rootClassName} />}
-      onValueChange={(next) => {
-        const option = options.find((candidate) => candidate.value === next);
-        if (option) onValueChange(option.value);
-      }}
-      value={value}
-    >
-      {options.map((option) => (
-        <RadioPrimitive.Root className={itemClassName} key={option.value} value={option.value}>
-          {option.label}
-        </RadioPrimitive.Root>
-      ))}
-    </RadioGroupPrimitive>
+    <div className={rootClassName}>
+      <RadioGroupPrimitive
+        aria-label={label}
+        render={<div className="contents" />}
+        onValueChange={(next) => {
+          const option = options.find((candidate) => candidate.value === next);
+          if (option) onValueChange(option.value);
+        }}
+        value={value}
+      >
+        {options.map((option) => (
+          <RadioPrimitive.Root className={itemClassName} key={option.value} value={option.value}>
+            {option.label}
+          </RadioPrimitive.Root>
+        ))}
+      </RadioGroupPrimitive>
+    </div>
   );
 }

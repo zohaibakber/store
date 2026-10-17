@@ -1,4 +1,3 @@
-import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   ImportCatalogResult,
   ImportId,
@@ -27,6 +26,15 @@ import {
   decodePurchaseOrderItemId,
   decodeSupplierId,
 } from "@store/contracts/ids";
+import {
+  authorityState,
+  importParts,
+  invoices,
+  products,
+  purchaseOrderItems,
+  replicas,
+  stockMovements,
+} from "@store/db/authority.schema";
 import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore, SyncEngine, SyncTransportService, type SyncTransport } from "@store/sync";
 import {
@@ -39,27 +47,25 @@ import {
   type SqliteReplicaHandle,
 } from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
-import { sql } from "drizzle-orm";
-import * as PgDrizzle from "drizzle-orm/effect-postgres";
+import { and, count, eq, min } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Struct from "effect/Struct";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { partitionDigest } from "../../src/authority/digest";
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryError } from "../../src/inventory/errors";
 import { makeInventoryImports } from "../../src/inventory/imports";
 import type { InventoryActor } from "../../src/inventory/model";
-import type { InventoryDrizzle } from "../../src/inventory/postgres";
 import { makeInventorySnapshots } from "../../src/inventory/snapshots";
+import { typedCommands } from "../inventory/typed-commands";
 import { claimsFor, TEST_ACCESS_TOKEN, webHandlerFor } from "../lib/app";
-import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
-import { typedCommands } from "./typed-commands";
+import { makeTestAuthorities, type TestAuthorities } from "./harness";
 
 const DEVICE = "device-local";
 const OCCURRED_AT = 1_760_000_000_000;
@@ -71,20 +77,6 @@ const decodeDigest = Schema.decodeUnknownSync(PartitionDigest);
 const decodeReceipt = Schema.decodeUnknownSync(Schema.fromJsonString(ImportPartReceipt));
 const decodeResult = Schema.decodeUnknownSync(Schema.fromJsonString(ImportCatalogResult));
 const decodePart = Schema.decodeUnknownEffect(Schema.fromJsonString(SnapshotPartPayload));
-
-let database: AuthorityPostgres;
-
-const postgres = () =>
-  PgClient.layer({
-    url: Redacted.make(database.connectionString),
-    maxConnections: 4,
-    applicationName: "tabaaq-catalog-import-tests",
-  });
-
-const openDb = Effect.gen(function* () {
-  const client = yield* PgClient.PgClient;
-  return yield* PgDrizzle.makeWithDefaults().pipe(Effect.provideService(PgClient.PgClient, client));
-});
 
 const seededReplica = (identity: {
   readonly organizationId: string;
@@ -418,9 +410,9 @@ const localWorkspace = (importId: string) =>
     Effect.scoped,
   );
 
-const authorityFor = (db: InventoryDrizzle, actor: InventoryActor): SyncTransport => {
-  const commands = typedCommands(makeInventoryCommands(db));
-  const snapshots = makeInventorySnapshots(db);
+const authorityFor = (authorities: TestAuthorities, actor: InventoryActor): SyncTransport => {
+  const commands = typedCommands(makeInventoryCommands(authorities));
+  const snapshots = makeInventorySnapshots(authorities);
   const settled = <A>(effect: Effect.Effect<A, InventoryError>) =>
     effect.pipe(Effect.catchTag("InventoryDatabaseError", (error) => Effect.die(error)));
   return {
@@ -436,10 +428,14 @@ const authorityFor = (db: InventoryDrizzle, actor: InventoryActor): SyncTranspor
   };
 };
 
-const organizationReplica = (db: InventoryDrizzle, actor: InventoryActor, replicaId: string) =>
+const organizationReplica = (
+  authorities: TestAuthorities,
+  actor: InventoryActor,
+  replicaId: string,
+) =>
   Layer.build(
     SyncEngine.layer().pipe(
-      Layer.provideMerge(Layer.succeed(SyncTransportService, authorityFor(db, actor))),
+      Layer.provideMerge(Layer.succeed(SyncTransportService, authorityFor(authorities, actor))),
       Layer.provideMerge(layerSqliteReplicaStore(`import-${replicaId}`)),
       Layer.provideMerge(
         seededReplica({
@@ -451,20 +447,6 @@ const organizationReplica = (db: InventoryDrizzle, actor: InventoryActor, replic
       ),
     ),
   );
-
-const serverDigest = (db: InventoryDrizzle, organizationId: string) =>
-  db
-    .execute(
-      sql`select "sync"."partition_digest"(${organizationId}, ${PARTITION_DIGEST_VERSION}::integer) ->> 'digest' as "value"`,
-      "objects",
-    )
-    .pipe(
-      Effect.map(
-        (rows) =>
-          Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ value: Schema.String })))(rows)[0]
-            ?.value,
-      ),
-    );
 
 const requestFor = (
   actor: InventoryActor,
@@ -479,29 +461,22 @@ const requestFor = (
   digestVersion: local.digest?.version ?? 0,
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient | Scope.Scope>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(postgres()), Effect.scoped));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.runPromise(Effect.scoped(effect));
 
 describe("publishing a local workspace into an empty organization", () => {
-  beforeAll(async () => {
-    database = await startAuthorityPostgres();
-  }, 180_000);
-
-  afterAll(async () => {
-    await database?.close();
-  });
-
   it("bootstraps every replica to the digest and rows the device held", async () => {
     const outcome = await run(
       Effect.gen(function* () {
-        const db = yield* openDb;
-        const imports = makeInventoryImports(db);
+        const authorities = makeTestAuthorities();
+        const { db } = yield* authorities.open("org-published");
+        const imports = makeInventoryImports(authorities);
         const owner: InventoryActor = { organizationId: "org-published", userId: OWNER };
         const clerk: InventoryActor = { organizationId: "org-published", userId: CLERK };
         const importId = decodeImportId("import-published");
         const local = yield* localWorkspace(importId);
 
-        const waiting = yield* organizationReplica(db, owner, "replica-owner");
+        const waiting = yield* organizationReplica(authorities, owner, "replica-owner");
         const waitingEngine = Context.get(waiting, SyncEngine);
         yield* waitingEngine.ensureRegistered();
         yield* waitingEngine.catchUp();
@@ -532,7 +507,7 @@ describe("publishing a local workspace into an empty organization", () => {
           .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
 
         yield* waitingEngine.catchUp();
-        const fresh = yield* organizationReplica(db, clerk, "replica-clerk");
+        const fresh = yield* organizationReplica(authorities, clerk, "replica-clerk");
         const freshEngine = Context.get(fresh, SyncEngine);
         yield* freshEngine.ensureRegistered();
         yield* freshEngine.catchUp();
@@ -548,38 +523,54 @@ describe("publishing a local workspace into an empty organization", () => {
             };
           }).pipe(Effect.provide(replica));
 
-        const leftovers = yield* db.execute(
-          sql`select count(*)::int as "parts" from "import_parts" where "organization_id" = ${owner.organizationId}`,
-          "objects",
+        const leftovers = yield* db.select({ parts: count() }).from(importParts).all();
+        const tombstones = yield* db
+          .select({ id: products.id })
+          .from(products)
+          .where(eq(products.id, "prod-gone"))
+          .all();
+        const owners = [
+          ...(yield* db.selectDistinct({ user: products.createdByUserId }).from(products).all()),
+          ...(yield* db
+            .selectDistinct({ user: stockMovements.actorUserId })
+            .from(stockMovements)
+            .all()),
+          ...(yield* db.selectDistinct({ user: invoices.organizationId }).from(invoices).all()),
+        ];
+        const lines = yield* db
+          .select()
+          .from(purchaseOrderItems)
+          .orderBy(purchaseOrderItems.id)
+          .all();
+        const purchasing = yield* Effect.forEach(lines, (row) =>
+          Effect.gen(function* () {
+            const held = yield* db
+              .select({ id: products.id })
+              .from(products)
+              .where(eq(products.id, row.productId))
+              .get();
+            const deliveries = yield* db
+              .select({ total: count() })
+              .from(stockMovements)
+              .where(
+                and(
+                  eq(stockMovements.purchaseOrderId, row.purchaseOrderId),
+                  eq(stockMovements.productId, row.productId),
+                ),
+              )
+              .get();
+            return {
+              line: row.id,
+              received: row.receivedBaseUnits,
+              productDeleted: held === undefined,
+              deliveries: deliveries?.total ?? 0,
+            };
+          }),
         );
-        const tombstones = yield* db.execute(
-          sql`select "id", "name", "deleted_at" is not null as "deleted" from "products" where "organization_id" = ${owner.organizationId} and "deleted_at" is not null
-              union all
-              select "id", "batch_number", "deleted_at" is not null from "batches" where "organization_id" = ${owner.organizationId} and "deleted_at" is not null`,
-          "objects",
-        );
-        const owners = yield* db.execute(
-          sql`select distinct "created_by_user_id" as "user" from "products" where "organization_id" = ${owner.organizationId}
-              union select distinct "actor_user_id" from "stock_movements" where "organization_id" = ${owner.organizationId}
-              union select distinct "organization_id" from "invoices" where "organization_id" = ${owner.organizationId}`,
-          "objects",
-        );
-        const purchasing = yield* db.execute(
-          sql`select "l"."id" as "line", "l"."received_base_units" as "received", "p"."deleted_at" is not null as "productDeleted",
-                (select count(*)::int from "stock_movements" as "m"
-                  where "m"."organization_id" = "l"."organization_id"
-                    and "m"."purchase_order_id" = "l"."purchase_order_id"
-                    and "m"."product_id" = "l"."product_id") as "deliveries"
-              from "purchase_order_items" as "l"
-              join "products" as "p" on "p"."organization_id" = "l"."organization_id" and "p"."id" = "l"."product_id"
-              where "l"."organization_id" = ${owner.organizationId}
-              order by "l"."id"`,
-          "objects",
-        );
-        const schemaVersions = yield* db.execute(
-          sql`select min("schema_version")::int as "lowest", count(*)::int as "replicas" from "replicas" where "organization_id" = ${owner.organizationId}`,
-          "objects",
-        );
+        const schemaVersions = yield* db
+          .select({ lowest: min(replicas.schemaVersion), replicas: count() })
+          .from(replicas)
+          .all();
         const beforeDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
         const delivered = yield* freshEngine.saveCommand(
           queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
@@ -591,10 +582,14 @@ describe("publishing a local workspace into an empty organization", () => {
           ReplicaStore.use((store) => store.readCommandStatus(delivered.operationId)),
           fresh,
         );
-        const receivedAfter = yield* db.execute(
-          sql`select "received_base_units" as "received", "row_version"::int as "version" from "purchase_order_items" where "organization_id" = ${owner.organizationId} and "id" = 'pol-panadol'`,
-          "objects",
-        );
+        const receivedAfter = yield* db
+          .select({
+            received: purchaseOrderItems.receivedBaseUnits,
+            version: purchaseOrderItems.rowVersion,
+          })
+          .from(purchaseOrderItems)
+          .where(eq(purchaseOrderItems.id, "pol-panadol"))
+          .all();
 
         return {
           local,
@@ -620,7 +615,7 @@ describe("publishing a local workspace into an empty organization", () => {
           leftovers,
           tombstones,
           owners,
-          authority: yield* serverDigest(db, owner.organizationId),
+          authority: (yield* partitionDigest(db, PARTITION_DIGEST_VERSION)).digest,
         };
       }),
     );
@@ -660,7 +655,7 @@ describe("publishing a local workspace into an empty organization", () => {
     expect(outcome.asked).toStrictEqual(outcome.committed);
     expect(outcome.restaged.partNumber).toBe(1);
     expect(outcome.leftovers).toEqual([{ parts: 0 }]);
-    expect(outcome.tombstones).toHaveLength(2);
+    expect(outcome.tombstones).toHaveLength(0);
     expect(new Set(outcome.owners.map((row) => Object.values(row)[0]))).toEqual(
       new Set(["org-published", OWNER]),
     );
@@ -688,8 +683,10 @@ describe("publishing a local workspace into an empty organization", () => {
   it("answers a status read without writing, and only for an owner", async () => {
     const outcome = await run(
       Effect.gen(function* () {
-        const db = yield* openDb;
-        const imports = makeInventoryImports(db);
+        const authorities = makeTestAuthorities();
+        const asked = yield* authorities.open("org-asked");
+        const stockedOrg = yield* authorities.open("org-stocked");
+        const imports = makeInventoryImports(authorities);
         const importId = decodeImportId("import-asked");
         const ask = (role: "owner" | "member", organizationId: string) =>
           Effect.promise(async () => {
@@ -704,20 +701,22 @@ describe("publishing a local workspace into an empty organization", () => {
             );
             return { status: response.status, body: await response.json() };
           });
-        const states = (organizationId: string) =>
-          db.execute(
-            sql`select count(*)::int as "rows" from "inventory_state" where "organization_id" = ${organizationId}`,
-            "objects",
-          );
+        const states = (authority: typeof asked) =>
+          authority.db.select({ rows: count() }).from(authorityState).all();
 
         const member = yield* ask("member", "org-asked");
         const empty = yield* ask("owner", "org-asked");
-        const untouched = yield* states("org-asked");
+        const untouched = yield* states(asked);
 
-        yield* db.execute(
-          sql`insert into "inventory_state" ("organization_id", "incarnation", "epoch", "commit_sequence", "retention_floor")
-              values ('org-stocked', 'incarnation-test', '1', 3, 0)`,
-        );
+        yield* stockedOrg.db.insert(authorityState).values({
+          id: 1,
+          organizationId: "org-stocked",
+          incarnation: "incarnation-test",
+          epoch: "1",
+          commitSequence: 3,
+          retentionFloor: 0,
+          createdAt: OCCURRED_AT,
+        });
         const stocked = yield* ask("owner", "org-stocked");
         const refused = yield* imports
           .commit(

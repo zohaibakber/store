@@ -1,158 +1,78 @@
 import {
-  ImportCatalogRequest,
   ImportCatalogResult,
-  MAX_IMPORT_PART_BYTES,
-  MAX_IMPORT_PART_ROWS,
-  MAX_IMPORT_PARTS,
+  type ImportCatalogRequest,
   type ImportId,
   type ImportStatus,
 } from "@store/contracts";
-import { sql } from "drizzle-orm";
-import * as Clock from "effect/Clock";
+import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { InventoryError } from "./errors";
+import { answered, type AuthorityNamespace } from "./authority-client";
+import { InventoryDatabaseError, type InventoryError } from "./errors";
 import type { EncodedCommit, EncodedJsonBody, InventoryActor } from "./model";
-import {
-  databaseError,
-  isDataException,
-  protocol,
-  randomHex,
-  withSerializationRetry,
-  type InventoryDrizzle,
-} from "./postgres";
-import {
-  actorJson,
-  answered,
-  syncFunctionJson,
-  syncFunctionReply,
-  syncFunctionRow,
-} from "./sync-function";
 
-export interface InventoryImportsContract {
+const decodeResult = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportCatalogResult));
+
+export interface InventoryImportsContract<R = never> {
   readonly stagePart: (
     actor: InventoryActor,
     importId: ImportId,
     partNumber: number,
     bodyText: string,
-  ) => Effect.Effect<EncodedJsonBody, InventoryError>;
+  ) => Effect.Effect<EncodedJsonBody, InventoryError, R>;
   readonly commit: (
     actor: InventoryActor,
     importId: ImportId,
     request: ImportCatalogRequest,
-  ) => Effect.Effect<EncodedCommit, InventoryError>;
+  ) => Effect.Effect<EncodedCommit, InventoryError, R>;
   readonly status: (
     actor: InventoryActor,
     importId: ImportId,
-  ) => Effect.Effect<ImportStatus, InventoryError>;
+  ) => Effect.Effect<ImportStatus, InventoryError, R>;
 }
 
-const committedRow = syncFunctionRow(
-  Schema.Struct({
-    fanout_epoch: Schema.NullOr(Schema.String),
-    fanout_horizon: Schema.NullOr(Schema.String),
-    ...syncFunctionReply,
+export class InventoryImports extends Context.Service<
+  InventoryImports,
+  InventoryImportsContract<RuntimeContext>
+>()("@store/server/InventoryImports") {}
+
+export const makeInventoryImports = <R, E>(
+  authorities: AuthorityNamespace<R, E>,
+): InventoryImportsContract<R> => ({
+  stagePart: Effect.fn("InventoryImports.stagePart")(
+    function* (actor, importId, partNumber, bodyText) {
+      const json = yield* answered(
+        authorities
+          .getByName(actor.organizationId)
+          .stageImportPart(actor, importId, partNumber, bodyText),
+      );
+      return { json } satisfies EncodedJsonBody;
+    },
+  ),
+  commit: Effect.fn("InventoryImports.commit")(function* (actor, importId, request) {
+    return yield* answered(
+      authorities.getByName(actor.organizationId).commitImport(actor, importId, request),
+    );
   }),
-);
-
-const statusRow = syncFunctionRow(
-  Schema.Struct({
-    committed: Schema.NullOr(Schema.String),
-    refusal: Schema.NullOr(Schema.String),
-  }),
-);
-
-const decodeResult = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportCatalogResult));
-
-const encodeRequest = Schema.encodeSync(Schema.fromJsonString(ImportCatalogRequest));
-
-const NO_GROUP = "";
-
-const NO_ORIGIN_REPLICA = "";
-
-export class InventoryImports extends Context.Service<InventoryImports, InventoryImportsContract>()(
-  "@store/server/InventoryImports",
-) {}
-
-export const makeInventoryImports = (db: InventoryDrizzle): InventoryImportsContract =>
-  InventoryImports.of({
-    stagePart: Effect.fn("InventoryImports.stagePart")(
-      function* (actor, importId, partNumber, bodyText) {
-        const now = yield* Clock.currentTimeMillis;
-        const json = yield* syncFunctionJson(
-          db.execute(
-            sql`select "body", "error_code", "error_message" from sync.stage_import_part(
-              ${actorJson(actor)}::jsonb,
-              ${importId}::text,
-              ${partNumber}::integer,
-              ${bodyText}::text,
-              ${now}::bigint,
-              ${MAX_IMPORT_PART_BYTES}::integer,
-              ${MAX_IMPORT_PART_ROWS}::integer,
-              ${MAX_IMPORT_PARTS}::integer
-            )`,
-            "objects",
-          ),
-        ).pipe(
-          Effect.catchIf(
-            (error) => error._tag === "InventoryDatabaseError" && isDataException(error),
-            () => protocol("INVALID_OPERATION", "The import part is not valid JSON."),
+  status: Effect.fn("InventoryImports.status")(function* (actor, importId) {
+    const status = yield* answered(
+      authorities.getByName(actor.organizationId).importStatus(actor, importId),
+    );
+    switch (status._tag) {
+      case "committed": {
+        const result = yield* decodeResult(status.json).pipe(
+          Effect.mapError((error) =>
+            InventoryDatabaseError.make({ message: error.message, cause: error }),
           ),
         );
-        return { json } satisfies EncodedJsonBody;
-      },
-    ),
-    commit: Effect.fn("InventoryImports.commit")(function* (actor, importId, request) {
-      const now = yield* Clock.currentTimeMillis;
-      const row = yield* committedRow(
-        withSerializationRetry(
-          db.execute(
-            sql`select "body", "fanout_epoch", "fanout_horizon", "error_code", "error_message"
-            from sync.import_catalog(
-              ${actorJson(actor)}::jsonb,
-              ${importId}::text,
-              ${encodeRequest(request)}::jsonb,
-              ${now}::bigint,
-              ${randomHex(16)}::text
-            )`,
-            "objects",
-          ),
-        ),
-      );
-      const { body: json } = yield* answered(row);
-      const fanout =
-        row.fanout_epoch === null || row.fanout_horizon === null
-          ? null
-          : {
-              epoch: row.fanout_epoch,
-              horizon: row.fanout_horizon,
-              group: NO_GROUP,
-              byteLength: 0,
-              originReplicaId: NO_ORIGIN_REPLICA,
-            };
-      return { json, fanout } satisfies EncodedCommit;
-    }),
-    status: Effect.fn("InventoryImports.status")(function* (actor, importId) {
-      const row = yield* statusRow(
-        db.execute(
-          sql`select
-            (
-              select "i"."result_json" from "catalog_imports" as "i"
-              where "i"."organization_id" = ${actor.organizationId}
-                and "i"."import_id" = ${importId}
-            ) as "committed",
-            sync.import_refusal(${actor.organizationId}::text) as "refusal"`,
-          "objects",
-        ),
-      );
-      if (row.committed !== null) {
-        const result = yield* decodeResult(row.committed).pipe(Effect.mapError(databaseError));
         return { _tag: "committed", result } satisfies ImportStatus;
       }
-      return row.refusal === null
-        ? ({ _tag: "none" } satisfies ImportStatus)
-        : ({ _tag: "other", message: row.refusal } satisfies ImportStatus);
-    }),
-  });
+      case "other":
+        return { _tag: "other", message: status.message } satisfies ImportStatus;
+      case "none":
+        return { _tag: "none" } satisfies ImportStatus;
+    }
+  }),
+});

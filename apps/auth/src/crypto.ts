@@ -38,7 +38,7 @@ export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worke
       crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Base64Url.encode));
 
     return {
-      randomId: crypto.randomUUIDv4.pipe(failed("randomId")),
+      randomId: crypto.randomUUIDv4().pipe(failed("randomId")),
       randomToken,
       randomSecret: (bytes: number) => Effect.map(randomToken(bytes), Redacted.make),
       otpCode: crypto

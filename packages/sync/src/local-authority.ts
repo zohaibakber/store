@@ -94,6 +94,8 @@ const RETRY_MILLIS = 1_000;
 
 const IDS_PER_QUERY = 400;
 
+const SETTLED_IDS_PER_QUERY = 90;
+
 type CatalogPayload = Extract<SyncCommand, { readonly _tag: "catalogWrite" }>["payload"];
 
 type InvoicePayload = Extract<SyncCommand, { readonly _tag: "issueInvoice" }>["payload"];
@@ -119,7 +121,7 @@ type Accepted = {
   readonly changes: ReadonlyArray<SyncLogChange>;
 };
 
-type Decision = Result.Result<Accepted, Rejection>;
+export type Decision = Result.Result<Accepted, Rejection>;
 
 type LocalCatalogFacts = {
   readonly rows: CatalogRowsById;
@@ -715,8 +717,6 @@ const decideIssueInvoice = (
 
 const queryBuilder = new QueryBuilder();
 
-const chunked = <Value>(values: ReadonlyArray<Value>) => Array.chunksOf(values, IDS_PER_QUERY);
-
 const unjournaled = (entity: SyncEntity, id: SQLiteColumn) =>
   notExists(
     queryBuilder
@@ -732,6 +732,20 @@ type JournalPrior = {
 };
 
 const NO_PRIORS: ReadonlyMap<string, JournalPrior> = new Map();
+
+type PriorsOf = (entity: SyncEntity) => ReadonlyMap<string, JournalPrior>;
+
+export type PendingJournal = {
+  readonly priorsOf: PriorsOf;
+  readonly unjournaled: (entity: SyncEntity, id: SQLiteColumn) => SQL | undefined;
+  readonly idsPerQuery: number;
+};
+
+export const SETTLED_CATALOG: PendingJournal = {
+  priorsOf: () => NO_PRIORS,
+  unjournaled: () => undefined,
+  idsPerQuery: SETTLED_IDS_PER_QUERY,
+};
 
 const earliestPriors = Effect.fn("LocalAuthority.earliestPriors")(function* (tx: ReplicaDb) {
   const rows = yield* tx
@@ -757,7 +771,15 @@ const earliestPriors = Effect.fn("LocalAuthority.earliestPriors")(function* (tx:
     earliest.get(entity) ?? NO_PRIORS;
 });
 
-type PriorsOf = Effect.Success<ReturnType<typeof earliestPriors>>;
+const chunked = <Value>(journal: PendingJournal, values: ReadonlyArray<Value>) =>
+  Array.chunksOf(values, journal.idsPerQuery);
+
+const replicaJournal = (tx: ReplicaDb) =>
+  Effect.map(earliestPriors(tx), (priorsOf): PendingJournal => ({
+    priorsOf,
+    unjournaled,
+    idsPerQuery: IDS_PER_QUERY,
+  }));
 
 const byId = <Row extends { readonly id: string }>(rows: Iterable<Row>): ReadonlyMap<string, Row> =>
   new Map(Array.fromIterable(rows).map((row) => [row.id, row]));
@@ -765,7 +787,7 @@ const byId = <Row extends { readonly id: string }>(rows: Iterable<Row>): Readonl
 const authoritativeView = <Row extends { readonly id: string }, Encoded>(
   tx: ReplicaDb,
   organizationId: string,
-  priorsOf: PriorsOf,
+  journal: PendingJournal,
   entity: SyncEntity,
   schema: Schema.Codec<Row, Encoded>,
 ) =>
@@ -773,7 +795,7 @@ const authoritativeView = <Row extends { readonly id: string }, Encoded>(
     const table = syncEntityRows[entity].table;
     const decodeStored = Schema.decodeUnknownEffect(Schema.Array(schema));
     const decodePrior = Schema.decodeUnknownEffect(Schema.fromJsonString(schema));
-    const priors = priorsOf(entity);
+    const priors = journal.priorsOf(entity);
     const restored = byId(
       yield* Effect.forEach(
         [...priors.values()].flatMap((prior) =>
@@ -786,7 +808,10 @@ const authoritativeView = <Row extends { readonly id: string }, Encoded>(
       Effect.gen(function* () {
         const wanted = [...new Set(ids)];
         const stored = yield* Effect.forEach(
-          chunked(wanted.filter((id) => !priors.has(id))),
+          chunked(
+            journal,
+            wanted.filter((id) => !priors.has(id)),
+          ),
           (chunk) =>
             tx
               .select()
@@ -808,7 +833,11 @@ const authoritativeView = <Row extends { readonly id: string }, Encoded>(
         .select()
         .from(table)
         .where(
-          and(eq(table.organizationId, organizationId), condition, unjournaled(entity, table.id)),
+          and(
+            eq(table.organizationId, organizationId),
+            condition,
+            journal.unjournaled(entity, table.id),
+          ),
         );
     return {
       restored,
@@ -977,27 +1006,27 @@ const footprintOf = (payload: CatalogPayload) => {
 const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(function* (
   tx: ReplicaDb,
   organizationId: string,
-  priorsOf: PriorsOf,
+  journal: PendingJournal,
   footprint: ReturnType<typeof footprintOf>,
 ) {
   const supplierView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "supplier",
     ReplicaSupplierRow,
   );
   const orderView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "purchaseOrder",
     ReplicaPurchaseOrderRow,
   );
   const lineView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "purchaseOrderItem",
     ReplicaPurchaseOrderItemRow,
   );
@@ -1027,7 +1056,7 @@ const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(functi
         untouchedOrders,
       ),
     )).flat(),
-    ...(yield* Effect.forEach(chunked([...footprint.orderNumbers]), (chunk) =>
+    ...(yield* Effect.forEach(chunked(journal, [...footprint.orderNumbers]), (chunk) =>
       orderView.stored(inArray(purchaseOrders.orderNumber, chunk)),
     )).flat(),
     ...(footprint.orderNumbers.size === 0
@@ -1035,8 +1064,9 @@ const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(functi
       : yield* orderView.firstStored(undefined, desc(purchaseOrders.orderNumber), untouchedOrders)),
     ...orderView.restored.values(),
   ]);
-  const namedSuppliers = yield* Effect.forEach(chunked([...footprint.supplierNames]), (chunk) =>
-    supplierView.stored(inArray(suppliers.name, chunk)),
+  const namedSuppliers = yield* Effect.forEach(
+    chunked(journal, [...footprint.supplierNames]),
+    (chunk) => supplierView.stored(inArray(suppliers.name, chunk)),
   );
   return {
     supplier: byId([
@@ -1053,50 +1083,46 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
   tx: ReplicaDb,
   organizationId: string,
   payload: CatalogPayload,
+  journal: PendingJournal,
 ) {
   const footprint = footprintOf(payload);
-  const priorsOf = yield* earliestPriors(tx);
   const categoryView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "category",
     ReplicaCategoryRow,
   );
   const productView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "product",
     ReplicaProductRow,
   );
-  const batchView = yield* authoritativeView(
-    tx,
-    organizationId,
-    priorsOf,
-    "batch",
-    ReplicaBatchRow,
-  );
+  const batchView = yield* authoritativeView(tx, organizationId, journal, "batch", ReplicaBatchRow);
   const movementView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "stockMovement",
     ReplicaStockMovementRow,
   );
 
-  const namedStored = yield* Effect.forEach(chunked([...footprint.categoryNames]), (chunk) =>
-    tx
-      .select({ id: categories.id })
-      .from(categories)
-      .where(
-        and(
-          eq(categories.organizationId, organizationId),
-          inArray(categories.name, chunk),
-          unjournaled("category", categories.id),
-        ),
-      )
-      .all(),
+  const namedStored = yield* Effect.forEach(
+    chunked(journal, [...footprint.categoryNames]),
+    (chunk) =>
+      tx
+        .select({ id: categories.id })
+        .from(categories)
+        .where(
+          and(
+            eq(categories.organizationId, organizationId),
+            inArray(categories.name, chunk),
+            journal.unjournaled("category", categories.id),
+          ),
+        )
+        .all(),
   );
   const namedRestored = [...categoryView.restored.values()].filter((category) =>
     footprint.categoryNames.has(category.name),
@@ -1111,7 +1137,7 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
   const movementRows = yield* movementView.rowsOf(footprint.movementIds);
 
   const storedProductsByCategory = yield* Effect.forEach(
-    chunked([...footprint.deletedCategoryIds]),
+    chunked(journal, [...footprint.deletedCategoryIds]),
     (chunk) =>
       tx
         .select({ key: products.categoryId, total: count() })
@@ -1120,7 +1146,7 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
           and(
             eq(products.organizationId, organizationId),
             inArray(products.categoryId, chunk),
-            unjournaled("product", products.id),
+            journal.unjournaled("product", products.id),
           ),
         )
         .groupBy(products.categoryId)
@@ -1145,7 +1171,7 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
   ]);
 
   const storedStockByProduct = yield* Effect.forEach(
-    chunked([...footprint.stockCheckedProductIds]),
+    chunked(journal, [...footprint.stockCheckedProductIds]),
     (chunk) =>
       tx
         .select({ key: batches.productId, total: count() })
@@ -1155,7 +1181,7 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
             eq(batches.organizationId, organizationId),
             inArray(batches.productId, chunk),
             or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
-            unjournaled("batch", batches.id),
+            journal.unjournaled("batch", batches.id),
           ),
         )
         .groupBy(batches.productId)
@@ -1184,7 +1210,7 @@ const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(function* 
       category: categoryRows,
       product: productRows,
       batch: batchRows,
-      ...(yield* loadPurchasingRows(tx, organizationId, priorsOf, footprint)),
+      ...(yield* loadPurchasingRows(tx, organizationId, journal, footprint)),
     },
     recordedMovementIds: new Set(movementRows.keys()),
     categoriesHoldingOtherProducts,
@@ -1196,47 +1222,41 @@ const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(function* 
   tx: ReplicaDb,
   organizationId: string,
   payload: InvoicePayload,
+  journal: PendingJournal,
 ) {
-  const priorsOf = yield* earliestPriors(tx);
   const productView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "product",
     ReplicaProductRow,
   );
-  const batchView = yield* authoritativeView(
-    tx,
-    organizationId,
-    priorsOf,
-    "batch",
-    ReplicaBatchRow,
-  );
+  const batchView = yield* authoritativeView(tx, organizationId, journal, "batch", ReplicaBatchRow);
   const invoiceView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "invoice",
     ReplicaInvoiceRow,
   );
   const itemView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "invoiceItem",
     ReplicaInvoiceItemRow,
   );
   const movementView = yield* authoritativeView(
     tx,
     organizationId,
-    priorsOf,
+    journal,
     "stockMovement",
     ReplicaStockMovementRow,
   );
 
   const settled = and(
     eq(invoices.organizationId, organizationId),
-    unjournaled("invoice", invoices.id),
+    journal.unjournaled("invoice", invoices.id),
   );
   const restoredNumbers = [...invoiceView.restored.values()].map(
     (invoice) => invoice.invoiceNumber,
@@ -1281,12 +1301,12 @@ const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(function* 
 
 type ReplicaStateRow = Effect.Success<ReturnType<typeof loadReplicaState>>;
 
-const decideCommand = (
+export const decideCommandWithin = (
   tx: ReplicaDb,
-  state: ReplicaStateRow,
+  actor: ProjectionActor,
   envelope: SyncCommandEnvelope,
+  journal: PendingJournal,
 ): Effect.Effect<Decision, EffectDrizzleQueryError | Schema.SchemaError> => {
-  const actor: ProjectionActor = { organizationId: state.organizationId, userId: state.userId };
   if (envelope.command.payload.commandId !== envelope.operationId) {
     return Effect.succeed(
       rejected("COMMAND_IDENTITY_MISMATCH", "The command id must match the envelope operation id."),
@@ -1295,17 +1315,30 @@ const decideCommand = (
   switch (envelope.command._tag) {
     case "issueInvoice": {
       const { payload } = envelope.command;
-      return loadInvoiceFacts(tx, state.organizationId, payload).pipe(
+      return loadInvoiceFacts(tx, actor.organizationId, payload, journal).pipe(
         Effect.map((facts) => decideIssueInvoice(envelope, payload, actor, facts)),
       );
     }
     case "catalogWrite": {
       const { payload } = envelope.command;
-      return loadCatalogFacts(tx, state.organizationId, payload).pipe(
+      return loadCatalogFacts(tx, actor.organizationId, payload, journal).pipe(
         Effect.map((facts) => decideCatalogWrite(payload, actor, facts)),
       );
     }
   }
+};
+
+const decideCommand = (
+  tx: ReplicaDb,
+  state: ReplicaStateRow,
+  envelope: SyncCommandEnvelope,
+): Effect.Effect<Decision, EffectDrizzleQueryError | Schema.SchemaError> => {
+  const actor = { organizationId: state.organizationId, userId: state.userId };
+  return envelope.command.payload.commandId !== envelope.operationId
+    ? decideCommandWithin(tx, actor, envelope, SETTLED_CATALOG)
+    : Effect.flatMap(replicaJournal(tx), (journal) =>
+        decideCommandWithin(tx, actor, envelope, journal),
+      );
 };
 
 type DecidedGroup = {

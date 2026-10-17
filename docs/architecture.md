@@ -2,7 +2,7 @@
 
 Tabaaq is offline-first inventory and sales. The desktop and mobile clients keep
 a local replica of their organization's catalog, writes commands to it first, and syncs with one
-authoritative Postgres database through a stateless Cloudflare Worker.
+authoritative `OrgAuthority` Durable Object per organization through a stateless Cloudflare Worker.
 
 ## Clients
 
@@ -54,32 +54,54 @@ authoritative Postgres database through a stateless Cloudflare Worker.
 ## API Worker (`apps/server`)
 
 The API is a thin gateway. Each request verifies the ES256 access token
-locally, takes the organization from the signed claims, and runs one
-`select sync.<fn>(...)` on Postgres through Hyperdrive. The SQL functions in
-the `sync` schema own validation, organization locking, conflict decisions,
-idempotency receipts, and the change log.
+locally, takes the organization from the signed claims, and calls one method on
+that organization's `OrgAuthority` Durable Object (`getByName(organizationId)`).
+The Worker-side services in `src/inventory` keep the route contracts and turn
+the object's reply (`ok`, `refused` with a protocol code, or `malformed`) back
+into typed errors.
 
-| Route                                  | SQL                     |
-| -------------------------------------- | ----------------------- |
-| `POST /api/sync/replicas`              | `sync.register_replica` |
-| `POST /api/sync/commands`              | `sync.submit_command`   |
-| `GET /api/sync/receipts/:operationId`  | `sync.receipt_frame`    |
-| `POST /api/sync/pull`                  | `sync.pull`             |
-| `POST /api/sync/snapshots`             | `sync.acquire_snapshot` |
-| `GET /api/sync/snapshots/:id/parts/:n` | `snapshot_parts` read   |
-| `GET /api/sync/live`                   | WebSocket to `OrgHub`   |
+| Route                                  | `OrgAuthority` method |
+| -------------------------------------- | --------------------- |
+| `POST /api/sync/replicas`              | `register`            |
+| `POST /api/sync/commands`              | `submit`              |
+| `GET /api/sync/receipts/:operationId`  | `receipt`             |
+| `POST /api/sync/pull`                  | `pull`                |
+| `POST /api/sync/snapshots`             | `acquireSnapshot`     |
+| `GET /api/sync/snapshots/:id/parts/:n` | `readSnapshotPart`    |
+| `POST /api/sync/imports/:id/parts/:n`  | `stageImportPart`     |
+| `POST /api/sync/imports/:id/commit`    | `commitImport`        |
+| `GET /api/sync/imports/:id`            | `importStatus`        |
+| `GET /api/sync/live`                   | WebSocket to `OrgHub` |
 
 Other routes: `/api/health`, `/api/auth/session`, `/api/uploads`, and
 `/api/product-scans` (Workers AI, rate limited).
 
+## Organization authority (`apps/server/src/authority`)
+
+- One SQLite-backed Durable Object per organization owns its catalog (the
+  shared `store.schema` tables), change log, receipts, replicas, snapshots,
+  download leases and staged imports (`packages/db/src/authority/schema.ts`,
+  migrations in `migrations/authority`, applied on activation).
+- Every command runs in one storage transaction, which closes the object's
+  input gate: the object is the organization lock. Decisions reuse the
+  deciders the local authority runs (`@store/sync/authority`) over the settled
+  catalog, so a local workspace and an organization decide alike.
 - Pull returns whole transaction groups within a row and encoded-byte budget
-  (`maxBytes`). A client asks for the digest by sending `digestVersion`.
-- Snapshots are built on demand by `sync.build_snapshot` in one SQL statement
-  and stored as parts in Postgres. Parts are served with a content ETag and
-  immutable caching.
-- A cron trigger (`*/5 * * * *`) runs `sync.maintain`: it advances retention
-  floors, deletes old change-log history in bounded batches, expires leases,
-  and prunes or rebuilds snapshots within a time budget.
+  (`maxBytes`). A client asks for the digest by sending `digestVersion`; v4
+  and v3 are answered.
+- Snapshots are built on demand into parts of at most 2,000 rows or 768 KiB
+  and served with a content ETag and immutable caching.
+- Maintenance runs on the object's own alarm, armed after writes: it expires
+  leases, rebuilds or prunes snapshots, advances the retention floor and trims
+  the change log within a time budget, then re-arms only while work remains.
+- Statements bind at most about 100 parameters (the Durable Object SQLite
+  limit), so multi-row writes and `in (...)` reads are chunked.
+- An organization that still lives in Postgres is adopted on first touch: the
+  object locks the organization's `inventory_state` row, copies the catalog,
+  replicas, receipts, retained history and import record, and fences Postgres
+  by changing its epoch so an old Worker version can no longer commit there.
+  Epoch, incarnation and commit sequence carry over, so caught-up replicas
+  continue without a snapshot.
 
 ## Live fan-out
 
@@ -102,7 +124,9 @@ pulls.
 ## Data (`packages/db`)
 
 - `migrations/auth`: D1 schema.
-- `migrations/postgres`: inventory tables plus the `sync` schema functions.
+- `migrations/authority`: the `OrgAuthority` Durable Object SQLite schema.
+- `migrations/postgres`: the former inventory authority, read only to adopt
+  organizations into their Durable Object.
 - `migrations/replica`: the local SQLite replica schema.
 
 ## Infrastructure and stages
@@ -110,8 +134,9 @@ pulls.
 Alchemy declares everything in `alchemy.run.ts` and the `infra.ts` modules next
 to the code they deploy. There are two stages:
 
-- `dev`: inventory Postgres on Neon, no web app deployment.
-- `prod`: inventory on PlanetScale Postgres, web app on `PRODUCTION_DOMAIN`,
+- `dev`: legacy inventory Postgres on Neon (adoption source), no web app
+  deployment.
+- `prod`: legacy inventory on PlanetScale Postgres (adoption source), web app on `PRODUCTION_DOMAIN`,
   API on `api.<domain>`, auth on `auth.<domain>`, and zone WAF rules
   (`infra/edge.ts`) that block paths outside each host's surface and rate-limit
   `/api/` per IP.

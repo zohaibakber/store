@@ -6,4 +6,9 @@ export class InventoryDatabaseError extends Schema.TaggedError<InventoryDatabase
   { message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 
+export class SyncRequestMalformed extends Schema.TaggedError<SyncRequestMalformed>()(
+  "SyncRequestMalformed",
+  { message: Schema.String },
+) {}
+
 export type InventoryError = SyncProtocolError | InventoryDatabaseError;

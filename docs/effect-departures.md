@@ -19,7 +19,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 
 ## Services and layers
 
-- **Tags without layers in `apps/server`.** `InventoryCommands`, `InventorySnapshots`, `InventoryImports`, `InventoryDevices` and `LiveFanout` are built by free `makeX(db)` functions and wrapped in `Layer.succeed` in `apps/server/src/http/app.ts`. Target: each service owns a layer that yields its database dependency; the Alchemy init effect bridges the built handle once.
+- **Tags without layers in `apps/server`.** `InventoryCommands`, `InventorySnapshots`, `InventoryImports`, `InventoryDevices` and `LiveFanout` are built by free `makeX(authorities)` functions over the `OrgAuthority` namespace and wrapped in `Layer.succeed` in `apps/server/src/http/app.ts`. The authority itself (`apps/server/src/authority/facade.ts`) is a factory over a `SqlClient`, not a service. Target: each service owns a layer that yields its dependency; the Alchemy init effect bridges the built handle once.
 - **Four layer spellings and two interface suffixes.** `X.layer`, `xLayer`, `layerX`, `XLive`; `XApi` and `XContract`. Target: the naming table in [services and layers](../.agents/skills/effect/references/SERVICES_LAYERS.md), with the interface inline.
 - **Unnamed service methods.** `packages/workspace` (`SessionHttp`), `packages/inventory-react` and most of `apps/desktop` use `Effect.gen` where `Effect.fn("Service.method")` belongs, so their traces have no spans.
 
@@ -45,7 +45,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 
 - **Two model-generation integrations.** Global search uses `LanguageModel.generateObject`, while scans and invoice extraction use `GenerateModelJson` and a second Workers AI wrapper. Reuse the existing provider adapter after adding per-operation token budgets and preserving tolerant extraction/JSON-recovery behavior. Document conversion remains separate.
 - **Mutable `Map` and `let` state beside Effect primitives.** `apps/desktop/electron/{workspace-sessions,replica-ownership,replica-backup}.ts`, the access-token listener set in `apps/desktop/electron/auth.ts`, `packages/inventory-react/src/{workspace,preferences}.ts`, `apps/web/src/web/app-host.ts`.
-- **The `crypto` global in Effect code.** `apps/server/src/inventory/postgres.ts`, `packages/sync/src/engine.ts` (`makeClaimId`), `apps/desktop/electron/{workspace-sessions,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
+- **The `crypto` global in Effect code.** `packages/sync/src/engine.ts` (`makeClaimId`), `apps/desktop/electron/{workspace-sessions,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `apps/web/src/lib/first-party-auth.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
 - **`Date.now()` and `setTimeout`.** `packages/inventory-react/src/atoms.ts` and UI code in `apps/web`.
 - **A hand-written cross-tab storage atom** beside `Atom.kvs` in `apps/web/src/lib/preferences.ts`. The installed `Atom.kvs` and `KeyValueStore.layerStorage` do not subscribe to storage events; preserve cross-tab adoption and reading current storage before applying an update. `Atom.kvs` alone is not a replacement.
 

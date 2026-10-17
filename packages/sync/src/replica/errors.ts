@@ -68,6 +68,23 @@ const isStorageFull = (cause: unknown): boolean =>
 export const hasSqlReason = (cause: unknown, tags: ReadonlyArray<string>): boolean =>
   someInCauseChain(cause, (link) => link._tag !== undefined && tags.includes(link._tag));
 
+const UNIQUE_CONSTRAINT_PATTERN = /UNIQUE constraint failed|PRIMARY KEY constraint failed/iu;
+
+const VALUE_CONSTRAINT_PATTERN =
+  /CHECK constraint failed|NOT NULL constraint failed|datatype mismatch/iu;
+
+export type ConstraintViolation = "duplicate" | "value";
+
+export const constraintViolationOf = (cause: unknown): ConstraintViolation | undefined => {
+  const matched = (pattern: RegExp) =>
+    someInCauseChain(cause, (link) => link.message !== undefined && pattern.test(link.message));
+  if (matched(VALUE_CONSTRAINT_PATTERN)) return "value";
+  if (matched(UNIQUE_CONSTRAINT_PATTERN) || hasSqlReason(cause, ["ConstraintError"])) {
+    return "duplicate";
+  }
+  return undefined;
+};
+
 export const isStorageFullFailure = (cause: unknown): boolean =>
   cause instanceof ReplicaStorageError && cause.full === true;
 

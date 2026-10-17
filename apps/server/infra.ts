@@ -16,9 +16,10 @@ import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { Api, OrgHub } from "./api";
+import { Api, OrgAuthority, OrgHub } from "./api";
 import { workersAiLanguageModel } from "./src/ai/language-model";
 import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
+import { OrgAuthorityLive } from "./src/authority/durable-object";
 import { makeGlobalSearchCache } from "./src/global-search/cache";
 import { PageImagesLive } from "./src/global-search/page-images";
 import { cloudflareWebSearch } from "./src/global-search/web-search";
@@ -28,8 +29,6 @@ import { makeInventoryCommands } from "./src/inventory/commands";
 import { makeInventoryDevices } from "./src/inventory/devices";
 import { makeInventoryImports } from "./src/inventory/imports";
 import { makeInventoryLive } from "./src/inventory/live-horizon";
-import { MAINTENANCE_POLICY, makeInventoryMaintenance } from "./src/inventory/maintenance";
-import { openInventoryDrizzle } from "./src/inventory/postgres";
 import { makeInventorySnapshots } from "./src/inventory/snapshots";
 import { makeLiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
@@ -75,17 +74,8 @@ export const ApiLive = Api.make(
   }),
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const db = yield* openInventoryDrizzle.pipe(
-      Effect.provide(Cloudflare.Hyperdrive.ConnectBinding),
-    );
-    const live = makeInventoryLive(db);
-    const maintenance = makeInventoryMaintenance(db);
-    yield* Cloudflare.Workers.cron(MAINTENANCE_POLICY.cronExpression, () =>
-      maintenance.runScheduled().pipe(
-        Effect.tap((progress) => Effect.log("inventory maintenance run", progress)),
-        Effect.tapError((error) => Effect.logError("inventory maintenance failed", error)),
-      ),
-    );
+    const authorities = yield* OrgAuthority;
+    const live = makeInventoryLive(authorities);
     const hubs = yield* OrgHub;
     const execution = yield* Cloudflare.WorkerExecutionContext;
     const liveFanout = makeLiveFanout(hubs, (effect) => execution.waitUntil(effect));
@@ -208,10 +198,10 @@ export const ApiLive = Api.make(
           ),
         limitGlobalSearch: (key) => globalSearchRateLimit.limit({ key }),
       },
-      commands: makeInventoryCommands(db),
-      snapshots: makeInventorySnapshots(db),
-      imports: makeInventoryImports(db),
-      devices: makeInventoryDevices(db),
+      commands: makeInventoryCommands(authorities),
+      snapshots: makeInventorySnapshots(authorities),
+      imports: makeInventoryImports(authorities),
+      devices: makeInventoryDevices(authorities),
       readLiveHorizon: live.readLiveHorizon,
       hubs,
       liveFanout,
@@ -220,7 +210,7 @@ export const ApiLive = Api.make(
     return { fetch };
   }).pipe(
     Effect.provide(OrgHubLive),
-    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
+    Effect.provide(OrgAuthorityLive),
     Effect.provide(Cloudflare.Workers.AIBinding),
     Effect.provide(Cloudflare.AI.QueryGatewayBinding),
     Effect.provide(Cloudflare.Workers.RateLimitBinding),

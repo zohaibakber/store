@@ -1,29 +1,17 @@
-import * as PgClient from "@effect/sql-pg/PgClient";
 import { OrgCommitSequence, SyncSubmitCommandRequest } from "@store/contracts";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
+import { authorityState } from "@store/db/authority.schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
+import { makeInventoryCommands } from "../../src/inventory/commands";
+import { makeTestAuthorities } from "./harness";
 
-let database: AuthorityPostgres;
+const ORGANIZATION_ID = "org-1";
 
-const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient>) =>
-  Effect.runPromise(
-    effect.pipe(
-      Effect.provide(
-        PgClient.layer({
-          url: Redacted.make(database.connectionString),
-          maxConnections: 2,
-          applicationName: "tabaaq-envelope-validation-tests",
-        }),
-      ),
-      Effect.scoped,
-    ),
-  );
+const ACTOR = { organizationId: ORGANIZATION_ID, userId: "user-1" };
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Json));
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json));
@@ -289,32 +277,44 @@ const candidatesFor = (base: Schema.Json) =>
     })),
   );
 
-const sqlProblems = (values: ReadonlyArray<Schema.Json>) =>
-  run(
-    Effect.gen(function* () {
-      const sql = yield* PgClient.PgClient;
-      const rows = yield* sql<{ readonly ordinal: string; readonly problem: string | null }>`
-        select candidate.ordinal::text as ordinal, sync.submit_request_problem(candidate.value) as problem
-        from jsonb_array_elements(${encodeJson(values)}::jsonb) with ordinality as candidate(value, ordinal)
-        order by candidate.ordinal`;
-      return rows.map((row) => row.problem);
-    }),
+const authorityProblems = (values: ReadonlyArray<Schema.Json>) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const authorities = makeTestAuthorities();
+        const { db } = yield* authorities.open(ORGANIZATION_ID);
+        yield* db
+          .insert(authorityState)
+          .values({
+            id: 1,
+            organizationId: ORGANIZATION_ID,
+            incarnation: "incarnation-test",
+            epoch: "1",
+            commitSequence: 0,
+            retentionFloor: 0,
+            createdAt: 0,
+          })
+          .pipe(Effect.orDie);
+        const commands = makeInventoryCommands(authorities);
+        return yield* Effect.forEach(values, (value) =>
+          commands.submitRaw(ACTOR, encodeJson(value)).pipe(
+            Effect.as(null),
+            Effect.catchTag("SyncRequestMalformed", (malformed) =>
+              Effect.succeed<string | null>(malformed.message),
+            ),
+            Effect.catchTag("SyncProtocolError", () => Effect.succeed(null)),
+          ),
+        );
+      }),
+    ),
   );
 
-beforeAll(async () => {
-  database = await startAuthorityPostgres();
-}, 120_000);
-
-afterAll(async () => {
-  await database?.close();
-});
-
-describe("command envelope validation in Postgres", () => {
+describe("command envelope validation in the durable object authority", () => {
   it.each(BASES)(
     "accepts the valid %s envelope exactly like the contract schema",
     async (_, base) => {
       expect(schemaAccepts(base)).toBe(true);
-      expect(await sqlProblems([base])).toEqual([null]);
+      expect(await authorityProblems([base])).toEqual([null]);
     },
   );
 
@@ -322,18 +322,18 @@ describe("command envelope validation in Postgres", () => {
     "rejects exactly the %s mutations that the contract schema rejects",
     async (_, base) => {
       const candidates = candidatesFor(base);
-      const problems = await sqlProblems(candidates.map((candidate) => candidate.value));
+      const problems = await authorityProblems(candidates.map((candidate) => candidate.value));
       const mismatches = candidates.flatMap((candidate, index) => {
         const schemaOk = schemaAccepts(candidate.value);
-        const sqlOk = problems[index] === null;
-        return schemaOk === sqlOk
+        const authorityOk = problems[index] === null;
+        return schemaOk === authorityOk
           ? []
           : [
               {
                 path: candidate.path,
                 replacement: candidate.replacement,
                 schemaOk,
-                sqlProblem: problems[index],
+                authorityProblem: problems[index],
               },
             ];
       });

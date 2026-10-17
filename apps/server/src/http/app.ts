@@ -1,4 +1,5 @@
 import { isTrustedOrigin } from "@store/auth/security";
+import type { RuntimeContext } from "alchemy";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -84,10 +85,10 @@ const recoverUnexpected = <E, R>(
 
 export interface WorkerServices {
   readonly runtime: ServerRuntimeContract;
-  readonly commands: InventoryCommandsContract;
-  readonly snapshots: InventorySnapshotsContract;
-  readonly imports: InventoryImportsContract;
-  readonly devices: InventoryDevicesContract;
+  readonly commands: InventoryCommandsContract<RuntimeContext>;
+  readonly snapshots: InventorySnapshotsContract<RuntimeContext>;
+  readonly imports: InventoryImportsContract<RuntimeContext>;
+  readonly devices: InventoryDevicesContract<RuntimeContext>;
   readonly liveFanout: LiveFanoutContract;
   readonly hubs: LiveRouteDependencies["hubs"];
   readonly readLiveHorizon: LiveRouteDependencies["readLiveHorizon"];

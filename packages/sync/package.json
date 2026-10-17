@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./authority": "./src/authority.ts",
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts",
     "./web-lock": "./src/web-lock.ts"
@@ -19,8 +20,8 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "typescript": "catalog:",
-    "vitest": "5.0.2"
+    "vitest": "5.0.5"
   }
 }

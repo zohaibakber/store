@@ -1,7 +1,5 @@
-import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   ACTIVE_REPLICA_WINDOW_MILLIS,
-  MAX_SYNC_PULL_TRANSACTIONS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
@@ -36,11 +34,11 @@ import {
   LAST_UNIT_REPLICA_B,
 } from "@store/contracts/sync/fixtures";
 import {
+  authorityChanges,
+  authorityState,
+  authorityTransactions,
   batches,
   categories,
-  inventoryChanges,
-  inventoryState,
-  inventoryTransactions,
   invoiceItems,
   invoices,
   products,
@@ -49,37 +47,28 @@ import {
   replicas,
   stockMovements,
   suppliers,
-} from "@store/db/postgres/schema";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import * as PgDrizzle from "drizzle-orm/effect-postgres";
+} from "@store/db/authority.schema";
+import type { ReplicaDb } from "@store/sync/authority";
+import { asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type * as Scope from "effect/Scope";
+import { describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { makeInventoryDevices } from "../../src/inventory/devices";
 import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import type { InventoryActor } from "../../src/inventory/model";
-import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
-import { typedCommands } from "./typed-commands";
+import { typedCommands } from "../inventory/typed-commands";
+import { makeTestAuthorities } from "./harness";
 
 const OCCURRED_AT = 1_700_000_000_000;
 const PRODUCT_ID = decodeProductId("prod-1");
 const SUPPLIER_ID = decodeSupplierId("sup-1");
 const ORDER_ID = decodePurchaseOrderId("po-1");
 
-let database: AuthorityPostgres;
-
-const layer = () =>
-  PgClient.layer({
-    url: Redacted.make(database.connectionString),
-    maxConnections: 4,
-    applicationName: "tabaaq-inventory-catalog-tests",
-  });
-
-const run = <A, E>(effect: Effect.Effect<A, E, PgClient.PgClient>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(layer()), Effect.scoped));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+  Effect.runPromise(Effect.scoped(effect));
 
 const actorFor = (organizationId: string): InventoryActor => ({
   organizationId,
@@ -110,9 +99,6 @@ const LegacyDigestPage = Schema.fromJsonString(
   }),
 );
 const decodeLegacyDigestPage = Schema.decodeUnknownEffect(LegacyDigestPage);
-const decodePullBodies = Schema.decodeUnknownEffect(
-  Schema.Tuple([Schema.Struct({ body: Schema.String })]),
-);
 
 const catalogCommand = (
   commandId: string,
@@ -279,30 +265,29 @@ const receivedBatch = (
   receipt: { purchaseOrderItemId: decodePurchaseOrderItemId(lineId) },
 });
 
-const openCatalog = (organizationId: string, commitSequence = "0") =>
+const openCatalog = (organizationId: string, commitSequence = 0) =>
   Effect.gen(function* () {
-    const client = yield* PgClient.PgClient;
-    const db = yield* PgDrizzle.makeWithDefaults().pipe(
-      Effect.provideService(PgClient.PgClient, client),
-    );
-    yield* db.insert(inventoryState).values({
+    const authorities = makeTestAuthorities();
+    const { db } = yield* authorities.open(organizationId);
+    yield* db.insert(authorityState).values({
+      id: 1,
       organizationId,
       incarnation: "incarnation-test",
       epoch: LAST_UNIT_EPOCH,
       commitSequence,
-      retentionFloor: "0",
+      retentionFloor: 0,
+      createdAt: OCCURRED_AT,
     });
     yield* db.insert(replicas).values({
-      organizationId,
       replicaId: LAST_UNIT_REPLICA_A,
       ownerUserId: "user-1",
       deviceLabel: LAST_UNIT_REPLICA_A,
-      lastClientSequence: "0",
-      processedThroughClientSequence: "0",
+      lastClientSequence: 0,
+      processedThroughClientSequence: 0,
       registeredAt: OCCURRED_AT,
       lastSeenAt: OCCURRED_AT,
     });
-    const commands = typedCommands(makeInventoryCommands(db));
+    const commands = typedCommands(makeInventoryCommands(authorities));
     let clientSequence = 0;
     const write = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>) =>
       Effect.suspend(() => {
@@ -316,10 +301,8 @@ const openCatalog = (organizationId: string, commitSequence = "0") =>
           ),
         );
       }).pipe(Effect.map((receipt) => receipt.result));
-    return { commands, db, write };
-  });
-
-type CatalogDb = Effect.Success<ReturnType<typeof openCatalog>>["db"];
+    return { authorities, commands, db, write };
+  }).pipe(Effect.orDie);
 
 const rejection = (rule: { readonly code: string; readonly message: string }) => ({
   _tag: "rejected",
@@ -335,51 +318,36 @@ const seedCatalog = () =>
     batchWrite("batch-1", null, "mv-seed", 2, 0),
   ]);
 
-const activePartitionRows = (db: CatalogDb, organizationId: string) =>
+const activePartitionRows = (db: ReplicaDb) =>
   Effect.gen(function* () {
     const rows: Array<PartitionLeafSource> = [];
-    const categoryRows = yield* db
-      .select()
-      .from(categories)
-      .where(eq(categories.organizationId, organizationId))
-      .orderBy(asc(categories.id));
+    const categoryRows = yield* db.select().from(categories).orderBy(asc(categories.id)).all();
     for (const row of categoryRows) {
       rows.push({ entity: "category", entityId: row.id, rowVersion: row.rowVersion });
     }
-    const productRows = yield* db
-      .select()
-      .from(products)
-      .where(and(eq(products.organizationId, organizationId), isNull(products.deletedAt)))
-      .orderBy(asc(products.id));
+    const productRows = yield* db.select().from(products).orderBy(asc(products.id)).all();
     for (const row of productRows) {
       rows.push({ entity: "product", entityId: row.id, rowVersion: row.rowVersion });
     }
-    const batchRows = yield* db
-      .select()
-      .from(batches)
-      .where(and(eq(batches.organizationId, organizationId), isNull(batches.deletedAt)))
-      .orderBy(asc(batches.id));
+    const batchRows = yield* db.select().from(batches).orderBy(asc(batches.id)).all();
     for (const row of batchRows) {
       rows.push({ entity: "batch", entityId: row.id, rowVersion: row.rowVersion });
     }
     const invoiceRows = yield* db
       .select({ id: invoices.id, rowVersion: invoices.rowVersion })
       .from(invoices)
-      .where(eq(invoices.organizationId, organizationId));
+      .all();
     for (const row of invoiceRows) {
       rows.push({ entity: "invoice", entityId: row.id, rowVersion: row.rowVersion });
     }
     const itemRows = yield* db
       .select({ id: invoiceItems.id, rowVersion: invoiceItems.rowVersion })
       .from(invoiceItems)
-      .where(eq(invoiceItems.organizationId, organizationId));
+      .all();
     for (const row of itemRows) {
       rows.push({ entity: "invoiceItem", entityId: row.id, rowVersion: row.rowVersion });
     }
-    const movementRows = yield* db
-      .select({ id: stockMovements.id })
-      .from(stockMovements)
-      .where(eq(stockMovements.organizationId, organizationId));
+    const movementRows = yield* db.select({ id: stockMovements.id }).from(stockMovements).all();
     for (const row of movementRows) {
       rows.push({
         entity: "stockMovement",
@@ -390,54 +358,42 @@ const activePartitionRows = (db: CatalogDb, organizationId: string) =>
     const supplierRows = yield* db
       .select({ id: suppliers.id, rowVersion: suppliers.rowVersion })
       .from(suppliers)
-      .where(eq(suppliers.organizationId, organizationId));
+      .all();
     for (const row of supplierRows) {
       rows.push({ entity: "supplier", entityId: row.id, rowVersion: row.rowVersion });
     }
     const orderRows = yield* db
       .select({ id: purchaseOrders.id, rowVersion: purchaseOrders.rowVersion })
       .from(purchaseOrders)
-      .where(eq(purchaseOrders.organizationId, organizationId));
+      .all();
     for (const row of orderRows) {
       rows.push({ entity: "purchaseOrder", entityId: row.id, rowVersion: row.rowVersion });
     }
     const lineRows = yield* db
       .select({ id: purchaseOrderItems.id, rowVersion: purchaseOrderItems.rowVersion })
       .from(purchaseOrderItems)
-      .where(eq(purchaseOrderItems.organizationId, organizationId));
+      .all();
     for (const row of lineRows) {
       rows.push({ entity: "purchaseOrderItem", entityId: row.id, rowVersion: row.rowVersion });
     }
     return rows;
   });
 
-describe("postgres catalog writes", () => {
-  beforeAll(async () => {
-    database = await startAuthorityPostgres();
-  }, 180_000);
-
-  afterAll(async () => {
-    await database?.close();
-  });
-
+describe("durable object catalog writes", () => {
   it("holds supplier and order rows back while another device on the old schema was seen within 14 days", async () => {
     const organizationId = decodeOrganizationId("org-purchasing-gate");
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
-        const { commands, db, write } = yield* openCatalog(organizationId);
+        const { authorities, commands, db, write } = yield* openCatalog(organizationId);
         const now = Date.now();
-        const peer = and(
-          eq(replicas.organizationId, organizationId),
-          eq(replicas.replicaId, LAST_UNIT_REPLICA_B),
-        );
+        const peer = eq(replicas.replicaId, LAST_UNIT_REPLICA_B);
         yield* db.insert(replicas).values({
-          organizationId,
           replicaId: LAST_UNIT_REPLICA_B,
           ownerUserId: "user-1",
           deviceLabel: "Till 2",
-          lastClientSequence: "0",
-          processedThroughClientSequence: "0",
+          lastClientSequence: 0,
+          processedThroughClientSequence: 0,
           registeredAt: OCCURRED_AT,
           lastSeenAt: now,
         });
@@ -462,12 +418,12 @@ describe("postgres catalog writes", () => {
           replicaId: LAST_UNIT_REPLICA_A,
           schemaVersion: 2,
         });
-        const live = makeInventoryLive(db);
+        const live = makeInventoryLive(authorities);
         yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
         ]);
-        const devices = makeInventoryDevices(db);
+        const devices = makeInventoryDevices(authorities);
         const standingOf = devices
           .list(actor)
           .pipe(
@@ -563,39 +519,12 @@ describe("postgres catalog writes", () => {
           lineWrite("line-1", null),
         ]);
         const legacyAfter = yield* legacyDigest("2");
-        const requested = yield* commands.pullEncoded(
-          actor,
-          pullFrom("2", PARTITION_DIGEST_VERSION_V3),
-        );
-        const [deployed] = yield* db
-          .execute(
-            sql`select "body" from sync.pull(
-              ${organizationId}::text,
-              ${LAST_UNIT_EPOCH}::text,
-              ${OPERATIONAL_SUBSCRIPTION}::text,
-              ${"2"}::text,
-              ${MAX_SYNC_PULL_TRANSACTIONS}::integer,
-              ${MAX_TRANSPORT_PAYLOAD_BYTES}::integer,
-              ${true}::boolean
-            )`,
-            "objects",
-          )
-          .pipe(Effect.flatMap(decodePullBodies));
         const currentAfter = yield* commands.pull(actor, pullFrom("2", true));
-        const expected = yield* partitionDigestOf(yield* activePartitionRows(db, organizationId));
-        return {
-          legacyBefore,
-          currentBefore,
-          legacyAfter,
-          requested,
-          deployed,
-          currentAfter,
-          expected,
-        };
+        const expected = yield* partitionDigestOf(yield* activePartitionRows(db));
+        return { legacyBefore, currentBefore, legacyAfter, currentAfter, expected };
       }),
     );
     expect(outcome.legacyAfter).toEqual(outcome.legacyBefore);
-    expect(outcome.requested.json).toBe(outcome.deployed.body);
     expect(new Set(Object.keys(outcome.legacyAfter.digest.entities))).toEqual(
       new Set(PARTITION_ENTITIES_V3),
     );
@@ -612,10 +541,9 @@ describe("postgres catalog writes", () => {
     const filler = "x".repeat(600_000);
     const outcome = await run(
       Effect.gen(function* () {
-        const { commands, db } = yield* openCatalog(organizationId, "2");
-        for (const commitSequence of ["1", "2"]) {
+        const { commands, db } = yield* openCatalog(organizationId, 2);
+        for (const commitSequence of [1, 2]) {
           const changes = [0, 1].map((ordinal) => ({
-            organizationId,
             commitSequence,
             ordinal,
             entity: "category",
@@ -624,15 +552,14 @@ describe("postgres catalog writes", () => {
             rowVersion: 1,
             rowJson: `{"id":"big-${commitSequence}-${ordinal}","filler":"${filler}"}`,
           }));
-          yield* db.insert(inventoryTransactions).values({
-            organizationId,
+          yield* db.insert(authorityTransactions).values({
             commitSequence,
             operationId: `bulk-${commitSequence}`,
             decision: "accepted",
             epoch: LAST_UNIT_EPOCH,
             byteLength: changes.reduce((total, change) => total + change.rowJson.length, 128),
           });
-          yield* db.insert(inventoryChanges).values(changes);
+          yield* db.insert(authorityChanges).values(changes);
         }
         const first = yield* commands.pull(actor, pullFrom("0"));
         const second = yield* commands.pull(actor, pullFrom(first.nextCommitSequence));

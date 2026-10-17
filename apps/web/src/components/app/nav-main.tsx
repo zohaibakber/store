@@ -57,7 +57,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
         <SidebarMenu>
           <SidebarMenuItem className="-mb-0.5">
             <SidebarMenuButton
-              className="hover:bg-transparent"
+              variant="plain"
               tooltip={parkedSales > 0 ? `New Sale · ${parkedLabel}` : "New Sale"}
               aria-keyshortcuts={newSaleShortcut.ariaKeyShortcuts}
               render={<Link to="/invoices/new" onClick={closeMobileSidebar} />}
@@ -87,7 +87,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           {items.map((item) => (
             <SidebarMenuItem className="-mb-0.5" key={item.title}>
               <SidebarMenuButton
-                className="hover:bg-transparent"
+                variant="plain"
                 isActive={isWithin(pathname, item.url)}
                 tooltip={item.title}
                 render={<Link to={item.url} onClick={closeMobileSidebar} />}

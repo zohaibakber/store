@@ -10,6 +10,7 @@ const targets = [
   { config: "drizzle.postgres.config.ts", dialect: "postgresql" },
   { config: "drizzle.replica.config.ts", dialect: "sqlite" },
   { config: "drizzle.analytics.config.ts", dialect: "sqlite" },
+  { config: "drizzle.authority.config.ts", dialect: "sqlite" },
 ];
 
 const describeStatements = (statements) =>

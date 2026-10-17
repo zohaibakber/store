@@ -1,4 +1,3 @@
-import * as PgClient from "@effect/sql-pg/PgClient";
 import {
   catalogWriteError,
   OPERATIONAL_SUBSCRIPTION,
@@ -40,16 +39,14 @@ import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore, SyncEngine, SyncTransportService } from "@store/sync";
 import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
-import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";
-import { startAuthorityPostgres, type AuthorityPostgres } from "./authority-postgres";
-import { typedCommands } from "./typed-commands";
+import { typedCommands } from "../inventory/typed-commands";
+import { makeTestAuthorities } from "./harness";
 
 const USER_ID = "user-1";
 const OCCURRED_AT = lastUnitBuyerACommand.occurredAt;
@@ -72,10 +69,8 @@ type LocalSubmission = {
 
 type TwinDecision = {
   readonly local: SyncSubmitCommandResult;
-  readonly postgres: SyncSubmitCommandResult;
+  readonly authority: SyncSubmitCommandResult;
 };
-
-let database: AuthorityPostgres;
 
 const seededReplica = (organizationId: string) =>
   Layer.effectDiscard(
@@ -141,11 +136,6 @@ const twinLayer = (
       Layer.provideMerge(recordingStore(organizationId, submissions, path)),
       Layer.provideMerge(seededReplica(organizationId)),
     ),
-    PgClient.layer({
-      url: Redacted.make(database.connectionString),
-      maxConnections: 4,
-      applicationName: "tabaaq-local-authority-parity-tests",
-    }),
   );
 
 const receiptOf = ({ page: _page, ...receipt }: SyncSubmitCommandResult) => receipt;
@@ -162,12 +152,11 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
     const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
     const localAuthority = yield* SyncTransportService;
-    const db = yield* PgDrizzle.makeWithDefaults().pipe(
-      Effect.provideService(PgClient.PgClient, yield* PgClient.PgClient),
-    );
-    const postgresAuthority = typedCommands(makeInventoryCommands(db));
+    const authorities = makeTestAuthorities();
+    yield* authorities.open(organizationId);
+    const authority = typedCommands(makeInventoryCommands(authorities));
     const actor: InventoryActor = { organizationId, userId: USER_ID };
-    yield* postgresAuthority.register(actor, {
+    yield* authority.register(actor, {
       replicaId: LAST_UNIT_REPLICA_A,
       schemaVersion: SYNC_SCHEMA_VERSION,
     });
@@ -183,14 +172,14 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
           for (const { request, result } of submissions.slice(decidedBefore)) {
             decisions.push({
               local: result,
-              postgres: yield* postgresAuthority.submit(actor, request),
+              authority: yield* authority.submit(actor, request),
             });
           }
         }
         return decisions;
       });
 
-    return { actor, store, localAuthority, postgresAuthority, decide };
+    return { actor, store, localAuthority, authority, decide };
   });
 
 const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "queued") => {
@@ -198,7 +187,7 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
   const submissions: Array<LocalSubmission> = [];
   return Effect.runPromise(
     Effect.gen(function* () {
-      const { actor, store, localAuthority, postgresAuthority, decide } = yield* openTwin(
+      const { actor, store, localAuthority, authority, decide } = yield* openTwin(
         organizationId,
         submissions,
       );
@@ -210,7 +199,7 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
           ? undefined
           : {
               local: yield* localAuthority.submitCommand(last.request),
-              postgres: yield* postgresAuthority.submit(actor, last.request),
+              authority: yield* authority.submit(actor, last.request),
             };
 
       const head = OrgCommitSequence.make((yield* store.readSyncCursor()).appliedCommitSequence);
@@ -220,17 +209,17 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
         afterCommitSequence: head,
       };
       const localPage = yield* localAuthority.pull(cursor);
-      const postgresPage = yield* postgresAuthority.pull(actor, {
+      const authorityPage = yield* authority.pull(actor, {
         ...cursor,
         digestVersion: PARTITION_DIGEST_VERSION,
       });
       const digest = yield* store.integrateAuthority({
         payload: {
           _tag: "pullPage",
-          page: { ...postgresPage, incarnation: localPage.incarnation },
+          page: { ...authorityPage, incarnation: localPage.incarnation },
         },
       });
-      return { decisions, repeated, localPage, postgresPage, digest: digest.value };
+      return { decisions, repeated, localPage, authorityPage, digest: digest.value };
     }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped),
   );
 };
@@ -240,7 +229,7 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
   const submissions: Array<LocalSubmission> = [];
   return Effect.runPromise(
     Effect.gen(function* () {
-      const { actor, store, localAuthority, postgresAuthority, decide } = yield* openTwin(
+      const { actor, store, localAuthority, authority, decide } = yield* openTwin(
         organizationId,
         submissions,
       );
@@ -260,32 +249,32 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
       return {
         local: yield* localAuthority.submitCommand(request),
         redecided: yield* localAuthority.submitCommand(request),
-        postgres: yield* postgresAuthority.submit(actor, request),
+        authority: yield* authority.submit(actor, request),
       };
     }).pipe(Effect.provide(twinLayer(organizationId, submissions)), Effect.scoped),
   );
 };
 
 const expectParity = (twin: Awaited<ReturnType<typeof decideOnBoth>>) => {
-  for (const { local, postgres } of twin.decisions) {
-    expect(local.page?.transactions).toStrictEqual(postgres.page?.transactions);
+  for (const { local, authority } of twin.decisions) {
+    expect(local.page?.transactions).toStrictEqual(authority.page?.transactions);
     expect(local.page?.transactions).toHaveLength(1);
-    expect(local.page?.nextCommitSequence).toBe(postgres.page?.nextCommitSequence);
-    expect(local.page?.horizon).toBe(postgres.page?.horizon);
-    expect(receiptOf(local)).toStrictEqual(receiptOf(postgres));
+    expect(local.page?.nextCommitSequence).toBe(authority.page?.nextCommitSequence);
+    expect(local.page?.horizon).toBe(authority.page?.horizon);
+    expect(receiptOf(local)).toStrictEqual(receiptOf(authority));
   }
   const lastDecision = twin.decisions.at(-1);
   expect(lastDecision).toBeDefined();
   expect(twin.repeated && receiptOf(twin.repeated.local)).toStrictEqual(
     lastDecision && receiptOf(lastDecision.local),
   );
-  expect(twin.repeated && receiptOf(twin.repeated.postgres)).toStrictEqual(
-    lastDecision && receiptOf(lastDecision.postgres),
+  expect(twin.repeated && receiptOf(twin.repeated.authority)).toStrictEqual(
+    lastDecision && receiptOf(lastDecision.authority),
   );
   expect(twin.localPage.transactions).toEqual([]);
   expect(twin.localPage.digest).toBeUndefined();
-  expect(twin.postgresPage.transactions).toEqual([]);
-  expect(twin.postgresPage.digest).toBeDefined();
+  expect(twin.authorityPage.transactions).toEqual([]);
+  expect(twin.authorityPage.digest).toBeDefined();
   expect(twin.digest).toMatchObject({ repairRequired: false, digestVerified: true });
 };
 
@@ -690,15 +679,7 @@ const importedLines = (
     }),
   ]);
 
-describe("the local authority decides like the postgres authority", () => {
-  beforeAll(async () => {
-    database = await startAuthorityPostgres();
-  }, 180_000);
-
-  afterAll(async () => {
-    await database?.close();
-  });
-
+describe("the local authority decides like the durable object authority", () => {
   it.each(DECISION_PATHS)(
     "emits the same groups for catalog inserts, updates, deletes and their stock movements when %s",
     async (path) => {
@@ -1119,15 +1100,12 @@ describe("the local authority decides like the postgres authority", () => {
     120_000,
   );
 
-  it("refuses at enqueue what postgres rejects, and keeps no trace, when the store decides", async () => {
+  it("refuses at enqueue what the authority rejects, and keeps no trace, when the store decides", async () => {
     const organizationId = decodeOrganizationId("org-parity-refusal");
     const submissions: Array<LocalSubmission> = [];
     const refusal = await Effect.runPromise(
       Effect.gen(function* () {
-        const { actor, store, postgresAuthority, decide } = yield* openTwin(
-          organizationId,
-          submissions,
-        );
+        const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
         const engine = yield* SyncEngine;
         yield* decide(REPACKED);
         const before = yield* store.readSyncCursor();
@@ -1137,8 +1115,8 @@ describe("the local authority decides like the postgres authority", () => {
         return {
           failure,
           decisions: refused.length,
-          postgres: yield* Effect.forEach(refused, ({ request }) =>
-            postgresAuthority.submit(actor, request),
+          authority: yield* Effect.forEach(refused, ({ request }) =>
+            authority.submit(actor, request),
           ),
           status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
           before,
@@ -1148,7 +1126,7 @@ describe("the local authority decides like the postgres authority", () => {
     );
 
     expect(refusal.decisions).toBe(1);
-    expect(refusal.postgres.map(({ result }) => result)).toEqual([
+    expect(refusal.authority.map(({ result }) => result)).toEqual([
       { _tag: "rejected", code: "ENTITY_CONFLICT", message: refusal.failure.message },
     ]);
     expect(refusal.failure).toMatchObject({
@@ -1702,7 +1680,7 @@ describe("the local authority decides like the postgres authority", () => {
   ];
 
   it.each(unqueued)(
-    "decides %s like postgres and the same way twice, though the engine never queues it",
+    "decides %s like the authority and the same way twice, though the engine never queues it",
     async (_name, setup, command, expected) => {
       const twin = await decideUnqueuedOnBoth(
         `org-parity-${command.payload.commandId}`,
@@ -1710,10 +1688,10 @@ describe("the local authority decides like the postgres authority", () => {
         command,
       );
       expect(twin.local.result).toMatchObject(expected);
-      expect(twin.local.page?.transactions).toStrictEqual(twin.postgres.page?.transactions);
+      expect(twin.local.page?.transactions).toStrictEqual(twin.authority.page?.transactions);
       expect(twin.local.page?.transactions).toHaveLength(1);
-      expect(twin.local.page?.horizon).toBe(twin.postgres.page?.horizon);
-      expect(receiptOf(twin.local)).toStrictEqual(receiptOf(twin.postgres));
+      expect(twin.local.page?.horizon).toBe(twin.authority.page?.horizon);
+      expect(receiptOf(twin.local)).toStrictEqual(receiptOf(twin.authority));
       expect(twin.redecided).toStrictEqual(twin.local);
     },
   );
