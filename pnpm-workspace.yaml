@@ -9,6 +9,7 @@ catalog:
   "@effect/platform-node": 4.0.5
   "@effect/sql-d1": 4.0.5
   "@effect/sql-pg": 4.0.5
+  "@effect/sql-sqlite-do": 4.0.5
   "@effect/sql-sqlite-node": 4.0.5
   "@effect/sql-sqlite-react-native": 4.0.5
   "@effect/vitest": 4.0.5

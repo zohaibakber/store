@@ -11,6 +11,11 @@ const bundles = [
     migrations: "migrations/analytics",
     out: "src/analytics/migrations.gen.ts",
   },
+  {
+    name: "authority",
+    migrations: "migrations/authority",
+    out: "src/authority/migrations.gen.ts",
+  },
 ];
 
 const readMigrations = (directory) => {

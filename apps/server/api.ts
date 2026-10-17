@@ -4,6 +4,7 @@ import type * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/http/HttpServerResponse";
 
+import type { OrgAuthorityApi } from "./src/authority/facade";
 import type { CommitFanout } from "./src/inventory/model";
 
 export interface OrgHubContract {
@@ -29,4 +30,12 @@ export interface OrgHubContract {
 
 export class OrgHub extends Cloudflare.DurableObject<OrgHub, OrgHubContract>()("OrgHub") {}
 
-export class Api extends Cloudflare.Worker<Api, {}, OrgHub>()("Api") {}
+export interface OrgAuthorityContract extends OrgAuthorityApi<RuntimeContext> {
+  readonly alarm: () => Effect.Effect<void, never, RuntimeContext>;
+}
+
+export class OrgAuthority extends Cloudflare.DurableObject<OrgAuthority, OrgAuthorityContract>()(
+  "OrgAuthority",
+) {}
+
+export class Api extends Cloudflare.Worker<Api, {}, OrgHub | OrgAuthority>()("Api") {}

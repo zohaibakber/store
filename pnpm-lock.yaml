@@ -554,6 +554,9 @@ importers:
       '@effect/sql-pg':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)
+      '@effect/sql-sqlite-do':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
       '@store/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -566,6 +569,9 @@ importers:
       '@store/services':
         specifier: workspace:*
         version: link:../../packages/services
+      '@store/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       drizzle-orm:
         specifier: 1.0.0-rc.5-ab785fc
         version: 1.0.0-rc.5-ab785fc(patch_hash=8017e6dce2177ffd753e084acbabe195ceaa149953f4b816bab699932f45d186)(@cloudflare/workers-types@5.20261016.1)(@effect/sql-d1@4.0.5(effect@4.0.5))(@effect/sql-pg@4.0.5(effect@4.0.5))(@effect/sql-sqlite-do@4.0.5(effect@4.0.5))(@effect/sql-sqlite-node@4.0.5(effect@4.0.5))(@electric-sql/pglite@0.3.15)(@libsql/client@0.18.0)(@op-engineering/op-sqlite@18.2.5(react-native@0.88.0(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2))(react@19.3.1))(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(effect@4.0.5)(expo-sqlite@57.0.1(expo@58.0.12)(react-native@0.88.0(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.3.0)(react@19.3.1)(supports-color@10.2.2))(react@19.3.1))(pg@8.23.1)(valibot@1.5.0(typescript@7.0.2))(zod@4.6.7)
@@ -576,9 +582,9 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
-      '@store/sync':
-        specifier: workspace:*
-        version: link:../../packages/sync
+      '@effect/sql-sqlite-node':
+        specifier: 4.0.5
+        version: 4.0.5(effect@4.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

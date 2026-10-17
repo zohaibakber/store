@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./authority": "./src/authority.ts",
     "./sql-client": "./src/sql-client.ts",
     "./sqlite": "./src/sqlite.ts",
     "./web-lock": "./src/web-lock.ts"
