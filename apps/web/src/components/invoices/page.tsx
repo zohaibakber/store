@@ -78,8 +78,10 @@ const columns = columnHelper.columns([
     header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
     cell: ({ getValue }) => (
       <Tooltip>
-        <TooltipTrigger render={<span className="text-muted-foreground tabular-nums" />}>
-          {formatInvoiceTime(getValue())}
+        <TooltipTrigger render={<span />}>
+          <span className="text-muted-foreground tabular-nums">
+            {formatInvoiceTime(getValue())}
+          </span>
         </TooltipTrigger>
         <TooltipPopup>{formatDateTime(getValue())}</TooltipPopup>
       </Tooltip>
