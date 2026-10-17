@@ -12,7 +12,7 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 - **`Crypto.Crypto`** is provided by `packages/auth/src/web-crypto.ts`.
 - **Typed infrastructure failures.** Storage and network failures stay in `E`: the UI shows offline, retries, or asks the user to free space.
 - **Process boundaries** are the "Sync engine boundaries" section of `AGENTS.md`.
-- **Tests.** The policy is the "Tests" section of `AGENTS.md`. Authority tests run the `OrgAuthority` facade on node SQLite through `apps/server/test/authority/harness.ts`; the Postgres harness is only for adoption; convergence of two replicas is the invariant worth a committed test.
+- **Tests.** The policy is the "Tests" section of `AGENTS.md`. Authority tests run the `OrgAuthority` facade on node SQLite through `apps/server/test/authority/harness.ts`; convergence of two replicas is the invariant worth a committed test.
 
 ## Edges
 
@@ -39,7 +39,7 @@ Desktop budget: nothing on the path to first paint waits for auth or the network
 
 ## Persistence
 
-- `SqlClient` drivers: `@effect/sql-sqlite-node` on desktop and in authority tests, `@effect/sql-sqlite-do` in the `OrgAuthority` Durable Object, `@effect/sql-d1` in the auth Worker, `@effect/sql-pg` in adoption tests, with Drizzle's Effect drivers on top where the schema is Drizzle's.
+- `SqlClient` drivers: `@effect/sql-sqlite-node` on desktop and in authority tests, `@effect/sql-sqlite-do` in the `OrgAuthority` Durable Object and `@effect/sql-d1` in the auth Worker, with Drizzle's Effect drivers on top where the schema is Drizzle's.
 - The sync engine's guarantees: a command's `operationId` is its idempotency key, a command whose response was lost is resolved by asking for its receipt, and the persisted command queue is the durable work a worker resumes.
 
 ## Exemplars

@@ -5,7 +5,7 @@
 Tabaaq owns identity, sessions, organizations, and token refresh. The auth
 Worker issues tokens; the API, the Electron main process, the web renderer, and
 the Android app consume them. An authenticated organization ID scopes the same
-Postgres rows and local replica on every client.
+organization authority and local replica on every client.
 
 ## Usage (caller's view)
 
@@ -102,7 +102,7 @@ The host owns secure token storage. Electron uses `safeStorage`, Android uses
 Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
 browser keeps the refresh credential in an HttpOnly
 SameSite cookie. An authenticated workspace snapshot supplies the organization
-scope for Postgres mutations and replica sync. The replica owns each
+scope for authority commands and replica sync. The replica owns each
 client's persisted inventory independently of the auth lifecycle.
 
 ## Shape
@@ -249,8 +249,8 @@ encode.
 - A new user gets one organization in the same D1 batch. The organization ID
   directly scopes inventory rows and replica sync. A new session opens the
   membership the user joined most recently.
-- Postgres is the authoritative inventory database. Authenticated
-  `/api/sync/*` requests write to Postgres. The API validates the same JWT and
+- The organization's `OrgAuthority` Durable Object is the authoritative
+  inventory store. Authenticated `/api/sync/*` requests commit there. The API validates the same JWT and
   filters every replica stream by its signed organization claim.
 - The browser refresh token is an HttpOnly, Secure, SameSite=Lax cookie scoped
   to the auth host. Native clients receive it in the response and store it in

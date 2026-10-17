@@ -2,7 +2,8 @@
 
 pnpm workspace for offline-first inventory: an Electron desktop app, the same
 renderer as a browser shell without inventory, an Expo Android app, and
-Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
+Cloudflare Worker API and auth services. Inventory commands commit in each
+organization's `OrgAuthority` Durable Object. The system
 design is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Workspace boundaries
@@ -26,12 +27,12 @@ design is in [`docs/architecture.md`](docs/architecture.md).
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
-  in Postgres through Hyperdrive.
+  in the organization's `OrgAuthority` Durable Object.
 - `packages/contracts` owns shared store and server contracts.
 - `packages/client-db` owns the replica session hosts open, catalog writes,
   row models, and the `InventoryReads`, `InventoryStore`, and
   `InventoryInsights` handlers each host serves.
-- `packages/db` owns the authentication, Postgres authority, and replica
+- `packages/db` owns the authentication, authority, replica, and analytics
   schemas and their migrations.
 - `packages/sync` owns the host-agnostic replica engine: command outbox,
   pending projections, coverage, the polling scheduler, and the typed
@@ -58,8 +59,8 @@ writer's commit notices invalidate them. Analytics use one bounded aggregate rea
 sales by product and local day (`readInsights`), and `@store/services/insights`
 turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
 sync commands: they commit locally first, project pending rows, then upload to
-`/api/sync/commands`, where one organization-locked PostgreSQL transaction
-decides them and appends to the change log that `/api/sync/pull` serves.
+`/api/sync/commands`, where one transaction in the organization's
+`OrgAuthority` Durable Object decides them and appends to the change log that `/api/sync/pull` serves.
 Replicas hard-delete on a `delete` change. The signed organization claim scopes
 every pull.
 
