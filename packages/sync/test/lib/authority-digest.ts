@@ -42,7 +42,7 @@ const partitionLeaves = (rows: Iterable<SnapshotRow>) =>
 export const authorityDigest = (partition: AuthorityPartition) =>
   partitionDigestOf(partitionLeaves(partition.values()));
 
-type PostgresMutableMetadata = {
+type ServerMutableMetadata = {
   readonly organizationId: string;
   readonly createdByUserId: string;
   readonly updatedByUserId: string;
@@ -51,15 +51,15 @@ type PostgresMutableMetadata = {
   readonly rowVersion: number;
 };
 
-type PostgresCategoryRow = {
+type ServerCategoryRow = {
   readonly id: string;
   readonly name: string;
   readonly tracksPacks: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
-} & PostgresMutableMetadata;
+} & ServerMutableMetadata;
 
-type PostgresProductRow = {
+type ServerProductRow = {
   readonly id: string;
   readonly name: string;
   readonly categoryId: string;
@@ -74,9 +74,9 @@ type PostgresProductRow = {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly deletedAt: number | null;
-} & PostgresMutableMetadata;
+} & ServerMutableMetadata;
 
-type PostgresBatchRow = {
+type ServerBatchRow = {
   readonly id: string;
   readonly productId: string;
   readonly batchNumber: string | null;
@@ -86,12 +86,12 @@ type PostgresBatchRow = {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly deletedAt: number | null;
-} & PostgresMutableMetadata;
+} & ServerMutableMetadata;
 
-export type PostgresPartitionTables = {
-  readonly categories: ReadonlyArray<PostgresCategoryRow>;
-  readonly products: ReadonlyArray<PostgresProductRow>;
-  readonly batches: ReadonlyArray<PostgresBatchRow>;
+export type ServerPartitionTables = {
+  readonly categories: ReadonlyArray<ServerCategoryRow>;
+  readonly products: ReadonlyArray<ServerProductRow>;
+  readonly batches: ReadonlyArray<ServerBatchRow>;
 };
 
 const partitionRows = <Row extends { readonly id: string; readonly rowVersion: number }>(
@@ -100,7 +100,7 @@ const partitionRows = <Row extends { readonly id: string; readonly rowVersion: n
 ): ReadonlyArray<SnapshotRow> =>
   rows.map((row) => ({ entity, entityId: row.id, rowVersion: row.rowVersion, row }));
 
-export const serverPartitionDigest = (tables: PostgresPartitionTables) =>
+export const serverPartitionDigest = (tables: ServerPartitionTables) =>
   partitionDigestOf(
     partitionLeaves([
       ...partitionRows("category", tables.categories),
@@ -127,7 +127,7 @@ const logChange = <Row extends { readonly id: string; readonly rowVersion: numbe
   row,
 });
 
-export const serverChangeLog = (tables: PostgresPartitionTables): ReadonlyArray<SyncLogChange> => [
+export const serverChangeLog = (tables: ServerPartitionTables): ReadonlyArray<SyncLogChange> => [
   ...tables.categories.map((row) => logChange("category", row, false)),
   ...tables.products.map((row) => logChange("product", row, row.deletedAt !== null)),
   ...tables.batches.map((row) => logChange("batch", row, row.deletedAt !== null)),

@@ -173,10 +173,7 @@ const upsertOf = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Reje
       const { row } = projected;
       return fitsInt4(row.unitsPerPack, row.purchasePrice, row.retailPrice, row.unitPrice)
         ? Result.succeed(
-            changeOf("product", "upsert", projected.entityId, row.rowVersion, {
-              ...row,
-              deletedAt: null,
-            }),
+            changeOf("product", "upsert", projected.entityId, row.rowVersion, row),
           )
         : OUT_OF_RANGE;
     }
@@ -184,10 +181,7 @@ const upsertOf = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Reje
       const { row } = projected;
       return fitsInt4(row.packQuantity, row.unitQuantity)
         ? Result.succeed(
-            changeOf("batch", "upsert", projected.entityId, row.rowVersion, {
-              ...row,
-              deletedAt: null,
-            }),
+            changeOf("batch", "upsert", projected.entityId, row.rowVersion, row),
           )
         : OUT_OF_RANGE;
     }
@@ -455,7 +449,6 @@ const decideCatalogWrite = (
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
-              deletedAt: payload.occurredAt,
             };
             staged.product.set(write.id, undefined);
             return Result.succeed([
@@ -510,7 +503,6 @@ const decideCatalogWrite = (
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
-              deletedAt: payload.occurredAt,
             };
             staged.batch.set(write.id, undefined);
             return Result.succeed([changeOf("batch", "delete", write.id, image.rowVersion, image)]);
@@ -692,7 +684,7 @@ const decideIssueInvoice = (
         facts.recordedItemIds.has(take.invoiceItemId),
       );
       changes.push(
-        changeOf("batch", "upsert", batch.id, batch.rowVersion, { ...batch, deletedAt: null }),
+        changeOf("batch", "upsert", batch.id, batch.rowVersion, batch),
         item,
       );
       if (opened > 0) {

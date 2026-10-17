@@ -27,8 +27,6 @@ const SCAN_ROWS = 1_000;
 
 const SNAPSHOT_SUBSCRIPTION = "operational";
 
-const SOFT_DELETED_ENTITIES: ReadonlySet<PartitionEntity> = new Set(["product", "batch"]);
-
 type Snapshot = typeof snapshots.$inferSelect;
 
 const decodeEntityCounts = Schema.decodeUnknownEffect(
@@ -52,10 +50,7 @@ type ScannedRow = {
 };
 
 const rowFrame = (entity: PartitionEntity, scanned: ScannedRow) => {
-  const image = SOFT_DELETED_ENTITIES.has(entity)
-    ? { ...scanned.row, deletedAt: null }
-    : scanned.row;
-  return `{"entity":${JSON.stringify(entity)},"entityId":${JSON.stringify(scanned.id)},"rowVersion":${scanned.version},"row":${JSON.stringify(image)}}`;
+  return `{"entity":${JSON.stringify(entity)},"entityId":${JSON.stringify(scanned.id)},"rowVersion":${scanned.version},"row":${JSON.stringify(scanned.row)}}`;
 };
 
 const scanPage = (db: ReplicaDb, entity: PartitionEntity, after: string | undefined) => {
