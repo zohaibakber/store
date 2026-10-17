@@ -11,7 +11,6 @@ import { Api } from "./apps/server/api.ts";
 import { ApiLive } from "./apps/server/infra.ts";
 import { Website } from "./apps/web/infra.ts";
 import { Edge } from "./infra/edge.ts";
-import { InventoryDatabaseId, stageUsesNeonInventory } from "./packages/db/src/postgres/infra.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",
@@ -21,12 +20,12 @@ export default Alchemy.Stack(
       Drizzle.providers(),
       Layer.unwrap(
         Effect.map(Alchemy.Stage, (stage) =>
-          stageUsesNeonInventory(stage) ? Neon.providers() : Layer.empty,
+          stage === "dev" ? Neon.providers() : Layer.empty,
         ),
       ),
       Layer.unwrap(
         Effect.map(Alchemy.Stage, (stage) =>
-          stageUsesNeonInventory(stage) ? Layer.empty : Planetscale.providers(),
+          stage === "dev" ? Layer.empty : Planetscale.providers(),
         ),
       ),
     ),
@@ -38,7 +37,6 @@ export default Alchemy.Stack(
     const api = yield* Api;
     const websiteUrl = stage === "prod" ? (yield* Website).url : undefined;
     const edge = yield* Edge;
-    const inventoryDatabaseId = yield* InventoryDatabaseId;
     return {
       stage,
       websiteUrl,
@@ -46,7 +44,6 @@ export default Alchemy.Stack(
       apiUrl: api.url,
       workerName: api.workerName,
       edge,
-      inventoryDatabaseId,
     };
   }).pipe(Effect.provide(AuthLive.pipe(Layer.provideMerge(ApiLive)))),
 );

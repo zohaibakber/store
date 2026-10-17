@@ -13,7 +13,6 @@
     "src",
     "drizzle.analytics.config.ts",
     "drizzle.auth.config.ts",
-    "drizzle.postgres.config.ts",
     "drizzle.replica.config.ts"
   ]
 }

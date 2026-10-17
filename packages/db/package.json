@@ -11,15 +11,12 @@
     "./authority.schema": "./src/authority/schema.ts",
     "./authority/migrations": "./src/authority/migrations.gen.ts",
     "./auth/infra": "./src/auth/infra.ts",
-    "./postgres/infra": "./src/postgres/infra.ts",
-    "./postgres/schema": "./src/postgres/schema.ts",
     "./store.schema": "./src/shared/store.schema.ts",
     "./replica.schema": "./src/replica/schema.ts",
     "./replica/migrations": "./src/replica/migrations.gen.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.postgres.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.replica.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.analytics.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.authority.config.ts && node scripts/check-schema-drift.mjs",
-    "db:generate": "node scripts/drizzle-kit.cjs generate --config drizzle.postgres.config.ts",
+    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.replica.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.analytics.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.authority.config.ts && node scripts/check-schema-drift.mjs",
     "db:bundle": "node scripts/build-migration-bundle.mjs"
   },
   "dependencies": {

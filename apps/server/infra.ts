@@ -8,7 +8,6 @@ import {
   publicHostnameFrom,
   resolveAuthSecurity,
 } from "@store/auth/security";
-import { inventoryPlacement } from "@store/db/postgres/infra";
 import { searchGlobalProducts } from "@store/services";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -59,7 +58,7 @@ export const ApiLive = Api.make(
         date: ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE,
         flags: ["nodejs_compat", "enable_request_signal"],
       },
-      placement: inventoryPlacement(stage),
+      placement: { mode: "smart" as const },
       observability: { enabled: true },
       dev: { port: 8787 },
     };
