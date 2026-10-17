@@ -9,20 +9,10 @@ import { decodeOrganizationId } from "@store/contracts/ids";
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  LAST_UNIT_REPLICA_B,
   lastUnitBuyerAEnvelope,
   lastUnitBuyerBEnvelope,
 } from "@store/contracts/sync/fixtures";
-import {
-  authorityState,
-  authorityTransactions,
-  batches,
-  categories,
-  products,
-  replicas,
-} from "@store/db/authority.schema";
+import { authorityTransactions, batches } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -33,8 +23,6 @@ import type { InventoryActor } from "../../src/inventory/model";
 import { typedCommands } from "../inventory/typed-commands";
 import { seedLastUnit } from "./fixtures";
 import { makeTestAuthorities } from "./harness";
-
-export { seedLastUnit } from "./fixtures";
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("effect/Scope").Scope>) =>
   Effect.runPromise(Effect.scoped(effect));
