@@ -16,9 +16,15 @@ decided on the device by the local authority and never leaves it, except as a
 backup file the user saves or when its owner publishes it.
 _Avoid_: Guest mode, offline mode, demo
 
+**Organization authority.**
+The one `OrgAuthority` Durable Object per organization that accepts or rejects
+its commands, keeps its change log, receipts and snapshots, and holds the
+authoritative catalog in its own SQLite storage.
+_Avoid_: Server database, Postgres authority, backend
+
 **Local authority.**
 The on-device decider that accepts or rejects commands for a local workspace
-using the same rules as the Postgres authority.
+using the same rules as the organization authority.
 _Avoid_: Offline sync, fake server
 
 **Publish.**
@@ -29,8 +35,8 @@ local file is set aside, never merged.
 _Avoid_: Migrate, upload, merge
 
 **Catalog layout.**
-The physical columns for catalog entities in authoritative Postgres and in the
-SQLite catalog projection. Persistence only; not a business aggregate.
+The physical columns for catalog entities in the organization authority and in
+the SQLite catalog projection. Persistence only; not a business aggregate.
 _Avoid_: Store schema, replica tables
 
 **Catalog.**
@@ -49,7 +55,7 @@ _Avoid_: Local database, client DB, live inventory
 **Catalog write.**
 The `catalogWrite` sync command: an ordered row list that changes categories,
 products, batches, suppliers, purchase orders, or their lines. It commits
-locally as pending rows, then the PlanetScale Postgres authority decides it in
+locally as pending rows, then the organization authority decides it in
 the same organization-locked transaction as `issueInvoice` and publishes it
 through the change log.
 _Avoid_: SyncOperation, live sync, mutation envelope

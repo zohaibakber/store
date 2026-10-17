@@ -1,86 +1,10 @@
-import { SyncProtocolError, syncProtocolError, unpadDecimalSequence } from "@store/contracts";
 import { InventoryHyperdrive } from "@store/db/postgres/infra";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as DrizzlePostgres from "alchemy/Drizzle/Postgres";
 import type { EffectPgDatabase } from "drizzle-orm/effect-postgres";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
-import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
-import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
-import * as SqlError from "effect/sql/SqlError";
-
-import { InventoryDatabaseError } from "./errors";
 
 export type InventoryDrizzle = EffectPgDatabase;
-
-const isProtocolError = Schema.is(SyncProtocolError);
-
-export const protocol = (code: SyncProtocolError["code"], message: string) =>
-  Effect.fail(syncProtocolError(code, message));
-
-export const databaseError = (cause: unknown) =>
-  InventoryDatabaseError.make({
-    message: cause instanceof Error ? cause.message : "Inventory command failed.",
-    cause,
-  });
-
-export const integerTextFromNumeric = (value: string) =>
-  unpadDecimalSequence(value.split(".", 1)[0] ?? value);
-
-export const randomHex = (byteCount: number): string =>
-  Hex.encode(crypto.getRandomValues(new Uint8Array(byteCount)));
-
-export const requireState = <S>(state: S | undefined) =>
-  state === undefined
-    ? protocol("EPOCH_MISMATCH", "This organization inventory is not ready.")
-    : Effect.succeed(state);
-
-const MAX_SERIALIZATION_RETRIES = 4;
-
-const sqlErrorOf = <E>(error: E): SqlError.SqlError | undefined => {
-  if (SqlError.isSqlError(error)) return error;
-  if (
-    !Predicate.isTagged(error, "EffectDrizzleQueryError") ||
-    !Predicate.hasProperty(error, "cause") ||
-    !Cause.isCause(error.cause)
-  ) {
-    return undefined;
-  }
-  const failure = Cause.findErrorOption(error.cause);
-  return Option.isSome(failure) && SqlError.isSqlError(failure.value) ? failure.value : undefined;
-};
-
-const DATA_EXCEPTION_CLASS = "22";
-
-export const isDataException = (error: InventoryDatabaseError): boolean => {
-  const cause = sqlErrorOf(error.cause)?.reason.cause;
-  return (
-    Predicate.hasProperty(cause, "code") &&
-    Predicate.isString(cause.code) &&
-    cause.code.startsWith(DATA_EXCEPTION_CLASS)
-  );
-};
-
-const isSerializationFailure = <E>(error: E): boolean => {
-  const reason = sqlErrorOf(error)?.reason._tag;
-  return reason === "SerializationError" || reason === "DeadlockError";
-};
-
-export const withSerializationRetry = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.retry(effect, {
-    schedule: Schedule.jittered(Schedule.exponential("10 millis", 2)),
-    times: MAX_SERIALIZATION_RETRIES,
-    while: isSerializationFailure,
-  });
-
-const toInventoryError = <E>(cause: E) =>
-  isProtocolError(cause) || cause instanceof InventoryDatabaseError ? cause : databaseError(cause);
-
-export const runStatement = <A, E>(effect: Effect.Effect<A, E>) =>
-  effect.pipe(Effect.mapError(toInventoryError));
 
 export const openInventoryDrizzle = Effect.gen(function* () {
   const inventoryHyperdrive = yield* InventoryHyperdrive;

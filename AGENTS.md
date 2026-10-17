@@ -137,7 +137,8 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   `nodeLinker: hoisted` — that duplicates React across packages.
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
-  stores state remotely and binds real dev-stage D1, Hyperdrive, and Postgres.
+  stores state remotely and binds real dev-stage D1, the `OrgAuthority` and `OrgHub` Durable
+  Objects, and the legacy Postgres (Hyperdrive) that organizations are adopted from.
   There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
   refresh and ephemeral peppers, and Google OAuth credentials. Use different
@@ -145,7 +146,9 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
 - **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials
-  above. D1 is auth. Inventory commands commit in Postgres through
-  `/api/sync/*` (Neon in `dev`, PlanetScale in `prod`).
+  above. D1 is auth. Inventory commands commit in the organization's `OrgAuthority`
+  Durable Object (SQLite storage) through `/api/sync/*`. An organization still in the
+  legacy Postgres (Neon in `dev`, PlanetScale in `prod`) is copied into its object on
+  first touch.
   Inventory can be driven from the local replica without the backend after the
   first sync.
