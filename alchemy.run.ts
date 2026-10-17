@@ -19,9 +19,7 @@ export default Alchemy.Stack(
       Cloudflare.providers(),
       Drizzle.providers(),
       Layer.unwrap(
-        Effect.map(Alchemy.Stage, (stage) =>
-          stage === "dev" ? Neon.providers() : Layer.empty,
-        ),
+        Effect.map(Alchemy.Stage, (stage) => (stage === "dev" ? Neon.providers() : Layer.empty)),
       ),
       Layer.unwrap(
         Effect.map(Alchemy.Stage, (stage) =>

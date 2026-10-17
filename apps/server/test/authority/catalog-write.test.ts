@@ -48,7 +48,6 @@ import {
 import type { ReplicaDb } from "@store/sync/authority";
 import { asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { describe, expect, it } from "vitest";
 
@@ -72,10 +71,7 @@ const actorFor = (organizationId: string): InventoryActor => ({
   userId: "user-1",
 });
 
-const pullFrom = (
-  afterCommitSequence: string,
-  withDigest = false,
-): SyncPullRequest => {
+const pullFrom = (afterCommitSequence: string, withDigest = false): SyncPullRequest => {
   const request: SyncPullRequest = {
     epoch: LAST_UNIT_EPOCH,
     subscription: OPERATIONAL_SUBSCRIPTION,

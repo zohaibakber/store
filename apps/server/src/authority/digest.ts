@@ -32,9 +32,7 @@ export type DigestReport = {
   readonly entities: Readonly<Record<string, string>>;
 };
 
-export const partitionDigest = Effect.fn("Authority.partitionDigest")(function* (
-  db: ReplicaDb,
-) {
+export const partitionDigest = Effect.fn("Authority.partitionDigest")(function* (db: ReplicaDb) {
   const domain = PARTITION_DIGEST_DOMAIN;
   const digests: Array<{ readonly entity: PartitionEntity; readonly digest: string }> = [];
   let count = 0;

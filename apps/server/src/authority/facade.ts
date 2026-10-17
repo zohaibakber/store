@@ -249,9 +249,7 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* (
     readSnapshotPart: (actor, snapshotId, partNumber) =>
       replyOf(snapshots.readPart(actor, snapshotId, partNumber)),
     devices: (actor) =>
-      replyOf(
-        Effect.flatMap(Clock.currentTimeMillis, (now) => engine.devices(actor, now)),
-      ),
+      replyOf(Effect.flatMap(Clock.currentTimeMillis, (now) => engine.devices(actor, now))),
     deviceCommand: (actor, command) =>
       replyOf(
         Effect.flatMap(Clock.currentTimeMillis, (now) => engine.deviceCommand(actor, command, now)),
