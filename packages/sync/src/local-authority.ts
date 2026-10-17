@@ -1332,15 +1332,14 @@ const decideCommand = (
   tx: ReplicaDb,
   state: ReplicaStateRow,
   envelope: SyncCommandEnvelope,
-): Effect.Effect<Decision, EffectDrizzleQueryError | Schema.SchemaError> =>
-  Effect.flatMap(replicaJournal(tx), (journal) =>
-    decideCommandWithin(
-      tx,
-      { organizationId: state.organizationId, userId: state.userId },
-      envelope,
-      journal,
-    ),
-  );
+): Effect.Effect<Decision, EffectDrizzleQueryError | Schema.SchemaError> => {
+  const actor = { organizationId: state.organizationId, userId: state.userId };
+  return envelope.command.payload.commandId !== envelope.operationId
+    ? decideCommandWithin(tx, actor, envelope, SETTLED_CATALOG)
+    : Effect.flatMap(replicaJournal(tx), (journal) =>
+        decideCommandWithin(tx, actor, envelope, journal),
+      );
+};
 
 type DecidedGroup = {
   readonly group: SyncTransactionGroup;

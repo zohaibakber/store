@@ -9,7 +9,7 @@ import {
 } from "@store/db/authority.schema";
 import * as pg from "@store/db/postgres/schema";
 import { writeEntityRow, type ReplicaDb } from "@store/sync/authority";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull } from "drizzle-orm";
 import type { EffectPgDatabase } from "drizzle-orm/effect-postgres";
 import * as Array from "effect/Array";
 import * as Clock from "effect/Clock";
@@ -21,6 +21,8 @@ import { sequenceOf, type AuthorityActor } from "./engine";
 const CHANGE_ROWS_PER_INSERT = 12;
 
 const ADOPTED_FROM_POSTGRES = "postgres";
+
+const ADOPTION_FENCING = "postgres:fencing";
 
 const FENCE_SUFFIX = "0000";
 
@@ -98,11 +100,47 @@ export type AdoptionSource = {
     sql: SqlClient,
     db: ReplicaDb,
   ) => Effect.Effect<boolean, unknown>;
+  readonly fence: (organizationId: string, epoch: string) => Effect.Effect<void, unknown>;
 };
 
-export const NO_ADOPTION: AdoptionSource = { adopt: () => Effect.succeed(false) };
+export const NO_ADOPTION: AdoptionSource = {
+  adopt: () => Effect.succeed(false),
+  fence: () => Effect.void,
+};
+
+const fenced = (epoch: string) => `${epoch}${FENCE_SUFFIX}`;
+
+export const settleAdoption = Effect.fn("AuthorityAdoption.settle")(function* (
+  source: AdoptionSource,
+  actor: AuthorityActor,
+  sql: SqlClient,
+  db: ReplicaDb,
+) {
+  const held = yield* db.select().from(authorityState).get();
+  const adopted = held === undefined ? yield* source.adopt(actor, sql, db) : false;
+  const state = adopted ? yield* db.select().from(authorityState).get() : held;
+  if (state?.adoptedFrom === ADOPTION_FENCING) {
+    yield* source.fence(state.organizationId, state.epoch);
+    yield* db
+      .update(authorityState)
+      .set({ adoptedFrom: ADOPTED_FROM_POSTGRES })
+      .where(eq(authorityState.id, state.id));
+  }
+  return adopted;
+});
 
 export const postgresAdoption = (source: EffectPgDatabase): AdoptionSource => ({
+  fence: Effect.fn("AuthorityAdoption.fence")(function* (organizationId, epoch) {
+    yield* source
+      .update(pg.inventoryState)
+      .set({ epoch: fenced(epoch) })
+      .where(
+        and(
+          eq(pg.inventoryState.organizationId, organizationId),
+          eq(pg.inventoryState.epoch, epoch),
+        ),
+      );
+  }),
   adopt: Effect.fn("AuthorityAdoption.fromPostgres")(function* (actor, sql, db) {
     const organizationId = actor.organizationId;
     return yield* source.transaction((tx) =>
@@ -130,12 +168,22 @@ export const postgresAdoption = (source: EffectPgDatabase): AdoptionSource => ({
         const transactions = yield* tx
           .select()
           .from(pg.inventoryTransactions)
-          .where(eq(pg.inventoryTransactions.organizationId, organizationId))
+          .where(
+            and(
+              eq(pg.inventoryTransactions.organizationId, organizationId),
+              gt(pg.inventoryTransactions.commitSequence, state.retentionFloor),
+            ),
+          )
           .orderBy(asc(pg.inventoryTransactions.commitSequence));
         const changes = yield* tx
           .select()
           .from(pg.inventoryChanges)
-          .where(eq(pg.inventoryChanges.organizationId, organizationId))
+          .where(
+            and(
+              eq(pg.inventoryChanges.organizationId, organizationId),
+              gt(pg.inventoryChanges.commitSequence, state.retentionFloor),
+            ),
+          )
           .orderBy(asc(pg.inventoryChanges.commitSequence), asc(pg.inventoryChanges.ordinal));
         const [imported] = yield* tx
           .select()
@@ -153,7 +201,7 @@ export const postgresAdoption = (source: EffectPgDatabase): AdoptionSource => ({
               retentionFloor,
               createdAt: now,
               maintainedAt: state.maintainedAt,
-              adoptedFrom: ADOPTED_FROM_POSTGRES,
+              adoptedFrom: ADOPTION_FENCING,
             });
             for (const { entity, rows } of catalog) {
               for (const row of rows) yield* writeEntityRow(db, entity, row);
@@ -230,7 +278,7 @@ export const postgresAdoption = (source: EffectPgDatabase): AdoptionSource => ({
 
         yield* tx
           .update(pg.inventoryState)
-          .set({ epoch: `${state.epoch}${FENCE_SUFFIX}` })
+          .set({ epoch: fenced(state.epoch) })
           .where(eq(pg.inventoryState.organizationId, organizationId));
         return true;
       }),

@@ -90,6 +90,42 @@ describe("durable object inventory commands", () => {
     ).toHaveLength(1);
   });
 
+  it.each([
+    ["UNIQUE constraint failed: invoices.id", "ENTITY_CONFLICT"],
+    ["CHECK constraint failed: invoices_total", "INVALID_OPERATION"],
+  ] as const)(
+    "rolls the sale back and records a rejection when the write hits %s",
+    async (failure, code) => {
+      const organizationId = decodeOrganizationId("org-constraint");
+      const actor = actorFor(organizationId);
+      const envelope = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
+      const outcome = await run(
+        Effect.gen(function* () {
+          const authorities = makeTestAuthorities();
+          const { db, sql } = yield* authorities.open(organizationId);
+          yield* seedLastUnit(db, organizationId).pipe(Effect.orDie);
+          yield* sql
+            .unsafe(
+              `CREATE TRIGGER fail_invoice BEFORE INSERT ON invoices BEGIN SELECT RAISE(ABORT, '${failure}'); END`,
+            )
+            .pipe(Effect.orDie);
+          const commands = typedCommands(makeInventoryCommands(authorities));
+          const receipt = yield* commands.commit(actor, envelope);
+          const stock = yield* batchStock(db);
+          const pulled = yield* commands.pull(actor, pullFromStart);
+          return { receipt, stock, pulled };
+        }),
+      );
+      expect(outcome.receipt).toMatchObject({
+        decision: "rejected",
+        commitSequence: "1",
+        result: { _tag: "rejected", code },
+      });
+      expect(outcome.stock).toEqual({ unitQuantity: 1, packQuantity: 0 });
+      expect(outcome.pulled.transactions).toMatchObject([{ decision: "rejected", changes: [] }]);
+    },
+  );
+
   it("answers a replayed command with its receipt and refuses a reused id", async () => {
     const organizationId = decodeOrganizationId("org-replay");
     const actor = actorFor(organizationId);

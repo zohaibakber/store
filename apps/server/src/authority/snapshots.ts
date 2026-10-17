@@ -107,9 +107,10 @@ export const makeAuthoritySnapshots = (
     const counts: Record<string, number> = {};
     let partNumber = 1;
     let held: Array<string> = [];
-    let position = 0;
-    let bytesBefore = 0;
-    let key: string | undefined;
+    let heldBytes = 0;
+    const envelopeBytes = byteLengthOf(
+      `{"snapshotId":${JSON.stringify(snapshotId)},"partNumber":${Number.MAX_SAFE_INTEGER},"rows":[]}`,
+    );
     const flush = Effect.fnUntraced(function* () {
       const payload = `{"snapshotId":${JSON.stringify(snapshotId)},"partNumber":${partNumber},"rows":[${held.join(",")}]}`;
       yield* db.insert(snapshotParts).values({
@@ -120,6 +121,7 @@ export const makeAuthoritySnapshots = (
         payloadJson: payload,
       });
       held = [];
+      heldBytes = 0;
     });
     for (const entity of PARTITION_ENTITIES) {
       counts[entity] = 0;
@@ -128,15 +130,16 @@ export const makeAuthoritySnapshots = (
         const page: ReadonlyArray<ScannedRow> = yield* scanPage(db, entity, after);
         for (const row of page) {
           const frame = rowFrame(entity, row);
-          const next = `${Math.floor(bytesBefore / partBytes)}:${Math.floor(position / partRows)}`;
-          if (key !== undefined && next !== key) {
+          const frameBytes = byteLengthOf(frame) + 1;
+          if (
+            held.length > 0 &&
+            (held.length >= partRows || envelopeBytes + heldBytes + frameBytes > partBytes)
+          ) {
             yield* flush();
             partNumber += 1;
           }
-          key = next;
           held.push(frame);
-          position += 1;
-          bytesBefore += byteLengthOf(frame) + 1;
+          heldBytes += frameBytes;
           counts[entity] += 1;
         }
         const last = page.at(-1);

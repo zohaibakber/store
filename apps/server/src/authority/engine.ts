@@ -21,10 +21,12 @@ import {
   replicas,
 } from "@store/db/authority.schema";
 import {
+  constraintViolationOf,
   decideCommandWithin,
   removeEntityRow,
   SETTLED_CATALOG,
   writeEntityRow,
+  type ConstraintViolation,
   type Decision,
   type ReplicaDb,
 } from "@store/sync/authority";
@@ -34,7 +36,6 @@ import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
-import * as SqlError from "effect/sql/SqlError";
 
 import { isDigestVersion, partitionDigest } from "./digest";
 import {
@@ -101,8 +102,19 @@ export type EncodedCommit = {
   readonly fanout: CommitFanout | null;
 };
 
-const isConstraintViolation = <E>(error: E): boolean =>
-  SqlError.isSqlError(error) && error.reason._tag === "ConstraintError";
+const CONSTRAINT_REJECTIONS = {
+  duplicate: {
+    code: "ENTITY_CONFLICT",
+    message: "A record this command creates already exists.",
+  },
+  value: {
+    code: "INVALID_OPERATION",
+    message: "A value in this command is out of range.",
+  },
+} as const satisfies Record<
+  ConstraintViolation,
+  { readonly code: SyncProtocolCode; readonly message: string }
+>;
 
 export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
   const loadState = db
@@ -358,15 +370,13 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     const applied = yield* Result.match(decision, {
       onSuccess: ({ result, changes }) =>
         applyAccepted(actor.organizationId, changes).pipe(
-          Effect.as(Result.succeed({ result, changes })),
-          Effect.catchIf(isConstraintViolation, () =>
-            Effect.succeed(
-              Result.fail({
-                code: "ENTITY_CONFLICT" as const,
-                message: "A record this command creates already exists.",
-              }),
-            ),
-          ),
+          Effect.map(() => Result.succeed({ result, changes })),
+          Effect.catch((error) => {
+            const violation = constraintViolationOf(error);
+            return violation === undefined
+              ? Effect.fail(error)
+              : Effect.succeed(Result.fail(CONSTRAINT_REJECTIONS[violation]));
+          }),
         ),
       onFailure: (rejection) => Effect.succeed(Result.fail(rejection)),
     });

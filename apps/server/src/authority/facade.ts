@@ -8,7 +8,7 @@ import {
   type SyncProtocolCode,
   type SyncPullRequest,
 } from "@store/contracts";
-import { makeReplicaDb } from "@store/sync/authority";
+import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -153,7 +153,7 @@ export type OrgAuthorityDependencies<R> = {
   readonly sql: SqlClient;
   readonly mintId: Effect.Effect<string>;
   readonly alarm: MaintenanceAlarm;
-  readonly adopt: (actor: AuthorityActor) => Effect.Effect<void, never, R>;
+  readonly adopt: (actor: AuthorityActor, db: ReplicaDb) => Effect.Effect<boolean, never, R>;
 };
 
 const isProtocolError = Schema.is(SyncProtocolError);
@@ -194,7 +194,12 @@ export const makeOrgAuthority = Effect.fn("OrgAuthority.make")(function* <R>(
   );
 
   const serve = <A, E, R>(actor: AuthorityActor, effect: Effect.Effect<A, E, R>) =>
-    replyOf(Effect.andThen(adopt(actor), effect));
+    replyOf(
+      Effect.andThen(
+        Effect.flatMap(adopt(actor, db), (adopted) => (adopted ? soon : Effect.void)),
+        effect,
+      ),
+    );
 
   const serveWrite = <A, E, R>(actor: AuthorityActor, effect: Effect.Effect<A, E, R>) =>
     serve(

@@ -5,7 +5,7 @@ import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import { NO_ADOPTION, type AdoptionSource } from "../../src/authority/adopt";
+import { NO_ADOPTION, settleAdoption, type AdoptionSource } from "../../src/authority/adopt";
 import type { AuthorityActor } from "../../src/authority/engine";
 import { makeOrgAuthority, type OrgAuthorityApi } from "../../src/authority/facade";
 import type { AuthorityNamespace } from "../../src/inventory/authority-client";
@@ -57,16 +57,15 @@ export const makeTestAuthorities = (
           scheduleAt: (at) => Effect.sync(() => void alarms.push(at)),
           scheduleBy: (at) => Effect.sync(() => void alarms.push(at)),
         },
-        adopt: (actor: AuthorityActor) =>
+        adopt: (actor: AuthorityActor, db: ReplicaDb) =>
           adopted
-            ? Effect.void
-            : adoption.adopt(actor, sql, db).pipe(
+            ? Effect.succeed(false)
+            : settleAdoption(adoption, actor, sql, db).pipe(
                 Effect.tap(() =>
                   Effect.sync(() => {
                     adopted = true;
                   }),
                 ),
-                Effect.asVoid,
                 Effect.orDie,
               ),
       });
