@@ -19,14 +19,14 @@
     "@store/services": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "catalog:",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@store/sync": "workspace:*",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "embedded-postgres": "18.4.0-beta.17",
     "typescript": "catalog:",
-    "vitest": "5.0.2"
+    "vitest": "5.0.5"
   }
 }

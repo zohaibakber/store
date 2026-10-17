@@ -37,4 +37,5 @@ export const layerNodeSqliteReadonlyReplica = (
 ): Layer.Layer<SqliteReplica | SqlClient> =>
   SqliteReplica.layerReadonlyFromClient.pipe(
     Layer.provideMerge(SqliteClient.layer({ filename: path, readonly: true, disableWAL: true })),
+    Layer.orDie,
   );

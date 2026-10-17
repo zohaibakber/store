@@ -4,7 +4,7 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 
 ## Facts
 
-- **Versions.** `effect@4.0.0` and `alchemy@2.0.0-beta.80`, pinned in the `pnpm-workspace.yaml` catalog.
+- **Versions.** `effect@4.0.5` and `alchemy@2.0.0-beta.83`, pinned in the `pnpm-workspace.yaml` catalog.
 - **Service ids** are `@store/<package>/<Name>`.
 - **IDs** are branded strings from `packages/contracts/src/ids.ts`.
 - **Timestamps** on the wire and in storage stay epoch milliseconds.

@@ -16,7 +16,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "typescript": "catalog:"
   }
 }
