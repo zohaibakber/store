@@ -33,7 +33,6 @@ export {
   deliverPorts,
   desktopServices,
   forwardedPorts,
-  inProcessWorkspace,
   makeInventoryServices,
   type ForwardedPorts,
   type InventoryServices,

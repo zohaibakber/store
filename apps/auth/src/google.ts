@@ -137,9 +137,6 @@ interface GoogleOAuthApi {
     readonly codeVerifier: string | undefined;
     readonly nonce: string | undefined;
   }) => Effect.Effect<GoogleProfile, GoogleOAuthError | GoogleIdentityRejected>;
-  readonly verifyIdToken: (
-    idToken: string,
-  ) => Effect.Effect<GoogleProfile, GoogleOAuthError | GoogleIdentityRejected>;
 }
 
 export class GoogleOAuth extends Context.Service<GoogleOAuth, GoogleOAuthApi>()(
@@ -150,7 +147,6 @@ interface GoogleOAuthConfiguration {
   readonly clientId: string;
   readonly clientSecret: Redacted.Redacted<string>;
   readonly callbackUrl: string;
-  readonly nativeClientIds?: ReadonlyArray<string>;
 }
 
 const oauthError = (operation: string, cause: unknown) =>
@@ -201,12 +197,12 @@ const signingKeys = (keySet: typeof GoogleKeySet.Type): ReadonlyMap<string, Sign
 
 const verifySignature = (key: SigningKey, signature: Uint8Array, signingInput: string) =>
   WebCrypto.verifyRs256(key, signature, textEncoder.encode(signingInput)).pipe(
-    Effect.mapError((failure) => oauthError("verifyIdToken.verify", failure.cause)),
+    Effect.mapError((failure) => oauthError("idToken.verify", failure.cause)),
   );
 
 const sameNonce = (presented: string, expected: string) =>
   WebCrypto.constantTimeEqual(textEncoder.encode(presented), textEncoder.encode(expected)).pipe(
-    Effect.mapError((failure) => oauthError("verifyIdToken.nonce", failure.cause)),
+    Effect.mapError((failure) => oauthError("idToken.nonce", failure.cause)),
   );
 
 export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
@@ -216,11 +212,6 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
       const client = yield* HttpClient.HttpClient;
       const keySetCache = yield* Ref.make(Option.none<KeySet>());
       const webAudience = new Set([configuration.clientId]);
-      const audiences = new Set(
-        [configuration.clientId, ...(configuration.nativeClientIds ?? [])].filter(
-          (value) => value.trim().length > 0,
-        ),
-      );
 
       const execute = (operation: string, request: HttpClientRequest.HttpClientRequest) =>
         client.execute(request).pipe(
@@ -359,9 +350,6 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
           );
           const idToken = yield* exchangeForIdToken(request);
           return yield* verify(idToken, { audiences: webAudience, nonce: input.nonce });
-        }),
-        verifyIdToken: Effect.fn("GoogleOAuth.verifyIdToken")(function* (idToken) {
-          return yield* verify(idToken, { audiences, nonce: undefined });
         }),
       });
     }),

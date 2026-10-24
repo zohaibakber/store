@@ -132,7 +132,7 @@ const issueAndRecord = Effect.fn("LicenceCli.issue")(function* (
   const store = yield* OperatorStore;
   const fs = yield* FileSystem.FileSystem;
   const crypto = yield* Crypto.Crypto;
-  const id = LicenceId.make(yield* Effect.orDie(crypto.randomUUIDv4));
+  const id = LicenceId.make(yield* Effect.orDie(crypto.randomUUIDv4()));
   const issued = signLicence({ ...grant, id }, key, backup);
   yield* store.record(issued);
   if (Option.isSome(file)) {
@@ -208,7 +208,7 @@ const issue = Command.make(
     const key = yield* signingKey(input.key);
     const shopId = yield* Option.match(input.shopId, {
       onSome: (id) => Effect.succeed(id),
-      onNone: () => Effect.map(Effect.orDie(crypto.randomUUIDv4), (id) => ShopId.make(id)),
+      onNone: () => Effect.map(Effect.orDie(crypto.randomUUIDv4()), (id) => ShopId.make(id)),
     });
     const issuedAt = (yield* Clock.currentTimeMillis) - input.issuedDaysAgo * DAY_MILLIS;
     const backup = input.backup

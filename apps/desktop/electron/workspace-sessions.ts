@@ -5,8 +5,6 @@ import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
 import { ReplicaStorageError, ReplicaUnavailable } from "@store/contracts/replica";
 import * as Clock from "effect/Clock";
-
-import type { PublishProgress } from "../src/host/workspace-publish";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -22,6 +20,7 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
 
+import type { PublishProgress } from "../src/host/workspace-publish";
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
 import type { DesktopLicence } from "./desktop-rpcs";
 import type { LicenceService } from "./licence/service";
@@ -50,7 +49,6 @@ import {
   type ReplicaWorkerClient,
   type SpawnReplicaReader,
   type SpawnReplicaWorker,
-  type ReplicaWorkerClient,
 } from "./replica-supervisor";
 import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
 

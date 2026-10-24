@@ -1,25 +1,18 @@
 # Store
 
-pnpm workspace for offline-first inventory: an Electron desktop app, an Expo
-Android app, and Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
+pnpm workspace for offline-first inventory: an Electron desktop app and
+Cloudflare Worker API and auth services. Inventory commands commit in Postgres through Hyperdrive. The system
 design is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Workspace boundaries
 
-- `apps/web` owns the product UI: the React app, routes, components, styles,
-  and the host contract (`src/host`) that says what the desktop shell must
-  provide. It is the renderer of the desktop app and is not deployed on its
-  own. It never imports from `apps/desktop`.
-- `apps/desktop` owns the Electron shell: main process, preload, workers,
-  updater, tests, and packaging. It uses `apps/web` as its renderer and
-  implements the host contract, importing only `@store/web/host/*` and
-  `@store/web/vite`. The renderer uses hash history; the main process keeps
-  encrypted refresh credentials and pushes a short-lived access token to the
-  replica worker, which makes its own sync HTTP calls to the API origin only.
-  Live inventory is the local replica, owned by a main-process worker on
+- `apps/desktop` owns the Electron app: the renderer in `src`, the host contract
+  in `src/host`, the main process, preload, workers, updater, tests, and
+  packaging. The renderer uses hash history; the main process keeps encrypted
+  refresh credentials and pushes a short-lived access token to the replica
+  worker, which makes its own sync HTTP calls to the API origin only. Live
+  inventory is the local replica, owned by a main-process worker on
   `@effect/sql-sqlite-node` over `node:sqlite`. The renderer never sees SQL.
-- `apps/mobile` is the Expo Android app. Its replica is op-sqlite through
-  `@effect/sql-sqlite-react-native`.
 - `apps/auth` is the first-party Cloudflare Worker for password, OTP, Google
   OAuth, access tokens, and refresh sessions.
 - `apps/server/src` is the Worker API. `/api/sync/*` commits inventory commands
@@ -34,18 +27,18 @@ design is in [`docs/architecture.md`](docs/architecture.md).
   pending projections, coverage, the polling scheduler, and the typed
   `SyncHttpApi` client. Its shared entrypoint (`@store/sync`) is native-free;
   the SQLite adapter lives behind `@store/sync/sqlite`.
-- `packages/inventory-react` owns the React bindings over the replica shared by
-  the desktop renderer and mobile.
+- `packages/inventory-react` owns the React bindings over the replica used by
+  the desktop renderer.
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
 - `packages/services` owns shared application services such as invoice extraction.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
-Shared helpers stay next to the tests that use them. `apps/web` has no unit
+Shared helpers stay next to the tests that use them. The desktop renderer has no unit
 tests; the UI is tested end to end by hand.
 
-Web app components are grouped by feature. `components/app` owns the application
+Renderer components are grouped by feature. `components/app` owns the application
 shell, `components/shared` holds reusable application components, and
 `components/ui` is the registry-managed primitive layer.
 
@@ -68,7 +61,7 @@ vp run dev
 ```
 
 `vp run` starts the API/auth Workers and the desktop workspace in parallel. The
-desktop's plain `vp dev` task serves `apps/web` as its renderer on `:5174`,
+desktop's plain `vp dev` task serves the renderer on `:5174`,
 builds main and preload, and launches Electron. Use `vp run @store/desktop#dev` when you only
 need one workspace.
 
@@ -111,11 +104,8 @@ Each GitHub Environment must define:
 - Secrets `AUTH_REFRESH_TOKEN_PEPPER`, `AUTH_EPHEMERAL_PEPPER`, and
   `GOOGLE_OAUTH_CLIENT_SECRET`.
 - Variable `GOOGLE_OAUTH_CLIENT_ID`.
-- Variable `GOOGLE_OAUTH_NATIVE_CLIENT_IDS` (optional). Comma-separated iOS and
-  Android OAuth client IDs, accepted as ID token audiences alongside the web
-  client ID.
 - Variables with code defaults (optional): `ELECTRON_PROTOCOL`
-  (`com.tabaaq.desktop`), `MOBILE_PROTOCOL` (`com.tabaaq.mobile`),
+  (`com.tabaaq.desktop`),
   `AUTH_TRUSTED_ORIGINS` (comma-separated `https://` origins, bare hosts, or
   wildcard patterns), and `AUTH_DEV_OTP`. Blank values are treated as unset.
 

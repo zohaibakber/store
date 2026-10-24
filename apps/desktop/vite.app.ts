@@ -5,7 +5,7 @@ import { tanstackRouter, type CodeSplittingOptions } from "@tanstack/router-plug
 import react from "@vitejs/plugin-react";
 import type { Plugin, PluginOption } from "vite";
 
-export const webRoot = import.meta.dirname;
+export const rendererRoot = import.meta.dirname;
 
 const devSplash = (): Plugin => ({
   name: "desktop-dev-splash",
@@ -22,7 +22,7 @@ const keepShellInStartupBundle: CodeSplittingOptions = {
   splitBehavior: ({ routeId }) => (routeId === "/_app" ? [] : undefined),
 };
 
-export const webAppConfig = (input: { readonly version: string }) => ({
+export const rendererAppConfig = (input: { readonly version: string }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(input.version),
     __SENTRY_DEBUG__: false,
@@ -40,8 +40,8 @@ export const webAppConfig = (input: { readonly version: string }) => ({
       target: "react",
       autoCodeSplitting: true,
       codeSplittingOptions: keepShellInStartupBundle,
-      routesDirectory: path.join(webRoot, "src/routes"),
-      generatedRouteTree: path.join(webRoot, "src/routeTree.gen.ts"),
+      routesDirectory: path.join(rendererRoot, "src/routes"),
+      generatedRouteTree: path.join(rendererRoot, "src/routeTree.gen.ts"),
     }),
     tailwindcss(),
     react({ compiler: true }),

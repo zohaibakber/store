@@ -14,7 +14,7 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260929.1",
+    "@cloudflare/workers-types": "^5.20261023.1",
     "@store/server": "workspace:*",
     "@types/node": "^26.6.5",
     "alchemy": "catalog:",

@@ -11,8 +11,6 @@ import { AppSidebar } from "@/components/app/sidebar";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
-import { TitleBarInsightsFreshness } from "@/components/insights/freshness";
-import { LicenceGate } from "@/components/licence/gate";
 import { LicenceNotice } from "@/components/licence/notice";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
 import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
@@ -50,7 +48,6 @@ export function AppShell() {
             </TitleBarStart>
             <TitleBarSearch />
             <TitleBarEnd>
-              <TitleBarInsightsFreshness />
               <WorkspaceSyncAction />
               <WindowControls />
             </TitleBarEnd>
@@ -88,9 +85,7 @@ export function AppShell() {
   if (!host || !lease) return shell;
   return (
     <InventoryProvider catalog={catalog} host={host} lease={lease}>
-      <LicenceGate>
-        <StaffGate>{shell}</StaffGate>
-      </LicenceGate>
+      <StaffGate>{shell}</StaffGate>
     </InventoryProvider>
   );
 }

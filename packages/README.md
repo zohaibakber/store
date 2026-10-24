@@ -14,14 +14,13 @@
   (`@store/sync`) stays native-free (`test/browser-boundary.test.ts` enforces
   it); SQLite lives behind `@store/sync/sqlite`.
 - `inventory-react`. React bindings over the replica (atoms, queries, sync
-  status, insights) shared by the desktop renderer and the mobile app.
+  status, insights) used by the desktop renderer.
 - `workspace`. Shared session HTTP, token renewal, and organization clients.
 - `services`. Application services shared by multiple apps.
 
 Package tests mirror the source domains under `test`.
 
-`@store/client-db` owns the replica open used by each host. Electron opens the
+`@store/client-db` owns the replica open the desktop host uses. Electron opens the
 replica in a main-process Node worker over `node:sqlite`; that worker makes its
-own sync HTTP calls with an access token main pushes to it. Mobile opens
-op-sqlite and supplies authenticated fetch. The browser host opens no replica. See
+own sync HTTP calls with an access token main pushes to it. The renderer opens no replica. See
 `docs/architecture.md` for the whole system. Replicas hard-delete on a `delete` change.

@@ -7,7 +7,7 @@
     "dev": "vp run --parallel dev",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "vp run -r build",
-    "lint:design": "vp lint -c .oxlintrc.design.json apps/web/src",
+    "lint:design": "vp lint -c .oxlintrc.design.json apps/desktop/src",
     "licence": "node packages/licence/run.mjs",
     "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "pnpm exec alchemy deploy --stage dev --env-file .env.dev",
@@ -18,10 +18,10 @@
     "prepare": "vp config"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260929.1",
+    "@cloudflare/workers-types": "5.20261023.1",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@shadcn/lint": "0.2.0",
+    "@shadcn/lint": "0.2.3",
     "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "effect": "catalog:",
@@ -35,8 +35,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@12.15.0",
-  "op-sqlite": {
-    "fts5": true
-  }
+  "packageManager": "pnpm@12.15.0"
 }

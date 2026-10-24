@@ -76,8 +76,6 @@ const runtimeFor = (options: AppOptions): ServerRuntimeContract => ({
   verifyAccessToken: verifierFor(options.claims ?? claimsFor("owner")),
   invoiceAi: Effect.succeed({ toMarkdown: unused, generate: unused }),
   limitInvoiceExtraction: unused,
-  productScanAi: Effect.succeed({ generate: unused }),
-  limitProductScan: unused,
   globalSearchCache: { get: () => Effect.succeed(Option.none()), put: () => Effect.void },
   searchGlobalProducts: unused,
   limitGlobalSearch: unused,

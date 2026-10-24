@@ -83,14 +83,14 @@ These files establish the current boundaries:
 
 - [Architecture](architecture.md) describes the current Postgres authority, which Phase 2 removes.
 - [Local authority](../packages/sync/src/local-authority.ts) already decides and commits commands for a local workspace without a server. After Phase 2 it is the only authority.
-- [Local access policy](../apps/web/src/host-access.ts) currently permits local workspaces without an account. The licence gate replaces it.
+- [Local access policy](../apps/desktop/src/host-access.ts) currently permits local workspaces without an account. The licence gate replaces it.
 - [Desktop auth](../apps/desktop/electron/auth.ts) and the [auth Worker](../apps/auth) hold the account flows that Phase 2 deletes.
 - [Server inventory](../apps/server/src/inventory) and [live fan-out](../apps/server/src/live) hold the Postgres authority and notifications that Phase 2 deletes.
 - [Shared inventory schema](../packages/db/src/shared/store.schema.ts) has product prices and batch stock. Customer ledgers, payments, strips, and batch prices need additions.
 - [Replica schema](../packages/db/src/replica/schema.ts) is the device database. Staff, staff events, and settings are added here so they travel in every backup.
-- [Draft model](../apps/web/src/lib/sale-drafts.ts) needs staff ownership and handover records.
+- [Draft model](../apps/desktop/src/lib/sale-drafts.ts) needs staff ownership and handover records.
 - [Desktop backup](../apps/desktop/electron/replica-backup.ts) already stages, validates, and swaps local backups. Cloud backup reuses that path and adds only transport.
-- [Header status](../apps/web/src/lib/inventory/sync-status.tsx) shows an action only when something needs attention. Keep its storage-error recovery when the sync states go.
+- [Header status](../apps/desktop/src/lib/inventory/sync-status.tsx) shows an action only when something needs attention. Keep its storage-error recovery when the sync states go.
 
 ## Keep the cloud small
 
@@ -163,7 +163,7 @@ Block comparison coarser than a page saves nothing, because random ids scatter e
 
 The release gate is a fresh installation activated offline, relaunch with no connection, an owner selling alone with staff off, turning staff on, staff switching, an unauthorized command refused by the owning process, owner recovery by both codes, an expired licence going read-only after the grace period, a renewal restoring sales, and a clock set backwards not extending the licence.
 
-Primary ownership: `apps/desktop/electron` for the licence and worker wiring, `packages/contracts` for licence and staff contracts, `packages/client-db` for the staff gate, `packages/db/src/replica` for staff tables, `apps/web/src/session`, and the lock, setup, and staff screens in `apps/web`.
+Primary ownership: `apps/desktop/electron` for the licence and worker wiring, `packages/contracts` for licence and staff contracts, `packages/client-db` for the staff gate, `packages/db/src/replica` for staff tables, `apps/desktop/src/session`, and the lock, setup, and staff screens in `apps/desktop`.
 
 ## Phase 2: Remove accounts and cloud sync
 
@@ -175,7 +175,7 @@ Subtract before building pharmacy features, so each feature is written against o
 4. Delete the sign-in, sign-up, organization, team, invitation, workspace-switcher, and publish surfaces in the renderer, with their preload channels and main-process handlers.
 5. Delete the server inventory authority, live fan-out, Hyperdrive binding, Postgres migrations, and the auth Worker. Reduce D1 to the licence registry.
 6. Move the online helpers to licence authorization and rate-limit them per licence.
-7. Remove the mobile app and the in-process store wiring that exists only for it.
+7. The mobile app and the in-process store wiring that existed only for it are removed.
 8. Collapse the client layers that existed only to reconcile with a server, such as pending overlays and receipt replay from the server. Keep `operationId` idempotency, because a double submit must still commit once. Judge each layer by deleting it and seeing what breaks.
 9. Decommission PlanetScale and Neon after the retention window. Update [architecture.md](architecture.md), the Effect profile, `AGENTS.md`, and the affected tests.
 
@@ -183,7 +183,7 @@ Do steps 1 and 2 in a release that still contains sync, so a device can settle i
 
 The release gate is an upgraded organization device that opens as a local shop with the same stock, invoices, and purchasing history, a fresh installation that never contacts a server, the packaged app containing no auth or sync code, and the deployed stage containing no Postgres or Hyperdrive resources. Measure startup and checkout latency before and after.
 
-Primary ownership: `packages/sync`, `packages/client-db`, `apps/desktop/electron`, `apps/web/src/session` and the auth and settings screens, `apps/server`, `apps/auth`, `apps/mobile`, `packages/auth`, `packages/workspace`, and `alchemy.run.ts`.
+Primary ownership: `packages/sync`, `packages/client-db`, `apps/desktop/electron`, `apps/desktop/src/session` and the auth and settings screens, `apps/server`, `apps/auth`, `packages/auth`, `packages/workspace`, and `alchemy.run.ts`.
 
 ## Phase 3: Add pharmacy stock rules
 

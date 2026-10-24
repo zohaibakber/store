@@ -41,8 +41,8 @@ _Avoid_: Inventory bag, collections
 
 **Catalog replica.**
 The local copy of the catalog, applied from the authority's change log.
-Desktop keeps it in SQLite owned by a main-process worker and mobile in
-op-sqlite. Replicas hard-delete on a `delete` change
+Desktop keeps it in SQLite owned by a main-process worker.
+Replicas hard-delete on a `delete` change
 and hold no `deletedAt`.
 _Avoid_: Local database, client DB, live inventory
 

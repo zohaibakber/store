@@ -1,16 +1,13 @@
 # Architecture
 
-Tabaaq is offline-first inventory and sales. The desktop and mobile clients keep
-a local replica of their organization's catalog, writes commands to it first, and syncs with one
+Tabaaq is offline-first inventory and sales. The desktop app keeps
+a local replica of the shop's catalog, writes commands to it first, and syncs with one
 authoritative Postgres database through a stateless Cloudflare Worker.
 
 ## Clients
 
-- `apps/web`: the product UI, a React app that runs only as the desktop
-  renderer. It defines the host contract in `src/host` and never imports from
-  `apps/desktop`. It is not deployed on its own; there is no website.
-- `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
-  implements the host contract. The replica lives in a main-process Node worker
+- `apps/desktop`: the Electron app. The product UI lives in `src` and is the
+  renderer. `src/host` is the contract the main process implements. The replica lives in a main-process Node worker
   on `@effect/sql-sqlite-node` over `node:sqlite`. The renderer reaches it
   over `MessagePort`s that main forwards once per attach: `InventoryReads`
   (named bounded reads, served by a read-only reader worker), `InventoryStore`
@@ -20,10 +17,8 @@ authoritative Postgres database through a stateless Cloudflare Worker.
   backup, restore, and publish only. The main process keeps the encrypted
   refresh token and pushes a short-lived access token to the writer, which
   makes its own sync HTTP calls.
-- `apps/mobile`: Expo Android app. The replica is op-sqlite through
-  `@effect/sql-sqlite-react-native`.
 - `packages/inventory-react` holds the React bindings (atoms, queries, sync
-  status, insights) shared by the web app and mobile.
+  status, insights) the renderer uses.
 
 ## Local replica (`packages/sync`)
 
@@ -65,8 +60,7 @@ idempotency receipts, and the change log.
 | `GET /api/sync/snapshots/:id/parts/:n` | `snapshot_parts` read   |
 | `GET /api/sync/live`                   | WebSocket to `OrgHub`   |
 
-Other routes: `/api/health`, `/api/auth/session`, `/api/uploads`, and
-`/api/product-scans` (Workers AI, rate limited).
+Other routes: `/api/health`, `/api/auth/session`, and `/api/uploads` (Workers AI, rate limited).
 
 - Pull returns whole transaction groups within a row and encoded-byte budget
   (`maxBytes`). A client asks for the digest by sending `digestVersion`.

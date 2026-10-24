@@ -53,48 +53,6 @@ export const invoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(InvoiceEx
   generateDescriptions: true,
 }).schema;
 
-const MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH = 12_000;
-
-export const ProductScanMode = Schema.Literals(["product", "batch"]);
-export type ProductScanMode = typeof ProductScanMode.Type;
-
-export const ProductScanInput = Schema.Struct({
-  recognizedText: Schema.Trim.check(
-    Schema.isMinLength(1),
-    Schema.isMaxLength(MAX_PRODUCT_SCAN_RECOGNIZED_TEXT_LENGTH),
-  ),
-  mode: ProductScanMode,
-});
-export interface ProductScanInput extends Schema.Schema.Type<typeof ProductScanInput> {}
-
-const nullableScanText = (description: string, maximumLength: number) =>
-  Schema.NullOr(
-    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(maximumLength)),
-  ).annotate({ description });
-
-const normalizedScanExpiry = Schema.NullOr(
-  Schema.String.check(Schema.isPattern(/^20\d{2}-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?$/)),
-).annotate({ description: "Expiry as YYYY-MM-DD, or YYYY-MM when only a month is printed." });
-
-export const ProductScanResult = Schema.Struct({
-  name: nullableScanText("Product or brand name visible in the recognized text.", 120),
-  composition: nullableScanText("Active ingredient or composition, without strength.", 160),
-  strength: nullableScanText("Strength including its unit, such as 500mg.", 20),
-  unitsPerPack: Schema.NullOr(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(10_000)),
-  ).annotate({ description: "Units contained in one sealed pack." }),
-  batchNumber: nullableScanText("Batch or lot number.", 64),
-  expiresAt: normalizedScanExpiry,
-  confidence: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
-    description: "Overall extraction confidence from 0 to 1.",
-  }),
-});
-export interface ProductScanResult extends Schema.Schema.Type<typeof ProductScanResult> {}
-
-export const productScanResultJsonSchema = Schema.toJsonSchemaDocument(ProductScanResult, {
-  generateDescriptions: true,
-}).schema;
-
 export const MIN_GLOBAL_SEARCH_QUERY_LENGTH = 2;
 export const MAX_GLOBAL_SEARCH_QUERY_LENGTH = 80;
 export const MAX_GLOBAL_SEARCH_PRODUCTS = 8;
@@ -109,18 +67,23 @@ export interface GlobalProductSearchInput extends Schema.Schema.Type<
   typeof GlobalProductSearchInput
 > {}
 
+const nullableText = (description: string, maximumLength: number) =>
+  Schema.NullOr(
+    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(maximumLength)),
+  ).annotate({ description });
+
 const HttpsUrl = Schema.String.check(Schema.isPattern(/^https:\/\/\S+$/), Schema.isMaxLength(2048));
 
 export const GlobalProduct = Schema.Struct({
   name: Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(120)).annotate({
     description: "Product or brand name, without strength or pack size.",
   }),
-  composition: nullableScanText("Active ingredient or composition, without strength.", 160),
-  strength: nullableScanText("Strength including its unit, such as 500mg.", 20),
+  composition: nullableText("Active ingredient or composition, without strength.", 160),
+  strength: nullableText("Strength including its unit, such as 500mg.", 20),
   unitsPerPack: Schema.NullOr(
     Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(10_000)),
   ).annotate({ description: "Units contained in one sealed pack." }),
-  manufacturer: nullableScanText("Manufacturer or brand owner.", 120),
+  manufacturer: nullableText("Manufacturer or brand owner.", 120),
   imageUrl: Schema.NullOr(HttpsUrl).annotate({ description: "Product image on the source site." }),
   sourceUrl: HttpsUrl.annotate({ description: "Web page the product was found on." }),
   sourceName: Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(120)).annotate({

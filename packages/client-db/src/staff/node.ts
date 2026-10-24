@@ -129,7 +129,7 @@ export const layerNodeStaffGate = (options?: {
       const seal = (secret: Redacted.Redacted<string>) =>
         sealSecret(secret, kdfCost).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
-      const newStaffId = crypto.randomUUIDv4.pipe(
+      const newStaffId = crypto.randomUUIDv4().pipe(
         Effect.orDie,
         Effect.map((id) => StaffId.make(id)),
       );

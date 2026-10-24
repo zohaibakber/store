@@ -1,8 +1,6 @@
 import * as Result from "effect/Result";
 
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
-export const DEFAULT_MOBILE_PROTOCOL = "com.tabaaq.mobile";
-const DEFAULT_MOBILE_DEBUG_PROTOCOL = "com.tabaaq.mobile.debug";
 export const ELECTRON_RENDERER_HOST = "app";
 
 export const fallbackIfBlank = (value: string | undefined, fallback: string) => {
@@ -47,7 +45,6 @@ export const parseTrustedOrigins = (value: string | undefined) =>
 interface AuthSecurityInput {
   readonly baseURL: string;
   readonly electronProtocol: string;
-  readonly mobileProtocol: string;
   readonly trustedOrigins: ReadonlyArray<string>;
 }
 
@@ -64,8 +61,6 @@ interface AuthSecurityConfig {
   readonly baseURL: string;
   readonly electronOrigin: string;
   readonly electronProtocol: string;
-  readonly mobileOrigin: string;
-  readonly mobileProtocol: string;
   readonly secureCookies: boolean;
   readonly trustedOrigins: ReadonlyArray<string>;
   readonly trustedRedirects: ReadonlyArray<string>;
@@ -182,7 +177,6 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     "ELECTRON_PROTOCOL",
     DEFAULT_ELECTRON_PROTOCOL,
   );
-  const mobileProtocol = protocol(input.mobileProtocol, "MOBILE_PROTOCOL", DEFAULT_MOBILE_PROTOCOL);
 
   const baseURL = Result.getOrThrowWith(
     secureWebOrigin(input.baseURL, "Auth base URL"),
@@ -197,20 +191,12 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     rejectedSettings.push({ setting: "AUTH_TRUSTED_ORIGINS", ...origin });
 
   const electronOrigin = `${electronProtocol}://${ELECTRON_RENDERER_HOST}`;
-  const trustedOrigins = [
-    baseURL,
-    ...configured.accepted,
-    electronOrigin,
-    `${mobileProtocol}://`,
-    `${DEFAULT_MOBILE_DEBUG_PROTOCOL}://`,
-  ];
+  const trustedOrigins = [baseURL, ...configured.accepted, electronOrigin];
 
   return {
     baseURL,
     electronOrigin,
     electronProtocol,
-    mobileOrigin: `${mobileProtocol}://`,
-    mobileProtocol,
     secureCookies,
     trustedOrigins: [...new Set(trustedOrigins)],
     trustedRedirects: [...new Set([...trustedOrigins, `${electronProtocol}://`])],

@@ -1,11 +1,4 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
-import type { CatalogCounts } from "@store/web/host/workspace-backup";
-import type {
-  LocalCatalogReport,
-  PublishOffer,
-  PublishOutcome,
-  PublishProgress,
-} from "@store/web/host/workspace-publish";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
@@ -13,6 +6,13 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
+import type { CatalogCounts } from "../src/host/workspace-backup";
+import type {
+  LocalCatalogReport,
+  PublishOffer,
+  PublishOutcome,
+  PublishProgress,
+} from "../src/host/workspace-publish";
 import {
   archiveReplicaFile,
   readPublishMarker,

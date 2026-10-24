@@ -4,6 +4,7 @@ import path from "node:path";
 
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -32,6 +33,10 @@ const MAIN_CHANNELS = [
   "backup:choose-restore",
   "backup:discard-restore",
   "backup:save",
+  "publish:discard",
+  "publish:local-catalog",
+  "publish:offer",
+  "publish:start",
   "replica:close",
   "replica:open",
   "replica:retry",
@@ -97,7 +102,11 @@ const setupIpc = () => {
     },
     userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-test-")),
     workerPath: "/tmp/replica-worker.js",
-    replicaId: "device-1",
+    apiBaseUrl: "https://api.tabaaq.local",
+    accessTokens: {
+      current: async () => Redacted.make("access-1"),
+      subscribe: () => () => undefined,
+    },
     allowedOrigins: () => allowed,
     backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
     sessions: { spawnWorker, spawnReader },
@@ -107,6 +116,7 @@ const setupIpc = () => {
     sender: {
       id,
       isDestroyed: () => false,
+      send: () => undefined,
       on: () => undefined,
       removeListener: () => undefined,
     },
@@ -118,7 +128,14 @@ const setupIpc = () => {
     return listener(event, input as never);
   };
   const open = async (event: ReplicaInvokeEvent) =>
-    decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, undefined));
+    decodeOpened(
+      await invoke(REPLICA_OPEN_CHANNEL, event, {
+        authority: "remote",
+        organizationId: "org-1",
+        userId: "user-1",
+        replicaId: "device-1",
+      }),
+    );
   return { listeners, registration, senderEvent, invoke, open };
 };
 

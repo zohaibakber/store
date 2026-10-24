@@ -1,6 +1,5 @@
 import type {
   BeginGoogleInput,
-  ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   IdentifyInput,
   LoginCommand,
@@ -41,9 +40,6 @@ interface AuthServiceApi {
   }) => Effect.Effect<GoogleCallback, AuthFailure, RuntimeContext>;
   readonly exchangeGoogle: (
     input: ExchangeGoogleInput,
-  ) => Effect.Effect<RefreshedSession, AuthFailure, RuntimeContext>;
-  readonly exchangeGoogleIdToken: (
-    input: ExchangeGoogleIdTokenInput,
   ) => Effect.Effect<RefreshedSession, AuthFailure, RuntimeContext>;
   readonly refresh: (
     presented: PresentedRefresh | undefined,
@@ -110,10 +106,6 @@ export const authServiceLayer = Layer.effect(
       beginGoogle: withInfrastructure("AuthService.beginGoogle", google.beginGoogle),
       completeGoogle: withInfrastructure("AuthService.completeGoogle", google.completeGoogle),
       exchangeGoogle: withInfrastructure("AuthService.exchangeGoogle", google.exchangeGoogle),
-      exchangeGoogleIdToken: withInfrastructure(
-        "AuthService.exchangeGoogleIdToken",
-        google.exchangeGoogleIdToken,
-      ),
       refresh: withInfrastructure("AuthService.refresh", sessions.refresh),
       signOut: withInfrastructure("AuthService.signOut", sessions.signOut),
       roster: withInfrastructure("AuthService.roster", organizations.roster),

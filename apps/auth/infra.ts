@@ -9,7 +9,6 @@ import {
 } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
-  DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   LOCAL_WEB_ORIGINS,
   parseTrustedOrigins,
@@ -131,15 +130,10 @@ export const AuthLive = Auth.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
     );
-    const mobileProtocol = yield* Config.String("MOBILE_PROTOCOL").pipe(
-      Config.withDefault(""),
-      Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
-    );
     const siteHostname = publicHostnameFrom(productionDomain);
     const security = resolveAuthSecurity({
       baseURL: baseUrl,
       electronProtocol,
-      mobileProtocol,
       trustedOrigins: [
         ...parseTrustedOrigins(trustedOriginsRaw),
         ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
@@ -156,15 +150,6 @@ export const AuthLive = Auth.make(
     const ephemeralPepper = yield* Config.Redacted("AUTH_EPHEMERAL_PEPPER");
     const googleClientId = yield* Config.String("GOOGLE_OAUTH_CLIENT_ID");
     const googleClientSecret = yield* Config.Redacted("GOOGLE_OAUTH_CLIENT_SECRET");
-    const googleNativeClientIds = yield* Config.String("GOOGLE_OAUTH_NATIVE_CLIENT_IDS").pipe(
-      Config.withDefault(""),
-      Config.map((value) =>
-        value
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0),
-      ),
-    );
     const tenPerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_TEN_PER_MINUTE", {
       namespaceId: 1003,
       simple: { limit: 10, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
@@ -207,7 +192,6 @@ export const AuthLive = Auth.make(
         clientId: googleClientId,
         clientSecret: googleClientSecret,
         callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
-        nativeClientIds: googleNativeClientIds,
       }).pipe(Layer.provide(FetchHttpClient.layer)),
       hubRevocationLayer(orgHubs, (effect) => execution.waitUntil(effect)),
       authLimiterLayer({

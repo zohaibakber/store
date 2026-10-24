@@ -6,7 +6,6 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./in-process": "./src/in-process.ts",
     "./insights": "./src/insights/handlers.ts",
     "./node-analytics": "./src/analytics/node.ts",
     "./node-backup": "./src/replica/node-backup.ts",

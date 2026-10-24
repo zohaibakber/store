@@ -3,9 +3,8 @@
 ## Scope
 
 Tabaaq owns identity, sessions, organizations, and token refresh. The auth
-Worker issues tokens; the API, the Electron main process, the web renderer, and
-the Android app consume them. An authenticated organization ID scopes the same
-Postgres rows and local replica on every client.
+Worker issues tokens; the API and the Electron app consume them. An
+authenticated organization ID scopes the Postgres rows and the local replica.
 
 ## Usage (caller's view)
 
@@ -77,20 +76,6 @@ const tokens =
   });
 ```
 
-Mobile presents Google's own account picker through the Google Sign-In SDK, so
-there is no redirect to protect and no PKCE. The ID token Google mints is the
-proof; the Worker verifies its signature, issuer, audience, and expiry with
-Google before issuing the same session.
-
-```ts
-const tokens =
-  yield *
-  auth.exchangeGoogleIdToken({
-    idToken,
-    client: nativeClient("Tabaaq Mobile"),
-  });
-```
-
 The API Worker only verifies access tokens. It never calls the auth Worker on a
 request path.
 
@@ -98,10 +83,8 @@ request path.
 const claims = yield * verifyAccessToken(token, { issuer, audience, publicJwk });
 ```
 
-The host owns secure token storage. Electron uses `safeStorage`, Android uses
-Preferences DataStore (app-private, credential-encrypted at rest on FBE), and the
-browser keeps the refresh credential in an HttpOnly
-SameSite cookie. An authenticated workspace snapshot supplies the organization
+Electron main stores the refresh token with `safeStorage`. A browser client
+keeps it in an HttpOnly SameSite cookie. An authenticated workspace snapshot supplies the organization
 scope for Postgres mutations and replica sync. The replica owns each
 client's persisted inventory independently of the auth lifecycle.
 
@@ -175,9 +158,6 @@ interface AuthClient {
     input: BeginGoogleInput,
   ) => Effect.Effect<GoogleAuthorization, AuthClientError>;
   readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthClientError>;
-  readonly exchangeGoogleIdToken: (
-    input: ExchangeGoogleIdTokenInput,
-  ) => Effect.Effect<TokenSet, AuthClientError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthClientError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthClientError>;
 }
@@ -188,17 +168,14 @@ interface AuthService {
   readonly beginGoogle: (input: BeginGoogleInput) => Effect.Effect<GoogleAuthorization, AuthError>;
   readonly completeGoogle: (input: GoogleCallbackInput) => Effect.Effect<GoogleCallback, AuthError>;
   readonly exchangeGoogle: (input: ExchangeGoogleInput) => Effect.Effect<TokenSet, AuthError>;
-  readonly exchangeGoogleIdToken: (
-    input: ExchangeGoogleIdTokenInput,
-  ) => Effect.Effect<TokenSet, AuthError>;
   readonly refresh: (input: RefreshInput) => Effect.Effect<TokenSet, AuthError>;
   readonly signOut: (input: SignOutInput) => Effect.Effect<void, AuthError>;
 }
 ```
 
-`AuthClient` is a deep module. Seven operations hide transport, validation,
-refresh rotation, browser cookie policy, native token handling, provider
-payloads, and error decoding. The Worker-side `AuthService` owns each complete
+`AuthClient` is a deep module. Its operations hide transport, validation,
+refresh rotation, browser cookie policy, provider payloads, and error decoding.
+The Worker-side `AuthService` owns each complete
 authentication transition. HTTP handlers only decode, call one method, and
 encode.
 

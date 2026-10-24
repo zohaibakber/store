@@ -5,7 +5,6 @@ import { isTrustedOrigin, isTrustedRedirect, resolveAuthSecurity } from "../src/
 const secureInput = {
   baseURL: "https://api.example.com",
   electronProtocol: "com.tabaaq.desktop",
-  mobileProtocol: "com.tabaaq.mobile",
   trustedOrigins: ["https://app.example.com"],
 } as const;
 
@@ -53,9 +52,8 @@ describe("matchesTrustedOrigin", () => {
     ["https://api.example.com", "https://example.com", false],
     ["http://example.com", "https://example.com", false],
     ["com.tabaaq.desktop://app", "com.tabaaq.desktop://app", true],
-    ["com.tabaaq.mobile://callback", "com.tabaaq.mobile://", true],
-    ["com.tabaaq.mobile.debug://app", "com.tabaaq.mobile.debug://", true],
-    ["https://evil.example.net", "com.tabaaq.mobile://", false],
+    ["com.tabaaq.desktop://callback", "com.tabaaq.desktop://", true],
+    ["https://evil.example.net", "com.tabaaq.desktop://", false],
     ["https://api.example.com", "*.example.com", true],
     ["https://api.example.com", "*.other.com", false],
   ])("matches %s against %s", (origin, pattern, expected) => {
@@ -71,7 +69,6 @@ describe("isTrustedRedirect", () => {
     ["https://api.example.com/auth/callback", true],
     ["https://evil.example.net/auth/callback", false],
     ["com.tabaaq.desktop://auth/callback", true],
-    ["com.tabaaq.mobile://auth/callback", true],
     ["com.tabaaq.other://auth/callback", false],
     ["not a url", false],
   ])("decides %s", (redirectUri, expected) => {

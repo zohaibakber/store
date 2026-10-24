@@ -2,15 +2,15 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { isWhatsAppUrl } from "@store/services/purchasing";
+import * as Schema from "effect/Schema";
+import type { IpcMain, IpcMainInvokeEvent, WebContentsPrintOptions } from "electron";
+
 import {
   PrintPage,
   type PrintOutcome,
   type SavePdfOutcome,
   type ShareBridge,
-} from "@store/web/host/share";
-import * as Schema from "effect/Schema";
-import type { IpcMain, IpcMainInvokeEvent, WebContentsPrintOptions } from "electron";
-
+} from "../src/host/share";
 import {
   SHARE_COPY_TEXT_CHANNEL,
   SHARE_OPEN_EXTERNAL_CHANNEL,

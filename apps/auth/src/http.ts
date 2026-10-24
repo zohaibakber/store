@@ -233,17 +233,6 @@ const SessionHandlers = HttpApiBuilder.group(
         }),
       )
       .handle(
-        "googleNative",
-        Effect.fn("AuthSessionHandlers.googleNative")(function* ({ payload }) {
-          yield* admitCaller;
-          return yield* issueBrowserTokens(
-            auth.exchangeGoogleIdToken(payload),
-            payload.client,
-            cookies,
-          );
-        }),
-      )
-      .handle(
         "refresh",
         Effect.fn("AuthSessionHandlers.refresh")(function* ({ payload }) {
           const presented = yield* presentedRefreshCredential(payload.refreshToken);

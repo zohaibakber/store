@@ -167,8 +167,6 @@ type ReadsRpcs = RpcGroup.Rpcs<typeof InventoryReads>;
 type StoreRpcs = RpcGroup.Rpcs<typeof InventoryStore>;
 type InsightsRpcs = RpcGroup.Rpcs<typeof InventoryInsights>;
 
-const RUNNING: WorkspaceState = { writer: "running", reader: "running" };
-
 export type InventoryServices = {
   readonly Reads: AtomRpc.AtomRpcClient<Reads, "inventory/Reads", ReadsRpcs>;
   readonly Store: AtomRpc.AtomRpcClient<Store, "inventory/Store", StoreRpcs>;
@@ -231,10 +229,6 @@ export const desktopServices = makeInventoryServices({
 });
 
 export const { Reads, Store, Insights } = desktopServices;
-
-export const inProcessWorkspace: Atom.Atom<Option.Option<WorkspaceState>> = Atom.make(
-  Option.some(RUNNING),
-);
 
 export type StoreClient = Client<StoreRpcs>;
 

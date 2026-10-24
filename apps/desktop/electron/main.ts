@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import { makeSourceLinks } from "@store/web/host/source-links";
 import * as Schema from "effect/Schema";
 import {
   app,
@@ -22,6 +21,7 @@ import {
   shell,
 } from "electron";
 
+import { makeSourceLinks } from "../src/host/source-links";
 import { makeAuthBroker } from "./auth";
 import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";

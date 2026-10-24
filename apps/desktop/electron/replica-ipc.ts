@@ -1,14 +1,14 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import type { DeviceLabel } from "@store/contracts";
-import type { ReplicaWorkspaceBridge } from "@store/web/host/electron";
-import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
-import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import type { MessageChannelMain } from "electron";
 
+import type { ReplicaWorkspaceBridge } from "../src/host/electron";
+import type { WorkspaceBackupBridge } from "../src/host/workspace-backup";
+import type { WorkspacePublishBridge } from "../src/host/workspace-publish";
 import {
   BACKUP_SAVE_CHANNEL,
   PUBLISH_DISCARD_CHANNEL,

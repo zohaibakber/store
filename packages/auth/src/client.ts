@@ -11,12 +11,10 @@ import { AuthHttpApi } from "./http-api";
 import { authHttpErrorStatus, type AuthHttpError } from "./http-errors";
 import {
   BeginGoogleInput,
-  ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   IdentifyInput,
   LoginCommand,
   type BeginGoogleInput as BeginGoogleInputType,
-  type ExchangeGoogleIdTokenInput as ExchangeGoogleIdTokenInputType,
   type ExchangeGoogleInput as ExchangeGoogleInputType,
   type GoogleAuthorization as GoogleAuthorizationType,
   type IdentifyInput as IdentifyInputType,
@@ -33,7 +31,6 @@ const AuthClientOperation = Schema.Literals([
   "authenticate.register",
   "google.begin",
   "google.exchange",
-  "google.native",
 ]);
 type AuthClientOperation = typeof AuthClientOperation.Type;
 
@@ -59,9 +56,6 @@ export interface AuthClientApi {
   ) => Effect.Effect<GoogleAuthorizationType, AuthClientError>;
   readonly exchangeGoogle: (
     input: ExchangeGoogleInputType,
-  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
-  readonly exchangeGoogleIdToken: (
-    input: ExchangeGoogleIdTokenInputType,
   ) => Effect.Effect<IssuedSessionType, AuthClientError>;
 }
 
@@ -184,16 +178,6 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
         input,
         (payload) => session.googleExchange({ payload }),
       ),
-    ),
-    exchangeGoogleIdToken: Effect.fn("AuthClient.exchangeGoogleIdToken")(
-      (input: ExchangeGoogleIdTokenInputType) =>
-        request(
-          "google.native",
-          "The Google sign-in is invalid.",
-          ExchangeGoogleIdTokenInput,
-          input,
-          (payload) => session.googleNative({ payload }),
-        ),
     ),
   });
 });

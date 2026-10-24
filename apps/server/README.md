@@ -11,7 +11,6 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
   `Sec-WebSocket-Protocol` and the socket is held by the organization's
   `OrgHub` Durable Object, which fans out each commit and stores nothing)
 - `POST /api/uploads`
-- `POST /api/product-scans`
 
 The auth Worker issues short-lived ES256 JWTs. The API verifies them locally
 from `Authorization: Bearer` and trusts the organization membership in the
@@ -27,7 +26,7 @@ receipts, and the change log.
 
 Infrastructure is declared in TypeScript with [Alchemy](https://alchemy.run).
 The Worker, its bindings, and the local dev port live in `infra.ts`.
-`alchemy.run.ts` composes the API Worker, auth Worker, website, and inventory
+`alchemy.run.ts` composes the API Worker, auth Worker, and inventory
 Postgres database into one stack.
 
 Alchemy provisions the auth D1 database, Workers AI, rate limiters, the

@@ -2,19 +2,19 @@ import "@sentry/electron/preload";
 import { REPLICA_PORTS_CHANNEL, type ReplicaPortsMessage } from "@store/contracts/replica";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import { ipcRenderer, contextBridge } from "electron";
+
 import type {
   AuthIpcBridge,
   InventoryHttpBridge,
   ReplicaWorkspaceBridge,
   ServerApiIpcBridge,
-} from "@store/web/host/electron";
-import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "@store/web/host/index";
-import { makeReplayChannel } from "@store/web/host/replay-channel";
-import type { ShareBridge } from "@store/web/host/share";
-import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
-import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
-import { ipcRenderer, contextBridge } from "electron";
-
+} from "../src/host/electron";
+import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "../src/host/index";
+import { makeReplayChannel } from "../src/host/replay-channel";
+import type { ShareBridge } from "../src/host/share";
+import type { WorkspaceBackupBridge } from "../src/host/workspace-backup";
+import type { WorkspacePublishBridge } from "../src/host/workspace-publish";
 import {
   AUTH_AUTHENTICATE_CHANNEL,
   AUTH_BEGIN_GOOGLE_CHANNEL,
