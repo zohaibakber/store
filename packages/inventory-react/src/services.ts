@@ -167,8 +167,6 @@ type ReadsRpcs = RpcGroup.Rpcs<typeof InventoryReads>;
 type StoreRpcs = RpcGroup.Rpcs<typeof InventoryStore>;
 type InsightsRpcs = RpcGroup.Rpcs<typeof InventoryInsights>;
 
-const RUNNING: WorkspaceState = { writer: "running", reader: "running" };
-
 export type InventoryServices = {
   readonly Reads: AtomRpc.AtomRpcClient<Reads, "inventory/Reads", ReadsRpcs>;
   readonly Store: AtomRpc.AtomRpcClient<Store, "inventory/Store", StoreRpcs>;
@@ -232,10 +230,6 @@ export const desktopServices = makeInventoryServices({
 
 export const { Reads, Store, Insights } = desktopServices;
 
-export const inProcessWorkspace: Atom.Atom<Option.Option<WorkspaceState>> = Atom.make(
-  Option.some(RUNNING),
-);
-
 export type StoreClient = Client<StoreRpcs>;
 
 const restarting = () => new ReplicaUnavailable({ reason: "restarting" });
@@ -292,6 +286,14 @@ export const makeInventoryLinks = (services: InventoryServices) => {
   const syncHealth = StoreService.runtime
     .atom(Stream.unwrap(StoreService.use((store) => Effect.succeed(store("Health", undefined)))))
     .pipe(Atom.keepAlive);
+
+  const staffState = StoreService.runtime
+    .atom(
+      Stream.unwrap(StoreService.use((store) => Effect.succeed(store("StaffState", undefined)))),
+    )
+    .pipe(Atom.keepAlive);
+
+  const staff = Atom.make((get) => AsyncResult.value(get(staffState)));
 
   const unavailable = Atom.make((get) =>
     unavailableReason(get(services.generation), get(services.workspace)),
@@ -367,6 +369,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
     healthTag,
     unavailable,
     health,
+    staff,
     command,
   };
 };

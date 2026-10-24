@@ -9,11 +9,11 @@ import * as Layer from "effect/Layer";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Scope from "effect/Scope";
 import { SqlClient } from "effect/sql/SqlClient";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { layerInventoryReads } from "../src/reads/handlers";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
-import { layerInventoryStore } from "../src/store/handlers";
+import { layerInventoryStore, LicenceGate, StaffGate } from "../src/store/handlers";
 
 const DAY = 86_400_000;
 
@@ -54,7 +54,14 @@ const openStore = async (replicaId: string) => {
   const client = () =>
     Effect.runPromise(
       RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
-        Effect.provide(Layer.fresh(Layer.provide(layerInventoryStore, services))),
+        Effect.provide(
+          Layer.fresh(
+            Layer.provide(
+              layerInventoryStore,
+              Layer.mergeAll(services, StaffGate.layerDisabled, LicenceGate.layerOpen),
+            ),
+          ),
+        ),
         Scope.provide(scope),
       ),
     );

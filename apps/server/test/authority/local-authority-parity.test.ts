@@ -41,7 +41,7 @@ import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/s
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";

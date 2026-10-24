@@ -49,7 +49,7 @@ import type { ReplicaDb } from "@store/sync/authority";
 import { asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { makeInventoryDevices } from "../../src/inventory/devices";

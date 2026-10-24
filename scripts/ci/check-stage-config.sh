@@ -27,7 +27,6 @@ done
 
 echo "AUTH_TRUSTED_ORIGINS=${AUTH_TRUSTED_ORIGINS:-<unset>}"
 echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
-echo "MOBILE_PROTOCOL=${MOBILE_PROTOCOL:-<unset, default com.tabaaq.mobile>}"
 echo "PRODUCTION_DOMAIN=${PRODUCTION_DOMAIN:-<unset>}"
 echo "VITE_API_URL=${VITE_API_URL:-<unset>}"
 echo "VITE_AUTH_URL=${VITE_AUTH_URL:-<unset>}"

@@ -20,12 +20,14 @@ import {
   type InsightsContext,
   type InsightsSummaryRead,
   type Invoice,
+  type InvoiceStaff,
   type Product,
   type ProductInsight,
   type PurchaseOrder,
   type RestockCursor,
   type RestockFilters,
   type RestockPageRead,
+  type StaffState,
   type StockMovement,
   type Supplier,
   type SupplierId,
@@ -280,7 +282,6 @@ export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Atom<InventorySyncStatus>;
   readonly syncActivity: Atom.Atom<InventorySyncActivity>;
-  readonly syncing: Atom.Atom<boolean>;
   readonly syncTransfer: Atom.Atom<SyncTransfer | undefined>;
   readonly storageFull: Atom.Writable<boolean>;
   readonly syncSnapshot: Read<ReplicaSyncActivity>;
@@ -321,6 +322,8 @@ export type WorkspaceAtoms = {
   readonly invoicePage: (request: InvoiceListRequest) => Read<ReadonlyArray<Invoice>>;
   readonly invoiceCount: (filters: InvoiceListFilters) => Read<number>;
   readonly invoice: (invoiceId: string) => Read<Invoice | undefined>;
+  readonly invoiceStaff: (invoiceId: string) => Read<InvoiceStaff>;
+  readonly staff: Atom.Atom<Option.Option<StaffState>>;
   readonly recentInvoices: (limit: number) => Read<ReadonlyArray<Invoice>>;
   readonly issuedInvoices: (
     invoiceIds: ReadonlyArray<string>,
@@ -545,6 +548,17 @@ export const createWorkspaceAtoms = (
     );
   });
 
+  const NO_INVOICE_STAFF: InvoiceStaff = { soldBy: null, startedBy: null };
+
+  const invoiceStaffAtom = Atom.family((invoiceId: string): Read<InvoiceStaff> => {
+    const [id] = invoiceIdsOf([invoiceId]);
+    if (id === undefined) return Atom.make(AsyncResult.success(NO_INVOICE_STAFF));
+    return Atom.mapResult(
+      Reads.query("InvoiceStaff", { id }, keyed(rowKey("invoice", invoiceId))),
+      (read) => read.staff,
+    );
+  });
+
   const NO_ORDER: PurchaseOrderDetail = { order: undefined, deliveries: [] };
 
   const purchaseOrderDetailAtom = Atom.family((orderId: string): Read<PurchaseOrderDetail> => {
@@ -622,10 +636,6 @@ export const createWorkspaceAtoms = (
     registry,
     syncStatus,
     syncActivity,
-    syncing: Atom.make((get) => {
-      const health = get(links.sync);
-      return health._tag === "running" && health.syncing === true;
-    }),
     syncTransfer: Atom.make((get) => {
       const health = get(links.sync);
       return health._tag === "running" ? health.transfer : undefined;
@@ -761,6 +771,8 @@ export const createWorkspaceAtoms = (
       ),
     ),
     invoice: invoiceAtom,
+    invoiceStaff: invoiceStaffAtom,
+    staff: links.staff,
     recentInvoices: Atom.family((limit: number) =>
       Atom.mapResult(
         Reads.query("InvoiceHistory", { limit: boundedHistoryPage(limit) }, INVOICE_LINES),

@@ -4,8 +4,7 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 
 ## Facts
 
-- **Versions.** `effect@4.0.5` and `alchemy@2.0.0-beta.83`, pinned in the `pnpm-workspace.yaml` catalog.
-- **Service ids** are `@store/<package>/<Name>`.
+- **Versions.** `effect@4.0.6` and `alchemy@2.0.0-beta.83`, pinned in the `pnpm-workspace.yaml` catalog.- **Service ids** are `@store/<package>/<Name>`.
 - **IDs** are branded strings from `packages/contracts/src/ids.ts`.
 - **Timestamps** on the wire and in storage stay epoch milliseconds.
 - **Comments.** Code carries none; the `// SAFETY:` line above a cast is the one exception.
@@ -18,16 +17,14 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 
 The target is one layer graph per process, launched once. This is where each edge is today.
 
-| Host                                                | Edge                                                                                                                                                                                                                              | Read                                                                                    |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Desktop worker threads (replica, reader, analytics) | `RpcServer.layer(...)` chain, `Layer.launch`, `NodeRuntime.runMain`                                                                                                                                                               | `apps/desktop/electron/replica-worker.ts`                                               |
-| Electron main                                       | a broker per concern: one `ManagedRuntime` behind a Promise facade                                                                                                                                                                | `apps/desktop/electron/auth.ts` (`makeAuthBroker`)                                      |
-| Electron IPC handlers                               | `Effect.runPromise` per `ipcMain.handle` call (a departure; open, close, backup and publish only)                                                                                                                                 | `apps/desktop/electron/replica-ipc.ts`                                                  |
-| Renderer to workers                                 | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port                                                                                                                                      | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
-| Web host                                            | one `ManagedRuntime`, every `AppHost` method is `runtime.runPromise(Service.use(...))`                                                                                                                                            | `apps/web/src/web/app-host.ts`                                                          |
-| Mobile host                                         | one `ManagedRuntime` per host that owns the database locks; each session's SQLite layers are built into the workspace scope under that context, and native callbacks enter through a session-scoped `FiberSet.makeRuntimePromise` | `apps/mobile/src/inventory/host.ts`                                                     |
-| Cloudflare Workers (`apps/server`, `apps/auth`)     | Alchemy calls the returned `HttpEffect`; app code never calls `run*`                                                                                                                                                              | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts`                     |
-| React                                               | atoms from `effect/reactivity/Atom` through `@effect/atom-react`                                                                                                                                                                  | `packages/inventory-react/src/atoms.ts`                                                 |
+| Host                                                | Edge                                                                                              | Read                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Desktop worker threads (replica, reader, analytics) | `RpcServer.layer(...)` chain, `Layer.launch`, `NodeRuntime.runMain`                               | `apps/desktop/electron/replica-worker.ts`                                               |
+| Electron main                                       | a broker per concern: one `ManagedRuntime` behind a Promise facade                                | `apps/desktop/electron/auth.ts` (`makeAuthBroker`)                                      |
+| Electron IPC handlers                               | `Effect.runPromise` per `ipcMain.handle` call (a departure; open, close, backup and publish only) | `apps/desktop/electron/replica-ipc.ts`                                                  |
+| Renderer to workers                                 | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port      | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
+| Cloudflare Workers (`apps/server`, `apps/auth`)     | Alchemy calls the returned `HttpEffect`; app code never calls `run*`                              | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts`                     |
+| React                                               | atoms from `effect/reactivity/Atom` through `@effect/atom-react`                                  | `packages/inventory-react/src/atoms.ts`                                                 |
 
 Desktop budget: nothing on the path to first paint waits for auth or the network, and a query result that drives the UI is paged, because the app runs on low-end machines. Measure cold start and command latency before and after a change to an entry point or a layer graph.
 

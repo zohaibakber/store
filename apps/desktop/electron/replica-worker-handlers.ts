@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   NOTICE_BUFFER_CAPACITY,
   offerCoalescing,
@@ -16,6 +17,7 @@ import {
   settleReplicaFile,
   stageReplicaBackup,
 } from "@store/client-db/node-backup";
+import { layerNodeLicenceGate, ShopLicence } from "@store/client-db/node-licence";
 import {
   commitPublish,
   ImportRefused,
@@ -32,7 +34,13 @@ import {
   makePinnedHttp,
   type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
-import { CommandAdmission, layerInventoryStore } from "@store/client-db/store";
+import { layerNodeStaffGate } from "@store/client-db/node-staff";
+import {
+  CommandAdmission,
+  layerInventoryStore,
+  type LicenceGate,
+  StaffGate,
+} from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
@@ -75,7 +83,11 @@ const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this devi
 const fileFailure = (failure: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: failure.message });
 
-type Session = Context.Context<SqliteReplicaServices>;
+const OWNER_ONLY_MESSAGE = "Only the owner can do this. Unlock as the owner and try again.";
+
+const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer));
+
+type Session = Context.Context<SqliteReplicaServices | StaffGate | LicenceGate | ShopLicence>;
 
 type AuthorityLink = {
   readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
@@ -169,9 +181,10 @@ const openSession = (
   session: Layer.Layer<SqliteReplicaServices, unknown>,
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
-  Layer.buildWithScope(Layer.fresh(session), scope).pipe(
-    Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()),
-  );
+  Layer.buildWithScope(
+    Layer.fresh(Layer.provideMerge(Layer.merge(StaffGateLive, layerNodeLicenceGate), session)),
+    scope,
+  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
 
 export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(
@@ -233,6 +246,21 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             }),
           ),
         );
+
+      const ownerOnly = Ref.get(live).pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.void,
+            onSome: (session) =>
+              Context.get(session, StaffGate)
+                .authorize("manageShop")
+                .pipe(
+                  Effect.mapError(() => new ReplicaWorkerFailure({ message: OWNER_ONLY_MESSAGE })),
+                  Effect.asVoid,
+                ),
+          }),
+        ),
+      );
 
       const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp());
 
@@ -316,18 +344,21 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 link.setForeground(Context.get(session, SyncScheduler), visible),
               ),
         BackUp: ({ destinationPath }) =>
-          backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
-            Effect.mapError(
-              (failure) =>
-                new ReplicaWorkerFailure({
-                  message: `The backup could not be written. ${failure.message}`,
-                }),
+          Effect.andThen(
+            ownerOnly,
+            backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
+              Effect.mapError(
+                (failure) =>
+                  new ReplicaWorkerFailure({
+                    message: `The backup could not be written. ${failure.message}`,
+                  }),
+              ),
             ),
           ),
         StageRestore: ({ sourcePath, stagedPath }) => {
           switch (config.authority) {
             case "local":
-              return stageRestore(config, sourcePath, stagedPath);
+              return Effect.andThen(ownerOnly, stageRestore(config, sourcePath, stagedPath));
             case "remote":
               return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
           }
@@ -335,7 +366,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         ReleaseForRestore: ({ stagedPath }) => {
           switch (config.authority) {
             case "local":
-              return releaseForRestore(config, stagedPath);
+              return Effect.andThen(ownerOnly, releaseForRestore(config, stagedPath));
             case "remote":
               return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
           }
@@ -343,16 +374,24 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         PublishSummary: ({ sourcePath }) =>
           readPublishSummary(sourcePath).pipe(Effect.mapError(fileFailure)),
         PublishStage: ({ sourcePath, importId }) =>
-          stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
-            Stream.mapError(fileFailure),
+          Stream.unwrap(
+            Effect.as(
+              ownerOnly,
+              stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
+                Stream.mapError(fileFailure),
+              ),
+            ),
           ),
         PublishCommit: ({ sourcePath, importId, seal }) =>
-          commitPublish({
-            organizationId: config.organizationId,
-            importId,
-            seal,
-            client: link.imports,
-          }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
+          Effect.andThen(
+            ownerOnly,
+            commitPublish({
+              organizationId: config.organizationId,
+              importId,
+              seal,
+              client: link.imports,
+            }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
+          ),
         PublishStatus: ({ importId }) => readPublishStatus({ importId, client: link.imports }),
         Commits: () =>
           Option.match(opened, {
@@ -390,6 +429,12 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
           link
             .setToken(token)
             .pipe(Effect.andThen(token === null ? Effect.void : wake("reconnect"))),
+        SetLicence: ({ state }) =>
+          withSession((session) => Context.get(session, ShopLicence).accept(state)),
+        DatabaseShop: () =>
+          withSession((session) => Context.get(session, ShopLicence).shop).pipe(
+            Effect.map((shop) => ({ shopId: Option.getOrNull(shop) })),
+          ),
       });
     }),
   );

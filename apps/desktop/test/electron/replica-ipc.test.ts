@@ -8,7 +8,7 @@ import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import {
   REPLICA_CLOSE_CHANNEL,
@@ -27,13 +27,6 @@ import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/repl
 const allowed = ["https://app.tabaaq.local"];
 
 const untrusted = "Rejected IPC from an untrusted renderer.";
-
-const openInput = {
-  authority: "remote",
-  organizationId: "org-1",
-  userId: "user-1",
-  replicaId: "device-1",
-};
 
 const MAIN_CHANNELS = [
   "backup:apply-restore",
@@ -67,6 +60,8 @@ const setupIpc = () => {
     Commits: () => Stream.never,
     SyncHealth: () => Stream.never,
     SetAccessToken: () => Effect.void,
+    SetLicence: () => Effect.void,
+    DatabaseShop: () => Effect.succeed({ shopId: null }),
   });
   const readerHandlers = ReplicaReaderRpcs.toLayer({
     Engine: () => Effect.succeed("sqlite" as const),
@@ -133,7 +128,14 @@ const setupIpc = () => {
     return listener(event, input as never);
   };
   const open = async (event: ReplicaInvokeEvent) =>
-    decodeOpened(await invoke(REPLICA_OPEN_CHANNEL, event, openInput));
+    decodeOpened(
+      await invoke(REPLICA_OPEN_CHANNEL, event, {
+        authority: "remote",
+        organizationId: "org-1",
+        userId: "user-1",
+        replicaId: "device-1",
+      }),
+    );
   return { listeners, registration, senderEvent, invoke, open };
 };
 

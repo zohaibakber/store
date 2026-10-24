@@ -143,9 +143,17 @@ export const harness = (
   const d1 = authD1();
   const deliversOtp = options.deliversOtp ?? false;
   const revocations: Array<HubRevocationCall> = [];
+  let googleIdToken = "";
   const googleHttp = HttpClient.make((request) =>
     Effect.succeed(
-      HttpClientResponse.fromWeb(request, Response.json({ keys: [googleSigner.publicJwk] })),
+      HttpClientResponse.fromWeb(
+        request,
+        Response.json(
+          request.url === "https://oauth2.googleapis.com/token"
+            ? { id_token: googleIdToken }
+            : { keys: [googleSigner.publicJwk] },
+        ),
+      ),
     ),
   );
 
@@ -195,7 +203,14 @@ export const harness = (
     Logger.layer([]),
   );
 
-  return { d1, revocations, layer };
+  return {
+    d1,
+    revocations,
+    layer,
+    setGoogleIdToken: (token: string) => {
+      googleIdToken = token;
+    },
+  };
 };
 
 export type Harness = ReturnType<typeof harness>;

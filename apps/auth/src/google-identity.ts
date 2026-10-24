@@ -1,7 +1,6 @@
 import {
   type AuthorizationCode,
   type BeginGoogleInput,
-  type ExchangeGoogleIdTokenInput,
   type ExchangeGoogleInput,
 } from "@store/auth";
 import { isTrustedRedirect } from "@store/auth/security";
@@ -14,7 +13,6 @@ import { AUTHORIZATION_TTL_MS, AuthCrypto, OAUTH_STATE_TTL_MS } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
 import { AuthRefusal } from "./failures";
 import { GoogleOAuth, type GoogleProfile } from "./google";
-import { AuthLimiter } from "./limits";
 import { AuthRepository, type UserRecord } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
@@ -32,7 +30,6 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       const ephemeral = yield* EphemeralStore;
       const google = yield* GoogleOAuth;
       const sessions = yield* Sessions;
-      const limiter = yield* AuthLimiter;
       const crypto = yield* AuthCrypto;
       const { trustedRedirects } = yield* AuthSettings;
 
@@ -141,31 +138,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         return yield* sessions.issueSession(user, grant.client, `oauth-${input.code}`);
       });
 
-      const exchangeGoogleIdToken = Effect.fn("Auth.Google.exchangeGoogleIdToken")(function* (
-        input: ExchangeGoogleIdTokenInput,
-      ) {
-        const profile = yield* google.verifyIdToken(input.idToken).pipe(
-          Effect.tapErrorTag("Auth.GoogleOAuthError", (failure) =>
-            Effect.logError("auth.infrastructure").pipe(
-              Effect.annotateLogs({
-                tag: failure._tag,
-                operation: failure.operation,
-                message: failure.message,
-              }),
-            ),
-          ),
-          Effect.mapError(() => new AuthRefusal({ reason: "InvalidGoogleIdentity" })),
-        );
-        yield* limiter.admit(
-          "tenPerMinute",
-          `google-identity:${profile.providerAccountId}`,
-          "request",
-        );
-        const user = yield* linkGoogleUser(profile);
-        return yield* sessions.issueSession(user, input.client);
-      });
-
-      return { beginGoogle, completeGoogle, exchangeGoogle, exchangeGoogleIdToken };
+      return { beginGoogle, completeGoogle, exchangeGoogle };
     }),
   },
 ) {

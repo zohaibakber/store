@@ -19,23 +19,28 @@ import { CommandAdmission } from "./admission";
 import { makeCommandHandlers } from "./commands";
 import { coalescedNotices, openingNotice } from "./commit-notices";
 import { readFailure } from "./failures";
+import { LicenceGate } from "./licence-gate";
+import { StaffGate } from "./staff-gate";
 
 export const layerInventoryStore: Layer.Layer<
   Rpc.ToHandler<RpcGroup.Rpcs<typeof InventoryStore>>,
   never,
-  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica
+  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica | StaffGate | LicenceGate
 > = InventoryStore.toLayer(
   Effect.gen(function* () {
     const admission = yield* CommandAdmission;
     const store = yield* ReplicaStore;
     const scheduler = yield* SyncScheduler;
     const replica = yield* SqliteReplica;
+    const gate = yield* StaffGate;
+    const licence = yield* LicenceGate;
     const wakes = yield* Ref.make(0);
 
     const stamp = Effect.mapError(store.readStamp(), readFailure);
 
     return InventoryStore.of({
-      ...makeCommandHandlers({ admission, store, scheduler, replica }),
+      ...makeCommandHandlers({ admission, store, scheduler, replica, gate, licence }),
+      ...gate.handlers,
       Commits: ({ after }) =>
         Stream.unwrap(
           Effect.gen(function* () {
@@ -67,3 +72,5 @@ export const layerInventoryStore: Layer.Layer<
 );
 
 export { CommandAdmission } from "./admission";
+export { LicenceGate } from "./licence-gate";
+export { StaffGate, type StaffHandlers } from "./staff-gate";

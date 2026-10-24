@@ -22,6 +22,6 @@
     "@effect/vitest": "catalog:",
     "@types/node": "^26.6.5",
     "typescript": "catalog:",
-    "vitest": "5.0.5"
+    "vitest": "catalog:"
   }
 }

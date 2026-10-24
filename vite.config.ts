@@ -29,7 +29,7 @@ export default defineConfig({
     sortImports: true,
     sortTailwindcss: {
       functions: ["clsx", "cn", "cva", "twMerge"],
-      stylesheet: "./apps/web/src/styles.css",
+      stylesheet: "./apps/desktop/src/styles.css",
     },
   },
   staged: {
@@ -81,10 +81,8 @@ export default defineConfig({
           "apps/server/src/routes/sync.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
           "packages/inventory-react/**/*.{ts,tsx}",
-          "apps/web/src/lib/inventory/{provider,sync-status}.{ts,tsx}",
-          "apps/mobile/src/**/*.{ts,tsx}",
-          "apps/mobile/test/**/*.ts",
-          "apps/web/src/start-electron.tsx",
+          "apps/desktop/src/lib/inventory/{provider,sync-status}.{ts,tsx}",
+          "apps/desktop/src/start-electron.tsx",
           "apps/desktop/electron/inventory-http.ts",
           "apps/desktop/electron/ipc-channels.ts",
         ],
@@ -93,7 +91,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["apps/web/src/**/*.{ts,tsx}"],
+        files: ["apps/desktop/src/**/*.{ts,tsx}"],
         plugins: ["react"],
         rules: {
           "react/no-children-prop": "off",

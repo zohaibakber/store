@@ -26,7 +26,7 @@ import type { ReplicaDb } from "@store/sync/authority";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
 import { makeInventorySnapshots } from "../../src/inventory/snapshots";

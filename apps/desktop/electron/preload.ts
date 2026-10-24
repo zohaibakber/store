@@ -2,19 +2,19 @@ import "@sentry/electron/preload";
 import { REPLICA_PORTS_CHANNEL, type ReplicaPortsMessage } from "@store/contracts/replica";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import { ipcRenderer, contextBridge } from "electron";
+
 import type {
   AuthIpcBridge,
   InventoryHttpBridge,
   ReplicaWorkspaceBridge,
   ServerApiIpcBridge,
-} from "@store/web/host/electron";
-import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "@store/web/host/index";
-import { makeReplayChannel } from "@store/web/host/replay-channel";
-import type { ShareBridge } from "@store/web/host/share";
-import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
-import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
-import { ipcRenderer, contextBridge } from "electron";
-
+} from "../src/host/electron";
+import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "../src/host/index";
+import { makeReplayChannel } from "../src/host/replay-channel";
+import type { ShareBridge } from "../src/host/share";
+import type { WorkspaceBackupBridge } from "../src/host/workspace-backup";
+import type { WorkspacePublishBridge } from "../src/host/workspace-publish";
 import {
   AUTH_AUTHENTICATE_CHANNEL,
   AUTH_BEGIN_GOOGLE_CHANNEL,
@@ -41,8 +41,6 @@ import {
   RESTORE_APPLY_CHANNEL,
   RESTORE_CHOOSE_CHANNEL,
   RESTORE_DISCARD_CHANNEL,
-  SERVER_DEVICE_COMMAND_CHANNEL,
-  SERVER_DEVICES_CHANNEL,
   SERVER_GLOBAL_SEARCH_CHANNEL,
   SERVER_UPLOADS_CHANNEL,
   SHARE_COPY_TEXT_CHANNEL,
@@ -172,8 +170,6 @@ contextBridge.exposeInMainWorld("auth", auth);
 const serverApi: ServerApiIpcBridge = {
   analyseInvoices: (input) => ipcRenderer.invoke(SERVER_UPLOADS_CHANNEL, input),
   searchGlobalProducts: (input) => ipcRenderer.invoke(SERVER_GLOBAL_SEARCH_CHANNEL, input),
-  organizationDevices: () => ipcRenderer.invoke(SERVER_DEVICES_CHANNEL),
-  commandDevice: (command) => ipcRenderer.invoke(SERVER_DEVICE_COMMAND_CHANNEL, command),
 };
 
 contextBridge.exposeInMainWorld("serverApi", serverApi);

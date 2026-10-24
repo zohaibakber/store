@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { AUTH_JWT_KEY_ID, issueAccessToken, makeAccessTokenVerifier } from "../src/jwt";
 import { EmailAddress, OrganizationId, SessionId, UserId } from "../src/model";

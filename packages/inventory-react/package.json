@@ -17,8 +17,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "typescript": "catalog:",
-    "vitest": "5.0.5"
+    "typescript": "catalog:"
   },
   "peerDependencies": {
     "react": "*"

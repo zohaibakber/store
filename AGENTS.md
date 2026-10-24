@@ -10,6 +10,10 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 `vp <name>` runs a built-in command. `vp run <name>` runs a `package.json` script or a `vite.config.ts` task. Scripts cannot overwrite built-ins, so `vp dev` and `vp run dev` may do different things. Check `package.json` and `vite.config.ts` first, and run `vp run <name>` when the project defines a script or task with that name.
 
+## Running Scripts
+
+Run TypeScript and JavaScript files with `vpx <file>`, for example `vpx ./scripts/seed.ts --dry-run`. It handles enums, decorators, JSX, and tsconfig `paths`, so do not add `tsx` or `ts-node` to run scripts. `vpx --watch <file>` reruns the file when a file it uses changes, in place of `tsx watch`. `vp node <file>` runs plain Node.js.
+
 ## Tool Versions
 
 Run `vp toolchain` to show versions and relationships in the active Vite+
@@ -34,8 +38,8 @@ invariant that nothing else covers. Don't add a test file per fix.
 
 ## Typography
 
-These rules apply to all UI work in `apps/web`. The tokens live in
-`apps/web/src/styles.css` (Tailwind v4 `@theme` block).
+These rules apply to all UI work in `apps/desktop`. The tokens live in
+`apps/desktop/src/styles.css` (Tailwind v4 `@theme` block).
 
 Conventions, not hard clamps: `@theme` sets the font family, but nothing blocks
 other weights or sizes. Follow the rules anyway.
@@ -79,8 +83,8 @@ say so in the PR.
   no `deletedAt`.
 - The shared entrypoint of `packages/sync` (`@store/sync`) must stay native-free.
   `packages/sync/test/browser-boundary.test.ts` enforces it, because the renderer
-  and mobile import that entry; SQLite belongs in `@store/sync/sqlite`. No
-  browser replica exists: outside Electron the renderer has no replica.
+  imports that entry; SQLite belongs in `@store/sync/sqlite`. No
+  browser replica exists.
 - Command state never crosses process boundaries as SQL or query IR. The
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
@@ -93,24 +97,17 @@ say so in the PR.
 
 ## UI components
 
-`apps/web/src/components/ui` is a registry managed by `components.json`, not
+`apps/desktop/src/components/ui` is a registry managed by `components.json`, not
 application code. Primitives there may have no importer yet. That is inventory,
 not dead code, so don't delete them for being unused.
 
 Before composing these primitives, read `.agents/skills/coss/SKILL.md`. The skill
 is portable; what is local to this repo is this section, Typography, and
-`apps/web/components.json`, whose directory is where `shadcn` commands run.
+`apps/desktop/components.json`, whose directory is where `shadcn` commands run.
 
-After changing UI code in `apps/web`, run `vp run lint:design`. Application code
+After changing UI code in `apps/desktop`, run `vp run lint:design`. Application code
 must pass the design-system rules with zero errors; registry-owned COSS primitives
-under `apps/web/src/components/ui` stay governed by their upstream definitions.
-
-## Mobile UI
-
-Before writing or reviewing code under `apps/mobile`, read
-`.agents/skills/expo/SKILL.md`, then `docs/expo-profile.md`. The skill is
-portable; the profile holds what is local: Android only, light theme, the
-wrappers in `src/ui` and the tokens.
+under `apps/desktop/src/components/ui` stay governed by their upstream definitions.
 
 ## Cursor Cloud instructions
 
@@ -126,9 +123,8 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   without its `dist/` binary, or `vp dev` for the desktop errors that Electron
   is missing, run `node apps/desktop/node_modules/electron/install.js`.
 - **Desktop app.** `vp run dev` from the repo root starts the API/auth workers
-  and `apps/desktop` in parallel. Its `vp dev` command serves `apps/web` as the
-  renderer on `:5174`, builds main/preload, and launches Electron. `vp run dev:web`
-  serves `apps/web` in the browser instead. Unpackaged/dev keeps an
+  and `apps/desktop` in parallel. Its `vp dev` command serves the renderer
+  on `:5174`, builds main/preload, and launches Electron. Unpackaged/dev keeps an
   escape hatch: `ELECTRON_DISABLE_SANDBOX=1` (the SUID `chrome-sandbox` helper
   can't run) and `DISPLAY=:1` in the headless VM. Production packages flip
   Electron Fuses in electron-builder's `afterPack` hook and keep

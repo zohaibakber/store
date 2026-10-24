@@ -11,8 +11,6 @@ import {
   InvoiceExtraction,
   MAX_INVOICE_UPLOAD_BYTES,
   MAX_INVOICE_UPLOAD_FILES,
-  ProductScanInput,
-  ProductScanResult,
 } from "./schema";
 
 const statusByTag = {
@@ -66,14 +64,6 @@ export const uploadsGroup = HttpApiGroup.make("uploads").add(
   }),
 );
 
-export const productScansGroup = HttpApiGroup.make("productScans").add(
-  HttpApiEndpoint.post("parse", "/api/product-scans", {
-    payload: ProductScanInput,
-    success: ProductScanResult,
-    error: [BadRequest, PayloadTooLarge, TooManyRequests, BadGateway],
-  }),
-);
-
 export const globalSearchGroup = HttpApiGroup.make("globalSearch").add(
   HttpApiEndpoint.post("search", "/api/global-search", {
     payload: GlobalProductSearchInput,
@@ -82,8 +72,4 @@ export const globalSearchGroup = HttpApiGroup.make("globalSearch").add(
   }),
 );
 
-export const ServerHttpApi = HttpApi.make("ServerHttpApi").add(
-  uploadsGroup,
-  productScansGroup,
-  globalSearchGroup,
-);
+export const ServerHttpApi = HttpApi.make("ServerHttpApi").add(uploadsGroup, globalSearchGroup);

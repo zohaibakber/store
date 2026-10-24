@@ -10,5 +10,6 @@ export * from "./reads/products";
 export * from "./reads/purchasing";
 export * from "./reads/search";
 export * from "./reads/shared";
+export * from "./staff";
 export * from "./store";
 export * from "./sync-status";

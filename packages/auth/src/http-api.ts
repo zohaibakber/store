@@ -9,7 +9,6 @@ import { AuthBadRequest, AuthHttpErrors } from "./http-errors";
 import { AuthJwks } from "./jwt";
 import {
   BeginGoogleInput,
-  ExchangeGoogleIdTokenInput,
   ExchangeGoogleInput,
   GoogleAuthorization,
   IdentifyInput,
@@ -77,13 +76,6 @@ const authSessionGroup = HttpApiGroup.make("session")
   .add(
     HttpApiEndpoint.post("googleExchange", "/v1/oauth/google/exchange", {
       payload: ExchangeGoogleInput,
-      success: IssuedSession,
-      error: AuthHttpErrors,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("googleNative", "/v1/oauth/google/native", {
-      payload: ExchangeGoogleIdTokenInput,
       success: IssuedSession,
       error: AuthHttpErrors,
     }),

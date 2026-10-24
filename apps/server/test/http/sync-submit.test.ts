@@ -1,7 +1,7 @@
 import { OrgCommitSequence } from "@store/contracts";
 import { LAST_UNIT_ORGANIZATION_ID, lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { seedLastUnit } from "../authority/fixtures";

@@ -1,6 +1,6 @@
-import type { InventoryHttpConfig } from "@store/web/host/electron";
 import type { IpcMain } from "electron";
 
+import type { InventoryHttpConfig } from "../src/host/electron";
 import { INVENTORY_HTTP_CONFIG_CHANNEL } from "./ipc-channels";
 import { trustedIpcListener } from "./ipc-sender";
 

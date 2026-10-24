@@ -66,11 +66,6 @@ const REFUSALS = {
     "INVALID_GOOGLE_IDENTITY",
     "Google sign-in could not be verified.",
   ),
-  InvalidGoogleIdentity: wire(
-    "Unauthenticated",
-    "INVALID_GOOGLE_IDENTITY",
-    "Google sign-in could not be verified.",
-  ),
   InvalidAuthorizationCode: wire(
     "Unauthenticated",
     "INVALID_AUTHORIZATION_CODE",

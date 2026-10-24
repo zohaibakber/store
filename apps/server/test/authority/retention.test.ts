@@ -25,7 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { makeAuthorityEngine } from "../../src/authority/engine";
 import { makeAuthorityMaintenance, type MaintenancePolicy } from "../../src/authority/maintenance";

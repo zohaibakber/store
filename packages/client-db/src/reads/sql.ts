@@ -15,11 +15,14 @@ import {
 } from "@store/contracts/replica";
 import {
   categories,
+  commandStaff,
   invoiceItems,
   invoices,
   products,
   purchaseOrderItems,
   purchaseOrders,
+  staff,
+  staffEvents,
   stockMovements,
   suppliers,
 } from "@store/db/replica.schema";
@@ -336,3 +339,20 @@ export const issuedInvoicesOf = (invoiceIds: ReadonlyArray<string>) =>
     .from(invoices)
     .where(scopedTo("invoices", among(invoices.id, invoiceIds)))
     .orderBy(asc(invoices.id));
+
+export const invoiceSellerOf = (invoiceId: string) =>
+  replicaQueryBuilder
+    .select({ name: staff.name })
+    .from(commandStaff)
+    .innerJoin(staff, eq(staff.id, commandStaff.staffId))
+    .where(eq(commandStaff.operationId, invoiceId))
+    .limit(1);
+
+export const invoiceStarterOf = (invoiceId: string) =>
+  replicaQueryBuilder
+    .select({ name: staff.name })
+    .from(staffEvents)
+    .innerJoin(staff, eq(staff.id, staffEvents.fromStaffId))
+    .where(and(eq(staffEvents.kind, "draftHandedOver"), eq(staffEvents.subjectId, invoiceId)))
+    .orderBy(asc(staffEvents.seq))
+    .limit(1);

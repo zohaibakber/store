@@ -6,12 +6,13 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
-    "./in-process": "./src/in-process.ts",
     "./insights": "./src/insights/handlers.ts",
     "./node-analytics": "./src/analytics/node.ts",
     "./node-backup": "./src/replica/node-backup.ts",
+    "./node-licence": "./src/licence/node.ts",
     "./node-publish": "./src/replica/node-publish.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
+    "./node-staff": "./src/staff/node.ts",
     "./reads": "./src/reads/handlers.ts",
     "./sql-client": "./src/replica/sql-client.ts",
     "./store": "./src/store/handlers.ts",
@@ -26,7 +27,6 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:",
-    "vitest": "5.0.5"
+    "typescript": "catalog:"
   }
 }

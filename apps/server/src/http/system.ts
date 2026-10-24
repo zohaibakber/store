@@ -11,13 +11,7 @@ export const SystemHandlers = HttpApiBuilder.group(StoreApi, "system", (handlers
     .handle("landing", () =>
       Effect.succeed({
         service: "Store Invoice API" as const,
-        endpoints: [
-          "/api/health",
-          "/api/auth/*",
-          "/api/sync/*",
-          "/api/uploads",
-          "/api/product-scans",
-        ],
+        endpoints: ["/api/health", "/api/auth/*", "/api/sync/*", "/api/uploads"],
       }),
     )
     .handle("status", () => Effect.succeed({ service: "Store Invoice API" as const, ok: true }))

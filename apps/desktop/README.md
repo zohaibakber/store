@@ -1,14 +1,9 @@
 # Desktop app
 
-The Electron shell for Tabaaq. This workspace owns the main process, the
-preload bridge, the replica and analytics workers, the updater, their tests,
-and packaging. It has no UI of its own: the renderer is the web app in
-`apps/web`, built and served from here with the shared Vite fragment
-`@store/web/vite`.
-
-The dependency runs one way. `apps/web` defines the host contract in
-`src/host`; this workspace implements it and imports only `@store/web/host/*`
-and `@store/web/vite`. The web app never imports from here.
+The Electron app for Tabaaq. This workspace owns the renderer in `src`, the
+host contract in `src/host`, the main process, the preload bridge, the replica
+and analytics workers, the updater, their tests, and packaging. Vite config
+for the renderer lives in `vite.app.ts`.
 
 The renderer uses hash history. Auth, invoice analysis, native integrations,
 and authenticated sync HTTP go through preload IPC. Live inventory reads the
@@ -22,7 +17,7 @@ path or a table. Sales and catalog edits are the same two sync commands
 and settle when the authority's decision arrives through the pull.
 
 Channel names live in `electron/ipc-channels.ts`. The bridge types they carry
-come from `@store/web/host/*`.
+come from `src/host`.
 
 Sentry reports errors only, and only when `VITE_SENTRY_DSN` is set. Each
 process uses the SDK made for it. The main process runs `@sentry/electron/main`.
@@ -44,7 +39,7 @@ vp run dev
 ```
 
 `vp run` starts the server and desktop workspace in parallel. The desktop workspace's plain
-`vp dev` command serves the web app on `127.0.0.1:5174`, builds main and
+`vp dev` command serves the renderer on `127.0.0.1:5174`, builds main and
 preload, launches Electron, and reloads the relevant process when its source
 changes. Env files in this directory apply to the desktop dev server and build.
 
@@ -54,15 +49,13 @@ To run only the desktop workspace against an already-running backend:
 vp run @store/desktop#dev
 ```
 
-For the browser host, see `apps/web/README.md`.
-
 ## Build
 
 ```sh
 vp run build:desktop
 ```
 
-The renderer is built from `apps/web` into `dist`, main, preload, and the
+The renderer is built into `dist`, main, preload, and the
 workers into `dist-electron`, and electron-builder packages both.
 
 ## Releases

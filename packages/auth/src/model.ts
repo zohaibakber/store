@@ -186,19 +186,6 @@ export const ExchangeGoogleInput = Schema.Struct({
 });
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}
 
-export const GoogleIdToken = NonEmptyString.check(Schema.isMaxLength(8192)).pipe(
-  Schema.brand("GoogleIdToken"),
-);
-export type GoogleIdToken = typeof GoogleIdToken.Type;
-
-export const ExchangeGoogleIdTokenInput = Schema.Struct({
-  idToken: GoogleIdToken,
-  client: AuthClientKind,
-});
-export interface ExchangeGoogleIdTokenInput extends Schema.Schema.Type<
-  typeof ExchangeGoogleIdTokenInput
-> {}
-
 export const RefreshInput = Schema.Struct({
   refreshToken: Schema.optionalKey(RefreshToken),
 });

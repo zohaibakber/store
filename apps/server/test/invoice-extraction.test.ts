@@ -1,6 +1,6 @@
 import { extractInvoice, type InvoiceAiClient } from "@store/services";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 const csv = (name: string, product: string) =>
   new File([`name,packs,units per pack\n${product},2,10\n`], name, { type: "text/csv" });

@@ -1,12 +1,12 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 import path from "node:path";
 
-import { webAppConfig, webRoot } from "@store/web/vite";
 import type { ElectronOptions } from "vite-plugin-electron";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
 import packageJson from "./package.json";
+import { rendererAppConfig, rendererRoot } from "./vite.app";
 
 const desktopRoot = import.meta.dirname;
 const electronSource = path.join(desktopRoot, "electron");
@@ -19,7 +19,7 @@ const electronDefines = {
   "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(process.env["VITE_SENTRY_DSN"] ?? ""),
 };
 
-const app = webAppConfig({ version: packageJson.version, signedInApp: "eager" });
+const app = rendererAppConfig({ version: packageJson.version });
 
 type ElectronStart = NonNullable<ElectronOptions["onstart"]>;
 
@@ -31,7 +31,7 @@ const reloadRenderer: ElectronStart = (start) =>
   process.electronApp ? start.reload() : startElectron(start);
 
 export default defineConfig(({ command }) => ({
-  root: webRoot,
+  root: rendererRoot,
   envDir: desktopRoot,
   define: app.define,
   resolve: app.resolve,
@@ -46,14 +46,20 @@ export default defineConfig(({ command }) => ({
     "*": "vp check --fix",
   },
   fmt: {
-    ignorePatterns: ["dist/**", "dist-electron/**"],
+    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
   },
   lint: {
     env: { browser: true, node: true, es2020: true },
-    ignorePatterns: ["dist/**", "dist-electron/**"],
-    plugins: ["eslint", "typescript", "unicorn", "oxc"],
+    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+    plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
+      "react/exhaustive-deps": "warn",
+      "react/only-export-components": [
+        "warn",
+        { allowConstantExport: true, allowExportNames: ["Route"] },
+      ],
+      "react/rules-of-hooks": "error",
       "vite-plus/prefer-vite-plus-imports": "error",
     },
     options: { maxWarnings: 0 },

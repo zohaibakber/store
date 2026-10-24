@@ -3,10 +3,12 @@ import {
   DeviceLabel,
   ImportId,
   ImportPartNumber,
+  LicenceState,
   LOCAL_ORGANIZATION_ID,
   LOCAL_USER_ID,
   PartitionDigest,
   PositiveInt,
+  ShopId,
 } from "@store/contracts";
 import { Stamp, SyncHealth } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
@@ -191,4 +193,9 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),
   Rpc.make("SyncHealth", { success: ReplicaSyncHealth, stream: true }),
   Rpc.make("SetAccessToken", { payload: { token: Schema.NullOr(AccessToken) } }),
+  Rpc.make("SetLicence", { payload: { state: LicenceState }, error: ReplicaWorkerFailure }),
+  Rpc.make("DatabaseShop", {
+    success: Schema.Struct({ shopId: Schema.NullOr(ShopId) }),
+    error: ReplicaWorkerFailure,
+  }),
 );

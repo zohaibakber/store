@@ -1,15 +1,10 @@
-import {
-  EmailAddress,
-  GoogleIdToken,
-  IdentifyInput,
-  OtpCode,
-  type OtpChallengeId,
-} from "@store/auth";
+import { EmailAddress, IdentifyInput, OtpCode, type OtpChallengeId } from "@store/auth";
 import { RateLimitError } from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
@@ -33,13 +28,41 @@ import {
   type IdTokenSigner,
 } from "./harness";
 
+const VERIFIER = "a".repeat(64);
+const pkceChallenge = (verifier: string) =>
+  Effect.promise(async () =>
+    Base64Url.encode(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))),
+    ),
+  );
+
 const googleSignIn =
-  (profile: { sub: string; email: string }, signer?: IdTokenSigner) => (auth: Api) =>
-    Effect.promise(() => mintIdToken(googleClaims(profile), signer)).pipe(
-      Effect.flatMap((idToken) =>
-        auth.exchangeGoogleIdToken({ idToken: GoogleIdToken.make(idToken), client: browser }),
-      ),
-    );
+  (instance: Harness, profile: { sub: string; email: string }, signer?: IdTokenSigner) =>
+  (auth: Api) =>
+    Effect.gen(function* () {
+      const challenge = yield* pkceChallenge(VERIFIER);
+      const authorization = yield* auth.beginGoogle({
+        redirectUri: "https://app.example.com/callback",
+        codeChallenge: challenge,
+        client: browser,
+      });
+      const parameters = new URL(authorization.href).searchParams;
+      const state = parameters.get("state");
+      const nonce = parameters.get("nonce");
+      if (!state || !nonce) {
+        return yield* Effect.die(new Error("Google did not return a sign-in state."));
+      }
+      const idToken = yield* Effect.promise(() =>
+        mintIdToken({ ...googleClaims(profile), nonce }, signer),
+      );
+      instance.setGoogleIdToken(idToken);
+      const callback = yield* auth.completeGoogle({ code: "google-authorization-code", state });
+      return yield* auth.exchangeGoogle({
+        code: callback.code,
+        codeVerifier: VERIFIER,
+        client: browser,
+      });
+    });
 
 const identify = (instance: Harness, email: string) =>
   run(instance, (auth) => auth.identify(IdentifyInput.make({ email: EmailAddress.make(email) })));
@@ -59,7 +82,7 @@ describe("one-time codes", () => {
 
   it("signs in with a delivered code and makes nothing redeemable while delivery is disabled", async () => {
     const delivering = harness({ deliversOtp: true });
-    await run(delivering, googleSignIn(googleOnly));
+    await run(delivering, googleSignIn(delivering, googleOnly));
     const delivered = await identify(delivering, googleOnly.email);
     if (delivered._tag !== "Otp" || !delivered.developmentCode) throw new Error("expected a code");
     expect(
@@ -71,7 +94,7 @@ describe("one-time codes", () => {
     expect(signedIn.workspace.user.email).toBe(googleOnly.email);
 
     const disabled = harness({ deliversOtp: false });
-    await run(disabled, googleSignIn(googleOnly));
+    await run(disabled, googleSignIn(disabled, googleOnly));
     const issuedBefore = sessions(disabled);
     const route = await identify(disabled, googleOnly.email);
     expect(route).toEqual({
@@ -164,12 +187,12 @@ describe("Google sign-in", () => {
   it("refuses an identity token Google did not mint for us", async () => {
     const instance = harness();
     const profile = { sub: "google-sub-1", email: "victim@example.com" };
-    const failure = await failing(instance, googleSignIn(profile, forgingSigner));
-    expect(failure).toMatchObject({ status: 401, code: "INVALID_GOOGLE_IDENTITY" });
+    const failure = await failing(instance, googleSignIn(instance, profile, forgingSigner));
+    expect(failure).toMatchObject({ status: 400, code: "INVALID_GOOGLE_IDENTITY" });
     expect(sessions(instance)).toBe(0);
     expect(count(instance, "SELECT count(*) AS total FROM auth_user")).toBe(0);
 
-    await run(instance, googleSignIn(profile));
+    await run(instance, googleSignIn(instance, profile));
     expect(sessions(instance)).toBe(1);
   });
 
@@ -191,7 +214,10 @@ describe("Google sign-in", () => {
     await signUp(instance, "victim@example.com");
     expect(sessions(instance, "revokedAt IS NULL")).toBe(1);
 
-    await run(instance, googleSignIn({ sub: "google-sub-new", email: "victim@example.com" }));
+    await run(
+      instance,
+      googleSignIn(instance, { sub: "google-sub-new", email: "victim@example.com" }),
+    );
 
     expect(
       count(
@@ -211,7 +237,7 @@ describe("Google sign-in", () => {
 
     const failure = await failing(
       instance,
-      googleSignIn({ sub: "google-sub-new", email: "owner@example.com" }),
+      googleSignIn(instance, { sub: "google-sub-new", email: "owner@example.com" }),
     );
 
     expect(failure).toMatchObject({ status: 409, code: "PASSWORD_ACCOUNT_EXISTS" });
@@ -223,12 +249,18 @@ describe("Google sign-in", () => {
 
   it("does not move a Google identity that already belongs to somebody", async () => {
     const instance = harness();
-    await run(instance, googleSignIn({ sub: "google-sub-new", email: "first@example.com" }));
-    await run(instance, googleSignIn({ sub: "google-sub-2", email: "second@example.com" }));
+    await run(
+      instance,
+      googleSignIn(instance, { sub: "google-sub-new", email: "first@example.com" }),
+    );
+    await run(
+      instance,
+      googleSignIn(instance, { sub: "google-sub-2", email: "second@example.com" }),
+    );
 
     const session = await run(
       instance,
-      googleSignIn({ sub: "google-sub-new", email: "second@example.com" }),
+      googleSignIn(instance, { sub: "google-sub-new", email: "second@example.com" }),
     );
 
     expect(session.workspace.user.email).toBe("first@example.com");

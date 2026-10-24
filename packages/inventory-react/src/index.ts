@@ -14,12 +14,25 @@ export {
   type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
-export { catalogOpenFailure, commandFailureSurface, type FailureSurface } from "./errors";
+export {
+  catalogOpenFailure,
+  commandFailureSurface,
+  licenceRefusalCopy,
+  staffRefusalCopy,
+  type FailureSurface,
+} from "./errors";
+export { useEnterLicence, useLicenceState } from "./licence";
+export {
+  useInvoiceStaff,
+  useStaffActions,
+  useStaffPermission,
+  useStaffState,
+  type StaffActions,
+} from "./staff";
 export {
   deliverPorts,
   desktopServices,
   forwardedPorts,
-  inProcessWorkspace,
   makeInventoryServices,
   type ForwardedPorts,
   type InventoryServices,
@@ -32,7 +45,6 @@ export {
   useInventoryActions,
   useInventoryState,
   useInventorySyncActivity,
-  useInventorySyncing,
   useInventorySyncTransfer,
   useInventorySyncStatus,
   useReadyInventory,

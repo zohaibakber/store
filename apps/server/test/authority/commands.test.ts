@@ -16,7 +16,7 @@ import { authorityTransactions, batches } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
 import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryActor } from "../../src/inventory/model";

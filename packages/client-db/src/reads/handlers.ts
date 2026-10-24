@@ -13,6 +13,7 @@ import {
 import { and, asc, eq } from "drizzle-orm";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { SqlClient } from "effect/sql/SqlClient";
 
 import { visibleBatches } from "../replica/compile";
@@ -23,6 +24,8 @@ import {
   among,
   containsEvery,
   invoiceOrder,
+  invoiceSellerOf,
+  invoiceStarterOf,
   invoiceWhere,
   issuedInvoicesOf,
   learnedSuppliersOf,
@@ -40,6 +43,8 @@ import {
   purchaseOrderOrder,
   purchaseOrderWhere,
 } from "./sql";
+
+const StaffNameRow = Schema.Struct({ name: Schema.String });
 
 const UNCATEGORIZED = "Uncategorized";
 
@@ -85,6 +90,7 @@ export const layerInventoryReads = InventoryReads.toLayer(
     const { snapshot, rows, decoded, counted, facetValues } = makeReplicaReads(yield* SqlClient);
     const issuedInvoices = decoded(IssuedInvoice);
     const learnedSuppliers = decoded(LearnedSupplier);
+    const staffNames = decoded(StaffNameRow);
 
     const batchesOf = (productIds: ReadonlyArray<string>) =>
       rows("batches", among(visibleBatches.productId, productIds), [asc(visibleBatches.id)]);
@@ -225,6 +231,12 @@ export const layerInventoryReads = InventoryReads.toLayer(
           limit,
         );
         return { ...recent, rows: yield* invoicesWithItems(recent.rows) };
+      }, snapshot),
+
+      InvoiceStaff: Effect.fn("InventoryReads.InvoiceStaff")(function* ({ id }) {
+        const [seller] = yield* staffNames(invoiceSellerOf(id));
+        const [starter] = yield* staffNames(invoiceStarterOf(id));
+        return { staff: { soldBy: seller?.name ?? null, startedBy: starter?.name ?? null } };
       }, snapshot),
 
       IssuedInvoices: Effect.fn("InventoryReads.IssuedInvoices")(function* ({ ids }) {

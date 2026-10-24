@@ -1,20 +1,13 @@
 # Architecture
 
-Tabaaq is offline-first inventory and sales. The desktop and mobile clients keep
-a local replica of their organization's catalog, writes commands to it first, and syncs with one
+Tabaaq is offline-first inventory and sales. The desktop app keeps
+a local replica of the shop's catalog, writes commands to it first, and syncs with one
 authoritative `OrgAuthority` Durable Object per organization through a stateless Cloudflare Worker.
 
 ## Clients
 
-- `apps/web`: the product UI and the website. One React app with two hosts,
-  chosen at startup by whether the preload bridges are present. It defines the
-  host contract in `src/host` and never imports from `apps/desktop`. In the
-  browser it keeps the access token in memory and the refresh token in the auth
-  Worker's HttpOnly cookie, and holds no replica: sign-in, organizations and
-  settings work, and inventory screens point to the desktop app.
-  Prod serves it on `PRODUCTION_DOMAIN`.
-- `apps/desktop`: the Electron shell. It uses `apps/web` as its renderer and
-  implements the host contract. The replica lives in a main-process Node worker
+- `apps/desktop`: the Electron app. The product UI lives in `src` and is the
+  renderer. `src/host` is the contract the main process implements. The replica lives in a main-process Node worker
   on `@effect/sql-sqlite-node` over `node:sqlite`. The renderer reaches it
   over `MessagePort`s that main forwards once per attach: `InventoryReads`
   (named bounded reads, served by a read-only reader worker), `InventoryStore`
@@ -24,10 +17,8 @@ authoritative `OrgAuthority` Durable Object per organization through a stateless
   backup, restore, and publish only. The main process keeps the encrypted
   refresh token and pushes a short-lived access token to the writer, which
   makes its own sync HTTP calls.
-- `apps/mobile`: Expo Android app. The replica is op-sqlite through
-  `@effect/sql-sqlite-react-native`.
 - `packages/inventory-react` holds the React bindings (atoms, queries, sync
-  status, insights) shared by the web app and mobile.
+  status, insights) the renderer uses.
 
 ## Local replica (`packages/sync`)
 
@@ -73,8 +64,7 @@ into typed errors.
 | `GET /api/sync/imports/:id`            | `importStatus`        |
 | `GET /api/sync/live`                   | WebSocket to `OrgHub` |
 
-Other routes: `/api/health`, `/api/auth/session`, `/api/uploads`, and
-`/api/product-scans` (Workers AI, rate limited).
+Other routes: `/api/health`, `/api/auth/session`, and `/api/uploads` (Workers AI, rate limited).
 
 ## Organization authority (`apps/server/src/authority`)
 
@@ -125,9 +115,7 @@ pulls.
 Alchemy declares everything in `alchemy.run.ts` and the `infra.ts` modules next
 to the code they deploy. There are two stages:
 
-- `dev`: no web app deployment.
-- `prod`: web app on `PRODUCTION_DOMAIN`,
-  API on `api.<domain>`, auth on `auth.<domain>`, and zone WAF rules
+- `dev` and `prod`: API on `api.<domain>`, auth on `auth.<domain>`, and zone WAF rules
   (`infra/edge.ts`) that block paths outside each host's surface and rate-limit
   `/api/` per IP.
 

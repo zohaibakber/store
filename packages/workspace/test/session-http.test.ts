@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { loadSessionSnapshot } from "../src/session-broker";
 import { SessionHttp, layerSessionHttp, sessionFetch } from "../src/session-http";

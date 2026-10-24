@@ -1,7 +1,6 @@
 import { decodeJwtKeyRingText, makeAccessTokenVerifier } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
-  DEFAULT_MOBILE_PROTOCOL,
   fallbackIfBlank,
   LOCAL_WEB_ORIGINS,
   parseTrustedOrigins,
@@ -17,7 +16,7 @@ import * as Layer from "effect/Layer";
 
 import { Api, OrgAuthority, OrgHub } from "./api";
 import { workersAiLanguageModel } from "./src/ai/language-model";
-import { invoiceAiClient, productScanAiClient } from "./src/ai/workers-ai";
+import { invoiceAiClient } from "./src/ai/workers-ai";
 import { OrgAuthorityLive } from "./src/authority/durable-object";
 import { makeGlobalSearchCache } from "./src/global-search/cache";
 import { PageImagesLive } from "./src/global-search/page-images";
@@ -86,10 +85,6 @@ export const ApiLive = Api.make(
         simple: RATE_LIMITS.invoiceExtraction,
       },
     );
-    const productScanRateLimit = yield* Cloudflare.RateLimit("PRODUCT_SCAN_RATE_LIMIT", {
-      namespaceId: 1001,
-      simple: RATE_LIMITS.productScan,
-    });
     const globalSearchRateLimit = yield* Cloudflare.RateLimit("GLOBAL_SEARCH_RATE_LIMIT", {
       namespaceId: 1003,
       simple: RATE_LIMITS.globalSearch,
@@ -130,10 +125,6 @@ export const ApiLive = Api.make(
       Config.withDefault(""),
       Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
     );
-    const mobileProtocol = yield* Config.String("MOBILE_PROTOCOL").pipe(
-      Config.withDefault(""),
-      Config.map((value) => fallbackIfBlank(value, DEFAULT_MOBILE_PROTOCOL)),
-    );
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
     const published = stage === "prod";
     const productionHostname = resolveProductionHostname(productionDomainEnv);
@@ -156,7 +147,6 @@ export const ApiLive = Api.make(
     const security = resolveAuthSecurity({
       baseURL: authOrigin,
       electronProtocol,
-      mobileProtocol,
       trustedOrigins: [
         ...trustedOrigins,
         ...(siteOrigin ? [siteOrigin] : []),
@@ -188,8 +178,6 @@ export const ApiLive = Api.make(
         verifyAccessToken,
         invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
         limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
-        productScanAi: ai.raw.pipe(Effect.map(productScanAiClient)),
-        limitProductScan: (key) => productScanRateLimit.limit({ key }),
         globalSearchCache: makeGlobalSearchCache((effect) => execution.waitUntil(effect)),
         searchGlobalProducts: (query) =>
           Effect.flatMap(globalSearchServices, (services) =>

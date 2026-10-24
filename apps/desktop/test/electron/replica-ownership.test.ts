@@ -9,7 +9,7 @@ import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/ipc-channels";
 import {
@@ -77,6 +77,8 @@ const makeWorld = (
         Commits: () => Stream.never,
         SyncHealth: () => Stream.make({ _tag: "running" as const }),
         SetAccessToken: () => Effect.void,
+        SetLicence: () => Effect.void,
+        DatabaseShop: () => Effect.succeed({ shopId: null }),
       });
       const client = yield* RpcTest.makeClient(ReplicaWorkerRpcs).pipe(Effect.provide(handlers));
       if (owners.live > 0) owners.overlaps += 1;

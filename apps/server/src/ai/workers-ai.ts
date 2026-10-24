@@ -3,7 +3,6 @@ import {
   type ConvertedDocument,
   type InvoiceAiClient,
   type ModelPrompt,
-  type ProductScanAiClient,
 } from "@store/services";
 import * as Effect from "effect/Effect";
 
@@ -59,8 +58,4 @@ export const invoiceAiClient = (ai: Ai): InvoiceAiClient => ({
         new ModelRequestError({ message: "Workers AI did not convert the attachments.", cause }),
     }),
   generate: generateJson(ai, "invoice_extraction", 4096),
-});
-
-export const productScanAiClient = (ai: Ai): ProductScanAiClient => ({
-  generate: generateJson(ai, "product_scan", 512),
 });
