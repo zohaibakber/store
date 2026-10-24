@@ -44,7 +44,7 @@ function UploadPage() {
           type="button"
         >
           <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-          Read files
+          Analyse invoices
         </Button>
       </PageToolbar>
       <div className="flex flex-col gap-2">

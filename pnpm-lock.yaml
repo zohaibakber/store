@@ -302,6 +302,9 @@ importers:
       '@sentry/electron':
         specifier: 7.20.0
         version: 7.20.0(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))(supports-color@8.1.1)
+      '@store/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@store/client-db':
         specifier: workspace:*
         version: link:../../packages/client-db
@@ -320,6 +323,9 @@ importers:
       '@store/web':
         specifier: workspace:*
         version: link:../web
+      '@store/workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       effect:
         specifier: 4.0.0
         version: 4.0.0
