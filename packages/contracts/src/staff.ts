@@ -1,3 +1,4 @@
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { StaffId } from "./ids";
@@ -81,6 +82,74 @@ export const permits = (state: StaffState, permission: StaffPermission): boolean
       return roleAllows(state.actor.role, permission);
   }
 };
+
+const namesMatch = (left: string, right: string) =>
+  left.trim().toLowerCase() === right.trim().toLowerCase();
+
+const refused = (reason: StaffRefusalReason) => Result.fail(new StaffRefusal({ reason }));
+
+export const lockStaff = (state: StaffState): StaffState =>
+  state._tag === "unlocked" ? { _tag: "locked", staff: state.staff } : state;
+
+export const requireActor = (
+  state: StaffState,
+  permission: StaffPermission,
+): Result.Result<StaffMember, StaffRefusal> => {
+  switch (state._tag) {
+    case "unlocked":
+      return roleAllows(state.actor.role, permission)
+        ? Result.succeed(state.actor)
+        : refused("forbidden");
+    case "disabled":
+    case "solo":
+    case "locked":
+      return refused("locked");
+  }
+};
+
+export const decideSetUpOwner = (hasActiveStaff: boolean): Result.Result<void, StaffRefusal> =>
+  hasActiveStaff ? refused("alreadySetUp") : Result.succeed(undefined);
+
+export const decideAddStaff = (
+  active: ReadonlyArray<Pick<StaffMember, "name">>,
+  name: string,
+): Result.Result<void, StaffRefusal> => {
+  if (active.length >= MAX_STAFF_MEMBERS) return refused("tooManyStaff");
+  if (active.some((member) => namesMatch(member.name, name))) return refused("nameTaken");
+  return Result.succeed(undefined);
+};
+
+export const decideUpdateStaff = (
+  active: ReadonlyArray<StaffMember>,
+  id: StaffId,
+  name: string,
+  role: StaffRole,
+): Result.Result<StaffMember, StaffRefusal> => {
+  const member = active.find((candidate) => candidate.id === id);
+  if (member === undefined) return refused("unknownStaff");
+  if ((member.role === "owner") !== (role === "owner")) return refused("ownerIsFixed");
+  if (active.some((candidate) => candidate.id !== id && namesMatch(candidate.name, name))) {
+    return refused("nameTaken");
+  }
+  return Result.succeed(member);
+};
+
+export const decideRemoveStaff = (
+  member: StaffMember | undefined,
+): Result.Result<StaffMember, StaffRefusal> => {
+  if (member === undefined) return refused("unknownStaff");
+  if (member.role === "owner") return refused("ownerIsFixed");
+  return Result.succeed(member);
+};
+
+export const decideHandOverDraft = (
+  rosterIds: ReadonlyArray<StaffId>,
+  from: StaffId,
+  actorId: StaffId,
+): Result.Result<void, StaffRefusal> =>
+  rosterIds.some((id) => id === from) && from !== actorId
+    ? Result.succeed(undefined)
+    : refused("unknownStaff");
 
 export const StaffRefusalReason = Schema.Literals([
   "disabled",

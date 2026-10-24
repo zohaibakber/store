@@ -1,7 +1,10 @@
 import {
   allocationsCoverInput,
   AuthorityIncarnation,
-  catalogWriteError,
+  checkCanChangeUnitsPerPack,
+  checkCanDeleteBatch,
+  checkCanDeleteCategory,
+  checkCanDeleteProduct,
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
@@ -313,13 +316,23 @@ const decideCatalogWrite = (
     },
   };
 
-  const categoryHoldsProduct = (categoryId: string): boolean =>
-    facts.categoriesHoldingOtherProducts.has(categoryId) ||
-    live("product").some((product) => product.categoryId === categoryId);
+  const categoryProducts = (categoryId: string) => {
+    const loaded = live("product").filter((product) => product.categoryId === categoryId);
+    return facts.categoriesHoldingOtherProducts.has(categoryId)
+      ? [{ categoryId }, ...loaded]
+      : loaded;
+  };
 
-  const productHoldsStock = (productId: string): boolean =>
-    facts.productsHoldingOtherStock.has(productId) ||
-    live("batch").some((batch) => batch.productId === productId && hasStock(batch));
+  const stockedBatches = (productId: string) => {
+    const loaded = live("batch").filter(
+      (batch) => batch.productId === productId && hasStock(batch),
+    );
+    if (loaded.length > 0 || !facts.productsHoldingOtherStock.has(productId)) return loaded;
+    return [{ productId, packQuantity: 1, unitQuantity: 0 }];
+  };
+
+  const conflictIfRefused = <A>(decision: Result.Result<A, { readonly message: string }>) =>
+    Result.isFailure(decision) ? rejected("ENTITY_CONFLICT", decision.failure.message) : undefined;
 
   const record = (projected: ProjectedUpsert): Result.Result<SyncLogChange, Rejection> => {
     switch (projected.entity) {
@@ -400,9 +413,10 @@ const decideCatalogWrite = (
             if (write.expectedRowVersion !== existing.rowVersion) {
               return rejected("ENTITY_CONFLICT", `Category ${write.id} changed since it was read.`);
             }
-            if (categoryHoldsProduct(write.id)) {
-              return rejected("ENTITY_CONFLICT", catalogWriteError.categoryHasProducts);
-            }
+            const categoryBlocked = conflictIfRefused(
+              checkCanDeleteCategory(categoryProducts(write.id), write.id),
+            );
+            if (categoryBlocked) return categoryBlocked;
             staged.category.set(write.id, undefined);
             return Result.succeed([
               changeOf("category", "delete", write.id, existing.rowVersion + 1, existing),
@@ -439,9 +453,10 @@ const decideCatalogWrite = (
             if (write.expectedRowVersion !== existing.rowVersion) {
               return rejected("ENTITY_CONFLICT", `Product ${write.id} changed since it was read.`);
             }
-            if (productHoldsStock(write.id)) {
-              return rejected("ENTITY_CONFLICT", catalogWriteError.productHasStock);
-            }
+            const productBlocked = conflictIfRefused(
+              checkCanDeleteProduct(stockedBatches(write.id), write.id),
+            );
+            if (productBlocked) return productBlocked;
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
@@ -473,9 +488,10 @@ const decideCatalogWrite = (
                   `Product ${write.id} changed since units per pack was read.`,
                 );
               }
-              if (productHoldsStock(write.id)) {
-                return rejected("ENTITY_CONFLICT", catalogWriteError.unitsPerPackWithStock);
-              }
+              const unitsBlocked = conflictIfRefused(
+                checkCanChangeUnitsPerPack(stockedBatches(write.id), write.id),
+              );
+              if (unitsBlocked) return unitsBlocked;
             }
             return write.row.categoryId !== existing.categoryId && categoryMissing
               ? relationInvalid
@@ -493,9 +509,8 @@ const decideCatalogWrite = (
             if (write.expectedRowVersion !== existing.rowVersion) {
               return rejected("ENTITY_CONFLICT", `Batch ${write.id} changed since it was read.`);
             }
-            if (hasStock(existing)) {
-              return rejected("ENTITY_CONFLICT", catalogWriteError.batchHasStock);
-            }
+            const batchBlocked = conflictIfRefused(checkCanDeleteBatch(existing));
+            if (batchBlocked) return batchBlocked;
             const image = {
               ...existing,
               ...stampOf(payload, actor, existing),
