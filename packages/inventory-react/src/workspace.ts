@@ -28,7 +28,13 @@ import {
   type CatalogOpenFailure,
   type StaleCatalogLease,
 } from "./errors";
-import type { InventoryHost, InventoryScope, OpenedReplica } from "./host";
+import {
+  replicaAuthorityOf,
+  type InventoryHost,
+  type InventoryScope,
+  type OpenedReplica,
+  type ReplicaAuthority,
+} from "./host";
 import { makeInventoryLinks, type InventoryLinks, type StoreClient } from "./services";
 import { makeStaffActions } from "./staff";
 import type { Inventory, InventoryActions } from "./types";
@@ -44,6 +50,7 @@ const makeActions = (
   links: InventoryLinks,
   atoms: WorkspaceAtoms,
   opened: OpenedReplica,
+  authority: ReplicaAuthority,
 ): InventoryActions => {
   const dispatch = async <A extends Commit>(
     send: (store: StoreClient) => Effect.Effect<A, CommandFailure | RpcClientError>,
@@ -70,6 +77,10 @@ const makeActions = (
       status: exit.value.status,
     });
     return exit.value;
+  };
+
+  const wake = () => {
+    if (authority === "remote") Effect.runFork(links.wake(registry));
   };
 
   const commands: CatalogCommands = {
@@ -115,7 +126,11 @@ const makeActions = (
   return {
     ...commands,
     staff: makeStaffActions(registry, links),
-    retrySync: () => Effect.runPromise(opened.retryRecovery),
+    retrySync: async () => {
+      await Effect.runPromise(opened.retryRecovery);
+      wake();
+    },
+    syncNow: wake,
   };
 };
 
@@ -138,9 +153,11 @@ const openWorkspace = (host: InventoryHost, scope: InventoryScope) =>
       Effect.timeout(FIRST_READ_WAIT),
       Effect.mapError(() => catalogOpenFailure(undefined)),
     );
+    const authority = replicaAuthorityOf(scope);
     return {
       atoms,
-      actions: makeActions(registry, links, atoms, opened),
+      actions: makeActions(registry, links, atoms, opened, authority),
+      authority,
       deviceId: opened.replicaId ?? host.deviceId,
     };
   });

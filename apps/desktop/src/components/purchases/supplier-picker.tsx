@@ -23,6 +23,7 @@ type SupplierOption = {
 };
 
 export function SupplierPicker({
+  canCreate = true,
   disabled = false,
   label,
   onChange,
@@ -30,6 +31,7 @@ export function SupplierPicker({
   suppliers,
   value,
 }: {
+  readonly canCreate?: boolean;
   readonly disabled?: boolean;
   readonly label: string;
   readonly onChange: (supplierId: Supplier["id"]) => void;
@@ -49,7 +51,7 @@ export function SupplierPicker({
     ? suppliers.filter((supplier) => supplier.name.toLocaleLowerCase().includes(lowered))
     : suppliers;
   const exists = suppliers.some((supplier) => supplier.name.trim().toLocaleLowerCase() === lowered);
-  const offersCreate = term.length > 0 && !exists;
+  const offersCreate = canCreate && term.length > 0 && !exists;
   const options: ReadonlyArray<SupplierOption> = offersCreate
     ? [...matches, { id: `create:${term}`, name: term, create: true }]
     : matches;
@@ -98,7 +100,9 @@ export function SupplierPicker({
         size="sm"
       />
       <ComboboxPopup className="max-w-96 *:min-w-0">
-        <ComboboxEmpty>Type a name to add a supplier.</ComboboxEmpty>
+        <ComboboxEmpty>
+          {canCreate ? "Type a name to add a supplier." : "No suppliers found."}
+        </ComboboxEmpty>
         <ComboboxList>
           {(option: SupplierOption) =>
             option.create ? (

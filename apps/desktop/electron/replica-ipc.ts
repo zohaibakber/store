@@ -146,6 +146,7 @@ export const registerReplicaWorkerIpc = (options: {
   }
 
   return {
+    setForeground: (visible: boolean) => run(sessions.setForeground(visible)),
     dispose: () => {
       for (const channel of Object.keys(registered)) options.ipcMain.removeHandler(channel);
       return run(sessions.disposeAll).finally(() => runtime.dispose());

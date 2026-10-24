@@ -167,6 +167,12 @@ const choosePdfDestination = (suggestedName: string) =>
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
 
+const publishReplicaForeground = (visible: boolean) => {
+  replicaWorker
+    ?.setForeground(visible)
+    .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
+};
+
 const publishWindowMaximized = () => {
   if (!win || win.isDestroyed()) return;
   win.webContents.send(WINDOW_MAXIMIZED_CHANNEL, win.isMaximized());
@@ -211,6 +217,12 @@ function createWindow() {
   });
   win.on("maximize", publishWindowMaximized);
   win.on("unmaximize", publishWindowMaximized);
+  win.on("blur", () => publishReplicaForeground(false));
+  win.on("minimize", () => publishReplicaForeground(false));
+  win.on("hide", () => publishReplicaForeground(false));
+  win.on("focus", () => publishReplicaForeground(true));
+  win.on("restore", () => publishReplicaForeground(true));
+  win.on("show", () => publishReplicaForeground(true));
 
   void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));
 }

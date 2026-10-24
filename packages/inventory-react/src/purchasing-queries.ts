@@ -1,5 +1,7 @@
 import { useAtomSuspense, useAtomValue } from "@effect/atom-react";
 import {
+  purchasingBlockedByStaleReplica,
+  staleReplicaRejection,
   type PurchaseOrder,
   type StockMovement,
   type Supplier,
@@ -9,8 +11,9 @@ import * as Option from "effect/Option";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as React from "react";
 
+import type { ReplicaAuthority } from "./host";
 import type { PurchaseOrderTab } from "./list-request";
-import { useCatalogReplica } from "./provider";
+import { useCatalogReplica, useInventorySyncActivity } from "./provider";
 import {
   NOTHING_ON_ORDER,
   type ProductOnOrder,
@@ -78,4 +81,35 @@ export const useLearnedSuppliers = (productIds: ReadonlyArray<string>) =>
   useLatest(
     useAtomValue(useCatalogReplica().atoms.learnedSuppliers(productIds)),
     NO_LEARNED_SUPPLIERS,
+  );
+
+export type PurchasingGate =
+  | { readonly blocked: false }
+  | { readonly blocked: true; readonly message: string };
+
+const PURCHASING_OPEN: PurchasingGate = { blocked: false };
+
+const PURCHASING_BLOCKED: PurchasingGate = {
+  blocked: true,
+  message: staleReplicaRejection(null).message,
+};
+
+const purchasingGateOf = (
+  authority: ReplicaAuthority,
+  lowestActiveSchemaVersion: number | null,
+): PurchasingGate => {
+  switch (authority) {
+    case "local":
+      return PURCHASING_OPEN;
+    case "remote":
+      return purchasingBlockedByStaleReplica(lowestActiveSchemaVersion ?? undefined)
+        ? PURCHASING_BLOCKED
+        : PURCHASING_OPEN;
+  }
+};
+
+export const usePurchasingGate = (): PurchasingGate =>
+  purchasingGateOf(
+    useCatalogReplica().authority,
+    useInventorySyncActivity().lowestActiveSchemaVersion,
   );

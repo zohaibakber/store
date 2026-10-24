@@ -1,3 +1,4 @@
+import { LOCAL_ORGANIZATION_ID } from "@store/contracts";
 import type * as Effect from "effect/Effect";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type * as Scope from "effect/Scope";
@@ -9,6 +10,11 @@ export type InventoryScope = {
   readonly organizationId: string;
   readonly userId: string;
 };
+
+export type ReplicaAuthority = "local" | "remote";
+
+export const replicaAuthorityOf = (scope: { readonly organizationId: string }): ReplicaAuthority =>
+  scope.organizationId === LOCAL_ORGANIZATION_ID ? "local" : "remote";
 
 export type ReplicaOpenIdentity = {
   readonly organizationId: string;

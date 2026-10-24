@@ -7,6 +7,7 @@ import {
 } from "@store/contracts";
 import {
   useInventoryActions,
+  usePurchasingGate,
   useSuspenseCatalogProductsById,
   type ReceiveDeliveryLineInput,
 } from "@store/inventory-react";
@@ -35,6 +36,7 @@ import { EMPTY, formatCount } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
+import { PurchasingGateNotice } from "./gate-notice";
 import { formatLineQuantity, formatOrderNumber } from "./presentation";
 import {
   initialReceiveRows,
@@ -259,6 +261,7 @@ export function ReceiveDeliveryBody({
   prefill,
 }: ReceiveDeliveryBodyProps) {
   const { receiveDelivery } = useInventoryActions();
+  const gate = usePurchasingGate();
   const productIds = React.useMemo(
     () => [...new Set(order.items.map((item) => item.productId))].sort(),
     [order.items],
@@ -292,7 +295,7 @@ export function ReceiveDeliveryBody({
   const summary = summarizeDelivery(order.items, rows, productOfItem);
   const invalid = rows.some((row) => rowProblems(row).size > 0);
   const closing = closeChoice ?? summary.completesOrder;
-  const canReceive = !pending && !invalid && summary.lines > 0;
+  const canReceive = !gate.blocked && !pending && !invalid && summary.lines > 0;
   const number = formatOrderNumber(order.orderNumber);
 
   const change = (key: string, patch: Partial<ReceiveRow>) =>
@@ -339,6 +342,7 @@ export function ReceiveDeliveryBody({
     <>
       <SheetPanel>
         <div className="flex flex-col gap-4">
+          <PurchasingGateNotice gate={gate} />
           <Frame>
             <Table className="table-fixed" variant="card">
               <TableHeader>

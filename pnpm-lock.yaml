@@ -571,6 +571,9 @@ importers:
       '@sentry/react':
         specifier: 10.75.0
         version: 10.75.0(react@19.3.0)
+      '@store/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@store/client-db':
         specifier: workspace:*
         version: link:../../packages/client-db
@@ -583,6 +586,9 @@ importers:
       '@store/services':
         specifier: workspace:*
         version: link:../../packages/services
+      '@store/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       '@store/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace

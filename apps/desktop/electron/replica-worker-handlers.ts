@@ -5,6 +5,7 @@ import {
   sameSyncHealth,
   syncHealthOf,
   toClientNotice,
+  withAuthRefreshing,
   type ReplicaCommitNotice,
   type ReplicaSyncHealth,
 } from "@store/client-db";
@@ -17,7 +18,22 @@ import {
   stageReplicaBackup,
 } from "@store/client-db/node-backup";
 import { layerNodeLicenceGate, ShopLicence } from "@store/client-db/node-licence";
-import { layerNodeLocalReplica, type SqliteReplicaServices } from "@store/client-db/node-sqlite";
+import {
+  commitPublish,
+  ImportRefused,
+  makeImportClient,
+  readPublishStatus,
+  readPublishSummary,
+  stagePublish,
+  type ImportClient,
+  type ReplicaPublishCommit,
+} from "@store/client-db/node-publish";
+import {
+  layerNodeLocalReplica,
+  layerNodeReplicaSync,
+  makePinnedHttp,
+  type SqliteReplicaServices,
+} from "@store/client-db/node-sqlite";
 import { layerNodeStaffGate } from "@store/client-db/node-staff";
 import {
   CommandAdmission,
@@ -25,7 +41,6 @@ import {
   type LicenceGate,
   StaffGate,
 } from "@store/client-db/store";
-import { LOCAL_ORGANIZATION_ID, LOCAL_USER_ID } from "@store/contracts";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
@@ -34,6 +49,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import type * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as RpcServer from "effect/rpc/RpcServer";
 import * as Scope from "effect/Scope";
@@ -44,6 +60,7 @@ import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   catalogCountsOf,
   commitStampOf,
+  RESTORE_LOCAL_ONLY,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
   type ReplicaWorkerBoot,
@@ -61,6 +78,8 @@ const ORGANIZATION_BACKUP_MESSAGE =
 
 const UNOPENABLE_BACKUP_MESSAGE = "This backup could not be opened by this version of Tabaaq.";
 
+const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this device's data.";
+
 const fileFailure = (failure: { readonly message: string }) =>
   new ReplicaWorkerFailure({ message: failure.message });
 
@@ -70,14 +89,52 @@ const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer))
 
 type Session = Context.Context<SqliteReplicaServices | StaffGate | LicenceGate | ShopLicence>;
 
+type AuthorityLink = {
+  readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
+  readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
+  readonly setForeground: (
+    scheduler: SyncScheduler["Service"],
+    visible: boolean,
+  ) => Effect.Effect<void>;
+  readonly healthOf: (health: Stream.Stream<ReplicaSyncHealth>) => Stream.Stream<ReplicaSyncHealth>;
+  readonly imports: ImportClient;
+};
+
 const sessionInput = (config: WorkerBoot) => ({
   path: config.databasePath,
   identity: {
-    organizationId: LOCAL_ORGANIZATION_ID,
-    userId: LOCAL_USER_ID,
+    organizationId: config.organizationId,
+    userId: config.userId,
     replicaId: config.replicaId,
   },
   databaseIdentity: config.databasePath,
+});
+
+const linkRemoteAuthority = Effect.fnUntraced(function* (
+  config: Extract<WorkerBoot, { readonly authority: "remote" }>,
+) {
+  const http = yield* makePinnedHttp(config.apiBaseUrl);
+  return {
+    session: layerNodeReplicaSync({
+      ...sessionInput(config),
+      transport: http.syncTransport,
+      live: {
+        apiBaseUrl: config.apiBaseUrl,
+        accessToken: (options) => Effect.runPromise(http.liveAccessToken(options)),
+      },
+      deviceLabel: config.deviceLabel,
+    }),
+    setToken: http.setToken,
+    setForeground: (scheduler, visible) =>
+      scheduler
+        .setVisible(visible)
+        .pipe(Effect.andThen(visible ? scheduler.wake("focus") : Effect.void)),
+    healthOf: (health) =>
+      Stream.zipLatest(health, http.refreshing).pipe(
+        Stream.map(([current, refreshing]) => withAuthRefreshing(current, refreshing)),
+      ),
+    imports: makeImportClient(http.client, config.apiBaseUrl),
+  } satisfies AuthorityLink;
 });
 
 const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
@@ -88,6 +145,35 @@ const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
     case "updateRequired":
     case "recoveryRequired":
       return health;
+  }
+};
+
+const needsOrganization = Effect.fail(
+  new ImportRefused({ code: "ORGANIZATION_REQUIRED", message: PUBLISH_NEEDS_ORGANIZATION }),
+);
+
+const localImports: ImportClient = {
+  stagePart: () => needsOrganization,
+  commit: () => needsOrganization,
+  status: () => needsOrganization,
+};
+
+const linkLocalAuthority = (
+  config: Extract<WorkerBoot, { readonly authority: "local" }>,
+): AuthorityLink => ({
+  session: layerNodeLocalReplica(sessionInput(config)),
+  setToken: () => Effect.void,
+  setForeground: () => Effect.void,
+  healthOf: Stream.map(onDeviceHealth),
+  imports: localImports,
+});
+
+const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink> => {
+  switch (config.authority) {
+    case "local":
+      return Effect.succeed(linkLocalAuthority(config));
+    case "remote":
+      return linkRemoteAuthority(config);
   }
 };
 
@@ -104,11 +190,10 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
+      const link = yield* linkAuthority(config);
+
       const sessionScope = yield* Scope.fork(yield* Effect.scope);
-      const opened = yield* openSession(
-        layerNodeLocalReplica(sessionInput(config)),
-        sessionScope,
-      ).pipe(
+      const opened = yield* openSession(link.session, sessionScope).pipe(
         Effect.map(Option.some),
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause)
@@ -121,14 +206,18 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
       );
       const live = yield* Ref.make(opened);
 
-      const health = Option.match(opened, {
-        onNone: () =>
-          Stream.concat(Stream.succeed<ReplicaSyncHealth>({ _tag: "running" }), Stream.never),
-        onSome: (session) =>
-          SubscriptionRef.changes(Context.get(session, SyncScheduler).state).pipe(
-            Stream.map(syncHealthOf),
-          ),
-      }).pipe(Stream.map(onDeviceHealth), Stream.changesWith(sameSyncHealth));
+      const health = link
+        .healthOf(
+          Option.match(opened, {
+            onNone: () =>
+              Stream.concat(Stream.succeed<ReplicaSyncHealth>({ _tag: "running" }), Stream.never),
+            onSome: (session) =>
+              SubscriptionRef.changes(Context.get(session, SyncScheduler).state).pipe(
+                Stream.map(syncHealthOf),
+              ),
+          }),
+        )
+        .pipe(Stream.changesWith(sameSyncHealth));
 
       const renderers = yield* Option.match(opened, {
         onNone: () => Effect.succeed(noRendererServers),
@@ -175,16 +264,25 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
 
       const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp());
 
-      const stageRestore = (sourcePath: string, stagedPath: string) =>
+      const wake = (reason: "focus" | "reconnect") =>
+        withSession((session) => Context.get(session, SyncScheduler).wake(reason)).pipe(
+          Effect.ignore,
+        );
+
+      const stageRestore = (
+        local: Extract<WorkerBoot, { readonly authority: "local" }>,
+        sourcePath: string,
+        stagedPath: string,
+      ) =>
         Effect.gen(function* () {
           const backup = yield* stageReplicaBackup({ sourcePath, stagedPath });
-          if (backup.organizationId !== LOCAL_ORGANIZATION_ID || backup.userId !== LOCAL_USER_ID) {
+          if (backup.organizationId !== local.organizationId || backup.userId !== local.userId) {
             return yield* new ReplicaWorkerFailure({ message: ORGANIZATION_BACKUP_MESSAGE });
           }
           yield* Effect.scopedWith((trial) =>
             openSession(
               layerNodeLocalReplica({
-                ...sessionInput(config),
+                ...sessionInput(local),
                 path: stagedPath,
                 databaseIdentity: stagedPath,
               }),
@@ -197,14 +295,17 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 : Effect.fail(new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE })),
             ),
           );
-          const current = yield* readReplicaFileSummary(config.databasePath);
+          const current = yield* readReplicaFileSummary(local.databasePath);
           return { current: catalogCountsOf(current), backup: catalogCountsOf(backup) };
         }).pipe(
           Effect.onError(() => discardReplicaFile(stagedPath)),
           Effect.mapError(fileFailure),
         );
 
-      const releaseForRestore = (stagedPath: string) =>
+      const releaseForRestore = (
+        local: Extract<WorkerBoot, { readonly authority: "local" }>,
+        stagedPath: string,
+      ) =>
         Effect.gen(function* () {
           const sealed = yield* withSession((session) =>
             Context.get(session, CommandAdmission).exclusive(
@@ -218,14 +319,30 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               }),
             ),
           );
-          yield* settleReplicaFile(config.databasePath);
+          yield* settleReplicaFile(local.databasePath);
           yield* sealReplicaFile(stagedPath, sealed.localCommitVersion);
         }).pipe(Effect.mapError(fileFailure));
+
+      const afterPublish = (sourcePath: string, outcome: ReplicaPublishCommit) => {
+        switch (outcome._tag) {
+          case "committed":
+            return settleReplicaFile(sourcePath).pipe(Effect.ignore, Effect.andThen(wake("focus")));
+          case "refused":
+          case "unconfirmed":
+            return Effect.void;
+        }
+      };
 
       return ReplicaWorkerRpcs.of({
         Engine: () => Effect.succeed(Option.isNone(opened) ? "unavailable" : "sqlite"),
         AttachRenderer: ({ port }) => renderers.attach(port),
         Stamp: () => stamp,
+        SetForeground: ({ visible }) =>
+          Option.isNone(opened)
+            ? Effect.void
+            : withSession((session) =>
+                link.setForeground(Context.get(session, SyncScheduler), visible),
+              ),
         BackUp: ({ destinationPath }) =>
           Effect.andThen(
             ownerOnly,
@@ -238,10 +355,44 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               ),
             ),
           ),
-        StageRestore: ({ sourcePath, stagedPath }) =>
-          Effect.andThen(ownerOnly, stageRestore(sourcePath, stagedPath)),
-        ReleaseForRestore: ({ stagedPath }) =>
-          Effect.andThen(ownerOnly, releaseForRestore(stagedPath)),
+        StageRestore: ({ sourcePath, stagedPath }) => {
+          switch (config.authority) {
+            case "local":
+              return Effect.andThen(ownerOnly, stageRestore(config, sourcePath, stagedPath));
+            case "remote":
+              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+          }
+        },
+        ReleaseForRestore: ({ stagedPath }) => {
+          switch (config.authority) {
+            case "local":
+              return Effect.andThen(ownerOnly, releaseForRestore(config, stagedPath));
+            case "remote":
+              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+          }
+        },
+        PublishSummary: ({ sourcePath }) =>
+          readPublishSummary(sourcePath).pipe(Effect.mapError(fileFailure)),
+        PublishStage: ({ sourcePath, importId }) =>
+          Stream.unwrap(
+            Effect.as(
+              ownerOnly,
+              stagePublish({ path: sourcePath, importId, client: link.imports }).pipe(
+                Stream.mapError(fileFailure),
+              ),
+            ),
+          ),
+        PublishCommit: ({ sourcePath, importId, seal }) =>
+          Effect.andThen(
+            ownerOnly,
+            commitPublish({
+              organizationId: config.organizationId,
+              importId,
+              seal,
+              client: link.imports,
+            }).pipe(Effect.tap((outcome) => afterPublish(sourcePath, outcome))),
+          ),
+        PublishStatus: ({ importId }) => readPublishStatus({ importId, client: link.imports }),
         Commits: () =>
           Option.match(opened, {
             onNone: () => Stream.empty,
@@ -273,6 +424,11 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
           }),
+        SyncHealth: () => health,
+        SetAccessToken: ({ token }) =>
+          link
+            .setToken(token)
+            .pipe(Effect.andThen(token === null ? Effect.void : wake("reconnect"))),
         SetLicence: ({ state }) =>
           withSession((session) => Context.get(session, ShopLicence).accept(state)),
         DatabaseShop: () =>

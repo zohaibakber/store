@@ -11,6 +11,7 @@
     "./node-analytics": "./src/analytics/node.ts",
     "./node-backup": "./src/replica/node-backup.ts",
     "./node-licence": "./src/licence/node.ts",
+    "./node-publish": "./src/replica/node-publish.ts",
     "./node-sqlite": "./src/replica/node-sqlite.ts",
     "./node-staff": "./src/staff/node.ts",
     "./reads": "./src/reads/handlers.ts",

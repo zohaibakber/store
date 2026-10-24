@@ -8,7 +8,12 @@ export type {
 export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
 export { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
 export { configureInventoryPreferences } from "./preferences";
-export type { InventoryHost, OpenedReplica, ReplicaOpenIdentity } from "./host";
+export {
+  replicaAuthorityOf,
+  type InventoryHost,
+  type OpenedReplica,
+  type ReplicaOpenIdentity,
+} from "./host";
 export {
   catalogOpenFailure,
   commandFailureSurface,
@@ -41,6 +46,7 @@ export {
   useInventoryActions,
   useInventoryState,
   useInventorySyncActivity,
+  useInventorySyncTransfer,
   useInventorySyncStatus,
   useReadyInventory,
 } from "./provider";
@@ -95,6 +101,7 @@ export type { PurchaseOrderListRequest } from "./purchasing";
 export {
   useLearnedSuppliers,
   useProductsOnOrder,
+  usePurchasingGate,
   useSuspenseOpenPurchaseOrders,
   useSuspenseProductOnOrder,
   useSuspensePurchaseOrder,
@@ -104,6 +111,7 @@ export {
   useSuspensePurchaseOrderPage,
   useSuspenseSupplierCount,
   useSuspenseSuppliers,
+  type PurchasingGate,
 } from "./purchasing-queries";
 export type { ProductFacets, ProductListRequest } from "./product-list";
 export {
