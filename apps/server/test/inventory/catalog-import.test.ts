@@ -49,7 +49,7 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Struct from "effect/Struct";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import type { InventoryError } from "../../src/inventory/errors";

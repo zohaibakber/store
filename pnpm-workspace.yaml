@@ -17,8 +17,9 @@ catalog:
   drizzle-orm: 1.0.0-rc.5-ab785fc
   effect: 4.0.0
   typescript: 7.0.2
-  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
-  vite-plus: 1.0.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
+  vitest: 5.0.5
 
 overrides:
   "@cloudflare/workers-types": 5.20260929.1
@@ -39,8 +40,8 @@ overrides:
   drizzle-orm: 1.0.0-rc.5-ab785fc
   uuid: 11.1.1
   valibot: 1.5.0
-  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
-  vitest: 5.0.2
+  vite@*: "catalog:"
+  vitest@*: "catalog:"
 
 allowBuilds:
   "@embedded-postgres/linux-x64": true
@@ -120,3 +121,10 @@ minimumReleaseAgeExclude:
 patchedDependencies:
   alchemy: patches/alchemy.patch
   drizzle-orm@1.0.0-rc.5-ab785fc: patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"

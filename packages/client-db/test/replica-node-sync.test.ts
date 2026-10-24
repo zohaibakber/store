@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
 import { syncHealthOf, type ReplicaSyncHealth } from "../src/replica/status";

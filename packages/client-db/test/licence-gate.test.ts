@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as RpcTest from "effect/rpc/RpcTest";
 import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { layerNodeLicenceGate, ShopLicence } from "../src/licence/node";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";

@@ -1,4 +1,4 @@
-import { eslintCompatPlugin } from "@oxlint/plugins";
+import { eslintCompatPlugin } from "vite-plus/lint/plugins";
 
 import { noChainedTypeAssertionsRule } from "./rules/no-chained-type-assertions.ts";
 import { noCommentsRule } from "./rules/no-comments.ts";

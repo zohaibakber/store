@@ -6,7 +6,7 @@ import {
   type OrganizationId,
   type OrganizationRole,
 } from "@store/auth";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { count, failing, harness, refreshWith, run, signUp, type Harness } from "./harness";
 

@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Scope from "effect/Scope";
 import { SqlClient } from "effect/sql/SqlClient";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { layerInventoryReads } from "../src/reads/handlers";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";

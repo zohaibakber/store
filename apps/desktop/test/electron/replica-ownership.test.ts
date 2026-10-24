@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/ipc-channels";
 import {

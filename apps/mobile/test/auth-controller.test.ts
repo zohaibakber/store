@@ -1,6 +1,6 @@
 import { nativeClient } from "@store/auth";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { createAuthController, type SessionVault } from "../src/auth/controller";
 import type { LastOrganization, StoredSession } from "../src/auth/model";

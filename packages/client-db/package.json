@@ -27,7 +27,6 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:",
-    "vitest": "5.0.2"
+    "typescript": "catalog:"
   }
 }

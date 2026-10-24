@@ -22,10 +22,10 @@
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
-    "nanoid": "^6.0.1"
+    "nanoid": "^6.0.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "drizzle-kit": "catalog:",
     "effect": "catalog:",

@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Redacted from "effect/Redacted";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import { liveSocketHandler, type LiveRouteDependencies } from "../../src/live/route";

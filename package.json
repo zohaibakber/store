@@ -7,7 +7,7 @@
     "dev": "vp run --parallel dev",
     "build:desktop": "vp run --filter @store/desktop build",
     "build": "vp run -r build",
-    "lint:design": "oxlint -c .oxlintrc.design.json apps/web/src",
+    "lint:design": "vp lint -c .oxlintrc.design.json apps/web/src",
     "licence": "node packages/licence/run.mjs",
     "plan:dev": "pnpm exec alchemy plan --stage dev --env-file .env.dev",
     "deploy:dev": "pnpm exec alchemy deploy --stage dev --env-file .env.dev",
@@ -21,23 +21,21 @@
     "@cloudflare/workers-types": "5.20260929.1",
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
-    "@oxlint/plugins": "1.86.0",
     "@shadcn/lint": "0.2.0",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "effect": "catalog:",
-    "oxlint": "1.86.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
-    "vite-plus": "^1.0.0"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "11.27.1",
+      "version": "12.15.0",
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.27.1",
+  "packageManager": "pnpm@12.15.0",
   "op-sqlite": {
     "fts5": true
   }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { compareUtf8, sortedPartitionLeaves } from "../../src/sync/digest";
 import { canonicalPayloadHash, sha256Hex } from "../../src/sync/operation-hash";

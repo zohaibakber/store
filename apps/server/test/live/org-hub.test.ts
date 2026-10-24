@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Option from "effect/Option";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { OrgHubContract } from "../../api";
 import { admissionHeaders, type HubAdmission, type HubAttachment } from "../../src/live/hub-core";

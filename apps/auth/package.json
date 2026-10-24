@@ -16,9 +16,9 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260929.1",
     "@store/server": "workspace:*",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "typescript": "catalog:",
-    "vitest": "5.0.2"
+    "vitest": "catalog:"
   }
 }

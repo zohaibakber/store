@@ -13,7 +13,7 @@ import { batches, categories, inventoryState, products, replicas } from "@store/
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { makeInventoryCommands } from "../../src/inventory/commands";
 import { startAuthorityPostgres, type AuthorityPostgres } from "../inventory/authority-postgres";

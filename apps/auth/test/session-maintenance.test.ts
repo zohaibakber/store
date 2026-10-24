@@ -1,7 +1,7 @@
 import { EmailAddress, PasswordHash, SessionId, type OrganizationId } from "@store/auth";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";

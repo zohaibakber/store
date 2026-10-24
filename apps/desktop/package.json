@@ -13,7 +13,7 @@
     "release": "tsc && vp build && electron-builder --config electron-builder.json5 --publish always"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "@effect/platform-browser": "catalog:",
@@ -29,13 +29,12 @@
     "@store/sync": "workspace:*",
     "@store/web": "workspace:*",
     "effect": "catalog:",
-    "electron": "^44.4.5",
-    "electron-builder": "^26.15.3",
+    "electron": "^44.9.3",
+    "electron-builder": "^26.18.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-electron": "1.1.2",
-    "vite-plus": "catalog:",
-    "vitest": "5.0.2"
+    "vite-plus": "catalog:"
   },
   "devEngines": {
     "packageManager": {
