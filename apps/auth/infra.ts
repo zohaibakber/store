@@ -100,7 +100,14 @@ export const AuthLive = Auth.make(
       },
     };
     const served = assets ? { ...worker, assets } : worker;
-    return authHostname ? { ...served, domain: authHostname, workersDev: false } : served;
+    return authHostname
+      ? {
+          ...served,
+          name: "tabaaq-auth-prod-lsvjysktazcvrrda",
+          domain: authHostname,
+          workersDev: false,
+        }
+      : served;
   }),
   Effect.gen(function* () {
     const databaseResource = yield* AuthDatabase;
