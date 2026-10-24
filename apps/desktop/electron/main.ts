@@ -1,8 +1,12 @@
 // Must stay the first import: parsers created before it run on the interpreter.
 import "effect/schema/SchemaJITCompiler/enable";
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
+import { deviceLabelOf } from "@store/contracts";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import { makeSourceLinks } from "@store/web/host/source-links";
 import * as Schema from "effect/Schema";
 import {
@@ -18,10 +22,14 @@ import {
   shell,
 } from "electron";
 
+import { makeAuthBroker } from "./auth";
+import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
 import { registerInventoryHttpIpc } from "./inventory-http";
 import {
+  AUTH_SESSION_CHANGED_CHANNEL,
+  OAUTH_CALLBACK_CHANNEL,
   THEME_SET_SOURCE_CHANNEL,
   WINDOW_CLOSE_CHANNEL,
   WINDOW_MAXIMIZED_CHANNEL,
@@ -31,8 +39,8 @@ import {
 import { isTrustedIpcSenderFrame } from "./ipc-sender";
 import { makeLicenceHost } from "./licence/host";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
+import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
 import {
-  DEFAULT_ELECTRON_PROTOCOL,
   desktopRendererOrigin,
   desktopRendererUrl,
   registerDesktopProtocolHandler,
@@ -79,8 +87,6 @@ const unpackagedDevMarkPath = () =>
 const appIconPath = () =>
   app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
 
-const fallbackIfBlank = (value: string | undefined, fallback: string) => value?.trim() || fallback;
-
 const runtimeApiUrlOverride = process.env["STORE_API_URL"];
 const viteInlinedApiUrl = import.meta.env.VITE_API_URL;
 const API_BASE_URL = fallbackIfBlank(
@@ -93,6 +99,10 @@ const API_BASE_URL = fallbackIfBlank(
 const ELECTRON_PROTOCOL = fallbackIfBlank(
   process.env["ELECTRON_PROTOCOL"],
   DEFAULT_ELECTRON_PROTOCOL,
+);
+const AUTH_BASE_URL = fallbackIfBlank(
+  process.env["AUTH_BASE_URL"] ?? import.meta.env.VITE_AUTH_URL,
+  "http://localhost:8788",
 );
 
 const EXPERIMENTAL_WAYLAND_COLOR_MANAGER = "WaylandWpColorManagerV1";
@@ -115,8 +125,30 @@ const windowBackground = () =>
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
+const publishSession = (snapshot: WorkspaceSnapshot) => {
+  win?.webContents.send(AUTH_SESSION_CHANGED_CHANNEL, snapshot);
+  return snapshot;
+};
+
+const authBroker = makeAuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
+
+let pendingOAuthCallback: string | null = null;
+
+const deliverOAuthCallback = () => {
+  if (!pendingOAuthCallback || !win || win.webContents.isLoading()) return;
+  win.webContents.send(OAUTH_CALLBACK_CHANNEL, pendingOAuthCallback);
+  pendingOAuthCallback = null;
+};
+
+const publishOAuthCallback = (url: string) => {
+  if (!isOAuthCallbackUrl(url, ELECTRON_PROTOCOL)) return;
+  pendingOAuthCallback = url;
+  deliverOAuthCallback();
+};
+
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
+  apiOrigin: new URL(API_BASE_URL).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
 
@@ -124,6 +156,11 @@ const allowedRendererOrigins = () =>
   [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
     Boolean(value),
   );
+
+const hostDeviceLabel = () => {
+  const [name = ""] = hostname().split(".");
+  return name.includes("@") ? undefined : deviceLabelOf(name);
+};
 
 const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
 
@@ -202,6 +239,7 @@ function createWindow() {
   app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
+  win.webContents.on("did-finish-load", deliverOAuthCallback);
   win.webContents.on("did-finish-load", publishWindowMaximized);
   win.webContents.on("console-message", (event) => {
     if (event.level === "debug" || event.level === "info") return;
@@ -290,15 +328,27 @@ app.on("before-quit", shutdown);
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
 
-app.on("second-instance", () => {
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  publishOAuthCallback(url);
+});
+app.on("second-instance", (_event, argv) => {
+  const callback = argv.find((value) => value.startsWith(`${ELECTRON_PROTOCOL}://`));
+  if (callback) publishOAuthCallback(callback);
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
   }
 });
 
+const initialOAuthCallback = process.argv.find((value) =>
+  value.startsWith(`${ELECTRON_PROTOCOL}://`),
+);
+if (initialOAuthCallback) publishOAuthCallback(initialOAuthCallback);
+
 void app.whenReady().then(async () => {
   if (!primaryInstance) return;
+  app.setAsDefaultProtocolClient(ELECTRON_PROTOCOL);
   registerDesktopProtocolHandler({
     scheme: ELECTRON_PROTOCOL,
     rendererRoot: RENDERER_DIST,
@@ -312,6 +362,14 @@ void app.whenReady().then(async () => {
   });
   registerNewSaleAccelerator();
   const sourceLinks = makeSourceLinks();
+  registerAuthIpc({
+    ipcMain,
+    broker: authBroker,
+    allowedOrigins: allowedRendererOrigins,
+    oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
+    openExternal: (url) => shell.openExternal(url),
+    rememberSourceLinks: sourceLinks.remember,
+  });
   registerShareIpc({
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
@@ -337,11 +395,17 @@ void app.whenReady().then(async () => {
     ipcMain,
     userDataPath: app.getPath("userData"),
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
-    replicaId: deviceId,
+    apiBaseUrl: API_BASE_URL,
+    deviceLabel: hostDeviceLabel(),
+    accessTokens: {
+      current: (force) => authBroker.liveAccessToken(force),
+      subscribe: authBroker.onAccessToken,
+    },
     allowedOrigins: allowedRendererOrigins,
     backupDialogs,
     rendererChannel: () => new MessageChannelMain(),
     sessions: { licence: licenceHost.service },
   });
+  publishSession(await authBroker.initialize());
   if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
 });

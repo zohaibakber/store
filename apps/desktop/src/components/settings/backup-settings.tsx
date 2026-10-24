@@ -15,7 +15,9 @@ import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { useClearSaleDrafts } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
+import type { Workspace } from "@/host-access";
 import type { RestoreChoice, WorkspaceBackupBridge } from "@/host/workspace-backup";
+import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
 import { storeErrorMessage } from "@/lib/errors";
 
@@ -30,15 +32,46 @@ const fileSize = (bytes: number) =>
     ? `${Math.max(1, Math.round(bytes / KILOBYTE))} KB`
     : `${(bytes / (KILOBYTE * KILOBYTE)).toFixed(1)} MB`;
 
-const BACK_UP_COPY =
-  "Saves this device’s products, stock, sales and purchase orders to a file you choose. This is the only copy outside this device.";
+type BackupOffer = {
+  readonly backUp: string;
+  readonly restore: string;
+  readonly canBackUp: boolean;
+  readonly canRestore: boolean;
+};
 
-const RESTORE_COPY = "Replaces everything on this device with the contents of a backup file.";
+const backupOffer = (workspace: Workspace): BackupOffer => {
+  switch (workspace._tag) {
+    case "Local":
+      return {
+        backUp:
+          "Saves this device’s products, stock, sales and purchase orders to a file you choose. This is the only copy outside this device.",
+        restore: "Replaces everything on this device with the contents of a backup file.",
+        canBackUp: true,
+        canRestore: true,
+      };
+    case "Organization":
+      return {
+        backUp: `Saves this device’s copy of ${workspace.organization.name}’s products, stock, sales and purchase orders to a file you choose.`,
+        restore:
+          "Only the workspace kept on this device can be restored from a file. An organization’s data comes back when you sign in.",
+        canBackUp: true,
+        canRestore: false,
+      };
+    case "None":
+      return {
+        backUp: "Open a workspace to back it up.",
+        restore: "Open the workspace on this device to restore it.",
+        canBackUp: false,
+        canRestore: false,
+      };
+  }
+};
 
 const failure = (title: string, cause: unknown) =>
   toastManager.add({ title, description: storeErrorMessage(cause), type: "error" });
 
 function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) {
+  const offer = backupOffer(useAuth().workspace);
   const clearSaleDrafts = useClearSaleDrafts();
   const [activity, setActivity] = useState<Activity>("idle");
   const [staged, setStaged] = useState<StagedRestore | null>(null);
@@ -130,11 +163,11 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
         <div className="flex items-center justify-between gap-4 pb-3">
           <div className="min-w-0">
             <dt>Back up to file</dt>
-            <dd className="text-xs text-muted-foreground">{BACK_UP_COPY}</dd>
+            <dd className="text-xs text-muted-foreground">{offer.backUp}</dd>
           </div>
           <Button
             className="shrink-0"
-            disabled={busy}
+            disabled={!offer.canBackUp || busy}
             loading={activity === "backingUp"}
             onClick={() => void backUp()}
             size="sm"
@@ -147,11 +180,11 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
         <div className="flex items-center justify-between gap-4 pt-3">
           <div className="min-w-0">
             <dt>Restore from file</dt>
-            <dd className="text-xs text-muted-foreground">{RESTORE_COPY}</dd>
+            <dd className="text-xs text-muted-foreground">{offer.restore}</dd>
           </div>
           <Button
             className="shrink-0"
-            disabled={busy}
+            disabled={!offer.canRestore || busy}
             loading={activity === "choosing" || activity === "restoring"}
             onClick={() => void chooseRestore()}
             size="sm"

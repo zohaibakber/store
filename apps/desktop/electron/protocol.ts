@@ -1,11 +1,8 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { ELECTRON_RENDERER_HOST } from "@store/auth/security";
 import { net, protocol } from "electron";
-
-export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
-
-const ELECTRON_RENDERER_HOST = "app";
 
 export const desktopRendererOrigin = (scheme: string) => `${scheme}://${ELECTRON_RENDERER_HOST}`;
 

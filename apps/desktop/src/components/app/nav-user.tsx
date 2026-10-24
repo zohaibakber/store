@@ -1,20 +1,24 @@
 import {
   ComputerIcon,
   LockIcon,
+  Login01Icon,
+  LogoutIcon,
   Moon02Icon,
+  SettingsIcon,
   Sun03Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { StaffMember } from "@store/contracts";
+import { permits, type StaffMember } from "@store/contracts";
 import { useStaffActions } from "@store/inventory-react";
 import { initials } from "@store/services/format";
+import { Link } from "@tanstack/react-router";
 import type * as React from "react";
 
-import { LicenceStatus, useShopName } from "@/components/licence/status";
+import { LicenceStatus } from "@/components/licence/status";
 import { staffFailure, staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Menu,
   MenuGroup,
@@ -27,19 +31,21 @@ import {
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { toastManager } from "@/components/ui/toast";
-import { OnDeviceStatus } from "@/lib/inventory/storage-status";
+import { signOut, useAuth } from "@/lib/auth";
+import { OnDeviceStatus } from "@/lib/inventory/sync-status";
+import { usePublishInProgress } from "@/lib/local-publish";
 import { useWindowKeydown } from "@/lib/shortcuts";
 
 type Identity = {
   readonly name: string;
-  readonly detail: React.ReactNode;
+  readonly detail: string;
   readonly mark: React.ReactNode;
   readonly avatar: React.ReactNode;
 };
 
-const deviceIdentity = (shopName: string | undefined): Identity => ({
-  name: shopName ?? "This device",
-  detail: <OnDeviceStatus />,
+const DEVICE_IDENTITY: Identity = {
+  name: "This device",
+  detail: "No account",
   mark: <HugeiconsIcon aria-hidden="true" icon={ComputerIcon} />,
   avatar: (
     <Avatar className="size-8 shrink-0">
@@ -48,15 +54,32 @@ const deviceIdentity = (shopName: string | undefined): Identity => ({
       </AvatarFallback>
     </Avatar>
   ),
-});
+};
+
+const accountIdentity = (user: {
+  readonly name: string;
+  readonly email: string;
+  readonly image?: string | null;
+}): Identity => {
+  const face = (
+    <>
+      <AvatarImage alt={user.name} src={user.image ?? undefined} />
+      <AvatarFallback>{initials(user.name)}</AvatarFallback>
+    </>
+  );
+  return {
+    name: user.name,
+    detail: user.email,
+    mark: <Avatar className="-mx-0.5 size-5 shrink-0">{face}</Avatar>,
+    avatar: <Avatar className="size-8 shrink-0">{face}</Avatar>,
+  };
+};
 
 const staffIdentity = (member: StaffMember): Identity => {
   const face = <AvatarFallback>{initials(member.name)}</AvatarFallback>;
   return {
     name: member.name,
-    detail: (
-      <span className="truncate text-xs text-muted-foreground">{staffRoleLabel(member.role)}</span>
-    ),
+    detail: staffRoleLabel(member.role),
     mark: <Avatar className="-mx-0.5 size-5 shrink-0">{face}</Avatar>,
     avatar: <Avatar className="size-8 shrink-0">{face}</Avatar>,
   };
@@ -153,10 +176,17 @@ function ThemeGroup() {
 }
 
 export function NavUser() {
+  const { snapshot, workspace } = useAuth();
+  const moving = usePublishInProgress();
+  const signedIn = snapshot?.status === "authenticated";
   const staff = useStaffAccess();
   const actor = staff._tag === "unlocked" ? staff.actor : null;
-  const shopName = useShopName();
-  const identity = actor ? staffIdentity(actor) : deviceIdentity(shopName);
+  const canManageShop = permits(staff, "manageShop");
+  const identity = actor
+    ? staffIdentity(actor)
+    : signedIn
+      ? accountIdentity(snapshot.user)
+      : DEVICE_IDENTITY;
 
   return (
     <SidebarMenu>
@@ -164,7 +194,7 @@ export function NavUser() {
         {actor ? <LockShortcut /> : null}
         <Menu>
           <MenuTrigger
-            render={<SidebarMenuButton aria-label="User menu" tooltip={identity.name} />}
+            render={<SidebarMenuButton aria-label="Account menu" tooltip={identity.name} />}
           >
             {identity.mark}
             <span>{identity.name}</span>
@@ -174,7 +204,15 @@ export function NavUser() {
               <MenuGroupLabel>
                 <span className="flex w-full items-center gap-2">
                   <IdentityRow
-                    detail={identity.detail}
+                    detail={
+                      actor === null && workspace._tag === "Local" ? (
+                        <OnDeviceStatus />
+                      ) : (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {identity.detail}
+                        </span>
+                      )
+                    }
                     mark={identity.avatar}
                     name={identity.name}
                   />
@@ -193,8 +231,39 @@ export function NavUser() {
                 <LockGroup />
               </>
             ) : null}
+            {canManageShop ? (
+              <>
+                <MenuSeparator />
+                <MenuGroup>
+                  {signedIn ? (
+                    <MenuItem
+                      render={<Link params={{ section: "account" }} to="/settings/$section" />}
+                    >
+                      <HugeiconsIcon aria-hidden="true" icon={SettingsIcon} />
+                      Account settings
+                    </MenuItem>
+                  ) : (
+                    <MenuItem render={<Link to="/sign-in" />}>
+                      <HugeiconsIcon aria-hidden="true" icon={Login01Icon} />
+                      Sign in to sync
+                    </MenuItem>
+                  )}
+                </MenuGroup>
+              </>
+            ) : null}
             <MenuSeparator />
             <ThemeGroup />
+            {signedIn && canManageShop ? (
+              <>
+                <MenuSeparator />
+                <MenuGroup>
+                  <MenuItem disabled={moving} onClick={() => void signOut()} variant="destructive">
+                    <HugeiconsIcon aria-hidden="true" icon={LogoutIcon} />
+                    Log out
+                  </MenuItem>
+                </MenuGroup>
+              </>
+            ) : null}
           </MenuPopup>
         </Menu>
       </SidebarMenuItem>

@@ -2,7 +2,7 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useCallback } from "react";
 
 import { recentProductsAtom, type RecentProduct } from "@/lib/preferences";
-import { WORKSPACE_STORAGE_KEY } from "@/lib/workspace";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 export type { RecentProduct };
 
@@ -16,10 +16,10 @@ type RecentProductSource = {
 };
 
 export const useRecentProducts = (): ReadonlyArray<RecentProduct> =>
-  useAtomValue(recentProductsAtom(WORKSPACE_STORAGE_KEY));
+  useAtomValue(recentProductsAtom(useWorkspaceStorageKey()));
 
 export const useRememberRecentProduct = () => {
-  const setRecents = useAtomSet(recentProductsAtom(WORKSPACE_STORAGE_KEY));
+  const setRecents = useAtomSet(recentProductsAtom(useWorkspaceStorageKey()));
   return useCallback(
     (product: RecentProductSource) => {
       const entry: RecentProduct = {

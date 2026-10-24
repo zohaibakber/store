@@ -1,12 +1,20 @@
 import type { StaffState } from "@store/contracts";
 import * as Schema from "effect/Schema";
 
-export const settingsSections = ["staff", "receipts", "data", "licence", "general"] as const;
+export const settingsSections = [
+  "staff",
+  "account",
+  "organization",
+  "receipts",
+  "data",
+  "licence",
+  "general",
+] as const;
 
 export const SettingsSection = Schema.Literals(settingsSections);
 export type SettingsSection = typeof SettingsSection.Type;
 
-export const defaultSettingsSection: SettingsSection = "receipts";
+export const defaultSettingsSection: SettingsSection = "account";
 
 const decodeSettingsSection = Schema.decodeUnknownOption(SettingsSection);
 
@@ -14,6 +22,10 @@ export const settingsSectionTitle = (section: SettingsSection): string => {
   switch (section) {
     case "staff":
       return "Staff";
+    case "account":
+      return "Account";
+    case "organization":
+      return "Organization";
     case "receipts":
       return "Receipts";
     case "data":
@@ -45,9 +57,12 @@ export const staffSectionPlace = (staff: StaffState): StaffSectionPlace => {
 };
 
 export const availableSettingsSections = (
+  signedIn: boolean,
   staff: StaffSectionPlace,
 ): ReadonlyArray<SettingsSection> => {
-  const rest = settingsSections.filter((section) => section !== "staff");
+  const rest = settingsSections.filter(
+    (section) => section !== "staff" && (section !== "organization" || signedIn),
+  );
   switch (staff) {
     case "hidden":
       return rest;

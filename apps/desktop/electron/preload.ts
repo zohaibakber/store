@@ -1,7 +1,9 @@
 import "@sentry/electron/preload";
 import { REPLICA_PORTS_CHANNEL, type ReplicaPortsMessage } from "@store/contracts/replica";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import type {
+  AuthIpcBridge,
   InventoryHttpBridge,
   ReplicaWorkspaceBridge,
   ServerApiIpcBridge,
@@ -10,12 +12,29 @@ import type { AppUpdaterBridge, DesktopShellBridge, ThemeBridge } from "@store/w
 import { makeReplayChannel } from "@store/web/host/replay-channel";
 import type { ShareBridge } from "@store/web/host/share";
 import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
+import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import { ipcRenderer, contextBridge } from "electron";
 
 import {
+  AUTH_AUTHENTICATE_CHANNEL,
+  AUTH_BEGIN_GOOGLE_CHANNEL,
+  AUTH_COMPLETE_GOOGLE_CHANNEL,
+  AUTH_GET_SESSION_CHANNEL,
+  AUTH_IDENTIFY_CHANNEL,
+  AUTH_ORGANIZATION_CHANNEL,
+  AUTH_ORGANIZE_CHANNEL,
+  AUTH_RENEW_SESSION_CHANNEL,
+  AUTH_SESSION_CHANGED_CHANNEL,
+  AUTH_SIGN_OUT_CHANNEL,
   BACKUP_SAVE_CHANNEL,
   INVENTORY_HTTP_CONFIG_CHANNEL,
   NEW_SALE_CHANNEL,
+  OAUTH_CALLBACK_CHANNEL,
+  PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_LOCAL_CATALOG_CHANNEL,
+  PUBLISH_OFFER_CHANNEL,
+  PUBLISH_PROGRESS_CHANNEL,
+  PUBLISH_START_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_RETRY_CHANNEL,
@@ -37,6 +56,7 @@ import {
   WINDOW_MINIMIZE_CHANNEL,
   WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from "./ipc-channels";
+import { isOAuthCallbackUrl } from "./oauth-callback";
 
 ipcRenderer.on(REPLICA_PORTS_CHANNEL, (event, message: ReplicaPortsMessage) => {
   window.postMessage(message, "*", event.ports);
@@ -49,7 +69,7 @@ const inventoryHttp: InventoryHttpBridge = {
 contextBridge.exposeInMainWorld("inventoryHttp", inventoryHttp);
 
 const replica: ReplicaWorkspaceBridge = {
-  open: () => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL),
+  open: (input) => ipcRenderer.invoke(REPLICA_OPEN_CHANNEL, input),
   close: (workspaceToken) => ipcRenderer.invoke(REPLICA_CLOSE_CHANNEL, workspaceToken),
   retryRecovery: (workspaceToken) => ipcRenderer.invoke(REPLICA_RETRY_CHANNEL, workspaceToken),
 };
@@ -73,6 +93,79 @@ const sharing: ShareBridge = {
 };
 
 contextBridge.exposeInMainWorld("sharing", sharing);
+
+const workspacePublish: WorkspacePublishBridge = {
+  offer: (organizationId) => ipcRenderer.invoke(PUBLISH_OFFER_CHANNEL, organizationId),
+  publish: (organizationId) => ipcRenderer.invoke(PUBLISH_START_CHANNEL, organizationId),
+  discard: (organizationId) => ipcRenderer.invoke(PUBLISH_DISCARD_CHANNEL, organizationId),
+  localCatalog: () => ipcRenderer.invoke(PUBLISH_LOCAL_CATALOG_CHANNEL),
+  onProgress(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: Parameters<typeof callback>[0],
+    ) => callback(progress);
+    ipcRenderer.on(PUBLISH_PROGRESS_CHANNEL, listener);
+    return () => ipcRenderer.off(PUBLISH_PROGRESS_CHANNEL, listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("workspacePublish", workspacePublish);
+
+const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
+ipcRenderer.on(AUTH_SESSION_CHANGED_CHANNEL, (_event, snapshot: WorkspaceSnapshot) => {
+  sessionReplay.publish(snapshot);
+});
+
+const oauthCallbackScheme = globalThis.location.protocol.slice(0, -1);
+const oauthCallbackListeners = new Set<(url: string) => void>();
+let unclaimedOAuthCallback: string | null = null;
+
+ipcRenderer.on(OAUTH_CALLBACK_CHANNEL, (_event, url: string) => {
+  if (!isOAuthCallbackUrl(url, oauthCallbackScheme)) return;
+  if (oauthCallbackListeners.size === 0) {
+    unclaimedOAuthCallback = url;
+    return;
+  }
+  for (const listener of oauthCallbackListeners) listener(url);
+});
+
+const publishedSession = async (snapshot: Promise<WorkspaceSnapshot>) => {
+  const settled = await snapshot;
+  sessionReplay.publish(settled);
+  return settled;
+};
+
+const auth: AuthIpcBridge = {
+  getSession: () => publishedSession(ipcRenderer.invoke(AUTH_GET_SESSION_CHANNEL)),
+  identify: (input) => ipcRenderer.invoke(AUTH_IDENTIFY_CHANNEL, input),
+  authenticate: (credentials) =>
+    publishedSession(ipcRenderer.invoke(AUTH_AUTHENTICATE_CHANNEL, credentials)),
+  beginGoogle: () => ipcRenderer.invoke(AUTH_BEGIN_GOOGLE_CHANNEL),
+  completeGoogle: async (callbackUrl) => {
+    const snapshot: WorkspaceSnapshot | null = await ipcRenderer.invoke(
+      AUTH_COMPLETE_GOOGLE_CHANNEL,
+      callbackUrl,
+    );
+    if (snapshot !== null) sessionReplay.publish(snapshot);
+    return snapshot;
+  },
+  renewSession: () => publishedSession(ipcRenderer.invoke(AUTH_RENEW_SESSION_CHANNEL)),
+  signOut: () => ipcRenderer.invoke(AUTH_SIGN_OUT_CHANNEL),
+  organizationRoster: () => ipcRenderer.invoke(AUTH_ORGANIZATION_CHANNEL),
+  organize: (command) => ipcRenderer.invoke(AUTH_ORGANIZE_CHANNEL, command),
+  onOAuthCallback(callback) {
+    oauthCallbackListeners.add(callback);
+    const unclaimed = unclaimedOAuthCallback;
+    unclaimedOAuthCallback = null;
+    if (unclaimed) callback(unclaimed);
+    return () => {
+      oauthCallbackListeners.delete(callback);
+    };
+  },
+  onSessionChange: (callback) => sessionReplay.subscribe(callback),
+};
+
+contextBridge.exposeInMainWorld("auth", auth);
 
 const serverApi: ServerApiIpcBridge = {
   analyseInvoices: (input) => ipcRenderer.invoke(SERVER_UPLOADS_CHANNEL, input),

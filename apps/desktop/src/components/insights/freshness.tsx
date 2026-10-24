@@ -6,6 +6,7 @@ import { AsyncBoundary } from "@/components/app/error-boundary";
 import { Spinner } from "@/components/ui/spinner";
 import { formatRelativeTime } from "@/lib/format";
 import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
+import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 import { progressPercent } from "./presentation";
 
@@ -55,15 +56,20 @@ function PopulatedInsightsFreshness() {
   return <InsightsFreshness />;
 }
 
+function SyncedInsightsFreshness() {
+  if (useFirstSyncPending()) return null;
+  return (
+    <AsyncBoundary fallback={null}>
+      <PopulatedInsightsFreshness />
+    </AsyncBoundary>
+  );
+}
+
 export function TitleBarInsightsFreshness() {
   const onInsightsPage = useLocation({
     select: (location) => INSIGHTS_PATHS.has(location.pathname),
   });
   const ready = useCatalogIsReady();
   if (!onInsightsPage || !ready) return null;
-  return (
-    <AsyncBoundary fallback={null}>
-      <PopulatedInsightsFreshness />
-    </AsyncBoundary>
-  );
+  return <SyncedInsightsFreshness />;
 }

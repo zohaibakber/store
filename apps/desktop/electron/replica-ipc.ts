@@ -1,6 +1,8 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import type { DeviceLabel } from "@store/contracts";
 import type { ReplicaWorkspaceBridge } from "@store/web/host/electron";
 import type { WorkspaceBackupBridge } from "@store/web/host/workspace-backup";
+import type { WorkspacePublishBridge } from "@store/web/host/workspace-publish";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -9,6 +11,10 @@ import type { MessageChannelMain } from "electron";
 
 import {
   BACKUP_SAVE_CHANNEL,
+  PUBLISH_DISCARD_CHANNEL,
+  PUBLISH_LOCAL_CATALOG_CHANNEL,
+  PUBLISH_OFFER_CHANNEL,
+  PUBLISH_START_CHANNEL,
   REPLICA_CLOSE_CHANNEL,
   REPLICA_OPEN_CHANNEL,
   REPLICA_RETRY_CHANNEL,
@@ -18,9 +24,11 @@ import {
 } from "./ipc-channels";
 import { trustedIpcListener, type TrustedIpcSenderFrame } from "./ipc-sender";
 import { makeReplicaBackup, makeStagedRestores, type ReplicaBackupDialogs } from "./replica-backup";
-import { ReplicaWorkspaceToken } from "./replica-rpc";
+import { makeReplicaPublishHost } from "./replica-publish-host";
+import { ReplicaOpenInput, ReplicaWorkspaceToken } from "./replica-rpc";
 import {
   makeWorkspaceSessions,
+  type AccessTokenSource,
   type ReplicaSender,
   type WorkspaceSessionTuning,
 } from "./workspace-sessions";
@@ -69,9 +77,28 @@ type BackupIpcHandlers = {
   ) => Promise<BackupResult<Channel>>;
 };
 
+const PUBLISH_CHANNEL_METHODS = {
+  [PUBLISH_OFFER_CHANNEL]: "offer",
+  [PUBLISH_START_CHANNEL]: "publish",
+  [PUBLISH_DISCARD_CHANNEL]: "discard",
+  [PUBLISH_LOCAL_CATALOG_CHANNEL]: "localCatalog",
+} satisfies Record<string, keyof WorkspacePublishBridge>;
+
+type PublishResult<Channel extends keyof typeof PUBLISH_CHANNEL_METHODS> = BridgeResult<
+  WorkspacePublishBridge[(typeof PUBLISH_CHANNEL_METHODS)[Channel]]
+>;
+
+type PublishIpcHandlers = {
+  readonly [Channel in keyof typeof PUBLISH_CHANNEL_METHODS]: (
+    event: ReplicaInvokeEvent,
+    input: ReplicaIpcInput,
+  ) => Promise<PublishResult<Channel>>;
+};
+
 type ReplicaIpcResult =
   | BridgeResult<ChannelMethod<keyof typeof CHANNEL_METHODS>>
-  | BackupResult<keyof typeof BACKUP_CHANNEL_METHODS>;
+  | BackupResult<keyof typeof BACKUP_CHANNEL_METHODS>
+  | PublishResult<keyof typeof PUBLISH_CHANNEL_METHODS>;
 
 export type ReplicaIpcListener = (
   event: ReplicaInvokeEvent,
@@ -79,6 +106,8 @@ export type ReplicaIpcListener = (
 ) => Promise<ReplicaIpcResult>;
 
 const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
+const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
+const decodeOrganizationId = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {
@@ -87,7 +116,9 @@ export const registerReplicaWorkerIpc = (options: {
   };
   readonly userDataPath: string;
   readonly workerPath: string;
-  readonly replicaId: string;
+  readonly apiBaseUrl: string;
+  readonly deviceLabel?: DeviceLabel | undefined;
+  readonly accessTokens: AccessTokenSource;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly backupDialogs: ReplicaBackupDialogs;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
@@ -100,7 +131,9 @@ export const registerReplicaWorkerIpc = (options: {
   const sessions = makeWorkspaceSessions({
     userDataPath: options.userDataPath,
     workerPath: options.workerPath,
-    replicaId: options.replicaId,
+    apiBaseUrl: options.apiBaseUrl,
+    deviceLabel: options.deviceLabel,
+    accessTokens: options.accessTokens,
     rendererChannel: options.rendererChannel,
     onDispose: (session) => stagedRestores.discard(session.workspaceToken),
     ...options.sessions,
@@ -110,6 +143,7 @@ export const registerReplicaWorkerIpc = (options: {
     stagedRestores,
     dialogs: options.backupDialogs,
   });
+  const publish = makeReplicaPublishHost(sessions);
 
   const currentSession = (event: ReplicaInvokeEvent) => sessions.latestFor(event.sender.id);
 
@@ -120,8 +154,20 @@ export const registerReplicaWorkerIpc = (options: {
     [RESTORE_DISCARD_CHANNEL]: async (event) => run(backup.discardRestore(currentSession(event))),
   };
 
+  const publishHandlers: PublishIpcHandlers = {
+    [PUBLISH_OFFER_CHANNEL]: async (event, input) =>
+      run(publish.offer(currentSession(event), decodeOrganizationId(input))),
+    [PUBLISH_START_CHANNEL]: async (event, input) =>
+      run(publish.publish(currentSession(event), decodeOrganizationId(input))),
+    [PUBLISH_DISCARD_CHANNEL]: async (event, input) =>
+      run(publish.discard(currentSession(event), decodeOrganizationId(input))),
+    [PUBLISH_LOCAL_CATALOG_CHANNEL]: async (event) =>
+      run(publish.localCatalog(currentSession(event))),
+  };
+
   const handlers: ReplicaIpcHandlers = {
-    [REPLICA_OPEN_CHANNEL]: async (event) => run(sessions.open(event.sender)),
+    [REPLICA_OPEN_CHANNEL]: async (event, input) =>
+      run(sessions.open(event.sender, decodeOpenInput(input))),
     [REPLICA_CLOSE_CHANNEL]: async (event, input) =>
       run(sessions.close(event.sender.id, decodeWorkspaceToken(input))),
     [REPLICA_RETRY_CHANNEL]: async (event, input) =>
@@ -136,7 +182,7 @@ export const registerReplicaWorkerIpc = (options: {
       ),
   };
 
-  const registered = { ...handlers, ...backupHandlers } satisfies Record<
+  const registered = { ...handlers, ...backupHandlers, ...publishHandlers } satisfies Record<
     string,
     ReplicaIpcListener
   >;

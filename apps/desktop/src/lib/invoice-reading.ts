@@ -4,8 +4,9 @@ import * as Schema from "effect/Schema";
 
 import { useOnline } from "@/hooks/use-online";
 import { appHost } from "@/host";
+import type { Workspace } from "@/host-access";
 import type { InvoiceUploadFile } from "@/host/invoice-upload";
-import { useOnlineHelpers } from "@/lib/online-helpers";
+import { useAuth } from "@/lib/auth";
 
 const decodeExtraction = Schema.decodeUnknownSync(InvoiceExtraction);
 
@@ -25,14 +26,27 @@ export const readInvoices = async (
   });
 };
 
+const savesOffline = (workspace: Workspace): boolean => {
+  switch (workspace._tag) {
+    case "Local":
+      return true;
+    case "Organization":
+    case "None":
+      return false;
+  }
+};
+
 export const useInvoiceReading = () => {
-  const { available } = useOnlineHelpers();
+  const { snapshot, workspace } = useAuth();
   const online = useOnline();
+  const signedIn = snapshot?.status === "authenticated";
   return {
-    readsDocuments: available,
+    isOnline: online || savesOffline(workspace),
     analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>): Promise<InvoiceExtraction> =>
       readInvoices(files, async (documents) => {
-        if (!available) throw new Error("Only CSV files can be imported.");
+        if (!signedIn) {
+          throw new Error("Reading PDF invoices needs an account. Sign in, or import a CSV file.");
+        }
         if (!online) throw new Error("You're offline. Connect to read PDF invoices.");
         return appHost().analyseInvoices(documents);
       }),

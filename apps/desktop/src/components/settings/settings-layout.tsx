@@ -1,8 +1,10 @@
 import {
+  Building03Icon,
   Certificate01Icon,
   Database01Icon,
   Invoice03Icon,
   Settings01Icon,
+  UserCircleIcon,
   UserGroupIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -19,6 +21,7 @@ import { useStaffAccess } from "@/components/staff/access";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const ROOM_BESIDE_OPEN_SIDEBAR = "(min-width: 73rem)";
@@ -28,6 +31,10 @@ const sectionIcon = (section: SettingsSection): IconSvgElement => {
   switch (section) {
     case "staff":
       return UserGroupIcon;
+    case "account":
+      return UserCircleIcon;
+    case "organization":
+      return Building03Icon;
     case "receipts":
       return Invoice03Icon;
     case "data":
@@ -39,8 +46,10 @@ const sectionIcon = (section: SettingsSection): IconSvgElement => {
   }
 };
 
-export const useSettingsSections = (): ReadonlyArray<SettingsSection> =>
-  availableSettingsSections(staffSectionPlace(useStaffAccess()));
+export const useSettingsSections = (): ReadonlyArray<SettingsSection> => {
+  const signedIn = useAuth().snapshot?.status === "authenticated";
+  return availableSettingsSections(signedIn, staffSectionPlace(useStaffAccess()));
+};
 
 export function SettingsLayout() {
   const sections = useSettingsSections();

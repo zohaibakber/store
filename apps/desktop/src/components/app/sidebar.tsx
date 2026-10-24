@@ -16,9 +16,8 @@ import type * as React from "react";
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { NavMain, type NavMainItem } from "@/components/app/nav-main";
 import { NavUser } from "@/components/app/nav-user";
-import { BrandMark } from "@/components/brand-mark";
+import { WorkspaceLogo } from "@/components/app/workspace-logo";
 import { restockActionCount } from "@/components/insights/presentation";
-import { useShopName } from "@/components/licence/status";
 import { routePermission, useStaffAccess } from "@/components/staff/access";
 import {
   Sidebar,
@@ -28,6 +27,7 @@ import {
   SidebarMenuBadge,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { useFirstSyncPending } from "@/lib/inventory/provider";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;
@@ -42,6 +42,11 @@ function RestockCountReady() {
 
 function RestockCount() {
   if (!useCatalogIsReady()) return null;
+  return <RestockCountSynced />;
+}
+
+function RestockCountSynced() {
+  if (useFirstSyncPending()) return null;
   return (
     <AsyncBoundary fallback={null}>
       <RestockCountReady />
@@ -95,19 +100,13 @@ const navMain = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const staff = useStaffAccess();
-  const shopName = useShopName();
   const items = navMain.filter((item) => permits(staff, routePermission(item.url)));
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="-mb-2">
         <div className="flex h-8 items-center px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <span className="flex min-w-0 items-center gap-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
-            <BrandMark className="size-6 shrink-0 rounded-sm" />
-            <span className="truncate font-medium group-data-[collapsible=icon]:hidden">
-              {shopName ?? "Tabaaq"}
-            </span>
-          </span>
+          <WorkspaceLogo />
         </div>
       </SidebarHeader>
       <SidebarContent>

@@ -34,7 +34,7 @@ import {
   type SaleDraftOwner,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
-import { WORKSPACE_STORAGE_KEY } from "@/lib/workspace";
+import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 const searchFocusAtom = Atom.make(0).pipe(Atom.keepAlive);
 
@@ -140,7 +140,7 @@ const NO_STAFF: Atom.Atom<Option.Option<StaffState>> = Atom.make(Option.none<Sta
 
 export const useSaleDraftOwner = (): SaleDraftOwner => {
   const staff = useAtomValue(useReadyInventory()?.inventory.atoms.staff ?? NO_STAFF);
-  return saleDraftOwner(WORKSPACE_STORAGE_KEY, Option.getOrUndefined(staff));
+  return saleDraftOwner(useWorkspaceStorageKey(), Option.getOrUndefined(staff));
 };
 
 export const useSaleDraftsIn = (owner: SaleDraftOwner): SaleDrafts =>
@@ -153,12 +153,14 @@ export const useSaleDraftStore = (): SaleDraftStore => useSaleDraftStoreIn(useSa
 
 export const useClearSaleDrafts = () => {
   const registry = useContext(RegistryContext);
-  return () => clearSaleDrafts(registry, WORKSPACE_STORAGE_KEY);
+  const workspace = useWorkspaceStorageKey();
+  return () => clearSaleDrafts(registry, workspace);
 };
 
 export const useReleaseSaleDrafts = () => {
   const registry = useContext(RegistryContext);
-  return () => releaseSaleDrafts(registry, WORKSPACE_STORAGE_KEY);
+  const workspace = useWorkspaceStorageKey();
+  return () => releaseSaleDrafts(registry, workspace);
 };
 
 export const useSaleSearchFocusRequest = (): number => useAtomValue(searchFocusAtom);
@@ -225,15 +227,16 @@ export const useParkedElsewhere = () => {
   const registry = useContext(RegistryContext);
   const staff = useStaffState();
   const { handOverDraft } = useStaffActions();
-  const owner = saleDraftOwner(WORKSPACE_STORAGE_KEY, staff);
+  const workspace = useWorkspaceStorageKey();
+  const owner = saleDraftOwner(workspace, staff);
   const parkedAtom = useMemo(() => {
-    const others = otherSaleDraftOwners(WORKSPACE_STORAGE_KEY, staff);
+    const others = otherSaleDraftOwners(workspace, staff);
     return Atom.make((get): ReadonlyArray<ParkedElsewhere> =>
       others
         .map((other) => ({ owner: other, drafts: heldSaleDrafts(get(saleDraftsAtom(other))) }))
         .filter((held) => held.drafts.length > 0),
     );
-  }, [staff]);
+  }, [workspace, staff]);
 
   return {
     parked: useAtomValue(parkedAtom),
