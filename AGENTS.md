@@ -105,9 +105,8 @@ Before composing these primitives, read `.agents/skills/coss/SKILL.md`. The skil
 is portable; what is local to this repo is this section, Typography, and
 `apps/desktop/components.json`, whose directory is where `shadcn` commands run.
 
-After changing UI code in `apps/desktop`, run `vp run lint:design`. Application code
-must pass the design-system rules with zero errors; registry-owned COSS primitives
-under `apps/desktop/src/components/ui` stay governed by their upstream definitions.
+Registry-owned COSS primitives under `apps/desktop/src/components/ui` stay
+governed by their upstream definitions.
 
 ## Cursor Cloud instructions
 

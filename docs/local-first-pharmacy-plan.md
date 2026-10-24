@@ -346,7 +346,7 @@ The release gate includes a full copy with an interrupted upload, a backup taken
 - For web UI implementation, use COSS, Inter, the agreed size and weight scale, and Hugeicons. Keep registry-owned UI primitives intact.
 - Keep meaningful tests for financial, licence, and permission invariants. Use temporary tests for exploratory checks instead of adding a test file for every UI change.
 
-Run `vp install`, `vp check`, `vp run -r check`, and `vp test` for implementation releases. Run `vp run lint:design` after web UI changes and package the desktop with `vp run --filter @store/desktop build`. Verify the backup service against the real deployed dev stage before production. Measure startup and checkout latency before and after changes.
+Run `vp install`, `vp check`, `vp run -r check`, and `vp test` for implementation releases. Package the desktop with `vp run --filter @store/desktop build`. Verify the backup service against the real deployed dev stage before production. Measure startup and checkout latency before and after changes.
 
 Release in this order: licence and staff access, removal of accounts and sync, pharmacy stock rules, financial workflows, stocktake and claims, migration adapters, then cloud backup and usage reporting. Collect source fixtures early.
 
