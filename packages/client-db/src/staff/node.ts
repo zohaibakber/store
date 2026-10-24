@@ -1,8 +1,13 @@
 import {
+  decideAddStaff,
+  decideHandOverDraft,
+  decideRemoveStaff,
+  decideSetUpOwner,
+  decideUpdateStaff,
   DEFAULT_AUTO_LOCK_MINUTES,
+  lockStaff,
   MAX_STAFF_EVENTS,
-  MAX_STAFF_MEMBERS,
-  roleAllows,
+  requireActor,
   StaffEventKind,
   StaffId,
   StaffRefusal,
@@ -23,6 +28,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -81,9 +87,6 @@ type EventInput = {
 
 const memberOf = (row: StaffRow): StaffMember => ({ id: row.id, name: row.name, role: row.role });
 
-const sameName = (left: string, right: string) =>
-  left.trim().toLowerCase() === right.trim().toLowerCase();
-
 const ownerFirstThenName = (left: StaffMember, right: StaffMember) =>
   Number(right.role === "owner") - Number(left.role === "owner") ||
   left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
@@ -108,6 +111,9 @@ const stateOf = (
 };
 
 const refuse = (reason: StaffRefusalReason) => new StaffRefusal({ reason });
+
+const demand = <A>(decision: Result.Result<A, StaffRefusal>) =>
+  Result.isFailure(decision) ? Effect.fail(decision.failure) : Effect.succeed(decision.success);
 
 export const layerNodeStaffGate = (options?: {
   readonly kdfCost?: number;
@@ -191,10 +197,7 @@ export const layerNodeStaffGate = (options?: {
       });
 
       const actorAllowed = Effect.fnUntraced(function* (permission: StaffPermission) {
-        const current = yield* SubscriptionRef.get(state);
-        if (current._tag !== "unlocked") return yield* refuse("locked");
-        if (!roleAllows(current.actor.role, permission)) return yield* refuse("forbidden");
-        return current.actor;
+        return yield* demand(requireActor(yield* SubscriptionRef.get(state), permission));
       });
 
       const authorize = Effect.fn("StaffGate.authorize")(function* (permission: StaffPermission) {
@@ -251,7 +254,7 @@ export const layerNodeStaffGate = (options?: {
         readonly pin: Redacted.Redacted<string>;
       }) {
         const rows = yield* readRows;
-        if (rows.some((row) => row.active)) return yield* refuse("alreadySetUp");
+        yield* demand(decideSetUpOwner(rows.some((row) => row.active)));
         const id = yield* newStaffId;
         const pinVerifier = yield* seal(pin);
         const recovery = yield* issueRecoveryCode;
@@ -303,9 +306,10 @@ export const layerNodeStaffGate = (options?: {
         return memberOf(member);
       }, oneAtATime);
 
-      const lock = SubscriptionRef.update(state, (current): StaffState =>
-        current._tag === "unlocked" ? { _tag: "locked", staff: current.staff } : current,
-      ).pipe(oneAtATime, Effect.withSpan("StaffGate.lock"));
+      const lock = SubscriptionRef.update(state, lockStaff).pipe(
+        oneAtATime,
+        Effect.withSpan("StaffGate.lock"),
+      );
 
       const addStaff = Effect.fn("StaffGate.addStaff")(function* ({
         name,
@@ -318,8 +322,7 @@ export const layerNodeStaffGate = (options?: {
       }) {
         const actor = yield* actorAllowed("manageShop");
         const active = (yield* readRows).filter((row) => row.active);
-        if (active.length >= MAX_STAFF_MEMBERS) return yield* refuse("tooManyStaff");
-        if (active.some((row) => sameName(row.name, name))) return yield* refuse("nameTaken");
+        yield* demand(decideAddStaff(active, name));
         const id = yield* newStaffId;
         const pinVerifier = yield* seal(pin);
         const now = yield* Clock.currentTimeMillis;
@@ -348,15 +351,12 @@ export const layerNodeStaffGate = (options?: {
       }) {
         const actor = yield* actorAllowed("manageShop");
         const active = (yield* readRows).filter((row) => row.active);
-        const member = active.find((row) => row.id === id);
-        if (member === undefined) return yield* refuse("unknownStaff");
-        if ((member.role === "owner") !== (role === "owner")) return yield* refuse("ownerIsFixed");
-        if (active.some((row) => row.id !== id && sameName(row.name, name))) {
-          return yield* refuse("nameTaken");
-        }
+        const member = yield* demand(decideUpdateStaff(active, id, name, role));
         const renamedOrMoved = member.name !== name || member.role !== role;
         const pinVerifier = pin === undefined ? undefined : yield* seal(pin);
-        if (!renamedOrMoved && pinVerifier === undefined) return memberOf(member);
+        if (!renamedOrMoved && pinVerifier === undefined) {
+          return { id: member.id, name: member.name, role: member.role } satisfies StaffMember;
+        }
         const now = yield* Clock.currentTimeMillis;
         const renamed = { name, role, updatedAt: now };
         const changes =
@@ -382,9 +382,9 @@ export const layerNodeStaffGate = (options?: {
         readonly id: StaffId;
       }) {
         const actor = yield* actorAllowed("manageShop");
-        const member = (yield* readRows).find((row) => row.active && row.id === id);
-        if (member === undefined) return yield* refuse("unknownStaff");
-        if (member.role === "owner") return yield* refuse("ownerIsFixed");
+        yield* demand(
+          decideRemoveStaff((yield* readRows).find((row) => row.active && row.id === id)),
+        );
         const now = yield* Clock.currentTimeMillis;
         yield* transact(
           Effect.gen(function* () {
@@ -529,8 +529,13 @@ export const layerNodeStaffGate = (options?: {
         readonly from: StaffId;
       }) {
         const actor = yield* actorAllowed("manageStock");
-        const known = (yield* readRows).some((row) => row.id === from);
-        if (!known || from === actor.id) return yield* refuse("unknownStaff");
+        yield* demand(
+          decideHandOverDraft(
+            (yield* readRows).map((row) => row.id),
+            from,
+            actor.id,
+          ),
+        );
         yield* stored(
           record({
             kind: "draftHandedOver",

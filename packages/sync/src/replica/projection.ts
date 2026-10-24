@@ -9,7 +9,6 @@ import {
   purchaseOrderLineBaseUnits,
   purchasingRejection,
   receivedBaseUnitsOf,
-  SyncProtocolError,
   syncProtocolError,
   type CatalogRowWrite,
   type SyncCommandEnvelope,
@@ -248,16 +247,20 @@ const notInOrganization = (label: string, id: string): Rejection => ({
   message: `${label} ${id} is not available in this organization.`,
 });
 
-const refuse = (pass: CatalogPass, rejection: Rejection): void => {
-  if (pass.enforce) throw syncProtocolError(rejection.code, rejection.message);
-};
+const accepted = Result.succeed(undefined);
 
-const guard = (pass: CatalogPass, run: () => Result.Result<void, CatalogRefusal>): void => {
-  if (!pass.enforce) return;
+const halt = (pass: CatalogPass, rejection: Rejection): Result.Result<void, Rejection> =>
+  pass.enforce ? Result.fail(rejection) : accepted;
+
+const guard = (
+  pass: CatalogPass,
+  run: () => Result.Result<void, CatalogRefusal>,
+): Result.Result<void, Rejection> => {
+  if (!pass.enforce) return accepted;
   const result = run();
-  if (Result.isFailure(result)) {
-    throw syncProtocolError("ENTITY_CONFLICT", result.failure.message);
-  }
+  return Result.isFailure(result)
+    ? Result.fail({ code: "ENTITY_CONFLICT", message: result.failure.message })
+    : accepted;
 };
 
 const current = <Entity extends CatalogEntity>(
@@ -326,13 +329,14 @@ const checkUpsertTarget = (
   entity: PurchasingEntity,
   write: VersionedTarget,
   existing: MutableRowMetadata | undefined,
-): void => {
+): Result.Result<void, Rejection> => {
   if (write.expectedRowVersion === null && existing) {
-    refuse(pass, alreadyExists(entity, write.id));
+    return halt(pass, alreadyExists(entity, write.id));
   }
   if (write.expectedRowVersion !== null && !existing) {
-    refuse(pass, noLongerAvailable(entity, write.id));
+    return halt(pass, noLongerAvailable(entity, write.id));
   }
+  return accepted;
 };
 
 const checkDeleteTarget = (
@@ -340,14 +344,12 @@ const checkDeleteTarget = (
   entity: PurchasingEntity,
   write: VersionedTarget,
   existing: MutableRowMetadata | undefined,
-): void => {
-  if (!existing) {
-    refuse(pass, noLongerAvailable(entity, write.id));
-    return;
-  }
+): Result.Result<void, Rejection> => {
+  if (!existing) return halt(pass, noLongerAvailable(entity, write.id));
   if (existing.rowVersion !== write.expectedRowVersion) {
-    refuse(pass, changedSinceRead(entity, write.id));
+    return halt(pass, changedSinceRead(entity, write.id));
   }
+  return accepted;
 };
 
 const untouched = (pass: CatalogPass, entity: CatalogEntity, reference: EntityReference) =>
@@ -399,300 +401,314 @@ const freeOrderNumber = (pass: CatalogPass, purchaseOrderId: string, proposed: n
   );
 };
 
-const writeCategory = (pass: CatalogPass, write: WriteOf<"category">): void => {
-  const existing = current(pass, "category", write.id);
-  switch (write.action) {
-    case "delete": {
-      const blocking = pass.lookup.productInCategory(write.id);
-      guard(pass, () => checkCanDeleteCategory(blocking ? [blocking] : [], write.id));
-      if (existing) remove(pass, "category", write.id);
-      return;
-    }
-    case "upsert": {
-      const row: SyncEntityRow<"category"> = {
-        id: write.id,
-        name: write.row.name,
-        tracksPacks: write.row.tracksPacks,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.category.set(write.id, row);
-      pass.rows.push({ entity: "category", entityId: write.id, row });
-      return;
-    }
-    default:
-      return write satisfies never;
-  }
-};
-
-const writeProduct = (pass: CatalogPass, write: WriteOf<"product">): void => {
-  const existing = current(pass, "product", write.id);
-  switch (write.action) {
-    case "delete": {
-      const stocked = pass.lookup.stockedBatchOfProduct(write.id);
-      guard(pass, () => checkCanDeleteProduct(stocked ? [stocked] : [], write.id));
-      if (existing) remove(pass, "product", write.id);
-      return;
-    }
-    case "upsert": {
-      const stored = pass.lookup.product(write.id);
-      if (stored && stored.unitsPerPack !== write.row.unitsPerPack) {
-        const stocked = pass.lookup.stockedBatchOfProduct(write.id);
-        guard(pass, () => checkCanChangeUnitsPerPack(stocked ? [stocked] : [], write.id));
+const writeCategory = (pass: CatalogPass, write: WriteOf<"category">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "category", write.id);
+    switch (write.action) {
+      case "delete": {
+        const blocking = pass.lookup.productInCategory(write.id);
+        yield* guard(pass, () => checkCanDeleteCategory(blocking ? [blocking] : [], write.id));
+        if (existing) remove(pass, "category", write.id);
+        return;
       }
-      const row: SyncEntityRow<"product"> = {
-        id: write.id,
-        name: write.row.name,
-        categoryId: write.row.categoryId,
-        aisle: write.row.aisle,
-        composition: write.row.composition,
-        strength: write.row.strength,
-        unitsPerPack: write.row.unitsPerPack,
-        purchasePrice: write.row.purchasePrice,
-        retailPrice: write.row.retailPrice,
-        unitPrice: write.row.unitPrice,
-        visible: write.row.visible,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.product.set(write.id, row);
-      pass.rows.push({ entity: "product", entityId: write.id, row });
-      return;
+      case "upsert": {
+        const row: SyncEntityRow<"category"> = {
+          id: write.id,
+          name: write.row.name,
+          tracksPacks: write.row.tracksPacks,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.category.set(write.id, row);
+        pass.rows.push({ entity: "category", entityId: write.id, row });
+        return;
+      }
+      default:
+        return write satisfies never;
     }
-    default:
-      return write satisfies never;
-  }
-};
+  });
+
+const writeProduct = (pass: CatalogPass, write: WriteOf<"product">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "product", write.id);
+    switch (write.action) {
+      case "delete": {
+        const stocked = pass.lookup.stockedBatchOfProduct(write.id);
+        yield* guard(pass, () => checkCanDeleteProduct(stocked ? [stocked] : [], write.id));
+        if (existing) remove(pass, "product", write.id);
+        return;
+      }
+      case "upsert": {
+        const stored = pass.lookup.product(write.id);
+        if (stored && stored.unitsPerPack !== write.row.unitsPerPack) {
+          const stocked = pass.lookup.stockedBatchOfProduct(write.id);
+          yield* guard(pass, () => checkCanChangeUnitsPerPack(stocked ? [stocked] : [], write.id));
+        }
+        const row: SyncEntityRow<"product"> = {
+          id: write.id,
+          name: write.row.name,
+          categoryId: write.row.categoryId,
+          aisle: write.row.aisle,
+          composition: write.row.composition,
+          strength: write.row.strength,
+          unitsPerPack: write.row.unitsPerPack,
+          purchasePrice: write.row.purchasePrice,
+          retailPrice: write.row.retailPrice,
+          unitPrice: write.row.unitPrice,
+          visible: write.row.visible,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.product.set(write.id, row);
+        pass.rows.push({ entity: "product", entityId: write.id, row });
+        return;
+      }
+      default:
+        return write satisfies never;
+    }
+  });
 
 const receiptLine = (
   pass: CatalogPass,
   write: Extract<WriteOf<"batch">, { readonly action: "upsert" }>,
-): SyncEntityRow<"purchaseOrderItem"> | undefined => {
-  if (write.receipt === undefined) return undefined;
-  if (write.expectedRowVersion !== null) {
-    refuse(pass, purchasingRejection.receiptOnExistingBatch);
-    return undefined;
-  }
-  const line = current(pass, "purchaseOrderItem", write.receipt.purchaseOrderItemId);
-  if (!line) {
-    refuse(
-      pass,
-      notInOrganization(purchasingLabel.purchaseOrderItem, write.receipt.purchaseOrderItemId),
-    );
-    return undefined;
-  }
-  if (line.productId !== write.row.productId) {
-    refuse(pass, purchasingRejection.receiptProductMismatch);
-  }
-  if (purchaseOrderIsClosed(pass, line.purchaseOrderId)) {
-    refuse(pass, purchasingRejection.orderNotOpen);
-  }
-  return line;
-};
+) =>
+  Result.gen(function* () {
+    if (write.receipt === undefined) return undefined;
+    if (write.expectedRowVersion !== null) {
+      yield* halt(pass, purchasingRejection.receiptOnExistingBatch);
+      return undefined;
+    }
+    const line = current(pass, "purchaseOrderItem", write.receipt.purchaseOrderItemId);
+    if (!line) {
+      yield* halt(
+        pass,
+        notInOrganization(purchasingLabel.purchaseOrderItem, write.receipt.purchaseOrderItemId),
+      );
+      return undefined;
+    }
+    if (line.productId !== write.row.productId) {
+      yield* halt(pass, purchasingRejection.receiptProductMismatch);
+    }
+    if (purchaseOrderIsClosed(pass, line.purchaseOrderId)) {
+      yield* halt(pass, purchasingRejection.orderNotOpen);
+    }
+    return line;
+  });
 
-const writeBatch = (pass: CatalogPass, write: WriteOf<"batch">): void => {
-  const existing = current(pass, "batch", write.id);
-  switch (write.action) {
-    case "delete": {
-      const stored = pass.lookup.batch(write.id);
-      if (stored) guard(pass, () => checkCanDeleteBatch(stored));
-      if (existing) remove(pass, "batch", write.id);
-      return;
-    }
-    case "upsert": {
-      const line = receiptLine(pass, write);
-      const row: SyncEntityRow<"batch"> = {
-        id: write.id,
-        productId: write.row.productId,
-        batchNumber: write.row.batchNumber,
-        expiresAt: write.row.expiresAt,
-        packQuantity: write.row.packQuantity,
-        unitQuantity: write.row.unitQuantity,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.batch.set(write.id, row);
-      pass.rows.push({ entity: "batch", entityId: write.id, row });
+const writeBatch = (pass: CatalogPass, write: WriteOf<"batch">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "batch", write.id);
+    switch (write.action) {
+      case "delete": {
+        const stored = pass.lookup.batch(write.id);
+        if (stored) yield* guard(pass, () => checkCanDeleteBatch(stored));
+        if (existing) remove(pass, "batch", write.id);
+        return;
+      }
+      case "upsert": {
+        const line = yield* receiptLine(pass, write);
+        const row: SyncEntityRow<"batch"> = {
+          id: write.id,
+          productId: write.row.productId,
+          batchNumber: write.row.batchNumber,
+          expiresAt: write.row.expiresAt,
+          packQuantity: write.row.packQuantity,
+          unitQuantity: write.row.unitQuantity,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.batch.set(write.id, row);
+        pass.rows.push({ entity: "batch", entityId: write.id, row });
 
-      const packDelta = row.packQuantity - (existing?.packQuantity ?? 0);
-      const unitDelta = row.unitQuantity - (existing?.unitQuantity ?? 0);
-      if (packDelta !== 0 || unitDelta !== 0) {
-        pass.rows.push({
-          entity: "stockMovement",
-          entityId: write.movementId,
-          row: {
-            id: write.movementId,
-            productId: row.productId,
-            batchId: row.id,
-            invoiceId: null,
-            purchaseOrderId: line?.purchaseOrderId ?? null,
-            type: movementType(write),
-            packDelta,
-            unitDelta,
-            note: write.note,
-            organizationId: pass.actor.organizationId,
-            actorUserId: pass.actor.userId,
-            deviceId: pass.command.deviceId,
-            operationId: pass.command.commandId,
-            createdAt: pass.command.occurredAt,
-          },
-        });
+        const packDelta = row.packQuantity - (existing?.packQuantity ?? 0);
+        const unitDelta = row.unitQuantity - (existing?.unitQuantity ?? 0);
+        if (packDelta !== 0 || unitDelta !== 0) {
+          pass.rows.push({
+            entity: "stockMovement",
+            entityId: write.movementId,
+            row: {
+              id: write.movementId,
+              productId: row.productId,
+              batchId: row.id,
+              invoiceId: null,
+              purchaseOrderId: line?.purchaseOrderId ?? null,
+              type: movementType(write),
+              packDelta,
+              unitDelta,
+              note: write.note,
+              organizationId: pass.actor.organizationId,
+              actorUserId: pass.actor.userId,
+              deviceId: pass.command.deviceId,
+              operationId: pass.command.commandId,
+              createdAt: pass.command.occurredAt,
+            },
+          });
+        }
+        if (!line) return;
+        const unitsPerPack = current(pass, "product", row.productId)?.unitsPerPack ?? 1;
+        const received: SyncEntityRow<"purchaseOrderItem"> = {
+          ...line,
+          receivedBaseUnits: line.receivedBaseUnits + receivedBaseUnitsOf(row, unitsPerPack),
+          ...updatedMetadata(pass, line),
+        };
+        pass.working.purchaseOrderItem.set(received.id, received);
+        pass.rows.push({ entity: "purchaseOrderItem", entityId: received.id, row: received });
+        return;
       }
-      if (!line) return;
-      const unitsPerPack = current(pass, "product", row.productId)?.unitsPerPack ?? 1;
-      const received: SyncEntityRow<"purchaseOrderItem"> = {
-        ...line,
-        receivedBaseUnits: line.receivedBaseUnits + receivedBaseUnitsOf(row, unitsPerPack),
-        ...updatedMetadata(pass, line),
-      };
-      pass.working.purchaseOrderItem.set(received.id, received);
-      pass.rows.push({ entity: "purchaseOrderItem", entityId: received.id, row: received });
-      return;
+      default:
+        return write satisfies never;
     }
-    default:
-      return write satisfies never;
-  }
-};
+  });
 
-const writeSupplier = (pass: CatalogPass, write: WriteOf<"supplier">): void => {
-  const existing = current(pass, "supplier", write.id);
-  switch (write.action) {
-    case "delete": {
-      checkDeleteTarget(pass, "supplier", write, existing);
-      if (supplierHasOrders(pass, write.id)) refuse(pass, purchasingRejection.supplierHasOrders);
-      if (existing) remove(pass, "supplier", write.id);
-      return;
-    }
-    case "upsert": {
-      checkUpsertTarget(pass, "supplier", write, existing);
-      if (supplierNameTaken(pass, write.id, write.row.name)) {
-        refuse(pass, conflict(`Supplier name ${write.row.name} is already in use.`));
+const writeSupplier = (pass: CatalogPass, write: WriteOf<"supplier">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "supplier", write.id);
+    switch (write.action) {
+      case "delete": {
+        yield* checkDeleteTarget(pass, "supplier", write, existing);
+        if (supplierHasOrders(pass, write.id)) {
+          yield* halt(pass, purchasingRejection.supplierHasOrders);
+        }
+        if (existing) remove(pass, "supplier", write.id);
+        return;
       }
-      const row: SyncEntityRow<"supplier"> = {
-        id: write.id,
-        name: write.row.name,
-        phone: write.row.phone,
-        note: write.row.note,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.supplier.set(write.id, row);
-      pass.rows.push({ entity: "supplier", entityId: write.id, row });
-      return;
+      case "upsert": {
+        yield* checkUpsertTarget(pass, "supplier", write, existing);
+        if (supplierNameTaken(pass, write.id, write.row.name)) {
+          yield* halt(pass, conflict(`Supplier name ${write.row.name} is already in use.`));
+        }
+        const row: SyncEntityRow<"supplier"> = {
+          id: write.id,
+          name: write.row.name,
+          phone: write.row.phone,
+          note: write.row.note,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.supplier.set(write.id, row);
+        pass.rows.push({ entity: "supplier", entityId: write.id, row });
+        return;
+      }
+      default:
+        return write satisfies never;
     }
-    default:
-      return write satisfies never;
-  }
-};
+  });
 
-const writePurchaseOrder = (pass: CatalogPass, write: WriteOf<"purchaseOrder">): void => {
-  const existing = current(pass, "purchaseOrder", write.id);
-  switch (write.action) {
-    case "delete": {
-      checkDeleteTarget(pass, "purchaseOrder", write, existing);
-      if (existing && existing.status !== "draft") {
-        refuse(pass, purchasingRejection.orderNotDraft);
+const writePurchaseOrder = (pass: CatalogPass, write: WriteOf<"purchaseOrder">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "purchaseOrder", write.id);
+    switch (write.action) {
+      case "delete": {
+        yield* checkDeleteTarget(pass, "purchaseOrder", write, existing);
+        if (existing && existing.status !== "draft") {
+          yield* halt(pass, purchasingRejection.orderNotDraft);
+        }
+        if (purchaseOrderHasItems(pass, write.id)) {
+          yield* halt(pass, purchasingRejection.orderHasItems);
+        }
+        if (existing) remove(pass, "purchaseOrder", write.id);
+        return;
       }
-      if (purchaseOrderHasItems(pass, write.id)) refuse(pass, purchasingRejection.orderHasItems);
-      if (existing) remove(pass, "purchaseOrder", write.id);
-      return;
+      case "upsert": {
+        yield* checkUpsertTarget(pass, "purchaseOrder", write, existing);
+        if (existing && !isPurchaseOrderOpen(existing.status)) {
+          yield* halt(pass, purchasingRejection.orderNotOpen);
+        }
+        const allowed = existing
+          ? canMovePurchaseOrder(existing.status, write.row.status)
+          : canCreatePurchaseOrderAs(write.row.status);
+        if (!allowed) yield* halt(pass, purchasingRejection.orderTransitionInvalid);
+        if (
+          existing?.supplierId !== write.row.supplierId &&
+          current(pass, "supplier", write.row.supplierId) === undefined
+        ) {
+          yield* halt(pass, notInOrganization(purchasingLabel.supplier, write.row.supplierId));
+        }
+        const row: SyncEntityRow<"purchaseOrder"> = {
+          id: write.id,
+          orderNumber: existing
+            ? existing.orderNumber
+            : freeOrderNumber(pass, write.id, write.row.orderNumber),
+          supplierId: write.row.supplierId,
+          status: write.row.status,
+          note: write.row.note,
+          sentAt: write.row.sentAt,
+          expectedAt: write.row.expectedAt,
+          total: write.row.total,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.purchaseOrder.set(write.id, row);
+        pass.rows.push({ entity: "purchaseOrder", entityId: write.id, row });
+        return;
+      }
+      default:
+        return write satisfies never;
     }
-    case "upsert": {
-      checkUpsertTarget(pass, "purchaseOrder", write, existing);
-      if (existing && !isPurchaseOrderOpen(existing.status)) {
-        refuse(pass, purchasingRejection.orderNotOpen);
-      }
-      const allowed = existing
-        ? canMovePurchaseOrder(existing.status, write.row.status)
-        : canCreatePurchaseOrderAs(write.row.status);
-      if (!allowed) refuse(pass, purchasingRejection.orderTransitionInvalid);
-      if (
-        existing?.supplierId !== write.row.supplierId &&
-        current(pass, "supplier", write.row.supplierId) === undefined
-      ) {
-        refuse(pass, notInOrganization(purchasingLabel.supplier, write.row.supplierId));
-      }
-      const row: SyncEntityRow<"purchaseOrder"> = {
-        id: write.id,
-        orderNumber: existing
-          ? existing.orderNumber
-          : freeOrderNumber(pass, write.id, write.row.orderNumber),
-        supplierId: write.row.supplierId,
-        status: write.row.status,
-        note: write.row.note,
-        sentAt: write.row.sentAt,
-        expectedAt: write.row.expectedAt,
-        total: write.row.total,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.purchaseOrder.set(write.id, row);
-      pass.rows.push({ entity: "purchaseOrder", entityId: write.id, row });
-      return;
-    }
-    default:
-      return write satisfies never;
-  }
-};
+  });
 
-const writePurchaseOrderItem = (pass: CatalogPass, write: WriteOf<"purchaseOrderItem">): void => {
-  const existing = current(pass, "purchaseOrderItem", write.id);
-  switch (write.action) {
-    case "delete": {
-      checkDeleteTarget(pass, "purchaseOrderItem", write, existing);
-      if (!existing) return;
-      if (purchaseOrderIsClosed(pass, existing.purchaseOrderId)) {
-        refuse(pass, purchasingRejection.orderNotOpen);
+const writePurchaseOrderItem = (pass: CatalogPass, write: WriteOf<"purchaseOrderItem">) =>
+  Result.gen(function* () {
+    const existing = current(pass, "purchaseOrderItem", write.id);
+    switch (write.action) {
+      case "delete": {
+        yield* checkDeleteTarget(pass, "purchaseOrderItem", write, existing);
+        if (!existing) return;
+        if (purchaseOrderIsClosed(pass, existing.purchaseOrderId)) {
+          yield* halt(pass, purchasingRejection.orderNotOpen);
+        }
+        if (existing.receivedBaseUnits > 0) yield* halt(pass, purchasingRejection.itemReceived);
+        remove(pass, "purchaseOrderItem", write.id);
+        return;
       }
-      if (existing.receivedBaseUnits > 0) refuse(pass, purchasingRejection.itemReceived);
-      remove(pass, "purchaseOrderItem", write.id);
-      return;
+      case "upsert": {
+        yield* checkUpsertTarget(pass, "purchaseOrderItem", write, existing);
+        const order = current(pass, "purchaseOrder", write.row.purchaseOrderId);
+        if (!order) {
+          yield* halt(
+            pass,
+            notInOrganization(purchasingLabel.purchaseOrder, write.row.purchaseOrderId),
+          );
+        }
+        if (
+          (order !== undefined && !isPurchaseOrderOpen(order.status)) ||
+          (existing !== undefined && purchaseOrderIsClosed(pass, existing.purchaseOrderId))
+        ) {
+          yield* halt(pass, purchasingRejection.orderNotOpen);
+        }
+        if (
+          existing !== undefined &&
+          existing.receivedBaseUnits > 0 &&
+          (existing.productId !== write.row.productId ||
+            existing.purchaseOrderId !== write.row.purchaseOrderId)
+        ) {
+          yield* halt(pass, purchasingRejection.itemReceived);
+        }
+        const product = current(pass, "product", write.row.productId);
+        if (!product) yield* halt(pass, notInOrganization("Product", write.row.productId));
+        if (
+          product !== undefined &&
+          write.row.baseUnitQuantity !== purchaseOrderLineBaseUnits(write.row, product.unitsPerPack)
+        ) {
+          yield* halt(pass, purchasingRejection.itemQuantityInvalid);
+        }
+        const row: SyncEntityRow<"purchaseOrderItem"> = {
+          id: write.id,
+          purchaseOrderId: write.row.purchaseOrderId,
+          productId: write.row.productId,
+          productName: write.row.productName,
+          quantity: write.row.quantity,
+          quantityType: write.row.quantityType,
+          baseUnitQuantity: write.row.baseUnitQuantity,
+          packCost: write.row.packCost,
+          receivedBaseUnits: existing?.receivedBaseUnits ?? 0,
+          ...writtenMetadata(pass, existing),
+        };
+        pass.working.purchaseOrderItem.set(write.id, row);
+        pass.rows.push({ entity: "purchaseOrderItem", entityId: write.id, row });
+        return;
+      }
+      default:
+        return write satisfies never;
     }
-    case "upsert": {
-      checkUpsertTarget(pass, "purchaseOrderItem", write, existing);
-      const order = current(pass, "purchaseOrder", write.row.purchaseOrderId);
-      if (!order) {
-        refuse(pass, notInOrganization(purchasingLabel.purchaseOrder, write.row.purchaseOrderId));
-      }
-      if (
-        (order !== undefined && !isPurchaseOrderOpen(order.status)) ||
-        (existing !== undefined && purchaseOrderIsClosed(pass, existing.purchaseOrderId))
-      ) {
-        refuse(pass, purchasingRejection.orderNotOpen);
-      }
-      if (
-        existing !== undefined &&
-        existing.receivedBaseUnits > 0 &&
-        (existing.productId !== write.row.productId ||
-          existing.purchaseOrderId !== write.row.purchaseOrderId)
-      ) {
-        refuse(pass, purchasingRejection.itemReceived);
-      }
-      const product = current(pass, "product", write.row.productId);
-      if (!product) refuse(pass, notInOrganization("Product", write.row.productId));
-      if (
-        product !== undefined &&
-        write.row.baseUnitQuantity !== purchaseOrderLineBaseUnits(write.row, product.unitsPerPack)
-      ) {
-        refuse(pass, purchasingRejection.itemQuantityInvalid);
-      }
-      const row: SyncEntityRow<"purchaseOrderItem"> = {
-        id: write.id,
-        purchaseOrderId: write.row.purchaseOrderId,
-        productId: write.row.productId,
-        productName: write.row.productName,
-        quantity: write.row.quantity,
-        quantityType: write.row.quantityType,
-        baseUnitQuantity: write.row.baseUnitQuantity,
-        packCost: write.row.packCost,
-        receivedBaseUnits: existing?.receivedBaseUnits ?? 0,
-        ...writtenMetadata(pass, existing),
-      };
-      pass.working.purchaseOrderItem.set(write.id, row);
-      pass.rows.push({ entity: "purchaseOrderItem", entityId: write.id, row });
-      return;
-    }
-    default:
-      return write satisfies never;
-  }
-};
+  });
 
-const applyCatalogWrite = (pass: CatalogPass, write: CatalogRowWrite): void => {
+const applyCatalogWrite = (pass: CatalogPass, write: CatalogRowWrite) => {
   switch (write.entity) {
     case "category":
       return writeCategory(pass, write);
@@ -716,25 +732,26 @@ const runCatalogWrite = (
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
   enforce: boolean,
-): ReadonlyArray<ProjectedRow> => {
-  const pass: CatalogPass = {
-    command,
-    actor,
-    lookup,
-    enforce,
-    working: {
-      category: new Map(),
-      product: new Map(),
-      batch: new Map(),
-      supplier: new Map(),
-      purchaseOrder: new Map(),
-      purchaseOrderItem: new Map(),
-    },
-    rows: [],
-  };
-  for (const write of command.writes) applyCatalogWrite(pass, write);
-  return pass.rows;
-};
+): Result.Result<ReadonlyArray<ProjectedRow>, Rejection> =>
+  Result.gen(function* () {
+    const pass: CatalogPass = {
+      command,
+      actor,
+      lookup,
+      enforce,
+      working: {
+        category: new Map(),
+        product: new Map(),
+        batch: new Map(),
+        supplier: new Map(),
+        purchaseOrder: new Map(),
+        purchaseOrderItem: new Map(),
+      },
+      rows: [],
+    };
+    for (const write of command.writes) yield* applyCatalogWrite(pass, write);
+    return pass.rows;
+  });
 
 export const decideCatalogRow = (
   command: CatalogWrite,
@@ -742,13 +759,7 @@ export const decideCatalogRow = (
   lookup: ReplicaCatalogLookup,
   write: CatalogRowWrite,
 ): Result.Result<ReadonlyArray<ProjectedRow>, CommandRejection> =>
-  Result.try({
-    try: () => runCatalogWrite({ ...command, writes: [write] }, actor, lookup, true),
-    catch: (cause) => {
-      if (cause instanceof SyncProtocolError) return { code: cause.code, message: cause.message };
-      throw cause;
-    },
-  });
+  runCatalogWrite({ ...command, writes: [write] }, actor, lookup, true);
 
 export const projectCommand = (
   envelope: SyncCommandEnvelope,
@@ -758,16 +769,24 @@ export const projectCommand = (
   switch (envelope.command._tag) {
     case "issueInvoice":
       return projectIssueInvoice(envelope.command, actor, lookup);
-    case "catalogWrite":
-      return summarize(runCatalogWrite(envelope.command.payload, actor, lookup, false));
+    case "catalogWrite": {
+      const projected = runCatalogWrite(envelope.command.payload, actor, lookup, false);
+      if (Result.isFailure(projected)) {
+        throw new Error(`Catalog evolve refused ${projected.failure.code}`);
+      }
+      return summarize(projected.success);
+    }
   }
 };
+
+const insufficientStock = (message: string): Result.Result<void, Rejection> =>
+  Result.fail({ code: "INSUFFICIENT_STOCK", message });
 
 const assertInvoiceStock = (
   envelope: Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }>,
   unitsPerPackFor: (productId: string) => number,
   stockFor: (batchId: string) => VisibleStock,
-): void => {
+): Result.Result<void, Rejection> => {
   const working = new Map<string, VisibleStock>();
   for (const take of envelope.payload.allocations) {
     const unitsPerPack = unitsPerPackFor(take.productId);
@@ -777,8 +796,7 @@ const assertInvoiceStock = (
         ? current.packQuantity
         : current.packQuantity * unitsPerPack + current.unitQuantity;
     if (available < take.quantity) {
-      throw syncProtocolError(
-        "INSUFFICIENT_STOCK",
+      return insufficientStock(
         `Not enough stock for ${take.productId}: ${available} available, ${take.quantity} requested.`,
       );
     }
@@ -788,13 +806,14 @@ const assertInvoiceStock = (
     const nextPackQuantity = current.packQuantity + packDelta;
     const nextUnitQuantity = current.unitQuantity + unitDelta;
     if (nextPackQuantity < 0 || nextUnitQuantity < 0) {
-      throw syncProtocolError("INSUFFICIENT_STOCK", `Not enough stock for ${take.productId}.`);
+      return insufficientStock(`Not enough stock for ${take.productId}.`);
     }
     working.set(take.batchId, {
       packQuantity: nextPackQuantity,
       unitQuantity: nextUnitQuantity,
     });
   }
+  return accepted;
 };
 
 const RULE_CHECK_USER_ID = "rule-check";
@@ -804,19 +823,20 @@ const assertEnqueueAllowed = (
   lookup: ReplicaCatalogLookup,
   unitsPerPackFor: (productId: string) => number,
   stockFor: (batchId: string) => VisibleStock,
-): void => {
+): Result.Result<void, Rejection> => {
   switch (envelope.command._tag) {
     case "issueInvoice":
       return assertInvoiceStock(envelope.command, unitsPerPackFor, stockFor);
-    case "catalogWrite": {
-      runCatalogWrite(
-        envelope.command.payload,
-        { organizationId: envelope.organizationId, userId: RULE_CHECK_USER_ID },
-        lookup,
-        true,
+    case "catalogWrite":
+      return Result.map(
+        runCatalogWrite(
+          envelope.command.payload,
+          { organizationId: envelope.organizationId, userId: RULE_CHECK_USER_ID },
+          lookup,
+          true,
+        ),
+        () => undefined,
       );
-      return;
-    }
     default:
       return envelope.command satisfies never;
   }
@@ -828,7 +848,13 @@ export const checkEnqueueAllowed = (
   unitsPerPackFor: (productId: string) => number,
   stockFor: (batchId: string) => VisibleStock,
 ): Effect.Effect<void, ReplicaStoreError> =>
-  Effect.try({
-    try: () => assertEnqueueAllowed(envelope, lookup, unitsPerPackFor, stockFor),
-    catch: mapReplicaStoreFailure,
-  });
+  Effect.flatMap(
+    Effect.try({
+      try: () => assertEnqueueAllowed(envelope, lookup, unitsPerPackFor, stockFor),
+      catch: mapReplicaStoreFailure,
+    }),
+    (decided) =>
+      Result.isFailure(decided)
+        ? Effect.fail(syncProtocolError(decided.failure.code, decided.failure.message))
+        : Effect.void,
+  );

@@ -93,10 +93,7 @@ export const createdMutationMetadata = (
     readonly userId: string;
     readonly deviceId: string;
   },
-  ids: { readonly now: () => number; readonly operationId: () => string } = {
-    now: Date.now,
-    operationId: () => crypto.randomUUID(),
-  },
+  ids: { readonly now: () => number; readonly operationId: () => string },
 ) => {
   const now = ids.now();
   return {
@@ -117,10 +114,7 @@ export const updatedMutationMetadata = (
     readonly deviceId: string;
     readonly rowVersion: number;
   },
-  ids: { readonly now: () => number; readonly operationId: () => string } = {
-    now: Date.now,
-    operationId: () => crypto.randomUUID(),
-  },
+  ids: { readonly now: () => number; readonly operationId: () => string },
 ) => ({
   updatedByUserId: actor.userId,
   deviceId: actor.deviceId,
