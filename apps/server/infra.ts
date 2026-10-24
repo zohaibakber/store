@@ -65,6 +65,7 @@ export const ApiLive = Api.make(
     const siteHostname = requireProductionHostname(domains);
     return {
       ...worker,
+      name: "tabaaq-api-prod-dirryhrx4li46wwh",
       domain: requireProductionApiHostname(domains),
       routes: [{ pattern: `${siteHostname}/api/*`, zoneName: siteHostname }],
       workersDev: false,
@@ -90,6 +91,7 @@ export const ApiLive = Api.make(
       simple: RATE_LIMITS.globalSearch,
     });
     const globalSearchGateway = yield* Cloudflare.AI.Gateway("GlobalSearchGateway", {
+      id: stage === "prod" ? "tabaaq-globalsearchgateway-prod-ckap43plh4qg4zku" : undefined,
       cacheTtl: GLOBAL_SEARCH_GATEWAY_CACHE_SECONDS,
       rateLimitingInterval: 60,
       rateLimitingLimit: 120,

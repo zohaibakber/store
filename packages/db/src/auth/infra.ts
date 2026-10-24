@@ -12,6 +12,7 @@ export const AuthDatabase = Effect.gen(function* () {
     dialect: "sqlite",
   });
   return yield* Cloudflare.D1.Database("AuthDatabase", {
-    migrations: schema,
+    name: stage === "prod" ? "Tabaaq-AuthDatabase-prod-za4i7ph2otmfoagi" : undefined,
+    migrations: { dir: schema.out, table: "drizzle_migrations" },
   }).pipe(RemovalPolicy.retain(stage === "prod"));
 });
