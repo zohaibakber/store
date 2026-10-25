@@ -50,7 +50,7 @@ The files nearest the target. Read one for the idea it is listed for; where it d
 | Small complete service that yields `Crypto.Crypto`                            | `apps/auth/src/crypto.ts`                                                                                     |
 | Outbound adapter: typed HTTP client behind a service, pure failure classifier | `packages/sync/src/transport.ts`                                                                              |
 | Composition root; `Layer.build` once, handed on with `Layer.succeedContext`   | `apps/auth/infra.ts`                                                                                          |
-| `mergeAll` plus `provideMerge` used deliberately                              | `apps/auth/src/service.ts`                                                                                    |
+| `mergeAll` plus `provideMerge` used deliberately                              | `OperationsLive` in `apps/auth/infra.ts`                                                                      |
 | Lazy sub-layer kept off first paint                                           | `apps/desktop/electron/auth.ts`                                                                               |
 | Per-session sub-graph built with `Layer.build`                                | `apps/desktop/electron/worker-process.ts`                                                                     |
 | State machine, restart and retry                                              | `apps/desktop/electron/replica-supervisor.ts`                                                                 |
