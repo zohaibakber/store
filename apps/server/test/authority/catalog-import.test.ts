@@ -376,10 +376,11 @@ const catalogOf = (handle: SqliteReplicaHandle) =>
 const localWorkspace = (importId: string) =>
   Effect.gen(function* () {
     const engine = yield* SyncEngine;
+    const store = yield* ReplicaStore;
     const handle = yield* SqliteReplica;
     yield* engine.ensureRegistered();
     for (const command of localHistory) {
-      yield* engine.saveCommand(queued(command));
+      yield* store.enqueueCommand(queued(command));
       yield* engine.drainUploads();
     }
     const digest = yield* sqlitePartitionDigest(handle.db);
@@ -570,8 +571,13 @@ describe("publishing a local workspace into an empty organization", () => {
           .from(replicas)
           .all();
         const beforeDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
-        const delivered = yield* freshEngine.saveCommand(
-          queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
+        const { value: delivered } = yield* Effect.provide(
+          ReplicaStore.use((store) =>
+            store.enqueueCommand(
+              queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
+            ),
+          ),
+          fresh,
         );
         yield* freshEngine.drainUploads();
         yield* waitingEngine.catchUp();
