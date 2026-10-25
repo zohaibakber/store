@@ -56,3 +56,18 @@ export const importCategory = (context: CatalogProjectionContext, input: CreateC
       tables: withProjectedCategory(context, projected.row).tables,
     };
   });
+
+const placeholderRowId = (index: number) =>
+  `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+
+export const rowIdSupply = (drawn: ReadonlyArray<string>) => {
+  let used = 0;
+  return {
+    used: () => used,
+    rowId: () => {
+      const id = drawn[used] ?? placeholderRowId(used);
+      used += 1;
+      return id;
+    },
+  };
+};

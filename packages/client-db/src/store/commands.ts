@@ -46,7 +46,7 @@ import {
   type PurchasingRowsRequest,
 } from "../catalog-read";
 import { projectIssuedInvoice } from "../invoice-projection";
-import type { Projected, ProjectionContext } from "../projection-context";
+import type { CatalogWriteIds, Projected, ProjectionContext } from "../projection-context";
 import {
   projectCancelOrder,
   projectCloseOrder,
@@ -60,7 +60,7 @@ import {
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
-import { importCategory, leadingChunks, withProjectedProduct } from "./projected";
+import { importCategory, leadingChunks, rowIdSupply, withProjectedProduct } from "./projected";
 import type { StaffGate } from "./staff-gate";
 
 const READER = "store";
@@ -72,6 +72,10 @@ const MANAGE_STOCK: StaffPermission = "manageStock";
 type CommandFailure = CatalogRefusal | StaffRefusal | ReturnType<typeof mapReplicaStoreFailure>;
 
 type Command = SyncCommandEnvelope["command"];
+
+type BegunContext<Tables> = Omit<ProjectionContext<Tables>, "ids"> & {
+  readonly ids: Omit<CatalogWriteIds, "rowId">;
+};
 
 type CommandHandlers = Pick<
   RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof InventoryStore>>,
@@ -112,7 +116,20 @@ export const makeCommandHandlers = ({
   readonly crypto: Crypto.Crypto;
 }): CommandHandlers => {
   const newId = Effect.orDie(crypto.randomUUIDv4());
-  const newRowId = () => Effect.runSync(newId);
+
+  const withRowIds = Effect.fn("InventoryStore.withRowIds")(function* <Tables, A, E>(
+    context: BegunContext<Tables>,
+    project: (context: ProjectionContext<Tables>) => Result.Result<A, E>,
+  ) {
+    const counting = rowIdSupply([]);
+    const dry = project({ ...context, ids: { ...context.ids, rowId: counting.rowId } });
+    if (Result.isFailure(dry)) return yield* Effect.fromResult(dry);
+    const drawn = yield* Effect.replicateEffect(newId, counting.used());
+    const supply = rowIdSupply(drawn);
+    return yield* Effect.fromResult(
+      project({ ...context, ids: { ...context.ids, rowId: supply.rowId } }),
+    );
+  });
 
   const snapshot = snapshotRunnerFromHandle(replica);
   const subset: ReadSubset = (spec) => readSnapshotSubset(snapshot, READER, spec);
@@ -150,10 +167,9 @@ export const makeCommandHandlers = ({
       ids: {
         now: () => occurredAt,
         operationId: () => commandId,
-        rowId: newRowId,
       },
       tables,
-    } satisfies ProjectionContext<Tables>;
+    } satisfies BegunContext<Tables>;
   });
 
   const enqueue = Effect.fn("InventoryStore.enqueue")(function* (
@@ -180,7 +196,7 @@ export const makeCommandHandlers = ({
     );
 
   const catalogWrite = (
-    context: ProjectionContext<unknown>,
+    context: Pick<BegunContext<unknown>, "actor" | "commandId" | "occurredAt">,
     writes: ReadonlyArray<CatalogRowWrite>,
     staff: Option.Option<StaffId>,
   ): Effect.Effect<Commit, CommandFailure> =>
@@ -203,7 +219,7 @@ export const makeCommandHandlers = ({
 
   const write = Effect.fn("InventoryStore.write")(function* <Tables, Row>(
     read: Effect.Effect<Tables, unknown>,
-    project: (context: ProjectionContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
+    project: (context: BegunContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
   ) {
     const staff = yield* gate.authorize(MANAGE_STOCK);
     const context = yield* begin(read);
@@ -215,14 +231,14 @@ export const makeCommandHandlers = ({
   const catalog = <Row>(
     rows: CatalogRowsRequest,
     project: (context: CatalogProjectionContext) => Result.Result<Projected<Row>, CatalogRefusal>,
-  ) => write(readCatalogRows(subset, rows), (context) => Effect.fromResult(project(context)));
+  ) => write(readCatalogRows(subset, rows), (context) => withRowIds(context, project));
 
   const purchasing = <Row>(
     rows: PurchasingRowsRequest,
     project: (
       context: PurchasingProjectionContext,
     ) => Result.Result<Projected<Row>, CatalogRefusal>,
-  ) => write(readPurchasingRows(subset, rows), (context) => Effect.fromResult(project(context)));
+  ) => write(readPurchasingRows(subset, rows), (context) => withRowIds(context, project));
 
   const saved = <Row, E>(written: Effect.Effect<{ commit: Commit; row: Row }, E>) =>
     Effect.map(written, ({ commit, row }) => ({ ...commit, result: row }));
@@ -265,14 +281,14 @@ export const makeCommandHandlers = ({
           : { allCategories: true, productIds },
       ),
     );
-    const projected = yield* Effect.fromResult(
+    const projected = yield* withRowIds(context, (supplied) =>
       Result.gen(function* () {
         const category =
           "categoryId" in input
-            ? { writes: [], id: input.categoryId, tables: context.tables }
-            : yield* importCategory(context, input.newCategory);
+            ? { writes: [], id: input.categoryId, tables: supplied.tables }
+            : yield* importCategory(supplied, input.newCategory);
         const imported = yield* projectImportInventory(
-          { ids: context.ids, tables: category.tables },
+          { ids: supplied.ids, tables: category.tables },
           { categoryId: category.id, lines: input.lines },
         );
         return { ...imported, chunks: leadingChunks(category.writes, imported.chunks) };
@@ -310,16 +326,16 @@ export const makeCommandHandlers = ({
         readNextInvoiceNumber(subset, context.actor.organizationId),
         mapReplicaStoreFailure,
       );
-      const projection = yield* Effect.fromResult(
+      const projection = yield* withRowIds(context, (supplied) =>
         projectIssuedInvoice({
-          actor: context.actor,
-          commandId: context.commandId,
-          occurredAt: context.occurredAt,
+          actor: supplied.actor,
+          commandId: supplied.commandId,
+          occurredAt: supplied.occurredAt,
           invoiceNumber,
           sale: input,
-          products: context.tables.products,
-          batches: context.tables.batches,
-          ids: context.ids,
+          products: supplied.tables.products,
+          batches: supplied.tables.batches,
+          ids: supplied.ids,
         }),
       );
       const commit = yield* enqueue(
@@ -398,7 +414,9 @@ export const makeCommandHandlers = ({
             readNextPurchaseOrderNumber(subset, context.actor.organizationId).pipe(
               Effect.mapError(mapReplicaStoreFailure),
               Effect.flatMap((orderNumber) =>
-                Effect.fromResult(projectSaveOrderDraft(context, input, orderNumber)),
+                withRowIds(context, (supplied) =>
+                  projectSaveOrderDraft(supplied, input, orderNumber),
+                ),
               ),
             ),
         ),

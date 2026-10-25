@@ -23,7 +23,7 @@ import {
   type Paisa,
   type SyncProtocolCode,
 } from "@store/contracts";
-import type { CatalogRefusal, CatalogRefusalReason } from "@store/contracts/catalog-refusal";
+import { CATALOG_REFUSALS, type CatalogRefusal } from "@store/contracts/catalog-refusal";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -293,15 +293,10 @@ const notInOrganization = (label: string, id: string): Rejection => ({
 
 const accepted = Result.succeed(undefined);
 
-type PurchasingReason = CatalogRefusalReason & keyof typeof purchasingRejection;
-
-const isPurchasingReason = (reason: CatalogRefusalReason): reason is PurchasingReason =>
-  Object.hasOwn(purchasingRejection, reason);
-
-const rejectionOf = (refusal: CatalogRefusal): Rejection =>
-  isPurchasingReason(refusal.reason)
-    ? { code: purchasingRejection[refusal.reason].code, message: refusal.message }
-    : conflict(refusal.message);
+const rejectionOf = (refusal: CatalogRefusal): Rejection => ({
+  code: CATALOG_REFUSALS[refusal.reason].code,
+  message: refusal.message,
+});
 
 const halt = (pass: CatalogPass, rejection: Rejection): Result.Result<void, Rejection> =>
   pass.mode === "decide" ? Result.fail(rejection) : accepted;

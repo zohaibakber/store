@@ -35,9 +35,6 @@ export const isPurchaseOrderOpen = (status: PurchaseOrderStatus): boolean => {
 export const OPEN_PURCHASE_ORDER_STATUSES: ReadonlyArray<PurchaseOrderStatus> =
   PURCHASE_ORDER_STATUSES.filter(isPurchaseOrderOpen);
 
-export const canCreatePurchaseOrderAs = (status: PurchaseOrderStatus): boolean =>
-  status === "draft";
-
 export const canMovePurchaseOrder = (
   from: PurchaseOrderStatus,
   to: PurchaseOrderStatus,
@@ -177,7 +174,7 @@ export const checkCanDeleteSupplier = (
 
 export const checkCanCreateOrder = (status: PurchaseOrderStatus) =>
   Result.gen(function* () {
-    if (!canCreatePurchaseOrderAs(status)) {
+    if (status !== "draft") {
       return yield* Result.fail(
         new CatalogRefusal({
           reason: "orderTransitionInvalid",
