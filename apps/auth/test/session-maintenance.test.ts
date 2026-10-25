@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
+import { SessionFamilyId } from "../src/identifiers";
 import { AuthRepository } from "../src/repository";
 import { pruneExpiredSessions } from "../src/session-maintenance";
 import { authD1 } from "./sqlite-d1";
@@ -39,7 +40,7 @@ const sessionFor = (
 ) =>
   repository.createSession({
     id: SessionId.make(input.id),
-    familyId: `family-${input.id}`,
+    familyId: SessionFamilyId.make(`family-${input.id}`),
     userId: input.userId,
     activeOrganizationId: input.organizationId,
     refreshTokenHash: `hash-${input.id}`,
@@ -104,7 +105,7 @@ describe("refresh session reads and pruning on D1", () => {
         yield* seed("expired-long-ago-2", now - 20 * day);
         yield* seed("expired-recently", now - day);
         yield* seed("live", now + day);
-        yield* repository.revokeFamily("family-live", now);
+        yield* repository.revokeFamily(SessionFamilyId.make("family-live"), now);
         const policy = { retainAfterExpiryMillis: 7 * day, batchRows: 1, maxBatches: 1 };
         const first = yield* pruneExpiredSessions(repository, policy);
         const second = yield* pruneExpiredSessions(repository, { ...policy, maxBatches: 5 });
