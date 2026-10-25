@@ -1,19 +1,4 @@
-export type { CatalogCommands, CommandExecution, ImportInventoryRequest } from "./catalog-commands";
-export type { CatalogActor } from "./projection-context";
-export type {
-  PurchaseOrderLineInput,
-  ReceivedDelivery,
-  ReceiveDeliveryInput,
-  ReceiveDeliveryLineInput,
-  SavedPurchaseOrder,
-  SaveOrderDraftInput,
-  SaveSupplierInput,
-} from "./purchasing-projection";
-export {
-  inventoryReplicaScope,
-  REPLICA_STORAGE_PREFIX,
-  sqliteReplicaFileName,
-} from "./replica/naming";
+export { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "./replica/naming";
 export {
   accumulateNotice,
   mergeAccumulators,
@@ -30,14 +15,7 @@ export {
   syncStatusWithHealth,
   withAuthRefreshing,
 } from "./replica/status";
-export {
-  EMPTY_SYNC_ACTIVITY,
-  rejectedCommandLabel,
-  rejectedCommandSubject,
-  rejectionReason,
-  replicaSyncActivityOf,
-  ReplicaSyncActivity,
-} from "./replica/activity";
+export { EMPTY_SYNC_ACTIVITY, rejectedCommandLabel, ReplicaSyncActivity } from "./replica/activity";
 export type {
   InventorySyncActivity,
   RejectedCommand,

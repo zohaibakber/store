@@ -110,7 +110,7 @@ const commandTargets = (command: SyncCommand): CommandTargets => {
 
 export type RejectedCommandSubject = "sale" | "delivery" | "purchaseOrder" | "supplier" | "stock";
 
-export const rejectedCommandSubject = (
+const rejectedCommandSubject = (
   rejected: Pick<RejectedCommand, "command" | "targets">,
 ): RejectedCommandSubject => {
   switch (rejected.command) {
@@ -154,7 +154,7 @@ const REJECTION_REASONS: ReadonlyMap<string, string> = new Map(
   } satisfies Partial<Record<SyncProtocolCode, string>>),
 );
 
-export const rejectionReason = (code: string): string => REJECTION_REASONS.get(code) ?? "Rejected";
+const rejectionReason = (code: string): string => REJECTION_REASONS.get(code) ?? "Rejected";
 
 export type RejectedCommandLabel = {
   readonly subject: RejectedCommandSubject;

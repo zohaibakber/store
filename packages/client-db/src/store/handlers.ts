@@ -1,10 +1,6 @@
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
-import {
-  readOutboxActivitySqlite,
-  readPendingRowIdsSqlite,
-  SqliteReplica,
-} from "@store/sync/sql-client";
+import { readOutboxActivitySqlite, SqliteReplica } from "@store/sync/sql-client";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -58,8 +54,6 @@ export const layerInventoryStore: Layer.Layer<
           Effect.map(replicaSyncActivityOf),
           Effect.mapError(readFailure),
         ),
-      PendingRows: ({ entity }) =>
-        readPendingRowIdsSqlite(replica.db, entity).pipe(Effect.mapError(readFailure)),
       WakeSyncUpload: () =>
         scheduler.wake("localWrite").pipe(
           Effect.andThen(Ref.updateAndGet(wakes, (count) => count + 1)),

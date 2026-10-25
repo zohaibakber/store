@@ -8,13 +8,15 @@ import {
   purchaseOrderLineTotal,
   purchaseOrderTotal,
 } from "@store/contracts";
-import { CatalogRefusal } from "@store/contracts/catalog-refusal";
+import { CatalogRefusal, decideField } from "@store/contracts/catalog-refusal";
 import { createdMutationMetadata, updatedMutationMetadata } from "@store/contracts/catalog-rules";
 import {
+  CatalogNote,
+  MAX_CATALOG_NOTE_LENGTH,
   MAX_CATALOG_WRITE_ROWS,
+  MAX_CATALOG_NAME_LENGTH,
   SupplierPhone,
   type CatalogRowWrite,
-  type PurchaseOrderQuantityType,
   type PurchaseOrderStatus,
 } from "@store/contracts/catalog-write";
 import {
@@ -22,15 +24,30 @@ import {
   decodePurchaseOrderId,
   decodePurchaseOrderItemId,
   decodeSupplierId,
+  type PurchaseOrderId,
+  type SupplierId,
 } from "@store/contracts/ids";
+import type {
+  PurchaseOrderLineInput,
+  ReceivedDelivery,
+  ReceiveDeliveryInput,
+  ReceiveDeliveryLineInput,
+  SavedPurchaseOrder,
+  SaveOrderDraftInput,
+  SaveSupplierInput,
+} from "@store/contracts/replica";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { productFieldsOf } from "./catalog-projection";
 import {
   commandIds,
+  nameField,
+  naturalField,
+  positiveField,
   requiredRow,
   type CatalogReadableCollection,
+  type Projected,
   type ProjectionContext,
 } from "./projection-context";
 import type {
@@ -41,10 +58,6 @@ import type {
   SupplierRow,
 } from "./rows";
 
-const MAX_NAME_LENGTH = 200;
-
-const MAX_NOTE_LENGTH = 500;
-
 export type PurchasingProjectionTables = {
   readonly suppliers: CatalogReadableCollection<SupplierRow>;
   readonly purchaseOrders: CatalogReadableCollection<PurchaseOrderRow>;
@@ -54,90 +67,12 @@ export type PurchasingProjectionTables = {
 
 export type PurchasingProjectionContext = ProjectionContext<PurchasingProjectionTables>;
 
-export type SaveSupplierInput = {
-  readonly id?: string;
-  readonly name: string;
-  readonly phone?: string | null;
-  readonly note?: string | null;
-};
-
-export type PurchaseOrderLineInput = {
-  readonly id?: string;
-  readonly productId: string;
-  readonly quantity: number;
-  readonly quantityType: PurchaseOrderQuantityType;
-  readonly packCost?: number | null;
-};
-
-export type SaveOrderDraftInput = {
-  readonly id?: string;
-  readonly supplierId: string;
-  readonly note?: string | null;
-  readonly expectedAt?: number | null;
-  readonly lines: ReadonlyArray<PurchaseOrderLineInput>;
-  readonly send?: boolean;
-};
-
-export type SavedPurchaseOrder = {
-  readonly order: PurchaseOrderRow;
-  readonly lines: ReadonlyArray<PurchaseOrderItemRow>;
-};
-
-export type ReceiveDeliveryLineInput = {
-  readonly purchaseOrderItemId: string;
-  readonly batchNumber?: string | null;
-  readonly expiresAt?: number | null;
-  readonly packQuantity?: number;
-  readonly unitQuantity?: number;
-  readonly purchasePrice?: number | null;
-  readonly retailPrice?: number | null;
-  readonly unitPrice?: number | null;
-};
-
-export type ReceiveDeliveryInput = {
-  readonly orderId: string;
-  readonly lines: ReadonlyArray<ReceiveDeliveryLineInput>;
-  readonly note?: string | null;
-  readonly close?: boolean;
-};
-
-export type ReceivedDelivery = {
-  readonly order: PurchaseOrderRow;
-  readonly batches: ReadonlyArray<BatchRow>;
-};
-
-type RowProjection<Row> = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-  readonly row: Row;
-};
-
-type WriteProjection = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-};
-
 const isSupplierPhone = Schema.is(SupplierPhone);
 
-const supplierName = (value: string): Result.Result<string, CatalogRefusal> =>
-  Result.gen(function* () {
-    const name = value.trim();
-    if (!name)
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: "Enter a supplier name.",
-          field: "name",
-        }),
-      );
-    if (name.length > MAX_NAME_LENGTH) {
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: `Keep the supplier name under ${MAX_NAME_LENGTH} characters.`,
-          field: "name",
-        }),
-      );
-    }
-    return name;
+const supplierName = (value: string) =>
+  nameField(value, {
+    empty: "Enter a supplier name.",
+    tooLong: `Keep the supplier name under ${MAX_CATALOG_NAME_LENGTH} characters.`,
   });
 
 const supplierPhone = (
@@ -160,32 +95,11 @@ const supplierPhone = (
 const noteOf = (value: string | null | undefined): Result.Result<string | null, CatalogRefusal> =>
   Result.gen(function* () {
     const note = (value ?? "").trim();
-    if (note.length > MAX_NOTE_LENGTH) {
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: `Keep the note under ${MAX_NOTE_LENGTH} characters.`,
-          field: "note",
-        }),
-      );
-    }
+    yield* decideField(CatalogNote, note, {
+      message: `Keep the note under ${MAX_CATALOG_NOTE_LENGTH} characters.`,
+      field: "note",
+    });
     return note === "" ? null : note;
-  });
-
-const requireWholeNumber = (
-  value: number,
-  minimum: number,
-  message: string,
-  field?: string,
-): Result.Result<number, CatalogRefusal> =>
-  Result.gen(function* () {
-    if (!Number.isSafeInteger(value) || value < minimum)
-      return yield* Result.fail(
-        field === undefined
-          ? new CatalogRefusal({ reason: "invalidInput", message })
-          : new CatalogRefusal({ reason: "invalidInput", message, field }),
-      );
-    return value;
   });
 
 const timestampOf = (
@@ -193,21 +107,15 @@ const timestampOf = (
   label: string,
   field?: string,
 ): Result.Result<number | null, CatalogRefusal> =>
-  Result.gen(function* () {
-    return value === null || value === undefined
-      ? null
-      : yield* requireWholeNumber(value, 1, `${label} is not a valid date.`, field);
-  });
+  value === null || value === undefined
+    ? Result.succeed(null)
+    : positiveField(value, `${label} is not a valid date.`, field);
 
 const priceOf = (
   value: number | null,
   label: string,
 ): Result.Result<number | null, CatalogRefusal> =>
-  Result.gen(function* () {
-    return value === null
-      ? null
-      : yield* requireWholeNumber(value, 0, `${label} must be zero or more.`);
-  });
+  value === null ? Result.succeed(null) : naturalField(value, `${label} must be zero or more.`);
 
 const created = (context: PurchasingProjectionContext) =>
   createdMutationMetadata(context.actor, commandIds(context));
@@ -273,7 +181,7 @@ const orderUpsert = (
 export const projectSaveSupplier = (
   context: PurchasingProjectionContext,
   input: SaveSupplierInput,
-): Result.Result<RowProjection<SupplierRow>, CatalogRefusal> =>
+): Result.Result<Projected<SupplierRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const name = yield* supplierName(input.name);
     const fields = {
@@ -334,8 +242,8 @@ export const projectSaveSupplier = (
 
 export const projectDeleteSupplier = (
   context: PurchasingProjectionContext,
-  id: string,
-): Result.Result<WriteProjection, CatalogRefusal> =>
+  id: SupplierId,
+): Result.Result<Projected, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(context.tables.suppliers.state.get(id), "This supplier");
     yield* checkCanDeleteSupplier(context.tables.purchaseOrders.state.values(), current.id);
@@ -348,6 +256,7 @@ export const projectDeleteSupplier = (
           expectedRowVersion: current.rowVersion,
         },
       ],
+      row: undefined,
     };
   });
 
@@ -376,9 +285,8 @@ const projectLine = (
       context.tables.products.state.get(input.productId),
       "This product",
     );
-    const quantity = yield* requireWholeNumber(
+    const quantity = yield* positiveField(
       input.quantity,
-      1,
       `Enter a whole quantity of at least 1 for ${product.name}.`,
     );
     const requestedCost =
@@ -432,7 +340,7 @@ export const projectSaveOrderDraft = (
   context: PurchasingProjectionContext,
   input: SaveOrderDraftInput,
   proposedOrderNumber: number,
-): Result.Result<RowProjection<SavedPurchaseOrder>, CatalogRefusal> =>
+): Result.Result<Projected<SavedPurchaseOrder>, CatalogRefusal> =>
   Result.gen(function* () {
     const current =
       input.id === undefined
@@ -540,10 +448,10 @@ export const projectSaveOrderDraft = (
 
 const moveOrder = (
   context: PurchasingProjectionContext,
-  id: string,
+  id: PurchaseOrderId,
   status: Exclude<PurchaseOrderStatus, "draft">,
   invalidMessage?: string,
-): Result.Result<RowProjection<PurchaseOrderRow>, CatalogRefusal> =>
+): Result.Result<Projected<PurchaseOrderRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(
       context.tables.purchaseOrders.state.get(id),
@@ -564,8 +472,8 @@ const moveOrder = (
 
 export const projectSendOrder = (
   context: PurchasingProjectionContext,
-  id: string,
-): Result.Result<RowProjection<PurchaseOrderRow>, CatalogRefusal> =>
+  id: PurchaseOrderId,
+): Result.Result<Projected<PurchaseOrderRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const projected = yield* moveOrder(context, id, "sent");
     if (projected.writes.length > 0 && linesOfOrder(context, projected.row.id).length === 0) {
@@ -581,14 +489,14 @@ export const projectSendOrder = (
 
 export const projectCloseOrder = (
   context: PurchasingProjectionContext,
-  id: string,
-): Result.Result<RowProjection<PurchaseOrderRow>, CatalogRefusal> =>
+  id: PurchaseOrderId,
+): Result.Result<Projected<PurchaseOrderRow>, CatalogRefusal> =>
   moveOrder(context, id, "closed", "Send this order before closing it.");
 
 export const projectCancelOrder = (
   context: PurchasingProjectionContext,
-  id: string,
-): Result.Result<RowProjection<PurchaseOrderRow>, CatalogRefusal> =>
+  id: PurchaseOrderId,
+): Result.Result<Projected<PurchaseOrderRow>, CatalogRefusal> =>
   moveOrder(context, id, "cancelled");
 
 const pricedProduct = (
@@ -616,7 +524,7 @@ const pricedProduct = (
 export const projectReceiveDelivery = (
   context: PurchasingProjectionContext,
   input: ReceiveDeliveryInput,
-): Result.Result<RowProjection<ReceivedDelivery>, CatalogRefusal> =>
+): Result.Result<Projected<ReceivedDelivery>, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(
       context.tables.purchaseOrders.state.get(input.orderId),
@@ -645,14 +553,12 @@ export const projectReceiveDelivery = (
         context.tables.products.state.get(line.productId),
         "This product",
       );
-      const packQuantity = yield* requireWholeNumber(
+      const packQuantity = yield* naturalField(
         received.packQuantity ?? 0,
-        0,
         "Pack quantity must be a non-negative whole number.",
       );
-      const unitQuantity = yield* requireWholeNumber(
+      const unitQuantity = yield* naturalField(
         received.unitQuantity ?? 0,
-        0,
         "Unit quantity must be a non-negative whole number.",
       );
       if (packQuantity === 0 && unitQuantity === 0) continue;

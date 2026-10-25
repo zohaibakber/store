@@ -5,11 +5,6 @@ import * as Result from "effect/Result";
 import { projectCreateCategory, type CatalogProjectionContext } from "../catalog-projection";
 import type { CategoryRow, ProductRow } from "../rows";
 
-export type Projected<Row> = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-  readonly row: Row;
-};
-
 type RowState<Row> = {
   readonly get: (id: string) => Row | undefined;
   readonly values: () => Iterable<Row>;
@@ -61,7 +56,3 @@ export const importCategory = (context: CatalogProjectionContext, input: CreateC
       tables: withProjectedCategory(context, projected.row).tables,
     };
   });
-
-export const removed = (projection: {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-}): Projected<void> => ({ writes: projection.writes, row: undefined });

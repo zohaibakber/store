@@ -45,7 +45,7 @@ import {
   type PurchasingRowsRequest,
 } from "../catalog-read";
 import { projectIssuedInvoice } from "../invoice-projection";
-import type { ProjectionContext } from "../projection-context";
+import type { Projected, ProjectionContext } from "../projection-context";
 import {
   projectCancelOrder,
   projectCloseOrder,
@@ -59,13 +59,7 @@ import {
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
-import {
-  importCategory,
-  leadingChunks,
-  removed,
-  withProjectedProduct,
-  type Projected,
-} from "./projected";
+import { importCategory, leadingChunks, withProjectedProduct } from "./projected";
 import type { StaffGate } from "./staff-gate";
 
 const READER = "store";
@@ -344,7 +338,7 @@ export const makeCommandHandlers = ({
     DeleteCategory: ({ id }) =>
       deleted(
         catalog({ categoryIds: [id], anyProductInCategory: id }, (context) =>
-          Result.map(projectDeleteCategory(context, id), removed),
+          projectDeleteCategory(context, id),
         ),
       ),
     CreateProduct: (input) =>
@@ -364,7 +358,7 @@ export const makeCommandHandlers = ({
     DeleteProduct: ({ id }) =>
       deleted(
         catalog({ productIds: [id], batchesOfProductIds: [id] }, (context) =>
-          Result.map(projectDeleteProduct(context, id), removed),
+          projectDeleteProduct(context, id),
         ),
       ),
     CreateBatch: createBatch,
@@ -378,7 +372,7 @@ export const makeCommandHandlers = ({
     DeleteSupplier: ({ id }) =>
       deleted(
         purchasing({ supplierIds: [id], anyOrderOfSupplier: id }, (context) =>
-          Result.map(projectDeleteSupplier(context, id), removed),
+          projectDeleteSupplier(context, id),
         ),
       ),
     SaveOrderDraft: (input) => {

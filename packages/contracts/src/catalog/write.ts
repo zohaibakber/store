@@ -15,9 +15,11 @@ export const MAX_CATALOG_WRITE_ROWS = 1_000;
 
 export const MAX_CATALOG_NAME_LENGTH = 200;
 
-const CatalogName = Schema.NonEmptyString.check(Schema.isMaxLength(MAX_CATALOG_NAME_LENGTH));
+export const CatalogName = Schema.NonEmptyString.check(Schema.isMaxLength(MAX_CATALOG_NAME_LENGTH));
 
-const CatalogNote = Schema.String.check(Schema.isMaxLength(500));
+export const MAX_CATALOG_NOTE_LENGTH = 500;
+
+export const CatalogNote = Schema.String.check(Schema.isMaxLength(MAX_CATALOG_NOTE_LENGTH));
 
 const CatalogRowVersion = PositiveInt;
 

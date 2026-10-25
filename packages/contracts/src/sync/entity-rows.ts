@@ -30,13 +30,26 @@ import type { SyncEntity } from "./schema";
 
 const NullableNatural = Schema.NullOr(Schema.Natural);
 
+const mutableEntityFields = {
+  organizationId: Schema.NonEmptyString,
+  createdByUserId: Schema.NonEmptyString,
+  updatedByUserId: Schema.NonEmptyString,
+  deviceId: Schema.NonEmptyString,
+  operationId: Schema.NonEmptyString,
+  rowVersion: PositiveInt,
+  createdAt: Schema.Natural,
+  updatedAt: Schema.Natural,
+};
+
 export const CategoryRow = createSelectSchema(categories, {
+  ...mutableEntityFields,
   id: CategoryId,
   name: Schema.NonEmptyString,
   tracksPacks: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 
 export const ProductRow = createSelectSchema(products, {
+  ...mutableEntityFields,
   id: ProductId,
   name: Schema.NonEmptyString,
   categoryId: CategoryId,
@@ -47,6 +60,7 @@ export const ProductRow = createSelectSchema(products, {
 });
 
 export const BatchRow = createSelectSchema(batches, {
+  ...mutableEntityFields,
   id: BatchId,
   productId: ProductId,
   expiresAt: NullableNatural,
@@ -55,12 +69,14 @@ export const BatchRow = createSelectSchema(batches, {
 });
 
 export const InvoiceRow = createSelectSchema(invoices, {
+  ...mutableEntityFields,
   id: InvoiceId,
   invoiceNumber: PositiveInt,
   total: Schema.Natural,
 });
 
 export const InvoiceItemRow = createSelectSchema(invoiceItems, {
+  ...mutableEntityFields,
   id: InvoiceItemId,
   invoiceId: InvoiceId,
   productId: ProductId,
@@ -73,8 +89,14 @@ export const InvoiceItemRow = createSelectSchema(invoiceItems, {
 });
 
 export const StockMovementRow = createSelectSchema(stockMovements, {
+  id: Schema.NonEmptyString,
+  organizationId: Schema.NonEmptyString,
+  actorUserId: Schema.NonEmptyString,
+  deviceId: Schema.NonEmptyString,
+  operationId: Schema.NonEmptyString,
   productId: ProductId,
   batchId: BatchId,
+  invoiceId: Schema.NullOr(InvoiceId),
   purchaseOrderId: Schema.NullOr(PurchaseOrderId).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(null)),
   ),
@@ -85,11 +107,13 @@ export const StockMovementRow = createSelectSchema(stockMovements, {
 });
 
 export const SupplierRow = createSelectSchema(suppliers, {
+  ...mutableEntityFields,
   id: SupplierId,
   name: Schema.NonEmptyString,
 });
 
 export const PurchaseOrderRow = createSelectSchema(purchaseOrders, {
+  ...mutableEntityFields,
   id: PurchaseOrderId,
   orderNumber: PositiveInt,
   supplierId: SupplierId,
@@ -100,6 +124,7 @@ export const PurchaseOrderRow = createSelectSchema(purchaseOrders, {
 });
 
 export const PurchaseOrderItemRow = createSelectSchema(purchaseOrderItems, {
+  ...mutableEntityFields,
   id: PurchaseOrderItemId,
   purchaseOrderId: PurchaseOrderId,
   productId: ProductId,
