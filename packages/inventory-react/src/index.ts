@@ -1,11 +1,9 @@
-export { rejectedCommandLabel } from "@store/client-db";
 export type {
   InventorySyncActivity,
   InventorySyncStatus,
   ReceiveDeliveryLineInput,
   RejectedCommand,
 } from "@store/client-db";
-export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
 export { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
 export { configureInventoryPreferences } from "./preferences";
 export {
@@ -33,15 +31,12 @@ export {
   deliverPorts,
   desktopServices,
   forwardedPorts,
-  makeInventoryServices,
   type ForwardedPorts,
   type InventoryServices,
-  type Link,
 } from "./services";
 export {
   InventoryProvider,
   useCatalogIsReady,
-  useCommandExecution,
   useInventoryActions,
   useInventoryState,
   useInventorySyncActivity,
@@ -50,17 +45,9 @@ export {
   useReadyInventory,
 } from "./provider";
 export {
-  useCatalogCategories,
-  useCatalogProduct,
-  useCatalogProductCandidates,
-  useCatalogProductSearch,
-  useStockMovementHistory,
   useCatalogProductLookup,
-  useInventoryInvoice,
   useInventoryInvoices,
-  useInvoiceHistory,
   useIssuedInvoices,
-  usePendingRowIds,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
   useSuspenseCatalogProductsById,
@@ -89,13 +76,6 @@ export {
   type PurchaseOrderTab,
 } from "./list-request";
 export type { InvoiceListRequest } from "./invoice-list";
-export {
-  matchCatalogProducts,
-  summarizeProductStock,
-  type CatalogProductSearchResult,
-  type ProductStockSummary,
-  type SearchableProduct,
-} from "./search";
 export type { PurchaseOrderListRequest } from "./purchasing";
 export {
   useLearnedSuppliers,

@@ -82,7 +82,7 @@ export const useReadyInventory = () => {
 export const useInventoryActions = () => {
   const state = React.useContext(InventoryContext);
   if (!state || state._tag !== "Ready") throw new Error("Inventory is not ready.");
-  return state.actions;
+  return state.inventory.actions;
 };
 
 export const useCatalogReplica = () => {
@@ -95,8 +95,6 @@ export const useCatalogIsReady = () => {
   const state = React.useContext(InventoryContext);
   return state?._tag === "Ready";
 };
-
-export const useCommandExecution = () => useAtomValue(useCatalogReplica().atoms.commandExecution);
 
 export const useInventorySyncStatus = () => useAtomValue(useCatalogReplica().atoms.syncStatus);
 

@@ -20,5 +20,5 @@ export interface InventoryActions extends CatalogCommands {
 
 export type InventoryState =
   | { readonly _tag: "Opening" }
-  | { readonly _tag: "Ready"; readonly inventory: Inventory; readonly actions: InventoryActions }
+  | { readonly _tag: "Ready"; readonly inventory: Inventory }
   | { readonly _tag: "Error"; readonly error: string; readonly retry: () => void };

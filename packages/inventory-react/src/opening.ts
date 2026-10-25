@@ -57,11 +57,7 @@ export const inventoryState = (
 ): InventoryState =>
   AsyncResult.matchWithWaiting(result, {
     onWaiting: () => OPENING,
-    onSuccess: ({ value }): InventoryState => ({
-      _tag: "Ready",
-      inventory: value,
-      actions: value.actions,
-    }),
+    onSuccess: ({ value }): InventoryState => ({ _tag: "Ready", inventory: value }),
     onError: (failure): InventoryState =>
       failure._tag === "StaleCatalogLease"
         ? OPENING
