@@ -12,8 +12,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
-const NonNegativeInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0));
-const SignedInteger = Schema.Number.check(Schema.isInt());
 
 const mutableEntityFields = {
   id: NonEmptyString,
@@ -23,8 +21,8 @@ const mutableEntityFields = {
   deviceId: NonEmptyString,
   operationId: NonEmptyString,
   rowVersion: PositiveInt,
-  createdAt: NonNegativeInteger,
-  updatedAt: NonNegativeInteger,
+  createdAt: Schema.Natural,
+  updatedAt: Schema.Natural,
 };
 
 export const CategoryRow = Schema.Struct({
@@ -44,9 +42,9 @@ export const ProductRow = Schema.Struct({
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
   unitsPerPack: PositiveInt,
-  purchasePrice: Schema.NullOr(NonNegativeInteger),
-  retailPrice: Schema.NullOr(NonNegativeInteger),
-  unitPrice: Schema.NullOr(NonNegativeInteger),
+  purchasePrice: Schema.NullOr(Schema.Natural),
+  retailPrice: Schema.NullOr(Schema.Natural),
+  unitPrice: Schema.NullOr(Schema.Natural),
   visible: Schema.Boolean,
 });
 export type ProductRow = typeof ProductRow.Type;
@@ -56,9 +54,9 @@ export const BatchRow = Schema.Struct({
   id: BatchId,
   productId: ProductId,
   batchNumber: Schema.NullOr(Schema.String),
-  expiresAt: Schema.NullOr(NonNegativeInteger),
-  packQuantity: NonNegativeInteger,
-  unitQuantity: NonNegativeInteger,
+  expiresAt: Schema.NullOr(Schema.Natural),
+  packQuantity: Schema.Natural,
+  unitQuantity: Schema.Natural,
 });
 export type BatchRow = typeof BatchRow.Type;
 
@@ -67,7 +65,7 @@ export const InvoiceRow = Schema.Struct({
   id: InvoiceId,
   invoiceNumber: PositiveInt,
   customerName: Schema.NullOr(Schema.String),
-  total: NonNegativeInteger,
+  total: Schema.Natural,
 });
 export type InvoiceRow = typeof InvoiceRow.Type;
 
@@ -82,7 +80,7 @@ export const InvoiceItemRow = Schema.Struct({
   quantity: PositiveInt,
   quantityType: Schema.Literals(["unit", "pack"]),
   baseUnitQuantity: PositiveInt,
-  salePrice: NonNegativeInteger,
+  salePrice: Schema.Natural,
 });
 export type InvoiceItemRow = typeof InvoiceItemRow.Type;
 
@@ -95,14 +93,14 @@ export const StockMovementRow = Schema.Struct({
     Schema.withDecodingDefaultKey(Effect.succeed(null)),
   ),
   type: Schema.Literals(["stock_in", "sale", "open_pack", "adjustment"]),
-  packDelta: SignedInteger,
-  unitDelta: SignedInteger,
+  packDelta: Schema.Int,
+  unitDelta: Schema.Int,
   note: Schema.NullOr(Schema.String),
   organizationId: NonEmptyString,
   actorUserId: NonEmptyString,
   deviceId: NonEmptyString,
   operationId: NonEmptyString,
-  createdAt: NonNegativeInteger,
+  createdAt: Schema.Natural,
 });
 export type StockMovementRow = typeof StockMovementRow.Type;
 

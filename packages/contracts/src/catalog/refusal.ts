@@ -16,6 +16,8 @@ export const CatalogRefusalReason = Schema.Literals([
   "orderTransitionInvalid",
   "orderNotOpen",
   "orderNotDraft",
+  "orderHasItems",
+  "orderHasItems",
   "itemReceived",
   "lineBelongsElsewhere",
   "allocationFailed",
