@@ -10,17 +10,20 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 
+import { AccessTokens } from "../auth/access-tokens";
 import { OrganizationAuthLive } from "../auth/organization";
-import { OrgAuthorities, OrganizationAuthority } from "../inventory/organization-authority";
-import { LiveFanout, type LiveFanoutContract } from "../live/fanout";
-import { LiveRoutes, type LiveRouteDependencies } from "../live/route";
+import { GlobalSearch } from "../global-search/service";
+import { OrganizationAuthority } from "../inventory/organization-authority";
+import { InvoiceExtraction } from "../invoice-extraction/service";
+import { LiveFanout } from "../live/fanout";
+import { OrgHubs } from "../live/org-hubs";
+import { LiveRoutes } from "../live/route";
 import { GlobalSearchHandlers } from "../routes/global-search";
 import { SyncHandlers } from "../routes/sync";
 import { UploadHandlers } from "../routes/uploads";
 import { buildOncePerIsolate, workerRuntimeServices } from "../runtime/isolate";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
-import { ServerRuntime, type ServerRuntimeContract } from "./runtime";
 import { AuthHandlers, SystemHandlers } from "./system";
 
 const ProtectedHandlers = Layer.mergeAll(UploadHandlers, GlobalSearchHandlers, SyncHandlers).pipe(
@@ -33,9 +36,9 @@ const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
 
 const Cors = HttpRouter.middleware(
   Effect.gen(function* () {
-    const runtime = yield* ServerRuntime;
+    const { trustedOrigins } = yield* AccessTokens;
     const cors = HttpMiddleware.cors({
-      allowedOrigins: (origin) => isTrustedOrigin(origin, runtime.trustedOrigins),
+      allowedOrigins: (origin) => isTrustedOrigin(origin, trustedOrigins),
       allowedHeaders: ["Content-Type", "Authorization", "traceparent", "b3"],
       allowedMethods: ["GET", "POST", "OPTIONS"],
       exposedHeaders: ["Content-Length"],
@@ -75,30 +78,18 @@ const recoverUnexpected = <E, R>(
     }),
   );
 
-export interface WorkerServices {
-  readonly runtime: ServerRuntimeContract;
-  readonly authorities: OrgAuthorities["Service"];
-  readonly liveFanout: LiveFanoutContract;
-  readonly hubs: LiveRouteDependencies["hubs"];
-}
+export type ApiServices =
+  | AccessTokens
+  | GlobalSearch
+  | InvoiceExtraction
+  | LiveFanout
+  | OrgHubs
+  | OrganizationAuthority;
 
-export const makeWorkerFetch = Effect.fnUntraced(function* (services: WorkerServices) {
-  const routes = Layer.mergeAll(
-    ApiRoutes,
-    Cors,
-    LiveRoutes({
-      hubs: services.hubs,
-      verifyAccessToken: services.runtime.verifyAccessToken,
-    }),
-  ).pipe(
-    Layer.provide([
-      Layer.succeed(ServerRuntime, services.runtime),
-      OrganizationAuthority.layer.pipe(
-        Layer.provide(Layer.succeed(OrgAuthorities, services.authorities)),
-      ),
-      Layer.succeed(LiveFanout, services.liveFanout),
-      HttpServer.layerServices,
-    ]),
+export const makeWorkerFetch = Effect.gen(function* () {
+  const services = yield* Effect.context<ApiServices>();
+  const routes = Layer.mergeAll(ApiRoutes, Cors, LiveRoutes).pipe(
+    Layer.provide([Layer.succeedContext(services), HttpServer.layerServices]),
   );
   const serveRequest = yield* buildOncePerIsolate(
     HttpRouter.toHttpEffect(routes),

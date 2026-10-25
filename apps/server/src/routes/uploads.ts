@@ -1,6 +1,5 @@
-import { MAX_INVOICE_UPLOAD_BYTES, MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
+import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import type { BadRequest, PayloadTooLarge } from "@store/contracts/server-api";
-import { extractInvoice } from "@store/services";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as Multipart from "effect/http/Multipart";
@@ -16,9 +15,7 @@ import {
   tooManyRequests,
   unsupportedMediaType,
 } from "../http/errors";
-import { RATE_LIMITS, ServerRuntime } from "../http/runtime";
-
-const isInvoice = (name: string) => /\.(csv|pdf)$/i.test(name);
+import { InvoiceExtraction, type InvoiceUploadRefused } from "../invoice-extraction/service";
 
 const multipartFailure = (
   error: Multipart.MultipartError,
@@ -64,63 +61,56 @@ const collectFiles = (parts: Stream.Stream<Multipart.Part, Multipart.MultipartEr
     },
   ).pipe(Effect.catchTag("MultipartError", multipartFailure));
 
+const refusal = (reason: InvoiceUploadRefused["reason"]) => {
+  switch (reason) {
+    case "noAttachments":
+      return badRequest("NO_ATTACHMENTS", "Attach at least one invoice file.");
+    case "tooMany":
+      return payloadTooLarge(
+        "TOO_MANY_ATTACHMENTS",
+        `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`,
+      );
+    case "unsupported":
+      return unsupportedMediaType(
+        "UNSUPPORTED_ATTACHMENT",
+        "Only PDF and CSV invoices are accepted.",
+      );
+    case "tooLarge":
+      return payloadTooLarge("ATTACHMENTS_TOO_LARGE", "The attachments are too large.");
+    default: {
+      const _exhaustive: never = reason;
+      return _exhaustive;
+    }
+  }
+};
+
 export const UploadHandlers = HttpApiBuilder.group(
   StoreApi,
   "uploads",
   Effect.fn("UploadHandlers.make")(function* (handlers) {
-    const runtime = yield* ServerRuntime;
+    const invoices = yield* InvoiceExtraction;
 
     return handlers.handle(
       "extract",
       Effect.fn("UploadHandlers.extract")(function* ({ payload }) {
         const identity = yield* CurrentOrganization;
-        const rateLimit = yield* runtime
-          .limitInvoiceExtraction(`${identity.organizationId}:${identity.userId}`)
-          .pipe(Effect.orDie);
-        if (!rateLimit.success) {
-          yield* retryAfter(RATE_LIMITS.invoiceExtraction.period * 1_000);
-          return yield* Effect.fail(
-            tooManyRequests(
-              "INVOICE_EXTRACTION_RATE_LIMITED",
-              "Too many invoice uploads. Try again in a minute.",
-            ),
-          );
-        }
-
-        const files = yield* collectFiles(payload);
-        if (files.length === 0)
-          return yield* Effect.fail(
-            badRequest("NO_ATTACHMENTS", "Attach at least one invoice file."),
-          );
-        if (files.length > MAX_INVOICE_UPLOAD_FILES)
-          return yield* Effect.fail(
-            payloadTooLarge(
-              "TOO_MANY_ATTACHMENTS",
-              `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`,
-            ),
-          );
-        if (files.some((file) => !isInvoice(file.name)))
-          return yield* Effect.fail(
-            unsupportedMediaType(
-              "UNSUPPORTED_ATTACHMENT",
-              "Only PDF and CSV invoices are accepted.",
-            ),
-          );
-        if (files.reduce((total, file) => total + file.size, 0) > MAX_INVOICE_UPLOAD_BYTES)
-          return yield* Effect.fail(
-            payloadTooLarge("ATTACHMENTS_TOO_LARGE", "The attachments are too large."),
-          );
-
-        const ai = yield* runtime.invoiceAi;
-        return yield* extractInvoice(ai, files).pipe(
-          Effect.tapError((cause) =>
-            Effect.logError("Invoice extraction failed").pipe(
-              Effect.annotateLogs({ cause: cause.message }),
-            ),
-          ),
-          Effect.mapError(() =>
-            badGateway("EXTRACTION_FAILED", "Invoice analysis failed. Try again."),
-          ),
+        return yield* invoices.extract(identity, collectFiles(payload)).pipe(
+          Effect.catchTags({
+            InvoiceUploadRateLimited: (limited) =>
+              retryAfter(limited.retryAfterMillis).pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    tooManyRequests(
+                      "INVOICE_EXTRACTION_RATE_LIMITED",
+                      "Too many invoice uploads. Try again in a minute.",
+                    ),
+                  ),
+                ),
+              ),
+            InvoiceUploadRefused: (refused) => Effect.fail(refusal(refused.reason)),
+            InvoiceExtractionFailed: () =>
+              Effect.fail(badGateway("EXTRACTION_FAILED", "Invoice analysis failed. Try again.")),
+          }),
         );
       }),
     );
