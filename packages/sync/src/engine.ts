@@ -10,7 +10,6 @@ import {
   type AcquireSnapshotRequest,
   type CommandReceipt,
   type DeviceLabel,
-  type EnqueueCommandRequest,
   type SyncCommandEnvelope,
   type SyncLiveServerFrame,
   type SyncLiveWakeHint,
@@ -49,7 +48,6 @@ import {
   ReplicaStore,
   type AppliedCursor,
   type Integrated,
-  type QueuedCommand,
   type ReplicaStoreContract,
   type ReplicaStoreError,
 } from "./replica/store";
@@ -114,9 +112,6 @@ interface SyncEngineContract {
   readonly state: SubscriptionRef.SubscriptionRef<SyncState>;
   readonly ensureRegistered: () => Effect.Effect<void, SyncEngineError | SyncRecoveryRequired>;
   readonly awaitRegistered: Effect.Effect<void>;
-  readonly saveCommand: (
-    request: EnqueueCommandRequest,
-  ) => Effect.Effect<QueuedCommand, SyncProtocolError | ReplicaStoreError>;
   readonly drainUploads: () => Effect.Effect<number, SyncEngineError>;
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncEngineError>;
   readonly recover: (
@@ -199,12 +194,6 @@ export const makeSyncEngineFromReplicaStore = (
           }),
         ),
       );
-
-    const saveCommand = Effect.fn("SyncEngine.saveCommand")(function* (
-      request: EnqueueCommandRequest,
-    ) {
-      return (yield* withPermit(store.enqueueCommand(request))).value;
-    });
 
     const registered = yield* Deferred.make<void>();
     const heldBack = yield* Ref.make(false);
@@ -565,7 +554,6 @@ export const makeSyncEngineFromReplicaStore = (
       state,
       ensureRegistered,
       awaitRegistered: Deferred.await(registered),
-      saveCommand,
       drainUploads,
       catchUp,
       recover,

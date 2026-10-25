@@ -167,7 +167,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
         const decisions: Array<TwinDecision> = [];
         for (const step of steps) {
           const decidedBefore = submissions.length;
-          for (const request of step) yield* engine.saveCommand(request);
+          for (const request of step) yield* store.enqueueCommand(request);
           yield* engine.drainUploads();
           for (const { request, result } of submissions.slice(decidedBefore)) {
             decisions.push({
@@ -1114,11 +1114,10 @@ describe("the local authority decides like the durable object authority", () => 
     const refusal = await Effect.runPromise(
       Effect.gen(function* () {
         const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
-        const engine = yield* SyncEngine;
         yield* decide(REPACKED);
         const before = yield* store.readSyncCursor();
         const decidedBefore = submissions.length;
-        const failure = yield* Effect.flip(engine.saveCommand(queued(stalePriceDelivery)));
+        const failure = yield* Effect.flip(store.enqueueCommand(queued(stalePriceDelivery)));
         const refused = submissions.slice(decidedBefore);
         return {
           failure,
