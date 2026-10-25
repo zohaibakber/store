@@ -13,7 +13,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { layerInventoryReads } from "../src/reads/handlers";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
-import { layerInventoryStore, LicenceGate, StaffGate } from "../src/store/handlers";
+import { layerInventoryStore, StaffGate } from "../src/store/handlers";
 
 const DAY = 86_400_000;
 
@@ -56,10 +56,7 @@ const openStore = async (replicaId: string) => {
       RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
         Effect.provide(
           Layer.fresh(
-            Layer.provide(
-              layerInventoryStore,
-              Layer.mergeAll(services, StaffGate.layerDisabled, LicenceGate.layerOpen),
-            ),
+            Layer.provide(layerInventoryStore, Layer.mergeAll(services, StaffGate.layerDisabled)),
           ),
         ),
         Scope.provide(scope),

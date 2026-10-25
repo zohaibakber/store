@@ -14,20 +14,10 @@ import type {
 import * as Result from "effect/Result";
 
 import type { CatalogActor, CatalogWriteIds } from "./projection-context";
-import {
-  type BatchRow,
-  type InvoiceItemRow,
-  type InvoiceRow,
-  type ProductRow,
-  type StockMovementRow,
-} from "./rows";
+import { type BatchRow, type ProductRow } from "./rows";
 
 type SaleProjection = {
   readonly command: IssueInvoiceCommand;
-  readonly invoice: InvoiceRow;
-  readonly items: ReadonlyArray<InvoiceItemRow>;
-  readonly batchUpdates: ReadonlyArray<BatchRow>;
-  readonly movements: ReadonlyArray<StockMovementRow>;
 };
 
 type ProductSource = {
@@ -77,20 +67,7 @@ export const projectIssuedInvoice = (input: {
       [...input.batches.state.values()].map((batch) => [batch.id, { ...batch }]),
     );
     const allocations: InvoiceAllocation[] = [];
-    const items: InvoiceItemRow[] = [];
-    const movements: StockMovementRow[] = [];
     const invoiceId = decodeInvoiceId(input.commandId);
-    const total = input.sale.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
-    const meta = {
-      organizationId: input.actor.organizationId,
-      createdByUserId: input.actor.userId,
-      updatedByUserId: input.actor.userId,
-      deviceId: input.actor.deviceId,
-      operationId: input.commandId,
-      rowVersion: 1,
-      createdAt: input.occurredAt,
-      updatedAt: input.occurredAt,
-    } as const;
 
     for (const line of input.sale.items) {
       const product = input.products.state.get(line.productId);
@@ -125,64 +102,10 @@ export const projectIssuedInvoice = (input: {
               message: `The selected batch for ${product.name} is gone.`,
             }),
           );
-        const next: BatchRow = {
+        working.set(take.batchId, {
           ...current,
           packQuantity: take.nextPackQuantity,
           unitQuantity: take.nextUnitQuantity,
-          updatedByUserId: input.actor.userId,
-          deviceId: input.actor.deviceId,
-          operationId: input.commandId,
-          rowVersion: current.rowVersion + 1,
-          updatedAt: input.occurredAt,
-        };
-        working.set(take.batchId, next);
-        items.push({
-          id: allocation.invoiceItemId,
-          invoiceId,
-          productId: product.id,
-          batchId: take.batchId,
-          productName: product.name,
-          batchNumber: take.batchNumber,
-          quantity: take.quantity,
-          quantityType: line.quantityType,
-          baseUnitQuantity:
-            take.quantity * (line.quantityType === "pack" ? product.unitsPerPack : 1),
-          salePrice: line.salePrice,
-          ...meta,
-        });
-        if (take.packsOpened > 0 && allocation.openPackMovementId) {
-          movements.push({
-            id: allocation.openPackMovementId,
-            productId: product.id,
-            batchId: take.batchId,
-            invoiceId,
-            purchaseOrderId: null,
-            type: "open_pack",
-            packDelta: -take.packsOpened,
-            unitDelta: take.packsOpened * product.unitsPerPack,
-            note: `Opened for invoice #${input.invoiceNumber}`,
-            organizationId: input.actor.organizationId,
-            actorUserId: input.actor.userId,
-            deviceId: input.actor.deviceId,
-            operationId: input.commandId,
-            createdAt: input.occurredAt,
-          });
-        }
-        movements.push({
-          id: allocation.saleMovementId,
-          productId: product.id,
-          batchId: take.batchId,
-          invoiceId,
-          purchaseOrderId: null,
-          type: "sale",
-          packDelta: line.quantityType === "pack" ? -take.quantity : 0,
-          unitDelta: line.quantityType === "unit" ? -take.quantity : 0,
-          note: `Invoice #${input.invoiceNumber}`,
-          organizationId: input.actor.organizationId,
-          actorUserId: input.actor.userId,
-          deviceId: input.actor.deviceId,
-          operationId: input.commandId,
-          createdAt: input.occurredAt,
         });
       }
     }
@@ -214,18 +137,5 @@ export const projectIssuedInvoice = (input: {
       );
     }
 
-    const touched = new Set(allocations.map((take) => take.batchId));
-    return {
-      command,
-      invoice: {
-        id: invoiceId,
-        invoiceNumber: input.invoiceNumber,
-        customerName: input.sale.customerName?.trim() || null,
-        total,
-        ...meta,
-      },
-      items,
-      batchUpdates: [...working.values()].filter((batch) => touched.has(batch.id)),
-      movements,
-    };
+    return { command };
   });
