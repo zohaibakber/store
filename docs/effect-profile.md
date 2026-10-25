@@ -8,7 +8,7 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 - **IDs** are branded strings from `packages/contracts/src/ids.ts`.
 - **Timestamps** on the wire and in storage stay epoch milliseconds.
 - **Comments.** Code carries none; the `// SAFETY:` line above a cast is the one exception.
-- **`Crypto.Crypto`** is provided by `packages/auth/src/web-crypto.ts`.
+- **`Crypto.Crypto`** is provided by `packages/auth/src/web-crypto.ts` in the auth and server code and by `NodeCrypto.layer` (`@effect/platform-node/NodeCrypto`) in the desktop writer.
 - **Typed infrastructure failures.** Storage and network failures stay in `E`: the UI shows offline, retries, or asks the user to free space.
 - **Process boundaries** are the "Sync engine boundaries" section of `AGENTS.md`.
 - **Tests.** The policy is the "Tests" section of `AGENTS.md`. Authority tests run the `OrgAuthority` facade on node SQLite through `apps/server/test/authority/harness.ts`; convergence of two replicas is the invariant worth a committed test.

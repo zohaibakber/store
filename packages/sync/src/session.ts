@@ -64,7 +64,7 @@ const ownHttpSync = (
             ),
           ),
         setConnected: inner.setLiveConnected,
-        maxBytes: engine.pullMaxBytes,
+        maxBytes: Effect.succeed(options.policy?.pullMaxBytes),
       },
     );
     const scheduler: SyncSchedulerContract = {

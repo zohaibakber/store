@@ -117,9 +117,7 @@ interface SyncEngineContract {
   readonly saveCommand: (
     request: EnqueueCommandRequest,
   ) => Effect.Effect<QueuedCommand, SyncProtocolError | ReplicaStoreError>;
-  readonly uploadOnce: () => Effect.Effect<CommandReceipt | undefined, SyncEngineError>;
   readonly drainUploads: () => Effect.Effect<number, SyncEngineError>;
-  readonly downloadOnce: (request: SyncPullRequest) => Effect.Effect<string, SyncEngineError>;
   readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncEngineError>;
   readonly recover: (
     code: RecoverableCode,
@@ -128,15 +126,13 @@ interface SyncEngineContract {
   readonly applyLiveFrame: (
     frame: SyncLiveServerFrame,
   ) => Effect.Effect<LiveFrameOutcome, ReplicaStoreError>;
-  readonly setPullMaxBytes: (maxBytes: number | undefined) => Effect.Effect<void>;
-  readonly pullMaxBytes: Effect.Effect<number | undefined>;
 }
 
 const makeClaimId = Effect.sync(() => crypto.randomUUID());
 
 const decodeEpoch = Schema.decodeUnknownEffect(SyncEpoch);
 
-export const cursorFromStore = (store: ReplicaStoreContract) =>
+const cursorFromStore = (store: ReplicaStoreContract) =>
   store.readSyncCursor().pipe(
     Effect.flatMap((cursor) =>
       decodeEpoch(cursor.epoch).pipe(
@@ -177,7 +173,6 @@ export const makeSyncEngineFromReplicaStore = (
     const digestIntervalMillis =
       options.digestVerificationIntervalMillis ?? DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS;
     const believesCaughtUp = yield* Ref.make(true);
-    const pullMaxBytes = yield* Ref.make(options.pullMaxBytes);
     const uploadReachedHorizon = yield* Ref.make<string | undefined>(undefined);
     const caughtUpRecordedAt = yield* Ref.make<number | undefined>(undefined);
     const state = yield* SubscriptionRef.make(initialSyncState);
@@ -241,6 +236,9 @@ export const makeSyncEngineFromReplicaStore = (
 
     const reannounce = withPermit(store.readSyncCursor()).pipe(
       Effect.flatMap((cursor) => announce(cursor.replicaId)),
+      Effect.tapError((error) =>
+        Effect.logWarning("sync.reannounce_failed").pipe(Effect.annotateLogs({ error })),
+      ),
       Effect.ignore,
     );
 
@@ -345,7 +343,7 @@ export const makeSyncEngineFromReplicaStore = (
         ...envelope,
         afterCommitSequence: OrgCommitSequence.make(cursor.appliedCommitSequence),
       };
-      return withMaxBytes(request, yield* Ref.get(pullMaxBytes));
+      return withMaxBytes(request, options.pullMaxBytes);
     });
 
     const settleSubmitted = Effect.fn("SyncEngine.settleSubmitted")(function* (
@@ -377,7 +375,7 @@ export const makeSyncEngineFromReplicaStore = (
       const digestRequest: SyncPullRequest = includeDigest
         ? { ...request, digestVersion: PARTITION_DIGEST_VERSION }
         : request;
-      const pullRequest = withMaxBytes(digestRequest, yield* Ref.get(pullMaxBytes));
+      const pullRequest = withMaxBytes(digestRequest, options.pullMaxBytes);
       const pulled = yield* transport.pull(pullRequest).pipe(
         Effect.catchIf(isSnapshotRequired, () =>
           Effect.gen(function* () {
@@ -393,7 +391,7 @@ export const makeSyncEngineFromReplicaStore = (
                 includeDigest
                   ? { ...recovered, digestVersion: PARTITION_DIGEST_VERSION }
                   : recovered,
-                yield* Ref.get(pullMaxBytes),
+                options.pullMaxBytes,
               ),
             );
           }),
@@ -419,11 +417,6 @@ export const makeSyncEngineFromReplicaStore = (
       return integrated.appliedThrough;
     });
 
-    const downloadOnce = Effect.fn("SyncEngine.downloadOnce")(function* (request: SyncPullRequest) {
-      const { pulled, pulledAt } = yield* pullPage(request);
-      return yield* applyPage(pulled, pulledAt);
-    });
-
     const followingPage = (request: SyncPullRequest, pulled: SyncPullResult) =>
       pulled.transactions.length > 0 &&
       compareDecimalSequence(pulled.nextCommitSequence, pulled.horizon) < 0
@@ -432,7 +425,7 @@ export const makeSyncEngineFromReplicaStore = (
 
     const prefetch = Effect.fn("SyncEngine.prefetch")(function* (request: SyncPullRequest) {
       const pulledAt = yield* Clock.currentTimeMillis;
-      const pulled = yield* transport.pull(withMaxBytes(request, yield* Ref.get(pullMaxBytes)));
+      const pulled = yield* transport.pull(withMaxBytes(request, options.pullMaxBytes));
       return { pulled, pulledAt };
     });
 
@@ -573,15 +566,11 @@ export const makeSyncEngineFromReplicaStore = (
       ensureRegistered,
       awaitRegistered: Deferred.await(registered),
       saveCommand,
-      uploadOnce,
       drainUploads,
-      downloadOnce,
       catchUp,
       recover,
       hintApplied,
       applyLiveFrame: applyLiveFrameEffect,
-      setPullMaxBytes: (maxBytes) => Ref.set(pullMaxBytes, maxBytes),
-      pullMaxBytes: Ref.get(pullMaxBytes),
     };
   });
 
@@ -595,8 +584,6 @@ const makeSyncEngineFromContext = (options?: SyncEngineOptions) =>
 export class SyncEngine extends Context.Service<SyncEngine, SyncEngineContract>()(
   "@store/sync/SyncEngine",
 ) {
-  static readonly make = makeSyncEngineFromContext;
-
   static readonly layer = (options?: SyncEngineOptions) =>
     Layer.effect(SyncEngine, makeSyncEngineFromContext(options));
 }

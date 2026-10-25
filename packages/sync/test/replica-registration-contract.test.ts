@@ -231,14 +231,12 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         });
         const engine = yield* engineFor(store, authority.transport);
         yield* engine.ensureRegistered();
-        const first = yield* engine.uploadOnce();
-        const second = yield* engine.uploadOnce();
-        expect([first?.operationId, second?.operationId]).toEqual(["op-1", "op-2"]);
+        expect(yield* engine.drainUploads()).toBe(2);
         expect(authority.accepted).toEqual(["7", "8"]);
         expect(yield* store.readCommandStatus("op-1")).toBe("accepted_awaiting_integration");
         expect(yield* store.readCommandStatus("op-2")).toBe("accepted_awaiting_integration");
         yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(3, "2", "9"), FIXTURE_NOW));
-        yield* engine.uploadOnce();
+        expect(yield* engine.drainUploads()).toBe(1);
         expect(authority.accepted).toEqual(["7", "8", "9"]);
         yield* engine.ensureRegistered();
         expect(authority.counts.registers).toBe(1);

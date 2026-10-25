@@ -1673,7 +1673,6 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
 };
 
 export const LocalAuthority = {
-  make: makeLocalAuthority,
   submitWithin,
   layer: Layer.effect(
     SyncTransportService,
