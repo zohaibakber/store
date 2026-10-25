@@ -38,7 +38,7 @@ import { layerNodeStaffGate } from "@store/client-db/node-staff";
 import {
   CommandAdmission,
   layerInventoryStore,
-  type LicenceGate,
+  LicenceGate,
   StaffGate,
 } from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
@@ -182,7 +182,12 @@ const openSession = (
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
   Layer.buildWithScope(
-    Layer.fresh(Layer.provideMerge(Layer.merge(StaffGateLive, layerNodeLicenceGate), session)),
+    Layer.fresh(
+      Layer.provideMerge(
+        Layer.mergeAll(StaffGateLive, layerNodeLicenceGate, LicenceGate.layerOpen),
+        session,
+      ),
+    ),
     scope,
   ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
 
