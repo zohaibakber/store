@@ -88,7 +88,7 @@ interface KeySet {
 
 interface IdTokenExpectation {
   readonly audiences: ReadonlySet<string>;
-  readonly nonce: string | undefined;
+  readonly nonce: string;
 }
 
 export interface GoogleProfile {
@@ -99,17 +99,14 @@ export interface GoogleProfile {
   readonly image: string | null;
 }
 
-export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()(
-  "Auth.GoogleOAuthError",
-  {
-    operation: Schema.String,
-    message: Schema.String,
-    cause: Schema.optionalKey(Schema.Defect()),
-  },
-) {}
+export class GoogleOAuthError extends Schema.TaggedError<GoogleOAuthError>()("GoogleOAuthError", {
+  operation: Schema.String,
+  message: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {}
 
 export class GoogleIdentityRejected extends Schema.TaggedError<GoogleIdentityRejected>()(
-  "Auth.GoogleIdentityRejected",
+  "GoogleIdentityRejected",
   {
     reason: Schema.Literals([
       "Malformed",
@@ -134,8 +131,8 @@ interface GoogleOAuthApi {
   }) => URL;
   readonly exchangeCode: (input: {
     readonly code: string;
-    readonly codeVerifier: string | undefined;
-    readonly nonce: string | undefined;
+    readonly codeVerifier: string;
+    readonly nonce: string;
   }) => Effect.Effect<GoogleProfile, GoogleOAuthError | GoogleIdentityRejected>;
 }
 
@@ -305,10 +302,7 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
         if (!isTrue(claims.email_verified)) {
           return yield* rejected("EmailUnverified", "Google did not verify this email address.");
         }
-        if (
-          expected.nonce !== undefined &&
-          (claims.nonce === undefined || !(yield* sameNonce(claims.nonce, expected.nonce)))
-        ) {
+        if (claims.nonce === undefined || !(yield* sameNonce(claims.nonce, expected.nonce))) {
           return yield* rejected("Nonce", "The identity token belongs to another sign-in.");
         }
         const email = EmailAddress.make(normalizeEmail(claims.email));

@@ -58,8 +58,8 @@ const OAuthStatePayload = Schema.Struct({
   redirectUri: Schema.String,
   codeChallenge: Schema.String,
   client: AuthClientKind,
-  googleCodeVerifier: Schema.optionalKey(Schema.String),
-  googleNonce: Schema.optionalKey(Schema.String),
+  googleCodeVerifier: Schema.String,
+  googleNonce: Schema.String,
 });
 interface OAuthStateRecord extends Schema.Schema.Type<typeof OAuthStatePayload> {
   readonly expiresAt: number;
@@ -75,7 +75,7 @@ interface AuthorizationGrantRecord extends Schema.Schema.Type<typeof Authorizati
 }
 
 export class EphemeralStoreError extends Schema.TaggedError<EphemeralStoreError>()(
-  "Auth.EphemeralStoreError",
+  "EphemeralStoreError",
   {
     operation: Schema.String,
     message: Schema.String,

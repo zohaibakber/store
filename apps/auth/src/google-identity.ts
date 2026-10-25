@@ -33,7 +33,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       const crypto = yield* AuthCrypto;
       const { trustedRedirects } = yield* AuthSettings;
 
-      const linkGoogleUser = Effect.fn("Auth.Google.linkGoogleUser")(function* (
+      const linkGoogleUser = Effect.fn("GoogleIdentity.linkGoogleUser")(function* (
         profile: GoogleProfile,
       ) {
         const now = yield* Clock.currentTimeMillis;
@@ -64,7 +64,9 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         return { ...existing, passwordHash: null, emailVerified: true } satisfies UserRecord;
       });
 
-      const beginGoogle = Effect.fn("Auth.Google.beginGoogle")(function* (input: BeginGoogleInput) {
+      const beginGoogle = Effect.fn("GoogleIdentity.beginGoogle")(function* (
+        input: BeginGoogleInput,
+      ) {
         const now = yield* Clock.currentTimeMillis;
         if (!isTrustedRedirect(input.redirectUri, trustedRedirects)) {
           return yield* new AuthRefusal({ reason: "InvalidRedirect" });
@@ -86,7 +88,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         });
       });
 
-      const completeGoogle = Effect.fn("Auth.Google.completeGoogle")(function* (input: {
+      const completeGoogle = Effect.fn("GoogleIdentity.completeGoogle")(function* (input: {
         readonly code: string;
         readonly state: string;
       }) {
@@ -102,7 +104,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
             nonce: state.googleNonce,
           })
           .pipe(
-            Effect.catchTag("Auth.GoogleIdentityRejected", () =>
+            Effect.catchTag("GoogleIdentityRejected", () =>
               Effect.fail(new AuthRefusal({ reason: "GoogleCodeUnverified" })),
             ),
           );
@@ -116,7 +118,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         return { redirectUri: state.redirectUri, code };
       });
 
-      const exchangeGoogle = Effect.fn("Auth.Google.exchangeGoogle")(function* (
+      const exchangeGoogle = Effect.fn("GoogleIdentity.exchangeGoogle")(function* (
         input: ExchangeGoogleInput,
       ) {
         const now = yield* Clock.currentTimeMillis;

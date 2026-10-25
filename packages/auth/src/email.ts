@@ -21,7 +21,7 @@ export interface SendInvitationInput {
 }
 
 export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
-  "Auth.EmailDeliveryError",
+  "EmailDeliveryError",
   {
     message: Schema.String,
   },

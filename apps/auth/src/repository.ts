@@ -101,11 +101,14 @@ export interface RefreshContext {
   readonly activeMembership: MembershipRecord | null;
 }
 
-export class RepositoryError extends Schema.TaggedError<RepositoryError>()("Auth.RepositoryError", {
-  operation: Schema.String,
-  message: Schema.String,
-  cause: Schema.optionalKey(Schema.Defect()),
-}) {}
+export class AuthRepositoryError extends Schema.TaggedError<AuthRepositoryError>()(
+  "AuthRepositoryError",
+  {
+    operation: Schema.String,
+    message: Schema.String,
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {}
 
 interface NewSession {
   readonly id: SessionIdType;
@@ -132,101 +135,104 @@ export class AuthRepository extends Context.Service<
   {
     readonly findUserByEmail: (
       email: EmailAddressType,
-    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    ) => Effect.Effect<UserRecord | null, AuthRepositoryError>;
     readonly findUserById: (
       userId: UserIdType,
-    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    ) => Effect.Effect<UserRecord | null, AuthRepositoryError>;
     readonly findUserByGoogleId: (
       providerAccountId: string,
-    ) => Effect.Effect<UserRecord | null, RepositoryError>;
+    ) => Effect.Effect<UserRecord | null, AuthRepositoryError>;
     readonly createPasswordUser: (input: {
       readonly email: EmailAddressType;
       readonly name: string;
       readonly passwordHash: PasswordHashType;
-    }) => Effect.Effect<UserRecord, RepositoryError>;
+    }) => Effect.Effect<UserRecord, AuthRepositoryError>;
     readonly replacePasswordHash: (input: {
       readonly userId: UserIdType;
       readonly previous: PasswordHashType;
       readonly next: PasswordHashType;
-    }) => Effect.Effect<void, RepositoryError>;
+    }) => Effect.Effect<void, AuthRepositoryError>;
     readonly createGoogleUser: (input: {
       readonly email: EmailAddressType;
       readonly name: string;
       readonly image: string | null;
       readonly providerAccountId: string;
-    }) => Effect.Effect<UserRecord, RepositoryError>;
+    }) => Effect.Effect<UserRecord, AuthRepositoryError>;
     readonly attachGoogleAccount: (input: {
       readonly userId: UserIdType;
       readonly providerAccountId: string;
-    }) => Effect.Effect<boolean, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly claimUnverifiedPasswordUser: (input: {
       readonly userId: UserIdType;
       readonly providerAccountId: string;
       readonly image: string | null;
       readonly now: number;
-    }) => Effect.Effect<boolean, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly membershipForUser: (
       userId: UserIdType,
-    ) => Effect.Effect<MembershipRecord, RepositoryError>;
+    ) => Effect.Effect<MembershipRecord, AuthRepositoryError>;
     readonly membershipInOrganization: (input: {
       readonly userId: UserIdType;
       readonly organizationId: OrganizationIdType;
-    }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
+    }) => Effect.Effect<MembershipRecord | null, AuthRepositoryError>;
     readonly updateOrganization: (input: {
       readonly organizationId: OrganizationIdType;
       readonly name: string;
       readonly role: OrganizationRoleType;
-    }) => Effect.Effect<MembershipRecord | null, RepositoryError>;
+    }) => Effect.Effect<MembershipRecord | null, AuthRepositoryError>;
     readonly listMembers: (
       organizationId: OrganizationIdType,
-    ) => Effect.Effect<ReadonlyArray<OrganizationMember>, RepositoryError>;
+    ) => Effect.Effect<ReadonlyArray<OrganizationMember>, AuthRepositoryError>;
     readonly changeMemberRole: (input: {
       readonly organizationId: OrganizationIdType;
       readonly userId: UserIdType;
       readonly role: OrganizationRoleType;
-    }) => Effect.Effect<boolean, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly removeMember: (input: {
       readonly organizationId: OrganizationIdType;
       readonly userId: UserIdType;
-    }) => Effect.Effect<boolean, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly createInvitation: (
       input: NewInvitation,
-    ) => Effect.Effect<InvitationRecord, RepositoryError>;
+    ) => Effect.Effect<InvitationRecord, AuthRepositoryError>;
     readonly revokeInvitation: (input: {
       readonly organizationId: OrganizationIdType;
       readonly invitationId: InvitationIdType;
       readonly now: number;
-    }) => Effect.Effect<boolean, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly findInvitationByTokenHash: (
       tokenHash: string,
-    ) => Effect.Effect<InvitationRecord | null, RepositoryError>;
+    ) => Effect.Effect<InvitationRecord | null, AuthRepositoryError>;
     readonly pendingInvitationsForOrganization: (input: {
       readonly organizationId: OrganizationIdType;
       readonly now: number;
-    }) => Effect.Effect<ReadonlyArray<InvitationRecord>, RepositoryError>;
+    }) => Effect.Effect<ReadonlyArray<InvitationRecord>, AuthRepositoryError>;
     readonly acceptInvitation: (input: {
       readonly invitation: InvitationRecord;
       readonly userId: UserIdType;
       readonly sessionId: SessionIdType;
       readonly now: number;
-    }) => Effect.Effect<boolean, RepositoryError>;
-    readonly createSession: (input: NewSession) => Effect.Effect<void, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
+    readonly createSession: (input: NewSession) => Effect.Effect<void, AuthRepositoryError>;
     readonly findSession: (
       sessionId: SessionIdType,
-    ) => Effect.Effect<SessionRecord | null, RepositoryError>;
+    ) => Effect.Effect<SessionRecord | null, AuthRepositoryError>;
     readonly findRefreshContext: (
       sessionId: SessionIdType,
-    ) => Effect.Effect<RefreshContext | null, RepositoryError>;
+    ) => Effect.Effect<RefreshContext | null, AuthRepositoryError>;
     readonly pruneExpiredSessions: (input: {
       readonly expiredBefore: number;
       readonly limit: number;
-    }) => Effect.Effect<number, RepositoryError>;
+    }) => Effect.Effect<number, AuthRepositoryError>;
     readonly rotateSession: (input: {
       readonly currentId: SessionIdType;
       readonly replacement: NewSession;
       readonly now: number;
-    }) => Effect.Effect<boolean, RepositoryError>;
-    readonly revokeFamily: (familyId: string, now: number) => Effect.Effect<void, RepositoryError>;
+    }) => Effect.Effect<boolean, AuthRepositoryError>;
+    readonly revokeFamily: (
+      familyId: string,
+      now: number,
+    ) => Effect.Effect<void, AuthRepositoryError>;
   }
 >()("@store/auth-worker/AuthRepository") {
   static readonly layer = Layer.effect(
@@ -240,7 +246,7 @@ export class AuthRepository extends Context.Service<
 }
 
 const repositoryError = (operation: string, cause: unknown) =>
-  new RepositoryError({ operation, message: storageFailureMessage(cause), cause });
+  new AuthRepositoryError({ operation, message: storageFailureMessage(cause), cause });
 
 const at = (milliseconds: number) => new Date(milliseconds);
 

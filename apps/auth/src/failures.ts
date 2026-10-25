@@ -151,12 +151,12 @@ const REFUSALS = {
   ),
 } as const satisfies Record<string, AuthFailureWire>;
 
-export class AuthRefusal extends Schema.TaggedError<AuthRefusal>()("Auth.Refusal", {
+export class AuthRefusal extends Schema.TaggedError<AuthRefusal>()("AuthRefusal", {
   reason: Schema.Literals(Struct.keys(REFUSALS)),
 }) {}
 
 export class InvitationEmailMismatch extends Schema.TaggedError<InvitationEmailMismatch>()(
-  "Auth.InvitationEmailMismatch",
+  "InvitationEmailMismatch",
   { invited: EmailAddress },
 ) {}
 
@@ -166,9 +166,9 @@ export type RateLimitAttempt = "request" | "code" | "invitation";
 
 export const authFailureWire = (failure: AuthFailure): AuthFailureWire => {
   switch (failure._tag) {
-    case "Auth.Refusal":
+    case "AuthRefusal":
       return REFUSALS[failure.reason];
-    case "Auth.InvitationEmailMismatch":
+    case "InvitationEmailMismatch":
       return wire(
         "Forbidden",
         "INVITATION_EMAIL_MISMATCH",

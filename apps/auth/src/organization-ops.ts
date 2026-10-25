@@ -52,7 +52,7 @@ export class Organizations extends Context.Service<Organizations>()(
       const hashInvite = (secret: Redacted.Redacted<string>) =>
         crypto.invitationHash(refreshTokenPepper, secret);
 
-      const membershipOf = Effect.fn("Auth.Organization.membershipOf")(function* (
+      const membershipOf = Effect.fn("Organizations.membershipOf")(function* (
         userId: UserId,
         organizationId: OrganizationId,
       ) {
@@ -63,7 +63,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return membership;
       });
 
-      const requireRole = Effect.fn("Auth.Organization.requireRole")(function* (
+      const requireRole = Effect.fn("Organizations.requireRole")(function* (
         userId: UserId,
         organizationId: OrganizationId,
         requires: "owner" | "manager",
@@ -92,7 +92,7 @@ export class Organizations extends Context.Service<Organizations>()(
           createdAt: invitation.createdAt,
         });
 
-      const roster = Effect.fn("Auth.Organization.roster")(function* (
+      const roster = Effect.fn("Organizations.roster")(function* (
         accessToken: Redacted.Redacted<string>,
       ) {
         const now = yield* Clock.currentTimeMillis;
@@ -113,7 +113,7 @@ export class Organizations extends Context.Service<Organizations>()(
         });
       });
 
-      const updateOrganization = Effect.fn("Auth.Organization.updateOrganization")(function* (
+      const updateOrganization = Effect.fn("Organizations.updateOrganization")(function* (
         claims: AccessClaims,
         input: {
           readonly organizationId: OrganizationId;
@@ -132,7 +132,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return { _tag: "Updated", organization: membershipView(updated) } as const;
       });
 
-      const inviteMember = Effect.fn("Auth.Organization.inviteMember")(function* (
+      const inviteMember = Effect.fn("Organizations.inviteMember")(function* (
         claims: AccessClaims,
         input: {
           readonly organizationId: OrganizationId;
@@ -170,7 +170,7 @@ export class Organizations extends Context.Service<Organizations>()(
             expiresAt,
           })
           .pipe(
-            Effect.catchTag("Auth.EmailDeliveryError", (cause) =>
+            Effect.catchTag("EmailDeliveryError", (cause) =>
               Effect.logWarning("auth.invitation_delivery_failed").pipe(
                 Effect.annotateLogs({ invitation: invitation.id, message: cause.message }),
               ),
@@ -183,7 +183,7 @@ export class Organizations extends Context.Service<Organizations>()(
         } as const;
       });
 
-      const acceptInvitation = Effect.fn("Auth.Organization.acceptInvitation")(function* (
+      const acceptInvitation = Effect.fn("Organizations.acceptInvitation")(function* (
         claims: AccessClaims,
         token: InvitationToken,
       ) {
@@ -215,7 +215,7 @@ export class Organizations extends Context.Service<Organizations>()(
         } as const;
       });
 
-      const lastOwnerOrMissing = Effect.fn("Auth.Organization.lastOwnerOrMissing")(function* (
+      const lastOwnerOrMissing = Effect.fn("Organizations.lastOwnerOrMissing")(function* (
         organizationId: OrganizationId,
         userId: UserId,
         blocks: "roleChange" | "removal",
@@ -227,7 +227,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return yield* new AuthRefusal({ reason: "MemberNotFound" });
       });
 
-      const changeMemberRole = Effect.fn("Auth.Organization.changeMemberRole")(function* (
+      const changeMemberRole = Effect.fn("Organizations.changeMemberRole")(function* (
         claims: AccessClaims,
         input: {
           readonly organizationId: OrganizationId;
@@ -259,7 +259,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return { _tag: "Applied" } as const;
       });
 
-      const removeMember = Effect.fn("Auth.Organization.removeMember")(function* (
+      const removeMember = Effect.fn("Organizations.removeMember")(function* (
         claims: AccessClaims,
         input: {
           readonly organizationId: OrganizationId;
@@ -288,7 +288,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return { _tag: "Applied" } as const;
       });
 
-      const organize = Effect.fn("Auth.Organization.organize")(function* (input: {
+      const organize = Effect.fn("Organizations.organize")(function* (input: {
         readonly accessToken: Redacted.Redacted<string>;
         readonly command: OrganizationCommand;
       }) {

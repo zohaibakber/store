@@ -19,7 +19,7 @@ export const PasswordHash = Schema.String.check(
 export type PasswordHash = typeof PasswordHash.Type;
 
 export class PasswordHashError extends Schema.TaggedError<PasswordHashError>()(
-  "Auth.PasswordHashError",
+  "PasswordHashError",
   {
     message: Schema.String,
     cause: Schema.optionalKey(Schema.Defect()),

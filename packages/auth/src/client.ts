@@ -40,7 +40,7 @@ const AuthClientFailure = Schema.Union([
   Schema.TaggedStruct("Rejected", { status: Schema.Number, code: Schema.String }),
 ]);
 
-export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth.AuthClientError", {
+export class AuthClientError extends Schema.TaggedError<AuthClientError>()("AuthClientError", {
   operation: AuthClientOperation,
   reason: AuthClientFailure,
   message: Schema.String,

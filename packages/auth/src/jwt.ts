@@ -82,7 +82,7 @@ const JwtHeader = Schema.Struct({
   kid: Schema.String,
 });
 
-export class JwtError extends Schema.TaggedError<JwtError>()("Auth.JwtError", {
+export class JwtError extends Schema.TaggedError<JwtError>()("JwtError", {
   reason: Schema.Literals([
     "Malformed",
     "InvalidSignature",

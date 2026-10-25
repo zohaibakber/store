@@ -36,19 +36,19 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
     const crypto = yield* AuthCrypto;
     const { developmentOtp } = yield* AuthSettings;
 
-    const rehash = Effect.fn("Auth.Login.rehash")(
+    const rehash = Effect.fn("Login.rehash")(
       function* (userId: UserId, previous: PasswordHash, password: Redacted.Redacted<string>) {
         const next = yield* passwords.hash(password);
         yield* repository.replacePasswordHash({ userId, previous, next });
       },
-      Effect.catchTag(["Auth.PasswordHashError", "Auth.RepositoryError"], (failure) =>
+      Effect.catchTag(["PasswordHashError", "AuthRepositoryError"], (failure) =>
         Effect.logWarning("auth.password_rehash_failed").pipe(
           Effect.annotateLogs({ tag: failure._tag, message: failure.message }),
         ),
       ),
     );
 
-    const identify = Effect.fn("Auth.Login.identify")(function* (input: IdentifyInput) {
+    const identify = Effect.fn("Login.identify")(function* (input: IdentifyInput) {
       const now = yield* Clock.currentTimeMillis;
       const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
         normalizeEmail(input.email),
@@ -102,7 +102,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
       }
     });
 
-    const authenticate = Effect.fn("Auth.Login.authenticate")(function* (command: LoginCommand) {
+    const authenticate = Effect.fn("Login.authenticate")(function* (command: LoginCommand) {
       const now = yield* Clock.currentTimeMillis;
       switch (command._tag) {
         case "Password": {
@@ -151,7 +151,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const user = yield* repository
             .createPasswordUser({ email: emailAddress, name: command.name, passwordHash })
             .pipe(
-              Effect.catchTag("Auth.RepositoryError", (failure) =>
+              Effect.catchTag("AuthRepositoryError", (failure) =>
                 Effect.flatMap(repository.findUserByEmail(emailAddress), (raced) =>
                   Effect.fail(raced ? new AuthRefusal({ reason: "AccountExists" }) : failure),
                 ),

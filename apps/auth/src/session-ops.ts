@@ -19,7 +19,7 @@ import {
   AuthRepository,
   type MembershipRecord,
   type RefreshContext,
-  type RepositoryError,
+  type AuthRepositoryError,
   type SessionRecord,
   type UserRecord,
 } from "./repository";
@@ -78,7 +78,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       now,
     });
 
-    const issueTokens = Effect.fn("Auth.Session.issueTokens")(function* (input: {
+    const issueTokens = Effect.fn("Sessions.issueTokens")(function* (input: {
       readonly user: UserRecord;
       readonly sessionId: SessionId;
       readonly membership: MembershipRecord;
@@ -97,7 +97,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       } satisfies RefreshedSession;
     });
 
-    const issueSession = Effect.fn("Auth.Session.issueSession")(function* (
+    const issueSession = Effect.fn("Sessions.issueSession")(function* (
       user: UserRecord,
       client: AuthClientKind,
       replayKey?: string,
@@ -145,7 +145,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     const liveSuccessor: (
       revoked: SessionRecord,
       hops: number,
-    ) => Effect.Effect<RefreshContext | null, RepositoryError> = Effect.fnUntraced(
+    ) => Effect.Effect<RefreshContext | null, AuthRepositoryError> = Effect.fnUntraced(
       function* (revoked, hops) {
         if (hops === 0 || revoked.replacedBySessionId === null) return null;
         const successor = yield* repository.findRefreshContext(revoked.replacedBySessionId);
@@ -156,7 +156,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       },
     );
 
-    const openRefresh = Effect.fn("Auth.Session.openRefresh")(function* (
+    const openRefresh = Effect.fn("Sessions.openRefresh")(function* (
       presented: PresentedRefresh | undefined,
     ) {
       const now = yield* Clock.currentTimeMillis;
@@ -189,7 +189,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       return yield* liveRefresh(successor, now);
     });
 
-    const rotateInto = Effect.fn("Auth.Session.rotateInto")(function* (input: {
+    const rotateInto = Effect.fn("Sessions.rotateInto")(function* (input: {
       readonly session: SessionRecord;
       readonly user: UserRecord;
       readonly membership: MembershipRecord;
@@ -228,7 +228,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       });
     });
 
-    const refresh = Effect.fn("Auth.Session.refresh")(function* (
+    const refresh = Effect.fn("Sessions.refresh")(function* (
       presented: PresentedRefresh | undefined,
     ) {
       const open = yield* openRefresh(presented);
@@ -237,7 +237,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       return yield* rotateInto({ session: open.session, user: open.user, membership });
     });
 
-    const signOut = Effect.fn("Auth.Session.signOut")(function* (
+    const signOut = Effect.fn("Sessions.signOut")(function* (
       refreshToken: Redacted.Redacted<string> | undefined,
     ) {
       const now = yield* Clock.currentTimeMillis;
@@ -249,7 +249,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       yield* repository.revokeFamily(session.familyId, now);
     });
 
-    const authorize = Effect.fn("Auth.Session.authorize")(function* (
+    const authorize = Effect.fn("Sessions.authorize")(function* (
       accessToken: Redacted.Redacted<string>,
     ) {
       const now = yield* Clock.currentTimeMillis;

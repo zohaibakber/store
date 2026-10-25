@@ -24,18 +24,15 @@ export const shippedLicenceTrust = (packaged: boolean): LicenceTrust => ({
   packaged,
 });
 
-const signedBy = (key: LicencePublicKey, payload: Uint8Array, signature: Uint8Array) => {
-  try {
-    return verify(
+const signedBy = (key: LicencePublicKey, payload: Uint8Array, signature: Uint8Array) =>
+  Result.try(() =>
+    verify(
       null,
       payload,
       createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: key.publicKey }, format: "jwk" }),
       signature,
-    );
-  } catch {
-    return false;
-  }
-};
+    ),
+  ).pipe(Result.getOrElse(() => false));
 
 export const verifyLicenceText = (
   text: string,
