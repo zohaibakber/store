@@ -1,5 +1,6 @@
 import {
   CommandReceipt,
+  type OperationId,
   OrgCommitSequence,
   type SyncCommandEnvelope,
   type SyncTransactionGroup,
@@ -69,7 +70,7 @@ type DecidedGroup = {
 
 export const groupOf = (
   commitSequence: OrgCommitSequence,
-  operationId: string,
+  operationId: OperationId,
   decision: Decision,
 ): DecidedGroup =>
   Result.match(decision, {

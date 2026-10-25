@@ -1,3 +1,4 @@
+import { OperationId } from "@store/contracts";
 import {
   categories,
   commandOutbox,
@@ -206,6 +207,6 @@ export const listPendingMarks = Effect.fn("ReplicaPending.listPendingMarks")(fun
   return rows.map((row) => ({
     entity: decodeEntity(row.entity),
     entityId: row.entityId,
-    operationId: row.operationId,
+    operationId: OperationId.make(row.operationId),
   }));
 });

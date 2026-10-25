@@ -5,6 +5,7 @@ import {
   type CommandReceipt,
   type SyncCommandEnvelope,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   decodeBatchId,
@@ -42,7 +43,7 @@ const managed = {
 
 export const seedCatalogGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("1"),
-  operationId: "seed-catalog",
+  operationId: OperationId.make("seed-catalog"),
   decision: "accepted",
   changes: [
     {
@@ -92,7 +93,7 @@ export const seedCatalogGroup: SyncTransactionGroup = {
 
 export const seedSpareBatchGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("2"),
-  operationId: "seed-spare",
+  operationId: OperationId.make("seed-spare"),
   decision: "accepted",
   changes: [
     {
@@ -132,7 +133,7 @@ export const catalogEnvelope = (input: {
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
-    operationId: input.operationId,
+    operationId: OperationId.make(input.operationId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };

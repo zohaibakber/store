@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
+import { ReplicaId } from "../ids";
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import {
   OrgCommitSequence,
@@ -57,7 +58,7 @@ export type SnapshotPartPayload = typeof SnapshotPartPayload.Type;
 export const AcquireSnapshotRequest = Schema.Struct({
   epoch: SyncEpoch,
   subscription: SyncSubscription,
-  replicaId: Schema.optionalKey(SyncIdentifier),
+  replicaId: Schema.optionalKey(ReplicaId),
 });
 export type AcquireSnapshotRequest = typeof AcquireSnapshotRequest.Type;
 

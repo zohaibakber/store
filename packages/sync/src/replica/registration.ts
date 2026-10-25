@@ -1,5 +1,7 @@
 import {
+  type OrgCommitSequence,
   purchasingBlockedByStaleReplica,
+  type ReplicaId,
   ReplicaClientSequence,
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
@@ -154,9 +156,9 @@ const announcementOf = (state: {
 });
 
 export const syncCursorOf = (state: {
-  readonly epoch: string;
-  readonly appliedCommitSequence: string;
-  readonly replicaId: string;
+  readonly epoch: SyncEpoch;
+  readonly appliedCommitSequence: OrgCommitSequence;
+  readonly replicaId: ReplicaId;
   readonly caughtUpAt: number | null;
   readonly activeGeneration: number;
   readonly registeredAt: number | null;

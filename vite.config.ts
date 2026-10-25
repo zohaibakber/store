@@ -123,7 +123,6 @@ export default defineConfig({
       {
         files: [
           "apps/desktop/electron/host.ts",
-          "apps/desktop/electron/replica-worker-handlers.ts",
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
           "apps/desktop/src/session/workspace-session.ts",

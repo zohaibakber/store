@@ -4,6 +4,7 @@ import {
   compareDecimalSequence,
   incrementDecimalSequence,
   OPERATIONAL_SUBSCRIPTION,
+  OperationId,
   OrgCommitSequence,
   SYNC_SCHEMA_VERSION,
   SyncEpoch,
@@ -103,7 +104,7 @@ export const pageOf = Effect.fn("LocalAuthority.pageOf")(function* (
   afterCommitSequence: OrgCommitSequence,
   transactions: ReadonlyArray<SyncTransactionGroup>,
 ) {
-  const applied = OrgCommitSequence.make(state.appliedCommitSequence);
+  const applied = state.appliedCommitSequence;
   const last = transactions.at(-1)?.commitSequence;
   return {
     epoch: yield* epochOf(state),
@@ -130,7 +131,7 @@ const unappliedGroup = Effect.fn("LocalAuthority.unappliedGroup")(function* (
   if (row.status === "rejected") {
     return {
       commitSequence,
-      operationId: row.operationId,
+      operationId: OperationId.make(row.operationId),
       decision: "rejected",
       changes: [],
     } satisfies SyncTransactionGroup;
@@ -138,7 +139,7 @@ const unappliedGroup = Effect.fn("LocalAuthority.unappliedGroup")(function* (
   const envelope = yield* decodeStoredEnvelope(row);
   const { group } = groupOf(
     commitSequence,
-    row.operationId,
+    envelope.operationId,
     yield* decideCommand(tx, state, envelope),
   );
   return group.decision === "accepted" ? group : yield* unreproducible;

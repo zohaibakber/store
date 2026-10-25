@@ -2,7 +2,6 @@ import {
   CommandReceipt,
   compareDecimalSequence,
   incrementDecimalSequence,
-  OrgCommitSequence,
   ReplicaClientSequence,
   SYNC_SCHEMA_VERSION,
   syncProtocolError,
@@ -119,7 +118,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
             "This replica does not own the local workspace.",
           );
         }
-        const applied = OrgCommitSequence.make(state.appliedCommitSequence);
+        const applied = state.appliedCommitSequence;
         const { lastClientSequence } = yield* decidedTail(tx, state);
         return {
           replicaId: request.replicaId,

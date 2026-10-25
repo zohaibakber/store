@@ -12,6 +12,7 @@ import {
   type SyncCommand,
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
+  OperationId,
 } from "@store/contracts";
 import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
 import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
@@ -161,7 +162,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
       replicaId: LAST_UNIT_REPLICA_A,
       schemaVersion: SYNC_SCHEMA_VERSION,
     });
-    yield* engine.ensureRegistered();
+    yield* engine.ensureRegistered;
 
     const decide = (steps: Steps) =>
       Effect.gen(function* () {
@@ -169,7 +170,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
         for (const step of steps) {
           const decidedBefore = submissions.length;
           for (const request of step) yield* store.enqueueCommand(request);
-          yield* engine.drainUploads();
+          yield* engine.drainUploads;
           for (const { request, result } of submissions.slice(decidedBefore)) {
             decisions.push({
               local: result,
@@ -202,7 +203,7 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
             authority: yield* authority.submit(actor, last.request),
           };
 
-    const head = OrgCommitSequence.make((yield* store.readSyncCursor()).appliedCommitSequence);
+    const head = OrgCommitSequence.make((yield* store.readSyncCursor).appliedCommitSequence);
     const cursor = {
       epoch: LAST_UNIT_EPOCH,
       subscription: OPERATIONAL_SUBSCRIPTION,
@@ -237,11 +238,11 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
       epoch: LAST_UNIT_EPOCH,
       replicaId: LAST_UNIT_REPLICA_A,
       clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
-      operationId: command.payload.commandId,
+      operationId: OperationId.make(command.payload.commandId),
       payloadHash: canonicalPayloadHash(command),
       command,
       afterCommitSequence: OrgCommitSequence.make(
-        (yield* store.readSyncCursor()).appliedCommitSequence,
+        (yield* store.readSyncCursor).appliedCommitSequence,
       ),
     };
     return {
@@ -279,7 +280,7 @@ const queued = (
   command: SyncCommand,
   operationId = command.payload.commandId,
 ): EnqueueCommandRequest => ({
-  operationId,
+  operationId: OperationId.make(operationId),
   command,
   occurredAt: command.payload.occurredAt,
 });
@@ -1140,7 +1141,7 @@ describe("the local authority decides like the durable object authority", () => 
         const refusal = yield* Effect.gen(function* () {
           const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
           yield* decide(REPACKED);
-          const before = yield* store.readSyncCursor();
+          const before = yield* store.readSyncCursor;
           const decidedBefore = submissions.length;
           const failure = yield* Effect.flip(store.enqueueCommand(queued(stalePriceDelivery)));
           const refused = submissions.slice(decidedBefore);
@@ -1150,9 +1151,11 @@ describe("the local authority decides like the durable object authority", () => 
             authority: yield* Effect.forEach(refused, ({ request }) =>
               authority.submit(actor, request),
             ),
-            status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
+            status: yield* store.readCommandStatus(
+              OperationId.make(stalePriceDelivery.payload.commandId),
+            ),
             before,
-            after: yield* store.readSyncCursor(),
+            after: yield* store.readSyncCursor,
           };
         }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped);
 

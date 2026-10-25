@@ -4,6 +4,9 @@ import {
   type SyncEpoch,
   type SyncProtocolCode,
 } from "@store/contracts";
+import * as Context from "effect/Context";
+import * as Layer from "effect/Layer";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 export type SuspendReason =
   | "auth"
@@ -88,3 +91,10 @@ export const withRecoveryEnded = (state: SyncState, previous: SyncPhase): SyncSt
   const { transfer: _transfer, ...rest } = state;
   return { ...rest, phase: state.phase === "recovering" ? previous : state.phase };
 };
+
+export class SyncStateRef extends Context.Service<
+  SyncStateRef,
+  SubscriptionRef.SubscriptionRef<SyncState>
+>()("@store/sync/SyncStateRef") {
+  static readonly layer = Layer.effect(SyncStateRef, SubscriptionRef.make(initialSyncState));
+}

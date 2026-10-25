@@ -8,7 +8,6 @@ import * as Ref from "effect/Ref";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { replicaSyncActivityOf } from "../replica/activity";
 import { sameSyncHealth, syncHealthOf } from "../replica/status";
@@ -32,7 +31,7 @@ export const layerInventoryStore: Layer.Layer<
     const crypto = yield* Crypto.Crypto;
     const wakes = yield* Ref.make(0);
 
-    const stamp = Effect.mapError(store.readStamp(), readFailure);
+    const stamp = Effect.mapError(store.readStamp, readFailure);
 
     return InventoryStore.of({
       ...makeCommandHandlers({ admission, store, scheduler, replica, gate, crypto }),
@@ -46,10 +45,7 @@ export const layerInventoryStore: Layer.Layer<
           }),
         ),
       Health: () =>
-        SubscriptionRef.changes(scheduler.state).pipe(
-          Stream.map(syncHealthOf),
-          Stream.changesWith(sameSyncHealth),
-        ),
+        scheduler.state.pipe(Stream.map(syncHealthOf), Stream.changesWith(sameSyncHealth)),
       Stamp: () => stamp,
       SyncActivity: () =>
         readOutboxActivitySqlite(replica.db).pipe(

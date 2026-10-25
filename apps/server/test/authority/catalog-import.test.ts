@@ -14,6 +14,7 @@ import {
   type ImportCatalogRequest,
   type SyncCommand,
   type SyncEntity,
+  OperationId,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
@@ -107,7 +108,7 @@ const catalog = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>): Syn
 });
 
 const queued = (command: SyncCommand): EnqueueCommandRequest => ({
-  operationId: command.payload.commandId,
+  operationId: OperationId.make(command.payload.commandId),
   command,
   occurredAt: command.payload.occurredAt,
 });
@@ -378,10 +379,10 @@ const localWorkspace = (importId: string) =>
     const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
     const handle = yield* SqliteReplica;
-    yield* engine.ensureRegistered();
+    yield* engine.ensureRegistered;
     for (const command of localHistory) {
       yield* store.enqueueCommand(queued(command));
-      yield* engine.drainUploads();
+      yield* engine.drainUploads;
     }
     const digest = yield* sqlitePartitionDigest(handle.db);
     const parts = yield* sqliteCatalogParts(handle.db, {
@@ -482,8 +483,8 @@ describe("publishing a local workspace into an empty organization", () => {
 
       const waiting = yield* organizationReplica(authorities, owner, "replica-owner");
       const waitingEngine = Context.get(waiting, SyncEngine);
-      yield* waitingEngine.ensureRegistered();
-      yield* waitingEngine.catchUp();
+      yield* waitingEngine.ensureRegistered;
+      yield* waitingEngine.catchUp;
 
       const unasked = yield* imports.importStatus(owner, importId);
       const receipts = yield* Effect.forEach(local.parts, (part) =>
@@ -510,11 +511,11 @@ describe("publishing a local workspace into an empty organization", () => {
         .stageImportPart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
         .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
 
-      yield* waitingEngine.catchUp();
+      yield* waitingEngine.catchUp;
       const fresh = yield* organizationReplica(authorities, clerk, "replica-clerk");
       const freshEngine = Context.get(fresh, SyncEngine);
-      yield* freshEngine.ensureRegistered();
-      yield* freshEngine.catchUp();
+      yield* freshEngine.ensureRegistered;
+      yield* freshEngine.catchUp;
 
       const held = (replica: typeof fresh) =>
         Effect.gen(function* () {
@@ -523,7 +524,7 @@ describe("publishing a local workspace into an empty organization", () => {
           return {
             digest: (yield* sqlitePartitionDigest(handle.db))?.digest,
             catalog: yield* catalogOf(handle),
-            cursor: (yield* store.readSyncCursor()).appliedCommitSequence,
+            cursor: (yield* store.readSyncCursor).appliedCommitSequence,
           };
         }).pipe(Effect.provide(replica));
 
@@ -584,8 +585,8 @@ describe("publishing a local workspace into an empty organization", () => {
         ),
         fresh,
       );
-      yield* freshEngine.drainUploads();
-      yield* waitingEngine.catchUp();
+      yield* freshEngine.drainUploads;
+      yield* waitingEngine.catchUp;
       const afterDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
       const deliveredStatus = yield* Effect.provide(
         ReplicaStore.use((store) => store.readCommandStatus(delivered.operationId)),

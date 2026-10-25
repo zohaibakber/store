@@ -37,7 +37,7 @@ describe("sync engine upload", () => {
             Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
         });
         const engine = yield* sqliteEngine(handle, transport);
-        const upload = yield* Effect.forkChild(engine.drainUploads());
+        const upload = yield* Effect.forkChild(engine.drainUploads);
         yield* Deferred.await(started);
         yield* Fiber.interrupt(upload);
         const row = yield* firstOutboxRow(handle);

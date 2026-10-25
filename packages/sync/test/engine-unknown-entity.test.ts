@@ -11,6 +11,7 @@ import {
   SyncPullRequest,
   SyncPullResult,
   SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   LAST_UNIT_EPOCH,
@@ -29,7 +30,7 @@ import { TestClock } from "effect/testing";
 
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { makeSyncTransport, type SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
@@ -60,7 +61,7 @@ const foreignChange = (entityId: string) => ({
 
 const foreignOnlyGroup = (commitSequence: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `foreign-write-${commitSequence}`,
+  operationId: OperationId.make(`foreign-write-${commitSequence}`),
   decision: "accepted",
   changes: [],
 });
@@ -160,7 +161,7 @@ const newerAuthorityTransport = (authority: SyncTransport) =>
   );
 
 const survivesUnknownEntities = Effect.fn(function* (
-  store: ReplicaStoreContract,
+  store: ReplicaStore["Service"],
   incarnation: string,
 ) {
   yield* TestClock.setTime(NOW);
@@ -169,17 +170,17 @@ const survivesUnknownEntities = Effect.fn(function* (
     historyAuthorityTransport(authority, incarnation),
   );
   const engine = yield* engineOf(store, transport);
-  const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
-  const { generationId } = yield* store.readStamp();
+  const applied = store.readSyncCursor.pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
+  const { generationId } = yield* store.readStamp;
 
-  yield* engine.catchUp();
+  yield* engine.catchUp;
   expect(yield* applied).toBe("1");
-  expect((yield* store.readStamp()).generationId).not.toBe(generationId);
+  expect((yield* store.readStamp).generationId).not.toBe(generationId);
 
   const pulled = [seedSpareBatchGroup, foreignOnlyGroup("3")];
   for (const group of pulled) commitToAuthority(authority.partition, group);
   yield* Ref.update(authority.log, (log) => [...log, ...pulled]);
-  yield* engine.catchUp();
+  yield* engine.catchUp;
   expect(yield* applied).toBe("3");
   expect(yield* store.readDigestVerification(OPERATIONAL_SUBSCRIPTION)).toBe(NOW);
 

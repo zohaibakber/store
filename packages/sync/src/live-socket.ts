@@ -123,8 +123,8 @@ export const makeLiveSocket = (
   Effect.gen(function* () {
     const nudges = yield* Queue.sliding<void>(1);
     const reconnect = yield* makeBackoff({
-      baseMillis: LIVE_SOCKET_POLICY.reconnectBaseMillis,
-      maxMillis: LIVE_SOCKET_POLICY.reconnectMaxMillis,
+      base: Duration.millis(LIVE_SOCKET_POLICY.reconnectBaseMillis),
+      max: Duration.millis(LIVE_SOCKET_POLICY.reconnectMaxMillis),
     });
     const forceRefresh = yield* Ref.make(false);
     const refusalRefreshSpent = yield* Ref.make(false);

@@ -50,7 +50,6 @@ import * as Ref from "effect/Ref";
 import * as RpcServer from "effect/rpc/RpcServer";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { ReplicaFileRefused } from "../src/host/file-refusal";
 import { makeRendererServers, noRendererServers } from "./renderer-servers";
@@ -186,7 +185,7 @@ const openSession = (
       Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
     ),
     scope,
-  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
+  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor));
 
 export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(
@@ -215,9 +214,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             onNone: () =>
               Stream.concat(Stream.succeed<ReplicaSyncHealth>({ _tag: "running" }), Stream.never),
             onSome: (session) =>
-              SubscriptionRef.changes(Context.get(session, SyncScheduler).state).pipe(
-                Stream.map(syncHealthOf),
-              ),
+              Context.get(session, SyncScheduler).state.pipe(Stream.map(syncHealthOf)),
           }),
         )
         .pipe(Stream.changesWith(sameSyncHealth));
@@ -266,7 +263,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         ),
       );
 
-      const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp());
+      const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp);
 
       const wake = (reason: "focus" | "reconnect") =>
         withSession((session) => Context.get(session, SyncScheduler).wake(reason)).pipe(
@@ -317,7 +314,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               Effect.gen(function* () {
                 yield* renderers.shutdown;
                 yield* Context.get(session, SyncScheduler).shutdown;
-                const final = yield* Context.get(session, ReplicaStore).readStamp();
+                const final = yield* Context.get(session, ReplicaStore).readStamp;
                 yield* Ref.set(live, Option.none());
                 yield* Scope.close(sessionScope, Exit.void);
                 return final;

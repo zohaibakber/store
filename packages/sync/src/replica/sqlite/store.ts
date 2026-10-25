@@ -83,7 +83,6 @@ import {
   ReplicaStore,
   type IntegrateAuthorityInput,
   type Integrated,
-  type ReplicaStoreContract,
   type ReplicaStoreError,
   type SnapshotActivation,
 } from "../store";
@@ -142,7 +141,7 @@ type EnqueuedCommand = {
 };
 
 type SqliteReplicaStoreInternals = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly cleanup: Effect.Effect<void>;
   readonly requestCleanup: Effect.Effect<void>;
   readonly cleanupRequests: Queue.Dequeue<void>;
@@ -600,10 +599,9 @@ const makeSqliteReplicaStoreInternals = (
       );
 
     const store = {
-      readSyncCursor: () =>
-        withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
-          loadReplicaState(tx).pipe(Effect.map(syncCursorOf)),
-        ),
+      readSyncCursor: withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
+        loadReplicaState(tx).pipe(Effect.map(syncCursorOf)),
+      ),
       adoptRegistration: (authority: RegisterReplicaResult, registeredAt: number) =>
         withTx("SqliteReplicaStore.adoptRegistration", (tx) =>
           Effect.gen(function* () {
@@ -679,12 +677,11 @@ const makeSqliteReplicaStoreInternals = (
         ),
       readCommandStatus: (operationId) =>
         withTx("SqliteReplicaStore.readCommandStatus", (tx) => commandStatus(tx, operationId)),
-      readPendingMarks: () =>
-        withTx("SqliteReplicaStore.readPendingMarks", (tx) => listPendingMarks(tx)),
-      readStamp: () => withTx("SqliteReplicaStore.readStamp", readStamp),
+      readPendingMarks: withTx("SqliteReplicaStore.readPendingMarks", (tx) => listPendingMarks(tx)),
+      readStamp: withTx("SqliteReplicaStore.readStamp", readStamp),
       recordCaughtUp: recordCaughtUpAt,
       commits,
-    } satisfies ReplicaStoreContract;
+    } satisfies ReplicaStore["Service"];
 
     return {
       store,
@@ -699,7 +696,7 @@ export const makeSqliteReplicaStore = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions = {},
-): Effect.Effect<ReplicaStoreContract> =>
+): Effect.Effect<ReplicaStore["Service"]> =>
   makeSqliteReplicaStoreInternals(handle, databaseIdentity, options).pipe(
     Effect.map((internals) => internals.store),
   );

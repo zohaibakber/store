@@ -118,11 +118,11 @@ describe("sync engine applies the page that rides on a submit", () => {
           verifiedDigestAt: 0,
         });
 
-        const refused = yield* Effect.flip(engine.drainUploads());
+        const refused = yield* Effect.flip(engine.drainUploads);
         expect(refused).toMatchObject({ _tag: "SyncProtocolError", code: "INCARNATION_MISMATCH" });
         expect(yield* outbox).toEqual(["accepted_awaiting_integration"]);
-        expect((yield* store.readSyncCursor()).appliedCommitSequence).toBe("0");
-        yield* engine.catchUp();
+        expect((yield* store.readSyncCursor).appliedCommitSequence).toBe("0");
+        yield* engine.catchUp;
 
         expect(recorded.pulls.map((request) => request.afterCommitSequence)).toEqual(["0"]);
       }),
@@ -137,8 +137,8 @@ describe("sync engine applies the page that rides on a submit", () => {
         );
         const { engine } = yield* openEngine(handle, recorded.transport);
 
-        yield* engine.drainUploads();
-        yield* engine.catchUp();
+        yield* engine.drainUploads;
+        yield* engine.catchUp;
 
         expect(recorded.pulls).toEqual([
           {
