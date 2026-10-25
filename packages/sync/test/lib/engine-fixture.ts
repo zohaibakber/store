@@ -4,6 +4,7 @@ import { makeSyncEngineFromReplicaStore } from "../../src/engine";
 import type { SqliteReplicaHandle } from "../../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../../src/replica/sqlite/store";
 import type { SyncTransport } from "../../src/transport";
+import { TestCrypto } from "./crypto";
 
 export const stubTransport = (overrides: Partial<SyncTransport> = {}): SyncTransport => ({
   registerReplica: () => Effect.die("unused"),
@@ -15,8 +16,11 @@ export const stubTransport = (overrides: Partial<SyncTransport> = {}): SyncTrans
   ...overrides,
 });
 
+export const engineOf = (...args: Parameters<typeof makeSyncEngineFromReplicaStore>) =>
+  makeSyncEngineFromReplicaStore(...args).pipe(Effect.provide(TestCrypto));
+
 export const sqliteEngine = (handle: SqliteReplicaHandle, transport: SyncTransport) =>
   Effect.gen(function* () {
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
-    return yield* makeSyncEngineFromReplicaStore(store, transport);
+    return yield* engineOf(store, transport);
   });

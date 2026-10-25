@@ -19,7 +19,6 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
@@ -34,6 +33,7 @@ import {
   type AuthorityPartition,
   type ServerPartitionTables,
 } from "./lib/authority-digest";
+import { engineOf } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   catalogEnvelope,
@@ -309,12 +309,10 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
 const withEngine = <A, E>(
   harness: StoreHarness,
   authority: Authority,
-  use: (
-    engine: Effect.Success<ReturnType<typeof makeSyncEngineFromReplicaStore>>,
-  ) => Effect.Effect<A, E>,
+  use: (engine: Effect.Success<ReturnType<typeof engineOf>>) => Effect.Effect<A, E>,
 ) =>
   Effect.gen(function* () {
-    const engine = yield* makeSyncEngineFromReplicaStore(
+    const engine = yield* engineOf(
       harness.store,
       authorityTransport(harness.incarnation, authority),
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },

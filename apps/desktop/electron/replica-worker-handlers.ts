@@ -40,6 +40,7 @@ import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FiberSet from "effect/FiberSet";
@@ -88,7 +89,7 @@ const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer))
 type Session = Context.Context<SqliteReplicaServices | StaffGate | ShopLicence>;
 
 type AuthorityLink = {
-  readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
+  readonly session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>;
   readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
   readonly setForeground: (
     scheduler: SyncScheduler["Service"],
@@ -177,11 +178,14 @@ const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, 
 };
 
 const openSession = (
-  session: Layer.Layer<SqliteReplicaServices, unknown>,
+  session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>,
+  crypto: Crypto.Crypto,
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
   Layer.buildWithScope(
-    Layer.fresh(Layer.provideMerge(Layer.mergeAll(StaffGateLive, layerShopLicence), session)),
+    Layer.fresh(Layer.provideMerge(Layer.mergeAll(StaffGateLive, layerShopLicence), session)).pipe(
+      Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
+    ),
     scope,
   ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
 
@@ -189,10 +193,11 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
+      const crypto = yield* Crypto.Crypto;
       const link = yield* linkAuthority(config);
 
       const sessionScope = yield* Scope.fork(yield* Effect.scope);
-      const opened = yield* openSession(link.session, sessionScope).pipe(
+      const opened = yield* openSession(link.session, crypto, sessionScope).pipe(
         Effect.map(Option.some),
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause)
@@ -230,6 +235,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
               Layer.provide(Layer.succeedContext(session)),
+              Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
               Layer.provide(protocol),
             ),
           ),
@@ -285,6 +291,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 path: stagedPath,
                 databaseIdentity: stagedPath,
               }),
+              crypto,
               trial,
             ),
           ).pipe(

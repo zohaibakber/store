@@ -54,7 +54,7 @@ const openShop = (replicaId: string) =>
           databaseIdentity: `staff-gate-${replicaId}`,
           transport: Layer.succeed(SyncTransportService, unreachable),
           live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
-        }),
+        }).pipe(Layer.provide(NodeCrypto.layer)),
       ),
     );
     const replica = Context.get(session, SqliteReplica);

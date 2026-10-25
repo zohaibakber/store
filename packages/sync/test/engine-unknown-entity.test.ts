@@ -27,13 +27,13 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { makeSyncTransport, type SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
+import { engineOf } from "./lib/engine-fixture";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { FIXTURE_USER_ID } from "./lib/replica-fixture";
@@ -168,7 +168,7 @@ const survivesUnknownEntities = Effect.fn(function* (
   const transport = yield* newerAuthorityTransport(
     historyAuthorityTransport(authority, incarnation),
   );
-  const engine = yield* makeSyncEngineFromReplicaStore(store, transport);
+  const engine = yield* engineOf(store, transport);
   const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   const { generationId } = yield* store.readStamp();
 

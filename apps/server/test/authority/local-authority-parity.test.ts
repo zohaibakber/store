@@ -46,7 +46,7 @@ import * as Layer from "effect/Layer";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
-import { scenario, TestAuthorities } from "./harness";
+import { scenario, SequentialCrypto, TestAuthorities } from "./harness";
 
 const USER_ID = "user-1";
 const OCCURRED_AT = lastUnitBuyerACommand.occurredAt;
@@ -132,6 +132,7 @@ const twinLayer = (
 ) =>
   Layer.mergeAll(
     SyncEngine.layer().pipe(
+      Layer.provide(SequentialCrypto),
       Layer.provideMerge(recordingLocalAuthority(submissions)),
       Layer.provideMerge(recordingStore(organizationId, submissions, path)),
       Layer.provideMerge(seededReplica(organizationId)),

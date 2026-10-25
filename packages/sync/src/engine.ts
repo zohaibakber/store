@@ -21,6 +21,7 @@ import {
 } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -123,8 +124,6 @@ interface SyncEngineContract {
   ) => Effect.Effect<LiveFrameOutcome, ReplicaStoreError>;
 }
 
-const makeClaimId = Effect.sync(() => crypto.randomUUID());
-
 const decodeEpoch = Schema.decodeUnknownEffect(SyncEpoch);
 
 const cursorFromStore = (store: ReplicaStoreContract) =>
@@ -161,8 +160,10 @@ export const makeSyncEngineFromReplicaStore = (
   store: ReplicaStoreContract,
   transport: SyncTransport,
   options: SyncEngineOptions = {},
-): Effect.Effect<SyncEngineContract> =>
+): Effect.Effect<SyncEngineContract, never, Crypto.Crypto> =>
   Effect.gen(function* () {
+    const crypto = yield* Crypto.Crypto;
+    const makeClaimId = Effect.orDie(crypto.randomUUIDv4());
     const mutex = yield* Semaphore.make(1);
     const firstClaimAt = yield* Ref.make<number | undefined>(undefined);
     const digestIntervalMillis =

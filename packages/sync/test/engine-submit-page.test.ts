@@ -18,11 +18,10 @@ import {
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { SyncTransport } from "../src/transport";
-import { stubTransport } from "./lib/engine-fixture";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
@@ -96,7 +95,7 @@ const openEngine = (
     if (options.verifiedDigestAt !== undefined) {
       yield* store.recordDigestVerification(OPERATIONAL_SUBSCRIPTION, options.verifiedDigestAt);
     }
-    const engine = yield* makeSyncEngineFromReplicaStore(
+    const engine = yield* engineOf(
       store,
       transport,
       options.pullMaxBytes === undefined ? {} : { pullMaxBytes: options.pullMaxBytes },

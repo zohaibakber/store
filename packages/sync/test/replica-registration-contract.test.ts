@@ -22,13 +22,13 @@ import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { SyncRecoveryRequired } from "../src/replica/errors";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStoreContract } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { SyncTransportOffline, type SyncTransport } from "../src/transport";
+import { engineOf } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
@@ -216,7 +216,7 @@ const categoryEnvelope = (
 };
 
 const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
-  makeSyncEngineFromReplicaStore(store, transport);
+  engineOf(store, transport);
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>

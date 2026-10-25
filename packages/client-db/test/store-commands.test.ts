@@ -38,7 +38,7 @@ const openStore = async (replicaId: string) => {
           databaseIdentity: `store-commands-${replicaId}`,
           transport: Layer.succeed(SyncTransportService, unreachable),
           live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
-        }),
+        }).pipe(Layer.provide(NodeCrypto.layer)),
       ),
       scope,
     ),
