@@ -1,12 +1,12 @@
 import * as Result from "effect/Result";
 
-import { CatalogRefusal } from "../catalog/refusal";
+import { CATALOG_REFUSALS, CatalogRefusal } from "../catalog/refusal";
 
 export const catalogWriteError = {
-  categoryHasProducts: "Move products to another category before deleting this category.",
-  productHasStock: "Clear remaining stock before deleting this product.",
-  unitsPerPackWithStock: "Change units per pack only after the product has no remaining stock.",
-  batchHasStock: "Clear remaining stock before deleting this batch.",
+  categoryHasProducts: CATALOG_REFUSALS.categoryHasProducts.message,
+  productHasStock: CATALOG_REFUSALS.productHasStock.message,
+  unitsPerPackWithStock: CATALOG_REFUSALS.unitsPerPackWithStock.message,
+  batchHasStock: CATALOG_REFUSALS.batchHasStock.message,
 } as const;
 
 type CatalogStockBatch = {

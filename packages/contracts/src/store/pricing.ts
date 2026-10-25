@@ -2,6 +2,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { CatalogRefusal } from "../catalog/refusal";
+import { isPositiveInt } from "../schema-primitives";
 
 export const Paisa = Schema.Natural.pipe(Schema.brand("Paisa"));
 export type Paisa = typeof Paisa.Type;
@@ -18,7 +19,7 @@ export const rupeesToPaisa = (rupees: number): Result.Result<Paisa, CatalogRefus
     ? paisaFrom(Math.round(rupees * 100), "Sale prices cannot be negative.")
     : invalidAmount("Sale prices cannot be negative.");
 
-export const paisaToRupees = (paisa: Paisa): number => paisa / 100;
+export const paisaToRupees = (paisa: number): number => paisa / 100;
 
 export const isValidDiscount = (percent: number | null): percent is number =>
   percent != null && percent >= 0 && percent <= 100;
@@ -32,7 +33,7 @@ export const discountedPrice = (
     : invalidAmount("Discounts must be between 0 and 100 percent.");
 
 export const lineTotal = (quantity: number, price: Paisa): Result.Result<Paisa, CatalogRefusal> =>
-  Number.isSafeInteger(quantity) && quantity >= 1
+  isPositiveInt(quantity)
     ? paisaFrom(quantity * price, "This sale is too large to total.")
     : invalidAmount("Quantities must be whole numbers of 1 or more.");
 

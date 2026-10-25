@@ -7,11 +7,10 @@ import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
 
 import { ReplicaSnapshotFailure } from "./errors";
+import { SQLITE_BUSY_TIMEOUT_MILLIS } from "./node-statements";
 import type { ReplicaSnapshotRunner, SnapshotQuery } from "./snapshot-read";
 
 export type NodeSqliteRow = Record<string, SQLOutputValue>;
-
-const READ_BUSY_TIMEOUT_MILLIS = 5_000;
 
 const PREPARED_STATEMENTS = 128;
 
@@ -29,7 +28,7 @@ export const openReadonlySnapshotRunner = (path: string) =>
       }),
       (opened) => Effect.sync(() => opened.close()),
     );
-    db.exec(`PRAGMA busy_timeout = ${READ_BUSY_TIMEOUT_MILLIS}`);
+    db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MILLIS}`);
     const turn = yield* Semaphore.make(1);
     const statements = yield* Cache.makeWith(
       (sql: string) => Effect.try({ try: () => db.prepare(sql), catch: snapshotFailure }),

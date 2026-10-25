@@ -11,8 +11,11 @@ import {
 import { count, eq, getTableName, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
+import { SQLITE_BUSY_TIMEOUT_MILLIS } from "./node-statements";
 
 class ReplicaFileFailure extends Schema.TaggedError<ReplicaFileFailure>()("ReplicaFileFailure", {
   reason: Schema.Literals([
@@ -24,6 +27,7 @@ class ReplicaFileFailure extends Schema.TaggedError<ReplicaFileFailure>()("Repli
     "storage",
   ]),
   message: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
 }) {}
 
 export type ReplicaFileSummary = {
@@ -36,8 +40,6 @@ export type ReplicaFileSummary = {
   readonly purchaseOrders: number;
 };
 
-const BUSY_TIMEOUT_MILLIS = 5_000;
-
 const SQLITE_MAGIC = "SQLite format 3\u0000";
 
 const WAL_SUFFIXES = ["-wal", "-shm"];
@@ -48,7 +50,7 @@ const causeMessage = (cause: unknown) =>
   cause instanceof Error ? cause.message : "The file could not be read.";
 
 const storageFailure = (cause: unknown) =>
-  new ReplicaFileFailure({ reason: "storage", message: causeMessage(cause) });
+  new ReplicaFileFailure({ reason: "storage", message: causeMessage(cause), cause });
 
 const notBackup = () =>
   new ReplicaFileFailure({ reason: "notBackup", message: "This file is not a Tabaaq backup." });
@@ -71,7 +73,7 @@ const withDatabase = <A, E>(
     }),
     (db) =>
       Effect.try({
-        try: () => db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`),
+        try: () => db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MILLIS}`),
         catch: storageFailure,
       }).pipe(Effect.andThen(use(db))),
     (db) => Effect.try(() => db.close()).pipe(Effect.ignore),
@@ -229,7 +231,7 @@ export const backUpReplicaFile = Effect.fn("ReplicaBackup.backUp")(function* (in
   readonly databasePath: string;
   readonly destinationPath: string;
 }) {
-  const partial = `${input.destinationPath}.${crypto.randomUUID()}.partial`;
+  const partial = `${input.destinationPath}.${yield* (yield* Crypto.Crypto).randomUUIDv4()}.partial`;
   return yield* Effect.gen(function* () {
     yield* withDatabase(input.databasePath, "read", (db) =>
       Effect.try({

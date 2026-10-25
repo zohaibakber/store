@@ -1,3 +1,5 @@
+import { paisaToRupees } from "@store/contracts/store-pricing";
+
 const rupees = new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR" });
 const rupeesAndPaisa = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -8,7 +10,7 @@ const rupeesAndPaisa = new Intl.NumberFormat("en-PK", {
 
 export const formatPrice = (paisa: number | null) => {
   if (paisa === null) return "—";
-  return (paisa % 100 === 0 ? rupees : rupeesAndPaisa).format(paisa / 100);
+  return (paisa % 100 === 0 ? rupees : rupeesAndPaisa).format(paisaToRupees(paisa));
 };
 
 export const initials = (name: string) =>

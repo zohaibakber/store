@@ -1,4 +1,5 @@
 import { nextSequenceNumber } from "@store/contracts";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
@@ -48,12 +49,11 @@ const readAll = <Source extends InventoryCollectionSource>(
   );
 
 const inChunks = (column: string, values: Iterable<string> | undefined) => {
-  const unique = [...new Set(values ?? [])];
-  const predicates: Array<SubsetPredicate> = [];
-  for (let start = 0; start < unique.length; start += MAX_IN_VALUES) {
-    predicates.push({ _tag: "in", column, values: unique.slice(start, start + MAX_IN_VALUES) });
-  }
-  return predicates;
+  return Arr.chunksOf(Arr.dedupe(values ?? []), MAX_IN_VALUES).map((chunk): SubsetPredicate => ({
+    _tag: "in",
+    column,
+    values: chunk,
+  }));
 };
 
 const readWhereIn = <Source extends InventoryCollectionSource>(

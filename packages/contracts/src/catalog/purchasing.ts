@@ -2,7 +2,7 @@ import * as Result from "effect/Result";
 
 import { baseUnitsOf } from "../store/stock";
 import type { SyncProtocolCode } from "../sync/protocol";
-import { CatalogRefusal } from "./refusal";
+import { CATALOG_REFUSALS, CatalogRefusal } from "./refusal";
 
 export const PURCHASE_ORDER_STATUSES = ["draft", "sent", "closed", "cancelled"] as const;
 type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
@@ -127,34 +127,16 @@ export const purchaseOrderProgress = (
 };
 
 export const purchasingRejection = {
-  supplierHasOrders: {
-    code: "SUPPLIER_HAS_ORDERS",
-    message: "This supplier has purchase orders and cannot be deleted.",
-  },
-  orderTransitionInvalid: {
-    code: "PURCHASE_ORDER_TRANSITION_INVALID",
-    message: "This purchase order cannot move to that status.",
-  },
-  orderNotOpen: {
-    code: "PURCHASE_ORDER_NOT_OPEN",
-    message: "This purchase order is closed or cancelled and can no longer change.",
-  },
-  orderNotDraft: {
-    code: "PURCHASE_ORDER_NOT_DRAFT",
-    message: "Only a draft purchase order can be deleted.",
-  },
-  orderHasItems: {
-    code: "PURCHASE_ORDER_HAS_ITEMS",
-    message: "Remove the lines from this purchase order before deleting it.",
-  },
+  supplierHasOrders: CATALOG_REFUSALS.supplierHasOrders,
+  orderTransitionInvalid: CATALOG_REFUSALS.orderTransitionInvalid,
+  orderNotOpen: CATALOG_REFUSALS.orderNotOpen,
+  orderNotDraft: CATALOG_REFUSALS.orderNotDraft,
+  orderHasItems: CATALOG_REFUSALS.orderHasItems,
   itemQuantityInvalid: {
     code: "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
     message: "The order line quantity does not match the product's units per pack.",
   },
-  itemReceived: {
-    code: "PURCHASE_ORDER_ITEM_RECEIVED",
-    message: "This order line has received stock and cannot be removed or moved.",
-  },
+  itemReceived: CATALOG_REFUSALS.itemReceived,
   receiptProductMismatch: {
     code: "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
     message: "The delivered batch is for a different product than the order line.",

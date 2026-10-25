@@ -15,13 +15,13 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
+import { SQLITE_BUSY_TIMEOUT_MILLIS, preparedStatements } from "../replica/node-statements";
 import { AnalyticsFailure, analyticsFailure } from "./errors";
 
 const PRE_MIGRATION_SCHEMA_VERSIONS = 1;
 const ANALYTICS_SCHEMA_VERSION =
   PRE_MIGRATION_SCHEMA_VERSIONS + Object.keys(analyticsMigrations).length;
 
-const BUSY_TIMEOUT_MILLIS = 5_000;
 const PREPARED_STATEMENTS = 64;
 const WAL_AUTOCHECKPOINT_PAGES = 30_000;
 
@@ -39,15 +39,7 @@ export type AnalyticsDatabase = {
 };
 
 const wrap = (db: DatabaseSync): AnalyticsDatabase => {
-  const statements = new Map<string, StatementSync>();
-  const prepare = (query: string) => {
-    const cached = statements.get(query);
-    if (cached !== undefined) return cached;
-    if (statements.size >= PREPARED_STATEMENTS) statements.clear();
-    const created = db.prepare(query);
-    statements.set(query, created);
-    return created;
-  };
+  const { prepare, clear } = preparedStatements(db, PREPARED_STATEMENTS);
   return {
     orm: drizzle({ client: db }),
     statement: prepare,
@@ -69,7 +61,7 @@ const wrap = (db: DatabaseSync): AnalyticsDatabase => {
       db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     },
     close: () => {
-      statements.clear();
+      clear();
       db.close();
     },
   };
@@ -106,7 +98,7 @@ const openConfigured = Effect.fnUntraced(function* (file: string) {
   );
   yield* Effect.try({
     try: () => {
-      db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`);
+      db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MILLIS}`);
       db.exec("PRAGMA journal_mode = WAL");
       db.exec("PRAGMA synchronous = NORMAL");
       db.exec(`PRAGMA wal_autocheckpoint = ${WAL_AUTOCHECKPOINT_PAGES}`);

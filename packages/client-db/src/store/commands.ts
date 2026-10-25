@@ -19,6 +19,7 @@ import { mapReplicaStoreFailure, type ReplicaStore, type SyncScheduler } from "@
 import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -101,13 +102,18 @@ export const makeCommandHandlers = ({
   scheduler,
   replica,
   gate,
+  crypto,
 }: {
   readonly admission: CommandAdmission["Service"];
   readonly store: ReplicaStore["Service"];
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
   readonly gate: StaffGate["Service"];
+  readonly crypto: Crypto.Crypto;
 }): CommandHandlers => {
+  const newId = Effect.orDie(crypto.randomUUIDv4());
+  const newRowId = () => Effect.runSync(newId);
+
   const snapshot = snapshotRunnerFromHandle(replica);
   const subset: ReadSubset = (spec) => readSnapshotSubset(snapshot, READER, spec);
 
@@ -131,8 +137,9 @@ export const makeCommandHandlers = ({
 
   const begin = Effect.fn("InventoryStore.begin")(function* <Tables>(
     read: Effect.Effect<Tables, unknown>,
-    commandId: string = crypto.randomUUID(),
+    givenCommandId?: string,
   ) {
+    const commandId = givenCommandId ?? (yield* newId);
     const identity = yield* actor;
     const tables = yield* Effect.mapError(read, mapReplicaStoreFailure);
     const occurredAt = yield* Clock.currentTimeMillis;
@@ -143,7 +150,7 @@ export const makeCommandHandlers = ({
       ids: {
         now: () => occurredAt,
         operationId: () => commandId,
-        rowId: () => crypto.randomUUID(),
+        rowId: newRowId,
       },
       tables,
     } satisfies ProjectionContext<Tables>;
@@ -194,7 +201,7 @@ export const makeCommandHandlers = ({
           staff,
         );
 
-  const write = Effect.fnUntraced(function* <Tables, Row>(
+  const write = Effect.fn("InventoryStore.write")(function* <Tables, Row>(
     read: Effect.Effect<Tables, unknown>,
     project: (context: ProjectionContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
   ) {
@@ -245,7 +252,9 @@ export const makeCommandHandlers = ({
         }),
     );
 
-  const importInventory = Effect.fnUntraced(function* (input: ImportInventoryRequest) {
+  const importInventory = Effect.fn("InventoryStore.importInventory")(function* (
+    input: ImportInventoryRequest,
+  ) {
     const staff = yield* gate.authorize(MANAGE_STOCK);
     const productIds = input.lines.flatMap((line) => (line.productId ? [line.productId] : []));
     const context = yield* begin(
@@ -269,12 +278,12 @@ export const makeCommandHandlers = ({
         return { ...imported, chunks: leadingChunks(category.writes, imported.chunks) };
       }),
     );
-    const commits = yield* Effect.forEach(projected.chunks, (chunk, index) =>
-      catalogWrite(
-        { ...context, commandId: index === 0 ? context.commandId : crypto.randomUUID() },
-        chunk,
-        staff,
-      ),
+    const commits = yield* Effect.forEach(
+      projected.chunks,
+      Effect.fnUntraced(function* (chunk, index) {
+        const commandId = index === 0 ? context.commandId : yield* newId;
+        return yield* catalogWrite({ ...context, commandId }, chunk, staff);
+      }),
     );
     const last = commits.at(-1) ?? (yield* unchanged(context.commandId));
     return {
@@ -289,46 +298,46 @@ export const makeCommandHandlers = ({
     };
   }, admission.admit);
 
-  const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fnUntraced(function* ({
-    input,
-    invoiceId,
-  }) {
-    const staff = yield* gate.authorize(SELL);
-    const productIds = input.items.map((line) => line.productId);
-    const context = yield* begin(
-      readCatalogRows(subset, { productIds, batchesOfProductIds: productIds }),
-      invoiceId,
-    );
-    const invoiceNumber = yield* Effect.mapError(
-      readNextInvoiceNumber(subset, context.actor.organizationId),
-      mapReplicaStoreFailure,
-    );
-    const projection = yield* Effect.fromResult(
-      projectIssuedInvoice({
-        actor: context.actor,
-        commandId: context.commandId,
-        occurredAt: context.occurredAt,
-        invoiceNumber,
-        sale: input,
-        products: context.tables.products,
-        batches: context.tables.batches,
-        ids: context.ids,
-      }),
-    );
-    const commit = yield* enqueue(
-      context.commandId,
-      { _tag: "issueInvoice", payload: projection.command },
-      context.occurredAt,
-      staff,
-    );
-    return {
-      ...commit,
-      result: {
-        invoiceId: projection.command.invoiceId,
-        invoiceNumber: projection.command.invoiceNumber,
-      },
-    };
-  }, admission.admit);
+  const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fn("InventoryStore.issueInvoice")(
+    function* ({ input, invoiceId }) {
+      const staff = yield* gate.authorize(SELL);
+      const productIds = input.items.map((line) => line.productId);
+      const context = yield* begin(
+        readCatalogRows(subset, { productIds, batchesOfProductIds: productIds }),
+        invoiceId,
+      );
+      const invoiceNumber = yield* Effect.mapError(
+        readNextInvoiceNumber(subset, context.actor.organizationId),
+        mapReplicaStoreFailure,
+      );
+      const projection = yield* Effect.fromResult(
+        projectIssuedInvoice({
+          actor: context.actor,
+          commandId: context.commandId,
+          occurredAt: context.occurredAt,
+          invoiceNumber,
+          sale: input,
+          products: context.tables.products,
+          batches: context.tables.batches,
+          ids: context.ids,
+        }),
+      );
+      const commit = yield* enqueue(
+        context.commandId,
+        { _tag: "issueInvoice", payload: projection.command },
+        context.occurredAt,
+        staff,
+      );
+      return {
+        ...commit,
+        result: {
+          invoiceId: projection.command.invoiceId,
+          invoiceNumber: projection.command.invoiceNumber,
+        },
+      };
+    },
+    admission.admit,
+  );
 
   return {
     CreateCategory: (input) =>

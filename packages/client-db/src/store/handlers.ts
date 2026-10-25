@@ -1,6 +1,7 @@
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import { readOutboxActivitySqlite, SqliteReplica } from "@store/sync/sql-client";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -20,7 +21,7 @@ import { StaffGate } from "./staff-gate";
 export const layerInventoryStore: Layer.Layer<
   Rpc.ToHandler<RpcGroup.Rpcs<typeof InventoryStore>>,
   never,
-  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica | StaffGate
+  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica | StaffGate | Crypto.Crypto
 > = InventoryStore.toLayer(
   Effect.gen(function* () {
     const admission = yield* CommandAdmission;
@@ -28,12 +29,13 @@ export const layerInventoryStore: Layer.Layer<
     const scheduler = yield* SyncScheduler;
     const replica = yield* SqliteReplica;
     const gate = yield* StaffGate;
+    const crypto = yield* Crypto.Crypto;
     const wakes = yield* Ref.make(0);
 
     const stamp = Effect.mapError(store.readStamp(), readFailure);
 
     return InventoryStore.of({
-      ...makeCommandHandlers({ admission, store, scheduler, replica, gate }),
+      ...makeCommandHandlers({ admission, store, scheduler, replica, gate, crypto }),
       ...gate.handlers,
       Commits: ({ after }) =>
         Stream.unwrap(

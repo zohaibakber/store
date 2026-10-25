@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { decodeInvoiceId, decodeProductId } from "@store/contracts/ids";
 import { InventoryReads, InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncTransportService, type SyncTransport } from "@store/sync";
@@ -56,7 +57,10 @@ const openStore = async (replicaId: string) => {
       RpcTest.makeClient(InventoryStore, { flatten: true }).pipe(
         Effect.provide(
           Layer.fresh(
-            Layer.provide(layerInventoryStore, Layer.mergeAll(services, StaffGate.layerDisabled)),
+            Layer.provide(
+              layerInventoryStore,
+              Layer.mergeAll(services, StaffGate.layerDisabled, NodeCrypto.layer),
+            ),
           ),
         ),
         Scope.provide(scope),

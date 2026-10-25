@@ -9,6 +9,7 @@ export const SyncIdentifier = Schema.NonEmptyString.check(
 export const INT4_MAX = 2_147_483_647;
 
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+export const isPositiveInt = Schema.is(PositiveInt);
 
 export const PositiveIntFromString = Schema.NumberFromString.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
