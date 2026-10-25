@@ -41,10 +41,12 @@ const unusedAuthority: ReturnType<OrgAuthorities["Service"]["getByName"]> = {
 
 export const TEST_ACCESS_TOKEN = "header.payload.signature";
 
+export const TEST_EPOCH = 1_700_000_000_000;
+
 export const claimsFor = (
   role: "owner" | "admin" | "member",
   organizationId = "org-1",
-  expiresAt = Date.now() + 60_000,
+  expiresAt = TEST_EPOCH + 60_000,
 ) =>
   AccessClaims.make({
     subject: UserId.make("user-1"),
@@ -104,12 +106,11 @@ const servicesFor = (options: AppOptions) =>
     Layer.succeed(InvoiceExtraction, options.invoiceExtraction ?? { extract: unused }),
   );
 
-export const webHandlerFor = async (options: AppOptions = {}) => {
-  const fetch = await Effect.runPromise(
-    makeWorkerFetch.pipe(
-      Effect.provide(servicesFor(options)),
-      Effect.provideContext(testRuntimeContext),
+export const webHandlerFor = (options: AppOptions = {}) =>
+  makeWorkerFetch.pipe(
+    Effect.provide(servicesFor(options)),
+    Effect.map((fetch) =>
+      HttpEffect.toWebHandler(fetch.pipe(Effect.provideContext(testRuntimeContext))),
     ),
+    Effect.provideContext(testRuntimeContext),
   );
-  return HttpEffect.toWebHandler(fetch.pipe(Effect.provideContext(testRuntimeContext)));
-};

@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
@@ -20,20 +21,15 @@ import {
 import type { ReplicaDb } from "@store/sync/authority";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
 import { makeAuthorityEngine } from "../../src/authority/engine";
 import type { Actor } from "../../src/authority/engine";
 import { SNAPSHOT_POLICY } from "../../src/authority/policy";
 import { makeAuthoritySnapshots } from "../../src/authority/snapshots";
-import { makeTestAuthorities } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const decodePart = Schema.decodeUnknownSync(Schema.fromJsonString(SnapshotPartPayload));
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
 
 const pad = (value: number) => String(value).padStart(6, "0");
 
@@ -156,82 +152,80 @@ const leavesOf = (rows: ReadonlyArray<SnapshotRow>) =>
   rows.map((row) => ({ entity: row.entity, entityId: row.entityId, rowVersion: row.rowVersion }));
 
 describe("durable object history snapshots", () => {
-  it("serves catalog and history in one snapshot that matches the partition digest", async () => {
-    const organizationId = "org-history-views";
-    const actor: Actor = { organizationId, userId: "user-1" };
-    const outcome = await run(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const { db, sql } = yield* authorities.open(organizationId);
-        yield* seed(db, organizationId, { invoices: 40, itemsPerInvoice: 2 }).pipe(Effect.orDie);
-        const engine = makeAuthorityEngine(sql, db);
-        let minted = 0;
-        const snapshots = makeAuthoritySnapshots(
-          engine,
-          db,
-          Effect.sync(() => `snapshot${(minted += 1)}`),
-        );
-        const acquired = yield* snapshots.acquire(
-          actor,
-          {
-            epoch: LAST_UNIT_EPOCH,
-            subscription: OPERATIONAL_SUBSCRIPTION,
-            replicaId: LAST_UNIT_REPLICA_A,
-          },
-          SYNC_SCHEMA_VERSION,
-          1_700_000_100_000,
-          { ...SNAPSHOT_POLICY, partRows: 50 },
-        );
-        const parts = yield* Effect.forEach(acquired.manifest.parts, (part) =>
-          snapshots.readPart(actor, acquired.manifest.snapshotId, part.partNumber).pipe(
-            Effect.map((encoded) => ({
-              sha256: encoded.sha256,
-              byteLength: Buffer.byteLength(encoded.json, "utf8"),
-              payload: decodePart(encoded.json),
-            })),
-          ),
-        );
-        return {
-          manifest: acquired.manifest,
-          parts,
-          digest: yield* partitionDigest(db),
-        };
-      }).pipe(Effect.orDie),
-    );
-    expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
-    expect(outcome.manifest.horizon).toBe("2");
-    expect(outcome.manifest.parts.map((part) => part.objectKey)).toEqual(
-      outcome.manifest.parts.map(
-        (part) => `${organizationId}/${outcome.manifest.snapshotId}/${part.partNumber}`,
-      ),
-    );
-    expect(outcome.parts.map(({ sha256, byteLength }) => ({ sha256, byteLength }))).toEqual(
-      outcome.manifest.parts.map(({ sha256, byteLength }) => ({ sha256, byteLength })),
-    );
-    expect(outcome.manifest.entityCounts).toEqual([
-      { entity: "category", rowCount: 1 },
-      { entity: "product", rowCount: 3 },
-      { entity: "batch", rowCount: 3 },
-      { entity: "invoice", rowCount: 40 },
-      { entity: "invoiceItem", rowCount: 80 },
-      { entity: "stockMovement", rowCount: 80 },
-      { entity: "supplier", rowCount: 0 },
-      { entity: "purchaseOrder", rowCount: 0 },
-      { entity: "purchaseOrderItem", rowCount: 0 },
-    ]);
-    const rows = outcome.parts.flatMap((part) => part.payload.rows);
-    expect(rows.map((row) => row.entity)).toEqual([
-      "category",
-      ...Array.from({ length: 3 }, () => "product"),
-      ...Array.from({ length: 3 }, () => "batch"),
-      ...Array.from({ length: 40 }, () => "invoice"),
-      ...Array.from({ length: 80 }, () => "invoiceItem"),
-      ...Array.from({ length: 80 }, () => "stockMovement"),
-    ]);
-    expect(
-      rows.filter((row) => row.entity === "stockMovement").map((row) => row.rowVersion),
-    ).toEqual(Array.from({ length: 80 }, () => 1));
-    for (const part of outcome.parts) expect(part.payload.rows.length).toBeLessThanOrEqual(50);
-    expect(await Effect.runPromise(partitionDigestOf(leavesOf(rows)))).toEqual(outcome.digest);
-  });
+  it.effect("serves catalog and history in one snapshot that matches the partition digest", () =>
+    Effect.gen(function* () {
+      const organizationId = "org-history-views";
+      const actor: Actor = { organizationId, userId: "user-1" };
+      const authorities = yield* TestAuthorities;
+      const { db, sql } = yield* authorities.open(organizationId);
+      yield* seed(db, organizationId, { invoices: 40, itemsPerInvoice: 2 }).pipe(Effect.orDie);
+      const engine = makeAuthorityEngine(sql, db);
+      let minted = 0;
+      const snapshots = makeAuthoritySnapshots(
+        engine,
+        db,
+        Effect.sync(() => `snapshot${(minted += 1)}`),
+      );
+      const acquired = yield* snapshots.acquire(
+        actor,
+        {
+          epoch: LAST_UNIT_EPOCH,
+          subscription: OPERATIONAL_SUBSCRIPTION,
+          replicaId: LAST_UNIT_REPLICA_A,
+        },
+        SYNC_SCHEMA_VERSION,
+        1_700_000_100_000,
+        { ...SNAPSHOT_POLICY, partRows: 50 },
+      );
+      const parts = yield* Effect.forEach(acquired.manifest.parts, (part) =>
+        snapshots.readPart(actor, acquired.manifest.snapshotId, part.partNumber).pipe(
+          Effect.map((encoded) => ({
+            sha256: encoded.sha256,
+            byteLength: Buffer.byteLength(encoded.json, "utf8"),
+            payload: decodePart(encoded.json),
+          })),
+        ),
+      );
+      const outcome = {
+        manifest: acquired.manifest,
+        parts,
+        digest: yield* partitionDigest(db),
+      };
+      expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
+      expect(outcome.manifest.horizon).toBe("2");
+      expect(outcome.manifest.parts.map((part) => part.objectKey)).toEqual(
+        outcome.manifest.parts.map(
+          (part) => `${organizationId}/${outcome.manifest.snapshotId}/${part.partNumber}`,
+        ),
+      );
+      expect(outcome.parts.map(({ sha256, byteLength }) => ({ sha256, byteLength }))).toEqual(
+        outcome.manifest.parts.map(({ sha256, byteLength }) => ({ sha256, byteLength })),
+      );
+      expect(outcome.manifest.entityCounts).toEqual([
+        { entity: "category", rowCount: 1 },
+        { entity: "product", rowCount: 3 },
+        { entity: "batch", rowCount: 3 },
+        { entity: "invoice", rowCount: 40 },
+        { entity: "invoiceItem", rowCount: 80 },
+        { entity: "stockMovement", rowCount: 80 },
+        { entity: "supplier", rowCount: 0 },
+        { entity: "purchaseOrder", rowCount: 0 },
+        { entity: "purchaseOrderItem", rowCount: 0 },
+      ]);
+      const rows = outcome.parts.flatMap((part) => part.payload.rows);
+      expect(rows.map((row) => row.entity)).toEqual([
+        "category",
+        ...Array.from({ length: 3 }, () => "product"),
+        ...Array.from({ length: 3 }, () => "batch"),
+        ...Array.from({ length: 40 }, () => "invoice"),
+        ...Array.from({ length: 80 }, () => "invoiceItem"),
+        ...Array.from({ length: 80 }, () => "stockMovement"),
+      ]);
+      expect(
+        rows.filter((row) => row.entity === "stockMovement").map((row) => row.rowVersion),
+      ).toEqual(Array.from({ length: 80 }, () => 1));
+      for (const part of outcome.parts) expect(part.payload.rows.length).toBeLessThanOrEqual(50);
+      expect(yield* partitionDigestOf(leavesOf(rows))).toEqual(outcome.digest);
+    }).pipe(scenario, Effect.orDie),
+  );
 });
