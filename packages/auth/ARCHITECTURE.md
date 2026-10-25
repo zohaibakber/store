@@ -48,7 +48,7 @@ const tokens =
     _tag: "Otp",
     challengeId,
     code,
-    client: browserClient(),
+    client: { _tag: "Browser" },
   });
 ```
 

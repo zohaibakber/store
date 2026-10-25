@@ -89,3 +89,18 @@ export const verifyRs256 = (
     );
     return crypto.subtle.verify(algorithm.name, imported, owned(signature), owned(message));
   });
+
+const ES256_KEY = { name: "ECDSA", namedCurve: "P-256" } as const;
+const ES256 = { name: "ECDSA", hash: "SHA-256" } as const;
+
+export const importEs256Key = (jwk: JsonWebKey, usage: "sign" | "verify") =>
+  attempt("importEs256Key", () => crypto.subtle.importKey("jwk", jwk, ES256_KEY, false, [usage]));
+
+export const signEs256 = (key: CryptoKey, message: Uint8Array) =>
+  attempt(
+    "signEs256",
+    async () => new Uint8Array(await crypto.subtle.sign(ES256, key, owned(message))),
+  );
+
+export const verifyEs256 = (key: CryptoKey, signature: Uint8Array, message: Uint8Array) =>
+  attempt("verifyEs256", () => crypto.subtle.verify(ES256, key, owned(signature), owned(message)));
