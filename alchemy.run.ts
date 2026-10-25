@@ -1,8 +1,6 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
-import * as Neon from "alchemy/Neon";
-import * as Planetscale from "alchemy/Planetscale";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -14,18 +12,7 @@ import { Edge } from "./infra/edge.ts";
 export default Alchemy.Stack(
   "Tabaaq",
   {
-    providers: Layer.mergeAll(
-      Cloudflare.providers(),
-      Drizzle.providers(),
-      Layer.unwrap(
-        Effect.map(Alchemy.Stage, (stage) => (stage === "dev" ? Neon.providers() : Layer.empty)),
-      ),
-      Layer.unwrap(
-        Effect.map(Alchemy.Stage, (stage) =>
-          stage === "dev" ? Layer.empty : Planetscale.providers(),
-        ),
-      ),
-    ),
+    providers: Layer.mergeAll(Cloudflare.providers(), Drizzle.providers()),
     state: Cloudflare.state(),
   },
   Effect.gen(function* () {

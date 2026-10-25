@@ -4,6 +4,7 @@ import {
   LIVE_SOCKET_PATH,
   LiveSocketQuery,
   offeredLiveProtocols,
+  type SyncProtocolCode,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
@@ -20,6 +21,7 @@ import * as Schema from "effect/Schema";
 
 import { authenticateToken } from "../auth/session";
 import { publicError } from "../http/errors";
+import { SYNC_STATUS } from "../http/sync-errors";
 import type { InventoryError } from "../inventory/errors";
 import type { LiveHorizon } from "../inventory/live-horizon";
 import type { InventoryActor } from "../inventory/model";
@@ -50,12 +52,13 @@ const decodeQuery = Schema.decodeUnknownOption(LiveSocketQuery);
 const queryOf = (request: HttpServerRequest.HttpServerRequest) =>
   decodeQuery(Object.fromEntries(new URL(request.url, "http://live.invalid").searchParams));
 
+const liveStatus = (code: SyncProtocolCode) =>
+  code === "ORGANIZATION_MISMATCH" ? 409 : SYNC_STATUS[code];
+
 const horizonFailure = (error: InventoryError) =>
   error._tag !== "SyncProtocolError"
     ? refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.")
-    : error.code === "REPLICA_OWNED_BY_OTHER"
-      ? refuse(403, error.code, error.message)
-      : refuse(409, error.code, error.message);
+    : refuse(liveStatus(error.code), error.code, error.message);
 
 const freshUpgradeResponse = (
   response: HttpServerResponse.HttpServerResponse,
