@@ -18,12 +18,21 @@ import type { ServerRuntimeContract } from "../../src/http/runtime";
 
 const unused = () => Effect.die("unused");
 
-const unusedInventory = {
-  commands: { register: unused, submitRaw: unused, receipt: unused, pullEncoded: unused },
-  snapshots: { acquireSnapshot: unused, readSnapshotPartEncoded: unused },
-  imports: { stagePart: unused, commit: unused, status: unused },
-  devices: { list: unused, command: unused },
-} satisfies Pick<WorkerServices, "commands" | "snapshots" | "imports" | "devices">;
+const unusedAuthority: ReturnType<WorkerServices["authorities"]["getByName"]> = {
+  register: unused,
+  submit: unused,
+  receipt: unused,
+  pull: unused,
+  acquireSnapshot: unused,
+  readSnapshotPart: unused,
+  devices: unused,
+  deviceCommand: unused,
+  liveHorizon: unused,
+  stageImportPart: unused,
+  commitImport: unused,
+  importStatus: unused,
+  maintain: unused,
+};
 
 export const TEST_ACCESS_TOKEN = "header.payload.signature";
 
@@ -86,13 +95,9 @@ export const webHandlerFor = async (options: AppOptions = {}) => {
   const fetch = await Effect.runPromise(
     makeWorkerFetch({
       runtime: runtimeFor(options),
-      commands: options.commands ?? unusedInventory.commands,
-      snapshots: options.snapshots ?? unusedInventory.snapshots,
-      imports: options.imports ?? unusedInventory.imports,
-      devices: options.devices ?? unusedInventory.devices,
+      authorities: options.authorities ?? { getByName: () => unusedAuthority },
       liveFanout: options.liveFanout ?? { publish: () => Effect.void },
       hubs: options.hubs ?? { getByName: () => ({ fetch: unused }) },
-      readLiveHorizon: options.readLiveHorizon ?? unused,
     }).pipe(Effect.provideContext(testRuntimeContext)),
   );
   return HttpEffect.toWebHandler(fetch.pipe(Effect.provideContext(testRuntimeContext)));

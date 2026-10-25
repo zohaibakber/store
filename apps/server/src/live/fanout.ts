@@ -3,7 +3,7 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-import type { CommitFanout } from "../inventory/model";
+import type { CommitFanout } from "../authority/frames";
 
 interface OrgHubStub {
   readonly publish: (input: CommitFanout) => Effect.Effect<number, unknown, RuntimeContext>;

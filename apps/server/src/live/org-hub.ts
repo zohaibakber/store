@@ -15,7 +15,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import { OrgHub, type OrgHubContract } from "../../api";
-import type { CommitFanout } from "../inventory/model";
+import type { CommitFanout } from "../authority/frames";
 import {
   admissionFromHeaders,
   advanceCursor,

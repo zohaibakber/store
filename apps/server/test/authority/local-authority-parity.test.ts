@@ -43,10 +43,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import type { InventoryActor } from "../../src/inventory/model";
+import type { Actor } from "../../src/authority/engine";
 import { typedCommands } from "../inventory/typed-commands";
-import { makeTestAuthorities } from "./harness";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
 const USER_ID = "user-1";
 const OCCURRED_AT = lastUnitBuyerACommand.occurredAt;
@@ -154,8 +154,8 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
     const localAuthority = yield* SyncTransportService;
     const authorities = makeTestAuthorities();
     yield* authorities.open(organizationId);
-    const authority = typedCommands(makeInventoryCommands(authorities));
-    const actor: InventoryActor = { organizationId, userId: USER_ID };
+    const authority = typedCommands(yield* organizationAuthorityFor(authorities));
+    const actor: Actor = { organizationId, userId: USER_ID };
     yield* authority.register(actor, {
       replicaId: LAST_UNIT_REPLICA_A,
       schemaVersion: SYNC_SCHEMA_VERSION,
@@ -220,7 +220,11 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
         },
       });
       return { decisions, repeated, localPage, authorityPage, digest: digest.value };
-    }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped),
+    }).pipe(
+      Effect.provide(twinLayer(organizationId, submissions, path)),
+      Effect.scoped,
+      Effect.provideContext(testRuntimeContext),
+    ),
   );
 };
 
@@ -251,7 +255,11 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
         redecided: yield* localAuthority.submitCommand(request),
         authority: yield* authority.submit(actor, request),
       };
-    }).pipe(Effect.provide(twinLayer(organizationId, submissions)), Effect.scoped),
+    }).pipe(
+      Effect.provide(twinLayer(organizationId, submissions)),
+      Effect.scoped,
+      Effect.provideContext(testRuntimeContext),
+    ),
   );
 };
 
@@ -1122,7 +1130,11 @@ describe("the local authority decides like the durable object authority", () => 
           before,
           after: yield* store.readSyncCursor(),
         };
-      }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped),
+      }).pipe(
+        Effect.provide(twinLayer(organizationId, submissions, "inline")),
+        Effect.scoped,
+        Effect.provideContext(testRuntimeContext),
+      ),
     );
 
     expect(refusal.decisions).toBe(1);

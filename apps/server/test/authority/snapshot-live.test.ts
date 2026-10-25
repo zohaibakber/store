@@ -22,24 +22,25 @@ import {
   replicas,
   snapshotParts,
 } from "@store/db/authority.schema";
+import type { RuntimeContext } from "alchemy";
 import { asc } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { InventoryActor } from "../../src/inventory/model";
-import { makeInventorySnapshots } from "../../src/inventory/snapshots";
-import { makeTestAuthorities } from "./harness";
+import type { Actor } from "../../src/authority/engine";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
 const isProtocol = Schema.is(SyncProtocolError);
 
 const OCCURRED_AT = 1_700_000_000_000;
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
+  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
-const actorFor = (organizationId: string, userId = "user-1"): InventoryActor => ({
+const actorFor = (organizationId: string, userId = "user-1"): Actor => ({
   organizationId,
   userId,
 });
@@ -108,7 +109,7 @@ const openAuthority = (organizationId: string) =>
         lastSeenAt: OCCURRED_AT,
       });
     }).pipe(Effect.orDie);
-    return { snapshots: makeInventorySnapshots(authorities), db };
+    return { snapshots: yield* organizationAuthorityFor(authorities), db };
   });
 
 const operationalRequest: AcquireSnapshotRequest = {
@@ -143,16 +144,12 @@ describe("durable object snapshot acquisition", () => {
           .from(snapshotParts)
           .orderBy(asc(snapshotParts.partNumber))
           .all();
-        const part = yield* snapshots.readSnapshotPartEncoded(
-          actor,
-          withReplica.manifest.snapshotId,
-          1,
-        );
+        const part = yield* snapshots.readSnapshotPart(actor, withReplica.manifest.snapshotId, 1);
         const missingPart = yield* snapshots
-          .readSnapshotPartEncoded(actor, withReplica.manifest.snapshotId, 2)
+          .readSnapshotPart(actor, withReplica.manifest.snapshotId, 2)
           .pipe(Effect.flip);
         const missingSnapshot = yield* snapshots
-          .readSnapshotPartEncoded(actor, SnapshotId.make("missing"), 1)
+          .readSnapshotPart(actor, SnapshotId.make("missing"), 1)
           .pipe(Effect.flip);
         return {
           withoutReplica,

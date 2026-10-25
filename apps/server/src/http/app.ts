@@ -1,5 +1,4 @@
 import { isTrustedOrigin } from "@store/auth/security";
-import type { RuntimeContext } from "alchemy";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -12,10 +11,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 
 import { OrganizationAuthLive } from "../auth/organization";
-import { InventoryCommands, type InventoryCommandsContract } from "../inventory/commands";
-import { InventoryDevices, type InventoryDevicesContract } from "../inventory/devices";
-import { InventoryImports, type InventoryImportsContract } from "../inventory/imports";
-import { InventorySnapshots, type InventorySnapshotsContract } from "../inventory/snapshots";
+import { OrgAuthorities, OrganizationAuthority } from "../inventory/organization-authority";
 import { LiveFanout, type LiveFanoutContract } from "../live/fanout";
 import { LiveRoutes, type LiveRouteDependencies } from "../live/route";
 import { GlobalSearchHandlers } from "../routes/global-search";
@@ -81,13 +77,9 @@ const recoverUnexpected = <E, R>(
 
 export interface WorkerServices {
   readonly runtime: ServerRuntimeContract;
-  readonly commands: InventoryCommandsContract<RuntimeContext>;
-  readonly snapshots: InventorySnapshotsContract<RuntimeContext>;
-  readonly imports: InventoryImportsContract<RuntimeContext>;
-  readonly devices: InventoryDevicesContract<RuntimeContext>;
+  readonly authorities: OrgAuthorities["Service"];
   readonly liveFanout: LiveFanoutContract;
   readonly hubs: LiveRouteDependencies["hubs"];
-  readonly readLiveHorizon: LiveRouteDependencies["readLiveHorizon"];
 }
 
 export const makeWorkerFetch = Effect.fnUntraced(function* (services: WorkerServices) {
@@ -97,15 +89,13 @@ export const makeWorkerFetch = Effect.fnUntraced(function* (services: WorkerServ
     LiveRoutes({
       hubs: services.hubs,
       verifyAccessToken: services.runtime.verifyAccessToken,
-      readLiveHorizon: services.readLiveHorizon,
     }),
   ).pipe(
     Layer.provide([
       Layer.succeed(ServerRuntime, services.runtime),
-      Layer.succeed(InventoryCommands, services.commands),
-      Layer.succeed(InventorySnapshots, services.snapshots),
-      Layer.succeed(InventoryImports, services.imports),
-      Layer.succeed(InventoryDevices, services.devices),
+      OrganizationAuthority.layer.pipe(
+        Layer.provide(Layer.succeed(OrgAuthorities, services.authorities)),
+      ),
       Layer.succeed(LiveFanout, services.liveFanout),
       HttpServer.layerServices,
     ]),

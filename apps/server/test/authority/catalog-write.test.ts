@@ -46,27 +46,26 @@ import {
   suppliers,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
+import type { RuntimeContext } from "alchemy";
 import { asc, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import { makeInventoryDevices } from "../../src/inventory/devices";
-import { makeInventoryLive } from "../../src/inventory/live-horizon";
-import type { InventoryActor } from "../../src/inventory/model";
+import type { Actor } from "../../src/authority/engine";
 import { typedCommands } from "../inventory/typed-commands";
-import { makeTestAuthorities } from "./harness";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
 const OCCURRED_AT = 1_700_000_000_000;
 const PRODUCT_ID = decodeProductId("prod-1");
 const SUPPLIER_ID = decodeSupplierId("sup-1");
 const ORDER_ID = decodePurchaseOrderId("po-1");
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
+  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
-const actorFor = (organizationId: string): InventoryActor => ({
+const actorFor = (organizationId: string): Actor => ({
   organizationId,
   userId: "user-1",
 });
@@ -268,7 +267,7 @@ const openCatalog = (organizationId: string, commitSequence = 0) =>
       registeredAt: OCCURRED_AT,
       lastSeenAt: OCCURRED_AT,
     });
-    const commands = typedCommands(makeInventoryCommands(authorities));
+    const commands = typedCommands(yield* organizationAuthorityFor(authorities));
     let clientSequence = 0;
     const write = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>) =>
       Effect.suspend(() => {
@@ -366,7 +365,7 @@ describe("durable object catalog writes", () => {
     const actor = actorFor(organizationId);
     const outcome = await run(
       Effect.gen(function* () {
-        const { authorities, commands, db, write } = yield* openCatalog(organizationId);
+        const { commands, db, write } = yield* openCatalog(organizationId);
         const now = Date.now();
         const peer = eq(replicas.replicaId, LAST_UNIT_REPLICA_B);
         yield* db.insert(replicas).values({
@@ -399,14 +398,12 @@ describe("durable object catalog writes", () => {
           replicaId: LAST_UNIT_REPLICA_A,
           schemaVersion: 2,
         });
-        const live = makeInventoryLive(authorities);
-        yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
+        yield* commands.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
         ]);
-        const devices = makeInventoryDevices(authorities);
-        const standingOf = devices
-          .list(actor)
+        const standingOf = commands
+          .devices(actor)
           .pipe(
             Effect.map(
               (listed) =>
@@ -414,16 +411,25 @@ describe("durable object catalog writes", () => {
             ),
           );
         const listedHolding = yield* standingOf;
-        yield* devices.command(actor, { _tag: "IgnoreDevice", replicaId: LAST_UNIT_REPLICA_B });
+        yield* commands.commandDevice(actor, {
+          _tag: "IgnoreDevice",
+          replicaId: LAST_UNIT_REPLICA_B,
+        });
         const ignored = yield* write("cmd-ignored", [supplierWrite("sup-4", null, "Umbrella")]);
         const listedIgnored = yield* standingOf;
-        yield* devices.command(actor, { _tag: "HeedDevice", replicaId: LAST_UNIT_REPLICA_B });
+        yield* commands.commandDevice(actor, {
+          _tag: "HeedDevice",
+          replicaId: LAST_UNIT_REPLICA_B,
+        });
         const heeded = yield* write("cmd-heeded", [supplierWrite("sup-5", null, "Hooli")]);
-        yield* devices.command(actor, { _tag: "RemoveDevice", replicaId: LAST_UNIT_REPLICA_B });
+        yield* commands.commandDevice(actor, {
+          _tag: "RemoveDevice",
+          replicaId: LAST_UNIT_REPLICA_B,
+        });
         const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
         const listedRemoved = yield* standingOf;
         yield* Effect.sleep("5 millis");
-        yield* live.readLiveHorizon(actor, LAST_UNIT_REPLICA_B);
+        yield* commands.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
         const listedReturned = yield* standingOf;
         yield* db

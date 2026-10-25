@@ -28,8 +28,8 @@ import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
 
 import { partitionDigest } from "./digest";
-import { refuse, type AuthorityActor, type AuthorityEngine, type CommitFanout } from "./engine";
-import { byteLengthOf } from "./frames";
+import { refuse, type Actor, type AuthorityEngine } from "./engine";
+import { byteLengthOf, type CommitFanout } from "./frames";
 import type { AuthoritySnapshots } from "./snapshots";
 
 const IMPORT_ID = /^[A-Za-z0-9._-]{1,200}$/u;
@@ -414,7 +414,7 @@ export const makeAuthorityImports = (
   });
 
   const importRows = Effect.fn("AuthorityImports.importRows")(function* (
-    actor: AuthorityActor,
+    actor: Actor,
     frames: ReadonlyArray<StagedFrame>,
     now: number,
   ) {
@@ -457,8 +457,6 @@ export const makeAuthorityImports = (
     digestVersion === PARTITION_DIGEST_VERSION ? partitionDigest(db) : Effect.undefined;
 
   return {
-    refusal,
-
     stagePart: Effect.fn("AuthorityImports.stagePart")(function* (
       importId: string,
       partNumber: number,
@@ -529,7 +527,7 @@ export const makeAuthorityImports = (
     }),
 
     commit: Effect.fn("AuthorityImports.commit")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       importId: string,
       request: ImportCommitRequest,
       now: number,
@@ -650,5 +648,3 @@ export const makeAuthorityImports = (
     }),
   };
 };
-
-export type AuthorityImports = ReturnType<typeof makeAuthorityImports>;

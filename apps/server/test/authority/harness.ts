@@ -1,12 +1,13 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
 import type { SqlClient } from "effect/sql/SqlClient";
 
 import { makeOrgAuthority, type OrgAuthorityApi } from "../../src/authority/facade";
-import type { AuthorityNamespace } from "../../src/inventory/authority-client";
+import { OrgAuthorities, OrganizationAuthority } from "../../src/inventory/organization-authority";
 
 export type TestAuthority = {
   readonly api: OrgAuthorityApi;
@@ -22,7 +23,7 @@ const mintId = Effect.sync(() => {
   return `${Date.now().toString(16)}${minted.toString(16).padStart(8, "0")}`.padEnd(32, "0");
 });
 
-export type TestAuthorities = AuthorityNamespace & {
+export type TestAuthorities = OrgAuthorities["Service"] & {
   readonly open: (organizationId: string) => Effect.Effect<TestAuthority, never, Scope.Scope>;
   readonly of: (organizationId: string) => TestAuthority;
 };
@@ -58,3 +59,10 @@ export const makeTestAuthorities = (): TestAuthorities => {
     });
   return { open, of, getByName: (organizationId) => of(organizationId).api };
 };
+
+export const organizationAuthorityFor = (authorities: TestAuthorities) =>
+  OrganizationAuthority.pipe(
+    Effect.provide(
+      OrganizationAuthority.layer.pipe(Layer.provide(Layer.succeed(OrgAuthorities, authorities))),
+    ),
+  );

@@ -47,6 +47,7 @@ import {
   type SqliteReplicaHandle,
 } from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
+import type { RuntimeContext } from "alchemy";
 import { and, count, eq, min } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -58,14 +59,11 @@ import * as Struct from "effect/Struct";
 import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
-import { makeInventoryCommands } from "../../src/inventory/commands";
+import type { Actor } from "../../src/authority/engine";
 import type { InventoryError } from "../../src/inventory/errors";
-import { makeInventoryImports } from "../../src/inventory/imports";
-import type { InventoryActor } from "../../src/inventory/model";
-import { makeInventorySnapshots } from "../../src/inventory/snapshots";
 import { typedCommands } from "../inventory/typed-commands";
-import { claimsFor, TEST_ACCESS_TOKEN, webHandlerFor } from "../lib/app";
-import { makeTestAuthorities, type TestAuthorities } from "./harness";
+import { claimsFor, TEST_ACCESS_TOKEN, testRuntimeContext, webHandlerFor } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor, type TestAuthorities } from "./harness";
 
 const DEVICE = "device-local";
 const OCCURRED_AT = 1_760_000_000_000;
@@ -410,11 +408,15 @@ const localWorkspace = (importId: string) =>
     Effect.scoped,
   );
 
-const authorityFor = (authorities: TestAuthorities, actor: InventoryActor): SyncTransport => {
-  const commands = typedCommands(makeInventoryCommands(authorities));
-  const snapshots = makeInventorySnapshots(authorities);
-  const settled = <A>(effect: Effect.Effect<A, InventoryError>) =>
-    effect.pipe(Effect.catchTag("InventoryDatabaseError", (error) => Effect.die(error)));
+const authorityFor = Effect.fnUntraced(function* (authorities: TestAuthorities, actor: Actor) {
+  const authority = yield* organizationAuthorityFor(authorities);
+  const commands = typedCommands(authority);
+  const snapshots = authority;
+  const settled = <A>(effect: Effect.Effect<A, InventoryError, RuntimeContext>) =>
+    effect.pipe(
+      Effect.catchTag("InventoryDatabaseError", (error) => Effect.die(error)),
+      Effect.provideContext(testRuntimeContext),
+    );
   return {
     registerReplica: (request) => settled(commands.register(actor, request)),
     submitCommand: (request) => settled(commands.submit(actor, request)),
@@ -422,20 +424,16 @@ const authorityFor = (authorities: TestAuthorities, actor: InventoryActor): Sync
     pull: (request) => settled(commands.pull(actor, request)),
     acquireSnapshot: (request) => settled(snapshots.acquireSnapshot(actor, request)),
     readSnapshotPart: (snapshotId, partNumber) =>
-      settled(snapshots.readSnapshotPartEncoded(actor, snapshotId, partNumber)).pipe(
+      settled(snapshots.readSnapshotPart(actor, snapshotId, partNumber)).pipe(
         Effect.flatMap((part) => Effect.orDie(decodePart(part.json))),
       ),
-  };
-};
+  } satisfies SyncTransport;
+});
 
-const organizationReplica = (
-  authorities: TestAuthorities,
-  actor: InventoryActor,
-  replicaId: string,
-) =>
+const organizationReplica = (authorities: TestAuthorities, actor: Actor, replicaId: string) =>
   Layer.build(
     SyncEngine.layer().pipe(
-      Layer.provideMerge(Layer.succeed(SyncTransportService, authorityFor(authorities, actor))),
+      Layer.provideMerge(Layer.effect(SyncTransportService, authorityFor(authorities, actor))),
       Layer.provideMerge(layerSqliteReplicaStore(`import-${replicaId}`)),
       Layer.provideMerge(
         seededReplica({
@@ -449,7 +447,7 @@ const organizationReplica = (
   );
 
 const requestFor = (
-  actor: InventoryActor,
+  actor: Actor,
   local: {
     readonly digest: { readonly digest: string; readonly version: number } | undefined;
   },
@@ -461,8 +459,8 @@ const requestFor = (
   digestVersion: local.digest?.version ?? 0,
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
+  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
 describe("publishing a local workspace into an empty organization", () => {
   it("bootstraps every replica to the digest and rows the device held", async () => {
@@ -470,9 +468,9 @@ describe("publishing a local workspace into an empty organization", () => {
       Effect.gen(function* () {
         const authorities = makeTestAuthorities();
         const { db } = yield* authorities.open("org-published");
-        const imports = makeInventoryImports(authorities);
-        const owner: InventoryActor = { organizationId: "org-published", userId: OWNER };
-        const clerk: InventoryActor = { organizationId: "org-published", userId: CLERK };
+        const imports = yield* organizationAuthorityFor(authorities);
+        const owner: Actor = { organizationId: "org-published", userId: OWNER };
+        const clerk: Actor = { organizationId: "org-published", userId: CLERK };
         const importId = decodeImportId("import-published");
         const local = yield* localWorkspace(importId);
 
@@ -481,29 +479,29 @@ describe("publishing a local workspace into an empty organization", () => {
         yield* waitingEngine.ensureRegistered();
         yield* waitingEngine.catchUp();
 
-        const unasked = yield* imports.status(owner, importId);
+        const unasked = yield* imports.importStatus(owner, importId);
         const receipts = yield* Effect.forEach(local.parts, (part) =>
           imports
-            .stagePart(owner, importId, part.partNumber, part.bodyText)
+            .stageImportPart(owner, importId, part.partNumber, part.bodyText)
             .pipe(Effect.map((staged) => decodeReceipt(staged.json))),
         );
         const request = requestFor(owner, local, local.parts.length);
         const mismatched = yield* imports
-          .commit(owner, importId, { ...request, digest: decodeDigest("0".repeat(64)) })
+          .commitImport(owner, importId, { ...request, digest: decodeDigest("0".repeat(64)) })
           .pipe(Effect.flip);
         const miscounted = { ...request, partCount: request.partCount + 1 };
-        const unlanded = yield* imports.commit(owner, importId, miscounted).pipe(Effect.flip);
-        const staged = yield* imports.status(owner, importId);
-        const landed = yield* imports.commit(owner, importId, request);
+        const unlanded = yield* imports.commitImport(owner, importId, miscounted).pipe(Effect.flip);
+        const staged = yield* imports.importStatus(owner, importId);
+        const landed = yield* imports.commitImport(owner, importId, request);
         const committed = decodeResult(landed.json);
-        const settled = yield* imports.status(owner, importId);
+        const settled = yield* imports.importStatus(owner, importId);
         const later = decodeImportId("import-later");
-        const superseded = yield* imports.status(owner, later);
-        const refused = yield* imports.commit(owner, later, request).pipe(Effect.flip);
-        const repeated = decodeResult((yield* imports.commit(owner, importId, request)).json);
-        const asked = decodeResult((yield* imports.commit(owner, importId, miscounted)).json);
+        const superseded = yield* imports.importStatus(owner, later);
+        const refused = yield* imports.commitImport(owner, later, request).pipe(Effect.flip);
+        const repeated = decodeResult((yield* imports.commitImport(owner, importId, request)).json);
+        const asked = decodeResult((yield* imports.commitImport(owner, importId, miscounted)).json);
         const restaged = yield* imports
-          .stagePart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
+          .stageImportPart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
           .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
 
         yield* waitingEngine.catchUp();
@@ -686,13 +684,13 @@ describe("publishing a local workspace into an empty organization", () => {
         const authorities = makeTestAuthorities();
         const asked = yield* authorities.open("org-asked");
         const stockedOrg = yield* authorities.open("org-stocked");
-        const imports = makeInventoryImports(authorities);
+        const imports = yield* organizationAuthorityFor(authorities);
         const importId = decodeImportId("import-asked");
         const ask = (role: "owner" | "member", organizationId: string) =>
           Effect.promise(async () => {
             const handler = await webHandlerFor({
               claims: claimsFor(role, organizationId),
-              imports,
+              authorities,
             });
             const response = await handler(
               new Request(`http://localhost/api/sync/imports/${importId}`, {
@@ -719,7 +717,7 @@ describe("publishing a local workspace into an empty organization", () => {
         });
         const stocked = yield* ask("owner", "org-stocked");
         const refused = yield* imports
-          .commit(
+          .commitImport(
             { organizationId: "org-stocked", userId: OWNER },
             importId,
             requestFor(

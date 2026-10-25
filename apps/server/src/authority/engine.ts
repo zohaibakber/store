@@ -44,22 +44,18 @@ import {
   groupFrame,
   pageFrame,
   receiptFrame,
+  type EncodedCommit,
   type StoredChange,
   type StoredReceipt,
 } from "./frames";
 
-export type AuthorityActor = {
+export type Actor = {
   readonly organizationId: string;
   readonly userId: string;
 };
 
 export class AuthorityRequestMalformed extends Schema.TaggedError<AuthorityRequestMalformed>()(
   "AuthorityRequestMalformed",
-  { message: Schema.String },
-) {}
-
-export class AuthorityStorageError extends Schema.TaggedError<AuthorityStorageError>()(
-  "AuthorityStorageError",
   { message: Schema.String },
 ) {}
 
@@ -76,11 +72,6 @@ export const refuse = (code: SyncProtocolCode, message: string) =>
 
 const notReady = () => refuse("EPOCH_MISMATCH", "This organization inventory is not ready.");
 
-export const storageFailure = (cause: unknown) =>
-  AuthorityStorageError.make({
-    message: cause instanceof Error ? cause.message : "The inventory authority failed.",
-  });
-
 export const sequenceOf = (text: string): number => {
   const value = Number(text);
   return Number.isSafeInteger(value) ? value : Number.POSITIVE_INFINITY;
@@ -89,19 +80,6 @@ export const sequenceOf = (text: string): number => {
 const decodeSubmit = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncSubmitCommandRequest));
 
 export type AuthorityState = typeof authorityState.$inferSelect;
-
-export type CommitFanout = {
-  readonly epoch: string;
-  readonly horizon: string;
-  readonly group: string;
-  readonly byteLength: number;
-  readonly originReplicaId: string;
-};
-
-export type EncodedCommit = {
-  readonly json: string;
-  readonly fanout: CommitFanout | null;
-};
 
 const CONSTRAINT_REJECTIONS = {
   duplicate: {
@@ -125,7 +103,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     .get()
     .pipe(Effect.map((state) => state ?? undefined));
 
-  const requireState = (actor: AuthorityActor) =>
+  const requireState = (actor: Actor) =>
     Effect.flatMap(loadState, (state) =>
       state === undefined || state.organizationId !== actor.organizationId
         ? notReady()
@@ -133,7 +111,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     );
 
   const ensureState = Effect.fn("Authority.ensureState")(function* (
-    actor: AuthorityActor,
+    actor: Actor,
     now: number,
     incarnation: string,
   ) {
@@ -276,7 +254,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
   });
 
   const decide = Effect.fn("Authority.decide")(function* (
-    actor: AuthorityActor,
+    actor: Actor,
     envelope: SyncCommandEnvelope,
     now: number,
   ) {
@@ -300,7 +278,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     );
 
   const submitWithin = Effect.fn("Authority.submitWithin")(function* (
-    actor: AuthorityActor,
+    actor: Actor,
     request: SyncSubmitCommandRequest,
     receivedAt: number,
     pageBytes: number,
@@ -513,7 +491,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     transact,
 
     register: Effect.fn("Authority.register")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       request: RegisterReplicaRequest,
       now: number,
       incarnation: string,
@@ -584,16 +562,17 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     }),
 
     submit: Effect.fn("Authority.submit")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       bodyText: string,
       receivedAt: number,
       pageBytesOf: (maxBytes: number | undefined) => number,
     ) {
       const request = yield* decodeSubmit(bodyText).pipe(
-        Effect.mapError(() =>
-          AuthorityRequestMalformed.make({
-            message: "The command envelope is not valid JSON of the expected shape.",
-          }),
+        Effect.mapError(
+          () =>
+            new AuthorityRequestMalformed({
+              message: "The command envelope is not valid JSON of the expected shape.",
+            }),
         ),
       );
       return yield* transact(
@@ -601,7 +580,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
       );
     }),
 
-    receipt: Effect.fn("Authority.receipt")(function* (actor: AuthorityActor, operationId: string) {
+    receipt: Effect.fn("Authority.receipt")(function* (actor: Actor, operationId: string) {
       return yield* transact(
         Effect.gen(function* () {
           yield* requireState(actor);
@@ -616,7 +595,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     }),
 
     pull: Effect.fn("Authority.pull")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       request: {
         readonly epoch: string;
         readonly subscription: string;
@@ -631,12 +610,12 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
       );
     }),
 
-    devices: Effect.fn("Authority.devices")(function* (actor: AuthorityActor, now: number) {
+    devices: Effect.fn("Authority.devices")(function* (actor: Actor, now: number) {
       return yield* transact(Effect.andThen(requireState(actor), listDevices(now)));
     }),
 
     deviceCommand: Effect.fn("Authority.deviceCommand")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       command: DeviceCommand,
       now: number,
     ) {
@@ -659,7 +638,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     }),
 
     liveHorizon: Effect.fn("Authority.liveHorizon")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       replicaId: string,
       now: number,
     ) {

@@ -1,4 +1,6 @@
 import {
+  OrganizationDevices,
+  RegisterReplicaResult,
   SYNC_SCHEMA_VERSION,
   SyncProtocolError,
   type AcquireSnapshotRequest,
@@ -14,12 +16,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
 
-import {
-  AuthorityRequestMalformed,
-  makeAuthorityEngine,
-  type AuthorityActor,
-  type EncodedCommit,
-} from "./engine";
+import { AuthorityRequestMalformed, makeAuthorityEngine, type Actor } from "./engine";
+import type { EncodedCommit } from "./frames";
 import { makeAuthorityImports } from "./imports";
 import { makeAuthorityMaintenance, type MaintenanceReport } from "./maintenance";
 import { migrateAuthority } from "./migrations";
@@ -48,29 +46,9 @@ export type SnapshotPartReply = { readonly json: string; readonly sha256: string
 
 export type LiveHorizonReply = { readonly epoch: string; readonly horizon: string };
 
-export type RegisterReply = {
-  readonly replicaId: string;
-  readonly nextClientSequence: string;
-  readonly epoch: string;
-  readonly incarnation: string;
-  readonly retentionFloor: string;
-  readonly horizon: string;
-  readonly schemaVersion: number;
-  readonly lowestActiveSchemaVersion: number;
-};
+export type RegisterReply = typeof RegisterReplicaResult.Encoded;
 
-export type DevicesReply = {
-  readonly devices: ReadonlyArray<{
-    readonly replicaId: string;
-    readonly userId: string;
-    readonly label: string | null;
-    readonly registeredAt: number;
-    readonly lastSeenAt: number;
-    readonly upToDate: boolean;
-    readonly ignored: boolean;
-    readonly holdsBack: boolean;
-  }>;
-};
+export type DevicesReply = typeof OrganizationDevices.Encoded;
 
 export type SnapshotReply = {
   readonly _tag: "ready";
@@ -93,52 +71,52 @@ export type SnapshotReply = {
 
 export interface OrgAuthorityApi<R = never, E = never> {
   readonly register: (
-    actor: AuthorityActor,
+    actor: Actor,
     request: RegisterReplicaRequest,
   ) => Effect.Effect<AuthorityReply<RegisterReply>, E, R>;
   readonly submit: (
-    actor: AuthorityActor,
+    actor: Actor,
     bodyText: string,
   ) => Effect.Effect<AuthorityReply<EncodedCommit>, E, R>;
   readonly receipt: (
-    actor: AuthorityActor,
+    actor: Actor,
     operationId: string,
   ) => Effect.Effect<AuthorityReply<string | null>, E, R>;
   readonly pull: (
-    actor: AuthorityActor,
+    actor: Actor,
     request: SyncPullRequest,
   ) => Effect.Effect<AuthorityReply<string>, E, R>;
   readonly acquireSnapshot: (
-    actor: AuthorityActor,
+    actor: Actor,
     request: AcquireSnapshotRequest,
   ) => Effect.Effect<AuthorityReply<SnapshotReply>, E, R>;
   readonly readSnapshotPart: (
-    actor: AuthorityActor,
+    actor: Actor,
     snapshotId: string,
     partNumber: number,
   ) => Effect.Effect<AuthorityReply<SnapshotPartReply>, E, R>;
-  readonly devices: (actor: AuthorityActor) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
+  readonly devices: (actor: Actor) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
   readonly deviceCommand: (
-    actor: AuthorityActor,
+    actor: Actor,
     command: DeviceCommand,
   ) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
   readonly liveHorizon: (
-    actor: AuthorityActor,
+    actor: Actor,
     replicaId: string,
   ) => Effect.Effect<AuthorityReply<LiveHorizonReply>, E, R>;
   readonly stageImportPart: (
-    actor: AuthorityActor,
+    actor: Actor,
     importId: string,
     partNumber: number,
     bodyText: string,
   ) => Effect.Effect<AuthorityReply<string>, E, R>;
   readonly commitImport: (
-    actor: AuthorityActor,
+    actor: Actor,
     importId: string,
     request: ImportCatalogRequest,
   ) => Effect.Effect<AuthorityReply<EncodedCommit>, E, R>;
   readonly importStatus: (
-    actor: AuthorityActor,
+    actor: Actor,
     importId: string,
   ) => Effect.Effect<AuthorityReply<ImportStatusReply>, E, R>;
   readonly maintain: () => Effect.Effect<MaintenanceReport, E, R>;

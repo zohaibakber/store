@@ -20,6 +20,7 @@ import {
   snapshots,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
+import type { RuntimeContext } from "alchemy";
 import { asc } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -28,13 +29,13 @@ import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vite-plus/test";
 
 import { makeAuthorityEngine } from "../../src/authority/engine";
+import type { Actor } from "../../src/authority/engine";
 import { makeAuthorityMaintenance, type MaintenancePolicy } from "../../src/authority/maintenance";
 import { MAINTENANCE_POLICY } from "../../src/authority/policy";
 import { makeAuthoritySnapshots } from "../../src/authority/snapshots";
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import type { InventoryActor } from "../../src/inventory/model";
 import { typedCommands } from "../inventory/typed-commands";
-import { makeTestAuthorities, type TestAuthorities } from "./harness";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor, type TestAuthorities } from "./harness";
 
 const isProtocol = Schema.is(SyncProtocolError);
 
@@ -52,15 +53,19 @@ const TEST_POLICY: MaintenancePolicy = {
   snapshotRowDeleteBatchRows: 500,
 };
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       yield* TestClock.setTime(OCCURRED_AT);
       return yield* effect;
-    }).pipe(Effect.provide(TestClock.layer()), Effect.scoped),
+    }).pipe(
+      Effect.provide(TestClock.layer()),
+      Effect.scoped,
+      Effect.provideContext(testRuntimeContext),
+    ),
   );
 
-const actorFor = (organizationId: string): InventoryActor => ({
+const actorFor = (organizationId: string): Actor => ({
   organizationId,
   userId: "user-1",
 });
@@ -338,7 +343,7 @@ describe("durable object inventory maintenance", () => {
         const authorities = makeTestAuthorities();
         const { db, maintain } = yield* seedOrganization(authorities, organizationId, 10);
         yield* publishSnapshot(db, "snapshot-pull", 6);
-        const commands = typedCommands(makeInventoryCommands(authorities));
+        const commands = typedCommands(yield* organizationAuthorityFor(authorities));
         const pullAfter = (after: string) =>
           commands.pull(actor, {
             epoch: LAST_UNIT_EPOCH,
