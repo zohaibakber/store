@@ -1,15 +1,24 @@
-import { authHttpErrorStatus, EmailAddress, type AuthHttpError } from "@store/auth";
+import {
+  authHttpErrorStatus,
+  EmailAddress,
+  type AuthErrorCode,
+  type AuthHttpError,
+} from "@store/auth";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 interface AuthFailureWire {
   readonly kind: AuthHttpError["_tag"];
   readonly status: number;
-  readonly code: string;
+  readonly code: AuthErrorCode;
   readonly message: string;
 }
 
-const wire = (kind: AuthHttpError["_tag"], code: string, message: string): AuthFailureWire => ({
+const wire = (
+  kind: AuthHttpError["_tag"],
+  code: AuthErrorCode,
+  message: string,
+): AuthFailureWire => ({
   kind,
   status: authHttpErrorStatus(kind),
   code,

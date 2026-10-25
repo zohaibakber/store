@@ -1,3 +1,4 @@
+import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
@@ -104,66 +105,63 @@ const schemePrefix = /^([a-z][a-z0-9+.-]*):\/\/?/i;
 const wildcarded = /[*?]/;
 const unusableSchemes = new Set(["about", "blob", "data", "file", "javascript", "vbscript"]);
 
-type ClassifiedOrigin = { readonly origins: ReadonlyArray<string> } | { readonly reason: string };
-
 const classifyTrustedOrigin = (
   raw: string,
   options: { readonly allowInsecure: boolean },
-): ClassifiedOrigin => {
+): Result.Result<ReadonlyArray<string>, string> => {
   const value = unquote(raw);
-  if (!value) return { reason: "is empty" };
-  if (/[\s<>"'\\]/.test(value)) return { reason: "contains characters an origin cannot hold" };
+  if (!value) return Result.fail("is empty");
+  if (/[\s<>"'\\]/.test(value)) return Result.fail("contains characters an origin cannot hold");
 
   const matched = schemePrefix.exec(value);
   const protocol = matched?.[1]?.toLowerCase();
   const isWeb = protocol === "http" || protocol === "https";
 
   if (protocol !== undefined && !isWeb) {
-    if (unusableSchemes.has(protocol)) return { reason: "is not an app origin" };
-    return { origins: [value] };
+    if (unusableSchemes.has(protocol)) return Result.fail("is not an app origin");
+    return Result.succeed([value]);
   }
 
   const host = (matched ? value.slice(matched[0].length) : value).replace(/\/+$/, "");
-  if (!host || host.includes("/")) return { reason: "is not an origin or origin pattern" };
+  if (!host || host.includes("/")) return Result.fail("is not an origin or origin pattern");
   if (protocol === "http" && !options.allowInsecure && !isLoopbackHost(host))
-    return { reason: "must use HTTPS outside local development" };
+    return Result.fail("must use HTTPS outside local development");
 
   if (wildcarded.test(host)) {
     const labels = host.replace(/:.*$/, "").split(".");
     const literal = labels.filter((label) => !wildcarded.test(label));
     const loopback = options.allowInsecure && isLoopbackHost(host.replace(/[*?]/g, "0"));
-    if (literal.length < 2 && !loopback) return { reason: "matches too many origins" };
-    return { origins: [isWeb ? `${protocol}://${host}` : `https://${host}`] };
+    if (literal.length < 2 && !loopback) return Result.fail("matches too many origins");
+    return Result.succeed([isWeb ? `${protocol}://${host}` : `https://${host}`]);
   }
 
-  const secure = secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin");
-  if (Result.isFailure(secure)) return { reason: secure.failure };
-  if (!options.allowInsecure || !isLoopbackHost(host)) return { origins: [secure.success] };
-  const insecure = secureWebOrigin(`http://${host}`, "Trusted origin");
-  if (Result.isFailure(insecure)) return { reason: insecure.failure };
-  return { origins: [...new Set([secure.success, insecure.success])] };
+  return Result.flatMap(
+    secureWebOrigin(`${isWeb ? protocol : "https"}://${host}`, "Trusted origin"),
+    (secure) =>
+      !options.allowInsecure || !isLoopbackHost(host)
+        ? Result.succeed([secure])
+        : Result.map(secureWebOrigin(`http://${host}`, "Trusted origin"), (insecure) => [
+            ...new Set([secure, insecure]),
+          ]),
+  );
 };
-
-interface ResolvedTrustedOrigins {
-  readonly accepted: ReadonlyArray<string>;
-  readonly rejected: ReadonlyArray<RejectedTrustedOrigin>;
-}
 
 const resolveTrustedOrigins = (
   origins: ReadonlyArray<string>,
   options: { readonly allowInsecure: boolean },
-): ResolvedTrustedOrigins => {
-  const accepted: Array<string> = [];
-  const rejected: Array<RejectedTrustedOrigin> = [];
-  for (const origin of origins) {
-    const classified = classifyTrustedOrigin(origin, options);
-    if ("reason" in classified) rejected.push({ value: origin, reason: classified.reason });
-    else accepted.push(...classified.origins);
-  }
-  return { accepted, rejected };
+) => {
+  const [accepted, rejected] = Arr.partition(origins, (origin) =>
+    Result.mapError(classifyTrustedOrigin(origin, options), (reason): RejectedTrustedOrigin => ({
+      value: origin,
+      reason,
+    })),
+  );
+  return { accepted: accepted.flat(), rejected };
 };
 
-export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig => {
+export const decideAuthSecurity = (
+  input: AuthSecurityInput,
+): Result.Result<AuthSecurityConfig, string> => {
   const rejectedSettings: Array<RejectedAuthSetting> = [];
 
   const protocol = (value: string, setting: string, fallback: string) => {
@@ -178,31 +176,32 @@ export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfi
     DEFAULT_ELECTRON_PROTOCOL,
   );
 
-  const baseURL = Result.getOrThrowWith(
-    secureWebOrigin(input.baseURL, "Auth base URL"),
-    (reason) => new Error(reason),
-  );
-  const secureCookies = baseURL.startsWith("https://");
+  return Result.map(secureWebOrigin(input.baseURL, "Auth base URL"), (baseURL) => {
+    const secureCookies = baseURL.startsWith("https://");
 
-  const configured = resolveTrustedOrigins(input.trustedOrigins, {
-    allowInsecure: !secureCookies,
+    const configured = resolveTrustedOrigins(input.trustedOrigins, {
+      allowInsecure: !secureCookies,
+    });
+    for (const origin of configured.rejected)
+      rejectedSettings.push({ setting: "AUTH_TRUSTED_ORIGINS", ...origin });
+
+    const electronOrigin = `${electronProtocol}://${ELECTRON_RENDERER_HOST}`;
+    const trustedOrigins = [baseURL, ...configured.accepted, electronOrigin];
+
+    return {
+      baseURL,
+      electronOrigin,
+      electronProtocol,
+      secureCookies,
+      trustedOrigins: [...new Set(trustedOrigins)],
+      trustedRedirects: [...new Set([...trustedOrigins, `${electronProtocol}://`])],
+      rejectedSettings,
+    };
   });
-  for (const origin of configured.rejected)
-    rejectedSettings.push({ setting: "AUTH_TRUSTED_ORIGINS", ...origin });
-
-  const electronOrigin = `${electronProtocol}://${ELECTRON_RENDERER_HOST}`;
-  const trustedOrigins = [baseURL, ...configured.accepted, electronOrigin];
-
-  return {
-    baseURL,
-    electronOrigin,
-    electronProtocol,
-    secureCookies,
-    trustedOrigins: [...new Set(trustedOrigins)],
-    trustedRedirects: [...new Set([...trustedOrigins, `${electronProtocol}://`])],
-    rejectedSettings,
-  };
 };
+
+export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig =>
+  Result.getOrThrowWith(decideAuthSecurity(input), (reason) => new Error(reason));
 
 const globToRegExp = (pattern: string) => {
   let source = "";

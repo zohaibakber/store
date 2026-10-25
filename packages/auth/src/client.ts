@@ -46,22 +46,24 @@ export class AuthClientError extends Schema.TaggedError<AuthClientError>()("Auth
   message: Schema.String,
 }) {}
 
-export interface AuthClientApi {
-  readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
-  readonly authenticate: (
-    command: LoginCredentials,
-  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
-  readonly beginGoogle: (
-    input: BeginGoogleInputType,
-  ) => Effect.Effect<GoogleAuthorizationType, AuthClientError>;
-  readonly exchangeGoogle: (
-    input: ExchangeGoogleInputType,
-  ) => Effect.Effect<IssuedSessionType, AuthClientError>;
+export class AuthClient extends Context.Service<
+  AuthClient,
+  {
+    readonly identify: (input: IdentifyInputType) => Effect.Effect<LoginRouteType, AuthClientError>;
+    readonly authenticate: (
+      command: LoginCredentials,
+    ) => Effect.Effect<IssuedSessionType, AuthClientError>;
+    readonly beginGoogle: (
+      input: BeginGoogleInputType,
+    ) => Effect.Effect<GoogleAuthorizationType, AuthClientError>;
+    readonly exchangeGoogle: (
+      input: ExchangeGoogleInputType,
+    ) => Effect.Effect<IssuedSessionType, AuthClientError>;
+  }
+>()("@store/auth/AuthClient") {
+  static readonly layer = (configuration: { readonly baseUrl: string }) =>
+    Layer.effect(AuthClient, make(configuration.baseUrl));
 }
-
-export class AuthClient extends Context.Service<AuthClient, AuthClientApi>()(
-  "@store/auth/AuthClient",
-) {}
 
 type TransportFailure = HttpClientError.HttpClientError | Schema.SchemaError;
 
@@ -182,5 +184,4 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
   });
 });
 
-export const authClientLayer = (configuration: { readonly baseUrl: string }) =>
-  Layer.effect(AuthClient, make(configuration.baseUrl));
+export const authClientLayer = AuthClient.layer;

@@ -14,6 +14,45 @@ const statusByTag = {
 
 type AuthHttpErrorTag = keyof typeof statusByTag;
 
+export const AuthErrorCode = Schema.Literals([
+  "REFRESH_REQUIRED",
+  "INVALID_REFRESH_TOKEN",
+  "REFRESH_REUSE_DETECTED",
+  "REFRESH_EXPIRED",
+  "ACCOUNT_NOT_FOUND",
+  "UNAUTHENTICATED",
+  "SESSION_REVOKED",
+  "INVALID_EMAIL",
+  "INVALID_CREDENTIALS",
+  "INVALID_OTP",
+  "ACCOUNT_EXISTS",
+  "PASSWORD_ACCOUNT_EXISTS",
+  "GOOGLE_MAILBOX_UNPROVEN",
+  "GOOGLE_ACCOUNT_LINKED",
+  "INVALID_REDIRECT",
+  "INVALID_OAUTH_STATE",
+  "INVALID_GOOGLE_IDENTITY",
+  "INVALID_AUTHORIZATION_CODE",
+  "INVALID_CODE_VERIFIER",
+  "INVALID_OAUTH_CLIENT",
+  "ORGANIZATION_NOT_FOUND",
+  "ALREADY_A_MEMBER",
+  "INVITATION_NOT_FOUND",
+  "INVITATION_ALREADY_USED",
+  "MEMBER_NOT_FOUND",
+  "CANNOT_REMOVE_SELF",
+  "AUTH_UNAVAILABLE",
+  "RATE_LIMITED",
+  "INSUFFICIENT_ROLE",
+  "LAST_OWNER",
+  "INVITATION_EMAIL_MISMATCH",
+  "INVALID_REQUEST",
+  "UNTRUSTED_ORIGIN",
+  "NOT_FOUND",
+  "INTERNAL_SERVER_ERROR",
+]);
+export type AuthErrorCode = typeof AuthErrorCode.Type;
+
 const PublicErrorBody = Schema.Struct({
   code: Schema.String,
   message: Schema.String,
@@ -64,7 +103,7 @@ export type AuthHttpError = (typeof AuthHttpErrors)[number]["Type"];
 
 export const authHttpErrorStatus = (tag: AuthHttpError["_tag"]): number => statusByTag[tag];
 
-export const sessionEndingCodes: ReadonlySet<string> = new Set([
+const SESSION_ENDING_CODES: ReadonlyArray<AuthErrorCode> = [
   "REFRESH_REQUIRED",
   "INVALID_REFRESH_TOKEN",
   "REFRESH_REUSE_DETECTED",
@@ -72,4 +111,6 @@ export const sessionEndingCodes: ReadonlySet<string> = new Set([
   "SESSION_REVOKED",
   "ACCOUNT_NOT_FOUND",
   "UNAUTHENTICATED",
-]);
+];
+
+export const sessionEndingCodes: ReadonlySet<string> = new Set(SESSION_ENDING_CODES);

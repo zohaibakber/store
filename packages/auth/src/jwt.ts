@@ -351,33 +351,31 @@ export const makeAccessTokenVerifier = (
     (keys) => (token, now) => verifyAccessToken(token, configuration, now, keys),
   );
 
-export interface AccessTokenServiceApi {
-  readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;
-  readonly verify: (token: string, now?: number) => Effect.Effect<AccessClaimsType, JwtError>;
-}
-
 export class AccessTokenService extends Context.Service<
   AccessTokenService,
-  AccessTokenServiceApi
->()("@store/auth/AccessTokenService") {}
-
-export const accessTokenLayer = (configuration: JwtConfiguration) =>
-  Layer.effect(
-    AccessTokenService,
-    Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
-      const verificationKeys = yield* importKeyRing(configuration.keys);
-      yield* Effect.all(verificationKeys.values(), { discard: true });
-      const signer = configuration.privateJwk ? yield* importSigner(configuration) : undefined;
-      return AccessTokenService.of({
-        issue: (input) =>
-          issueAccessToken(input, configuration, signer).pipe(
-            Effect.provideService(Crypto.Crypto, crypto),
-          ),
-        verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKeys),
-      });
-    }),
-  );
+  {
+    readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;
+    readonly verify: (token: string, now?: number) => Effect.Effect<AccessClaimsType, JwtError>;
+  }
+>()("@store/auth/AccessTokenService") {
+  static readonly layer = (configuration: JwtConfiguration) =>
+    Layer.effect(
+      AccessTokenService,
+      Effect.gen(function* () {
+        const crypto = yield* Crypto.Crypto;
+        const verificationKeys = yield* importKeyRing(configuration.keys);
+        yield* Effect.all(verificationKeys.values(), { discard: true });
+        const signer = configuration.privateJwk ? yield* importSigner(configuration) : undefined;
+        return AccessTokenService.of({
+          issue: (input) =>
+            issueAccessToken(input, configuration, signer).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            ),
+          verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKeys),
+        });
+      }),
+    );
+}
 
 const decodeJsonWebKeyText = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonWebKeySchema));
 

@@ -1,21 +1,12 @@
 import {
-  accessTokenLayer,
+  AccessTokenService,
   activeJwtKeyId,
   decodeSigningJwkText,
   decodeJwtKeyRingText,
-  disabledEmailLayer,
-  developmentEmailLayer,
+  EmailProvider,
   PasswordHasher,
   WebCrypto,
 } from "@store/auth";
-import {
-  DEFAULT_ELECTRON_PROTOCOL,
-  fallbackIfBlank,
-  LOCAL_WEB_ORIGINS,
-  parseTrustedOrigins,
-  publicHostnameFrom,
-  resolveAuthSecurity,
-} from "@store/auth/security";
 import { AuthDatabase } from "@store/db/auth/infra";
 import { Api, OrgHub } from "@store/server/api";
 import { buildOncePerIsolate, workerRuntimeServices } from "@store/server/runtime/isolate";
@@ -33,19 +24,28 @@ import * as Path from "effect/Path";
 
 import { AuthCrypto } from "./src/crypto";
 import { AuthD1 } from "./src/d1";
+import {
+  AuthDeploymentConfig,
+  resolveAuthDeployment,
+  resolveProductionAuthHostname,
+} from "./src/deployment";
 import { EphemeralStore } from "./src/ephemeral";
-import { googleOAuthLayer } from "./src/google";
+import { GoogleOAuth } from "./src/google";
+import { GoogleIdentity } from "./src/google-identity";
 import { authRoutes, recoverUnexpected } from "./src/http";
-import { hubRevocationLayer } from "./src/hub-revocation";
+import { HubRevocation } from "./src/hub-revocation";
 import { writeJwksAssets } from "./src/jwks-asset";
-import { AUTH_RATE_LIMIT_PERIOD_SECONDS, authLimiterLayer } from "./src/limits";
-import { resolveProductionAuthHostname } from "./src/public-hostname";
+import { AUTH_RATE_LIMIT_PERIOD_SECONDS, AuthLimiter } from "./src/limits";
+import { Login } from "./src/login";
+import { Organizations } from "./src/organization-ops";
 import { AuthRepository } from "./src/repository";
-import { authServiceLayer } from "./src/service";
 import { pruneExpiredSessions, SESSION_PRUNE_POLICY } from "./src/session-maintenance";
+import { Sessions } from "./src/session-ops";
 import { AuthSettings } from "./src/settings";
 
-const LOCAL_AUTH_ORIGIN = "http://localhost:8788";
+const OperationsLive = Layer.mergeAll(Login.layer, GoogleIdentity.layer, Organizations.layer).pipe(
+  Layer.provideMerge(Sessions.layer),
+);
 
 export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 
@@ -54,17 +54,10 @@ export const AuthLive = Auth.make(
     const database = yield* AuthDatabase;
     const { stage } = yield* Alchemy.Stack;
     const published = stage === "prod";
-    const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
-    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
-      Config.withDefault(""),
-    );
-    const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
-    const trustedOrigins = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
-      Config.withDefault(""),
-    );
+    const settings = yield* AuthDeploymentConfig;
     const authHostname =
       !globalThis.__ALCHEMY_RUNTIME__ && published
-        ? resolveProductionAuthHostname({ productionDomain, productionAuthDomain })
+        ? resolveProductionAuthHostname(settings)
         : undefined;
     if (!globalThis.__ALCHEMY_RUNTIME__ && published && !authHostname) {
       return yield* Effect.die(
@@ -95,8 +88,8 @@ export const AuthLive = Auth.make(
       dev: { port: 8788 },
       env: {
         AUTH_DB: database,
-        AUTH_BASE_URL: authBaseUrl,
-        AUTH_TRUSTED_ORIGINS: trustedOrigins,
+        AUTH_BASE_URL: settings.authBaseUrl,
+        AUTH_TRUSTED_ORIGINS: settings.trustedOrigins,
       },
     };
     const served = assets ? { ...worker, assets } : worker;
@@ -114,39 +107,12 @@ export const AuthLive = Auth.make(
     const databaseBinding = yield* Cloudflare.D1.QueryDatabase(databaseResource);
     const { stage } = yield* Alchemy.Stack;
     const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const published = stage === "prod";
-
-    const productionDomain = yield* Config.String("PRODUCTION_DOMAIN").pipe(Config.withDefault(""));
-    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
-      Config.withDefault(""),
+    const { security, developmentOtp } = yield* Effect.fromResult(
+      resolveAuthDeployment(yield* AuthDeploymentConfig, { stage, localDevelopment }),
+    ).pipe(
+      Effect.mapError((reason) => new Error(reason)),
+      Effect.orDie,
     );
-    const configuredAuthUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
-    const authHostname = resolveProductionAuthHostname({
-      productionDomain,
-      productionAuthDomain,
-    });
-    const baseUrl =
-      configuredAuthUrl.trim() ||
-      (!localDevelopment && published && authHostname
-        ? `https://${authHostname}`
-        : LOCAL_AUTH_ORIGIN);
-    const trustedOriginsRaw = yield* Config.String("AUTH_TRUSTED_ORIGINS").pipe(
-      Config.withDefault(""),
-    );
-    const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
-      Config.withDefault(""),
-      Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
-    );
-    const siteHostname = publicHostnameFrom(productionDomain);
-    const security = resolveAuthSecurity({
-      baseURL: baseUrl,
-      electronProtocol,
-      trustedOrigins: [
-        ...parseTrustedOrigins(trustedOriginsRaw),
-        ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
-        ...(siteHostname ? [`https://${siteHostname}`] : []),
-      ],
-    });
 
     const signingJwk = yield* Effect.flatMap(
       Config.Redacted("AUTH_JWT_PRIVATE_JWK"),
@@ -170,15 +136,6 @@ export const AuthLive = Auth.make(
       namespaceId: 1005,
       simple: { limit: 60, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
     });
-    const developmentOtp = yield* Config.Boolean("AUTH_DEV_OTP").pipe(Config.withDefault(false));
-    if (!localDevelopment && developmentOtp) {
-      return yield* Effect.die(
-        new Error(
-          "AUTH_DEV_OTP must be disabled outside local development because it exposes OTP codes.",
-        ),
-      );
-    }
-
     const orgHubs = yield* globalThis.__ALCHEMY_RUNTIME__ ? OrgHub.from("Api") : OrgHub.from(Api);
     const execution = yield* Cloudflare.WorkerExecutionContext;
 
@@ -188,21 +145,21 @@ export const AuthLive = Auth.make(
       AuthRepository.layer,
       EphemeralStore.layer(ephemeralPepper),
       PasswordHasher.layer,
-      accessTokenLayer({
+      AccessTokenService.layer({
         issuer: security.baseURL,
         audience: "tabaaq-api",
         keys,
         activeKeyId: activeJwtKeyId(keys, signingJwk.publicHalf),
         privateJwk: signingJwk.jwk,
       }).pipe(Layer.provide(WebCrypto.layer)),
-      developmentOtp ? developmentEmailLayer : disabledEmailLayer,
-      googleOAuthLayer({
+      developmentOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
+      GoogleOAuth.layer({
         clientId: googleClientId,
         clientSecret: googleClientSecret,
         callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
       }).pipe(Layer.provide(FetchHttpClient.layer)),
-      hubRevocationLayer(orgHubs, (effect) => execution.waitUntil(effect)),
-      authLimiterLayer({
+      HubRevocation.layer(orgHubs, (effect) => execution.waitUntil(effect)),
+      AuthLimiter.layer({
         tenPerMinute: (key) => tenPerMinute.limit({ key }),
         fivePerMinute: (key) => fivePerMinute.limit({ key }),
         sixtyPerMinute: (key) => sixtyPerMinute.limit({ key }),
@@ -217,8 +174,8 @@ export const AuthLive = Auth.make(
       buildOncePerIsolate(
         Effect.gen(function* () {
           const dependencies = yield* Layer.build(DependenciesLive);
-          const ServiceLive = authServiceLayer.pipe(
-            Layer.provide(Layer.succeedContext(dependencies)),
+          const ServiceLive = OperationsLive.pipe(
+            Layer.provideMerge(Layer.succeedContext(dependencies)),
           );
           const RoutesLive = authRoutes({
             keys,

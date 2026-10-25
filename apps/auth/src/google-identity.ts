@@ -15,6 +15,7 @@ import { EphemeralStore } from "./ephemeral";
 import { AuthRefusal } from "./failures";
 import { GoogleOAuth, type GoogleProfile } from "./google";
 import * as GoogleLinking from "./google-linking";
+import type { OAuthState } from "./identifiers";
 import { AuthRepository, type UserRecord } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
@@ -105,7 +106,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
 
       const completeGoogle = Effect.fn("GoogleIdentity.completeGoogle")(function* (input: {
         readonly code: string;
-        readonly state: string;
+        readonly state: OAuthState;
       }) {
         const now = yield* Clock.currentTimeMillis;
         const state = yield* ephemeral.consumeOAuthState(input.state, now);
