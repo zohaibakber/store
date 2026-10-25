@@ -6,9 +6,8 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryLive } from "../../src/inventory/live-horizon";
 import { liveSocketHandler, type LiveRouteDependencies } from "../../src/live/route";
-import { makeTestAuthorities } from "../authority/harness";
+import { makeTestAuthorities, organizationAuthorityFor } from "../authority/harness";
 import { claimsFor, TEST_ACCESS_TOKEN, testRuntimeContext, verifierFor } from "../lib/app";
 
 const verifyAccessToken = verifierFor(claimsFor("owner", "org-1", Date.now() + 60 * 60_000));
@@ -58,11 +57,11 @@ const connect = (replicaId: string) => {
           lastSeenAt: 1_700_000_000_000,
         });
       }
-      const live = makeInventoryLive(authorities);
+      const live = yield* organizationAuthorityFor(authorities);
       const response = yield* liveSocketHandler({
         hubs,
         verifyAccessToken,
-        readLiveHorizon: live.readLiveHorizon,
+        readLiveHorizon: live.liveHorizon,
       }).pipe(
         Effect.provideService(
           HttpServerRequest.HttpServerRequest,

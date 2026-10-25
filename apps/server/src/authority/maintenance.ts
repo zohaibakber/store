@@ -244,5 +244,3 @@ export const makeAuthorityMaintenance = (
     }),
   };
 };
-
-export type AuthorityMaintenance = ReturnType<typeof makeAuthorityMaintenance>;

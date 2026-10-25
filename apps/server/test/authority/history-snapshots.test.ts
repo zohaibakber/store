@@ -25,9 +25,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
 import { makeAuthorityEngine } from "../../src/authority/engine";
+import type { Actor } from "../../src/authority/engine";
 import { SNAPSHOT_POLICY } from "../../src/authority/policy";
 import { makeAuthoritySnapshots } from "../../src/authority/snapshots";
-import type { InventoryActor } from "../../src/inventory/model";
 import { makeTestAuthorities } from "./harness";
 
 const decodePart = Schema.decodeUnknownSync(Schema.fromJsonString(SnapshotPartPayload));
@@ -158,7 +158,7 @@ const leavesOf = (rows: ReadonlyArray<SnapshotRow>) =>
 describe("durable object history snapshots", () => {
   it("serves catalog and history in one snapshot that matches the partition digest", async () => {
     const organizationId = "org-history-views";
-    const actor: InventoryActor = { organizationId, userId: "user-1" };
+    const actor: Actor = { organizationId, userId: "user-1" };
     const outcome = await run(
       Effect.gen(function* () {
         const authorities = makeTestAuthorities();

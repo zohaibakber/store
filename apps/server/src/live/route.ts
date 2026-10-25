@@ -6,7 +6,6 @@ import {
   offeredLiveProtocols,
   type SyncProtocolCode,
 } from "@store/contracts";
-import type { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as HttpHeaders from "effect/http/Headers";
@@ -15,6 +14,7 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import type { HttpServerError } from "effect/http/HttpServerError";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -23,8 +23,7 @@ import { authenticateToken } from "../auth/session";
 import { publicError } from "../http/errors";
 import { SYNC_STATUS } from "../http/sync-errors";
 import type { InventoryError } from "../inventory/errors";
-import type { LiveHorizon } from "../inventory/live-horizon";
-import type { InventoryActor } from "../inventory/model";
+import { OrganizationAuthority } from "../inventory/organization-authority";
 import { admissionHeaders, withoutAdmissionHeaders } from "./hub-core";
 
 interface OrgHubFetcher {
@@ -38,10 +37,7 @@ interface OrgHubFetcher {
 export interface LiveRouteDependencies {
   readonly hubs: OrgHubFetcher;
   readonly verifyAccessToken: AccessTokenVerifier;
-  readonly readLiveHorizon: (
-    actor: InventoryActor,
-    replicaId: string,
-  ) => Effect.Effect<LiveHorizon, InventoryError, RuntimeContext>;
+  readonly readLiveHorizon: OrganizationAuthority["Service"]["liveHorizon"];
 }
 
 const refuse = (status: number, code: string, message: string) =>
@@ -126,5 +122,14 @@ export const liveSocketHandler = Effect.fnUntraced(function* (dependencies: Live
     );
 });
 
-export const LiveRoutes = (dependencies: LiveRouteDependencies) =>
-  HttpRouter.add("GET", LIVE_SOCKET_PATH, liveSocketHandler(dependencies));
+export const LiveRoutes = (dependencies: Omit<LiveRouteDependencies, "readLiveHorizon">) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const authority = yield* OrganizationAuthority;
+      return HttpRouter.add(
+        "GET",
+        LIVE_SOCKET_PATH,
+        liveSocketHandler({ ...dependencies, readLiveHorizon: authority.liveHorizon }),
+      );
+    }),
+  );

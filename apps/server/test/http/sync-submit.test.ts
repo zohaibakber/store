@@ -3,7 +3,6 @@ import { LAST_UNIT_ORGANIZATION_ID, lastUnitBuyerAEnvelope } from "@store/contra
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
 import { seedLastUnit } from "../authority/fixtures";
 import { makeTestAuthorities } from "../authority/harness";
 import { claimsFor, TEST_ACCESS_TOKEN, webHandlerFor } from "../lib/app";
@@ -27,7 +26,7 @@ const submitTo = (organizationId: string, body: BodyInit) =>
       const handler = yield* Effect.promise(() =>
         webHandlerFor({
           claims: claimsFor("owner", LAST_UNIT_ORGANIZATION_ID),
-          commands: makeInventoryCommands(authorities),
+          authorities,
         }),
       );
       return yield* Effect.promise(async () => {

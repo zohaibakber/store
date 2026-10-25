@@ -6,8 +6,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import { makeTestAuthorities } from "./harness";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
 const ORGANIZATION_ID = "org-1";
 
@@ -295,9 +295,9 @@ const authorityProblems = (values: ReadonlyArray<Schema.Json>) =>
             createdAt: 0,
           })
           .pipe(Effect.orDie);
-        const commands = makeInventoryCommands(authorities);
+        const commands = yield* organizationAuthorityFor(authorities);
         return yield* Effect.forEach(values, (value) =>
-          commands.submitRaw(ACTOR, encodeJson(value)).pipe(
+          commands.submit(ACTOR, encodeJson(value)).pipe(
             Effect.as(null),
             Effect.catchTag("SyncRequestMalformed", (malformed) =>
               Effect.succeed<string | null>(malformed.message),
@@ -306,7 +306,7 @@ const authorityProblems = (values: ReadonlyArray<Schema.Json>) =>
           ),
         );
       }),
-    ),
+    ).pipe(Effect.provideContext(testRuntimeContext)),
   );
 
 describe("command envelope validation in the durable object authority", () => {

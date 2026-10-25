@@ -6,13 +6,12 @@ import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as Layer from "effect/Layer";
 
+import type { Actor } from "../authority/engine";
 import { Forbidden, Unauthenticated, unauthenticated } from "../http/errors";
 import { ServerRuntime } from "../http/runtime";
 import { authenticateRequest } from "./session";
 
-interface CurrentOrganizationContext {
-  readonly organizationId: AccessClaims["activeOrganizationId"];
-  readonly userId: AccessClaims["subject"];
+interface CurrentOrganizationContext extends Actor {
   readonly role: AccessClaims["role"];
 }
 

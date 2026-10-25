@@ -18,16 +18,17 @@ import { eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import type { InventoryActor } from "../../src/inventory/model";
+import type { Actor } from "../../src/authority/engine";
 import { typedCommands } from "../inventory/typed-commands";
+import { testRuntimeContext } from "../lib/app";
 import { seedLastUnit } from "./fixtures";
-import { makeTestAuthorities } from "./harness";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
-const run = <A, E>(effect: Effect.Effect<A, E, import("effect/Scope").Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
+const run = <A, E>(
+  effect: Effect.Effect<A, E, import("effect/Scope").Scope | import("alchemy").RuntimeContext>,
+) => Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
-const actorFor = (organizationId: string): InventoryActor => ({
+const actorFor = (organizationId: string): Actor => ({
   organizationId,
   userId: "user-1",
 });
@@ -48,7 +49,7 @@ const openCommands = (organizationId: string, unitQuantity = 1) =>
     const authorities = makeTestAuthorities();
     const { db } = yield* authorities.open(organizationId);
     yield* seedLastUnit(db, organizationId, unitQuantity).pipe(Effect.orDie);
-    return { commands: typedCommands(makeInventoryCommands(authorities)), db };
+    return { commands: typedCommands(yield* organizationAuthorityFor(authorities)), db };
   });
 
 const batchStock = (db: ReplicaDb) =>
@@ -109,7 +110,7 @@ describe("durable object inventory commands", () => {
               `CREATE TRIGGER fail_invoice BEFORE INSERT ON invoices BEGIN SELECT RAISE(ABORT, '${failure}'); END`,
             )
             .pipe(Effect.orDie);
-          const commands = typedCommands(makeInventoryCommands(authorities));
+          const commands = typedCommands(yield* organizationAuthorityFor(authorities));
           const receipt = yield* commands.commit(actor, envelope);
           const stock = yield* batchStock(db);
           const pulled = yield* commands.pull(actor, pullFromStart);

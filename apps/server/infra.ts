@@ -23,11 +23,6 @@ import { PageImagesLive } from "./src/global-search/page-images";
 import { cloudflareWebSearch } from "./src/global-search/web-search";
 import { makeWorkerFetch } from "./src/http/app";
 import { RATE_LIMITS } from "./src/http/runtime";
-import { makeInventoryCommands } from "./src/inventory/commands";
-import { makeInventoryDevices } from "./src/inventory/devices";
-import { makeInventoryImports } from "./src/inventory/imports";
-import { makeInventoryLive } from "./src/inventory/live-horizon";
-import { makeInventorySnapshots } from "./src/inventory/snapshots";
 import { makeLiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
 import { buildOncePerIsolate, workerRuntimeServices } from "./src/runtime/isolate";
@@ -74,7 +69,6 @@ export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
     const authorities = yield* OrgAuthority;
-    const live = makeInventoryLive(authorities);
     const hubs = yield* OrgHub;
     const execution = yield* Cloudflare.WorkerExecutionContext;
     const liveFanout = makeLiveFanout(hubs, (effect) => execution.waitUntil(effect));
@@ -187,11 +181,7 @@ export const ApiLive = Api.make(
           ),
         limitGlobalSearch: (key) => globalSearchRateLimit.limit({ key }),
       },
-      commands: makeInventoryCommands(authorities),
-      snapshots: makeInventorySnapshots(authorities),
-      imports: makeInventoryImports(authorities),
-      devices: makeInventoryDevices(authorities),
-      readLiveHorizon: live.readLiveHorizon,
+      authorities,
       hubs,
       liveFanout,
     });

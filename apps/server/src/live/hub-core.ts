@@ -7,7 +7,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { CommitFanout } from "../inventory/model";
+import type { CommitFanout } from "../authority/frames";
 
 export const HubAttachment = Schema.Struct({
   replicaId: Schema.String,

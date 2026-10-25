@@ -10,8 +10,8 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { InventoryCommandsContract } from "../../src/inventory/commands";
-import type { InventoryActor } from "../../src/inventory/model";
+import type { Actor } from "../../src/authority/engine";
+import type { OrganizationAuthority } from "../../src/inventory/organization-authority";
 
 const decodeReceipt = Schema.decodeUnknownEffect(Schema.fromJsonString(CommandReceipt));
 const decodeSubmitResult = Schema.decodeUnknownEffect(
@@ -21,28 +21,30 @@ const decodePullResult = Schema.decodeUnknownEffect(Schema.fromJsonString(SyncPu
 
 type SubmitRequest = SyncCommandEnvelope & Partial<SyncSubmitCommandRequest>;
 
-export const typedCommands = (commands: InventoryCommandsContract) => {
-  const submitEncoded = (actor: InventoryActor, request: SubmitRequest) =>
+export const typedCommands = (commands: OrganizationAuthority["Service"]) => {
+  const submitEncoded = (actor: Actor, request: SubmitRequest) =>
     commands
-      .submitRaw(
+      .submit(
         actor,
         JSON.stringify({ afterCommitSequence: OrgCommitSequence.make("0"), ...request }),
       )
       .pipe(Effect.catchTag("SyncRequestMalformed", (error) => Effect.die(error)));
   return {
     ...commands,
+    submitRaw: commands.submit,
+    pullEncoded: commands.pull,
     submitEncoded,
-    commit: (actor: InventoryActor, request: SubmitRequest) =>
+    commit: (actor: Actor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
         Effect.flatMap((submitted) => Effect.orDie(decodeReceipt(submitted.json))),
       ),
-    submit: (actor: InventoryActor, request: SubmitRequest) =>
+    submit: (actor: Actor, request: SubmitRequest) =>
       submitEncoded(actor, request).pipe(
         Effect.flatMap((submitted) => Effect.orDie(decodeSubmitResult(submitted.json))),
       ),
-    pull: (actor: InventoryActor, request: SyncPullRequest) =>
+    pull: (actor: Actor, request: SyncPullRequest) =>
       commands
-        .pullEncoded(actor, request)
+        .pull(actor, request)
         .pipe(Effect.flatMap((encoded) => Effect.orDie(decodePullResult(encoded.json)))),
   };
 };

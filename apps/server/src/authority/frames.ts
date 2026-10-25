@@ -2,6 +2,19 @@ const utf8 = new TextEncoder();
 
 export const byteLengthOf = (text: string): number => utf8.encode(text).byteLength;
 
+export type CommitFanout = {
+  readonly epoch: string;
+  readonly horizon: string;
+  readonly group: string;
+  readonly byteLength: number;
+  readonly originReplicaId: string;
+};
+
+export type EncodedCommit = {
+  readonly json: string;
+  readonly fanout: CommitFanout | null;
+};
+
 export type StoredChange = {
   readonly entity: string;
   readonly action: string;

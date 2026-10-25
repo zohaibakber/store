@@ -23,17 +23,18 @@ import {
   suppliers,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
+import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
-import { makeInventorySnapshots } from "../../src/inventory/snapshots";
-import { makeTestAuthorities } from "./harness";
+import { testRuntimeContext } from "../lib/app";
+import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(Effect.scoped(effect));
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
+  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
 const decodePart = Schema.decodeUnknownSync(Schema.fromJsonString(SnapshotPartPayload));
 
@@ -261,13 +262,13 @@ describe("durable object row builders and partition digests", () => {
         const authorities = makeTestAuthorities();
         const { db } = yield* authorities.open(organizationId);
         yield* seed(db, organizationId);
-        const snapshots = makeInventorySnapshots(authorities);
+        const snapshots = yield* organizationAuthorityFor(authorities);
         const { manifest } = yield* snapshots.acquireSnapshot(actor, {
           epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
           subscription: OPERATIONAL_SUBSCRIPTION,
         });
         const parts = yield* Effect.forEach(manifest.parts, (part) =>
-          snapshots.readSnapshotPartEncoded(actor, manifest.snapshotId, part.partNumber),
+          snapshots.readSnapshotPart(actor, manifest.snapshotId, part.partNumber),
         );
         const stored = {
           category: yield* db.select().from(categories).all(),
