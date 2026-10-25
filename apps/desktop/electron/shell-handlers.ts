@@ -39,13 +39,17 @@ const PDF_FAILED = "The PDF could not be saved.";
 
 const MICRONS_PER_MM = 1000;
 
+const Messaged = Schema.Struct({ message: Schema.String });
+
 const decodeOpenInput = Schema.decodeUnknownEffect(ReplicaOpenInput);
 
 const signInFailure = <A, E, R>(command: Effect.Effect<A, E, R>) =>
   Effect.catchCause(command, (cause) => {
     const failure = Cause.squash(cause);
     return Effect.fail(
-      new SignInFailed({ message: failure instanceof Error ? failure.message : SIGN_IN_FAILED }),
+      new SignInFailed({
+        message: Schema.is(Messaged)(failure) ? failure.message : SIGN_IN_FAILED,
+      }),
     );
   });
 

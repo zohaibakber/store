@@ -1,11 +1,17 @@
 import type { DeviceLabel } from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import type { MessageChannelMain, WebContents } from "electron";
 
 import type { ThemeSource } from "../src/host/shell-rpcs";
 import type { ReplicaBackupDialogs } from "./replica-backup";
 import type { ReplicaSender } from "./workspace-sessions";
+
+export class OpenExternalFailed extends Schema.TaggedError<OpenExternalFailed>()(
+  "OpenExternalFailed",
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
 
 export type ShellSender = ReplicaSender & Pick<WebContents, "print" | "printToPDF">;
 
@@ -28,7 +34,7 @@ export class DesktopShell extends Context.Service<
     readonly toggleMaximizeWindow: Effect.Effect<void>;
     readonly closeWindow: Effect.Effect<void>;
     readonly setThemeSource: (source: ThemeSource) => Effect.Effect<void>;
-    readonly openExternal: (url: string) => Effect.Effect<void, Error>;
+    readonly openExternal: (url: string) => Effect.Effect<void, OpenExternalFailed>;
     readonly writeClipboardText: (text: string) => Effect.Effect<void>;
     readonly choosePdfDestination: (suggestedName: string) => Effect.Effect<string | null>;
   }

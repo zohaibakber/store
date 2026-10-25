@@ -126,6 +126,7 @@ export default defineConfig({
           "apps/desktop/electron/replica-worker-handlers.ts",
           "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/components/insights/restock-page.tsx",
+          "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
           "apps/desktop/src/session/workspace-session.ts",
           "packages/inventory-react/src/staff.ts",
