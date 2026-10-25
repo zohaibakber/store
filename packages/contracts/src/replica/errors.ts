@@ -2,7 +2,6 @@ import { CatalogRefusal } from "../catalog/refusal";
 export { CatalogRefusal, CatalogRefusalReason } from "../catalog/refusal";
 import * as Schema from "effect/Schema";
 
-import { LicenceRefusal } from "../licence";
 import { StaffRefusal } from "../staff";
 import { SyncProtocolError } from "../sync/protocol";
 
@@ -38,7 +37,6 @@ export const CommandFailure = Schema.Union([
   ReplicaUnavailable,
   CatalogRefusal,
   StaffRefusal,
-  LicenceRefusal,
   SyncProtocolError,
 ]);
 export type CommandFailure = typeof CommandFailure.Type;

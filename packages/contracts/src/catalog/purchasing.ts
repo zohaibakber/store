@@ -193,6 +193,18 @@ export const checkCanDeleteSupplier = (
     }
   });
 
+export const checkCanCreateOrder = (status: PurchaseOrderStatus) =>
+  Result.gen(function* () {
+    if (!canCreatePurchaseOrderAs(status)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "orderTransitionInvalid",
+          message: purchasingRejection.orderTransitionInvalid.message,
+        }),
+      );
+    }
+  });
+
 export const checkOrderOpen = (status: PurchaseOrderStatus) =>
   Result.gen(function* () {
     if (!isPurchaseOrderOpen(status)) {

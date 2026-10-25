@@ -1,9 +1,10 @@
-import type { PurchaseOrderItemRow, PurchaseOrderRow } from "@store/client-db";
 import {
   isPurchaseOrderOpen,
   purchaseOrderLineRemaining,
   type PurchaseOrder,
   type PurchaseOrderStatus,
+  type ReplicaPurchaseOrderItemRow,
+  type ReplicaPurchaseOrderRow,
   type StockMovement,
   type SupplierId,
 } from "@store/contracts";
@@ -11,15 +12,15 @@ import {
 import type { ListPage, PurchaseOrderSortColumn, PurchaseOrderTab } from "./list-request";
 
 type ProductOrderLine = {
-  readonly orderId: PurchaseOrderRow["id"];
+  readonly orderId: ReplicaPurchaseOrderRow["id"];
   readonly orderNumber: number;
   readonly supplierId: SupplierId;
   readonly status: PurchaseOrderStatus;
   readonly sentAt: number | null;
   readonly expectedAt: number | null;
-  readonly lineId: PurchaseOrderItemRow["id"];
+  readonly lineId: ReplicaPurchaseOrderItemRow["id"];
   readonly quantity: number;
-  readonly quantityType: PurchaseOrderItemRow["quantityType"];
+  readonly quantityType: ReplicaPurchaseOrderItemRow["quantityType"];
   readonly orderedBaseUnits: number;
   readonly receivedBaseUnits: number;
   readonly remainingBaseUnits: number;
@@ -33,8 +34,8 @@ export type ProductOnOrder = {
 export const NOTHING_ON_ORDER: ProductOnOrder = { onOrderBaseUnits: 0, lines: [] };
 
 type OpenOrderLines = {
-  readonly orders: ReadonlyArray<PurchaseOrderRow>;
-  readonly lines: ReadonlyArray<PurchaseOrderItemRow>;
+  readonly orders: ReadonlyArray<ReplicaPurchaseOrderRow>;
+  readonly lines: ReadonlyArray<ReplicaPurchaseOrderItemRow>;
 };
 
 export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<string, ProductOnOrder> => {

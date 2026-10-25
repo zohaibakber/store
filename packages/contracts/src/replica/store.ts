@@ -33,7 +33,6 @@ import {
   SupplierRow,
 } from "../sync/entity-rows";
 import { CommandStatus } from "../sync/replica-model";
-import { SyncEntity } from "../sync/schema";
 import { CommandFailure, ReadFailure } from "./errors";
 import { CommitNotice, Stamp } from "./notices";
 import { StaffRpcs } from "./staff";
@@ -240,10 +239,5 @@ export class InventoryStore extends RpcGroup.make(
   Rpc.make("Health", { success: SyncHealth, stream: true }),
   Rpc.make("Stamp", { success: Stamp, error: ReadFailure }),
   Rpc.make("SyncActivity", { success: ReplicaSyncActivity, error: ReadFailure }),
-  Rpc.make("PendingRows", {
-    payload: { entity: SyncEntity },
-    success: Schema.Array(Schema.String),
-    error: ReadFailure,
-  }),
   Rpc.make("WakeSyncUpload", { success: UploadWake, error: ReadFailure }),
 ).merge(StaffRpcs) {}

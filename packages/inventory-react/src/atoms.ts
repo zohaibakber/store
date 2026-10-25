@@ -6,7 +6,6 @@ import {
   uniqueById,
   type InventorySyncActivity,
   type InventorySyncStatus,
-  type ProductRow,
   type SyncTransfer,
 } from "@store/client-db";
 import {
@@ -22,6 +21,7 @@ import {
   type InvoiceStaff,
   type Product,
   type ProductInsight,
+  type ReplicaProductRow,
   type PurchaseOrder,
   type RestockCursor,
   type RestockFilters,
@@ -272,12 +272,12 @@ export type WorkspaceAtoms = {
   readonly insights: Read<InsightsSummaryRead>;
   readonly restockPage: (request: RestockPageRequest) => Read<RestockPageRead>;
   readonly exportRestock: (filters: RestockFilters) => Stream.Stream<ProductInsight, ReadError>;
-  readonly productPage: (request: ProductListRequest) => Read<ReadonlyArray<ProductRow>>;
+  readonly productPage: (request: ProductListRequest) => Read<ReadonlyArray<ReplicaProductRow>>;
   readonly productCount: (filters: ProductListFilters) => Read<number>;
   readonly productFacets: Read<ProductFacets>;
   readonly productLookup: Atom.AtomResultFn<
     ReadonlyArray<string>,
-    ReadonlyArray<ProductRow>,
+    ReadonlyArray<ReplicaProductRow>,
     ReadError
   >;
   readonly productInsight: (productId: string) => Read<ProductInsight | null>;
@@ -626,7 +626,9 @@ export const createWorkspaceAtoms = (
             reads("ProductsByNames", { names: chunk }),
           ),
         ).pipe(
-          Effect.map((parts): ReadonlyArray<ProductRow> => parts.flatMap((part) => part.products)),
+          Effect.map((parts): ReadonlyArray<ReplicaProductRow> =>
+            parts.flatMap((part) => part.products),
+          ),
         ),
       { concurrent: true },
     ),

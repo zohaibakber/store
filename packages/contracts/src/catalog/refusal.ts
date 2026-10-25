@@ -1,3 +1,4 @@
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 export const CatalogRefusalReason = Schema.Literals([
@@ -17,7 +18,6 @@ export const CatalogRefusalReason = Schema.Literals([
   "orderNotOpen",
   "orderNotDraft",
   "orderHasItems",
-  "orderHasItems",
   "itemReceived",
   "lineBelongsElsewhere",
   "allocationFailed",
@@ -29,3 +29,18 @@ export class CatalogRefusal extends Schema.TaggedError<CatalogRefusal>()("Catalo
   message: Schema.String,
   field: Schema.optionalKey(Schema.String),
 }) {}
+
+export const decideField = <S extends Schema.Decoder<unknown>>(
+  schema: S,
+  value: S["Encoded"],
+  refusal: { readonly message?: string; readonly field?: string | undefined },
+): Result.Result<S["Type"], CatalogRefusal> =>
+  Result.mapError(
+    Schema.decodeUnknownResult(schema)(value),
+    (error) =>
+      new CatalogRefusal({
+        reason: "invalidInput",
+        message: refusal.message ?? error.message,
+        ...(refusal.field === undefined ? null : { field: refusal.field }),
+      }),
+  );

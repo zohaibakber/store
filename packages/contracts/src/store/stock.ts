@@ -20,6 +20,18 @@ export type StockTake = {
 export const baseUnitsOf = (stock: BatchStock, unitsPerPack: number): number =>
   stock.packQuantity * unitsPerPack + stock.unitQuantity;
 
+export const stockDeltaOf = (
+  take: {
+    readonly quantity: number;
+    readonly quantityType: StockQuantityType;
+    readonly packsOpened: number;
+  },
+  unitsPerPack: number,
+): { readonly packDelta: number; readonly unitDelta: number } =>
+  take.quantityType === "pack"
+    ? { packDelta: -take.quantity, unitDelta: 0 }
+    : { packDelta: -take.packsOpened, unitDelta: take.packsOpened * unitsPerPack - take.quantity };
+
 export const availableFor = (
   stock: BatchStock,
   unitsPerPack: number,
@@ -45,9 +57,10 @@ export const takeFromStock = (
       take.quantityType === "unit"
         ? Math.max(0, Math.ceil((take.quantity - stock.unitQuantity) / product.unitsPerPack))
         : 0;
-    const packDelta = take.quantityType === "pack" ? -take.quantity : -packsOpened;
-    const unitDelta =
-      take.quantityType === "pack" ? 0 : packsOpened * product.unitsPerPack - take.quantity;
+    const { packDelta, unitDelta } = stockDeltaOf(
+      { quantity: take.quantity, quantityType: take.quantityType, packsOpened },
+      product.unitsPerPack,
+    );
     const nextPackQuantity = stock.packQuantity + packDelta;
     const nextUnitQuantity = stock.unitQuantity + unitDelta;
     if (nextPackQuantity < 0 || nextUnitQuantity < 0) {

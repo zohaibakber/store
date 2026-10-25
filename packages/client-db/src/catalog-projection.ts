@@ -7,7 +7,13 @@ import {
   updatedMutationMetadata,
 } from "@store/contracts/catalog-rules";
 import { MAX_CATALOG_WRITE_ROWS, type CatalogRowWrite } from "@store/contracts/catalog-write";
-import { decodeBatchId, decodeCategoryId, decodeProductId } from "@store/contracts/ids";
+import {
+  decodeBatchId,
+  decodeCategoryId,
+  decodeProductId,
+  type CategoryId,
+  type ProductId,
+} from "@store/contracts/ids";
 import type {
   CreateBatchInput,
   CreateCategoryInput,
@@ -21,9 +27,13 @@ import * as Result from "effect/Result";
 
 import {
   commandIds,
+  naturalField,
+  nameField,
+  positiveField,
   requiredRow,
   type CatalogReadableCollection,
   type CatalogWriteIds,
+  type Projected,
   type ProjectionContext,
 } from "./projection-context";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
@@ -42,32 +52,19 @@ export type CatalogProjectionTables = {
 
 export type CatalogProjectionContext = ProjectionContext<CatalogProjectionTables>;
 
-type CatalogRowProjection<Row> = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-  readonly row: Row;
-};
-
-type CatalogDeleteProjection = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-};
-
 type CatalogImportProjection = {
   readonly chunks: ReadonlyArray<ReadonlyArray<CatalogRowWrite>>;
   readonly createdProducts: number;
   readonly createdBatches: number;
 };
 
-const requireNonNegativeQuantity = (quantity: number, label: string, field?: string) =>
-  Result.gen(function* () {
-    if (!Number.isSafeInteger(quantity) || quantity < 0) {
-      const message = `${label} must be a non-negative whole number.`;
-      return yield* Result.fail(
-        field === undefined
-          ? new CatalogRefusal({ reason: "invalidInput", message })
-          : new CatalogRefusal({ reason: "invalidInput", message, field }),
-      );
-    }
-  });
+const nonNegativeQuantity = (quantity: number, label: string, field?: string) =>
+  naturalField(quantity, `${label} must be a non-negative whole number.`, field);
+
+const expiryField = (value: number | null | undefined) =>
+  value === null || value === undefined
+    ? Result.succeed(null)
+    : positiveField(value, "The expiry date is not a valid date.", "expiresAt");
 
 const activeCategory = (tables: CatalogProjectionTables, categoryId: string) =>
   Result.gen(function* () {
@@ -117,31 +114,23 @@ export const productFieldsOf = (row: ProductRow) => ({
 const batchFieldsOf = (row: BatchRow) => ({
   productId: row.productId,
   batchNumber: row.batchNumber,
-  expiresAt: row.expiresAt === 0 ? null : row.expiresAt,
+  expiresAt: row.expiresAt,
   packQuantity: row.packQuantity,
   unitQuantity: row.unitQuantity,
 });
 
 export const projectCreateCategory = (
   context: CatalogProjectionContext,
-  input: CreateCategoryInput & { readonly id?: string },
-): Result.Result<CatalogRowProjection<CategoryRow>, CatalogRefusal> =>
+  input: CreateCategoryInput,
+): Result.Result<Projected<CategoryRow>, CatalogRefusal> =>
   Result.gen(function* () {
-    const name = input.name.trim();
-    if (!name)
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: "Enter a category name.",
-          field: "name",
-        }),
-      );
+    const name = yield* nameField(input.name, { empty: "Enter a category name." });
     const duplicate = [...context.tables.categories.state.values()].find(
       (category) => category.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
     );
     if (duplicate) return { writes: [], row: duplicate };
     const row: CategoryRow = {
-      id: decodeCategoryId(input.id ?? context.ids.rowId()),
+      id: decodeCategoryId(context.ids.rowId()),
       name,
       tracksPacks: input.tracksPacks ?? true,
       ...createdMutationMetadata(context.actor, commandIds(context)),
@@ -163,21 +152,13 @@ export const projectCreateCategory = (
 export const projectUpdateCategory = (
   context: CatalogProjectionContext,
   input: UpdateCategoryInput,
-): Result.Result<CatalogRowProjection<CategoryRow>, CatalogRefusal> =>
+): Result.Result<Projected<CategoryRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(
       context.tables.categories.state.get(input.id),
       "This category",
     );
-    const name = input.name.trim();
-    if (!name)
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: "Enter a category name.",
-          field: "name",
-        }),
-      );
+    const name = yield* nameField(input.name, { empty: "Enter a category name." });
     const duplicate = [...context.tables.categories.state.values()].find(
       (category) =>
         category.id !== input.id &&
@@ -216,8 +197,8 @@ export const projectUpdateCategory = (
 
 export const projectDeleteCategory = (
   context: CatalogProjectionContext,
-  id: UpdateCategoryInput["id"],
-): Result.Result<CatalogDeleteProjection, CatalogRefusal> =>
+  id: CategoryId,
+): Result.Result<Projected, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(context.tables.categories.state.get(id), "This category");
     yield* checkCanDeleteCategory(context.tables.products.state.values(), id);
@@ -230,13 +211,14 @@ export const projectDeleteCategory = (
           expectedRowVersion: current.rowVersion,
         },
       ],
+      row: undefined,
     };
   });
 
 export const projectCreateProduct = (
   context: CatalogProjectionContext,
-  input: CreateProductInput & { readonly id?: string },
-): Result.Result<CatalogRowProjection<ProductRow>, CatalogRefusal> =>
+  input: CreateProductInput,
+): Result.Result<Projected<ProductRow>, CatalogRefusal> =>
   Result.gen(function* () {
     if (!input.categoryId)
       return yield* Result.fail(
@@ -247,17 +229,9 @@ export const projectCreateProduct = (
         }),
       );
     const category = yield* activeCategory(context.tables, input.categoryId);
-    const name = input.name.trim();
-    if (!name)
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "invalidInput",
-          message: "Enter a product name.",
-          field: "name",
-        }),
-      );
+    const name = yield* nameField(input.name, { empty: "Enter a product name." });
     const row: ProductRow = {
-      id: decodeProductId(input.id ?? context.ids.rowId()),
+      id: decodeProductId(context.ids.rowId()),
       name,
       categoryId: category.id,
       aisle: input.aisle ?? null,
@@ -284,29 +258,33 @@ export const projectCreateProduct = (
     };
   });
 
+const provided = <A>(value: A | undefined, fallback: A): A =>
+  value === undefined ? fallback : value;
+
 export const projectUpdateProduct = (
   context: CatalogProjectionContext,
   input: UpdateProductInput,
-): Result.Result<CatalogRowProjection<ProductRow>, CatalogRefusal> =>
+): Result.Result<Projected<ProductRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(context.tables.products.state.get(input.id), "This product");
     const category = yield* activeCategory(context.tables, input.categoryId ?? current.categoryId);
-    const unitsPerPack = input.unitsPerPack ?? 1;
+    const name = yield* nameField(input.name, { empty: "Enter a product name." });
+    const unitsPerPack = input.unitsPerPack ?? current.unitsPerPack;
     if (unitsPerPack !== current.unitsPerPack) {
       yield* checkCanChangeUnitsPerPack(context.tables.batches.state.values(), current.id);
     }
     const row: ProductRow = {
       ...current,
-      name: input.name.trim(),
+      name,
       categoryId: category.id,
-      aisle: input.aisle ?? null,
-      composition: input.composition ?? null,
-      strength: input.strength ?? null,
+      aisle: provided(input.aisle, current.aisle),
+      composition: provided(input.composition, current.composition),
+      strength: provided(input.strength, current.strength),
       unitsPerPack,
-      purchasePrice: input.purchasePrice ?? null,
-      retailPrice: input.retailPrice ?? null,
-      unitPrice: input.unitPrice ?? null,
-      visible: input.visible ?? true,
+      purchasePrice: provided(input.purchasePrice, current.purchasePrice),
+      retailPrice: provided(input.retailPrice, current.retailPrice),
+      unitPrice: provided(input.unitPrice, current.unitPrice),
+      visible: input.visible ?? current.visible,
       ...updatedMutationMetadata(
         { ...context.actor, rowVersion: current.rowVersion },
         commandIds(context),
@@ -328,8 +306,8 @@ export const projectUpdateProduct = (
 
 export const projectDeleteProduct = (
   context: CatalogProjectionContext,
-  id: UpdateProductInput["id"],
-): Result.Result<CatalogDeleteProjection, CatalogRefusal> =>
+  id: ProductId,
+): Result.Result<Projected, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(context.tables.products.state.get(id), "This product");
     yield* checkCanDeleteProduct(context.tables.batches.state.values(), current.id);
@@ -342,24 +320,26 @@ export const projectDeleteProduct = (
           expectedRowVersion: current.rowVersion,
         },
       ],
+      row: undefined,
     };
   });
 
 export const projectCreateBatch = (
   context: CatalogProjectionContext,
-  input: CreateBatchInput & { readonly id?: string; readonly note?: string | null },
-): Result.Result<CatalogRowProjection<BatchRow>, CatalogRefusal> =>
+  input: CreateBatchInput & { readonly note?: string | null },
+): Result.Result<Projected<BatchRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const product = yield* activeProduct(context.tables, input.productId);
     const packQuantity = input.packQuantity ?? 0;
     const unitQuantity = input.unitQuantity ?? 0;
-    yield* requireNonNegativeQuantity(packQuantity, "Pack quantity", "packQuantity");
-    yield* requireNonNegativeQuantity(unitQuantity, "Unit quantity", "unitQuantity");
+    yield* nonNegativeQuantity(packQuantity, "Pack quantity", "packQuantity");
+    yield* nonNegativeQuantity(unitQuantity, "Unit quantity", "unitQuantity");
+    const expiresAt = yield* expiryField(input.expiresAt);
     const row: BatchRow = {
-      id: decodeBatchId(input.id ?? context.ids.rowId()),
+      id: decodeBatchId(context.ids.rowId()),
       productId: product.id,
       batchNumber: input.batchNumber?.trim() || null,
-      expiresAt: input.expiresAt ?? null,
+      expiresAt,
       packQuantity,
       unitQuantity,
       ...createdMutationMetadata(context.actor, commandIds(context)),
@@ -383,19 +363,20 @@ export const projectCreateBatch = (
 export const projectUpdateBatch = (
   context: CatalogProjectionContext,
   input: UpdateBatchInput & { readonly note?: string | null },
-): Result.Result<CatalogRowProjection<BatchRow>, CatalogRefusal> =>
+): Result.Result<Projected<BatchRow>, CatalogRefusal> =>
   Result.gen(function* () {
     const current = yield* requiredRow(context.tables.batches.state.get(input.id), "This batch");
     if (input.packQuantity !== undefined) {
-      yield* requireNonNegativeQuantity(input.packQuantity, "Pack quantity", "packQuantity");
+      yield* nonNegativeQuantity(input.packQuantity, "Pack quantity", "packQuantity");
     }
     if (input.unitQuantity !== undefined) {
-      yield* requireNonNegativeQuantity(input.unitQuantity, "Unit quantity", "unitQuantity");
+      yield* nonNegativeQuantity(input.unitQuantity, "Unit quantity", "unitQuantity");
     }
+    const expiresAt = yield* expiryField(input.expiresAt);
     const row: BatchRow = {
       ...current,
       batchNumber: input.batchNumber?.trim() || null,
-      expiresAt: input.expiresAt,
+      expiresAt,
       packQuantity: input.packQuantity ?? current.packQuantity,
       unitQuantity: input.unitQuantity ?? current.unitQuantity,
       ...updatedMutationMetadata(
@@ -456,8 +437,8 @@ export const projectImportInventory = (
         );
       const packQuantity = line.packQuantity ?? 0;
       const unitQuantity = line.unitQuantity ?? 0;
-      yield* requireNonNegativeQuantity(packQuantity, "Pack quantity");
-      yield* requireNonNegativeQuantity(unitQuantity, "Unit quantity");
+      yield* nonNegativeQuantity(packQuantity, "Pack quantity");
+      yield* nonNegativeQuantity(unitQuantity, "Unit quantity");
       const existing = line.productId
         ? yield* requiredRow(context.tables.products.state.get(line.productId), "This product")
         : undefined;

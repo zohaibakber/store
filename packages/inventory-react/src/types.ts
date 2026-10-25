@@ -1,6 +1,5 @@
-import type { CatalogCommands } from "@store/client-db";
-
 import type { WorkspaceAtoms } from "./atoms";
+import type { CatalogCommands } from "./catalog-commands";
 import type { ReplicaAuthority } from "./host";
 import type { StaffActions } from "./staff";
 

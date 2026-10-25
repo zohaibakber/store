@@ -1,6 +1,11 @@
 import { useAtomSet, useAtomSuspense, useAtomValue } from "@effect/atom-react";
-import type { ProductRow } from "@store/client-db";
-import type { Category, Invoice, Product, ProductSuggestions } from "@store/contracts";
+import type {
+  Category,
+  Invoice,
+  Product,
+  ProductSuggestions,
+  ReplicaProductRow,
+} from "@store/contracts";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -112,7 +117,9 @@ export const useSuspenseProductSearch = (query: string, limit = 20): ReadonlyArr
   return React.useMemo(() => productsWithStock(found), [found]);
 };
 
-export const useSuspenseProductPage = (request: ProductListRequest): ReadonlyArray<ProductRow> =>
+export const useSuspenseProductPage = (
+  request: ProductListRequest,
+): ReadonlyArray<ReplicaProductRow> =>
   useAtomSuspense(useCatalogReplica().atoms.productPage(request)).value;
 
 export const useSuspenseProductCount = (filters: ProductListFilters): number =>

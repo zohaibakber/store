@@ -1,4 +1,3 @@
-import type { CatalogCommands } from "@store/client-db";
 import { decodePurchaseOrderId, decodeSupplierId } from "@store/contracts/ids";
 import {
   ReceiveDeliveryInput,
@@ -20,6 +19,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { createWorkspaceAtoms, type WorkspaceAtoms } from "./atoms";
+import type { CatalogCommands } from "./catalog-commands";
 import {
   catalogOpenFailure,
   causeSurface,
