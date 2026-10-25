@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   AuthorityIncarnation,
   OrgCommitSequence,
@@ -58,7 +59,7 @@ describe("layerNodeReplicaSync", () => {
               }),
             ),
             live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
-          }),
+          }).pipe(Layer.provide(NodeCrypto.layer)),
         ),
         scope,
       ),

@@ -21,6 +21,8 @@
     "./server-api": "./src/server/api.ts",
     "./server-api.schema": "./src/server/schema.ts",
     "./store-helpers": "./src/store/helpers.ts",
+    "./store-pricing": "./src/store/pricing.ts",
+    "./store-stock": "./src/store/stock.ts",
     "./store.schema": "./src/store/schema.ts",
     "./sync/api": "./src/sync/api.ts",
     "./sync/fixtures": "./src/sync/fixtures/last-unit-invoice.ts",

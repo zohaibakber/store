@@ -1,4 +1,6 @@
 import { InvoiceExtraction, invoiceExtractionJsonSchema } from "@store/contracts/server-api.schema";
+import * as Cause from "effect/Cause";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -11,13 +13,21 @@ import {
 import { isCsvFile, mergeReceivedStock, receivedStockFromCsv } from "./csv";
 import { normalizeLine, nullableString } from "./line";
 
-class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
+export class InvoiceExtractionError extends Schema.TaggedError<InvoiceExtractionError>()(
   "InvoiceExtractionError",
   {
+    reason: Schema.Literals(["unreadable", "timeout", "model", "invalidOutput"]),
     message: Schema.String,
     cause: Schema.Defect(),
   },
 ) {}
+
+const extractionFailed = (reason: InvoiceExtractionError["reason"]) => (cause: unknown) =>
+  new InvoiceExtractionError({
+    reason,
+    message: "Could not extract invoice attachments.",
+    cause,
+  });
 
 class AttachmentsUnreadable extends Schema.TaggedError<AttachmentsUnreadable>()(
   "AttachmentsUnreadable",
@@ -100,16 +110,23 @@ const readableMarkdown = (converted: ReadonlyArray<ConvertedDocument>) =>
     .map((document) => `## ${document.name}\n\n${document.data.trim()}`);
 
 const readCsvLines = (files: ReadonlyArray<File>) =>
-  Effect.tryPromise({
-    try: () =>
-      Promise.all(
-        files.map(async (file) =>
-          isCsvFile(file) ? receivedStockFromCsv(await file.text()) : null,
-        ),
-      ),
-    catch: (cause) =>
-      new AttachmentsUnreadable({ message: "A CSV attachment could not be read.", cause }),
-  });
+  Effect.forEach(
+    files,
+    (file) =>
+      isCsvFile(file)
+        ? Effect.tryPromise({
+            try: () => file.text(),
+            catch: (cause) =>
+              new AttachmentsUnreadable({ message: "A CSV attachment could not be read.", cause }),
+          }).pipe(Effect.map(receivedStockFromCsv))
+        : Effect.succeed(null),
+    { concurrency: "unbounded" },
+  );
+
+const timedOut = (duration: Duration.Input) => ({
+  duration,
+  orElse: () => Effect.fail(extractionFailed("timeout")(new Cause.TimeoutError())),
+});
 
 const NO_DOCUMENTS = { supplier: null, invoiceNumber: null, lines: [] };
 
@@ -119,7 +136,7 @@ const extractDocuments = Effect.fn("InvoiceExtraction.extractDocuments")(functio
 ) {
   const converted = yield* ai
     .toMarkdown(files.map((file) => ({ name: file.name, blob: file })))
-    .pipe(Effect.timeout("15 seconds"));
+    .pipe(Effect.timeoutOrElse(timedOut("15 seconds")));
   const failures = converted.filter(isFailure);
   for (const failure of failures) {
     yield* Effect.logWarning("Invoice attachment conversion failed").pipe(
@@ -142,7 +159,7 @@ const extractDocuments = Effect.fn("InvoiceExtraction.extractDocuments")(functio
       ],
       jsonSchema: invoiceExtractionJsonSchema,
     })
-    .pipe(Effect.timeout("30 seconds"));
+    .pipe(Effect.timeoutOrElse(timedOut("30 seconds")));
   return normalizeExtraction(yield* decodeInvoiceModelOutput(raw));
 });
 
@@ -159,12 +176,11 @@ export const extractInvoice = Effect.fn("InvoiceExtraction.extract")(
   },
   (effect) =>
     effect.pipe(
-      Effect.mapError(
-        (cause) =>
-          new InvoiceExtractionError({
-            message: "Could not extract invoice attachments.",
-            cause,
-          }),
-      ),
+      Effect.catchTags({
+        AttachmentsUnreadable: (cause) => Effect.fail(extractionFailed("unreadable")(cause)),
+        ModelRequestError: (cause) => Effect.fail(extractionFailed("model")(cause)),
+        ModelJsonMissing: (cause) => Effect.fail(extractionFailed("invalidOutput")(cause)),
+        SchemaError: (cause) => Effect.fail(extractionFailed("invalidOutput")(cause)),
+      }),
     ),
 );

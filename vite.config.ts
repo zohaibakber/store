@@ -129,6 +129,7 @@ export default defineConfig({
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
           "apps/desktop/src/session/workspace-session.ts",
+          "packages/client-db/src/store/commands.ts",
           "packages/inventory-react/src/staff.ts",
           "packages/inventory-react/src/workspace.ts",
         ],
@@ -161,10 +162,7 @@ export default defineConfig({
           "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/lib/preferences.ts",
           "packages/auth/src/web-crypto.ts",
-          "packages/client-db/src/replica/node-backup.ts",
-          "packages/client-db/src/store/commands.ts",
           "packages/contracts/src/sync/operation-hash.ts",
-          "packages/sync/src/engine.ts",
         ],
         rules: {
           "anti-slop/no-global-crypto": "off",

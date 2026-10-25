@@ -63,7 +63,7 @@ import type { InventoryError } from "../../src/inventory/errors";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
 import { claimsFor, TEST_ACCESS_TOKEN, testRuntimeContext, webHandlerFor } from "../lib/app";
-import { scenario, TestAuthorities } from "./harness";
+import { scenario, SequentialCrypto, TestAuthorities } from "./harness";
 
 const DEVICE = "device-local";
 const OCCURRED_AT = 1_760_000_000_000;
@@ -392,6 +392,7 @@ const localWorkspace = (importId: string) =>
   }).pipe(
     Effect.provide(
       SyncEngine.layer().pipe(
+        Layer.provide(SequentialCrypto),
         Layer.provideMerge(LocalAuthority.layer),
         Layer.provideMerge(
           layerSqliteReplicaStore("import-local", { authority: LocalAuthority.submitWithin }),
@@ -441,6 +442,7 @@ const organizationReplica = (
 ) =>
   Layer.build(
     SyncEngine.layer().pipe(
+      Layer.provide(SequentialCrypto),
       Layer.provideMerge(Layer.effect(SyncTransportService, authorityFor(authorities, actor))),
       Layer.provideMerge(layerSqliteReplicaStore(`import-${replicaId}`)),
       Layer.provideMerge(

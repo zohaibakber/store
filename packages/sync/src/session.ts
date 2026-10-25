@@ -1,5 +1,6 @@
 import type { DeviceLabel, SyncProtocolError } from "@store/contracts";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -104,7 +105,7 @@ export const layerOwnedHttpSync = (
 ): Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransportService
+  ReplicaStore | SyncTransportService | Crypto.Crypto
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
     Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy, options.deviceLabel))),
@@ -142,7 +143,7 @@ const ownLocalSync: Effect.Effect<
 export const layerOwnedLocalSync: Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransportService
+  ReplicaStore | SyncTransportService | Crypto.Crypto
 > = Layer.effect(SyncScheduler, ownLocalSync).pipe(
   Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),
 );

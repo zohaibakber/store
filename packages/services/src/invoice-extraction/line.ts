@@ -1,4 +1,5 @@
 import type { InvoiceExtractionLine } from "@store/contracts/server-api.schema";
+import * as Predicate from "effect/Predicate";
 
 import { parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
@@ -14,18 +15,15 @@ type PrintedInvoiceLine = {
   readonly packPrice?: PrintedValue | undefined;
 };
 
-const isString = <Value>(value: Value): value is Value & string => typeof value === "string";
-const isNumber = <Value>(value: Value): value is Value & number => typeof value === "number";
-
 const toFiniteNumber = (value: PrintedValue | undefined): number | null => {
-  if (isNumber(value)) return Number.isFinite(value) ? value : null;
-  if (!isString(value)) return null;
+  if (Predicate.isNumber(value)) return Number.isFinite(value) ? value : null;
+  if (!Predicate.isString(value)) return null;
   const parsed = Number(value.replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
 
 export const nullableString = (value: PrintedValue | undefined): string | null => {
-  if (isString(value)) return value.trim() || null;
+  if (Predicate.isString(value)) return value.trim() || null;
   if (value !== undefined && value !== null) return String(value);
   return null;
 };
@@ -52,7 +50,7 @@ export const normalizeLine = (value: PrintedInvoiceLine): InvoiceExtractionLine 
     unitQuantity: count(value.unitQuantity, 0, 0),
     unitsPerPack: salvageUnitsPerPack(
       name,
-      isString(value.unitsPerPack) || isNumber(value.unitsPerPack)
+      Predicate.isString(value.unitsPerPack) || Predicate.isNumber(value.unitsPerPack)
         ? parseUnitsPerPack(value.unitsPerPack, 1)
         : 1,
     ),

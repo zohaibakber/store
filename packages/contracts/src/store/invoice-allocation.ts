@@ -3,6 +3,7 @@ import * as Result from "effect/Result";
 import { CatalogRefusal } from "../catalog/refusal";
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
+import { isPositiveInt } from "../schema-primitives";
 import { isPaisa } from "./pricing";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
 import { availableFor, takeFromStock } from "./stock";
@@ -48,7 +49,7 @@ export const allocateInvoiceLine = (
   batches: ReadonlyArray<AllocatableBatch>,
 ): Result.Result<ReadonlyArray<InvoiceLineTake>, CatalogRefusal> =>
   Result.gen(function* () {
-    if (!Number.isSafeInteger(line.quantity) || line.quantity < 1) {
+    if (!isPositiveInt(line.quantity)) {
       return yield* Result.fail(
         new CatalogRefusal({
           reason: "invalidInput",

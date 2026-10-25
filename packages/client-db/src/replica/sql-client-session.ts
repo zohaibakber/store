@@ -19,6 +19,7 @@ import {
   type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -86,7 +87,11 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
   };
 
 type SqliteReplicaAuthority<SyncError> = {
-  readonly sync: Layer.Layer<SyncEngine | SyncScheduler, SyncError, ReplicaStore | SqliteReplica>;
+  readonly sync: Layer.Layer<
+    SyncEngine | SyncScheduler,
+    SyncError,
+    ReplicaStore | SqliteReplica | Crypto.Crypto
+  >;
   readonly store: SqliteReplicaStoreOptions;
 };
 
