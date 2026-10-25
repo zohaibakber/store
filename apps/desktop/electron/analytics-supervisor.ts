@@ -167,6 +167,6 @@ export const makeAnalyticsController = (options: {
               : error,
           ),
         ),
-      notify: (notice) => Effect.sync(() => offerCoalescing(notices, analyticsNoticeOf(notice))),
+      notify: (notice) => offerCoalescing(notices, analyticsNoticeOf(notice)),
     } satisfies AnalyticsController;
   });
