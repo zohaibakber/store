@@ -174,7 +174,7 @@ const fencedReader =
           (current): Effect.Effect<Result.Result<A, DigestFenceMoved>, EffectDrizzleQueryError> =>
             sameFence(current, fence)
               ? read(tx).pipe(Effect.map(Result.succeed))
-              : Effect.succeed(Result.fail(DigestFenceMoved.make({ current }))),
+              : Effect.succeed(Result.fail(new DigestFenceMoved({ current }))),
         ),
       ),
     ).pipe(Effect.flatMap(Effect.fromResult));
