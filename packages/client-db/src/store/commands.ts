@@ -60,7 +60,14 @@ import {
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
-import { importCategory, leadingChunks, rowIdSupply, withProjectedProduct } from "./projected";
+import {
+  importCategory,
+  leadingChunks,
+  RowIdSupplyMismatch,
+  countingRowIds,
+  drawnRowIds,
+  withProjectedProduct,
+} from "./projected";
 import type { StaffGate } from "./staff-gate";
 
 const READER = "store";
@@ -121,14 +128,18 @@ export const makeCommandHandlers = ({
     context: BegunContext<Tables>,
     project: (context: ProjectionContext<Tables>) => Result.Result<A, E>,
   ) {
-    const counting = rowIdSupply([]);
+    const counting = countingRowIds();
     const dry = project({ ...context, ids: { ...context.ids, rowId: counting.rowId } });
     if (Result.isFailure(dry)) return yield* Effect.fromResult(dry);
     const drawn = yield* Effect.replicateEffect(newId, counting.used());
-    const supply = rowIdSupply(drawn);
-    return yield* Effect.fromResult(
-      project({ ...context, ids: { ...context.ids, rowId: supply.rowId } }),
-    );
+    const supply = drawnRowIds(drawn);
+    const projected = project({ ...context, ids: { ...context.ids, rowId: supply.rowId } });
+    if (!supply.balanced()) {
+      return yield* Effect.die(
+        new RowIdSupplyMismatch({ drawn: drawn.length, taken: supply.used() }),
+      );
+    }
+    return yield* Effect.fromResult(projected);
   });
 
   const snapshot = snapshotRunnerFromHandle(replica);
