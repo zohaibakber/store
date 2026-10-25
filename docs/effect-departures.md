@@ -23,7 +23,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 ## Errors
 
 - **Plain `Error` in `E`.** `apps/desktop/electron/{workspace-sessions,auth-ipc,auth}.ts`.
-- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, and `protocolDisposition` in `packages/sync/src/transport.ts`, where every protocol code without its own rule becomes a `protocol` suspension. A new case is silently treated as the generic one.
+- **Absorbing `default:` branches.** `apps/server/src/http/sync-errors.ts`, where a case without its own rule is silently treated as the generic one.
 - **Mixed construction and tags.** `X.make({...})` beside `new X({...})`; dotted tags in `packages/workspace` beside class-name tags elsewhere. Dotted tags that cross the wire are contracts.
 
 ## Hand-rolled

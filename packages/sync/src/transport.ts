@@ -119,7 +119,7 @@ const decodeRetryAfterSeconds = Schema.decodeUnknownOption(
 );
 const decodeRetryAfterDate = Schema.decodeUnknownOption(Schema.DateFromString);
 
-export const retryAfterMillis = (header: string, nowMillis: number): number | undefined => {
+const retryAfterMillis = (header: string, nowMillis: number): number | undefined => {
   const trimmed = header.trim();
   if (trimmed.length === 0) return undefined;
   const seconds = decodeRetryAfterSeconds(trimmed);
@@ -131,22 +131,37 @@ export const retryAfterMillis = (header: string, nowMillis: number): number | un
 
 const decodeProtocolCode = Schema.decodeUnknownOption(SyncProtocolCode);
 
-const statusForErrorTag = (tag: string): number => {
-  if (tag === "BadRequest") return 400;
-  if (tag === "Forbidden") return 403;
-  if (tag === "NotFound") return 404;
-  if (tag === "Conflict") return 409;
-  return 503;
+const SyncHttpErrorTag = Schema.Literals([
+  "BadRequest",
+  "Forbidden",
+  "NotFound",
+  "Conflict",
+  "ServiceUnavailable",
+]);
+
+const statusForErrorTag = (tag: typeof SyncHttpErrorTag.Type): number => {
+  switch (tag) {
+    case "BadRequest":
+      return 400;
+    case "Forbidden":
+      return 403;
+    case "NotFound":
+      return 404;
+    case "Conflict":
+      return 409;
+    case "ServiceUnavailable":
+      return 503;
+  }
 };
 
 const TypedHttpError = Schema.Struct({
-  _tag: Schema.String,
+  _tag: SyncHttpErrorTag,
   error: Schema.Struct({
     code: Schema.String,
     message: Schema.String,
   }),
 });
-export type SyncHttpErrorBody = typeof TypedHttpError.Type;
+type SyncHttpErrorBody = typeof TypedHttpError.Type;
 const decodeTypedHttpError = Schema.decodeUnknownOption(TypedHttpError);
 
 export type SyncFailureCause =
@@ -156,7 +171,7 @@ export type SyncFailureCause =
   | SyncHttpErrorBody
   | Error;
 
-export const failureFromStatus = (
+const failureFromStatus = (
   status: number,
   message: string,
   retryAfter?: number,
@@ -174,7 +189,11 @@ export const failureFromStatus = (
   return new SyncTransportRefused({ message, status });
 };
 
-const fromTypedHttpError = (tag: string, code: string, message: string): SyncFailure => {
+const fromTypedHttpError = (
+  tag: typeof SyncHttpErrorTag.Type,
+  code: string,
+  message: string,
+): SyncFailure => {
   const protocolCode = decodeProtocolCode(code);
   if (Option.isSome(protocolCode)) {
     return new SyncProtocolError({ code: protocolCode.value, message });
@@ -202,7 +221,7 @@ const fromHttpClientError = (error: HttpClientError.HttpClientError, now: number
   return failureFromStatus(status, error.message, delay);
 };
 
-export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailure => {
+const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailure => {
   if (error instanceof SyncProtocolError) return error;
   if (
     error instanceof SyncTransportUnavailable ||
@@ -262,17 +281,51 @@ const protocolSuspension = (
   suspension: { reason, message: error.message, code: error.code, blocks: "all", timer: false },
 });
 
+const PROTOCOL_DISPOSITION = {
+  ORGANIZATION_MISMATCH: "protocol",
+  INVALID_OPERATION: "protocol",
+  OPERATION_ID_REUSED: "protocol",
+  INSUFFICIENT_STOCK: "protocol",
+  INVOICE_IDENTITY_CONFLICT: "protocol",
+  ENTITY_CONFLICT: "protocol",
+  ENTITY_RELATION_INVALID: "protocol",
+  ENTITY_WRITE_FAILED: "protocol",
+  REPLICA_SEQUENCE_GAP: "recoveryRequired",
+  EPOCH_MISMATCH: "EPOCH_MISMATCH",
+  REPLICA_UNKNOWN: "protocol",
+  REPLICA_OWNED_BY_OTHER: "protocol",
+  COMMAND_IDENTITY_MISMATCH: "protocol",
+  INVALID_PAYLOAD_HASH: "protocol",
+  SNAPSHOT_REQUIRED: "SNAPSHOT_REQUIRED",
+  SNAPSHOT_UNAVAILABLE: "protocol",
+  SCHEMA_VERSION_UNSUPPORTED: "updateRequired",
+  INCARNATION_MISMATCH: "INCARNATION_MISMATCH",
+  SUPPLIER_HAS_ORDERS: "protocol",
+  PURCHASE_ORDER_TRANSITION_INVALID: "protocol",
+  PURCHASE_ORDER_NOT_OPEN: "protocol",
+  PURCHASE_ORDER_NOT_DRAFT: "protocol",
+  PURCHASE_ORDER_HAS_ITEMS: "protocol",
+  PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "protocol",
+  PURCHASE_ORDER_ITEM_RECEIVED: "protocol",
+  PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "protocol",
+  REPLICA_SCHEMA_OUTDATED: "protocol",
+} as const satisfies Record<
+  SyncProtocolCode,
+  RecoverableCode | "recoveryRequired" | "updateRequired" | "protocol"
+>;
+
 const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition => {
-  switch (error.code) {
+  const disposition = PROTOCOL_DISPOSITION[error.code];
+  switch (disposition) {
     case "EPOCH_MISMATCH":
     case "INCARNATION_MISMATCH":
     case "SNAPSHOT_REQUIRED":
-      return { _tag: "recover", code: error.code };
-    case "REPLICA_SEQUENCE_GAP":
+      return { _tag: "recover", code: disposition };
+    case "recoveryRequired":
       return recoveryRequired(error.code, error.message);
-    case "SCHEMA_VERSION_UNSUPPORTED":
+    case "updateRequired":
       return protocolSuspension("updateRequired", error);
-    default:
+    case "protocol":
       return protocolSuspension("protocol", error);
   }
 };
@@ -365,7 +418,7 @@ const withDeadline =
         ),
     });
 
-export const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
+const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
   registerReplica: (request) => withDeadline("registerReplica")(transport.registerReplica(request)),
   submitCommand: (request) => withDeadline("submitCommand")(transport.submitCommand(request)),
   getReceipt: (operationId) => withDeadline("getReceipt")(transport.getReceipt(operationId)),

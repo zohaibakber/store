@@ -660,7 +660,7 @@ export const stepSnapshotActivation = Effect.fn("ReplicaImport.stepSnapshotActiv
       return yield* catchUpStep(tx, importRow, state);
     case "rebuilding":
       return yield* rebuildStep(tx, importRow, state);
-    default:
+    case "replaying":
       return yield* replayStep(tx, importRow, state, subscription.value);
   }
 });
