@@ -293,10 +293,6 @@ export class Organizations extends Context.Service<Organizations>()(
             return yield* changeMemberRole(claims, command);
           case "RemoveMember":
             return yield* removeMember(claims, command);
-          default: {
-            const _exhaustive: never = command;
-            return _exhaustive;
-          }
         }
       });
 

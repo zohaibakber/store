@@ -10,6 +10,9 @@ import { constantTimeEqual, layer, pbkdf2Sha256 } from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const WORKERD_PBKDF2_ITERATIONS = 100_000;
+const IterationCount = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: WORKERD_PBKDF2_ITERATIONS }),
+);
 const HASH_BYTES = 32;
 const SALT_BYTES = 16;
 
@@ -60,9 +63,7 @@ const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
   const iterations = Number(iterationText);
   if (
     algorithm !== "pbkdf2-sha256" ||
-    !Number.isSafeInteger(iterations) ||
-    iterations < 1 ||
-    iterations > WORKERD_PBKDF2_ITERATIONS ||
+    !Schema.is(IterationCount)(iterations) ||
     !saltText ||
     !hashText
   ) {

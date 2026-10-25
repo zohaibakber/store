@@ -1,5 +1,6 @@
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const ELECTRON_RENDERER_HOST = "app";
@@ -21,8 +22,7 @@ const unquote = (value: string) =>
 const parseUrl = (value: string) =>
   Result.try({
     try: () => new URL(value),
-    catch: (cause) =>
-      cause instanceof Error ? cause.message : "is not an origin or origin pattern",
+    catch: () => "is not an origin or origin pattern",
   });
 
 export const publicHostnameFrom = (value: string | undefined): string | undefined => {
@@ -200,8 +200,16 @@ export const decideAuthSecurity = (
   });
 };
 
+class AuthSecurityConfigError extends Schema.TaggedError<AuthSecurityConfigError>()(
+  "AuthSecurityConfigError",
+  { reason: Schema.String },
+) {}
+
 export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig =>
-  Result.getOrThrowWith(decideAuthSecurity(input), (reason) => new Error(reason));
+  Result.getOrThrowWith(
+    decideAuthSecurity(input),
+    (reason) => new AuthSecurityConfigError({ reason }),
+  );
 
 const globToRegExp = (pattern: string) => {
   let source = "";
