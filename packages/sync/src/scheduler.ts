@@ -29,12 +29,7 @@ import {
   type SyncWakeReason,
 } from "./session-state";
 import { restingPhase, type SyncPhase, type SyncState } from "./sync-state";
-import {
-  classifySyncFailure,
-  dispositionFor,
-  type RecoverableCode,
-  type SyncFailureCause,
-} from "./transport";
+import { dispositionFor, type RecoverableCode, type SyncCycleFailure } from "./transport";
 
 export type { SyncWakeReason } from "./session-state";
 
@@ -79,10 +74,10 @@ export type SyncSchedulerContract = {
 };
 
 type SyncSchedulerHandlers = {
-  readonly register?: () => Effect.Effect<void, SyncFailureCause>;
-  readonly drainUpload: () => Effect.Effect<void, SyncFailureCause>;
-  readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncFailureCause>;
-  readonly recover?: (code: RecoverableCode) => Effect.Effect<void, SyncFailureCause>;
+  readonly register?: () => Effect.Effect<void, SyncCycleFailure>;
+  readonly drainUpload: () => Effect.Effect<void, SyncCycleFailure>;
+  readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncCycleFailure>;
+  readonly recover?: (code: RecoverableCode) => Effect.Effect<void, SyncCycleFailure>;
   readonly hintApplied?: (hint: SyncLiveWakeHint) => Effect.Effect<boolean>;
 };
 
@@ -175,7 +170,7 @@ const makeScheduler = (
         ? Effect.succeed(false)
         : supervised(handlers.hintApplied(hint), false);
 
-    const handlerFor = (command: RunCommand): Effect.Effect<boolean, SyncFailureCause> => {
+    const handlerFor = (command: RunCommand): Effect.Effect<boolean, SyncCycleFailure> => {
       switch (command.step) {
         case "register":
           return handlers.register === undefined
@@ -194,7 +189,7 @@ const makeScheduler = (
 
     const failedOutcome = Effect.fn("SyncScheduler.failedOutcome")(function* (
       stepName: SessionStep,
-      cause: Cause.Cause<SyncFailureCause>,
+      cause: Cause.Cause<SyncCycleFailure>,
     ) {
       const error = Cause.findErrorOption(cause);
       if (Option.isNone(error)) {
@@ -206,11 +201,14 @@ const makeScheduler = (
           disposition: { _tag: "retry", delayMillis: undefined },
         } satisfies StepOutcome;
       }
-      const failure = classifySyncFailure(error.value, yield* Clock.currentTimeMillis);
-      const disposition = dispositionFor(failure);
+      const disposition = dispositionFor(error.value);
       if (disposition._tag === "suspend" || (disposition._tag === "retry" && disposition.suspect)) {
         yield* Effect.logWarning("sync.step_failed").pipe(
-          Effect.annotateLogs({ step: stepName, failure: failure._tag, message: failure.message }),
+          Effect.annotateLogs({
+            step: stepName,
+            failure: error.value._tag,
+            message: error.value.message,
+          }),
         );
       }
       return { _tag: "failed", disposition } satisfies StepOutcome;

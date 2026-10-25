@@ -199,10 +199,14 @@ const scanUnderFence = Effect.fn("ReplicaCoverage.scanUnderFence")(function* (
         error._tag === "DigestFenceMoved" && sameAuthorityState(error.current, fence),
     }),
     Effect.catchTag("DigestFenceMoved", (moved) =>
-      Effect.logInfo("replica partition digest deferred: the replica changed during the scan", {
-        scannedThrough: fence.appliedCommitSequence,
-        currentThrough: moved.current.appliedCommitSequence,
-      }).pipe(Effect.as(undefined)),
+      Effect.logInfo("replica.digest_deferred").pipe(
+        Effect.annotateLogs({
+          reason: "the replica changed during the scan",
+          scannedThrough: fence.appliedCommitSequence,
+          currentThrough: moved.current.appliedCommitSequence,
+        }),
+        Effect.as(undefined),
+      ),
     ),
   );
 });
@@ -214,8 +218,8 @@ const settleScannedDigest = Effect.fn("ReplicaCoverage.settleScannedDigest")(fun
 ) {
   const current = yield* readDigestFence(tx);
   if (!sameFence(current, scanned.fence)) {
-    yield* Effect.logInfo(
-      "replica partition digest deferred: the replica changed before recording",
+    yield* Effect.logInfo("replica.digest_deferred").pipe(
+      Effect.annotateLogs({ reason: "the replica changed before recording" }),
     );
     return UNVERIFIED;
   }

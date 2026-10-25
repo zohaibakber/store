@@ -30,4 +30,11 @@ describe("native-free entrypoints", () => {
     expect(graph.files.size).toBeGreaterThan(5);
     expect(matchingSpecifiers(graph.bare, NATIVE)).toStrictEqual([]);
   });
+
+  it("still detects the native driver when it is reachable", () => {
+    const graph = graphOf("src/sqlite.ts");
+    expect(matchingSpecifiers(graph.bare, NATIVE)).toContain(
+      "@effect/sql-sqlite-node/SqliteClient",
+    );
+  });
 });

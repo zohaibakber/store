@@ -40,7 +40,7 @@ const partitionEntityDigests = <E, R>(
   Effect.all(partitionEntityRecord(digestOf));
 
 const foreignOrganization = () =>
-  ReplicaStorageError.make({ message: "Replica partition holds more than one organization." });
+  new ReplicaStorageError({ message: "Replica partition holds more than one organization." });
 
 const pendingQuery = (tx: ReplicaDb) =>
   tx
@@ -86,55 +86,62 @@ export type DigestReader<Failure> = <A>(
   read: (tx: ReplicaDb) => Effect.Effect<A, EffectDrizzleQueryError>,
 ) => Effect.Effect<A, Failure>;
 
-const entityDigest = <Failure>(read: DigestReader<Failure>, entity: PartitionEntity) =>
-  Effect.gen(function* () {
-    const bounds = yield* read((tx) => boundsQuery(tx, entity));
-    const entityCount = bounds?.entityCount ?? 0;
-    const hasher = makePartitionEntityHasher(entity, entityCount);
-    if (!bounds || bounds.organizationId === null) {
-      return { count: entityCount, digest: hasher.finish() };
-    }
-    if (bounds.highestOrganizationId !== bounds.organizationId) return yield* foreignOrganization();
-    const organizationId = bounds.organizationId;
-    const orderer = makePartitionLeafOrderer(hasher.push);
-    yield* Stream.paginate(Option.none<string>(), (after) =>
-      read((tx) => pageQuery(tx, entity, organizationId, Option.getOrUndefined(after))).pipe(
-        Effect.map((rows) => {
-          const last = rows.at(-1);
-          return [
-            rows,
-            rows.length < PAGE_ROWS || last === undefined
-              ? Option.none()
-              : Option.some(Option.some(last.entityId)),
-          ] as const;
-        }),
-      ),
-    ).pipe(
-      Stream.runForEach((row) =>
-        Effect.sync(() =>
-          orderer.push(row.entityId, partitionLeafOf(entity, row.entityId, row.version)),
-        ),
-      ),
-    );
-    orderer.finish();
+const entityDigest = Effect.fn("ReplicaDigest.sqliteEntityDigest")(function* <Failure>(
+  read: DigestReader<Failure>,
+  entity: PartitionEntity,
+) {
+  const bounds = yield* read((tx) => boundsQuery(tx, entity));
+  const entityCount = bounds?.entityCount ?? 0;
+  const hasher = makePartitionEntityHasher(entity, entityCount);
+  if (!bounds || bounds.organizationId === null) {
     return { count: entityCount, digest: hasher.finish() };
-  }).pipe(Effect.withSpan("ReplicaDigest.sqliteEntityDigest"));
-
-export const readPartitionDigest = <Failure>(read: DigestReader<Failure>) =>
-  Effect.gen(function* () {
-    const pending = yield* read(pendingQuery);
-    if ((pending?.pendingCount ?? 0) > 0) return undefined;
-    return yield* finishPartitionDigestReport(
-      yield* partitionEntityDigests((entity) => entityDigest(read, entity)),
-    );
-  }).pipe(Effect.withSpan("ReplicaDigest.readPartitionDigest"));
-
-export const sqlitePartitionDigest = (tx: ReplicaDb) =>
-  readPartitionDigest<EffectDrizzleQueryError>((read) => read(tx)).pipe(
-    Effect.withSpan("ReplicaDigest.sqlitePartitionDigest"),
+  }
+  if (bounds.highestOrganizationId !== bounds.organizationId) return yield* foreignOrganization();
+  const organizationId = bounds.organizationId;
+  const orderer = makePartitionLeafOrderer(hasher.push);
+  yield* Stream.paginate(Option.none<string>(), (after) =>
+    read((tx) => pageQuery(tx, entity, organizationId, Option.getOrUndefined(after))).pipe(
+      Effect.map((rows) => {
+        const last = rows.at(-1);
+        return [
+          rows,
+          rows.length < PAGE_ROWS || last === undefined
+            ? Option.none()
+            : Option.some(Option.some(last.entityId)),
+        ] as const;
+      }),
+    ),
+  ).pipe(
+    Stream.runForEach((row) =>
+      Effect.sync(() =>
+        orderer.push(row.entityId, partitionLeafOf(entity, row.entityId, row.version)),
+      ),
+    ),
   );
+  orderer.finish();
+  return { count: entityCount, digest: hasher.finish() };
+});
+
+export const readPartitionDigest = Effect.fn("ReplicaDigest.readPartitionDigest")(function* <
+  Failure,
+>(read: DigestReader<Failure>) {
+  const pending = yield* read(pendingQuery);
+  if ((pending?.pendingCount ?? 0) > 0) return undefined;
+  return yield* finishPartitionDigestReport(
+    yield* partitionEntityDigests((entity) => entityDigest(read, entity)),
+  );
+});
+
+export const sqlitePartitionDigest = Effect.fn("ReplicaDigest.sqlitePartitionDigest")(function* (
+  tx: ReplicaDb,
+) {
+  return yield* readPartitionDigest<EffectDrizzleQueryError>((read) => read(tx));
+});
 
 export const logPartitionDivergence = (
   subscription: SyncSubscription,
   diverged: ReadonlyArray<PartitionEntity>,
-) => Effect.logWarning("replica partition digest diverged", { subscription, entities: diverged });
+) =>
+  Effect.logWarning("replica.digest_diverged").pipe(
+    Effect.annotateLogs({ subscription, entities: diverged }),
+  );

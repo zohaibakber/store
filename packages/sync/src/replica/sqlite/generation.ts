@@ -71,9 +71,7 @@ export const loadGenerationState = Effect.fn("ReplicaGeneration.loadState")(func
 ) {
   const row = yield* tx.select().from(generationState).get();
   if (!row) {
-    return yield* Effect.fail(
-      ReplicaStorageError.make({ message: "Replica generation state is missing." }),
-    );
+    return yield* new ReplicaStorageError({ message: "Replica generation state is missing." });
   }
   return row;
 });

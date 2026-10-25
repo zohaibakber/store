@@ -185,9 +185,9 @@ export const makeLiveSocket = (
           yield* writer.write(LIVE_SOCKET_PING);
           yield* Effect.sleep(Duration.millis(LIVE_SOCKET_POLICY.pongTimeoutMillis));
           if ((yield* Ref.get(heardAt)) < sentAt) {
-            return yield* Effect.fail(
-              LiveSocketStale.make({ message: "The live socket stopped answering pings." }),
-            );
+            return yield* new LiveSocketStale({
+              message: "The live socket stopped answering pings.",
+            });
           }
         });
 
@@ -203,9 +203,7 @@ export const makeLiveSocket = (
         const probes: Effect.Effect<SessionEnd, Socket.SocketError | LiveSocketStale> =
           Effect.forever(Queue.take(nudges).pipe(Effect.andThen(probe)));
         const offline = waitUntil(false).pipe(
-          Effect.andThen(
-            Effect.fail(LiveSocketOffline.make({ message: "The network is offline." })),
-          ),
+          Effect.andThen(new LiveSocketOffline({ message: "The network is offline." })),
         );
         const expiresAt = accessTokenExpiresAt(token);
         const now = yield* Clock.currentTimeMillis;

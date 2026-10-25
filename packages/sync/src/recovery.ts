@@ -19,13 +19,11 @@ import type {
   SnapshotActivation,
 } from "./replica/store";
 import type { SyncTransfer } from "./sync-state";
-import { SyncTransportUnavailable, type SyncTransport, type SyncTransportError } from "./transport";
+import type { SyncTransport, SyncTransportError } from "./transport";
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
 
 const SNAPSHOT_PART_FETCH_CONCURRENCY = 12;
-
-const SNAPSHOT_STORAGE_RETRY_MILLIS = 10 * 60_000;
 
 type SnapshotPartRef = SnapshotManifest["parts"][number];
 
@@ -95,18 +93,7 @@ const abandonOnInvalidCandidate = (
   error: SnapshotRecoveryError,
 ): Effect.Effect<never, SnapshotRecoveryError> => {
   const abandon = store.abandonSnapshot(manifest.snapshotId).pipe(Effect.ignore);
-  if (isStorageFullFailure(error)) {
-    return abandon.pipe(
-      Effect.andThen(
-        Effect.fail(
-          SyncTransportUnavailable.make({
-            message: "Local storage is full; snapshot preparation was cancelled.",
-            retryAfterMillis: SNAPSHOT_STORAGE_RETRY_MILLIS,
-          }),
-        ),
-      ),
-    );
-  }
+  if (isStorageFullFailure(error)) return abandon.pipe(Effect.andThen(Effect.fail(error)));
   if (
     error instanceof SyncProtocolError &&
     (error.code === "SNAPSHOT_UNAVAILABLE" || error.code === "SNAPSHOT_REQUIRED")

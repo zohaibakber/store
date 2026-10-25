@@ -45,7 +45,7 @@ const byteLength = (text: string) => utf8.encode(text).byteLength;
 const encodeFrame = Schema.encodeSync(Schema.fromJsonString(SnapshotRow));
 
 const unreadable = (entity: SyncEntity) =>
-  ReplicaStorageError.make({ message: `This device holds a ${entity} record it cannot read.` });
+  new ReplicaStorageError({ message: `This device holds a ${entity} record it cannot read.` });
 
 const versionOf = (row: SyncEntityRow<SyncEntity>): number =>
   "rowVersion" in row ? row.rowVersion : STOCK_MOVEMENT_ROW_VERSION;

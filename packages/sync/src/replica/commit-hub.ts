@@ -1,5 +1,6 @@
 import type { SyncEntity } from "@store/contracts";
 import type { ReplicaCommitNotice, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
+import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
@@ -60,8 +61,8 @@ export const EMPTY_TOUCHED: TouchedSet = { touchedEntities: [], touchedKeys: [] 
 const stockKey = (batchId: string): string => `batch:${batchId}`;
 
 export const mergeTouched = (...parts: ReadonlyArray<TouchedSet>): TouchedSet => ({
-  touchedEntities: [...new Set(parts.flatMap((part) => part.touchedEntities))],
-  touchedKeys: [...new Set(parts.flatMap((part) => part.touchedKeys))],
+  touchedEntities: Array.dedupe(parts.flatMap((part) => part.touchedEntities)),
+  touchedKeys: Array.dedupe(parts.flatMap((part) => part.touchedKeys)),
 });
 
 export const withStockTouched = (

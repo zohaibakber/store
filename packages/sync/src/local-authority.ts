@@ -65,9 +65,11 @@ import * as Layer from "effect/Layer";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import type { SqlError } from "effect/sql/SqlError";
 
 import { decodeStoredEnvelope } from "./replica/codecs";
 import { clientSequenceLength, loadReplicaState } from "./replica/commands";
+import type { ReplicaStorageError } from "./replica/errors";
 import {
   decideCatalogRow,
   projectCommand,
@@ -88,7 +90,6 @@ import {
   SyncTransportUnavailable,
   SyncTransportGarbled,
   type SyncTransport,
-  type SyncTransportError,
 } from "./transport";
 
 export const LOCAL_AUTHORITY_EPOCH = SyncEpoch.make("1");
@@ -1478,7 +1479,7 @@ const unappliedGroup = Effect.fn("LocalAuthority.unappliedGroup")(function* (
     row.operationId,
     yield* decideCommand(tx, state, envelope),
   );
-  return group.decision === "accepted" ? group : yield* Effect.fail(unreproducible);
+  return group.decision === "accepted" ? group : yield* unreproducible;
 });
 
 const pageAfter = Effect.fn("LocalAuthority.pageAfter")(function* (
@@ -1495,21 +1496,33 @@ const pageAfter = Effect.fn("LocalAuthority.pageAfter")(function* (
   );
 });
 
-const readFailure = <E>(cause: E): SyncProtocolError | SyncTransportError => {
-  if (
-    cause instanceof SyncProtocolError ||
-    cause instanceof SyncTransportUnavailable ||
-    cause instanceof SyncTransportGarbled
-  ) {
-    return cause;
+type ReadFailureCause =
+  | SyncProtocolError
+  | SyncTransportUnavailable
+  | SyncTransportGarbled
+  | SqlError
+  | EffectDrizzleQueryError
+  | ReplicaStorageError
+  | Schema.SchemaError;
+
+const readFailure = (
+  cause: ReadFailureCause,
+): SyncProtocolError | SyncTransportUnavailable | SyncTransportGarbled => {
+  switch (cause._tag) {
+    case "SyncProtocolError":
+    case "SyncTransportUnavailable":
+    case "SyncTransportGarbled":
+      return cause;
+    case "SchemaError":
+      return new SyncTransportGarbled({ message: cause.message });
+    case "SqlError":
+    case "EffectDrizzleQueryError":
+    case "ReplicaStorageError":
+      return new SyncTransportUnavailable({
+        message: cause.message,
+        retryAfterMillis: RETRY_MILLIS,
+      });
   }
-  if (cause instanceof Schema.SchemaError) {
-    return SyncTransportGarbled.make({ message: cause.message });
-  }
-  return SyncTransportUnavailable.make({
-    message: cause instanceof Error ? cause.message : "The local replica could not be read.",
-    retryAfterMillis: RETRY_MILLIS,
-  });
 };
 
 const snapshotUnavailable = Effect.fail(
@@ -1522,29 +1535,21 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
 ) {
   const state = yield* loadReplicaState(tx);
   if (request.organizationId !== state.organizationId) {
-    return yield* Effect.fail(
-      syncProtocolError(
-        "ORGANIZATION_MISMATCH",
-        "The command does not belong to the active organization.",
-      ),
+    return yield* syncProtocolError(
+      "ORGANIZATION_MISMATCH",
+      "The command does not belong to the active organization.",
     );
   }
   if (canonicalPayloadHash(request.command) !== request.payloadHash) {
-    return yield* Effect.fail(
-      syncProtocolError("INVALID_PAYLOAD_HASH", "The payload hash does not match."),
-    );
+    return yield* syncProtocolError("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
   }
   if (request.epoch !== (yield* epochOf(state))) {
-    return yield* Effect.fail(
-      syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match."),
-    );
+    return yield* syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match.");
   }
   const receipted = yield* storedReceipt(tx, request.operationId);
   if (receipted !== undefined) {
     if (receipted.payloadHash !== request.payloadHash) {
-      return yield* Effect.fail(
-        syncProtocolError("OPERATION_ID_REUSED", "The command id was reused."),
-      );
+      return yield* syncProtocolError("OPERATION_ID_REUSED", "The command id was reused.");
     }
     const page = yield* pageAfter(tx, state, request.afterCommitSequence);
     return (
@@ -1552,27 +1557,21 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
     ) satisfies SyncSubmitCommandResult;
   }
   if (request.replicaId !== state.replicaId || state.registeredAt === null) {
-    return yield* Effect.fail(
-      syncProtocolError("REPLICA_UNKNOWN", "This replica is not registered."),
-    );
+    return yield* syncProtocolError("REPLICA_UNKNOWN", "This replica is not registered.");
   }
   const tail = yield* decidedTail(tx, state);
   const expected = incrementDecimalSequence(tail.lastClientSequence);
   if (compareDecimalSequence(request.clientSequence, expected) !== 0) {
-    return yield* Effect.fail(
-      syncProtocolError(
-        "REPLICA_SEQUENCE_GAP",
-        `Expected client sequence ${expected}, received ${request.clientSequence}.`,
-      ),
+    return yield* syncProtocolError(
+      "REPLICA_SEQUENCE_GAP",
+      `Expected client sequence ${expected}, received ${request.clientSequence}.`,
     );
   }
   if (tail.unapplied !== undefined) {
-    return yield* Effect.fail(
-      SyncTransportUnavailable.make({
-        message: "An earlier decision has not reached the local replica yet.",
-        retryAfterMillis: RETRY_MILLIS,
-      }),
-    );
+    return yield* new SyncTransportUnavailable({
+      message: "An earlier decision has not reached the local replica yet.",
+      retryAfterMillis: RETRY_MILLIS,
+    });
   }
   const { group, result } = groupOf(
     nextCommitSequence(state),
@@ -1598,7 +1597,7 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
 });
 
 const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
-  const reading = <A, E>(run: (tx: ReplicaDb) => Effect.Effect<A, E>) =>
+  const reading = <A, E extends ReadFailureCause>(run: (tx: ReplicaDb) => Effect.Effect<A, E>) =>
     runReplicaTransaction(handle, run).pipe(Effect.mapError(readFailure));
 
   const registerReplica = Effect.fn("LocalAuthority.registerReplica")(function* (
@@ -1608,8 +1607,9 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
       Effect.gen(function* () {
         const state = yield* loadReplicaState(tx);
         if (request.replicaId !== state.replicaId) {
-          return yield* Effect.fail(
-            syncProtocolError("REPLICA_UNKNOWN", "This replica does not own the local workspace."),
+          return yield* syncProtocolError(
+            "REPLICA_UNKNOWN",
+            "This replica does not own the local workspace.",
           );
         }
         const applied = OrgCommitSequence.make(state.appliedCommitSequence);
@@ -1645,17 +1645,13 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
       Effect.gen(function* () {
         const state = yield* loadReplicaState(tx);
         if (request.epoch !== (yield* epochOf(state))) {
-          return yield* Effect.fail(
-            syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match."),
-          );
+          return yield* syncProtocolError("EPOCH_MISMATCH", "The replica epoch does not match.");
         }
         const page = yield* pageAfter(tx, state, request.afterCommitSequence);
         return page === undefined
-          ? yield* Effect.fail(
-              syncProtocolError(
-                "SNAPSHOT_REQUIRED",
-                "The local authority keeps no history outside the replica's own position.",
-              ),
+          ? yield* syncProtocolError(
+              "SNAPSHOT_REQUIRED",
+              "The local authority keeps no history outside the replica's own position.",
             )
           : page;
       }),

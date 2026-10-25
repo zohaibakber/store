@@ -61,7 +61,7 @@ export const loadReplicaState = Effect.fn("ReplicaCommands.loadReplicaState")(fu
 ) {
   const state = yield* tx.select().from(replicaState).get();
   if (!state) {
-    return yield* Effect.fail(ReplicaStorageError.make({ message: "Replica state is missing." }));
+    return yield* new ReplicaStorageError({ message: "Replica state is missing." });
   }
   return state;
 });

@@ -182,7 +182,11 @@ const makeSqliteReplicaStoreInternals = (
       const outcome = yield* maintainReplicaPlanner(handle.sql);
       if (outcome === "optimized") yield* Ref.set(lastOptimized, now);
     }).pipe(
-      Effect.tapError((error) => Effect.logWarning("Replica planner maintenance failed", error)),
+      Effect.tapError((error) =>
+        Effect.logWarning("replica.planner_maintenance_failed").pipe(
+          Effect.annotateLogs({ error }),
+        ),
+      ),
       Effect.ignore,
       Effect.withSpan("SqliteReplicaStore.maintainPlanner"),
     );
@@ -282,7 +286,7 @@ const makeSqliteReplicaStoreInternals = (
         const { page, ...receipt } = decided.value;
         if (page === undefined) return undefined;
         if (receipt.result._tag === "rejected") {
-          return yield* Effect.fail(syncProtocolError(receipt.result.code, receipt.result.message));
+          return yield* syncProtocolError(receipt.result.code, receipt.result.message);
         }
         return { receipt, page };
       });
@@ -534,7 +538,9 @@ const makeSqliteReplicaStoreInternals = (
       yield* holdCheckpoints("cleanup").pipe(Effect.andThen(clearRetiredWhenIdle), Effect.scoped);
       yield* withTx("SqliteReplicaStore.refreshPlannerStats", refreshPlannerStats);
     }).pipe(
-      Effect.tapError((error) => Effect.logWarning("Replica generation cleanup failed", error)),
+      Effect.tapError((error) =>
+        Effect.logWarning("replica.generation_cleanup_failed").pipe(Effect.annotateLogs({ error })),
+      ),
       Effect.ignore,
     );
 

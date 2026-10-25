@@ -1,5 +1,6 @@
 import type { CatalogRowWrite, SyncCommand } from "@store/contracts";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
+import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import { EMPTY_STOCK, type VisibleStock } from "./decisions";
@@ -46,7 +47,7 @@ const NO_RULE_DEPENDENCIES: RuleDependencies = {
   itemReferenceLimit: 0,
 };
 
-const unique = <Value>(values: Iterable<Value>): ReadonlyArray<Value> => [...new Set(values)];
+const unique = <Value>(values: Iterable<Value>): ReadonlyArray<Value> => Array.dedupe(values);
 
 const catalogWritesOf = (command: SyncCommand): ReadonlyArray<CatalogRowWrite> => {
   switch (command._tag) {

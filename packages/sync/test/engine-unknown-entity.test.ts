@@ -19,7 +19,8 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -141,26 +142,21 @@ const newerAuthorityResponse = Effect.fn(function* (
   return yield* Effect.die(`The newer authority has no route for ${pathname}.`);
 });
 
+const newerAuthorityClient = (authority: SyncTransport) =>
+  HttpClient.make((request, url) =>
+    newerAuthorityResponse(
+      authority,
+      url.pathname,
+      request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "",
+    ).pipe(
+      Effect.map((body) => HttpClientResponse.fromWeb(request, Response.json(body))),
+      Effect.orDie,
+    ),
+  );
+
 const newerAuthorityTransport = (authority: SyncTransport) =>
   makeSyncTransport("https://api.tabaaq.test").pipe(
-    Effect.provide(
-      FetchHttpClient.layer.pipe(
-        Layer.provide(
-          Layer.succeed(FetchHttpClient.Fetch, async (input, init) => {
-            const request = new Request(input, init);
-            return Response.json(
-              await Effect.runPromise(
-                newerAuthorityResponse(
-                  authority,
-                  new URL(request.url).pathname,
-                  await request.text(),
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
-    ),
+    Effect.provide(Layer.succeed(HttpClient.HttpClient, newerAuthorityClient(authority))),
   );
 
 const survivesUnknownEntities = Effect.fn(function* (
