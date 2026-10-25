@@ -1,6 +1,7 @@
 import {
   compareDecimalSequence,
   divergedPartitionEntities,
+  stockDeltaOf,
   syncProtocolError,
   type CommandReceipt,
   type PartitionDigest,
@@ -110,16 +111,13 @@ const overlayDeltasForInvoice = (
 ): ReadonlyArray<StockOverlayDelta> => {
   const byBatch = new Map<string, StockOverlayDelta>();
   for (const take of allocations) {
-    const unitsPerPack = unitsPerPackFor(take.productId);
     const held = byBatch.get(take.batchId);
+    const delta = stockDeltaOf(take, unitsPerPackFor(take.productId));
     byBatch.set(take.batchId, {
       commandId: operationId,
       batchId: take.batchId,
-      packDelta:
-        (held?.packDelta ?? 0) - (take.quantityType === "pack" ? take.quantity : take.packsOpened),
-      unitDelta:
-        (held?.unitDelta ?? 0) +
-        (take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity),
+      packDelta: (held?.packDelta ?? 0) + delta.packDelta,
+      unitDelta: (held?.unitDelta ?? 0) + delta.unitDelta,
     });
   }
   return [...byBatch.values()];

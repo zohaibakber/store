@@ -1,7 +1,7 @@
 import {
   baseUnitsOf,
-  canCreatePurchaseOrderAs,
   checkCanChangeUnitsPerPack,
+  checkCanCreateOrder,
   checkCanDeleteBatch,
   checkCanDeleteCategory,
   checkCanDeleteOrder,
@@ -178,7 +178,10 @@ const issueInvoiceRows = (
         batchNumber: batch?.batchNumber ?? null,
         quantity: take.quantity,
         quantityType: take.quantityType,
-        baseUnitQuantity: take.quantity * (take.quantityType === "pack" ? unitsPerPack : 1),
+        baseUnitQuantity:
+          take.quantityType === "pack"
+            ? baseUnitsOf({ packQuantity: take.quantity, unitQuantity: 0 }, unitsPerPack)
+            : take.quantity,
         salePrice: take.salePrice,
         createdAt: command.occurredAt,
         updatedAt: command.occurredAt,
@@ -656,8 +659,8 @@ const writePurchaseOrder = (pass: CatalogPass, write: WriteOf<"purchaseOrder">) 
         yield* checkUpsertTarget(pass, "purchaseOrder", write, existing);
         if (existing) {
           yield* guard(pass, () => checkCanMoveOrder(existing.status, write.row.status));
-        } else if (!canCreatePurchaseOrderAs(write.row.status)) {
-          yield* halt(pass, purchasingRejection.orderTransitionInvalid);
+        } else {
+          yield* guard(pass, () => checkCanCreateOrder(write.row.status));
         }
         if (
           existing?.supplierId !== write.row.supplierId &&
