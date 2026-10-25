@@ -1,9 +1,8 @@
 import {
-  accessTokenLayer,
+  AccessTokenService,
   AUTH_JWT_KEY_ID,
-  developmentEmailLayer,
-  disabledEmailLayer,
   EmailAddress,
+  EmailProvider,
   PasswordHasher,
   WebCrypto,
   type AuthClientKind,
@@ -25,12 +24,17 @@ import * as Redacted from "effect/Redacted";
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
 import { EphemeralStore } from "../src/ephemeral";
+import { unavailableOnInfrastructureFailure } from "../src/errors";
 import { authFailureWire, type AuthFailure } from "../src/failures";
-import { googleOAuthLayer } from "../src/google";
+import { GoogleOAuth } from "../src/google";
+import { GoogleIdentity } from "../src/google-identity";
 import { HubRevocation } from "../src/hub-revocation";
-import { authLimiterLayer, type AuthLimits, type AuthRateLimit } from "../src/limits";
+import { OAuthState } from "../src/identifiers";
+import { AuthLimiter, type AuthLimits, type AuthRateLimit } from "../src/limits";
+import { Login } from "../src/login";
+import { Organizations } from "../src/organization-ops";
 import { AuthRepository } from "../src/repository";
-import { AuthService, authServiceLayer } from "../src/service";
+import { Sessions } from "../src/session-ops";
 import { AuthSettings } from "../src/settings";
 import { authD1 } from "./sqlite-d1";
 
@@ -135,6 +139,10 @@ export const googleClaims = (profile: {
   ...profile,
 });
 
+const OperationsLive = Layer.mergeAll(Login.layer, GoogleIdentity.layer, Organizations.layer).pipe(
+  Layer.provideMerge(Sessions.layer),
+);
+
 export const harness = (
   options: {
     readonly deliversOtp?: boolean;
@@ -162,15 +170,15 @@ export const harness = (
     AuthRepository.layer,
     EphemeralStore.layer(EPHEMERAL_PEPPER),
     PasswordHasher.layer,
-    accessTokenLayer({
+    AccessTokenService.layer({
       issuer: "https://auth.example.com",
       audience: "tabaaq-api",
       keys: [{ kid: AUTH_JWT_KEY_ID, jwk: publicJwk }],
       activeKeyId: AUTH_JWT_KEY_ID,
       privateJwk: Redacted.make(privateJwk),
     }).pipe(Layer.provide(WebCrypto.layer)),
-    deliversOtp ? developmentEmailLayer : disabledEmailLayer,
-    googleOAuthLayer({
+    deliversOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
+    GoogleOAuth.layer({
       clientId: GOOGLE_CLIENT_ID,
       clientSecret: Redacted.make("google-client-secret"),
       callbackUrl: "https://auth.example.com/v1/oauth/google/callback",
@@ -184,7 +192,7 @@ export const harness = (
           }),
       }),
     ),
-    authLimiterLayer(
+    AuthLimiter.layer(
       options.limits ?? {
         tenPerMinute: countingLimit(10),
         fivePerMinute: countingLimit(5),
@@ -199,7 +207,7 @@ export const harness = (
   ).pipe(Layer.provide(AuthD1.layer(d1)), Layer.provideMerge(AuthCrypto.layer));
 
   const layer = Layer.mergeAll(
-    authServiceLayer.pipe(Layer.provide(dependencies)),
+    OperationsLive.pipe(Layer.provide(dependencies)),
     Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
     Logger.layer([]),
   );
@@ -216,22 +224,46 @@ export const harness = (
 
 export type Harness = ReturnType<typeof harness>;
 
-const withPlainTokens = (auth: typeof AuthService.Service) => ({
-  ...auth,
-  roster: (accessToken: string) => auth.roster(Redacted.make(accessToken)),
-  organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
-    auth.organize({ command: input.command, accessToken: Redacted.make(input.accessToken) }),
+const operations = Effect.gen(function* () {
+  const login = yield* Login;
+  const google = yield* GoogleIdentity;
+  const sessions = yield* Sessions;
+  const organizations = yield* Organizations;
+  return {
+    identify: (...args: Parameters<typeof login.identify>) =>
+      unavailableOnInfrastructureFailure(login.identify(...args)),
+    authenticate: (...args: Parameters<typeof login.authenticate>) =>
+      unavailableOnInfrastructureFailure(login.authenticate(...args)),
+    beginGoogle: (...args: Parameters<typeof google.beginGoogle>) =>
+      unavailableOnInfrastructureFailure(google.beginGoogle(...args)),
+    completeGoogle: (input: { readonly code: string; readonly state: string }) =>
+      unavailableOnInfrastructureFailure(
+        google.completeGoogle({ code: input.code, state: OAuthState.make(input.state) }),
+      ),
+    exchangeGoogle: (...args: Parameters<typeof google.exchangeGoogle>) =>
+      unavailableOnInfrastructureFailure(google.exchangeGoogle(...args)),
+    refresh: (...args: Parameters<typeof sessions.refresh>) =>
+      unavailableOnInfrastructureFailure(sessions.refresh(...args)),
+    signOut: (...args: Parameters<typeof sessions.signOut>) =>
+      unavailableOnInfrastructureFailure(sessions.signOut(...args)),
+    roster: (accessToken: string) =>
+      unavailableOnInfrastructureFailure(organizations.roster(Redacted.make(accessToken))),
+    organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
+      unavailableOnInfrastructureFailure(
+        organizations.organize({
+          command: input.command,
+          accessToken: Redacted.make(input.accessToken),
+        }),
+      ),
+  };
 });
 
-export type Api = ReturnType<typeof withPlainTokens>;
+export type Api = Effect.Success<typeof operations>;
 
 export const run = <A, E>(
   instance: Harness,
   use: (auth: Api) => Effect.Effect<A, E, RuntimeContext>,
-) =>
-  Effect.runPromise(
-    AuthService.use((auth) => use(withPlainTokens(auth))).pipe(Effect.provide(instance.layer)),
-  );
+) => Effect.runPromise(operations.pipe(Effect.flatMap(use), Effect.provide(instance.layer)));
 
 export const failing = <A>(
   instance: Harness,

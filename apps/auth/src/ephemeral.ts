@@ -22,6 +22,7 @@ import * as Schema from "effect/Schema";
 
 import { AuthCrypto } from "./crypto";
 import { AuthD1, bound, runD1Batch } from "./d1";
+import { OAuthState } from "./identifiers";
 import {
   decideOtpIssuance,
   issuanceRecordExpiresAt,
@@ -119,9 +120,9 @@ export class EphemeralStore extends Context.Service<
       readonly googleCodeVerifier: string;
       readonly googleNonce: string;
       readonly expiresAt: number;
-    }) => Effect.Effect<string, EphemeralStoreError>;
+    }) => Effect.Effect<OAuthState, EphemeralStoreError>;
     readonly consumeOAuthState: (
-      state: string,
+      state: OAuthState,
       now: number,
     ) => Effect.Effect<OAuthStateRecord | null, EphemeralStoreError>;
     readonly createAuthorizationGrant: (input: {
@@ -384,7 +385,7 @@ export class EphemeralStore extends Context.Service<
             return matched ? payload.email : null;
           }),
           createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
-            const state = yield* keyId;
+            const state = OAuthState.make(yield* keyId);
             yield* putRecord(
               "createOAuthState",
               "oauth-state",

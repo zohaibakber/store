@@ -1,10 +1,5 @@
-export { AuthClient, AuthClientError, authClientLayer, type AuthClientApi } from "./client";
-export {
-  developmentEmailLayer,
-  disabledEmailLayer,
-  EmailDeliveryError,
-  EmailProvider,
-} from "./email";
+export { AuthClient, AuthClientError, authClientLayer } from "./client";
+export { EmailDeliveryError, EmailProvider } from "./email";
 export {
   Authorization,
   bearerTokenFromHeaders,
@@ -17,6 +12,7 @@ export {
 export { AuthHttpApi, MalformedRequest } from "./http-api";
 export {
   AuthBadRequest,
+  AuthErrorCode,
   AuthUnauthenticated,
   authHttpErrorStatus,
   sessionEndingCodes,
@@ -26,7 +22,6 @@ export {
   AccessTokenService,
   AuthJwks,
   JwtError,
-  accessTokenLayer,
   activeJwtKeyId,
   AUTH_JWT_KEY_ID,
   decodeSigningJwkText,
