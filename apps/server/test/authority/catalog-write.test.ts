@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   ACTIVE_REPLICA_WINDOW_MILLIS,
   MAX_TRANSPORT_PAYLOAD_BYTES,
@@ -46,24 +47,20 @@ import {
   suppliers,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
-import type { RuntimeContext } from "alchemy";
 import { asc, eq } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vite-plus/test";
+import * as TestClock from "effect/testing/TestClock";
 
 import type { Actor } from "../../src/authority/engine";
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
-import { testRuntimeContext } from "../lib/app";
-import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const OCCURRED_AT = 1_700_000_000_000;
 const PRODUCT_ID = decodeProductId("prod-1");
 const SUPPLIER_ID = decodeSupplierId("sup-1");
 const ORDER_ID = decodePurchaseOrderId("po-1");
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
-  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
 
 const actorFor = (organizationId: string): Actor => ({
   organizationId,
@@ -247,7 +244,7 @@ const receivedBatch = (
 
 const openCatalog = (organizationId: string, commitSequence = 0) =>
   Effect.gen(function* () {
-    const authorities = makeTestAuthorities();
+    const authorities = yield* TestAuthorities;
     const { db } = yield* authorities.open(organizationId);
     yield* db.insert(authorityState).values({
       id: 1,
@@ -267,7 +264,7 @@ const openCatalog = (organizationId: string, commitSequence = 0) =>
       registeredAt: OCCURRED_AT,
       lastSeenAt: OCCURRED_AT,
     });
-    const commands = typedCommands(yield* organizationAuthorityFor(authorities));
+    const commands = typedCommands(yield* OrganizationAuthority);
     let clientSequence = 0;
     const write = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>) =>
       Effect.suspend(() => {
@@ -360,13 +357,14 @@ const activePartitionRows = (db: ReplicaDb) =>
   });
 
 describe("durable object catalog writes", () => {
-  it("holds supplier and order rows back while another device on the old schema was seen within 14 days", async () => {
-    const organizationId = decodeOrganizationId("org-purchasing-gate");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
+  it.effect(
+    "holds supplier and order rows back while another device on the old schema was seen within 14 days",
+    () =>
       Effect.gen(function* () {
+        const organizationId = decodeOrganizationId("org-purchasing-gate");
+        const actor = actorFor(organizationId);
         const { commands, db, write } = yield* openCatalog(organizationId);
-        const now = Date.now();
+        const now = yield* Clock.currentTimeMillis;
         const peer = eq(replicas.replicaId, LAST_UNIT_REPLICA_B);
         yield* db.insert(replicas).values({
           replicaId: LAST_UNIT_REPLICA_B,
@@ -428,7 +426,7 @@ describe("durable object catalog writes", () => {
         });
         const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
         const listedRemoved = yield* standingOf;
-        yield* Effect.sleep("5 millis");
+        yield* TestClock.adjust("5 millis");
         yield* commands.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
         const listedReturned = yield* standingOf;
@@ -443,7 +441,7 @@ describe("durable object catalog writes", () => {
         });
         yield* db.update(replicas).set({ lastSeenAt: now, schemaVersion: 2 }).where(peer);
         const upgraded = yield* write("cmd-upgraded", [supplierWrite("sup-2", null, "Globex")]);
-        return {
+        const outcome = {
           catalog,
           supplier,
           receipt,
@@ -464,89 +462,84 @@ describe("durable object catalog writes", () => {
           registeredClear,
           upgraded,
         };
-      }),
-    );
-    expect(outcome.catalog).toMatchObject(ACCEPTED);
-    expect(outcome.supplier).toEqual(rejection(staleReplicaRejection("Till 2")));
-    expect(outcome.receipt).toEqual(rejection(staleReplicaRejection("Till 2")));
-    expect(outcome.registeredBlocked.lowestActiveSchemaVersion).toBe(1);
-    expect(outcome.unnamed).toEqual(rejection(staleReplicaRejection(null)));
-    expect(outcome.abandoned).toMatchObject(ACCEPTED);
-    expect(outcome.registeredAbandoned.lowestActiveSchemaVersion).toBe(2);
-    expect(outcome.reconnected).toEqual(rejection(staleReplicaRejection(null)));
-    expect(outcome.listedHolding).toMatchObject({ upToDate: false, holdsBack: true });
-    expect(outcome.ignored).toMatchObject(ACCEPTED);
-    expect(outcome.listedIgnored).toMatchObject({ ignored: true, holdsBack: false });
-    expect(outcome.heeded).toEqual(rejection(staleReplicaRejection(null)));
-    expect(outcome.removed).toMatchObject(ACCEPTED);
-    expect(outcome.listedRemoved).toBeNull();
-    expect(outcome.returned).toEqual(rejection(staleReplicaRejection(null)));
-    expect(outcome.listedReturned).toMatchObject({ ignored: false, holdsBack: true });
-    expect(outcome.dormant).toMatchObject(ACCEPTED);
-    expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
-    expect(outcome.upgraded).toMatchObject(ACCEPTED);
-  });
+        expect(outcome.catalog).toMatchObject(ACCEPTED);
+        expect(outcome.supplier).toEqual(rejection(staleReplicaRejection("Till 2")));
+        expect(outcome.receipt).toEqual(rejection(staleReplicaRejection("Till 2")));
+        expect(outcome.registeredBlocked.lowestActiveSchemaVersion).toBe(1);
+        expect(outcome.unnamed).toEqual(rejection(staleReplicaRejection(null)));
+        expect(outcome.abandoned).toMatchObject(ACCEPTED);
+        expect(outcome.registeredAbandoned.lowestActiveSchemaVersion).toBe(2);
+        expect(outcome.reconnected).toEqual(rejection(staleReplicaRejection(null)));
+        expect(outcome.listedHolding).toMatchObject({ upToDate: false, holdsBack: true });
+        expect(outcome.ignored).toMatchObject(ACCEPTED);
+        expect(outcome.listedIgnored).toMatchObject({ ignored: true, holdsBack: false });
+        expect(outcome.heeded).toEqual(rejection(staleReplicaRejection(null)));
+        expect(outcome.removed).toMatchObject(ACCEPTED);
+        expect(outcome.listedRemoved).toBeNull();
+        expect(outcome.returned).toEqual(rejection(staleReplicaRejection(null)));
+        expect(outcome.listedReturned).toMatchObject({ ignored: false, holdsBack: true });
+        expect(outcome.dormant).toMatchObject(ACCEPTED);
+        expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
+        expect(outcome.upgraded).toMatchObject(ACCEPTED);
+      }).pipe(scenario),
+  );
 
-  it("answers a digest that covers purchasing rows", async () => {
-    const organizationId = decodeOrganizationId("org-purchasing-digest");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db, write } = yield* openCatalog(organizationId);
-        yield* write("cmd-seed", seedCatalog().writes);
-        const currentBefore = yield* commands.pull(actor, pullFrom("1", true));
-        yield* write("cmd-purchasing", [
-          supplierWrite("sup-1", null, "Acme"),
-          orderWrite("po-1", null),
-          lineWrite("line-1", null),
-        ]);
-        const currentAfter = yield* commands.pull(actor, pullFrom("2", true));
-        const expected = yield* partitionDigestOf(yield* activePartitionRows(db));
-        return { currentBefore, currentAfter, expected };
-      }),
-    );
-    expect(outcome.currentBefore.digest?.count).toBe(4);
-    expect(outcome.currentAfter.digest).toEqual(outcome.expected);
-    expect(outcome.currentAfter.digest?.count).toBe(7);
-    expect(outcome.currentAfter.digest?.digest).not.toBe(outcome.currentBefore.digest?.digest);
-  });
+  it.effect("answers a digest that covers purchasing rows", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-purchasing-digest");
+      const actor = actorFor(organizationId);
+      const { commands, db, write } = yield* openCatalog(organizationId);
+      yield* write("cmd-seed", seedCatalog().writes);
+      const currentBefore = yield* commands.pull(actor, pullFrom("1", true));
+      yield* write("cmd-purchasing", [
+        supplierWrite("sup-1", null, "Acme"),
+        orderWrite("po-1", null),
+        lineWrite("line-1", null),
+      ]);
+      const currentAfter = yield* commands.pull(actor, pullFrom("2", true));
+      const expected = yield* partitionDigestOf(yield* activePartitionRows(db));
+      const outcome = { currentBefore, currentAfter, expected };
+      expect(outcome.currentBefore.digest?.count).toBe(4);
+      expect(outcome.currentAfter.digest).toEqual(outcome.expected);
+      expect(outcome.currentAfter.digest?.count).toBe(7);
+      expect(outcome.currentAfter.digest?.digest).not.toBe(outcome.currentBefore.digest?.digest);
+    }).pipe(scenario),
+  );
 
-  it("bounds a pull page by the payload budget without splitting a group", async () => {
-    const organizationId = decodeOrganizationId("org-catalog-budget");
-    const actor = actorFor(organizationId);
-    const filler = "x".repeat(600_000);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { commands, db } = yield* openCatalog(organizationId, 2);
-        for (const commitSequence of [1, 2]) {
-          const changes = [0, 1].map((ordinal) => ({
-            commitSequence,
-            ordinal,
-            entity: "category",
-            action: "upsert" as const,
-            entityId: `big-${commitSequence}-${ordinal}`,
-            rowVersion: 1,
-            rowJson: `{"id":"big-${commitSequence}-${ordinal}","filler":"${filler}"}`,
-          }));
-          yield* db.insert(authorityTransactions).values({
-            commitSequence,
-            operationId: `bulk-${commitSequence}`,
-            decision: "accepted",
-            epoch: LAST_UNIT_EPOCH,
-            byteLength: changes.reduce((total, change) => total + change.rowJson.length, 128),
-          });
-          yield* db.insert(authorityChanges).values(changes);
-        }
-        const first = yield* commands.pull(actor, pullFrom("0"));
-        const second = yield* commands.pull(actor, pullFrom(first.nextCommitSequence));
-        return { first, second };
-      }),
-    );
-    expect(MAX_TRANSPORT_PAYLOAD_BYTES).toBeLessThan(2 * 1_200_000);
-    expect(outcome.first.transactions).toHaveLength(1);
-    expect(outcome.first.transactions[0]?.changes).toHaveLength(2);
-    expect(outcome.first.nextCommitSequence).toBe("1");
-    expect(outcome.second.transactions).toHaveLength(1);
-    expect(outcome.second.nextCommitSequence).toBe("2");
-  });
+  it.effect("bounds a pull page by the payload budget without splitting a group", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-catalog-budget");
+      const actor = actorFor(organizationId);
+      const filler = "x".repeat(600_000);
+      const { commands, db } = yield* openCatalog(organizationId, 2);
+      for (const commitSequence of [1, 2]) {
+        const changes = [0, 1].map((ordinal) => ({
+          commitSequence,
+          ordinal,
+          entity: "category",
+          action: "upsert" as const,
+          entityId: `big-${commitSequence}-${ordinal}`,
+          rowVersion: 1,
+          rowJson: `{"id":"big-${commitSequence}-${ordinal}","filler":"${filler}"}`,
+        }));
+        yield* db.insert(authorityTransactions).values({
+          commitSequence,
+          operationId: `bulk-${commitSequence}`,
+          decision: "accepted",
+          epoch: LAST_UNIT_EPOCH,
+          byteLength: changes.reduce((total, change) => total + change.rowJson.length, 128),
+        });
+        yield* db.insert(authorityChanges).values(changes);
+      }
+      const first = yield* commands.pull(actor, pullFrom("0"));
+      const second = yield* commands.pull(actor, pullFrom(first.nextCommitSequence));
+      const outcome = { first, second };
+      expect(MAX_TRANSPORT_PAYLOAD_BYTES).toBeLessThan(2 * 1_200_000);
+      expect(outcome.first.transactions).toHaveLength(1);
+      expect(outcome.first.transactions[0]?.changes).toHaveLength(2);
+      expect(outcome.first.nextCommitSequence).toBe("1");
+      expect(outcome.second.transactions).toHaveLength(1);
+      expect(outcome.second.nextCommitSequence).toBe("2");
+    }).pipe(scenario),
+  );
 });

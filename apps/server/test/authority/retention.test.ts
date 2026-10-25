@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import { OPERATIONAL_SUBSCRIPTION, OrgCommitSequence, SyncProtocolError } from "@store/contracts";
 import { decodeOrganizationId } from "@store/contracts/ids";
 import {
@@ -20,22 +21,18 @@ import {
   snapshots,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
-import type { RuntimeContext } from "alchemy";
 import { asc } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
-import { TestClock } from "effect/testing";
-import { describe, expect, it } from "vite-plus/test";
 
 import { makeAuthorityEngine } from "../../src/authority/engine";
 import type { Actor } from "../../src/authority/engine";
 import { makeAuthorityMaintenance, type MaintenancePolicy } from "../../src/authority/maintenance";
 import { MAINTENANCE_POLICY } from "../../src/authority/policy";
 import { makeAuthoritySnapshots } from "../../src/authority/snapshots";
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
-import { testRuntimeContext } from "../lib/app";
-import { makeTestAuthorities, organizationAuthorityFor, type TestAuthorities } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const isProtocol = Schema.is(SyncProtocolError);
 
@@ -53,24 +50,16 @@ const TEST_POLICY: MaintenancePolicy = {
   snapshotRowDeleteBatchRows: 500,
 };
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      yield* TestClock.setTime(OCCURRED_AT);
-      return yield* effect;
-    }).pipe(
-      Effect.provide(TestClock.layer()),
-      Effect.scoped,
-      Effect.provideContext(testRuntimeContext),
-    ),
-  );
-
 const actorFor = (organizationId: string): Actor => ({
   organizationId,
   userId: "user-1",
 });
 
-const seedOrganization = (authorities: TestAuthorities, organizationId: string, head: number) =>
+const seedOrganization = (
+  authorities: TestAuthorities["Service"],
+  organizationId: string,
+  head: number,
+) =>
   Effect.gen(function* () {
     const { db, sql } = yield* authorities.open(organizationId);
     const metadata = {
@@ -214,85 +203,90 @@ const readFloor = (db: ReplicaDb) =>
     );
 
 describe("durable object inventory maintenance", () => {
-  it("advances the floor to the smallest of snapshot horizon, lease cursor, and head minus the minimum", async () => {
-    const organizationId = decodeOrganizationId("org-floor-min");
-    const outcome = await run(
+  it.effect(
+    "advances the floor to the smallest of snapshot horizon, lease cursor, and head minus the minimum",
+    () =>
       Effect.gen(function* () {
-        const { db, maintain } = yield* seedOrganization(makeTestAuthorities(), organizationId, 10);
+        const organizationId = decodeOrganizationId("org-floor-min");
+        const { db, maintain } = yield* seedOrganization(
+          yield* TestAuthorities,
+          organizationId,
+          10,
+        );
         yield* publishSnapshot(db, "snapshot-min", 6);
         yield* grantLease(db, LAST_UNIT_REPLICA_A, "snapshot-min", 4, OCCURRED_AT + 600_000);
         const withLease = yield* maintain();
         yield* db.delete(downloadLeases).pipe(Effect.orDie);
         const withoutLease = yield* maintain();
-        return { withLease, withoutLease, floor: yield* readFloor(db) };
-      }),
-    );
-    expect(outcome.withLease.floorBefore).toBe("0");
-    expect(outcome.withLease.floorAfter).toBe("4");
-    expect(outcome.withLease.builtSnapshot).toBe(false);
-    expect(outcome.withoutLease.floorAfter).toBe("6");
-    expect(outcome.floor).toBe(6);
-  });
+        const outcome = { withLease, withoutLease, floor: yield* readFloor(db) };
+        expect(outcome.withLease.floorBefore).toBe("0");
+        expect(outcome.withLease.floorAfter).toBe("4");
+        expect(outcome.withLease.builtSnapshot).toBe(false);
+        expect(outcome.withoutLease.floorAfter).toBe("6");
+        expect(outcome.floor).toBe(6);
+      }).pipe(scenario),
+  );
 
-  it("never regresses the retention floor", async () => {
-    const organizationId = decodeOrganizationId("org-floor-monotonic");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { db, maintain } = yield* seedOrganization(makeTestAuthorities(), organizationId, 10);
-        yield* publishSnapshot(db, "snapshot-monotonic", 6);
-        const first = yield* maintain();
-        yield* grantLease(db, LAST_UNIT_REPLICA_A, "snapshot-monotonic", 1, OCCURRED_AT + 600_000);
-        const second = yield* maintain();
-        return { first, second, floor: yield* readFloor(db) };
-      }),
-    );
-    expect(outcome.first.floorAfter).toBe("6");
-    expect(outcome.second.floorBefore).toBe("6");
-    expect(outcome.second.floorAfter).toBe("6");
-    expect(outcome.floor).toBe(6);
-  });
+  it.effect("never regresses the retention floor", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-floor-monotonic");
+      const { db, maintain } = yield* seedOrganization(yield* TestAuthorities, organizationId, 10);
+      yield* publishSnapshot(db, "snapshot-monotonic", 6);
+      const first = yield* maintain();
+      yield* grantLease(db, LAST_UNIT_REPLICA_A, "snapshot-monotonic", 1, OCCURRED_AT + 600_000);
+      const second = yield* maintain();
+      const outcome = { first, second, floor: yield* readFloor(db) };
+      expect(outcome.first.floorAfter).toBe("6");
+      expect(outcome.second.floorBefore).toBe("6");
+      expect(outcome.second.floorAfter).toBe("6");
+      expect(outcome.floor).toBe(6);
+    }).pipe(scenario),
+  );
 
-  it("deletes history below the floor in bounded batches and keeps command receipts", async () => {
-    const organizationId = decodeOrganizationId("org-bounded-delete");
-    const outcome = await run(
-      Effect.gen(function* () {
-        const { db, maintain } = yield* seedOrganization(makeTestAuthorities(), organizationId, 10);
-        yield* publishSnapshot(db, "snapshot-bounded", 10);
-        const first = yield* maintain();
-        const second = yield* maintain();
-        const third = yield* maintain();
-        const remainingTransactions = yield* db
-          .select({ commitSequence: authorityTransactions.commitSequence })
-          .from(authorityTransactions)
-          .orderBy(asc(authorityTransactions.commitSequence))
-          .all()
-          .pipe(Effect.orDie);
-        const remainingChanges = yield* db.select().from(authorityChanges).all().pipe(Effect.orDie);
-        const receipts = yield* db
-          .select({ operationId: commandReceipts.operationId })
-          .from(commandReceipts)
-          .all()
-          .pipe(Effect.orDie);
-        return { first, second, third, remainingTransactions, remainingChanges, receipts };
-      }),
-    );
-    expect(outcome.first.floorAfter).toBe("8");
-    expect(outcome.first.deletedTransactions).toBe(4);
-    expect(outcome.first.more).toBe(true);
-    expect(outcome.second.deletedTransactions).toBe(4);
-    expect(outcome.second.more).toBe(false);
-    expect(outcome.third.deletedTransactions).toBe(0);
-    expect(outcome.third.more).toBe(false);
-    expect(outcome.remainingTransactions.map((row) => row.commitSequence)).toEqual([9, 10]);
-    expect(outcome.remainingChanges).toHaveLength(2);
-    expect(outcome.receipts).toHaveLength(10);
-  });
+  it.effect("deletes history below the floor in bounded batches and keeps command receipts", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-bounded-delete");
+      const { db, maintain } = yield* seedOrganization(yield* TestAuthorities, organizationId, 10);
+      yield* publishSnapshot(db, "snapshot-bounded", 10);
+      const first = yield* maintain();
+      const second = yield* maintain();
+      const third = yield* maintain();
+      const remainingTransactions = yield* db
+        .select({ commitSequence: authorityTransactions.commitSequence })
+        .from(authorityTransactions)
+        .orderBy(asc(authorityTransactions.commitSequence))
+        .all()
+        .pipe(Effect.orDie);
+      const remainingChanges = yield* db.select().from(authorityChanges).all().pipe(Effect.orDie);
+      const receipts = yield* db
+        .select({ operationId: commandReceipts.operationId })
+        .from(commandReceipts)
+        .all()
+        .pipe(Effect.orDie);
+      const outcome = { first, second, third, remainingTransactions, remainingChanges, receipts };
+      expect(outcome.first.floorAfter).toBe("8");
+      expect(outcome.first.deletedTransactions).toBe(4);
+      expect(outcome.first.more).toBe(true);
+      expect(outcome.second.deletedTransactions).toBe(4);
+      expect(outcome.second.more).toBe(false);
+      expect(outcome.third.deletedTransactions).toBe(0);
+      expect(outcome.third.more).toBe(false);
+      expect(outcome.remainingTransactions.map((row) => row.commitSequence)).toEqual([9, 10]);
+      expect(outcome.remainingChanges).toHaveLength(2);
+      expect(outcome.receipts).toHaveLength(10);
+    }).pipe(scenario),
+  );
 
-  it("expires leases, prunes old unleased snapshots, and sweeps abandoned import parts", async () => {
-    const organizationId = decodeOrganizationId("org-prune");
-    const outcome = await run(
+  it.effect(
+    "expires leases, prunes old unleased snapshots, and sweeps abandoned import parts",
+    () =>
       Effect.gen(function* () {
-        const { db, maintain } = yield* seedOrganization(makeTestAuthorities(), organizationId, 10);
+        const organizationId = decodeOrganizationId("org-prune");
+        const { db, maintain } = yield* seedOrganization(
+          yield* TestAuthorities,
+          organizationId,
+          10,
+        );
         yield* publishSnapshot(db, "snapshot-a", 2);
         yield* publishSnapshot(db, "snapshot-b", 4);
         yield* publishSnapshot(db, "snapshot-c", 6);
@@ -319,53 +313,50 @@ describe("durable object inventory maintenance", () => {
           .pipe(Effect.orDie);
         const leases = yield* db.select().from(downloadLeases).all().pipe(Effect.orDie);
         const parts = yield* db.select().from(importParts).all().pipe(Effect.orDie);
-        return { report, kept, leases, parts };
-      }),
-    );
-    expect(outcome.report.expiredLeases).toBe(1);
-    expect(outcome.report.prunedSnapshots).toBe(1);
-    expect(outcome.report.sweptImportParts).toBe(1);
-    expect(outcome.kept.map((row) => row.snapshotId)).toEqual([
-      "snapshot-b",
-      "snapshot-c",
-      "snapshot-d",
-    ]);
-    expect(outcome.leases.map((lease) => lease.replicaId)).toEqual(["replica-held"]);
-    expect(outcome.parts).toHaveLength(0);
-    expect(outcome.report.floorAfter).toBe("4");
-  });
+        const outcome = { report, kept, leases, parts };
+        expect(outcome.report.expiredLeases).toBe(1);
+        expect(outcome.report.prunedSnapshots).toBe(1);
+        expect(outcome.report.sweptImportParts).toBe(1);
+        expect(outcome.kept.map((row) => row.snapshotId)).toEqual([
+          "snapshot-b",
+          "snapshot-c",
+          "snapshot-d",
+        ]);
+        expect(outcome.leases.map((lease) => lease.replicaId)).toEqual(["replica-held"]);
+        expect(outcome.parts).toHaveLength(0);
+        expect(outcome.report.floorAfter).toBe("4");
+      }).pipe(scenario),
+  );
 
-  it("refuses a pull below the new floor and serves a pull above it", async () => {
-    const organizationId = decodeOrganizationId("org-pull-floor");
-    const actor = actorFor(organizationId);
-    const outcome = await run(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const { db, maintain } = yield* seedOrganization(authorities, organizationId, 10);
-        yield* publishSnapshot(db, "snapshot-pull", 6);
-        const commands = typedCommands(yield* organizationAuthorityFor(authorities));
-        const pullAfter = (after: string) =>
-          commands.pull(actor, {
-            epoch: LAST_UNIT_EPOCH,
-            subscription: OPERATIONAL_SUBSCRIPTION,
-            afterCommitSequence: OrgCommitSequence.make(after),
-          });
-        const beforeRetention = yield* pullAfter("0");
-        const progress = yield* maintain();
-        const belowFloor = yield* pullAfter("0").pipe(Effect.flip);
-        const atFloor = yield* pullAfter("6");
-        return { beforeRetention, progress, belowFloor, atFloor };
-      }),
-    );
-    expect(outcome.beforeRetention.transactions).toHaveLength(10);
-    expect(outcome.progress.floorAfter).toBe("6");
-    expect(isProtocol(outcome.belowFloor) && outcome.belowFloor.code).toBe("SNAPSHOT_REQUIRED");
-    expect(outcome.atFloor.retentionFloor).toBe(OrgCommitSequence.make("6"));
-    expect(outcome.atFloor.transactions.map((group) => group.commitSequence)).toEqual([
-      OrgCommitSequence.make("7"),
-      OrgCommitSequence.make("8"),
-      OrgCommitSequence.make("9"),
-      OrgCommitSequence.make("10"),
-    ]);
-  });
+  it.effect("refuses a pull below the new floor and serves a pull above it", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-pull-floor");
+      const actor = actorFor(organizationId);
+      const authorities = yield* TestAuthorities;
+      const { db, maintain } = yield* seedOrganization(authorities, organizationId, 10);
+      yield* publishSnapshot(db, "snapshot-pull", 6);
+      const commands = typedCommands(yield* OrganizationAuthority);
+      const pullAfter = (after: string) =>
+        commands.pull(actor, {
+          epoch: LAST_UNIT_EPOCH,
+          subscription: OPERATIONAL_SUBSCRIPTION,
+          afterCommitSequence: OrgCommitSequence.make(after),
+        });
+      const beforeRetention = yield* pullAfter("0");
+      const progress = yield* maintain();
+      const belowFloor = yield* pullAfter("0").pipe(Effect.flip);
+      const atFloor = yield* pullAfter("6");
+      const outcome = { beforeRetention, progress, belowFloor, atFloor };
+      expect(outcome.beforeRetention.transactions).toHaveLength(10);
+      expect(outcome.progress.floorAfter).toBe("6");
+      expect(isProtocol(outcome.belowFloor) && outcome.belowFloor.code).toBe("SNAPSHOT_REQUIRED");
+      expect(outcome.atFloor.retentionFloor).toBe(OrgCommitSequence.make("6"));
+      expect(outcome.atFloor.transactions.map((group) => group.commitSequence)).toEqual([
+        OrgCommitSequence.make("7"),
+        OrgCommitSequence.make("8"),
+        OrgCommitSequence.make("9"),
+        OrgCommitSequence.make("10"),
+      ]);
+    }).pipe(scenario),
+  );
 });

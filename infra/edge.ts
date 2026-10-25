@@ -3,7 +3,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
-import { resolveProductionAuthHostname } from "../apps/auth/src/public-hostname.ts";
+import { resolveProductionAuthHostname } from "../apps/auth/src/deployment.ts";
 import {
   productionDomainConfig,
   resolveProductionApiHostname,
