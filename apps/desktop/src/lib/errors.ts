@@ -1,4 +1,5 @@
 import { isConnectivityFailure } from "@store/contracts";
+import * as Schema from "effect/Schema";
 
 import { toastManager } from "@/components/ui/toast";
 
@@ -14,8 +15,10 @@ export const storeErrorMessage = (
   return message;
 };
 
+const Messaged = Schema.Struct({ message: Schema.String });
+
 export const toastStoreError = (cause: unknown, fallback?: string) => {
-  const raw = cause instanceof Error ? cause.message : "";
+  const raw = Schema.is(Messaged)(cause) ? cause.message : "";
   if (isConnectivityFailure(raw) || raw.startsWith("net::")) return;
   toastManager.add({ title: storeErrorMessage(cause, fallback), type: "error" });
 };

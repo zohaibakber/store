@@ -27,7 +27,7 @@ import {
 import { SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
 import { DesktopAuth } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
-import { DesktopShell } from "./desktop-shell";
+import { DesktopShell, OpenExternalFailed } from "./desktop-shell";
 import { makeDesktopHost } from "./host";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
@@ -211,8 +211,7 @@ const desktopShell = DesktopShell.of({
   openExternal: (url) =>
     Effect.tryPromise({
       try: () => shell.openExternal(url),
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error("The link could not be opened."),
+      catch: (cause) => new OpenExternalFailed({ message: "The link could not be opened.", cause }),
     }),
   writeClipboardText: (text) => Effect.sync(() => clipboard.writeText(text)),
   choosePdfDestination: (suggestedName) =>
