@@ -90,8 +90,10 @@ say so in the PR.
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
   `InventoryInsights`, and `DesktopRpcs` (main-owned workspace state), all
-  Effect RPC over MessagePorts. Preload IPC carries open, close, backup,
-  restore, and publish only. Adding a read means adding a named member, not a
+  Effect RPC over MessagePorts. Preload exposes only the shell-port handshake; every other shell command,
+  including open, close, backup, restore and publish, is a typed `ShellRpcs`
+  call over a MessagePort that main serves only to the trusted main frame, once
+  per document. Adding a read means adding a named member, not a
   parameter.
 - The pull digest is requested on the cadence policy only, when the replica
   believes it is caught up and the verification interval has elapsed.
