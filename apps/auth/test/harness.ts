@@ -5,6 +5,7 @@ import {
   disabledEmailLayer,
   EmailAddress,
   PasswordHasher,
+  WebCrypto,
   type AuthClientKind,
   type OrganizationCommand,
   type OrganizationId,
@@ -166,8 +167,8 @@ export const harness = (
       audience: "tabaaq-api",
       keys: [{ kid: AUTH_JWT_KEY_ID, jwk: publicJwk }],
       activeKeyId: AUTH_JWT_KEY_ID,
-      privateJwk,
-    }),
+      privateJwk: Redacted.make(privateJwk),
+    }).pipe(Layer.provide(WebCrypto.layer)),
     deliversOtp ? developmentEmailLayer : disabledEmailLayer,
     googleOAuthLayer({
       clientId: GOOGLE_CLIENT_ID,

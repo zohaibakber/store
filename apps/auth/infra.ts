@@ -1,11 +1,12 @@
 import {
   accessTokenLayer,
   activeJwtKeyId,
-  decodeJsonWebKeyText,
+  decodeSigningJwkText,
   decodeJwtKeyRingText,
   disabledEmailLayer,
   developmentEmailLayer,
   PasswordHasher,
+  WebCrypto,
 } from "@store/auth";
 import {
   DEFAULT_ELECTRON_PROTOCOL,
@@ -29,7 +30,6 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Redacted from "effect/Redacted";
 
 import { AuthCrypto } from "./src/crypto";
 import { AuthD1 } from "./src/d1";
@@ -148,8 +148,9 @@ export const AuthLive = Auth.make(
       ],
     });
 
-    const privateJwk = yield* Effect.flatMap(Config.Redacted("AUTH_JWT_PRIVATE_JWK"), (text) =>
-      decodeJsonWebKeyText(Redacted.value(text)),
+    const signingJwk = yield* Effect.flatMap(
+      Config.Redacted("AUTH_JWT_PRIVATE_JWK"),
+      decodeSigningJwkText,
     ).pipe(Effect.orDie);
     const publicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
     const keys = yield* decodeJwtKeyRingText(publicJwkText).pipe(Effect.orDie);
@@ -191,9 +192,9 @@ export const AuthLive = Auth.make(
         issuer: security.baseURL,
         audience: "tabaaq-api",
         keys,
-        activeKeyId: activeJwtKeyId(keys, privateJwk),
-        privateJwk,
-      }),
+        activeKeyId: activeJwtKeyId(keys, signingJwk.publicHalf),
+        privateJwk: signingJwk.jwk,
+      }).pipe(Layer.provide(WebCrypto.layer)),
       developmentOtp ? developmentEmailLayer : disabledEmailLayer,
       googleOAuthLayer({
         clientId: googleClientId,

@@ -29,7 +29,7 @@ export {
   accessTokenLayer,
   activeJwtKeyId,
   AUTH_JWT_KEY_ID,
-  decodeJsonWebKeyText,
+  decodeSigningJwkText,
   decodeJwtKeyRingText,
   makeAccessTokenVerifier,
   publicJwks,

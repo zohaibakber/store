@@ -1,10 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import { AUTH_JWT_KEY_ID, issueAccessToken, makeAccessTokenVerifier } from "../src/jwt";
 import { EmailAddress, OrganizationId, SessionId, UserId } from "../src/model";
+import { layer as webCryptoLayer } from "../src/web-crypto";
 
 const NEXT_KEY_ID = "tabaaq-auth-next";
 const textEncoder = new TextEncoder();
@@ -73,11 +75,11 @@ describe("ES256 access tokens", () => {
         const fromCurrent = yield* issueAccessToken(input, {
           ...ring,
           activeKeyId: AUTH_JWT_KEY_ID,
-          privateJwk: current.privateJwk,
+          privateJwk: Redacted.make(current.privateJwk),
         });
         const fromNext = yield* issueAccessToken(
           { ...input, sessionId: SessionId.make("session-2") },
-          { ...ring, activeKeyId: NEXT_KEY_ID, privateJwk: next.privateJwk },
+          { ...ring, activeKeyId: NEXT_KEY_ID, privateJwk: Redacted.make(next.privateJwk) },
         );
         const claims = fromCurrent.token.split(".")[1];
         const refusal = (
@@ -111,7 +113,7 @@ describe("ES256 access tokens", () => {
             ),
           }),
         ] as const;
-      }),
+      }).pipe(Effect.provide(webCryptoLayer)),
     );
 
     expect(accepted.map((claims) => claims.sessionId)).toEqual(["session-1", "session-2"]);

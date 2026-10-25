@@ -1,9 +1,11 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import {
@@ -17,6 +19,7 @@ import {
   type AccessClaims as AccessClaimsType,
   type AccessToken as AccessTokenType,
 } from "./model";
+import * as WebCrypto from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -56,7 +59,7 @@ export interface JwtConfiguration {
   readonly audience: string;
   readonly keys: JwtKeyRing;
   readonly activeKeyId?: string | undefined;
-  readonly privateJwk?: JsonWebKey;
+  readonly privateJwk?: Redacted.Redacted<JsonWebKey>;
   readonly accessTokenTtlSeconds?: number;
 }
 
@@ -107,43 +110,41 @@ const decodeBase64Url = (value: string) =>
     ),
   );
 
-const decodeJson = <A>(schema: Schema.Top & Schema.ConstraintDecoder<A>, bytes: Uint8Array) =>
-  Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(textDecoder.decode(bytes)).pipe(
+const claimsError = (cause: Schema.SchemaError) =>
+  new JwtError({
+    reason: "InvalidClaims",
+    message: `The access token claims are invalid: ${cause.message}`,
+    cause,
+  });
+
+const decodeJwtHeader = Schema.decodeUnknownEffect(Schema.fromJsonString(JwtHeader));
+const decodeJwtPayload = Schema.decodeUnknownEffect(Schema.fromJsonString(JwtPayload));
+const encodeJwtHeader = Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader));
+const encodeJwtPayload = Schema.encodeUnknownEffect(Schema.fromJsonString(JwtPayload));
+
+const importSigningKey = (jwk: Redacted.Redacted<JsonWebKey>) =>
+  WebCrypto.importEs256Key(Redacted.value(jwk), "sign").pipe(
     Effect.mapError(
       (cause) =>
         new JwtError({
-          reason: "InvalidClaims",
-          message: `The access token claims are invalid: ${cause.message}`,
+          reason: "NoKey",
+          message: "The JWT signing key could not be imported.",
           cause,
         }),
     ),
   );
 
-const importSigningKey = (jwk: JsonWebKey) =>
-  Effect.tryPromise({
-    try: () =>
-      crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]),
-    catch: (cause) =>
-      new JwtError({
-        reason: "NoKey",
-        message: `The JWT signing key could not be imported: ${String(cause)}`,
-        cause,
-      }),
-  });
-
 const importVerificationKey = (jwk: JsonWebKey) =>
-  Effect.tryPromise({
-    try: () =>
-      crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, [
-        "verify",
-      ]),
-    catch: (cause) =>
-      new JwtError({
-        reason: "NoKey",
-        message: `The JWT verification key could not be imported: ${String(cause)}`,
-        cause,
-      }),
-  });
+  WebCrypto.importEs256Key(jwk, "verify").pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "NoKey",
+          message: "The JWT verification key could not be imported.",
+          cause,
+        }),
+    ),
+  );
 
 type ImportedKeyRing = ReadonlyMap<string, Exit.Exit<CryptoKey, JwtError>>;
 
@@ -211,9 +212,20 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
   configuration: JwtConfiguration,
   importedSigner?: AccessTokenSigner,
 ) {
+  const crypto = yield* Crypto.Crypto;
   const signer = importedSigner ?? (yield* importSigner(configuration));
   const now = Math.floor((input.now ?? (yield* Clock.currentTimeMillis)) / 1_000);
   const expiresAt = now + (configuration.accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS);
+  const jti = yield* crypto.randomUUIDv4().pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "NoKey",
+          message: "The access token id could not be generated.",
+          cause,
+        }),
+    ),
+  );
   const payload = {
     iss: configuration.issuer,
     aud: configuration.audience,
@@ -227,56 +239,34 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     picture: input.image,
     iat: now,
     exp: expiresAt,
-    jti: crypto.randomUUID(),
+    jti,
   } satisfies typeof JwtPayload.Type;
   const header = {
     alg: "ES256",
     typ: "JWT",
     kid: signer.kid,
   } satisfies typeof JwtHeader.Type;
-  const encodedHeader = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtHeader))(
-    header,
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new JwtError({
-          reason: "InvalidClaims",
-          message: `The access token header is invalid: ${cause.message}`,
-          cause,
-        }),
-    ),
+  const encodedHeader = yield* encodeJwtHeader(header).pipe(
+    Effect.mapError(claimsError),
     Effect.map(Base64Url.encode),
   );
-  const encodedPayload = yield* Schema.encodeUnknownEffect(Schema.fromJsonString(JwtPayload))(
-    payload,
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new JwtError({
-          reason: "InvalidClaims",
-          message: `The access token claims are invalid: ${cause.message}`,
-          cause,
-        }),
-    ),
+  const encodedPayload = yield* encodeJwtPayload(payload).pipe(
+    Effect.mapError(claimsError),
     Effect.map(Base64Url.encode),
   );
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const signature = yield* Effect.tryPromise({
-    try: () =>
-      crypto.subtle.sign(
-        { name: "ECDSA", hash: "SHA-256" },
-        signer.key,
-        textEncoder.encode(signingInput),
-      ),
-    catch: (cause) =>
-      new JwtError({
-        reason: "NoKey",
-        message: `The access token could not be signed: ${String(cause)}`,
-        cause,
-      }),
-  });
+  const signature = yield* WebCrypto.signEs256(signer.key, textEncoder.encode(signingInput)).pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "NoKey",
+          message: "The access token could not be signed.",
+          cause,
+        }),
+    ),
+  );
   return {
-    token: AccessToken.make(`${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`),
+    token: AccessToken.make(`${signingInput}.${Base64Url.encode(signature)}`),
     expiresAt: expiresAt * 1_000,
   } satisfies IssuedAccessToken;
 });
@@ -295,37 +285,34 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
     });
   }
   const [encodedHeader, encodedPayload, encodedSignature] = segments;
-  const header = yield* decodeJson(JwtHeader, yield* decodeBase64Url(encodedHeader));
-  if (header.alg !== "ES256") {
-    return yield* new JwtError({
-      reason: "Malformed",
-      message: "The access token algorithm is not accepted.",
-    });
-  }
+  const header = yield* decodeJwtHeader(
+    textDecoder.decode(yield* decodeBase64Url(encodedHeader)),
+  ).pipe(Effect.mapError(claimsError));
   const key = yield* importedKeys?.get(header.kid) ?? importRingKey(configuration.keys, header.kid);
-  const signature = new Uint8Array(yield* decodeBase64Url(encodedSignature));
-  const valid = yield* Effect.tryPromise({
-    try: () =>
-      crypto.subtle.verify(
-        { name: "ECDSA", hash: "SHA-256" },
-        key,
-        signature,
-        textEncoder.encode(`${encodedHeader}.${encodedPayload}`),
-      ),
-    catch: (cause) =>
-      new JwtError({
-        reason: "InvalidSignature",
-        message: "The access token signature is invalid.",
-        cause,
-      }),
-  });
+  const signature = yield* decodeBase64Url(encodedSignature);
+  const valid = yield* WebCrypto.verifyEs256(
+    key,
+    signature,
+    textEncoder.encode(`${encodedHeader}.${encodedPayload}`),
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new JwtError({
+          reason: "InvalidSignature",
+          message: "The access token signature is invalid.",
+          cause,
+        }),
+    ),
+  );
   if (!valid) {
     return yield* new JwtError({
       reason: "InvalidSignature",
       message: "The access token signature is invalid.",
     });
   }
-  const payload = yield* decodeJson(JwtPayload, yield* decodeBase64Url(encodedPayload));
+  const payload = yield* decodeJwtPayload(
+    textDecoder.decode(yield* decodeBase64Url(encodedPayload)),
+  ).pipe(Effect.mapError(claimsError));
   if (payload.iss !== configuration.issuer || payload.aud !== configuration.audience) {
     return yield* new JwtError({
       reason: "InvalidClaims",
@@ -372,25 +359,47 @@ export interface AccessTokenServiceApi {
 export class AccessTokenService extends Context.Service<
   AccessTokenService,
   AccessTokenServiceApi
->()("@store/auth/AccessToken") {}
+>()("@store/auth/AccessTokenService") {}
 
 export const accessTokenLayer = (configuration: JwtConfiguration) =>
   Layer.effect(
     AccessTokenService,
     Effect.gen(function* () {
+      const crypto = yield* Crypto.Crypto;
       const verificationKeys = yield* importKeyRing(configuration.keys);
       yield* Effect.all(verificationKeys.values(), { discard: true });
       const signer = configuration.privateJwk ? yield* importSigner(configuration) : undefined;
       return AccessTokenService.of({
-        issue: (input) => issueAccessToken(input, configuration, signer),
+        issue: (input) =>
+          issueAccessToken(input, configuration, signer).pipe(
+            Effect.provideService(Crypto.Crypto, crypto),
+          ),
         verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKeys),
       });
     }),
   );
 
-export const decodeJsonWebKeyText = Schema.decodeUnknownEffect(
-  Schema.fromJsonString(JsonWebKeySchema),
-);
+const decodeJsonWebKeyText = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonWebKeySchema));
+
+export interface SigningJwk {
+  readonly jwk: Redacted.Redacted<JsonWebKey>;
+  readonly publicHalf: Pick<JsonWebKey, "x" | "y">;
+}
+
+export const decodeSigningJwkText = (text: Redacted.Redacted<string>) =>
+  decodeJsonWebKeyText(Redacted.value(text)).pipe(
+    Effect.map((jwk): SigningJwk => ({
+      jwk: Redacted.make(jwk),
+      publicHalf: { x: jwk.x, y: jwk.y },
+    })),
+    Effect.mapError(
+      () =>
+        new JwtError({
+          reason: "NoKey",
+          message: "The JWT signing key is not a valid JSON Web Key.",
+        }),
+    ),
+  );
 
 export const decodeJwtKeyRingText = (text: string) =>
   Schema.decodeUnknownEffect(
@@ -403,10 +412,13 @@ export const decodeJwtKeyRingText = (text: string) =>
     ),
   );
 
-export const activeJwtKeyId = (keys: JwtKeyRing, privateJwk: JsonWebKey): string | undefined => {
+export const activeJwtKeyId = (
+  keys: JwtKeyRing,
+  publicHalf: SigningJwk["publicHalf"],
+): string | undefined => {
   const [first, ...rest] = keys;
   if (rest.length === 0) return first?.kid;
-  const { x, y } = privateJwk;
+  const { x, y } = publicHalf;
   return x === undefined || y === undefined
     ? undefined
     : keys.find(({ jwk }) => jwk.x === x && jwk.y === y)?.kid;
