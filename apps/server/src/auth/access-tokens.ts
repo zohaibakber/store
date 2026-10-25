@@ -4,12 +4,12 @@ import {
   makeAccessTokenVerifier,
 } from "@store/auth";
 import {
+  decideAuthSecurity,
   DEFAULT_ELECTRON_PROTOCOL,
   fallbackIfBlank,
   LOCAL_WEB_ORIGINS,
   parseTrustedOrigins,
   publicHostnameFrom,
-  resolveAuthSecurity,
 } from "@store/auth/security";
 import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
@@ -67,15 +67,20 @@ export class AccessTokens extends Context.Service<
       const authOrigin =
         authBaseUrl.trim() ||
         (localDevelopment || !authHostname ? "http://localhost:8788" : `https://${authHostname}`);
-      const security = resolveAuthSecurity({
-        baseURL: authOrigin,
-        electronProtocol,
-        trustedOrigins: [
-          ...trustedOrigins,
-          ...(siteOrigin ? [siteOrigin] : []),
-          ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
-        ],
-      });
+      const security = yield* Effect.fromResult(
+        decideAuthSecurity({
+          baseURL: authOrigin,
+          electronProtocol,
+          trustedOrigins: [
+            ...trustedOrigins,
+            ...(siteOrigin ? [siteOrigin] : []),
+            ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
+          ],
+        }),
+      ).pipe(
+        Effect.mapError((reason) => new Error(reason)),
+        Effect.orDie,
+      );
       yield* Effect.forEach(
         security.rejectedSettings,
         (setting) =>

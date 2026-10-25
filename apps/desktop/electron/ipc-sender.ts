@@ -21,19 +21,3 @@ export const isTrustedIpcSenderFrame = (
   if (frameReportsDetached(frame)) return false;
   return isAllowedRendererNavigation(frame.url, allowedOrigins);
 };
-
-export const trustedIpcListener =
-  <
-    Event extends { readonly senderFrame: TrustedIpcSenderFrame | null },
-    Input extends ReadonlyArray<unknown>,
-    Result,
-  >(
-    allowedOrigins: () => ReadonlyArray<string>,
-    listener: (event: Event, ...input: Input) => Result,
-  ) =>
-  (event: Event, ...input: Input): Result => {
-    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedOrigins())) {
-      throw new Error("Rejected IPC from an untrusted renderer.");
-    }
-    return listener(event, ...input);
-  };

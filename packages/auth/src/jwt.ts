@@ -199,7 +199,6 @@ export interface IssueAccessTokenInput {
   readonly email: EmailAddress;
   readonly name: string;
   readonly image: string | null;
-  readonly now?: number;
 }
 
 export interface IssuedAccessToken {
@@ -214,7 +213,7 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
 ) {
   const crypto = yield* Crypto.Crypto;
   const signer = importedSigner ?? (yield* importSigner(configuration));
-  const now = Math.floor((input.now ?? (yield* Clock.currentTimeMillis)) / 1_000);
+  const now = Math.floor((yield* Clock.currentTimeMillis) / 1_000);
   const expiresAt = now + (configuration.accessTokenTtlSeconds ?? ACCESS_TOKEN_TTL_SECONDS);
   const jti = yield* crypto.randomUUIDv4().pipe(
     Effect.mapError(
@@ -274,7 +273,6 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
 export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   token: string,
   configuration: JwtConfiguration,
-  now?: number,
   importedKeys?: ImportedKeyRing,
 ) {
   const segments = token.split(".");
@@ -319,7 +317,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
       message: "The access token issuer or audience is invalid.",
     });
   }
-  if (payload.exp * 1_000 <= (now ?? (yield* Clock.currentTimeMillis))) {
+  if (payload.exp * 1_000 <= (yield* Clock.currentTimeMillis)) {
     return yield* new JwtError({
       reason: "Expired",
       message: "The access token has expired.",
@@ -338,24 +336,21 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   });
 });
 
-export type AccessTokenVerifier = (
-  token: string,
-  now?: number,
-) => Effect.Effect<AccessClaimsType, JwtError>;
+export type AccessTokenVerifier = (token: string) => Effect.Effect<AccessClaimsType, JwtError>;
 
 export const makeAccessTokenVerifier = (
   configuration: JwtConfiguration,
 ): Effect.Effect<AccessTokenVerifier> =>
   Effect.map(
     importKeyRing(configuration.keys),
-    (keys) => (token, now) => verifyAccessToken(token, configuration, now, keys),
+    (keys) => (token) => verifyAccessToken(token, configuration, keys),
   );
 
 export class AccessTokenService extends Context.Service<
   AccessTokenService,
   {
     readonly issue: (input: IssueAccessTokenInput) => Effect.Effect<IssuedAccessToken, JwtError>;
-    readonly verify: (token: string, now?: number) => Effect.Effect<AccessClaimsType, JwtError>;
+    readonly verify: (token: string) => Effect.Effect<AccessClaimsType, JwtError>;
   }
 >()("@store/auth/AccessTokenService") {
   static readonly layer = (configuration: JwtConfiguration) =>
@@ -371,7 +366,7 @@ export class AccessTokenService extends Context.Service<
             issueAccessToken(input, configuration, signer).pipe(
               Effect.provideService(Crypto.Crypto, crypto),
             ),
-          verify: (token, now) => verifyAccessToken(token, configuration, now, verificationKeys),
+          verify: (token) => verifyAccessToken(token, configuration, verificationKeys),
         });
       }),
     );

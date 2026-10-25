@@ -21,6 +21,7 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 
 import { AuthCrypto } from "./src/crypto";
 import { AuthD1 } from "./src/d1";
@@ -47,6 +48,10 @@ const OperationsLive = Layer.mergeAll(Login.layer, GoogleIdentity.layer, Organiz
   Layer.provideMerge(Sessions.layer),
 );
 
+class AuthDeploymentError extends Schema.TaggedError<AuthDeploymentError>()("AuthDeploymentError", {
+  reason: Schema.String,
+}) {}
+
 export class Auth extends Cloudflare.Worker<Auth, {}>()("Auth") {}
 
 export const AuthLive = Auth.make(
@@ -61,9 +66,10 @@ export const AuthLive = Auth.make(
         : undefined;
     if (!globalThis.__ALCHEMY_RUNTIME__ && published && !authHostname) {
       return yield* Effect.die(
-        new Error(
-          "Published auth hostname is missing. Set PRODUCTION_DOMAIN or PRODUCTION_AUTH_DOMAIN.",
-        ),
+        new AuthDeploymentError({
+          reason:
+            "Published auth hostname is missing. Set PRODUCTION_DOMAIN or PRODUCTION_AUTH_DOMAIN.",
+        }),
       );
     }
     const assets = globalThis.__ALCHEMY_RUNTIME__
@@ -110,7 +116,7 @@ export const AuthLive = Auth.make(
     const { security, developmentOtp } = yield* Effect.fromResult(
       resolveAuthDeployment(yield* AuthDeploymentConfig, { stage, localDevelopment }),
     ).pipe(
-      Effect.mapError((reason) => new Error(reason)),
+      Effect.mapError((reason) => new AuthDeploymentError({ reason })),
       Effect.orDie,
     );
 

@@ -28,14 +28,15 @@ export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worke
     const peppered = (pepper: Pepper, value: string) =>
       sha256(`${Redacted.value(pepper)}:${value}`);
 
-    const randomToken = (bytes: number) =>
-      crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Base64Url.encode));
+    const randomToken = Effect.fn("AuthCrypto.randomToken")((bytes: number) =>
+      crypto.randomBytes(bytes).pipe(failed("randomBytes"), Effect.map(Base64Url.encode)),
+    );
 
     return {
       randomId: crypto
         .randomUUIDv4()
         .pipe(failed("randomId"), Effect.withSpan("AuthCrypto.randomId")),
-      randomToken: Effect.fn("AuthCrypto.randomToken")((bytes: number) => randomToken(bytes)),
+      randomToken,
       randomSecret: Effect.fn("AuthCrypto.randomSecret")((bytes: number) =>
         Effect.map(randomToken(bytes), Redacted.make),
       ),

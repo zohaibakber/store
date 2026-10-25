@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   catalogWriteError,
   OPERATIONAL_SUBSCRIPTION,
@@ -41,12 +42,11 @@ import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/s
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vite-plus/test";
 
 import type { Actor } from "../../src/authority/engine";
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
-import { testRuntimeContext } from "../lib/app";
-import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const USER_ID = "user-1";
 const OCCURRED_AT = lastUnitBuyerACommand.occurredAt;
@@ -152,9 +152,9 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
     const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
     const localAuthority = yield* SyncTransportService;
-    const authorities = makeTestAuthorities();
+    const authorities = yield* TestAuthorities;
     yield* authorities.open(organizationId);
-    const authority = typedCommands(yield* organizationAuthorityFor(authorities));
+    const authority = typedCommands(yield* OrganizationAuthority);
     const actor: Actor = { organizationId, userId: USER_ID };
     yield* authority.register(actor, {
       replicaId: LAST_UNIT_REPLICA_A,
@@ -167,7 +167,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
         const decisions: Array<TwinDecision> = [];
         for (const step of steps) {
           const decidedBefore = submissions.length;
-          for (const request of step) yield* engine.saveCommand(request);
+          for (const request of step) yield* store.enqueueCommand(request);
           yield* engine.drainUploads();
           for (const { request, result } of submissions.slice(decidedBefore)) {
             decisions.push({
@@ -185,85 +185,73 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
 const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "queued") => {
   const organizationId = decodeOrganizationId(`${organization}-${path}`);
   const submissions: Array<LocalSubmission> = [];
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const { actor, store, localAuthority, authority, decide } = yield* openTwin(
-        organizationId,
-        submissions,
-      );
-      const decisions = yield* decide(steps);
+  return Effect.gen(function* () {
+    const { actor, store, localAuthority, authority, decide } = yield* openTwin(
+      organizationId,
+      submissions,
+    );
+    const decisions = yield* decide(steps);
 
-      const last = submissions.at(-1);
-      const repeated =
-        last === undefined
-          ? undefined
-          : {
-              local: yield* localAuthority.submitCommand(last.request),
-              authority: yield* authority.submit(actor, last.request),
-            };
+    const last = submissions.at(-1);
+    const repeated =
+      last === undefined
+        ? undefined
+        : {
+            local: yield* localAuthority.submitCommand(last.request),
+            authority: yield* authority.submit(actor, last.request),
+          };
 
-      const head = OrgCommitSequence.make((yield* store.readSyncCursor()).appliedCommitSequence);
-      const cursor = {
-        epoch: LAST_UNIT_EPOCH,
-        subscription: OPERATIONAL_SUBSCRIPTION,
-        afterCommitSequence: head,
-      };
-      const localPage = yield* localAuthority.pull(cursor);
-      const authorityPage = yield* authority.pull(actor, {
-        ...cursor,
-        digestVersion: PARTITION_DIGEST_VERSION,
-      });
-      const digest = yield* store.integrateAuthority({
-        payload: {
-          _tag: "pullPage",
-          page: { ...authorityPage, incarnation: localPage.incarnation },
-        },
-      });
-      return { decisions, repeated, localPage, authorityPage, digest: digest.value };
-    }).pipe(
-      Effect.provide(twinLayer(organizationId, submissions, path)),
-      Effect.scoped,
-      Effect.provideContext(testRuntimeContext),
-    ),
-  );
+    const head = OrgCommitSequence.make((yield* store.readSyncCursor()).appliedCommitSequence);
+    const cursor = {
+      epoch: LAST_UNIT_EPOCH,
+      subscription: OPERATIONAL_SUBSCRIPTION,
+      afterCommitSequence: head,
+    };
+    const localPage = yield* localAuthority.pull(cursor);
+    const authorityPage = yield* authority.pull(actor, {
+      ...cursor,
+      digestVersion: PARTITION_DIGEST_VERSION,
+    });
+    const digest = yield* store.integrateAuthority({
+      payload: {
+        _tag: "pullPage",
+        page: { ...authorityPage, incarnation: localPage.incarnation },
+      },
+    });
+    return { decisions, repeated, localPage, authorityPage, digest: digest.value };
+  }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped);
 };
 
 const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncCommand) => {
   const organizationId = decodeOrganizationId(organization);
   const submissions: Array<LocalSubmission> = [];
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const { actor, store, localAuthority, authority, decide } = yield* openTwin(
-        organizationId,
-        submissions,
-      );
-      yield* decide(setup);
-      const request: SyncSubmitCommandRequest = {
-        organizationId,
-        epoch: LAST_UNIT_EPOCH,
-        replicaId: LAST_UNIT_REPLICA_A,
-        clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
-        operationId: command.payload.commandId,
-        payloadHash: canonicalPayloadHash(command),
-        command,
-        afterCommitSequence: OrgCommitSequence.make(
-          (yield* store.readSyncCursor()).appliedCommitSequence,
-        ),
-      };
-      return {
-        local: yield* localAuthority.submitCommand(request),
-        redecided: yield* localAuthority.submitCommand(request),
-        authority: yield* authority.submit(actor, request),
-      };
-    }).pipe(
-      Effect.provide(twinLayer(organizationId, submissions)),
-      Effect.scoped,
-      Effect.provideContext(testRuntimeContext),
-    ),
-  );
+  return Effect.gen(function* () {
+    const { actor, store, localAuthority, authority, decide } = yield* openTwin(
+      organizationId,
+      submissions,
+    );
+    yield* decide(setup);
+    const request: SyncSubmitCommandRequest = {
+      organizationId,
+      epoch: LAST_UNIT_EPOCH,
+      replicaId: LAST_UNIT_REPLICA_A,
+      clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
+      operationId: command.payload.commandId,
+      payloadHash: canonicalPayloadHash(command),
+      command,
+      afterCommitSequence: OrgCommitSequence.make(
+        (yield* store.readSyncCursor()).appliedCommitSequence,
+      ),
+    };
+    return {
+      local: yield* localAuthority.submitCommand(request),
+      redecided: yield* localAuthority.submitCommand(request),
+      authority: yield* authority.submit(actor, request),
+    };
+  }).pipe(Effect.provide(twinLayer(organizationId, submissions)), Effect.scoped);
 };
 
-const expectParity = (twin: Awaited<ReturnType<typeof decideOnBoth>>) => {
+const expectParity = (twin: Effect.Success<ReturnType<typeof decideOnBoth>>) => {
   for (const { local, authority } of twin.decisions) {
     expect(local.page?.transactions).toStrictEqual(authority.page?.transactions);
     expect(local.page?.transactions).toHaveLength(1);
@@ -688,658 +676,695 @@ const importedLines = (
   ]);
 
 describe("the local authority decides like the durable object authority", () => {
-  it.each(DECISION_PATHS)(
-    "emits the same groups for catalog inserts, updates, deletes and their stock movements when %s",
-    async (path) => {
-      const twin = await decideOnBoth(
-        "org-parity-catalog",
-        [
-          [
-            queued(
-              catalog("stock", [
-                categoryWrite("cat-1", "Painkillers"),
-                productWrite("prod-1", { categoryId: "cat-1", name: "Panadol", unitsPerPack: 10 }),
-                batchWrite("batch-1", {
-                  productId: "prod-1",
-                  movementId: "mv-stock",
-                  packQuantity: 2,
-                  unitQuantity: 0,
-                }),
-                batchWrite(SPARE_BATCH, {
-                  productId: "prod-1",
-                  movementId: "mv-spare",
-                  packQuantity: 0,
-                  unitQuantity: 0,
-                }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("edit", [
-                categoryWrite("cat-1", "Pain relief", 1),
-                productWrite(
-                  "prod-1",
-                  {
-                    categoryId: "cat-1",
-                    name: "Panadol Extra",
-                    unitsPerPack: 10,
-                    retailPrice: 120,
-                  },
-                  1,
+  for (const path of DECISION_PATHS) {
+    it.effect(
+      `emits the same groups for catalog inserts, updates, deletes and their stock movements when ${path}`,
+      () =>
+        Effect.gen(function* () {
+          const twin = yield* decideOnBoth(
+            "org-parity-catalog",
+            [
+              [
+                queued(
+                  catalog("stock", [
+                    categoryWrite("cat-1", "Painkillers"),
+                    productWrite("prod-1", {
+                      categoryId: "cat-1",
+                      name: "Panadol",
+                      unitsPerPack: 10,
+                    }),
+                    batchWrite("batch-1", {
+                      productId: "prod-1",
+                      movementId: "mv-stock",
+                      packQuantity: 2,
+                      unitQuantity: 0,
+                    }),
+                    batchWrite(SPARE_BATCH, {
+                      productId: "prod-1",
+                      movementId: "mv-spare",
+                      packQuantity: 0,
+                      unitQuantity: 0,
+                    }),
+                  ]),
                 ),
-                batchWrite(
-                  "batch-1",
-                  {
-                    productId: "prod-1",
-                    movementId: "mv-recount",
-                    packQuantity: 3,
-                    unitQuantity: 5,
-                    note: "Recount",
-                  },
-                  1,
+              ],
+              [
+                queued(
+                  catalog("edit", [
+                    categoryWrite("cat-1", "Pain relief", 1),
+                    productWrite(
+                      "prod-1",
+                      {
+                        categoryId: "cat-1",
+                        name: "Panadol Extra",
+                        unitsPerPack: 10,
+                        retailPrice: 120,
+                      },
+                      1,
+                    ),
+                    batchWrite(
+                      "batch-1",
+                      {
+                        productId: "prod-1",
+                        movementId: "mv-recount",
+                        packQuantity: 3,
+                        unitQuantity: 5,
+                        note: "Recount",
+                      },
+                      1,
+                    ),
+                  ]),
                 ),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("shrink", [
-                batchWrite(
-                  "batch-1",
-                  {
-                    productId: "prod-1",
-                    movementId: "mv-shrink",
-                    packQuantity: 1,
-                    unitQuantity: 0,
-                  },
-                  2,
+              ],
+              [
+                queued(
+                  catalog("shrink", [
+                    batchWrite(
+                      "batch-1",
+                      {
+                        productId: "prod-1",
+                        movementId: "mv-shrink",
+                        packQuantity: 1,
+                        unitQuantity: 0,
+                      },
+                      2,
+                    ),
+                    batchWrite(
+                      "batch-1",
+                      {
+                        productId: "prod-1",
+                        movementId: "mv-relabel",
+                        packQuantity: 1,
+                        unitQuantity: 0,
+                      },
+                      3,
+                    ),
+                  ]),
                 ),
-                batchWrite(
-                  "batch-1",
-                  {
-                    productId: "prod-1",
-                    movementId: "mv-relabel",
-                    packQuantity: 1,
-                    unitQuantity: 0,
-                  },
-                  3,
+              ],
+              [
+                queued(
+                  catalog("second", [
+                    categoryWrite("cat-2", "Vitamins"),
+                    productWrite("prod-2", {
+                      categoryId: "cat-2",
+                      name: "Vitamin C",
+                      unitsPerPack: 1,
+                    }),
+                    batchWrite("batch-3", {
+                      productId: "prod-2",
+                      movementId: "mv-vitamins",
+                      packQuantity: 0,
+                      unitQuantity: 4,
+                    }),
+                  ]),
                 ),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("second", [
-                categoryWrite("cat-2", "Vitamins"),
-                productWrite("prod-2", { categoryId: "cat-2", name: "Vitamin C", unitsPerPack: 1 }),
-                batchWrite("batch-3", {
-                  productId: "prod-2",
-                  movementId: "mv-vitamins",
-                  packQuantity: 0,
-                  unitQuantity: 4,
-                }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("empty", [
-                batchWrite(
-                  "batch-3",
-                  { productId: "prod-2", movementId: "mv-empty", packQuantity: 0, unitQuantity: 0 },
-                  1,
+              ],
+              [
+                queued(
+                  catalog("empty", [
+                    batchWrite(
+                      "batch-3",
+                      {
+                        productId: "prod-2",
+                        movementId: "mv-empty",
+                        packQuantity: 0,
+                        unitQuantity: 0,
+                      },
+                      1,
+                    ),
+                  ]),
                 ),
-              ]),
-            ),
-            queued(
-              catalog("drop-batches", [
-                removal("batch", "batch-3", 2),
-                removal("batch", SPARE_BATCH, 1),
-              ]),
-            ),
-            queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
-            queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
-          ],
-        ],
-        path,
-      );
-
-      expectParity(twin);
-      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-        Array.from({ length: 8 }, () => "catalogWrite"),
-      );
-      expect(
-        twin.decisions.map(({ local }) =>
-          local.page?.transactions[0]?.changes.map((change) => `${change.action} ${change.entity}`),
-        ),
-      ).toEqual([
-        [
-          "upsert category",
-          "upsert product",
-          "upsert batch",
-          "upsert stockMovement",
-          "upsert batch",
-        ],
-        ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-        ["upsert batch", "upsert stockMovement", "upsert batch"],
-        ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-        ["upsert batch", "upsert stockMovement"],
-        ["delete batch", "delete batch"],
-        ["delete product"],
-        ["delete category"],
-      ]);
-    },
-  );
-
-  it.each(DECISION_PATHS)(
-    "emits the same groups for sales, including packs opened across batches, when %s",
-    async (path) => {
-      const twin = await decideOnBoth(
-        "org-parity-sales",
-        [
-          [seedSales(10, 2, 1)],
-          [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
-          [
-            queued(
-              sale("sale-split", 2, [
-                { quantity: 6, packsOpened: 1 },
-                { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
-              ]),
-            ),
-          ],
-          [
-            queued(
-              sale("sale-pack", 3, [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }], {
-                customerName: "  Ada Lovelace  ",
-              }),
-            ),
-            queued(sale("sale-loose", 4, [{ quantity: 3 }])),
-          ],
-          [queued(sale("sale-twice", 5, [{ quantity: 1 }, { quantity: 2, packsOpened: 1 }]))],
-        ],
-        path,
-      );
-
-      expectParity(twin);
-      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
-        "catalogWrite",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-      ]);
-      expect(
-        twin.decisions[2]?.local.page?.transactions[0]?.changes.map((change) => change.entity),
-      ).toEqual([
-        "invoice",
-        "batch",
-        "invoiceItem",
-        "stockMovement",
-        "stockMovement",
-        "batch",
-        "invoiceItem",
-        "stockMovement",
-        "stockMovement",
-      ]);
-    },
-  );
-
-  it.each(DECISION_PATHS)(
-    "emits the same groups for suppliers, orders, lines and deliveries when %s",
-    async (path) => {
-      const twin = await decideOnBoth(
-        "org-parity-purchasing",
-        [
-          [seedPurchasing],
-          [draftOrder],
-          [sendOrder],
-          [partialDelivery],
-          [
-            queued(
-              catalog("receive-rest", [
-                productWrite(
-                  PACKED_PRODUCT,
-                  { categoryId: GENERAL, name: "Packed", unitsPerPack: 10, retailPrice: 130 },
-                  1,
+                queued(
+                  catalog("drop-batches", [
+                    removal("batch", "batch-3", 2),
+                    removal("batch", SPARE_BATCH, 1),
+                  ]),
                 ),
-                deliveryWrite("batch-rest", {
-                  productId: PACKED_PRODUCT,
-                  lineId: "po-1-packed",
-                  movementId: "mv-rest",
-                  packQuantity: 1,
-                  unitQuantity: 5,
-                }),
-                deliveryWrite("batch-loose", {
-                  productId: LOOSE_PRODUCT,
-                  lineId: "po-1-loose",
-                  movementId: "mv-loose",
-                  packQuantity: 0,
-                  unitQuantity: 20,
-                }),
-                deliveryWrite("batch-nothing", {
-                  productId: LOOSE_PRODUCT,
-                  lineId: "po-1-loose",
-                  movementId: "mv-nothing",
-                  packQuantity: 0,
-                  unitQuantity: 0,
-                }),
-              ]),
-            ),
-          ],
-          [closeOrder],
-          [
-            queued(
-              catalog("draft-2", [
-                orderWrite("po-2", { orderNumber: 2, supplierId: "sup-globex", total: 400 }),
-                lineWrite("po-2-packed", {
-                  purchaseOrderId: "po-2",
-                  productId: PACKED_PRODUCT,
-                  quantity: 1,
-                  quantityType: "pack",
-                  baseUnitQuantity: 10,
-                  packCost: 400,
-                }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("cancel-2", [
-                orderWrite(
-                  "po-2",
-                  { orderNumber: 2, supplierId: "sup-globex", status: "cancelled", total: 400 },
-                  1,
-                ),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("draft-taken-number", [
-                orderWrite("po-3", { orderNumber: 1, supplierId: "sup-globex" }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("replace-highest", [
-                removal("purchaseOrder", "po-3", 1),
-                orderWrite("po-4", { orderNumber: 2, supplierId: "sup-acme" }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("add-line", [
-                lineWrite("po-4-loose", {
-                  purchaseOrderId: "po-4",
-                  productId: LOOSE_PRODUCT,
-                  quantity: 6,
-                  quantityType: "unit",
-                  baseUnitQuantity: 6,
-                }),
-              ]),
-            ),
-            queued(
-              catalog("edit-line", [
-                lineWrite(
-                  "po-4-loose",
-                  {
-                    purchaseOrderId: "po-4",
-                    productId: PACKED_PRODUCT,
-                    quantity: 2,
-                    quantityType: "pack",
-                    baseUnitQuantity: 20,
-                    packCost: 450,
-                  },
-                  1,
-                ),
-              ]),
-            ),
-            queued(
-              catalog("reissue", [
-                removal("purchaseOrderItem", "po-4-loose", 2),
-                removal("purchaseOrder", "po-4", 1),
-                orderWrite("po-5", { orderNumber: 3, supplierId: "sup-globex" }),
-                orderWrite("po-6", { orderNumber: 3, supplierId: "sup-globex" }),
-              ]),
-            ),
-          ],
-          [
-            queued(
-              catalog("rename-supplier", [
-                supplierWrite("sup-globex", { name: "Globex Corp" }, 1),
-                supplierWrite("sup-initech", { name: "Initech" }),
-              ]),
-            ),
-            queued(
-              catalog("regroup", [
-                orderWrite("po-5", { orderNumber: 3, supplierId: "sup-initech" }, 1),
-                supplierWrite("sup-hooli", { name: "Hooli" }),
-                removal("supplier", "sup-hooli", 1),
-              ]),
-            ),
-          ],
-        ],
-        path,
-      );
+                queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
+                queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
+              ],
+            ],
+            path,
+          );
 
-      expectParity(twin);
-      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-        Array.from({ length: 15 }, () => "catalogWrite"),
-      );
-      expect(
-        twin.decisions.map(({ local }) =>
-          local.page?.transactions[0]?.changes.map((change) => `${change.action} ${change.entity}`),
-        ),
-      ).toEqual([
-        [
-          "upsert category",
-          "upsert product",
-          "upsert product",
-          "upsert supplier",
-          "upsert supplier",
-        ],
-        ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
-        ["upsert purchaseOrder"],
-        ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
-        [
-          "upsert product",
-          "upsert batch",
-          "upsert stockMovement",
-          "upsert purchaseOrderItem",
-          "upsert batch",
-          "upsert stockMovement",
-          "upsert purchaseOrderItem",
-          "upsert batch",
-          "upsert purchaseOrderItem",
-        ],
-        ["upsert purchaseOrder"],
-        ["upsert purchaseOrder", "upsert purchaseOrderItem"],
-        ["upsert purchaseOrder"],
-        ["upsert purchaseOrder"],
-        ["delete purchaseOrder", "upsert purchaseOrder"],
-        ["upsert purchaseOrderItem"],
-        ["upsert purchaseOrderItem"],
-        [
-          "delete purchaseOrderItem",
-          "delete purchaseOrder",
-          "upsert purchaseOrder",
-          "upsert purchaseOrder",
-        ],
-        ["upsert supplier", "upsert supplier"],
-        ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
-      ]);
-    },
-  );
-
-  it.each(DECISION_PATHS)(
-    "emits the same groups for an import that opens its own category, in one write or split, when %s",
-    async (path) => {
-      const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
-      const twin = await decideOnBoth(
-        "org-parity-import",
-        [
-          [
-            queued(
-              catalog("import-small", [
-                categoryWrite("cat-small", "Small import"),
-                ...importedLines("cat-small", 0, 2),
-              ]),
+          expectParity(twin);
+          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+            Array.from({ length: 8 }, () => "catalogWrite"),
+          );
+          expect(
+            twin.decisions.map(({ local }) =>
+              local.page?.transactions[0]?.changes.map(
+                (change) => `${change.action} ${change.entity}`,
+              ),
             ),
-          ],
-          [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
-          [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
-          [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
-        ],
-        path,
-      );
-
-      expectParity(twin);
-      expect(twin.decisions.map(({ local }) => local.result)).toEqual([
-        { _tag: "catalogWrite", rowsWritten: 5 },
-        { _tag: "catalogWrite", rowsWritten: 1 },
-        { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
-        { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
-      ]);
-    },
-    120_000,
-  );
-
-  it("refuses at enqueue what the authority rejects, and keeps no trace, when the store decides", async () => {
-    const organizationId = decodeOrganizationId("org-parity-refusal");
-    const submissions: Array<LocalSubmission> = [];
-    const refusal = await Effect.runPromise(
-      Effect.gen(function* () {
-        const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
-        const engine = yield* SyncEngine;
-        yield* decide(REPACKED);
-        const before = yield* store.readSyncCursor();
-        const decidedBefore = submissions.length;
-        const failure = yield* Effect.flip(engine.saveCommand(queued(stalePriceDelivery)));
-        const refused = submissions.slice(decidedBefore);
-        return {
-          failure,
-          decisions: refused.length,
-          authority: yield* Effect.forEach(refused, ({ request }) =>
-            authority.submit(actor, request),
-          ),
-          status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
-          before,
-          after: yield* store.readSyncCursor(),
-        };
-      }).pipe(
-        Effect.provide(twinLayer(organizationId, submissions, "inline")),
-        Effect.scoped,
-        Effect.provideContext(testRuntimeContext),
-      ),
+          ).toEqual([
+            [
+              "upsert category",
+              "upsert product",
+              "upsert batch",
+              "upsert stockMovement",
+              "upsert batch",
+            ],
+            ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+            ["upsert batch", "upsert stockMovement", "upsert batch"],
+            ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+            ["upsert batch", "upsert stockMovement"],
+            ["delete batch", "delete batch"],
+            ["delete product"],
+            ["delete category"],
+          ]);
+        }).pipe(scenario),
     );
+  }
 
-    expect(refusal.decisions).toBe(1);
-    expect(refusal.authority.map(({ result }) => result)).toEqual([
-      { _tag: "rejected", code: "ENTITY_CONFLICT", message: refusal.failure.message },
-    ]);
-    expect(refusal.failure).toMatchObject({
-      code: "ENTITY_CONFLICT",
-      message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
-    });
-    expect(refusal.status).toBeUndefined();
-    expect(refusal.after).toEqual(refusal.before);
-  });
+  for (const path of DECISION_PATHS) {
+    it.effect(
+      `emits the same groups for sales, including packs opened across batches, when ${path}`,
+      () =>
+        Effect.gen(function* () {
+          const twin = yield* decideOnBoth(
+            "org-parity-sales",
+            [
+              [seedSales(10, 2, 1)],
+              [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
+              [
+                queued(
+                  sale("sale-split", 2, [
+                    { quantity: 6, packsOpened: 1 },
+                    { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  sale(
+                    "sale-pack",
+                    3,
+                    [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }],
+                    {
+                      customerName: "  Ada Lovelace  ",
+                    },
+                  ),
+                ),
+                queued(sale("sale-loose", 4, [{ quantity: 3 }])),
+              ],
+              [queued(sale("sale-twice", 5, [{ quantity: 1 }, { quantity: 2, packsOpened: 1 }]))],
+            ],
+            path,
+          );
 
-  it("rejects with the same code and message whatever a queued command gets wrong", async () => {
-    const staleTopUp = (commandId: string) =>
-      queued(
-        catalog(commandId, [
-          batchWrite(
-            LAST_UNIT_BATCH_ID,
-            {
-              productId: LAST_UNIT_PRODUCT_ID,
-              movementId: `${commandId}-move`,
-              packQuantity: 0,
-              unitQuantity: 60,
-            },
-            9,
-          ),
-        ]),
-      );
-    const staleEmptying = (commandId: string) =>
-      queued(
-        catalog(commandId, [
-          batchWrite(
-            LAST_UNIT_BATCH_ID,
-            {
-              productId: LAST_UNIT_PRODUCT_ID,
-              movementId: `${commandId}-move`,
-              packQuantity: 0,
-              unitQuantity: 0,
-            },
-            9,
-          ),
-          batchWrite(
-            PACK_BATCH,
-            {
-              productId: LAST_UNIT_PRODUCT_ID,
-              movementId: `${commandId}-move-packs`,
-              packQuantity: 0,
-              unitQuantity: 0,
-            },
-            1,
-          ),
-        ]),
-      );
-    const twin = await decideOnBoth("org-parity-rejections", [
-      [seedSales(1, 0, 9)],
-      [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
-      [
-        staleTopUp("stale-top-up"),
-        queued({
-          _tag: "issueInvoice",
-          payload: {
-            ...lastUnitBuyerBCommand,
-            invoiceNumber: 2,
-            input: {
-              ...lastUnitBuyerBCommand.input,
-              items: lastUnitBuyerBCommand.input.items.map((line) => ({ ...line, quantity: 50 })),
-            },
-            allocations: lastUnitBuyerBCommand.allocations.map((take) => ({
-              ...take,
-              quantity: 50,
-            })),
-          },
-        }),
-      ],
-      [
+          expectParity(twin);
+          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
+            "catalogWrite",
+            "issueInvoice",
+            "issueInvoice",
+            "issueInvoice",
+            "issueInvoice",
+            "issueInvoice",
+          ]);
+          expect(
+            twin.decisions[2]?.local.page?.transactions[0]?.changes.map((change) => change.entity),
+          ).toEqual([
+            "invoice",
+            "batch",
+            "invoiceItem",
+            "stockMovement",
+            "stockMovement",
+            "batch",
+            "invoiceItem",
+            "stockMovement",
+            "stockMovement",
+          ]);
+        }).pipe(scenario),
+    );
+  }
+
+  for (const path of DECISION_PATHS) {
+    it.effect(
+      `emits the same groups for suppliers, orders, lines and deliveries when ${path}`,
+      () =>
+        Effect.gen(function* () {
+          const twin = yield* decideOnBoth(
+            "org-parity-purchasing",
+            [
+              [seedPurchasing],
+              [draftOrder],
+              [sendOrder],
+              [partialDelivery],
+              [
+                queued(
+                  catalog("receive-rest", [
+                    productWrite(
+                      PACKED_PRODUCT,
+                      { categoryId: GENERAL, name: "Packed", unitsPerPack: 10, retailPrice: 130 },
+                      1,
+                    ),
+                    deliveryWrite("batch-rest", {
+                      productId: PACKED_PRODUCT,
+                      lineId: "po-1-packed",
+                      movementId: "mv-rest",
+                      packQuantity: 1,
+                      unitQuantity: 5,
+                    }),
+                    deliveryWrite("batch-loose", {
+                      productId: LOOSE_PRODUCT,
+                      lineId: "po-1-loose",
+                      movementId: "mv-loose",
+                      packQuantity: 0,
+                      unitQuantity: 20,
+                    }),
+                    deliveryWrite("batch-nothing", {
+                      productId: LOOSE_PRODUCT,
+                      lineId: "po-1-loose",
+                      movementId: "mv-nothing",
+                      packQuantity: 0,
+                      unitQuantity: 0,
+                    }),
+                  ]),
+                ),
+              ],
+              [closeOrder],
+              [
+                queued(
+                  catalog("draft-2", [
+                    orderWrite("po-2", { orderNumber: 2, supplierId: "sup-globex", total: 400 }),
+                    lineWrite("po-2-packed", {
+                      purchaseOrderId: "po-2",
+                      productId: PACKED_PRODUCT,
+                      quantity: 1,
+                      quantityType: "pack",
+                      baseUnitQuantity: 10,
+                      packCost: 400,
+                    }),
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  catalog("cancel-2", [
+                    orderWrite(
+                      "po-2",
+                      { orderNumber: 2, supplierId: "sup-globex", status: "cancelled", total: 400 },
+                      1,
+                    ),
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  catalog("draft-taken-number", [
+                    orderWrite("po-3", { orderNumber: 1, supplierId: "sup-globex" }),
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  catalog("replace-highest", [
+                    removal("purchaseOrder", "po-3", 1),
+                    orderWrite("po-4", { orderNumber: 2, supplierId: "sup-acme" }),
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  catalog("add-line", [
+                    lineWrite("po-4-loose", {
+                      purchaseOrderId: "po-4",
+                      productId: LOOSE_PRODUCT,
+                      quantity: 6,
+                      quantityType: "unit",
+                      baseUnitQuantity: 6,
+                    }),
+                  ]),
+                ),
+                queued(
+                  catalog("edit-line", [
+                    lineWrite(
+                      "po-4-loose",
+                      {
+                        purchaseOrderId: "po-4",
+                        productId: PACKED_PRODUCT,
+                        quantity: 2,
+                        quantityType: "pack",
+                        baseUnitQuantity: 20,
+                        packCost: 450,
+                      },
+                      1,
+                    ),
+                  ]),
+                ),
+                queued(
+                  catalog("reissue", [
+                    removal("purchaseOrderItem", "po-4-loose", 2),
+                    removal("purchaseOrder", "po-4", 1),
+                    orderWrite("po-5", { orderNumber: 3, supplierId: "sup-globex" }),
+                    orderWrite("po-6", { orderNumber: 3, supplierId: "sup-globex" }),
+                  ]),
+                ),
+              ],
+              [
+                queued(
+                  catalog("rename-supplier", [
+                    supplierWrite("sup-globex", { name: "Globex Corp" }, 1),
+                    supplierWrite("sup-initech", { name: "Initech" }),
+                  ]),
+                ),
+                queued(
+                  catalog("regroup", [
+                    orderWrite("po-5", { orderNumber: 3, supplierId: "sup-initech" }, 1),
+                    supplierWrite("sup-hooli", { name: "Hooli" }),
+                    removal("supplier", "sup-hooli", 1),
+                  ]),
+                ),
+              ],
+            ],
+            path,
+          );
+
+          expectParity(twin);
+          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+            Array.from({ length: 15 }, () => "catalogWrite"),
+          );
+          expect(
+            twin.decisions.map(({ local }) =>
+              local.page?.transactions[0]?.changes.map(
+                (change) => `${change.action} ${change.entity}`,
+              ),
+            ),
+          ).toEqual([
+            [
+              "upsert category",
+              "upsert product",
+              "upsert product",
+              "upsert supplier",
+              "upsert supplier",
+            ],
+            ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
+            ["upsert purchaseOrder"],
+            ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
+            [
+              "upsert product",
+              "upsert batch",
+              "upsert stockMovement",
+              "upsert purchaseOrderItem",
+              "upsert batch",
+              "upsert stockMovement",
+              "upsert purchaseOrderItem",
+              "upsert batch",
+              "upsert purchaseOrderItem",
+            ],
+            ["upsert purchaseOrder"],
+            ["upsert purchaseOrder", "upsert purchaseOrderItem"],
+            ["upsert purchaseOrder"],
+            ["upsert purchaseOrder"],
+            ["delete purchaseOrder", "upsert purchaseOrder"],
+            ["upsert purchaseOrderItem"],
+            ["upsert purchaseOrderItem"],
+            [
+              "delete purchaseOrderItem",
+              "delete purchaseOrder",
+              "upsert purchaseOrder",
+              "upsert purchaseOrder",
+            ],
+            ["upsert supplier", "upsert supplier"],
+            ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
+          ]);
+        }).pipe(scenario),
+    );
+  }
+
+  for (const path of DECISION_PATHS) {
+    it.effect(
+      `emits the same groups for an import that opens its own category, in one write or split, when ${path}`,
+      () =>
+        Effect.gen(function* () {
+          const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
+          const twin = yield* decideOnBoth(
+            "org-parity-import",
+            [
+              [
+                queued(
+                  catalog("import-small", [
+                    categoryWrite("cat-small", "Small import"),
+                    ...importedLines("cat-small", 0, 2),
+                  ]),
+                ),
+              ],
+              [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
+              [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
+              [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
+            ],
+            path,
+          );
+
+          expectParity(twin);
+          expect(twin.decisions.map(({ local }) => local.result)).toEqual([
+            { _tag: "catalogWrite", rowsWritten: 5 },
+            { _tag: "catalogWrite", rowsWritten: 1 },
+            { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
+            { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
+          ]);
+        }).pipe(scenario),
+      120_000,
+    );
+  }
+
+  it.effect(
+    "refuses at enqueue what the authority rejects, and keeps no trace, when the store decides",
+    () =>
+      Effect.gen(function* () {
+        const organizationId = decodeOrganizationId("org-parity-refusal");
+        const submissions: Array<LocalSubmission> = [];
+        const refusal = yield* Effect.gen(function* () {
+          const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
+          yield* decide(REPACKED);
+          const before = yield* store.readSyncCursor();
+          const decidedBefore = submissions.length;
+          const failure = yield* Effect.flip(store.enqueueCommand(queued(stalePriceDelivery)));
+          const refused = submissions.slice(decidedBefore);
+          return {
+            failure,
+            decisions: refused.length,
+            authority: yield* Effect.forEach(refused, ({ request }) =>
+              authority.submit(actor, request),
+            ),
+            status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
+            before,
+            after: yield* store.readSyncCursor(),
+          };
+        }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped);
+
+        expect(refusal.decisions).toBe(1);
+        expect(refusal.authority.map(({ result }) => result)).toEqual([
+          { _tag: "rejected", code: "ENTITY_CONFLICT", message: refusal.failure.message },
+        ]);
+        expect(refusal.failure).toMatchObject({
+          code: "ENTITY_CONFLICT",
+          message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
+        });
+        expect(refusal.status).toBeUndefined();
+        expect(refusal.after).toEqual(refusal.before);
+      }).pipe(scenario),
+  );
+
+  it.effect("rejects with the same code and message whatever a queued command gets wrong", () =>
+    Effect.gen(function* () {
+      const staleTopUp = (commandId: string) =>
         queued(
-          catalog("orphans", [
-            productWrite("prod-orphan", {
-              categoryId: "cat-gone",
-              name: "Orphan",
-              unitsPerPack: 1,
-            }),
-          ]),
-        ),
-        queued(
-          catalog("orphan-batch", [
-            batchWrite("batch-orphan", {
-              productId: "prod-gone",
-              movementId: "mv-orphan",
-              packQuantity: 1,
-              unitQuantity: 0,
-            }),
-          ]),
-        ),
-        queued(catalog("twice", [categoryWrite(GENERAL, "General again")])),
-        queued(
-          catalog("vanished", [
+          catalog(commandId, [
             batchWrite(
-              "batch-vanished",
+              LAST_UNIT_BATCH_ID,
               {
                 productId: LAST_UNIT_PRODUCT_ID,
-                movementId: "mv-vanished",
-                packQuantity: 1,
+                movementId: `${commandId}-move`,
+                packQuantity: 0,
+                unitQuantity: 60,
+              },
+              9,
+            ),
+          ]),
+        );
+      const staleEmptying = (commandId: string) =>
+        queued(
+          catalog(commandId, [
+            batchWrite(
+              LAST_UNIT_BATCH_ID,
+              {
+                productId: LAST_UNIT_PRODUCT_ID,
+                movementId: `${commandId}-move`,
+                packQuantity: 0,
+                unitQuantity: 0,
+              },
+              9,
+            ),
+            batchWrite(
+              PACK_BATCH,
+              {
+                productId: LAST_UNIT_PRODUCT_ID,
+                movementId: `${commandId}-move-packs`,
+                packQuantity: 0,
                 unitQuantity: 0,
               },
               1,
             ),
           ]),
-        ),
-        queued(catalog("drop-vanished", [removal("category", "cat-vanished", 1)])),
-        queued(
-          catalog("recorded-movement", [
-            batchWrite(
-              LAST_UNIT_BATCH_ID,
-              {
-                productId: LAST_UNIT_PRODUCT_ID,
-                movementId: "mv-seed",
-                packQuantity: 0,
-                unitQuantity: 7,
+        );
+      const twin = yield* decideOnBoth("org-parity-rejections", [
+        [seedSales(1, 0, 9)],
+        [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
+        [
+          staleTopUp("stale-top-up"),
+          queued({
+            _tag: "issueInvoice",
+            payload: {
+              ...lastUnitBuyerBCommand,
+              invoiceNumber: 2,
+              input: {
+                ...lastUnitBuyerBCommand.input,
+                items: lastUnitBuyerBCommand.input.items.map((line) => ({ ...line, quantity: 50 })),
               },
-              2,
-            ),
-          ]),
-        ),
-      ],
-      [
-        queued(sale("sale-reused-invoice", 2, [{ quantity: 1 }], { invoiceId: "sale-a" })),
-        queued(sale("sale-reused-item", 3, [{ quantity: 1, invoiceItemId: "item-a" }])),
-        queued(sale("sale-reused-movement", 4, [{ quantity: 1, saleMovementId: "move-a" }])),
-        queued(sale("sale-uncovered", 5, [{ quantity: 1 }], { soldQuantity: 2 })),
-        queued(sale("sale-overflow", 6, [{ quantity: 1, salePrice: 3_000_000_000 }])),
-        queued(
-          catalog("cmd-other", [categoryWrite("cat-mismatch", "Mismatch")]),
-          "operation-mismatch",
-        ),
-      ],
-      [
-        queued(
-          catalog("move-stale", [
-            productWrite(IDLE_PRODUCT, { categoryId: GENERAL, name: "Idle", unitsPerPack: 2 }, 9),
-          ]),
-        ),
-        queued(catalog("drop-idle-category", [removal("category", IDLE_CATEGORY, 1)])),
-      ],
-      [
-        staleEmptying("stale-emptying"),
-        queued(catalog("drop-stocked-batch", [removal("batch", LAST_UNIT_BATCH_ID, 2)])),
-      ],
-      [
-        staleEmptying("stale-emptying-again"),
-        queued(catalog("drop-stocked-product", [removal("product", LAST_UNIT_PRODUCT_ID, 1)])),
-      ],
-      [
-        queued(catalog("drop-idle-product", [removal("product", IDLE_PRODUCT, 1)])),
-        queued(
-          catalog("late-batch", [
-            batchWrite("batch-late", {
-              productId: IDLE_PRODUCT,
-              movementId: "mv-late",
-              packQuantity: 1,
-              unitQuantity: 0,
-            }),
-          ]),
-        ),
-        queued(catalog("drop-emptied-category", [removal("category", IDLE_CATEGORY, 1)])),
-        queued(
-          catalog("late-product", [
-            productWrite("prod-late", { categoryId: IDLE_CATEGORY, name: "Late", unitsPerPack: 1 }),
-          ]),
-        ),
-      ],
-    ]);
+              allocations: lastUnitBuyerBCommand.allocations.map((take) => ({
+                ...take,
+                quantity: 50,
+              })),
+            },
+          }),
+        ],
+        [
+          queued(
+            catalog("orphans", [
+              productWrite("prod-orphan", {
+                categoryId: "cat-gone",
+                name: "Orphan",
+                unitsPerPack: 1,
+              }),
+            ]),
+          ),
+          queued(
+            catalog("orphan-batch", [
+              batchWrite("batch-orphan", {
+                productId: "prod-gone",
+                movementId: "mv-orphan",
+                packQuantity: 1,
+                unitQuantity: 0,
+              }),
+            ]),
+          ),
+          queued(catalog("twice", [categoryWrite(GENERAL, "General again")])),
+          queued(
+            catalog("vanished", [
+              batchWrite(
+                "batch-vanished",
+                {
+                  productId: LAST_UNIT_PRODUCT_ID,
+                  movementId: "mv-vanished",
+                  packQuantity: 1,
+                  unitQuantity: 0,
+                },
+                1,
+              ),
+            ]),
+          ),
+          queued(catalog("drop-vanished", [removal("category", "cat-vanished", 1)])),
+          queued(
+            catalog("recorded-movement", [
+              batchWrite(
+                LAST_UNIT_BATCH_ID,
+                {
+                  productId: LAST_UNIT_PRODUCT_ID,
+                  movementId: "mv-seed",
+                  packQuantity: 0,
+                  unitQuantity: 7,
+                },
+                2,
+              ),
+            ]),
+          ),
+        ],
+        [
+          queued(sale("sale-reused-invoice", 2, [{ quantity: 1 }], { invoiceId: "sale-a" })),
+          queued(sale("sale-reused-item", 3, [{ quantity: 1, invoiceItemId: "item-a" }])),
+          queued(sale("sale-reused-movement", 4, [{ quantity: 1, saleMovementId: "move-a" }])),
+          queued(sale("sale-uncovered", 5, [{ quantity: 1 }], { soldQuantity: 2 })),
+          queued(sale("sale-overflow", 6, [{ quantity: 1, salePrice: 3_000_000_000 }])),
+          queued(
+            catalog("cmd-other", [categoryWrite("cat-mismatch", "Mismatch")]),
+            "operation-mismatch",
+          ),
+        ],
+        [
+          queued(
+            catalog("move-stale", [
+              productWrite(IDLE_PRODUCT, { categoryId: GENERAL, name: "Idle", unitsPerPack: 2 }, 9),
+            ]),
+          ),
+          queued(catalog("drop-idle-category", [removal("category", IDLE_CATEGORY, 1)])),
+        ],
+        [
+          staleEmptying("stale-emptying"),
+          queued(catalog("drop-stocked-batch", [removal("batch", LAST_UNIT_BATCH_ID, 2)])),
+        ],
+        [
+          staleEmptying("stale-emptying-again"),
+          queued(catalog("drop-stocked-product", [removal("product", LAST_UNIT_PRODUCT_ID, 1)])),
+        ],
+        [
+          queued(catalog("drop-idle-product", [removal("product", IDLE_PRODUCT, 1)])),
+          queued(
+            catalog("late-batch", [
+              batchWrite("batch-late", {
+                productId: IDLE_PRODUCT,
+                movementId: "mv-late",
+                packQuantity: 1,
+                unitQuantity: 0,
+              }),
+            ]),
+          ),
+          queued(catalog("drop-emptied-category", [removal("category", IDLE_CATEGORY, 1)])),
+          queued(
+            catalog("late-product", [
+              productWrite("prod-late", {
+                categoryId: IDLE_CATEGORY,
+                name: "Late",
+                unitsPerPack: 1,
+              }),
+            ]),
+          ),
+        ],
+      ]);
 
-    expectParity(twin);
-    expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
-      "catalogWrite",
-      "issueInvoice",
-      `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
-      "INSUFFICIENT_STOCK: Not enough stock for Last unit: 8 available, 50 requested.",
-      "ENTITY_RELATION_INVALID: Category cat-gone is not available in this organization.",
-      "ENTITY_RELATION_INVALID: Product prod-gone is not available in this organization.",
-      `ENTITY_CONFLICT: Category ${GENERAL} already exists.`,
-      "ENTITY_CONFLICT: Batch batch-vanished is no longer available.",
-      "ENTITY_CONFLICT: Category cat-vanished is no longer available.",
-      "ENTITY_CONFLICT: Movement mv-seed is already recorded.",
-      "INVOICE_IDENTITY_CONFLICT: This invoice id is already in use.",
-      "ENTITY_CONFLICT: A record this command creates already exists.",
-      "ENTITY_CONFLICT: A record this command creates already exists.",
-      "INVALID_OPERATION: The sale allocations do not match the items.",
-      "INVALID_OPERATION: A value in this command is out of range.",
-      "COMMAND_IDENTITY_MISMATCH: The command id must match the envelope operation id.",
-      `ENTITY_CONFLICT: Product ${IDLE_PRODUCT} changed since units per pack was read.`,
-      `ENTITY_CONFLICT: ${catalogWriteError.categoryHasProducts}`,
-      `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
-      `ENTITY_CONFLICT: ${catalogWriteError.batchHasStock}`,
-      `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
-      `ENTITY_CONFLICT: ${catalogWriteError.productHasStock}`,
-      "catalogWrite",
-      `ENTITY_RELATION_INVALID: Product ${IDLE_PRODUCT} is not available in this organization.`,
-      "catalogWrite",
-      `ENTITY_RELATION_INVALID: Category ${IDLE_CATEGORY} is not available in this organization.`,
-    ]);
-  });
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
+        "catalogWrite",
+        "issueInvoice",
+        `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
+        "INSUFFICIENT_STOCK: Not enough stock for Last unit: 8 available, 50 requested.",
+        "ENTITY_RELATION_INVALID: Category cat-gone is not available in this organization.",
+        "ENTITY_RELATION_INVALID: Product prod-gone is not available in this organization.",
+        `ENTITY_CONFLICT: Category ${GENERAL} already exists.`,
+        "ENTITY_CONFLICT: Batch batch-vanished is no longer available.",
+        "ENTITY_CONFLICT: Category cat-vanished is no longer available.",
+        "ENTITY_CONFLICT: Movement mv-seed is already recorded.",
+        "INVOICE_IDENTITY_CONFLICT: This invoice id is already in use.",
+        "ENTITY_CONFLICT: A record this command creates already exists.",
+        "ENTITY_CONFLICT: A record this command creates already exists.",
+        "INVALID_OPERATION: The sale allocations do not match the items.",
+        "INVALID_OPERATION: A value in this command is out of range.",
+        "COMMAND_IDENTITY_MISMATCH: The command id must match the envelope operation id.",
+        `ENTITY_CONFLICT: Product ${IDLE_PRODUCT} changed since units per pack was read.`,
+        `ENTITY_CONFLICT: ${catalogWriteError.categoryHasProducts}`,
+        `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
+        `ENTITY_CONFLICT: ${catalogWriteError.batchHasStock}`,
+        `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
+        `ENTITY_CONFLICT: ${catalogWriteError.productHasStock}`,
+        "catalogWrite",
+        `ENTITY_RELATION_INVALID: Product ${IDLE_PRODUCT} is not available in this organization.`,
+        "catalogWrite",
+        `ENTITY_RELATION_INVALID: Category ${IDLE_CATEGORY} is not available in this organization.`,
+      ]);
+    }).pipe(scenario),
+  );
 
   const unqueued: ReadonlyArray<
     readonly [string, Steps, SyncCommand, Partial<CommandReceipt["result"]>]
@@ -1691,20 +1716,23 @@ describe("the local authority decides like the durable object authority", () => 
     ],
   ];
 
-  it.each(unqueued)(
-    "decides %s like the authority and the same way twice, though the engine never queues it",
-    async (_name, setup, command, expected) => {
-      const twin = await decideUnqueuedOnBoth(
-        `org-parity-${command.payload.commandId}`,
-        setup,
-        command,
-      );
-      expect(twin.local.result).toMatchObject(expected);
-      expect(twin.local.page?.transactions).toStrictEqual(twin.authority.page?.transactions);
-      expect(twin.local.page?.transactions).toHaveLength(1);
-      expect(twin.local.page?.horizon).toBe(twin.authority.page?.horizon);
-      expect(receiptOf(twin.local)).toStrictEqual(receiptOf(twin.authority));
-      expect(twin.redecided).toStrictEqual(twin.local);
-    },
-  );
+  for (const [name, setup, command, expected] of unqueued) {
+    it.effect(
+      `decides ${name} like the authority and the same way twice, though the engine never queues it`,
+      () =>
+        Effect.gen(function* () {
+          const twin = yield* decideUnqueuedOnBoth(
+            `org-parity-${command.payload.commandId}`,
+            setup,
+            command,
+          );
+          expect(twin.local.result).toMatchObject(expected);
+          expect(twin.local.page?.transactions).toStrictEqual(twin.authority.page?.transactions);
+          expect(twin.local.page?.transactions).toHaveLength(1);
+          expect(twin.local.page?.horizon).toBe(twin.authority.page?.horizon);
+          expect(receiptOf(twin.local)).toStrictEqual(receiptOf(twin.authority));
+          expect(twin.redecided).toStrictEqual(twin.local);
+        }).pipe(scenario),
+    );
+  }
 });

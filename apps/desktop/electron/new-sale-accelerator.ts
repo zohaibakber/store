@@ -1,6 +1,4 @@
-import { app } from "electron";
-
-import { NEW_SALE_CHANNEL } from "./ipc-channels";
+import { app, type WebContents } from "electron";
 
 type AcceleratorInput = {
   readonly type: string;
@@ -19,12 +17,15 @@ const isNewSaleAccelerator = (input: AcceleratorInput): boolean => {
   return (input.control || input.meta) && !input.alt && !input.shift;
 };
 
-export const registerNewSaleAccelerator = () => {
+export const registerNewSaleAccelerator = (
+  isMainWindow: (contents: WebContents) => boolean,
+  onNewSale: () => void,
+) => {
   app.on("web-contents-created", (_event, contents) => {
     contents.on("before-input-event", (event, input) => {
       if (!isNewSaleAccelerator(input)) return;
       event.preventDefault();
-      contents.send(NEW_SALE_CHANNEL);
+      if (isMainWindow(contents)) onNewSale();
     });
   });
 };

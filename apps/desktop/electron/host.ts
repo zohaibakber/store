@@ -10,19 +10,21 @@ import type * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import type * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
-import type { BrowserWindow } from "electron";
 
 import { DesktopAuth, type DesktopAuthOptions } from "./auth";
+import { DesktopShell } from "./desktop-shell";
 import { LicenceService } from "./licence/service";
 import { PrivateFiles } from "./private-files";
-import { UpdaterLive } from "./updater";
+import { makeReplicaHost, ReplicaHost } from "./replica-host";
+import { ShellEvents } from "./shell-events";
+import { ShellServer } from "./shell-server";
+import { Updater } from "./updater";
 
 export interface DesktopHostOptions extends DesktopAuthOptions {
-  readonly userDataPath: string;
   readonly packaged: boolean;
-  readonly getWindow: () => BrowserWindow | null;
-  readonly allowedOrigins: () => ReadonlyArray<string>;
+  readonly shell: DesktopShell["Service"];
 }
 
 const PlatformLive = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer);
@@ -48,15 +50,44 @@ const LicenceLive = (options: { readonly directory: string; readonly trust: Lice
     }),
   );
 
+const ReplicaHostLive = Layer.effect(
+  ReplicaHost,
+  Effect.gen(function* () {
+    const auth = yield* DesktopAuth;
+    const licence = yield* LicenceService;
+    const events = yield* ShellEvents;
+    const shell = yield* DesktopShell;
+    return yield* makeReplicaHost({
+      userDataPath: shell.userDataPath,
+      workerPath: shell.workerPath,
+      apiBaseUrl: shell.apiBaseUrl,
+      deviceLabel: shell.deviceLabel,
+      accessTokens: auth,
+      backupDialogs: shell.backupDialogs,
+      publishProgress: (progress) => PubSub.publish(events.publishProgress, progress),
+      rendererChannel: shell.rendererChannel,
+      sessions: { licence },
+    });
+  }),
+);
+
 const MainLive = (options: DesktopHostOptions) =>
-  Layer.mergeAll(
-    DesktopAuth.layer(options),
-    LicenceLive({
-      directory: path.join(options.userDataPath, "licence"),
-      trust: shippedLicenceTrust(options.packaged),
-    }),
-    options.packaged ? UpdaterLive(options) : Layer.empty,
-  ).pipe(Layer.provideMerge(PrivateFiles.layerWithPlatform.pipe(Layer.provideMerge(PlatformLive))));
+  ShellServer.layer.pipe(
+    Layer.provideMerge(ReplicaHostLive),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        DesktopAuth.layer(options),
+        LicenceLive({
+          directory: path.join(options.shell.userDataPath, "licence"),
+          trust: shippedLicenceTrust(options.packaged),
+        }),
+        Layer.succeed(DesktopShell, options.shell),
+        options.packaged ? Updater.layer : Updater.layerUnpackaged,
+      ),
+    ),
+    Layer.provideMerge(ShellEvents.layer),
+    Layer.provideMerge(PrivateFiles.layerWithPlatform.pipe(Layer.provideMerge(PlatformLive))),
+  );
 
 export const makeDesktopHost = (options: DesktopHostOptions) => {
   const runtime = ManagedRuntime.make(MainLive(options));

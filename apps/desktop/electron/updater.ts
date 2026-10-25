@@ -8,27 +8,23 @@ import {
   type UpdaterEvent,
   type UpdatePhase,
 } from "@store/contracts/updater";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberHandle from "effect/FiberHandle";
-import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
+import { app } from "electron";
 import electronUpdater from "electron-updater";
 
-import {
-  UPDATER_CHECK_CHANNEL,
-  UPDATER_EVENT_CHANNEL,
-  UPDATER_INSTALL_CHANNEL,
-} from "./ipc-channels";
-import { isTrustedIpcSenderFrame, trustedIpcListener } from "./ipc-sender";
+import { ShellEvents } from "./shell-events";
 
 const { autoUpdater } = electronUpdater;
 
@@ -232,12 +228,22 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
     return { checkNow };
   });
 
-export const UpdaterLive = (options: {
-  readonly getWindow: () => BrowserWindow | null;
-  readonly allowedOrigins: () => ReadonlyArray<string>;
-}) =>
-  Layer.effectDiscard(
+export class Updater extends Context.Service<
+  Updater,
+  {
+    readonly checkNow: Effect.Effect<void>;
+    readonly install: Effect.Effect<void>;
+  }
+>()("@store/desktop/Updater") {
+  static readonly layerUnpackaged = Layer.succeed(
+    Updater,
+    Updater.of({ checkNow: Effect.void, install: Effect.void }),
+  );
+
+  static readonly layer = Layer.effect(
+    Updater,
     Effect.gen(function* () {
+      const events = yield* ShellEvents;
       autoUpdater.autoDownload = true;
       autoUpdater.autoInstallOnAppQuit = true;
       autoUpdater.logger = console;
@@ -246,27 +252,13 @@ export const UpdaterLive = (options: {
         owner: "zohaibakber",
         repo: "store",
       });
-      const workflow = yield* makeUpdaterWorkflow((event) =>
-        options.getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
-      );
-      const run = yield* FiberSet.makeRuntimePromise<never>();
-      const install = (event: IpcMainEvent) => {
-        if (!isTrustedIpcSenderFrame(event.senderFrame, options.allowedOrigins())) return;
-        autoUpdater.quitAndInstall();
-      };
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          ipcMain.handle(
-            UPDATER_CHECK_CHANNEL,
-            trustedIpcListener(options.allowedOrigins, () => run(workflow.checkNow)),
-          );
-          ipcMain.on(UPDATER_INSTALL_CHANNEL, install);
-        }),
-        () =>
-          Effect.sync(() => {
-            ipcMain.removeHandler(UPDATER_CHECK_CHANNEL);
-            ipcMain.off(UPDATER_INSTALL_CHANNEL, install);
-          }),
-      );
+      const workflow = yield* makeUpdaterWorkflow((event) => {
+        PubSub.publishUnsafe(events.updater, event);
+      });
+      return Updater.of({
+        checkNow: workflow.checkNow,
+        install: Effect.sync(() => autoUpdater.quitAndInstall()),
+      });
     }),
   );
+}

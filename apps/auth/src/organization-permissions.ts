@@ -25,7 +25,7 @@ export type RoleRequirement = "owner" | "manager";
 export const isDemotion = (from: OrganizationRole, to: OrganizationRole) =>
   ROLE_RANK[to] < ROLE_RANK[from];
 
-export const defaultOrganizationName = (ownerName: string) => `${ownerName.trim() || "My"}'s Store`;
+export const defaultOrganizationName = (ownerName: string) => `${ownerName.trim() || "My"}'s Shop`;
 
 export const requireRole = (
   membership: MembershipRecord,

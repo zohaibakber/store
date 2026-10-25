@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
@@ -23,18 +24,12 @@ import {
   suppliers,
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
-import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
-import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
-import { testRuntimeContext } from "../lib/app";
-import { makeTestAuthorities, organizationAuthorityFor } from "./harness";
-
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
-  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
+import { scenario, TestAuthorities } from "./harness";
 
 const decodePart = Schema.decodeUnknownSync(Schema.fromJsonString(SnapshotPartPayload));
 
@@ -233,36 +228,35 @@ const seed = (db: ReplicaDb, organizationId: string) =>
   });
 
 describe("durable object row builders and partition digests", () => {
-  it("computes the same partition digests as the shared client contract", async () => {
-    const organizationId = "org-digest-v4";
-    const outcome = await run(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const { db } = yield* authorities.open(organizationId);
-        const sources = yield* seed(db, organizationId);
-        const empty = yield* authorities.open("org-without-rows");
-        return {
-          history: yield* partitionDigest(db),
-          clientHistory: yield* partitionDigestOf(sources),
-          empty: yield* partitionDigest(empty.db),
-          emptyClient: yield* partitionDigestOf([]),
-        };
-      }).pipe(Effect.orDie),
-    );
-    expect(outcome.history).toEqual(outcome.clientHistory);
-    expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 9 - 2);
-    expect(outcome.empty).toEqual(outcome.emptyClient);
-  });
+  it.effect("computes the same partition digests as the shared client contract", () =>
+    Effect.gen(function* () {
+      const organizationId = "org-digest-v4";
+      const authorities = yield* TestAuthorities;
+      const { db } = yield* authorities.open(organizationId);
+      const sources = yield* seed(db, organizationId);
+      const empty = yield* authorities.open("org-without-rows");
+      const outcome = {
+        history: yield* partitionDigest(db),
+        clientHistory: yield* partitionDigestOf(sources),
+        empty: yield* partitionDigest(empty.db),
+        emptyClient: yield* partitionDigestOf([]),
+      };
+      expect(outcome.history).toEqual(outcome.clientHistory);
+      expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 9 - 2);
+      expect(outcome.empty).toEqual(outcome.emptyClient);
+    }).pipe(scenario, Effect.orDie),
+  );
 
-  it("serves snapshot rows that decode to the stored rows and hash to the authority digest", async () => {
-    const organizationId = "org-snapshot-rows";
-    const actor = { organizationId, userId: "user-1" };
-    const outcome = await run(
+  it.effect(
+    "serves snapshot rows that decode to the stored rows and hash to the authority digest",
+    () =>
       Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
+        const organizationId = "org-snapshot-rows";
+        const actor = { organizationId, userId: "user-1" };
+        const authorities = yield* TestAuthorities;
         const { db } = yield* authorities.open(organizationId);
         yield* seed(db, organizationId);
-        const snapshots = yield* organizationAuthorityFor(authorities);
+        const snapshots = yield* OrganizationAuthority;
         const { manifest } = yield* snapshots.acquireSnapshot(actor, {
           epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
           subscription: OPERATIONAL_SUBSCRIPTION,
@@ -281,34 +275,31 @@ describe("durable object row builders and partition digests", () => {
           purchaseOrder: yield* db.select().from(purchaseOrders).all(),
           purchaseOrderItem: yield* db.select().from(purchaseOrderItems).all(),
         };
-        return {
+        const outcome = {
           manifest,
           rows: parts.flatMap((part) => decodePart(part.json).rows),
           stored,
           digest: yield* partitionDigest(db),
         };
-      }).pipe(Effect.orDie),
-    );
-    expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
-    expect(outcome.rows).toHaveLength(ADVERSARIAL_TEXT.length * 9 - 2);
-    for (const row of outcome.rows) {
-      const decodeStored = Schema.decodeUnknownSync(syncEntityRows[row.entity].schema);
-      const original = outcome.stored[row.entity].find(
-        (candidate) => candidate.id === row.entityId,
-      );
-      expect(original, `${row.entity} ${row.entityId}`).toBeDefined();
-      expect(decodeStored(row.row)).toEqual(decodeStored(original));
-    }
-    expect(
-      await Effect.runPromise(
-        partitionDigestOf(
-          outcome.rows.map((row) => ({
-            entity: row.entity,
-            entityId: row.entityId,
-            rowVersion: row.rowVersion,
-          })),
-        ),
-      ),
-    ).toEqual(outcome.digest);
-  });
+        expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
+        expect(outcome.rows).toHaveLength(ADVERSARIAL_TEXT.length * 9 - 2);
+        for (const row of outcome.rows) {
+          const decodeStored = Schema.decodeUnknownSync(syncEntityRows[row.entity].schema);
+          const original = outcome.stored[row.entity].find(
+            (candidate) => candidate.id === row.entityId,
+          );
+          expect(original, `${row.entity} ${row.entityId}`).toBeDefined();
+          expect(decodeStored(row.row)).toEqual(decodeStored(original));
+        }
+        expect(
+          yield* partitionDigestOf(
+            outcome.rows.map((row) => ({
+              entity: row.entity,
+              entityId: row.entityId,
+              rowVersion: row.rowVersion,
+            })),
+          ),
+        ).toEqual(outcome.digest);
+      }).pipe(scenario, Effect.orDie),
+  );
 });

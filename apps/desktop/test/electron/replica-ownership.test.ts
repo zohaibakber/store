@@ -6,30 +6,16 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vite-plus/test";
 
-import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/ipc-channels";
-import {
-  registerReplicaWorkerIpc,
-  type ReplicaInvokeEvent,
-  type ReplicaIpcListener,
-} from "../../electron/replica-ipc";
+import { makeReplicaHost, ReplicaHost } from "../../electron/replica-host";
 import { ReplicaReaderRpcs, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/replica-supervisor";
-
-const allowed = ["https://app.tabaaq.local"];
-
-const decodeOpened = Schema.decodeUnknownSync(
-  Schema.Struct({
-    workspaceToken: Schema.String,
-    engine: Schema.Literals(["sqlite", "unavailable"]),
-  }),
-);
 
 const makeWorld = (
   plan: {
@@ -104,68 +90,56 @@ const makeWorld = (
       };
     });
 
-  const listeners = new Map<string, ReplicaIpcListener>();
-  const runtime = ManagedRuntime.make(NodeFileSystem.layer);
-  const registration = registerReplicaWorkerIpc({
-    ipcMain: {
-      handle: (channel, listener) => {
-        listeners.set(channel, listener);
-      },
-      removeHandler: (channel) => {
-        listeners.delete(channel);
-      },
-    },
-    userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
-    workerPath: "/tmp/replica-worker.js",
-    apiBaseUrl: "https://api.tabaaq.local",
-    run: (effect) => runtime.runPromise(effect),
-    accessTokens: {
-      liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
-      accessTokens: Stream.never,
-    },
-    allowedOrigins: () => allowed,
-    backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
-    sessions: {
-      spawnWorker,
-      spawnReader,
-      supervisorPolicy: {
-        retryDelay: Duration.millis(10),
-        stableAfter: Duration.millis(60),
-        bootTimeout: Duration.millis(500),
-        requestWait: Duration.millis(1_000),
-      },
-      closeGrace: Duration.millis(50),
-      ownershipWait: Duration.millis(150),
-    },
-  });
-
-  const senderEvent = (id: number): ReplicaInvokeEvent => ({
-    senderFrame: { url: allowed[0]! },
-    sender: {
-      id,
-      isDestroyed: () => false,
-      send: () => undefined,
-      on: () => undefined,
-      removeListener: () => undefined,
-    },
-  });
-  const invoke = <Input>(channel: string, event: ReplicaInvokeEvent, input: Input) => {
-    const listener = listeners.get(channel);
-    if (!listener) throw new Error(`No handler for ${channel}`);
-    // SAFETY: the tests send raw renderer payloads to the IPC decoder.
-    return listener(event, input as never);
-  };
-  const open = async (event: ReplicaInvokeEvent) =>
-    decodeOpened(
-      await invoke(REPLICA_OPEN_CHANNEL, event, {
-        authority: "remote",
-        organizationId: "org-1",
-        userId: "user-1",
-        replicaId: "device-1",
+  const runtime = ManagedRuntime.make(
+    Layer.effect(
+      ReplicaHost,
+      makeReplicaHost({
+        userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
+        workerPath: "/tmp/replica-worker.js",
+        apiBaseUrl: "https://api.tabaaq.local",
+        accessTokens: {
+          liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
+          accessTokens: Stream.never,
+        },
+        backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
+        publishProgress: () => Effect.void,
+        sessions: {
+          spawnWorker,
+          spawnReader,
+          supervisorPolicy: {
+            retryDelay: Duration.millis(10),
+            stableAfter: Duration.millis(60),
+            bootTimeout: Duration.millis(500),
+            requestWait: Duration.millis(1_000),
+          },
+          closeGrace: Duration.millis(50),
+          ownershipWait: Duration.millis(150),
+        },
       }),
-    );
+    ).pipe(Layer.provide(NodeFileSystem.layer)),
+  );
 
-  return { workers, owners, registration, senderEvent, invoke, open };
+  const sender = (id: number) => ({
+    id,
+    isDestroyed: () => false,
+    on: () => undefined,
+    removeListener: () => undefined,
+  });
+  const open = (id: number) =>
+    runtime.runPromise(
+      ReplicaHost.use((replicas) =>
+        replicas.open(sender(id), {
+          authority: "remote",
+          organizationId: "org-1",
+          userId: "user-1",
+          replicaId: "device-1",
+        }),
+      ),
+    );
+  const close = (id: number, workspaceToken: string) =>
+    runtime.runPromise(ReplicaHost.use((replicas) => replicas.close(id, workspaceToken)));
+
+  return { workers, owners, dispose: () => runtime.dispose(), open, close };
 };
 
 describe("ownership", () => {
@@ -174,16 +148,15 @@ describe("ownership", () => {
       closeFinalizer: (index, terminated) =>
         index === 0 ? Deferred.await(terminated) : Effect.void,
     });
-    const first = world.senderEvent(7);
-    const { workspaceToken } = await world.open(first);
-    const closing = world.invoke(REPLICA_CLOSE_CHANNEL, first, workspaceToken);
+    const { workspaceToken } = await world.open(7);
+    const closing = world.close(7, workspaceToken);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const reopening = world.open(world.senderEvent(8));
+    const reopening = world.open(8);
     await closing;
     await expect(reopening).resolves.toMatchObject({ engine: "sqlite" });
     expect(world.workers).toHaveLength(2);
     expect(world.owners.overlaps).toBe(0);
-    await world.registration.dispose();
+    await world.dispose();
   });
 
   it("answers busy instead of overlapping when termination cannot be confirmed", async () => {
@@ -191,11 +164,10 @@ describe("ownership", () => {
       closeFinalizer: (index) => (index === 0 ? Effect.never : Effect.void),
       terminateEffect: () => Effect.never,
     });
-    const first = world.senderEvent(7);
-    const { workspaceToken } = await world.open(first);
-    void world.invoke(REPLICA_CLOSE_CHANNEL, first, workspaceToken);
+    const { workspaceToken } = await world.open(7);
+    void world.close(7, workspaceToken);
     await new Promise((resolve) => setTimeout(resolve, 80));
-    await expect(world.open(world.senderEvent(8))).rejects.toThrow("still closing");
+    await expect(world.open(8)).rejects.toThrow("still closing");
     expect(world.workers).toHaveLength(1);
   });
 });

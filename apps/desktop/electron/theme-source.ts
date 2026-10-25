@@ -3,10 +3,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { ThemeSource } from "../src/host/shell-rpcs";
 import { PrivateFiles } from "./private-files";
-
-export const ThemeSource = Schema.Literals(["dark", "light", "system"]);
-export type ThemeSource = typeof ThemeSource.Type;
 
 const DEFAULT_THEME_SOURCE: ThemeSource = "dark";
 

@@ -20,7 +20,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
 
-import type { PublishProgress } from "../src/host/workspace-publish";
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
 import type { DesktopLicence } from "./desktop-rpcs";
 import type { LicenceService } from "./licence/service";
@@ -61,7 +60,6 @@ type ReplicaSenderListener = {
 export type ReplicaSender = {
   readonly id: number;
   readonly isDestroyed: () => boolean;
-  readonly send: (channel: string, event: PublishProgress) => void;
   readonly postMessage?: RendererPortsTarget["postMessage"];
   readonly on: ReplicaSenderListener;
   readonly removeListener: ReplicaSenderListener;
@@ -164,10 +162,6 @@ const prepareReplicaDirectory = Effect.fn("WorkspaceSessions.prepareDirectory")(
     { discard: true, concurrency: "unbounded" },
   );
 });
-
-export const sendToRenderer = (sender: ReplicaSender, channel: string, event: PublishProgress) => {
-  if (!sender.isDestroyed()) sender.send(channel, event);
-};
 
 const releaseWithSender = (sender: ReplicaSender, release: () => void) =>
   Effect.acquireRelease(

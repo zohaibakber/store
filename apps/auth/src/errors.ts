@@ -11,7 +11,7 @@ import { AuthRefusal, type AuthFailure } from "./failures";
 import type { GoogleOAuthError } from "./google";
 import type { AuthRepositoryError } from "./repository";
 
-export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("CryptoError", {
+export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("AuthCryptoError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}
@@ -83,24 +83,20 @@ export const infrastructureDiagnostics = (failure: InfrastructureFailure) => {
         operation: failure.operation,
         message: storageFailureMessage(failure.cause),
       };
-    case "CryptoError":
+    case "AuthCryptoError":
       return { tag: failure._tag, operation: failure.operation, message: String(failure.cause) };
     case "EmailDeliveryError":
     case "PasswordHashError":
     case "GoogleOAuthError":
     case "JwtError":
       return { tag: failure._tag, message: failure.message };
-    default: {
-      const _exhaustive: never = failure;
-      return _exhaustive;
-    }
   }
 };
 
 const INFRASTRUCTURE_TAGS = [
   "AuthRepositoryError",
   "EphemeralStoreError",
-  "CryptoError",
+  "AuthCryptoError",
   "EmailDeliveryError",
   "PasswordHashError",
   "GoogleOAuthError",

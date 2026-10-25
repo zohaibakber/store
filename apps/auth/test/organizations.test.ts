@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   EmailAddress,
   OrganizationName,
@@ -6,247 +7,245 @@ import {
   type OrganizationId,
   type OrganizationRole,
 } from "@store/auth";
-import { describe, expect, it } from "vite-plus/test";
+import * as Effect from "effect/Effect";
 
-import { count, failing, harness, refreshWith, run, signUp, type Harness } from "./harness";
+import { AuthApi, AuthTest, count, refreshWith, refusal, scenario, signUp } from "./harness";
 
-const command = (instance: Harness, accessToken: AccessToken, input: OrganizationCommand) =>
-  run(instance, (auth) => auth.organize({ accessToken, command: input }));
+const command = (accessToken: AccessToken, input: OrganizationCommand) =>
+  AuthApi.use((auth) => auth.organize({ accessToken, command: input }));
 
-const refused = (instance: Harness, accessToken: AccessToken, input: OrganizationCommand) =>
-  failing(instance, (auth) => auth.organize({ accessToken, command: input }));
+const refused = (accessToken: AccessToken, input: OrganizationCommand) =>
+  refusal(command(accessToken, input));
 
 type InvitableRole = Exclude<OrganizationRole, "owner">;
 
-const invite = async (
-  instance: Harness,
+const invite = Effect.fn("invite")(function* (
   accessToken: AccessToken,
   organizationId: OrganizationId,
   email: string,
   role: InvitableRole,
-) => {
-  const invited = await command(instance, accessToken, {
+) {
+  const invited = yield* command(accessToken, {
     _tag: "InviteMember",
     organizationId,
     email: EmailAddress.make(email),
     role,
   });
-  if (invited._tag !== "Invited") throw new Error("expected an invitation");
+  if (invited._tag !== "Invited") return yield* Effect.die(new Error("expected an invitation"));
   return invited;
-};
+});
 
-const withOwner = async () => {
-  const instance = harness();
-  const owner = await signUp(instance, "owner@example.com");
+const withOwner = Effect.gen(function* () {
+  const owner = yield* signUp("owner@example.com");
   return {
-    instance,
     owner,
     ownerId: owner.workspace.user.id,
     organizationId: owner.workspace.activeOrganization.id,
   };
-};
+});
 
-const memberships = (instance: Harness, organizationId: OrganizationId, where = "1 = 1") =>
+const memberships = (organizationId: OrganizationId, where = "1 = 1") =>
   count(
-    instance,
     `SELECT count(*) AS total FROM auth_organization_membership WHERE organizationId = ? AND ${where}`,
     organizationId,
   );
 
-const withTeam = async () => {
-  const base = await withOwner();
-  const join = async (email: string, role: InvitableRole) => {
-    const session = await signUp(base.instance, email);
-    const invited = await invite(
-      base.instance,
-      base.owner.accessToken,
-      base.organizationId,
-      email,
-      role,
-    );
-    await command(base.instance, session.accessToken, {
-      _tag: "AcceptInvitation",
-      token: invited.token,
-    });
-    const joined = await refreshWith(base.instance, session.refreshToken);
-    if (joined._tag !== "Success") throw new Error("expected a refreshed session");
+const withTeam = Effect.gen(function* () {
+  const base = yield* withOwner;
+  const join = Effect.fn("join")(function* (email: string, role: InvitableRole) {
+    const session = yield* signUp(email);
+    const invited = yield* invite(base.owner.accessToken, base.organizationId, email, role);
+    yield* command(session.accessToken, { _tag: "AcceptInvitation", token: invited.token });
+    const joined = yield* refreshWith(session.refreshToken);
+    if (joined._tag !== "Success") {
+      return yield* Effect.die(new Error("expected a refreshed session"));
+    }
     return { id: session.workspace.user.id, accessToken: joined.success.accessToken };
-  };
+  });
   return {
     ...base,
-    admin: await join("admin@example.com", "admin"),
-    member: await join("member@example.com", "member"),
+    admin: yield* join("admin@example.com", "admin"),
+    member: yield* join("member@example.com", "member"),
   };
-};
+});
 
 describe("organization invitations", () => {
-  it("refuses a token presented by anyone but the invited address", async () => {
-    const { instance, owner, organizationId } = await withOwner();
-    const outsider = await signUp(instance, "outsider@example.com");
-    const invited = await invite(
-      instance,
-      owner.accessToken,
-      organizationId,
-      "invitee@example.com",
-      "member",
-    );
+  it.effect("refuses a token presented by anyone but the invited address", () =>
+    Effect.gen(function* () {
+      const { owner, organizationId } = yield* withOwner;
+      const outsider = yield* signUp("outsider@example.com");
+      const invited = yield* invite(
+        owner.accessToken,
+        organizationId,
+        "invitee@example.com",
+        "member",
+      );
 
-    const failure = await refused(instance, outsider.accessToken, {
-      _tag: "AcceptInvitation",
-      token: invited.token,
-    });
+      const failure = yield* refused(outsider.accessToken, {
+        _tag: "AcceptInvitation",
+        token: invited.token,
+      });
 
-    expect(failure).toMatchObject({ status: 403, code: "INVITATION_EMAIL_MISMATCH" });
-    expect(memberships(instance, organizationId)).toBe(1);
-  });
+      expect(failure).toMatchObject({ status: 403, code: "INVITATION_EMAIL_MISMATCH" });
+      expect(yield* memberships(organizationId)).toBe(1);
+    }).pipe(scenario()),
+  );
 
-  it("spends an invitation once, for the invited role", async () => {
-    const { instance, owner, organizationId } = await withOwner();
-    const invitee = await signUp(instance, "invitee@example.com");
-    const invited = await invite(
-      instance,
-      owner.accessToken,
-      organizationId,
-      "invitee@example.com",
-      "admin",
-    );
-    const accept: OrganizationCommand = { _tag: "AcceptInvitation", token: invited.token };
+  it.effect("spends an invitation once, for the invited role", () =>
+    Effect.gen(function* () {
+      const { owner, organizationId } = yield* withOwner;
+      const invitee = yield* signUp("invitee@example.com");
+      const invited = yield* invite(
+        owner.accessToken,
+        organizationId,
+        "invitee@example.com",
+        "admin",
+      );
+      const accept: OrganizationCommand = { _tag: "AcceptInvitation", token: invited.token };
 
-    const joined = await command(instance, invitee.accessToken, accept);
-    const second = await refused(instance, invitee.accessToken, accept);
+      const joined = yield* command(invitee.accessToken, accept);
+      const second = yield* refused(invitee.accessToken, accept);
 
-    expect(joined).toMatchObject({ _tag: "Joined", organization: { id: organizationId } });
-    expect(second).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
-    expect(memberships(instance, organizationId)).toBe(2);
-    expect(memberships(instance, organizationId, "role = 'admin'")).toBe(1);
-  });
+      expect(joined).toMatchObject({ _tag: "Joined", organization: { id: organizationId } });
+      expect(second).toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
+      expect(yield* memberships(organizationId)).toBe(2);
+      expect(yield* memberships(organizationId, "role = 'admin'")).toBe(1);
+    }).pipe(scenario()),
+  );
 });
 
 describe("organization role guards", () => {
-  it("keeps role changes, removals of the owner, and renames away from lesser roles", async () => {
-    const team = await withTeam();
+  it.effect("keeps role changes, removals of the owner, and renames away from lesser roles", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      const control = yield* AuthTest;
 
-    const promote = await refused(team.instance, team.admin.accessToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-      role: "admin",
-    });
-    const removeOwner = await refused(team.instance, team.admin.accessToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.ownerId,
-    });
-    const rename = await refused(team.instance, team.member.accessToken, {
-      _tag: "UpdateOrganization",
-      organizationId: team.organizationId,
-      name: OrganizationName.make("Renamed"),
-    });
-
-    for (const failure of [promote, removeOwner, rename]) {
-      expect(failure).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
-    }
-    expect(memberships(team.instance, team.organizationId, "role = 'member'")).toBe(1);
-    expect(memberships(team.instance, team.organizationId, "role = 'owner'")).toBe(1);
-    expect(team.instance.revocations).toEqual([]);
-  });
-
-  it("lets one of two owners be removed and then keeps the remaining owner", async () => {
-    const team = await withTeam();
-    await command(team.instance, team.owner.accessToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.admin.id,
-      role: "owner",
-    });
-    const removed = await command(team.instance, team.owner.accessToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.admin.id,
-    });
-    expect(removed).toEqual({ _tag: "Applied" });
-
-    const demote = await refused(team.instance, team.owner.accessToken, {
-      _tag: "ChangeMemberRole",
-      organizationId: team.organizationId,
-      userId: team.ownerId,
-      role: "member",
-    });
-
-    expect(demote).toMatchObject({ status: 409, code: "LAST_OWNER" });
-    expect(memberships(team.instance, team.organizationId, "role = 'owner'")).toBe(1);
-  });
-
-  it("ends a removed member's sessions and sockets, and nobody else's", async () => {
-    const team = await withTeam();
-
-    const applied = await command(team.instance, team.admin.accessToken, {
-      _tag: "RemoveMember",
-      organizationId: team.organizationId,
-      userId: team.member.id,
-    });
-    expect(applied).toEqual({ _tag: "Applied" });
-    expect(memberships(team.instance, team.organizationId)).toBe(2);
-    expect(team.instance.revocations).toEqual([
-      { organizationId: team.organizationId, userId: team.member.id },
-    ]);
-
-    const removed = await failing(team.instance, (auth) => auth.roster(team.member.accessToken));
-    expect(removed).toMatchObject({ status: 401, code: "SESSION_REVOKED" });
-    const kept = await run(team.instance, (auth) => auth.roster(team.admin.accessToken));
-    expect(kept.members).toHaveLength(2);
-  });
-
-  it("closes the live sockets of a demoted member but not of a promoted one", async () => {
-    const team = await withTeam();
-    const changeRole = (userId: typeof team.ownerId, role: OrganizationRole) =>
-      command(team.instance, team.owner.accessToken, {
+      const promote = yield* refused(team.admin.accessToken, {
         _tag: "ChangeMemberRole",
         organizationId: team.organizationId,
-        userId,
-        role,
+        userId: team.member.id,
+        role: "admin",
+      });
+      const removeOwner = yield* refused(team.admin.accessToken, {
+        _tag: "RemoveMember",
+        organizationId: team.organizationId,
+        userId: team.ownerId,
+      });
+      const rename = yield* refused(team.member.accessToken, {
+        _tag: "UpdateOrganization",
+        organizationId: team.organizationId,
+        name: OrganizationName.make("Renamed"),
       });
 
-    await changeRole(team.member.id, "admin");
-    expect(team.instance.revocations).toEqual([]);
+      for (const failure of [promote, removeOwner, rename]) {
+        expect(failure).toMatchObject({ status: 403, code: "INSUFFICIENT_ROLE" });
+      }
+      expect(yield* memberships(team.organizationId, "role = 'member'")).toBe(1);
+      expect(yield* memberships(team.organizationId, "role = 'owner'")).toBe(1);
+      expect(yield* control.revocations).toEqual([]);
+    }).pipe(scenario()),
+  );
 
-    await changeRole(team.admin.id, "member");
-    expect(team.instance.revocations).toEqual([
-      { organizationId: team.organizationId, userId: team.admin.id },
-    ]);
-  });
+  it.effect("lets one of two owners be removed and then keeps the remaining owner", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      yield* command(team.owner.accessToken, {
+        _tag: "ChangeMemberRole",
+        organizationId: team.organizationId,
+        userId: team.admin.id,
+        role: "owner",
+      });
+      const removed = yield* command(team.owner.accessToken, {
+        _tag: "RemoveMember",
+        organizationId: team.organizationId,
+        userId: team.admin.id,
+      });
+      expect(removed).toEqual({ _tag: "Applied" });
 
-  it("hides an organization the caller does not belong to", async () => {
-    const team = await withTeam();
-    const outsider = await signUp(team.instance, "outsider@example.com");
+      const demote = yield* refused(team.owner.accessToken, {
+        _tag: "ChangeMemberRole",
+        organizationId: team.organizationId,
+        userId: team.ownerId,
+        role: "member",
+      });
 
-    const failure = await refused(team.instance, team.member.accessToken, {
-      _tag: "InviteMember",
-      organizationId: outsider.workspace.activeOrganization.id,
-      email: EmailAddress.make("someone@example.com"),
-      role: "member",
-    });
-    expect(failure).toMatchObject({ status: 404, code: "ORGANIZATION_NOT_FOUND" });
-    expect(count(team.instance, "SELECT count(*) AS total FROM auth_organization_invitation")).toBe(
-      2,
-    );
-  });
+      expect(demote).toMatchObject({ status: 409, code: "LAST_OWNER" });
+      expect(yield* memberships(team.organizationId, "role = 'owner'")).toBe(1);
+    }).pipe(scenario()),
+  );
 
-  it("keeps the pending invitation list away from plain members", async () => {
-    const team = await withTeam();
-    await invite(
-      team.instance,
-      team.owner.accessToken,
-      team.organizationId,
-      "someone@example.com",
-      "member",
-    );
+  it.effect("ends a removed member's sessions and sockets, and nobody else's", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      const control = yield* AuthTest;
 
-    const asOwner = await run(team.instance, (auth) => auth.roster(team.owner.accessToken));
-    const asMember = await run(team.instance, (auth) => auth.roster(team.member.accessToken));
+      const applied = yield* command(team.admin.accessToken, {
+        _tag: "RemoveMember",
+        organizationId: team.organizationId,
+        userId: team.member.id,
+      });
+      expect(applied).toEqual({ _tag: "Applied" });
+      expect(yield* memberships(team.organizationId)).toBe(2);
+      expect(yield* control.revocations).toEqual([
+        { organizationId: team.organizationId, userId: team.member.id },
+      ]);
 
-    expect(asOwner.invitations).toHaveLength(1);
-    expect(asMember.invitations).toHaveLength(0);
-    expect(asMember.organization).toMatchObject({ id: team.organizationId, role: "member" });
-  });
+      const removed = yield* refusal(AuthApi.use((auth) => auth.roster(team.member.accessToken)));
+      expect(removed).toMatchObject({ status: 401, code: "SESSION_REVOKED" });
+      const kept = yield* AuthApi.use((auth) => auth.roster(team.admin.accessToken));
+      expect(kept.members).toHaveLength(2);
+    }).pipe(scenario()),
+  );
+
+  it.effect("closes the live sockets of a demoted member but not of a promoted one", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      const control = yield* AuthTest;
+      const changeRole = (userId: typeof team.ownerId, role: OrganizationRole) =>
+        command(team.owner.accessToken, {
+          _tag: "ChangeMemberRole",
+          organizationId: team.organizationId,
+          userId,
+          role,
+        });
+
+      yield* changeRole(team.member.id, "admin");
+      expect(yield* control.revocations).toEqual([]);
+
+      yield* changeRole(team.admin.id, "member");
+      expect(yield* control.revocations).toEqual([
+        { organizationId: team.organizationId, userId: team.admin.id },
+      ]);
+    }).pipe(scenario()),
+  );
+
+  it.effect("hides an organization the caller does not belong to", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      const outsider = yield* signUp("outsider@example.com");
+
+      const failure = yield* refused(team.member.accessToken, {
+        _tag: "InviteMember",
+        organizationId: outsider.workspace.activeOrganization.id,
+        email: EmailAddress.make("someone@example.com"),
+        role: "member",
+      });
+      expect(failure).toMatchObject({ status: 404, code: "ORGANIZATION_NOT_FOUND" });
+      expect(yield* count("SELECT count(*) AS total FROM auth_organization_invitation")).toBe(2);
+    }).pipe(scenario()),
+  );
+
+  it.effect("keeps the pending invitation list away from plain members", () =>
+    Effect.gen(function* () {
+      const team = yield* withTeam;
+      yield* invite(team.owner.accessToken, team.organizationId, "someone@example.com", "member");
+
+      const asOwner = yield* AuthApi.use((auth) => auth.roster(team.owner.accessToken));
+      const asMember = yield* AuthApi.use((auth) => auth.roster(team.member.accessToken));
+
+      expect(asOwner.invitations).toHaveLength(1);
+      expect(asMember.invitations).toHaveLength(0);
+      expect(asMember.organization).toMatchObject({ id: team.organizationId, role: "member" });
+    }).pipe(scenario()),
+  );
 });

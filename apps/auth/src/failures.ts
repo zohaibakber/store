@@ -183,10 +183,6 @@ export const authFailureWire = (failure: AuthFailure): AuthFailureWire => {
         "INVITATION_EMAIL_MISMATCH",
         `This invitation was sent to ${failure.invited}.`,
       );
-    default: {
-      const _exhaustive: never = failure;
-      return _exhaustive;
-    }
   }
 };
 

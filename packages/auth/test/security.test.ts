@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
+import * as Result from "effect/Result";
 
-import { isTrustedOrigin, isTrustedRedirect, resolveAuthSecurity } from "../src/security";
+import { decideAuthSecurity, isTrustedOrigin, isTrustedRedirect } from "../src/security";
+
+const resolveAuthSecurity = (input: Parameters<typeof decideAuthSecurity>[0]) =>
+  Result.getOrThrow(decideAuthSecurity(input));
 
 const secureInput = {
   baseURL: "https://api.example.com",

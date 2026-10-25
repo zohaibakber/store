@@ -1,6 +1,6 @@
+import { describe, expect, it } from "@effect/vitest";
 import * as HttpBody from "effect/http/HttpBody";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
-import { describe, expect, it } from "vite-plus/test";
 
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "../src/oauth-callback-page";
 

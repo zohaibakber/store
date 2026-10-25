@@ -21,8 +21,7 @@ const unquote = (value: string) =>
 const parseUrl = (value: string) =>
   Result.try({
     try: () => new URL(value),
-    catch: (cause) =>
-      cause instanceof Error ? cause.message : "is not an origin or origin pattern",
+    catch: () => "is not an origin or origin pattern",
   });
 
 export const publicHostnameFrom = (value: string | undefined): string | undefined => {
@@ -199,9 +198,6 @@ export const decideAuthSecurity = (
     };
   });
 };
-
-export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig =>
-  Result.getOrThrowWith(decideAuthSecurity(input), (reason) => new Error(reason));
 
 const globToRegExp = (pattern: string) => {
   let source = "";

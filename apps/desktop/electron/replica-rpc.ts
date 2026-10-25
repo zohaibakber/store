@@ -16,6 +16,8 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 import * as Transferable from "effect/workers/Transferable";
 
+import { ReplicaFileRefused } from "../src/host/file-refusal";
+
 const PERMANENT_STREAMS = 2;
 const CONTROL_SLOTS = 8;
 const FINITE_DATABASE_OPERATIONS = 2;
@@ -61,8 +63,6 @@ export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) => ({
   sales: summary.sales,
   purchaseOrders: summary.purchaseOrders,
 });
-
-export const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
 
 export const ReplicaPublishSummary = Schema.Struct({
   importId: ImportId,
@@ -131,6 +131,8 @@ export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailur
   { message: Schema.String },
 ) {}
 
+const FileFailure = Schema.Union([ReplicaWorkerFailure, ReplicaFileRefused]);
+
 const EngineRpc = Rpc.make("Engine", { success: Schema.Literals(["sqlite", "unavailable"]) });
 
 export const AttachRendererRpc = Rpc.make("AttachRenderer", {
@@ -158,37 +160,37 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("BackUp", {
     payload: { destinationPath: FilePath },
     success: Schema.Struct({ bytes: Schema.Natural }),
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("StageRestore", {
     payload: { sourcePath: FilePath, stagedPath: FilePath },
     success: Schema.Struct({ current: ReplicaCatalogCounts, backup: ReplicaCatalogCounts }),
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("ReleaseForRestore", {
     payload: { stagedPath: FilePath },
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishSummary", {
     payload: { sourcePath: FilePath },
     success: ReplicaPublishSummary,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishStage", {
     payload: { sourcePath: FilePath, importId: ImportId },
     success: ReplicaPublishProgress,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
     stream: true,
   }),
   Rpc.make("PublishCommit", {
     payload: { sourcePath: FilePath, importId: ImportId, seal: ReplicaPublishSeal },
     success: ReplicaPublishCommit,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishStatus", {
     payload: { importId: ImportId },
     success: ReplicaPublishStatus,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),
   Rpc.make("SyncHealth", { success: ReplicaSyncHealth, stream: true }),

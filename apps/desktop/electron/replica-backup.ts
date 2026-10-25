@@ -5,14 +5,15 @@ import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Result from "effect/Result";
 
-import type { BackupOutcome, RestoreChoice, RestoreOutcome } from "../src/host/workspace-backup";
+import { ReplicaFileRefused } from "../src/host/file-refusal";
+import type { BackupSaved, RestoreApplied, RestoreStaged } from "../src/host/workspace-backup";
+import { asFileRefusal } from "./replica-refusal";
 import {
   backupFileName,
   removeReplicaFile,
   restorePreviousReplicaFile,
   swapReplicaFile,
 } from "./replica-restore-files";
-import { RESTORE_LOCAL_ONLY } from "./replica-rpc";
 import type { WorkspaceSession, WorkspaceSessions } from "./workspace-sessions";
 
 export type ReplicaBackupDialogs = {
@@ -27,27 +28,21 @@ type StagedRestores = {
 };
 
 export type ReplicaBackup = {
-  readonly backUp: (session: WorkspaceSession | undefined) => Effect.Effect<BackupOutcome>;
+  readonly backUp: (
+    session: WorkspaceSession | undefined,
+  ) => Effect.Effect<typeof BackupSaved.Type, ReplicaFileRefused>;
   readonly chooseRestore: (
     session: WorkspaceSession | undefined,
-  ) => Effect.Effect<RestoreChoice, never, FileSystem.FileSystem>;
+  ) => Effect.Effect<typeof RestoreStaged.Type, ReplicaFileRefused, FileSystem.FileSystem>;
   readonly applyRestore: (
     session: WorkspaceSession | undefined,
-  ) => Effect.Effect<RestoreOutcome, never, FileSystem.FileSystem>;
+  ) => Effect.Effect<typeof RestoreApplied.Type, ReplicaFileRefused, FileSystem.FileSystem>;
   readonly discardRestore: (
     session: WorkspaceSession | undefined,
   ) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 const RELEASE_LIMIT = "50 seconds";
-
-const RELEASE_TOO_LONG = "The local database took too long to close.";
-
-const NO_WORKSPACE = "Open a workspace before using backups.";
-
-const failed = (message: string) => ({ _tag: "failed" as const, message });
-
-const messageOf = (cause: { readonly message: string }) => cause.message;
 
 export const makeStagedRestores = (): StagedRestores => {
   const staged = new Map<string, string>();
@@ -78,15 +73,30 @@ export const makeReplicaBackup = (deps: {
 }): ReplicaBackup => {
   const { sessions, stagedRestores, dialogs } = deps;
 
-  const resumeUnchanged = (session: WorkspaceSession, reason: string) =>
+  const resumeUnchanged = (session: WorkspaceSession, refusal: ReplicaFileRefused) =>
     sessions.reopen(session).pipe(
-      Effect.as(failed(`${reason} Your workspace is unchanged.`)),
-      Effect.catch(() =>
-        Effect.sync(() => {
-          sessions.forget(session);
-          return failed(`${reason} Your workspace is unchanged. Restart Tabaaq to open it.`);
-        }),
-      ),
+      Effect.matchEffect({
+        onSuccess: () =>
+          Effect.fail(
+            new ReplicaFileRefused({
+              reason: refusal.reason,
+              detail: refusal.detail,
+              standing: "unchanged",
+            }),
+          ),
+        onFailure: () =>
+          Effect.sync(() => sessions.forget(session)).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ReplicaFileRefused({
+                  reason: refusal.reason,
+                  detail: refusal.detail,
+                  standing: "unchanged-closed",
+                }),
+              ),
+            ),
+          ),
+      }),
     );
 
   const backUp = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
@@ -104,7 +114,7 @@ export const makeReplicaBackup = (deps: {
         fileName: path.basename(destination),
         bytes: written.bytes,
       };
-    }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
+    }).pipe(Effect.mapError(asFileRefusal));
 
   const stageRestore = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
     Effect.gen(function* () {
@@ -127,7 +137,7 @@ export const makeReplicaBackup = (deps: {
         current: staged.current,
         backup: staged.backup,
       };
-    }).pipe(Effect.catch((cause) => Effect.succeed(failed(messageOf(cause)))));
+    }).pipe(Effect.mapError(asFileRefusal));
 
   const replaceWorkspace = (session: WorkspaceSession, stagedPath: string) =>
     Effect.scoped(
@@ -140,7 +150,7 @@ export const makeReplicaBackup = (deps: {
           .pipe(
             Effect.timeoutOrElse({
               duration: RELEASE_LIMIT,
-              orElse: () => Effect.fail({ message: RELEASE_TOO_LONG }),
+              orElse: () => Effect.fail(new ReplicaFileRefused({ reason: "release-too-long" })),
             }),
             Effect.ensuring(sessions.closeWorkers(session)),
             Effect.result,
@@ -148,7 +158,7 @@ export const makeReplicaBackup = (deps: {
         if (Result.isFailure(released)) {
           yield* sessions.closeWorkers(session);
           yield* removeReplicaFile(stagedPath);
-          return yield* resumeUnchanged(session, messageOf(released.failure));
+          return yield* resumeUnchanged(session, asFileRefusal(released.failure));
         }
         const swapped = yield* swapReplicaFile({
           databasePath: session.databasePath,
@@ -157,7 +167,7 @@ export const makeReplicaBackup = (deps: {
         }).pipe(Effect.result);
         if (Result.isFailure(swapped)) {
           yield* removeReplicaFile(stagedPath);
-          return yield* resumeUnchanged(session, messageOf(swapped.failure));
+          return yield* resumeUnchanged(session, asFileRefusal(swapped.failure));
         }
         const reopened = yield* sessions.reopen(session).pipe(Effect.result);
         if (Result.isFailure(reopened)) {
@@ -166,12 +176,17 @@ export const makeReplicaBackup = (deps: {
             previousPath,
           }).pipe(Effect.result);
           if (Result.isSuccess(putBack)) {
-            return yield* resumeUnchanged(session, "The backup could not be opened.");
+            return yield* resumeUnchanged(
+              session,
+              new ReplicaFileRefused({ reason: "backup-not-opened" }),
+            );
           }
           sessions.forget(session);
-          return failed(
-            `The backup could not be opened. Your previous workspace is saved as ${path.basename(previousPath)}.`,
-          );
+          return yield* new ReplicaFileRefused({
+            reason: "backup-not-opened",
+            standing: "previous-saved",
+            savedAs: path.basename(previousPath),
+          });
         }
         yield* removeReplicaFile(previousPath);
         return { _tag: "restored" as const };
@@ -180,26 +195,33 @@ export const makeReplicaBackup = (deps: {
 
   return {
     backUp: (session) =>
-      session === undefined ? Effect.succeed(failed(NO_WORKSPACE)) : backUp(session, dialogs),
+      session === undefined
+        ? Effect.fail(new ReplicaFileRefused({ reason: "no-workspace" }))
+        : backUp(session, dialogs),
     chooseRestore: (session) => {
-      if (session === undefined) return Effect.succeed(failed(NO_WORKSPACE));
+      if (session === undefined)
+        return Effect.fail(new ReplicaFileRefused({ reason: "no-workspace" }));
       switch (session.identity.authority) {
         case "local":
           return stageRestore(session, dialogs);
         case "remote":
-          return Effect.succeed(failed(RESTORE_LOCAL_ONLY));
+          return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
       }
     },
     applyRestore: (session) =>
       Effect.suspend(() => {
-        if (session === undefined) return Effect.succeed(failed(NO_WORKSPACE));
+        if (session === undefined) {
+          return Effect.fail(new ReplicaFileRefused({ reason: "no-workspace" }));
+        }
         const stagedPath = stagedRestores.take(session.workspaceToken);
-        if (stagedPath === undefined) return Effect.succeed(failed("Choose a backup file first."));
+        if (stagedPath === undefined) {
+          return Effect.fail(new ReplicaFileRefused({ reason: "no-staged-restore" }));
+        }
         switch (session.identity.authority) {
           case "local":
             return replaceWorkspace(session, stagedPath);
           case "remote":
-            return Effect.succeed(failed(RESTORE_LOCAL_ONLY));
+            return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
         }
       }),
     discardRestore: (session) =>

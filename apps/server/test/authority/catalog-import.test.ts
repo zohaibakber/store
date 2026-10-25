@@ -1,3 +1,4 @@
+import { describe, expect, it } from "@effect/vitest";
 import {
   ImportCatalogResult,
   ImportId,
@@ -53,17 +54,16 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Struct from "effect/Struct";
-import { describe, expect, it } from "vite-plus/test";
 
 import { partitionDigest } from "../../src/authority/digest";
 import type { Actor } from "../../src/authority/engine";
 import type { InventoryError } from "../../src/inventory/errors";
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
 import { claimsFor, TEST_ACCESS_TOKEN, testRuntimeContext, webHandlerFor } from "../lib/app";
-import { makeTestAuthorities, organizationAuthorityFor, type TestAuthorities } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const DEVICE = "device-local";
 const OCCURRED_AT = 1_760_000_000_000;
@@ -376,10 +376,11 @@ const catalogOf = (handle: SqliteReplicaHandle) =>
 const localWorkspace = (importId: string) =>
   Effect.gen(function* () {
     const engine = yield* SyncEngine;
+    const store = yield* ReplicaStore;
     const handle = yield* SqliteReplica;
     yield* engine.ensureRegistered();
     for (const command of localHistory) {
-      yield* engine.saveCommand(queued(command));
+      yield* store.enqueueCommand(queued(command));
       yield* engine.drainUploads();
     }
     const digest = yield* sqlitePartitionDigest(handle.db);
@@ -408,8 +409,11 @@ const localWorkspace = (importId: string) =>
     Effect.scoped,
   );
 
-const authorityFor = Effect.fnUntraced(function* (authorities: TestAuthorities, actor: Actor) {
-  const authority = yield* organizationAuthorityFor(authorities);
+const authorityFor = Effect.fnUntraced(function* (
+  authorities: TestAuthorities["Service"],
+  actor: Actor,
+) {
+  const authority = yield* OrganizationAuthority;
   const commands = typedCommands(authority);
   const snapshots = authority;
   const settled = <A>(effect: Effect.Effect<A, InventoryError, RuntimeContext>) =>
@@ -430,7 +434,11 @@ const authorityFor = Effect.fnUntraced(function* (authorities: TestAuthorities, 
   } satisfies SyncTransport;
 });
 
-const organizationReplica = (authorities: TestAuthorities, actor: Actor, replicaId: string) =>
+const organizationReplica = (
+  authorities: TestAuthorities["Service"],
+  actor: Actor,
+  replicaId: string,
+) =>
   Layer.build(
     SyncEngine.layer().pipe(
       Layer.provideMerge(Layer.effect(SyncTransportService, authorityFor(authorities, actor))),
@@ -459,239 +467,239 @@ const requestFor = (
   digestVersion: local.digest?.version ?? 0,
 });
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | RuntimeContext>) =>
-  Effect.runPromise(Effect.scoped(effect).pipe(Effect.provideContext(testRuntimeContext)));
-
 describe("publishing a local workspace into an empty organization", () => {
-  it("bootstraps every replica to the digest and rows the device held", async () => {
-    const outcome = await run(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const { db } = yield* authorities.open("org-published");
-        const imports = yield* organizationAuthorityFor(authorities);
-        const owner: Actor = { organizationId: "org-published", userId: OWNER };
-        const clerk: Actor = { organizationId: "org-published", userId: CLERK };
-        const importId = decodeImportId("import-published");
-        const local = yield* localWorkspace(importId);
+  it.effect("bootstraps every replica to the digest and rows the device held", () =>
+    Effect.gen(function* () {
+      const authorities = yield* TestAuthorities;
+      const { db } = yield* authorities.open("org-published");
+      const imports = yield* OrganizationAuthority;
+      const owner: Actor = { organizationId: "org-published", userId: OWNER };
+      const clerk: Actor = { organizationId: "org-published", userId: CLERK };
+      const importId = decodeImportId("import-published");
+      const local = yield* localWorkspace(importId);
 
-        const waiting = yield* organizationReplica(authorities, owner, "replica-owner");
-        const waitingEngine = Context.get(waiting, SyncEngine);
-        yield* waitingEngine.ensureRegistered();
-        yield* waitingEngine.catchUp();
+      const waiting = yield* organizationReplica(authorities, owner, "replica-owner");
+      const waitingEngine = Context.get(waiting, SyncEngine);
+      yield* waitingEngine.ensureRegistered();
+      yield* waitingEngine.catchUp();
 
-        const unasked = yield* imports.importStatus(owner, importId);
-        const receipts = yield* Effect.forEach(local.parts, (part) =>
-          imports
-            .stageImportPart(owner, importId, part.partNumber, part.bodyText)
-            .pipe(Effect.map((staged) => decodeReceipt(staged.json))),
-        );
-        const request = requestFor(owner, local, local.parts.length);
-        const mismatched = yield* imports
-          .commitImport(owner, importId, { ...request, digest: decodeDigest("0".repeat(64)) })
-          .pipe(Effect.flip);
-        const miscounted = { ...request, partCount: request.partCount + 1 };
-        const unlanded = yield* imports.commitImport(owner, importId, miscounted).pipe(Effect.flip);
-        const staged = yield* imports.importStatus(owner, importId);
-        const landed = yield* imports.commitImport(owner, importId, request);
-        const committed = decodeResult(landed.json);
-        const settled = yield* imports.importStatus(owner, importId);
-        const later = decodeImportId("import-later");
-        const superseded = yield* imports.importStatus(owner, later);
-        const refused = yield* imports.commitImport(owner, later, request).pipe(Effect.flip);
-        const repeated = decodeResult((yield* imports.commitImport(owner, importId, request)).json);
-        const asked = decodeResult((yield* imports.commitImport(owner, importId, miscounted)).json);
-        const restaged = yield* imports
-          .stageImportPart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
-          .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
+      const unasked = yield* imports.importStatus(owner, importId);
+      const receipts = yield* Effect.forEach(local.parts, (part) =>
+        imports
+          .stageImportPart(owner, importId, part.partNumber, part.bodyText)
+          .pipe(Effect.map((staged) => decodeReceipt(staged.json))),
+      );
+      const request = requestFor(owner, local, local.parts.length);
+      const mismatched = yield* imports
+        .commitImport(owner, importId, { ...request, digest: decodeDigest("0".repeat(64)) })
+        .pipe(Effect.flip);
+      const miscounted = { ...request, partCount: request.partCount + 1 };
+      const unlanded = yield* imports.commitImport(owner, importId, miscounted).pipe(Effect.flip);
+      const staged = yield* imports.importStatus(owner, importId);
+      const landed = yield* imports.commitImport(owner, importId, request);
+      const committed = decodeResult(landed.json);
+      const settled = yield* imports.importStatus(owner, importId);
+      const later = decodeImportId("import-later");
+      const superseded = yield* imports.importStatus(owner, later);
+      const refused = yield* imports.commitImport(owner, later, request).pipe(Effect.flip);
+      const repeated = decodeResult((yield* imports.commitImport(owner, importId, request)).json);
+      const asked = decodeResult((yield* imports.commitImport(owner, importId, miscounted)).json);
+      const restaged = yield* imports
+        .stageImportPart(owner, importId, 1, local.parts[0]?.bodyText ?? "")
+        .pipe(Effect.map((staged) => decodeReceipt(staged.json)));
 
-        yield* waitingEngine.catchUp();
-        const fresh = yield* organizationReplica(authorities, clerk, "replica-clerk");
-        const freshEngine = Context.get(fresh, SyncEngine);
-        yield* freshEngine.ensureRegistered();
-        yield* freshEngine.catchUp();
+      yield* waitingEngine.catchUp();
+      const fresh = yield* organizationReplica(authorities, clerk, "replica-clerk");
+      const freshEngine = Context.get(fresh, SyncEngine);
+      yield* freshEngine.ensureRegistered();
+      yield* freshEngine.catchUp();
 
-        const held = (replica: typeof fresh) =>
-          Effect.gen(function* () {
-            const handle = yield* SqliteReplica;
-            const store = yield* ReplicaStore;
-            return {
-              digest: (yield* sqlitePartitionDigest(handle.db))?.digest,
-              catalog: yield* catalogOf(handle),
-              cursor: (yield* store.readSyncCursor()).appliedCommitSequence,
-            };
-          }).pipe(Effect.provide(replica));
+      const held = (replica: typeof fresh) =>
+        Effect.gen(function* () {
+          const handle = yield* SqliteReplica;
+          const store = yield* ReplicaStore;
+          return {
+            digest: (yield* sqlitePartitionDigest(handle.db))?.digest,
+            catalog: yield* catalogOf(handle),
+            cursor: (yield* store.readSyncCursor()).appliedCommitSequence,
+          };
+        }).pipe(Effect.provide(replica));
 
-        const leftovers = yield* db.select({ parts: count() }).from(importParts).all();
-        const tombstones = yield* db
-          .select({ id: products.id })
-          .from(products)
-          .where(eq(products.id, "prod-gone"))
-          .all();
-        const owners = [
-          ...(yield* db.selectDistinct({ user: products.createdByUserId }).from(products).all()),
-          ...(yield* db
-            .selectDistinct({ user: stockMovements.actorUserId })
+      const leftovers = yield* db.select({ parts: count() }).from(importParts).all();
+      const tombstones = yield* db
+        .select({ id: products.id })
+        .from(products)
+        .where(eq(products.id, "prod-gone"))
+        .all();
+      const owners = [
+        ...(yield* db.selectDistinct({ user: products.createdByUserId }).from(products).all()),
+        ...(yield* db
+          .selectDistinct({ user: stockMovements.actorUserId })
+          .from(stockMovements)
+          .all()),
+        ...(yield* db.selectDistinct({ user: invoices.organizationId }).from(invoices).all()),
+      ];
+      const lines = yield* db
+        .select()
+        .from(purchaseOrderItems)
+        .orderBy(purchaseOrderItems.id)
+        .all();
+      const purchasing = yield* Effect.forEach(lines, (row) =>
+        Effect.gen(function* () {
+          const held = yield* db
+            .select({ id: products.id })
+            .from(products)
+            .where(eq(products.id, row.productId))
+            .get();
+          const deliveries = yield* db
+            .select({ total: count() })
             .from(stockMovements)
-            .all()),
-          ...(yield* db.selectDistinct({ user: invoices.organizationId }).from(invoices).all()),
-        ];
-        const lines = yield* db
-          .select()
-          .from(purchaseOrderItems)
-          .orderBy(purchaseOrderItems.id)
-          .all();
-        const purchasing = yield* Effect.forEach(lines, (row) =>
-          Effect.gen(function* () {
-            const held = yield* db
-              .select({ id: products.id })
-              .from(products)
-              .where(eq(products.id, row.productId))
-              .get();
-            const deliveries = yield* db
-              .select({ total: count() })
-              .from(stockMovements)
-              .where(
-                and(
-                  eq(stockMovements.purchaseOrderId, row.purchaseOrderId),
-                  eq(stockMovements.productId, row.productId),
-                ),
-              )
-              .get();
-            return {
-              line: row.id,
-              received: row.receivedBaseUnits,
-              productDeleted: held === undefined,
-              deliveries: deliveries?.total ?? 0,
-            };
-          }),
-        );
-        const schemaVersions = yield* db
-          .select({ lowest: min(replicas.schemaVersion), replicas: count() })
-          .from(replicas)
-          .all();
-        const beforeDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
-        const delivered = yield* freshEngine.saveCommand(
-          queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
-        );
-        yield* freshEngine.drainUploads();
-        yield* waitingEngine.catchUp();
-        const afterDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
-        const deliveredStatus = yield* Effect.provide(
-          ReplicaStore.use((store) => store.readCommandStatus(delivered.operationId)),
-          fresh,
-        );
-        const receivedAfter = yield* db
-          .select({
-            received: purchaseOrderItems.receivedBaseUnits,
-            version: purchaseOrderItems.rowVersion,
-          })
-          .from(purchaseOrderItems)
-          .where(eq(purchaseOrderItems.id, "pol-panadol"))
-          .all();
+            .where(
+              and(
+                eq(stockMovements.purchaseOrderId, row.purchaseOrderId),
+                eq(stockMovements.productId, row.productId),
+              ),
+            )
+            .get();
+          return {
+            line: row.id,
+            received: row.receivedBaseUnits,
+            productDeleted: held === undefined,
+            deliveries: deliveries?.total ?? 0,
+          };
+        }),
+      );
+      const schemaVersions = yield* db
+        .select({ lowest: min(replicas.schemaVersion), replicas: count() })
+        .from(replicas)
+        .all();
+      const beforeDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
+      const { value: delivered } = yield* Effect.provide(
+        ReplicaStore.use((store) =>
+          store.enqueueCommand(
+            queued(catalog("deliver-after", [delivery("batch-after", { packs: 1, units: 0 })])),
+          ),
+        ),
+        fresh,
+      );
+      yield* freshEngine.drainUploads();
+      yield* waitingEngine.catchUp();
+      const afterDelivery = { owner: yield* held(waiting), clerk: yield* held(fresh) };
+      const deliveredStatus = yield* Effect.provide(
+        ReplicaStore.use((store) => store.readCommandStatus(delivered.operationId)),
+        fresh,
+      );
+      const receivedAfter = yield* db
+        .select({
+          received: purchaseOrderItems.receivedBaseUnits,
+          version: purchaseOrderItems.rowVersion,
+        })
+        .from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.id, "pol-panadol"))
+        .all();
 
-        return {
-          local,
-          receipts,
-          mismatched,
-          unlanded,
-          unasked,
-          staged,
-          settled,
-          superseded,
-          refused,
-          fanout: landed.fanout,
-          committed,
-          repeated,
-          asked,
-          restaged,
-          beforeDelivery,
-          afterDelivery,
-          deliveredStatus,
-          receivedAfter,
-          purchasing,
-          schemaVersions,
-          leftovers,
-          tombstones,
-          owners,
-          authority: (yield* partitionDigest(db)).digest,
-        };
-      }),
-    );
+      const outcome = {
+        local,
+        receipts,
+        mismatched,
+        unlanded,
+        unasked,
+        staged,
+        settled,
+        superseded,
+        refused,
+        fanout: landed.fanout,
+        committed,
+        repeated,
+        asked,
+        restaged,
+        beforeDelivery,
+        afterDelivery,
+        deliveredStatus,
+        receivedAfter,
+        purchasing,
+        schemaVersions,
+        leftovers,
+        tombstones,
+        owners,
+        authority: (yield* partitionDigest(db)).digest,
+      };
 
-    const localDigest = outcome.local.digest?.digest;
-    expect(localDigest).toBeDefined();
-    expect(outcome.local.digest?.version).toBe(PARTITION_DIGEST_VERSION);
-    expect(outcome.local.catalog.map((rows) => rows.length)).toEqual(
-      ENTITIES.map((entity) => LOCAL_ROW_COUNTS[entity]),
-    );
-    expect(outcome.receipts.map((receipt) => receipt.partNumber)).toEqual(
-      outcome.local.parts.map((part) => part.partNumber),
-    );
-    expect(outcome.mismatched).toMatchObject({ code: "INVALID_PAYLOAD_HASH" });
-    expect(outcome.committed).toMatchObject({
-      importId: "import-published",
-      horizon: "1",
-      digest: localDigest,
-      digestVersion: PARTITION_DIGEST_VERSION,
-    });
-    expect(
-      Object.fromEntries(
-        outcome.committed.entityCounts.map((entry) => [entry.entity, entry.rowCount]),
-      ),
-    ).toEqual(LOCAL_ROW_COUNTS);
-    expect(outcome.fanout).toMatchObject({ epoch: "1", horizon: "1", group: "" });
-    expect(outcome.unlanded).toMatchObject({ code: "INVALID_OPERATION" });
-    expect(outcome.unasked).toEqual({ _tag: "none" });
-    expect(outcome.staged).toEqual({ _tag: "none" });
-    expect(outcome.settled).toStrictEqual({ _tag: "committed", result: outcome.committed });
-    expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
-    expect(outcome.superseded).toEqual({
-      _tag: "other",
-      message: outcome.refused.message,
-    });
-    expect(outcome.repeated).toStrictEqual(outcome.committed);
-    expect(outcome.asked).toStrictEqual(outcome.committed);
-    expect(outcome.restaged.partNumber).toBe(1);
-    expect(outcome.leftovers).toEqual([{ parts: 0 }]);
-    expect(outcome.tombstones).toHaveLength(0);
-    expect(new Set(outcome.owners.map((row) => Object.values(row)[0]))).toEqual(
-      new Set(["org-published", OWNER]),
-    );
+      const localDigest = outcome.local.digest?.digest;
+      expect(localDigest).toBeDefined();
+      expect(outcome.local.digest?.version).toBe(PARTITION_DIGEST_VERSION);
+      expect(outcome.local.catalog.map((rows) => rows.length)).toEqual(
+        ENTITIES.map((entity) => LOCAL_ROW_COUNTS[entity]),
+      );
+      expect(outcome.receipts.map((receipt) => receipt.partNumber)).toEqual(
+        outcome.local.parts.map((part) => part.partNumber),
+      );
+      expect(outcome.mismatched).toMatchObject({ code: "INVALID_PAYLOAD_HASH" });
+      expect(outcome.committed).toMatchObject({
+        importId: "import-published",
+        horizon: "1",
+        digest: localDigest,
+        digestVersion: PARTITION_DIGEST_VERSION,
+      });
+      expect(
+        Object.fromEntries(
+          outcome.committed.entityCounts.map((entry) => [entry.entity, entry.rowCount]),
+        ),
+      ).toEqual(LOCAL_ROW_COUNTS);
+      expect(outcome.fanout).toMatchObject({ epoch: "1", horizon: "1", group: "" });
+      expect(outcome.unlanded).toMatchObject({ code: "INVALID_OPERATION" });
+      expect(outcome.unasked).toEqual({ _tag: "none" });
+      expect(outcome.staged).toEqual({ _tag: "none" });
+      expect(outcome.settled).toStrictEqual({ _tag: "committed", result: outcome.committed });
+      expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
+      expect(outcome.superseded).toEqual({
+        _tag: "other",
+        message: outcome.refused.message,
+      });
+      expect(outcome.repeated).toStrictEqual(outcome.committed);
+      expect(outcome.asked).toStrictEqual(outcome.committed);
+      expect(outcome.restaged.partNumber).toBe(1);
+      expect(outcome.leftovers).toEqual([{ parts: 0 }]);
+      expect(outcome.tombstones).toHaveLength(0);
+      expect(new Set(outcome.owners.map((row) => Object.values(row)[0]))).toEqual(
+        new Set(["org-published", OWNER]),
+      );
 
-    expect(outcome.purchasing).toEqual([
-      { line: "pol-gone", received: 0, productDeleted: true, deliveries: 0 },
-      { line: "pol-panadol", received: 23, productDeleted: false, deliveries: 1 },
-    ]);
-    expect(outcome.schemaVersions).toEqual([{ lowest: SYNC_SCHEMA_VERSION, replicas: 2 }]);
+      expect(outcome.purchasing).toEqual([
+        { line: "pol-gone", received: 0, productDeleted: true, deliveries: 0 },
+        { line: "pol-panadol", received: 23, productDeleted: false, deliveries: 1 },
+      ]);
+      expect(outcome.schemaVersions).toEqual([{ lowest: SYNC_SCHEMA_VERSION, replicas: 2 }]);
 
-    for (const replica of [outcome.beforeDelivery.owner, outcome.beforeDelivery.clerk]) {
-      expect(replica.digest).toBe(localDigest);
-      expect(replica.catalog).toStrictEqual(outcome.local.catalog);
-      expect(replica.cursor).toBe("1");
-    }
-    expect(outcome.deliveredStatus).toBe("integrated");
-    expect(outcome.receivedAfter).toEqual([{ received: 33, version: 3 }]);
-    expect(outcome.afterDelivery.clerk.cursor).toBe("2");
-    expect(outcome.afterDelivery.owner.cursor).toBe("2");
-    expect(outcome.afterDelivery.owner.digest).toBe(outcome.afterDelivery.clerk.digest);
-    expect(outcome.afterDelivery.owner.digest).toBe(outcome.authority);
-    expect(outcome.afterDelivery.owner.digest).not.toBe(localDigest);
-  });
+      for (const replica of [outcome.beforeDelivery.owner, outcome.beforeDelivery.clerk]) {
+        expect(replica.digest).toBe(localDigest);
+        expect(replica.catalog).toStrictEqual(outcome.local.catalog);
+        expect(replica.cursor).toBe("1");
+      }
+      expect(outcome.deliveredStatus).toBe("integrated");
+      expect(outcome.receivedAfter).toEqual([{ received: 33, version: 3 }]);
+      expect(outcome.afterDelivery.clerk.cursor).toBe("2");
+      expect(outcome.afterDelivery.owner.cursor).toBe("2");
+      expect(outcome.afterDelivery.owner.digest).toBe(outcome.afterDelivery.clerk.digest);
+      expect(outcome.afterDelivery.owner.digest).toBe(outcome.authority);
+      expect(outcome.afterDelivery.owner.digest).not.toBe(localDigest);
+    }).pipe(scenario),
+  );
 
-  it("answers a status read without writing, and only for an owner", async () => {
-    const outcome = await run(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const asked = yield* authorities.open("org-asked");
-        const stockedOrg = yield* authorities.open("org-stocked");
-        const imports = yield* organizationAuthorityFor(authorities);
-        const importId = decodeImportId("import-asked");
-        const ask = (role: "owner" | "member", organizationId: string) =>
-          Effect.promise(async () => {
-            const handler = await webHandlerFor({
-              claims: claimsFor(role, organizationId),
-              authorities,
-            });
+  it.effect("answers a status read without writing, and only for an owner", () =>
+    Effect.gen(function* () {
+      const authorities = yield* TestAuthorities;
+      const asked = yield* authorities.open("org-asked");
+      const stockedOrg = yield* authorities.open("org-stocked");
+      const imports = yield* OrganizationAuthority;
+      const importId = decodeImportId("import-asked");
+      const ask = (role: "owner" | "member", organizationId: string) =>
+        Effect.gen(function* () {
+          const handler = yield* webHandlerFor({
+            claims: claimsFor(role, organizationId),
+            authorities,
+          });
+          return yield* Effect.promise(async () => {
             const response = await handler(
               new Request(`http://localhost/api/sync/imports/${importId}`, {
                 headers: { authorization: `Bearer ${TEST_ACCESS_TOKEN}` },
@@ -699,46 +707,46 @@ describe("publishing a local workspace into an empty organization", () => {
             );
             return { status: response.status, body: await response.json() };
           });
-        const states = (authority: typeof asked) =>
-          authority.db.select({ rows: count() }).from(authorityState).all();
-
-        const member = yield* ask("member", "org-asked");
-        const empty = yield* ask("owner", "org-asked");
-        const untouched = yield* states(asked);
-
-        yield* stockedOrg.db.insert(authorityState).values({
-          id: 1,
-          organizationId: "org-stocked",
-          incarnation: "incarnation-test",
-          epoch: "1",
-          commitSequence: 3,
-          retentionFloor: 0,
-          createdAt: OCCURRED_AT,
         });
-        const stocked = yield* ask("owner", "org-stocked");
-        const refused = yield* imports
-          .commitImport(
-            { organizationId: "org-stocked", userId: OWNER },
-            importId,
-            requestFor(
-              { organizationId: "org-stocked", userId: OWNER },
-              { digest: { digest: "a".repeat(64), version: PARTITION_DIGEST_VERSION } },
-              1,
-            ),
-          )
-          .pipe(Effect.flip);
-        return { member, empty, untouched, stocked, refused };
-      }),
-    );
+      const states = (authority: typeof asked) =>
+        authority.db.select({ rows: count() }).from(authorityState).all();
 
-    expect(outcome.member.status).toBe(403);
-    expect(outcome.member.body).toMatchObject({ error: { code: "OWNER_REQUIRED" } });
-    expect(outcome.empty).toEqual({ status: 200, body: { _tag: "none" } });
-    expect(outcome.untouched).toEqual([{ rows: 0 }]);
-    expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
-    expect(outcome.stocked).toEqual({
-      status: 200,
-      body: { _tag: "other", message: outcome.refused.message },
-    });
-  });
+      const member = yield* ask("member", "org-asked");
+      const empty = yield* ask("owner", "org-asked");
+      const untouched = yield* states(asked);
+
+      yield* stockedOrg.db.insert(authorityState).values({
+        id: 1,
+        organizationId: "org-stocked",
+        incarnation: "incarnation-test",
+        epoch: "1",
+        commitSequence: 3,
+        retentionFloor: 0,
+        createdAt: OCCURRED_AT,
+      });
+      const stocked = yield* ask("owner", "org-stocked");
+      const refused = yield* imports
+        .commitImport(
+          { organizationId: "org-stocked", userId: OWNER },
+          importId,
+          requestFor(
+            { organizationId: "org-stocked", userId: OWNER },
+            { digest: { digest: "a".repeat(64), version: PARTITION_DIGEST_VERSION } },
+            1,
+          ),
+        )
+        .pipe(Effect.flip);
+      const outcome = { member, empty, untouched, stocked, refused };
+
+      expect(outcome.member.status).toBe(403);
+      expect(outcome.member.body).toMatchObject({ error: { code: "OWNER_REQUIRED" } });
+      expect(outcome.empty).toEqual({ status: 200, body: { _tag: "none" } });
+      expect(outcome.untouched).toEqual([{ rows: 0 }]);
+      expect(outcome.refused).toMatchObject({ code: "ENTITY_CONFLICT" });
+      expect(outcome.stocked).toEqual({
+        status: 200,
+        body: { _tag: "other", message: outcome.refused.message },
+      });
+    }).pipe(scenario),
+  );
 });
