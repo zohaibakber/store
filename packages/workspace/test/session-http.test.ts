@@ -7,7 +7,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { loadSessionSnapshot } from "../src/session-broker";
-import { SessionHttp, layerSessionHttp, sessionFetch } from "../src/session-http";
+import { SessionHttp, layerSessionHttp } from "../src/session-http";
 
 const API = "https://api.example.test";
 const AUTH = "https://auth.example.test";
@@ -48,7 +48,6 @@ const harness = (routes: Readonly<Record<string, Route>>) => {
     layerSessionHttp({
       apiBaseUrl: API,
       authBaseUrl: AUTH,
-      credential: "refreshToken",
       onRefreshed: (refreshed) =>
         Effect.sync(() => {
           local = refreshed.workspace;
@@ -165,17 +164,5 @@ describe("session authority", () => {
 
     await expect(pending).resolves.toBeNull();
     expect(await test.held()).toBeNull();
-  });
-
-  it("refuses every origin but the API before touching the session", async () => {
-    const test = harness({});
-    const authenticatedFetch = sessionFetch((effect, options) =>
-      test.runtime.runPromise(effect, options),
-    );
-
-    await expect(authenticatedFetch("https://elsewhere.example.test/x")).rejects.toThrow(TypeError);
-    await expect(authenticatedFetch(new URL("/v1/session", AUTH))).rejects.toThrow(TypeError);
-
-    expect(test.sent).toEqual([]);
   });
 });

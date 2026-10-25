@@ -1,5 +1,4 @@
 import { createHash, randomBytes } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -51,7 +50,7 @@ import { app, net, safeStorage } from "electron";
 import { searchGlobalProducts } from "../src/host/global-search";
 import type { SignInCredentials } from "../src/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/host/invoice-upload";
-import { replacePrivateFile } from "./private-file";
+import { PrivateFiles } from "./private-files";
 
 const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&
@@ -98,27 +97,25 @@ const proofKey = Effect.sync(() => {
 
 const storagePath = () => path.join(app.getPath("userData"), "auth", "session.bin");
 
-const forgetPersisted = Effect.ignore(Effect.tryPromise(() => rm(storagePath(), { force: true })));
-
-const readPersisted = Effect.gen(function* () {
-  const encrypted = yield* Effect.tryPromise(() => readFile(storagePath()));
-  const text = yield* Effect.try(() =>
-    canPersistEncryptedSession() ? safeStorage.decryptString(encrypted) : undefined,
-  );
-  return yield* Schema.decodeUnknownEffect(PersistedAuthJson)(text);
-}).pipe(Effect.option);
-
-const writePersisted = (value: PersistedAuth) =>
-  Effect.gen(function* () {
-    const text = yield* Schema.encodeEffect(PersistedAuthJson)(value);
-    yield* Effect.tryPromise({
-      try: () =>
-        canPersistEncryptedSession()
-          ? replacePrivateFile(storagePath(), safeStorage.encryptString(text))
-          : rm(storagePath(), { force: true }),
-      catch: persistenceError,
-    });
-  });
+const persistence = (files: PrivateFiles["Service"]) => ({
+  forgetPersisted: Effect.ignore(files.remove(storagePath())),
+  readPersisted: Effect.gen(function* () {
+    const encrypted = yield* files.readBytes(storagePath());
+    const text = yield* Effect.try(() =>
+      canPersistEncryptedSession() && Option.isSome(encrypted)
+        ? safeStorage.decryptString(Buffer.from(encrypted.value))
+        : undefined,
+    );
+    return yield* Schema.decodeUnknownEffect(PersistedAuthJson)(text);
+  }).pipe(Effect.option),
+  writePersisted: (value: PersistedAuth) =>
+    Effect.gen(function* () {
+      const text = yield* Schema.encodeEffect(PersistedAuthJson)(value);
+      yield* canPersistEncryptedSession()
+        ? files.replace(storagePath(), safeStorage.encryptString(text))
+        : files.remove(storagePath());
+    }),
+});
 
 interface DesktopAuthApi {
   readonly session: Effect.Effect<WorkspaceSnapshot>;
@@ -161,6 +158,7 @@ interface DesktopAuthOptions {
 }
 
 const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
+  const { forgetPersisted, readPersisted, writePersisted } = persistence(yield* PrivateFiles);
   const scope = yield* Effect.scope;
   const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
   const googleVerifier = yield* Ref.make(Option.none<Redacted.Redacted<string>>());
@@ -183,7 +181,6 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
       layerSessionHttp({
         apiBaseUrl: options.apiBaseUrl,
         authBaseUrl: options.authBaseUrl,
-        credential: "refreshToken",
         onRefreshed: (refreshed, tokens) =>
           adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
             Effect.andThen(
@@ -321,7 +318,7 @@ export const makeAuthBroker = (
           for (const listen of tokenListeners) listen(token);
         },
       }),
-    ),
+    ).pipe(Layer.provide(PrivateFiles.layer)),
   );
   return {
     onAccessToken: (listen: AccessTokenListener) => {

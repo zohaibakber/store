@@ -67,7 +67,7 @@ const envFallbackFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
 ];
-for (const file of envFallbackFiles) {
+for (const file of app.isPackaged ? [] : envFallbackFiles) {
   try {
     process.loadEnvFile(file);
   } catch {}
@@ -378,7 +378,7 @@ void app.whenReady().then(async () => {
     writeClipboardText: (text) => clipboard.writeText(text),
     choosePdfDestination,
   });
-  nativeTheme.themeSource = readThemeSource(app.getPath("userData"));
+  nativeTheme.themeSource = await readThemeSource(app.getPath("userData"));
   createWindow();
   const deviceId = await loadDeviceId(app.getPath("userData"));
   disposeInventoryHttp = registerInventoryHttpIpc({
