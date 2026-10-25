@@ -15,7 +15,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
 import { layerNodeStaffGate } from "../src/staff/node";
-import { layerInventoryStore, LicenceGate } from "../src/store/handlers";
+import { layerInventoryStore } from "../src/store/handlers";
 
 const unreachable: SyncTransport = {
   registerReplica: () => Effect.never,
@@ -63,7 +63,6 @@ const openShop = (replicaId: string) =>
         Layer.fresh(
           layerInventoryStore.pipe(
             Layer.provide(layerNodeStaffGate({ kdfCost: 16 })),
-            Layer.provide(LicenceGate.layerOpen),
             Layer.provide(NodeCrypto.layer),
             Layer.provide(Layer.succeedContext(session)),
           ),
