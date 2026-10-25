@@ -2,7 +2,7 @@ import {
   EmailAddress,
   EmailProvider,
   InvitationToken,
-  normalizeEmail,
+  normalizedEmail,
   OrganizationInvitation,
   OrganizationRoster,
   type AccessClaims,
@@ -16,26 +16,17 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 
-import { AuthCrypto, INVITATION_TTL_MS } from "./crypto";
-import { AuthRefusal, InvitationEmailMismatch } from "./failures";
+import { AuthCrypto } from "./crypto";
+import { AuthRefusal } from "./failures";
 import { HubRevocation } from "./hub-revocation";
 import { AuthLimiter } from "./limits";
+import * as Permissions from "./organization-permissions";
 import { AuthRepository, type InvitationRecord, type MembershipRecord } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
-
-const ROLE_RANK = { member: 0, admin: 1, owner: 2 } as const satisfies Record<
-  OrganizationRole,
-  number
->;
-
-const isDemotion = (from: OrganizationRole, to: OrganizationRole) =>
-  ROLE_RANK[to] < ROLE_RANK[from];
-
-const MANAGERS: ReadonlyArray<OrganizationRole> = ["owner", "admin"];
-const OWNERS: ReadonlyArray<OrganizationRole> = ["owner"];
 
 export class Organizations extends Context.Service<Organizations>()(
   "@store/auth-worker/Organizations",
@@ -66,13 +57,10 @@ export class Organizations extends Context.Service<Organizations>()(
       const requireRole = Effect.fn("Organizations.requireRole")(function* (
         userId: UserId,
         organizationId: OrganizationId,
-        requires: "owner" | "manager",
+        requirement: Permissions.RoleRequirement,
       ) {
         const membership = yield* membershipOf(userId, organizationId);
-        if (!(requires === "owner" ? OWNERS : MANAGERS).includes(membership.role)) {
-          return yield* new AuthRefusal({ reason: `InsufficientRole.${requires}` });
-        }
-        return membership;
+        return yield* Effect.fromResult(Permissions.requireRole(membership, requirement));
       });
 
       const membershipView = (membership: MembershipRecord): AuthOrganizationMembership => ({
@@ -142,7 +130,7 @@ export class Organizations extends Context.Service<Organizations>()(
       ) {
         const now = yield* Clock.currentTimeMillis;
         yield* requireRole(claims.subject, input.organizationId, "manager");
-        const address = EmailAddress.make(normalizeEmail(input.email));
+        const address = normalizedEmail(input.email);
         const members = yield* repository.listMembers(input.organizationId);
         if (members.some((member) => member.email === address)) {
           return yield* new AuthRefusal({ reason: "AlreadyAMember" });
@@ -150,7 +138,7 @@ export class Organizations extends Context.Service<Organizations>()(
         const secret = yield* crypto.randomSecret(32);
         const token = InvitationToken.make(Redacted.value(secret));
         const tokenHash = yield* hashInvite(secret);
-        const expiresAt = now + INVITATION_TTL_MS;
+        const expiresAt = now + Permissions.INVITATION_TTL_MS;
         const invitation = yield* repository.createInvitation({
           organizationId: input.organizationId,
           email: address,
@@ -190,16 +178,10 @@ export class Organizations extends Context.Service<Organizations>()(
         const now = yield* Clock.currentTimeMillis;
         yield* limiter.admit("tenPerMinute", `accept-invitation:${claims.subject}`, "invitation");
         const tokenHash = yield* hashInvite(Redacted.make(token));
-        const invitation = yield* repository.findInvitationByTokenHash(tokenHash);
-        const expired = invitation !== null && invitation.expiresAt <= now;
-        const spent =
-          invitation !== null && (invitation.acceptedAt !== null || invitation.revokedAt !== null);
-        if (!invitation || expired || spent) {
-          return yield* new AuthRefusal({ reason: "InvitationInvalid" });
-        }
-        if (invitation.email !== normalizeEmail(claims.email)) {
-          return yield* new InvitationEmailMismatch({ invited: invitation.email });
-        }
+        const found = yield* repository.findInvitationByTokenHash(tokenHash);
+        const invitation = yield* Effect.fromResult(
+          Permissions.decideInvitationAcceptance(Option.fromNullishOr(found), claims.email, now),
+        );
         const accepted = yield* repository.acceptInvitation({
           invitation,
           userId: claims.subject,
@@ -253,7 +235,7 @@ export class Organizations extends Context.Service<Organizations>()(
           if (latest?.role === input.role) return { _tag: "Applied" } as const;
           return yield* lastOwnerOrMissing(input.organizationId, input.userId, "roleChange");
         }
-        if (isDemotion(target.role, input.role)) {
+        if (Permissions.isDemotion(target.role, input.role)) {
           yield* hubs.revoke(input.organizationId, input.userId);
         }
         return { _tag: "Applied" } as const;
@@ -267,19 +249,12 @@ export class Organizations extends Context.Service<Organizations>()(
         },
       ) {
         const caller = yield* requireRole(claims.subject, input.organizationId, "manager");
-        if (input.userId === claims.subject) {
-          return yield* new AuthRefusal({ reason: "CannotRemoveSelf" });
-        }
+        yield* Effect.fromResult(Permissions.refuseSelfRemoval(claims.subject, input.userId));
         const target = yield* repository.membershipInOrganization({
           userId: input.userId,
           organizationId: input.organizationId,
         });
-        if (!target) {
-          return yield* new AuthRefusal({ reason: "MemberNotFound" });
-        }
-        if (caller.role === "admin" && target.role !== "member") {
-          return yield* new AuthRefusal({ reason: "InsufficientRole.ownerOverManagers" });
-        }
+        yield* Effect.fromResult(Permissions.decideRemoval(caller, Option.fromNullishOr(target)));
         const removed = yield* repository.removeMember(input);
         if (!removed) {
           return yield* lastOwnerOrMissing(input.organizationId, input.userId, "removal");

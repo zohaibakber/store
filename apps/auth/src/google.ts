@@ -1,6 +1,6 @@
 import {
   EmailAddress,
-  normalizeEmail,
+  normalizedEmail,
   WebCrypto,
   type EmailAddress as EmailAddressType,
 } from "@store/auth";
@@ -19,6 +19,9 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+
+import * as GoogleLinking from "./google-linking";
+import { GoogleAccountId } from "./identifiers";
 
 const GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -71,8 +74,6 @@ const IdTokenClaims = Schema.Struct({
   hd: Schema.optionalKey(Schema.String),
 });
 
-const GOOGLE_MAILBOX = /@(gmail|googlemail)\.com$/u;
-
 const isTrue = (value: boolean | "true" | "false") => value === true || value === "true";
 
 interface SigningKey {
@@ -92,7 +93,7 @@ interface IdTokenExpectation {
 }
 
 export interface GoogleProfile {
-  readonly providerAccountId: string;
+  readonly providerAccountId: GoogleAccountId;
   readonly email: EmailAddressType;
   readonly ownsMailbox: boolean;
   readonly name: string;
@@ -305,11 +306,11 @@ export const googleOAuthLayer = (configuration: GoogleOAuthConfiguration) =>
         if (claims.nonce === undefined || !(yield* sameNonce(claims.nonce, expected.nonce))) {
           return yield* rejected("Nonce", "The identity token belongs to another sign-in.");
         }
-        const email = EmailAddress.make(normalizeEmail(claims.email));
+        const email = normalizedEmail(claims.email);
         return {
-          providerAccountId: claims.sub,
+          providerAccountId: GoogleAccountId.make(claims.sub),
           email,
-          ownsMailbox: (claims.hd ?? "") !== "" || GOOGLE_MAILBOX.test(email),
+          ownsMailbox: GoogleLinking.ownsMailbox(claims.hd, email),
           name: claims.name ?? email.split("@")[0] ?? email,
           image: claims.picture ?? null,
         } satisfies GoogleProfile;

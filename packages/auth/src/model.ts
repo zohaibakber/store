@@ -311,3 +311,6 @@ export const OrganizationCommandResult = Schema.TaggedUnion({
 export type OrganizationCommandResult = typeof OrganizationCommandResult.Type;
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+export const normalizedEmail = (email: EmailAddress): EmailAddress =>
+  EmailAddress.make(normalizeEmail(email));

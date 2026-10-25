@@ -2,6 +2,7 @@ import {
   EmailAddress,
   EmailProvider,
   LoginRoute,
+  normalizedEmail,
   normalizeEmail,
   OtpChallengeId,
   PasswordHasher,
@@ -17,13 +18,17 @@ import * as Layer from "effect/Layer";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { AuthCrypto, OTP_TTL_MS } from "./crypto";
+import { AuthCrypto } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
+import { infrastructureDiagnostics } from "./errors";
 import { AuthRefusal } from "./failures";
 import { AuthLimiter } from "./limits";
+import { OTP_TTL_MS } from "./otp-issuance";
 import { AuthRepository } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
+
+const decodeEmailAddress = Schema.decodeUnknownEffect(EmailAddress);
 
 export class Login extends Context.Service<Login>()("@store/auth-worker/Login", {
   make: Effect.gen(function* () {
@@ -43,16 +48,16 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
       },
       Effect.catchTag(["PasswordHashError", "AuthRepositoryError"], (failure) =>
         Effect.logWarning("auth.password_rehash_failed").pipe(
-          Effect.annotateLogs({ tag: failure._tag, message: failure.message }),
+          Effect.annotateLogs(infrastructureDiagnostics(failure)),
         ),
       ),
     );
 
     const identify = Effect.fn("Login.identify")(function* (input: IdentifyInput) {
       const now = yield* Clock.currentTimeMillis;
-      const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
-        normalizeEmail(input.email),
-      ).pipe(Effect.mapError(() => new AuthRefusal({ reason: "InvalidEmail" })));
+      const normalized = yield* decodeEmailAddress(normalizeEmail(input.email)).pipe(
+        Effect.mapError(() => new AuthRefusal({ reason: "InvalidEmail" })),
+      );
       yield* limiter.admit("tenPerMinute", `identify:${normalized}`, "request");
       const user = yield* repository.findUserByEmail(normalized);
       if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
@@ -106,18 +111,25 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
       const now = yield* Clock.currentTimeMillis;
       switch (command._tag) {
         case "Password": {
-          const emailAddress = EmailAddress.make(normalizeEmail(command.email));
+          const emailAddress = normalizedEmail(command.email);
           yield* limiter.admit("fivePerMinute", `password:${emailAddress}`, "request");
           const user = yield* repository.findUserByEmail(emailAddress);
           if (!user?.passwordHash) {
             return yield* new AuthRefusal({ reason: "InvalidCredentials" });
           }
           const verdict = yield* passwords.verify(command.password, user.passwordHash);
-          if (!verdict.matches) {
-            return yield* new AuthRefusal({ reason: "InvalidCredentials" });
-          }
-          if (verdict.outdated) {
-            yield* rehash(user.id, user.passwordHash, command.password);
+          switch (verdict) {
+            case "mismatch":
+              return yield* new AuthRefusal({ reason: "InvalidCredentials" });
+            case "matchNeedsRehash":
+              yield* rehash(user.id, user.passwordHash, command.password);
+              break;
+            case "match":
+              break;
+            default: {
+              const _exhaustive: never = verdict;
+              return _exhaustive;
+            }
           }
           return yield* sessions.issueSession(user, command.client);
         }
@@ -141,7 +153,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           return yield* sessions.issueSession(user, command.client, `otp-${command.challengeId}`);
         }
         case "RegisterPassword": {
-          const emailAddress = EmailAddress.make(normalizeEmail(command.email));
+          const emailAddress = normalizedEmail(command.email);
           yield* limiter.admit("fivePerMinute", `register:${emailAddress}`, "request");
           const existing = yield* repository.findUserByEmail(emailAddress);
           if (existing) {

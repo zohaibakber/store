@@ -74,11 +74,15 @@ export type InfrastructureFailure =
   | GoogleOAuthError
   | JwtError;
 
-const infrastructureDiagnostics = (failure: InfrastructureFailure) => {
+export const infrastructureDiagnostics = (failure: InfrastructureFailure) => {
   switch (failure._tag) {
     case "AuthRepositoryError":
     case "EphemeralStoreError":
-      return { tag: failure._tag, operation: failure.operation, message: failure.message };
+      return {
+        tag: failure._tag,
+        operation: failure.operation,
+        message: storageFailureMessage(failure.cause),
+      };
     case "CryptoError":
       return { tag: failure._tag, operation: failure.operation, message: String(failure.cause) };
     case "EmailDeliveryError":

@@ -31,10 +31,7 @@ const hashingFailed = (cause: unknown) =>
 
 type Password = Redacted.Redacted<string>;
 
-export interface PasswordVerdict {
-  readonly matches: boolean;
-  readonly outdated: boolean;
-}
+export type PasswordVerdict = "mismatch" | "match" | "matchNeedsRehash";
 
 const derive = (password: Password, salt: Uint8Array, iterations: number) =>
   pbkdf2Sha256({
@@ -69,7 +66,7 @@ const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
     !saltText ||
     !hashText
   ) {
-    return { matches: false, outdated: false } satisfies PasswordVerdict;
+    return "mismatch" as const;
   }
   const salt = yield* decodeSaltOrHash(saltText);
   const expected = yield* decodeSaltOrHash(hashText);
@@ -77,10 +74,10 @@ const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
   const matches = yield* constantTimeEqual(actual, expected).pipe(
     Effect.mapError((failure) => hashingFailed(failure.cause)),
   );
-  return {
-    matches,
-    outdated: matches && iterations < WORKERD_PBKDF2_ITERATIONS,
-  } satisfies PasswordVerdict;
+  if (!matches) return "mismatch" as const;
+  return iterations < WORKERD_PBKDF2_ITERATIONS
+    ? ("matchNeedsRehash" as const)
+    : ("match" as const);
 });
 
 export class PasswordHasher extends Context.Service<

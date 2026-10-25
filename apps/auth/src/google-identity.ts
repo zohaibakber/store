@@ -8,11 +8,13 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
-import { AUTHORIZATION_TTL_MS, AuthCrypto, OAUTH_STATE_TTL_MS } from "./crypto";
+import { AuthCrypto } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
 import { AuthRefusal } from "./failures";
 import { GoogleOAuth, type GoogleProfile } from "./google";
+import * as GoogleLinking from "./google-linking";
 import { AuthRepository, type UserRecord } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
@@ -38,30 +40,43 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       ) {
         const now = yield* Clock.currentTimeMillis;
         const linked = yield* repository.findUserByGoogleId(profile.providerAccountId);
-        if (linked) return linked;
-        const existing = yield* repository.findUserByEmail(profile.email);
-        if (!existing) return yield* repository.createGoogleUser(profile);
-        if (existing.passwordHash && existing.emailVerified) {
-          return yield* new AuthRefusal({ reason: "PasswordAccountExists" });
+        const existing = linked ? null : yield* repository.findUserByEmail(profile.email);
+        const link = yield* Effect.fromResult(
+          GoogleLinking.decideGoogleLink(
+            Option.fromNullishOr(linked),
+            Option.fromNullishOr(existing),
+            profile.ownsMailbox,
+          ),
+        );
+        switch (link._tag) {
+          case "Use":
+            return link.user;
+          case "Create":
+            return yield* repository.createGoogleUser(profile);
+          case "Claim":
+          case "Attach": {
+            const joined =
+              link._tag === "Claim"
+                ? yield* repository.claimUnverifiedPasswordUser({
+                    userId: link.user.id,
+                    providerAccountId: profile.providerAccountId,
+                    image: profile.image,
+                    now,
+                  })
+                : yield* repository.attachGoogleAccount({
+                    userId: link.user.id,
+                    providerAccountId: profile.providerAccountId,
+                  });
+            if (!joined) {
+              return yield* new AuthRefusal({ reason: "GoogleAccountLinked" });
+            }
+            return { ...link.user, passwordHash: null, emailVerified: true } satisfies UserRecord;
+          }
+          default: {
+            const _exhaustive: never = link;
+            return _exhaustive;
+          }
         }
-        if (!profile.ownsMailbox) {
-          return yield* new AuthRefusal({ reason: "GoogleMailboxUnproven" });
-        }
-        const claimed = existing.passwordHash
-          ? yield* repository.claimUnverifiedPasswordUser({
-              userId: existing.id,
-              providerAccountId: profile.providerAccountId,
-              image: profile.image,
-              now,
-            })
-          : yield* repository.attachGoogleAccount({
-              userId: existing.id,
-              providerAccountId: profile.providerAccountId,
-            });
-        if (!claimed) {
-          return yield* new AuthRefusal({ reason: "GoogleAccountLinked" });
-        }
-        return { ...existing, passwordHash: null, emailVerified: true } satisfies UserRecord;
       });
 
       const beginGoogle = Effect.fn("GoogleIdentity.beginGoogle")(function* (
@@ -79,7 +94,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
           client: input.client,
           googleCodeVerifier,
           googleNonce,
-          expiresAt: now + OAUTH_STATE_TTL_MS,
+          expiresAt: now + GoogleLinking.OAUTH_STATE_TTL_MS,
         });
         return google.authorizationUrl({
           state,
@@ -113,7 +128,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
           userId: user.id,
           codeChallenge: state.codeChallenge,
           client: state.client,
-          expiresAt: now + AUTHORIZATION_TTL_MS,
+          expiresAt: now + GoogleLinking.AUTHORIZATION_TTL_MS,
         });
         return { redirectUri: state.redirectUri, code };
       });

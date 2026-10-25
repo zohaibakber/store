@@ -13,8 +13,10 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { AuthCrypto, REFRESH_TTL_MS } from "./crypto";
+import { AuthCrypto } from "./crypto";
 import { AuthRefusal } from "./failures";
+import { SessionFamilyId } from "./identifiers";
+import * as RefreshRotation from "./refresh-rotation";
 import {
   AuthRepository,
   type MembershipRecord,
@@ -25,9 +27,6 @@ import {
 } from "./repository";
 import { AuthSettings } from "./settings";
 
-const REFRESH_REUSE_WINDOW_MS = 90_000;
-const REFRESH_REPLAY_HOPS = 4;
-
 export interface PresentedRefresh {
   readonly client: AuthClientKind;
   readonly refreshToken: Redacted.Redacted<string>;
@@ -36,15 +35,17 @@ export interface PresentedRefresh {
 const formatRefreshToken = (sessionId: SessionId, secret: Redacted.Redacted<string>) =>
   RefreshToken.make(`${sessionId}.${Redacted.value(secret)}`);
 
+const decodeSessionId = Schema.decodeUnknownEffect(SessionId);
+
 const parseRefreshToken = Effect.fnUntraced(function* (token: Redacted.Redacted<string>) {
   const presented = Redacted.value(token);
   const separator = presented.indexOf(".");
   if (separator <= 0 || separator === presented.length - 1) {
     return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
   }
-  const sessionId = yield* Schema.decodeUnknownEffect(SessionId)(
-    presented.slice(0, separator),
-  ).pipe(Effect.mapError(() => new AuthRefusal({ reason: "InvalidRefreshToken" })));
+  const sessionId = yield* decodeSessionId(presented.slice(0, separator)).pipe(
+    Effect.mapError(() => new AuthRefusal({ reason: "InvalidRefreshToken" })),
+  );
   return { sessionId, secret: Redacted.make(presented.slice(separator + 1)) };
 });
 
@@ -105,10 +106,10 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const now = yield* Clock.currentTimeMillis;
       const membership = yield* repository.membershipForUser(user.id);
       const sessionId = SessionId.make(replayKey ?? (yield* crypto.randomId));
-      const familyId = yield* crypto.randomId;
+      const familyId = SessionFamilyId.make(yield* crypto.randomId);
       const refreshSecret = yield* crypto.randomSecret(32);
       const refreshTokenHash = yield* hashSecret(refreshSecret);
-      const refreshExpiresAt = now + REFRESH_TTL_MS;
+      const refreshExpiresAt = now + RefreshRotation.REFRESH_TTL_MS;
       yield* repository.createSession({
         id: sessionId,
         familyId,
@@ -126,20 +127,6 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
         refreshExpiresAt,
         now,
       });
-    });
-
-    const liveRefresh = Effect.fnUntraced(function* (context: RefreshContext, now: number) {
-      if (context.session.expiresAt <= now) {
-        return yield* new AuthRefusal({ reason: "RefreshExpired" });
-      }
-      if (!context.user) {
-        return yield* new AuthRefusal({ reason: "AccountNotFound" });
-      }
-      return {
-        session: context.session,
-        user: context.user,
-        activeMembership: context.activeMembership,
-      };
     });
 
     const liveSuccessor: (
@@ -172,21 +159,23 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       if (!(yield* secretMatches(parsed.secret, current.refreshTokenHash))) {
         return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
-      if (current.clientKind !== presented.client._tag) {
-        return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
+      const presentedDecision = yield* Effect.fromResult(
+        RefreshRotation.decidePresentedRefresh(current, presented.client._tag, now),
+      ).pipe(
+        Effect.tapError((refusal) =>
+          refusal.reason === "RefreshReuseDetected"
+            ? repository.revokeFamily(current.familyId, now)
+            : Effect.void,
+        ),
+      );
+      if (presentedDecision === "live") {
+        return yield* Effect.fromResult(RefreshRotation.decideLiveRefresh(context, now));
       }
-      if (current.revokedAt === null) {
-        return yield* liveRefresh(context, now);
-      }
-      if (current.revokedAt + REFRESH_REUSE_WINDOW_MS <= now) {
-        yield* repository.revokeFamily(current.familyId, now);
-        return yield* new AuthRefusal({ reason: "RefreshReuseDetected" });
-      }
-      const successor = yield* liveSuccessor(current, REFRESH_REPLAY_HOPS);
+      const successor = yield* liveSuccessor(current, RefreshRotation.REPLAY_HOPS);
       if (!successor) {
         return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
-      return yield* liveRefresh(successor, now);
+      return yield* Effect.fromResult(RefreshRotation.decideLiveRefresh(successor, now));
     });
 
     const rotateInto = Effect.fn("Sessions.rotateInto")(function* (input: {
@@ -198,7 +187,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const nextId = SessionId.make(yield* crypto.randomId);
       const nextSecret = yield* crypto.randomSecret(32);
       const nextHash = yield* hashSecret(nextSecret);
-      const refreshExpiresAt = now + REFRESH_TTL_MS;
+      const refreshExpiresAt = now + RefreshRotation.REFRESH_TTL_MS;
       const rotated = yield* repository.rotateSession({
         currentId: input.session.id,
         now,
@@ -208,10 +197,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
           userId: input.session.userId,
           activeOrganizationId: input.membership.organizationId,
           refreshTokenHash: nextHash,
-          client:
-            input.session.clientKind === "Browser"
-              ? { _tag: "Browser" }
-              : { _tag: "Native", deviceName: input.session.deviceName ?? "Native client" },
+          client: input.session.client,
           expiresAt: refreshExpiresAt,
         },
       });
