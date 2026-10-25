@@ -1,5 +1,5 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import type { DeviceLabel } from "@store/contracts";
+import { decodeOrganizationId, type DeviceLabel } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -107,7 +107,6 @@ export type ReplicaIpcListener = (
 
 const decodeWorkspaceToken = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 const decodeOpenInput = Schema.decodeUnknownSync(ReplicaOpenInput);
-const decodeOrganizationId = Schema.decodeUnknownSync(ReplicaWorkspaceToken);
 
 export const registerReplicaWorkerIpc = (options: {
   readonly ipcMain: {

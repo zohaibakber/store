@@ -24,7 +24,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { makePrivateFiles } from "./files";
+import { PrivateFiles } from "../private-files";
 
 const RECHECK_EVERY = Duration.minutes(1);
 const REMEMBER_CLOCK_EVERY = Duration.minutes(10);
@@ -67,8 +67,8 @@ export class LicenceService extends Context.Service<
     Layer.effect(
       LicenceService,
       Effect.gen(function* () {
-        const files = yield* makePrivateFiles;
         const path = yield* Path.Path;
+        const files = yield* PrivateFiles;
         const licenceFile = path.join(options.directory, "licence.txt");
         const seenFile = path.join(options.directory, "last-seen");
         const turn = yield* Semaphore.make(1);
@@ -76,7 +76,7 @@ export class LicenceService extends Context.Service<
 
         const read = (file: string) =>
           files
-            .read(file)
+            .readText(file)
             .pipe(
               Effect.catch((failure) =>
                 Effect.as(
@@ -116,7 +116,7 @@ export class LicenceService extends Context.Service<
 
         const rememberClock = Effect.gen(function* () {
           const { at } = yield* Ref.get(seen);
-          yield* files.replace(seenFile, String(at));
+          yield* files.replaceText(seenFile, `${at}\n`);
           yield* Ref.set(remembered, at);
         }).pipe(
           Effect.catch((failure) => Effect.logWarning("LicenceService.clock_not_saved", failure)),
@@ -163,7 +163,7 @@ export class LicenceService extends Context.Service<
           ) {
             return yield* refuse("notNewer");
           }
-          yield* Effect.mapError(files.replace(licenceFile, accepted), notSaved);
+          yield* Effect.mapError(files.replaceText(licenceFile, `${accepted}\n`), notSaved);
           yield* Ref.set(held, Option.some(licence));
           yield* Ref.set(seen, {
             at: yield* Clock.currentTimeMillis,
@@ -180,5 +180,5 @@ export class LicenceService extends Context.Service<
           enter,
         });
       }),
-    );
+    ).pipe(Layer.provide(PrivateFiles.layer));
 }
