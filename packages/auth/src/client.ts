@@ -98,10 +98,6 @@ const clientError =
           },
           message: cause.error.message,
         });
-      default: {
-        const _exhaustive: never = cause;
-        return _exhaustive;
-      }
     }
   };
 
@@ -147,10 +143,6 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
             return session
               .signUpPassword({ payload: valid })
               .pipe(Effect.mapError(clientError("authenticate.register")));
-          default: {
-            const _exhaustive: never = valid;
-            return _exhaustive;
-          }
         }
       }),
     ),

@@ -73,10 +73,6 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
             }
             return { ...link.user, passwordHash: null, emailVerified: true } satisfies UserRecord;
           }
-          default: {
-            const _exhaustive: never = link;
-            return _exhaustive;
-          }
         }
       });
 

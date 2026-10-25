@@ -100,10 +100,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const route = { _tag: "Otp", email: normalized, challengeId: issue.challengeId } as const;
           return LoginRoute.make(developmentOtp ? { ...route, developmentCode: code } : route);
         }
-        default: {
-          const _exhaustive: never = issue;
-          return _exhaustive;
-        }
       }
     });
 
@@ -125,10 +121,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
               break;
             case "match":
               break;
-            default: {
-              const _exhaustive: never = verdict;
-              return _exhaustive;
-            }
           }
           return yield* sessions.issueSession(user, command.client);
         }
@@ -168,10 +160,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
               ),
             );
           return yield* sessions.issueSession(user, command.client);
-        }
-        default: {
-          const _exhaustive: never = command;
-          return _exhaustive;
         }
       }
     });

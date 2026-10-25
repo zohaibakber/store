@@ -103,13 +103,7 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/auth/src/errors.ts",
-          "apps/auth/src/failures.ts",
-          "apps/auth/src/google-identity.ts",
-          "apps/auth/src/login.ts",
-          "apps/auth/src/organization-ops.ts",
           "apps/server/src/routes/uploads.ts",
-          "packages/auth/src/client.ts",
           "packages/client-db/src/replica/pinned-http.ts",
           "packages/sync/src/replica/projection.ts",
         ],
@@ -150,7 +144,6 @@ export default defineConfig({
           "apps/desktop/src/hooks/use-app-updater.tsx",
           "apps/server/src/ai/language-model.ts",
           "apps/server/src/global-search/web-search.ts",
-          "packages/auth/src/security.ts",
           "packages/client-db/src/analytics/errors.ts",
           "packages/client-db/src/replica/node-backup.ts",
           "packages/client-db/src/replica/node-readonly.ts",
@@ -192,7 +185,6 @@ export default defineConfig({
           "apps/desktop/src/components/purchases/receive-lines.ts",
           "apps/server/src/authority/engine.ts",
           "apps/server/src/authority/imports.ts",
-          "packages/auth/src/password.ts",
           "packages/contracts/src/store/invoice-allocation.ts",
           "packages/contracts/src/store/pricing.ts",
           "packages/services/src/invoice-extraction/pack-size.ts",
@@ -203,7 +195,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/auth/infra.ts",
           "apps/desktop/electron/auth-ipc.ts",
           "apps/desktop/electron/auth.ts",
           "apps/desktop/electron/replica-backup.ts",
@@ -224,7 +215,6 @@ export default defineConfig({
           "apps/server/src/auth/access-tokens.ts",
           "apps/server/src/runtime/isolate.ts",
           "apps/server/src/runtime/production-domain.ts",
-          "packages/auth/src/security.ts",
           "packages/client-db/src/analytics/store.ts",
           "packages/client-db/src/replica/pinned-http.ts",
           "packages/inventory-react/src/errors.ts",
@@ -247,7 +237,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["apps/auth/src/errors.ts", "packages/workspace/src/session-http.ts"],
+        files: ["packages/workspace/src/session-http.ts"],
         rules: {
           "anti-slop/tagged-error-tag-matches-class": "off",
         },
