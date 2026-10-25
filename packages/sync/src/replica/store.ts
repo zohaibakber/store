@@ -61,47 +61,6 @@ type ReplicaSyncCursor = ReplicaAnnouncement & {
   readonly bootstrapped: boolean;
 };
 
-interface ReplicaRegistrationStore {
-  readonly readSyncCursor: () => Effect.Effect<ReplicaSyncCursor, ReplicaStoreError>;
-
-  readonly adoptRegistration: (
-    authority: RegisterReplicaResult,
-    registeredAt: number,
-  ) => Effect.Effect<ReplicaRegistrationOutcome, ReplicaStoreError>;
-}
-
-interface ReplicaCommandStore {
-  readonly enqueueCommand: (
-    request: EnqueueCommandRequest,
-  ) => Effect.Effect<Committed<QueuedCommand>, ReplicaStoreError>;
-
-  readonly readCommandStatus: (
-    operationId: string,
-  ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
-}
-
-interface ReplicaUploadClaimStore {
-  readonly claimNextUpload: (
-    input: ClaimNextUploadInput,
-  ) => Effect.Effect<Committed<UploadClaim | undefined>, ReplicaStoreError>;
-
-  readonly settleUploadClaim: (
-    claimId: string,
-    receipt: CommandReceipt,
-  ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
-
-  readonly releaseUploadClaim: (
-    operationId: string,
-    claimId: string,
-  ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
-}
-
-interface ReplicaAuthorityStore {
-  readonly integrateAuthority: (
-    input: IntegrateAuthorityInput,
-  ) => Effect.Effect<Committed<Integrated>, ReplicaStoreError>;
-}
-
 type SnapshotImportProgress = {
   readonly partsImported: number;
 };
@@ -114,69 +73,64 @@ export type SnapshotActivation =
       readonly throughCommitSequence: string;
     };
 
-export interface ReplicaSnapshotImportStore {
-  readonly beginSnapshotImport: (
-    manifest: SnapshotManifest,
-  ) => Effect.Effect<SnapshotImportProgress, ReplicaStoreError, Scope.Scope>;
-
-  readonly importSnapshotPart: (
-    manifest: SnapshotManifest,
-    part: SnapshotPartPayload,
-  ) => Effect.Effect<void, ReplicaStoreError>;
-
-  readonly applyCandidateAuthority: (
-    snapshotId: SnapshotId,
-    page: SyncPullResult,
-  ) => Effect.Effect<string, ReplicaStoreError>;
-
-  readonly abandonSnapshot: (snapshotId: SnapshotId) => Effect.Effect<void, ReplicaStoreError>;
-
-  readonly activateSnapshot: (
-    snapshotId: SnapshotId,
-  ) => Effect.Effect<Committed<SnapshotActivation>, ReplicaStoreError>;
-}
-
-interface ReplicaCoverageStore {
-  readonly markCoverageRepair: (
-    subscription: SyncSubscription,
-  ) => Effect.Effect<void, ReplicaStoreError>;
-
-  readonly readDigestVerification: (
-    subscription: SyncSubscription,
-  ) => Effect.Effect<number | undefined, ReplicaStoreError>;
-
-  readonly recordDigestVerification: (
-    subscription: SyncSubscription,
-    verifiedAt: number,
-  ) => Effect.Effect<void, ReplicaStoreError>;
-
-  readonly recordCaughtUp: (
-    caughtUpAt: number,
-  ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
-}
-
-interface ReplicaPendingMarkStore {
-  readonly readPendingMarks: () => Effect.Effect<
-    ReadonlyArray<PendingRowMarkEntry>,
-    ReplicaStoreError
-  >;
-}
-
-interface ReplicaCommitFeed {
-  readonly readStamp: () => Effect.Effect<ReplicaReadStamp, ReplicaStoreError>;
-
-  readonly commits: Stream.Stream<ReplicaCommitNotice>;
-}
-
-export type ReplicaStoreContract = ReplicaRegistrationStore &
-  ReplicaCommandStore &
-  ReplicaUploadClaimStore &
-  ReplicaAuthorityStore &
-  ReplicaSnapshotImportStore &
-  ReplicaCoverageStore &
-  ReplicaPendingMarkStore &
-  ReplicaCommitFeed;
-
-export class ReplicaStore extends Context.Service<ReplicaStore, ReplicaStoreContract>()(
-  "@store/sync/ReplicaStore",
-) {}
+export class ReplicaStore extends Context.Service<
+  ReplicaStore,
+  {
+    readonly readSyncCursor: Effect.Effect<ReplicaSyncCursor, ReplicaStoreError>;
+    readonly adoptRegistration: (
+      authority: RegisterReplicaResult,
+      registeredAt: number,
+    ) => Effect.Effect<ReplicaRegistrationOutcome, ReplicaStoreError>;
+    readonly enqueueCommand: (
+      request: EnqueueCommandRequest,
+    ) => Effect.Effect<Committed<QueuedCommand>, ReplicaStoreError>;
+    readonly readCommandStatus: (
+      operationId: string,
+    ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
+    readonly claimNextUpload: (
+      input: ClaimNextUploadInput,
+    ) => Effect.Effect<Committed<UploadClaim | undefined>, ReplicaStoreError>;
+    readonly settleUploadClaim: (
+      claimId: string,
+      receipt: CommandReceipt,
+    ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
+    readonly releaseUploadClaim: (
+      operationId: string,
+      claimId: string,
+    ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
+    readonly integrateAuthority: (
+      input: IntegrateAuthorityInput,
+    ) => Effect.Effect<Committed<Integrated>, ReplicaStoreError>;
+    readonly beginSnapshotImport: (
+      manifest: SnapshotManifest,
+    ) => Effect.Effect<SnapshotImportProgress, ReplicaStoreError, Scope.Scope>;
+    readonly importSnapshotPart: (
+      manifest: SnapshotManifest,
+      part: SnapshotPartPayload,
+    ) => Effect.Effect<void, ReplicaStoreError>;
+    readonly applyCandidateAuthority: (
+      snapshotId: SnapshotId,
+      page: SyncPullResult,
+    ) => Effect.Effect<string, ReplicaStoreError>;
+    readonly abandonSnapshot: (snapshotId: SnapshotId) => Effect.Effect<void, ReplicaStoreError>;
+    readonly activateSnapshot: (
+      snapshotId: SnapshotId,
+    ) => Effect.Effect<Committed<SnapshotActivation>, ReplicaStoreError>;
+    readonly markCoverageRepair: (
+      subscription: SyncSubscription,
+    ) => Effect.Effect<void, ReplicaStoreError>;
+    readonly readDigestVerification: (
+      subscription: SyncSubscription,
+    ) => Effect.Effect<number | undefined, ReplicaStoreError>;
+    readonly recordDigestVerification: (
+      subscription: SyncSubscription,
+      verifiedAt: number,
+    ) => Effect.Effect<void, ReplicaStoreError>;
+    readonly recordCaughtUp: (
+      caughtUpAt: number,
+    ) => Effect.Effect<Committed<void>, ReplicaStoreError>;
+    readonly readPendingMarks: Effect.Effect<ReadonlyArray<PendingRowMarkEntry>, ReplicaStoreError>;
+    readonly readStamp: Effect.Effect<ReplicaReadStamp, ReplicaStoreError>;
+    readonly commits: Stream.Stream<ReplicaCommitNotice>;
+  }
+>()("@store/sync/ReplicaStore") {}

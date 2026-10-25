@@ -21,7 +21,7 @@ import { TestClock } from "effect/testing";
 
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import type { SyncTransport } from "../src/transport";
 import { applyGroup } from "./lib/authority";
 import {
@@ -48,7 +48,7 @@ import { seedReplicaTenUnits } from "./lib/replica-fixture";
 const NOW = Date.UTC(2026, 8, 22, 9, 0, 0);
 
 type StoreHarness = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly incarnation: string;
   readonly close: () => Effect.Effect<void, unknown>;
 };
@@ -330,16 +330,16 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.catchUp();
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW);
 
           yield* TestClock.adjust("1 hour");
-          yield* engine.catchUp();
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true, false]);
 
           yield* TestClock.adjust("6 hours");
-          yield* engine.catchUp();
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true, false, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW + 25_200_000);
         }),
@@ -355,12 +355,12 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.catchUp();
+          yield* engine.catchUp;
           const [tampered] = remoteChanges;
           if (tampered === undefined) return yield* Effect.die("missing fixture");
           yield* applyGroup(harness.store, tampered);
           yield* TestClock.adjust("7 hours");
-          const failure = yield* Effect.exit(engine.catchUp());
+          const failure = yield* Effect.exit(engine.catchUp);
           expect(Exit.isFailure(failure)).toBe(true);
           expect(yield* Ref.get(authority.requested)).toEqual([true, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBeUndefined();
@@ -377,7 +377,7 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.catchUp();
+          yield* engine.catchUp;
           yield* harness.store.enqueueCommand(
             enqueueRequestOf(
               catalogEnvelope({
@@ -389,7 +389,7 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
             ),
           );
           yield* TestClock.adjust("7 hours");
-          const exit = yield* Effect.exit(engine.catchUp());
+          const exit = yield* Effect.exit(engine.catchUp);
           expect(Exit.isSuccess(exit)).toBe(true);
           expect(yield* Ref.get(authority.requested)).toEqual([true, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW);

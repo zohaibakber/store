@@ -13,11 +13,7 @@ import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
 
 import { isStorageFullFailure } from "./replica/errors";
-import type {
-  ReplicaSnapshotImportStore,
-  ReplicaStoreError,
-  SnapshotActivation,
-} from "./replica/store";
+import type { ReplicaStore, ReplicaStoreError, SnapshotActivation } from "./replica/store";
 import type { SyncTransfer } from "./sync-state";
 import type { SyncTransport, SyncTransportError } from "./transport";
 
@@ -33,7 +29,7 @@ type AuthorityGap = Extract<SnapshotActivation, { readonly _tag: "needsAuthority
 
 const catchUpCandidate = (
   transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
   gap: AuthorityGap,
@@ -67,7 +63,7 @@ const catchUpCandidate = (
 
 const activateCandidate = (
   transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
 ) =>
@@ -88,7 +84,7 @@ const abandonedCandidate = (message: string) =>
   syncProtocolError("SNAPSHOT_REQUIRED", `${message} A fresh snapshot will be requested.`);
 
 const abandonOnInvalidCandidate = (
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   manifest: SnapshotManifest,
   error: SnapshotRecoveryError,
 ): Effect.Effect<never, SnapshotRecoveryError> => {
@@ -105,7 +101,7 @@ const abandonOnInvalidCandidate = (
 
 const importCandidate = (
   transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
   onTransfer: (transfer: SyncTransfer) => Effect.Effect<void>,
@@ -141,7 +137,7 @@ const importCandidate = (
 
 export const recoverRequiredSnapshot = (
   transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   onTransfer: (transfer: SyncTransfer) => Effect.Effect<void> = () => Effect.void,
 ): Effect.Effect<void, SnapshotRecoveryError> =>

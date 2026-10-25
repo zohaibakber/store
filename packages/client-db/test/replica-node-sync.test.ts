@@ -13,7 +13,6 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
@@ -67,7 +66,7 @@ describe("layerNodeReplicaSync", () => {
     const scheduler = Context.get(session, SyncScheduler);
     const seen: Array<ReplicaSyncHealth> = [];
     Effect.runFork(
-      SubscriptionRef.changes(scheduler.state).pipe(
+      scheduler.state.pipe(
         Stream.runForEach((state) => Effect.sync(() => seen.push(syncHealthOf(state)))),
         Effect.forkIn(scope),
       ),

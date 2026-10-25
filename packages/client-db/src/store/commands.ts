@@ -201,7 +201,7 @@ export const makeCommandHandlers = ({
   }, Effect.mapError(mapReplicaStoreFailure));
 
   const unchanged = (operationId: string): Effect.Effect<Commit, CommandFailure> =>
-    store.readStamp().pipe(
+    store.readStamp.pipe(
       Effect.mapError(mapReplicaStoreFailure),
       Effect.map((stamp) => ({ operationId, status: "integrated", stamp })),
     );

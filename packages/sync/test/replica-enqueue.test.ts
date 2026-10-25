@@ -9,12 +9,12 @@ import * as Scope from "effect/Scope";
 
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 type Harness = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly close: Effect.Effect<void>;
 };
 
@@ -65,7 +65,7 @@ const categoryRequest = (index: number, name?: string): EnqueueCommandRequest =>
   },
 });
 
-const drainSequences = (store: ReplicaStoreContract, count: number) =>
+const drainSequences = (store: ReplicaStore["Service"], count: number) =>
   Effect.gen(function* () {
     const sequences: Array<string> = [];
     for (let index = 0; index < count; index += 1) {
@@ -85,7 +85,7 @@ const drainSequences = (store: ReplicaStoreContract, count: number) =>
   });
 
 describe.each(harnesses)("$name atomic enqueue", ({ make }) => {
-  const withStore = <A, E>(use: (store: ReplicaStoreContract) => Effect.Effect<A, E>) =>
+  const withStore = <A, E>(use: (store: ReplicaStore["Service"]) => Effect.Effect<A, E>) =>
     Effect.acquireUseRelease(
       make(),
       (harness) => use(harness.store),
@@ -117,7 +117,7 @@ describe.each(harnesses)("$name atomic enqueue", ({ make }) => {
         expect(first.value.operationId).toBe("op-1");
         expect(second.value.status).toBe("pending");
         expect(third.notice).toBeUndefined();
-        expect(yield* store.readPendingMarks()).toHaveLength(1);
+        expect(yield* store.readPendingMarks).toHaveLength(1);
         expect(yield* drainSequences(store, 3)).toEqual(["1"]);
       }),
     ),

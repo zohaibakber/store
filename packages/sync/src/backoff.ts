@@ -5,9 +5,9 @@ import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 
 export type BackoffOptions = {
-  readonly baseMillis: number;
-  readonly maxMillis: number;
-  readonly floorMillis?: number;
+  readonly base: Duration.Duration;
+  readonly max: Duration.Duration;
+  readonly floor?: Duration.Duration;
 };
 
 export type Backoff = {
@@ -17,16 +17,13 @@ export type Backoff = {
 };
 
 const backoffSchedule = (options: BackoffOptions): Schedule.Schedule<Duration.Duration> =>
-  Schedule.min([
-    Schedule.exponential(Duration.millis(options.baseMillis)),
-    Schedule.spaced(Duration.millis(options.maxMillis)),
-  ]).pipe(
+  Schedule.min([Schedule.exponential(options.base), Schedule.spaced(options.max)]).pipe(
     Schedule.jittered,
     Schedule.modifyDelay(({ duration }) =>
       Effect.succeed(
         Duration.max(
           Duration.millis(Math.round(Duration.toMillis(duration))),
-          Duration.millis(options.floorMillis ?? 0),
+          options.floor ?? Duration.zero,
         ),
       ),
     ),
@@ -40,14 +37,14 @@ const NEVER_FIRES: Backoff = {
 
 export const makeBackoff = (options: BackoffOptions): Effect.Effect<Backoff> =>
   Effect.gen(function* () {
-    if (!Number.isFinite(options.baseMillis)) return NEVER_FIRES;
+    if (!Duration.isFinite(options.base)) return NEVER_FIRES;
     const start = Schedule.toStep(backoffSchedule(options));
     const driver = yield* Ref.make(yield* start);
     const next = Effect.gen(function* () {
       const advance = yield* Ref.get(driver);
       const [, delay] = yield* advance(yield* Clock.currentTimeMillis, undefined);
       return delay;
-    }).pipe(Effect.orElseSucceed(() => Duration.millis(options.maxMillis)));
+    }).pipe(Effect.orElseSucceed(() => options.max));
     return {
       next,
       wait: Effect.flatMap(next, Effect.sleep),

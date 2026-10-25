@@ -9,7 +9,7 @@ import {
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
-import type { ReplicaStoreContract } from "../../src/replica/store";
+import type { ReplicaStore } from "../../src/replica/store";
 
 type TransactionsFrame = Extract<SyncLiveServerFrame, { readonly _tag: "transactions" }>;
 
@@ -45,11 +45,11 @@ const historyBefore = (
 };
 
 export const applyGroup = (
-  store: Pick<ReplicaStoreContract, "readSyncCursor" | "integrateAuthority">,
+  store: Pick<ReplicaStore["Service"], "readSyncCursor" | "integrateAuthority">,
   group: SyncTransactionGroup,
 ) =>
   Effect.gen(function* () {
-    const cursor = yield* store.readSyncCursor();
+    const cursor = yield* store.readSyncCursor;
     const groups = [...historyBefore(cursor.appliedCommitSequence, group.commitSequence), group];
     return yield* store.integrateAuthority({
       payload: { _tag: "liveFrame", frame: transactionsFrame(cursor.epoch, groups) },

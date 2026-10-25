@@ -3,6 +3,7 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  ReplicaClientSequence,
   type SyncPullRequest,
   type SyncPullResult,
   type SyncTransactionGroup,
@@ -10,16 +11,16 @@ import {
 import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import { TestClock } from "effect/testing";
 
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import { defaultHttpPollPolicy, SyncScheduler } from "../src/scheduler";
+import { defaultHttpPollPolicy } from "../src/scheduler";
 import { isFollowing } from "../src/sync-state";
 import { SyncTransportGarbled } from "../src/transport";
-import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
+import { sqliteScheduler, stubTransport } from "./lib/engine-fixture";
 import { seedCatalogGroup } from "./lib/pending-fixture";
 import { withSeededReplica } from "./lib/replica-fixture";
 
@@ -44,6 +45,16 @@ describe("sync scheduler", () => {
         const pulls = yield* Ref.make(0);
         const garbled = yield* Deferred.make<void>();
         const transport = stubTransport({
+          registerReplica: (request) =>
+            Effect.succeed({
+              replicaId: request.replicaId,
+              epoch: LAST_UNIT_EPOCH,
+              incarnation: AuthorityIncarnation.make("incarnation-test"),
+              nextClientSequence: ReplicaClientSequence.make("1"),
+              retentionFloor: OrgCommitSequence.make("0"),
+              horizon: OrgCommitSequence.make("0"),
+              schemaVersion: 1,
+            }),
           pull: (request) =>
             Effect.gen(function* () {
               if ((yield* Ref.getAndUpdate(pulls, (n) => n + 1)) === 0) {
@@ -53,30 +64,24 @@ describe("sync scheduler", () => {
               return page(request, request.afterCommitSequence === "0" ? [seedCatalogGroup] : []);
             }),
         });
-        const engine = yield* sqliteEngine(handle, transport);
-        const scheduler = yield* SyncScheduler.make(
-          {
-            drainUpload: () => engine.drainUploads().pipe(Effect.asVoid),
-            catchUp: () => engine.catchUp(),
-          },
-          defaultHttpPollPolicy,
-          engine.state,
-        );
-        const states = SubscriptionRef.changes(scheduler.state);
+        const scheduler = yield* sqliteScheduler(handle, transport, defaultHttpPollPolicy, {
+          recovers: false,
+        });
+        const states = scheduler.state;
         yield* scheduler.setNetworkOwner(true);
         yield* Deferred.await(garbled);
         yield* states.pipe(
           Stream.filter((state) => state.phase === "idle"),
           Stream.runHead,
         );
-        expect((yield* SubscriptionRef.get(scheduler.state)).suspended).toBeUndefined();
+        expect(Option.getOrThrow(yield* Stream.runHead(scheduler.state)).suspended).toBeUndefined();
         for (let turn = 0; turn < 20 && (yield* Ref.get(pulls)) < 2; turn += 1) {
           yield* TestClock.adjust("7 minutes");
         }
         const following = yield* states.pipe(Stream.filter(isFollowing), Stream.runHead);
         expect(following._tag).toBe("Some");
         const store = yield* makeSqliteReplicaStore(handle, "sqlite");
-        expect((yield* store.readSyncCursor()).appliedCommitSequence).toBe("1");
+        expect((yield* store.readSyncCursor).appliedCommitSequence).toBe("1");
         const settled = yield* states.pipe(
           Stream.filter((state) => state.phase === "following"),
           Stream.runHead,

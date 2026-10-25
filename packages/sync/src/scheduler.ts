@@ -6,13 +6,15 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FiberMap from "effect/FiberMap";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { makeBackoff, type Backoff } from "./backoff";
+import { SyncEngine } from "./engine";
 import {
   DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
   type DigestVerificationCadence,
@@ -28,58 +30,43 @@ import {
   type StepOutcome,
   type SyncWakeReason,
 } from "./session-state";
-import { restingPhase, type SyncPhase, type SyncState } from "./sync-state";
-import { dispositionFor, type RecoverableCode, type SyncCycleFailure } from "./transport";
+import { restingPhase, SyncStateRef, type SyncPhase, type SyncState } from "./sync-state";
+import { dispositionFor, type SyncCycleFailure } from "./transport";
 
 export type { SyncWakeReason } from "./session-state";
 
 export type SyncCatchUpOutcome = "advanced" | "unchanged";
 
 export type SyncSchedulerPolicy = {
-  readonly activePollMillis: number;
-  readonly backoffMaxMillis?: number;
-  readonly hiddenPollMillis: number;
-  readonly liveIdlePollMillis: number;
-  readonly minPollMillis?: number;
-  readonly maxRetryAfterMillis?: number;
+  readonly activePoll: Duration.Duration;
+  readonly backoffMax?: Duration.Duration;
+  readonly hiddenPoll: Duration.Duration;
+  readonly liveIdlePoll: Duration.Duration;
+  readonly minPoll?: Duration.Duration;
+  readonly maxRetryAfter?: Duration.Duration;
   readonly digestVerificationIntervalMillis?: DigestVerificationCadence;
   readonly pullMaxBytes?: number;
 };
 
-const DEFAULT_MAX_RETRY_AFTER_MILLIS = 5 * 60_000;
+const DEFAULT_MAX_RETRY_AFTER = Duration.minutes(5);
 
-const DEFAULT_BACKOFF_MAX_MILLIS = 5 * 60_000;
+const DEFAULT_BACKOFF_MAX = Duration.minutes(5);
 
-const PULL_FLOOR_MILLIS = 60_000;
+const PULL_FLOOR = Duration.minutes(1);
 
-const LIVE_IDLE_PULL_MILLIS = 15 * 60_000;
+const LIVE_IDLE_PULL = Duration.minutes(15);
 
 export const defaultHttpPollPolicy: SyncSchedulerPolicy = {
-  activePollMillis: PULL_FLOOR_MILLIS,
-  backoffMaxMillis: DEFAULT_BACKOFF_MAX_MILLIS,
-  hiddenPollMillis: 5 * 60_000,
-  liveIdlePollMillis: LIVE_IDLE_PULL_MILLIS,
-  minPollMillis: PULL_FLOOR_MILLIS,
-  maxRetryAfterMillis: DEFAULT_MAX_RETRY_AFTER_MILLIS,
+  activePoll: PULL_FLOOR,
+  backoffMax: DEFAULT_BACKOFF_MAX,
+  hiddenPoll: Duration.minutes(5),
+  liveIdlePoll: LIVE_IDLE_PULL,
+  minPoll: PULL_FLOOR,
+  maxRetryAfter: DEFAULT_MAX_RETRY_AFTER,
   digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS,
 };
 
-export type SyncSchedulerContract = {
-  readonly state: SubscriptionRef.SubscriptionRef<SyncState>;
-  readonly wake: (reason: SyncWakeReason, hint?: SyncLiveWakeHint) => Effect.Effect<void>;
-  readonly setVisible: (visible: boolean) => Effect.Effect<void>;
-  readonly setNetworkOwner: (owner: boolean) => Effect.Effect<void>;
-  readonly setLiveConnected: (connected: boolean) => Effect.Effect<void>;
-  readonly shutdown: Effect.Effect<void>;
-};
-
-type SyncSchedulerHandlers = {
-  readonly register?: () => Effect.Effect<void, SyncCycleFailure>;
-  readonly drainUpload: () => Effect.Effect<void, SyncCycleFailure>;
-  readonly catchUp: () => Effect.Effect<SyncCatchUpOutcome, SyncCycleFailure>;
-  readonly recover?: (code: RecoverableCode) => Effect.Effect<void, SyncCycleFailure>;
-  readonly hintApplied?: (hint: SyncLiveWakeHint) => Effect.Effect<boolean>;
-};
+export type SyncSchedulerOptions = { readonly recovers?: boolean };
 
 type Incoming = { readonly event: SessionEvent; readonly run?: number };
 
@@ -126,34 +113,31 @@ const withRetryAt =
   };
 
 const makeCadences = (policy: SyncSchedulerPolicy) => {
-  const backoffMaxMillis = policy.backoffMaxMillis ?? DEFAULT_BACKOFF_MAX_MILLIS;
-  const floorMillis = policy.minPollMillis ?? 0;
-  const growing = (baseMillis: number) =>
-    makeBackoff({ baseMillis, maxMillis: Math.max(baseMillis, backoffMaxMillis), floorMillis });
-  const constant = (baseMillis: number) =>
-    makeBackoff({ baseMillis, maxMillis: baseMillis, floorMillis });
+  const backoffMax = policy.backoffMax ?? DEFAULT_BACKOFF_MAX;
+  const floor = policy.minPoll ?? Duration.zero;
+  const growing = (base: Duration.Duration) =>
+    makeBackoff({ base, max: Duration.max(base, backoffMax), floor });
+  const constant = (base: Duration.Duration) => makeBackoff({ base, max: base, floor });
   return Effect.all({
-    active: growing(policy.activePollMillis),
-    hidden: growing(policy.hiddenPollMillis),
-    live: constant(policy.liveIdlePollMillis),
-    slow: constant(policy.hiddenPollMillis),
+    active: growing(policy.activePoll),
+    hidden: growing(policy.hiddenPoll),
+    live: constant(policy.liveIdlePoll),
+    slow: constant(policy.hiddenPoll),
   }) satisfies Effect.Effect<Record<Cadence, Backoff>>;
 };
 
-const makeScheduler = (
-  handlers: SyncSchedulerHandlers,
-  policy: SyncSchedulerPolicy,
-  state: SubscriptionRef.SubscriptionRef<SyncState>,
-): Effect.Effect<SyncSchedulerContract, never, Scope.Scope> =>
+const makeScheduler = (policy: SyncSchedulerPolicy, recovers: boolean) =>
   Effect.gen(function* () {
+    const engine = yield* SyncEngine;
+    const state = yield* SyncStateRef;
     const events = yield* Queue.unbounded<Incoming>();
     const session = yield* Ref.make(initialSessionState);
     const currentRun = yield* Ref.make(0);
     const fibers = yield* FiberMap.make<"step" | "timer", void, never>();
     const cadences = yield* makeCadences(policy);
     const reduce = step({
-      canRecover: handlers.recover !== undefined,
-      maxRetryAfterMillis: policy.maxRetryAfterMillis ?? DEFAULT_MAX_RETRY_AFTER_MILLIS,
+      canRecover: recovers,
+      maxRetryAfterMillis: Duration.toMillis(policy.maxRetryAfter ?? DEFAULT_MAX_RETRY_AFTER),
     });
 
     const offer = (incoming: Incoming) => Queue.offer(events, incoming).pipe(Effect.asVoid);
@@ -166,24 +150,22 @@ const makeScheduler = (
       );
 
     const hintApplied = (hint: SyncLiveWakeHint): Effect.Effect<boolean> =>
-      handlers.hintApplied === undefined
-        ? Effect.succeed(false)
-        : supervised(handlers.hintApplied(hint), false);
+      recovers
+        ? supervised(engine.hintApplied(hint).pipe(Effect.orElseSucceed(() => false)), false)
+        : Effect.succeed(false);
 
     const handlerFor = (command: RunCommand): Effect.Effect<boolean, SyncCycleFailure> => {
       switch (command.step) {
         case "register":
-          return handlers.register === undefined
-            ? Effect.succeed(false)
-            : Effect.as(handlers.register(), false);
+          return Effect.as(engine.ensureRegistered, false);
         case "upload":
-          return Effect.as(handlers.drainUpload(), false);
+          return Effect.as(engine.drainUploads, false);
         case "catchUp":
-          return Effect.map(handlers.catchUp(), (outcome) => outcome === "advanced");
+          return Effect.map(engine.catchUp, (outcome) => outcome === "advanced");
         case "recover":
-          return handlers.recover === undefined || command.code === undefined
+          return !recovers || command.code === undefined
             ? Effect.succeed(false)
-            : Effect.as(handlers.recover(command.code), false);
+            : Effect.as(engine.recover(command.code), false);
       }
     };
 
@@ -299,8 +281,8 @@ const makeScheduler = (
     );
     const fiber = yield* Effect.forkScoped(loop);
 
-    return {
-      state,
+    return SyncScheduler.of({
+      state: SubscriptionRef.changes(state),
       wake: (reason, hint) =>
         offer({
           event: hint === undefined ? { _tag: "wake", reason } : { _tag: "wake", reason, hint },
@@ -309,11 +291,20 @@ const makeScheduler = (
       setNetworkOwner: (owned) => offer({ event: { _tag: "owner", owned } }),
       setLiveConnected: (connected) => offer({ event: { _tag: "live", connected } }),
       shutdown: Fiber.interrupt(fiber).pipe(Effect.andThen(FiberMap.clear(fibers))),
-    } satisfies SyncSchedulerContract;
+    });
   });
 
-export class SyncScheduler extends Context.Service<SyncScheduler, SyncSchedulerContract>()(
-  "@store/sync/SyncScheduler",
-) {
-  static readonly make = makeScheduler;
+export class SyncScheduler extends Context.Service<
+  SyncScheduler,
+  {
+    readonly state: Stream.Stream<SyncState>;
+    readonly wake: (reason: SyncWakeReason, hint?: SyncLiveWakeHint) => Effect.Effect<void>;
+    readonly setVisible: (visible: boolean) => Effect.Effect<void>;
+    readonly setNetworkOwner: (owner: boolean) => Effect.Effect<void>;
+    readonly setLiveConnected: (connected: boolean) => Effect.Effect<void>;
+    readonly shutdown: Effect.Effect<void>;
+  }
+>()("@store/sync/SyncScheduler") {
+  static readonly layer = (policy: SyncSchedulerPolicy, options: SyncSchedulerOptions = {}) =>
+    Layer.effect(SyncScheduler, makeScheduler(policy, options.recovers ?? true));
 }

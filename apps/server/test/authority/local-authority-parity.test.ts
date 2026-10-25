@@ -161,7 +161,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
       replicaId: LAST_UNIT_REPLICA_A,
       schemaVersion: SYNC_SCHEMA_VERSION,
     });
-    yield* engine.ensureRegistered();
+    yield* engine.ensureRegistered;
 
     const decide = (steps: Steps) =>
       Effect.gen(function* () {
@@ -169,7 +169,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
         for (const step of steps) {
           const decidedBefore = submissions.length;
           for (const request of step) yield* store.enqueueCommand(request);
-          yield* engine.drainUploads();
+          yield* engine.drainUploads;
           for (const { request, result } of submissions.slice(decidedBefore)) {
             decisions.push({
               local: result,
@@ -202,7 +202,7 @@ const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "
             authority: yield* authority.submit(actor, last.request),
           };
 
-    const head = OrgCommitSequence.make((yield* store.readSyncCursor()).appliedCommitSequence);
+    const head = OrgCommitSequence.make((yield* store.readSyncCursor).appliedCommitSequence);
     const cursor = {
       epoch: LAST_UNIT_EPOCH,
       subscription: OPERATIONAL_SUBSCRIPTION,
@@ -241,7 +241,7 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
       payloadHash: canonicalPayloadHash(command),
       command,
       afterCommitSequence: OrgCommitSequence.make(
-        (yield* store.readSyncCursor()).appliedCommitSequence,
+        (yield* store.readSyncCursor).appliedCommitSequence,
       ),
     };
     return {
@@ -1140,7 +1140,7 @@ describe("the local authority decides like the durable object authority", () => 
         const refusal = yield* Effect.gen(function* () {
           const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
           yield* decide(REPACKED);
-          const before = yield* store.readSyncCursor();
+          const before = yield* store.readSyncCursor;
           const decidedBefore = submissions.length;
           const failure = yield* Effect.flip(store.enqueueCommand(queued(stalePriceDelivery)));
           const refused = submissions.slice(decidedBefore);
@@ -1152,7 +1152,7 @@ describe("the local authority decides like the durable object authority", () => 
             ),
             status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
             before,
-            after: yield* store.readSyncCursor(),
+            after: yield* store.readSyncCursor,
           };
         }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped);
 

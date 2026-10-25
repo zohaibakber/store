@@ -71,9 +71,9 @@ const followingEngine = Effect.fn(function* (
   handle: Parameters<Parameters<typeof withSeededReplica>[0]>[0],
 ) {
   const engine = yield* sqliteEngine(handle, followingAtOne);
-  yield* engine.catchUp();
+  yield* engine.catchUp;
   const store = yield* makeSqliteReplicaStore(handle, "sqlite");
-  const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
+  const applied = store.readSyncCursor.pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   return { engine, applied };
 });
 
