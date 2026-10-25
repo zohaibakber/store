@@ -11,6 +11,7 @@ import {
   type RefreshedSession,
   type RefreshInput,
 } from "@store/auth";
+import type { OrganizationId, UserId } from "@store/contracts";
 import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -230,8 +231,8 @@ interface Flight {
 }
 
 interface Principal {
-  readonly user: string;
-  readonly organization: string | null;
+  readonly user: UserId;
+  readonly organization: OrganizationId | null;
 }
 
 interface SessionState {

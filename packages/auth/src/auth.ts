@@ -1,4 +1,4 @@
-export { AuthClient, AuthClientError, authClientLayer } from "./client";
+export { AuthClient, AuthClientError } from "./client";
 export { EmailDeliveryError, EmailProvider } from "./email";
 export {
   Authorization,

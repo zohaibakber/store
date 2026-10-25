@@ -6,14 +6,18 @@ import {
   LicenceState,
   LOCAL_ORGANIZATION_ID,
   LOCAL_USER_ID,
+  OrganizationId,
   PartitionDigest,
   PositiveInt,
+  ReplicaId,
   ShopId,
+  UserId,
 } from "@store/contracts";
 import { Stamp, SyncHealth } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as Transferable from "effect/workers/Transferable";
 
 import { ReplicaFileRefused } from "../src/host/file-refusal";
@@ -28,22 +32,20 @@ const READER_CONTROL_SLOTS = 2;
 const READER_FINITE_READS = 2;
 export const READER_RPC_CONCURRENCY = READER_CONTROL_SLOTS + READER_FINITE_READS;
 
-const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
-
-export const ReplicaWorkspaceToken = NonEmptyString;
+const MAX_IDENTIFIER_LENGTH = Schema.isMaxLength(200);
 
 const LocalReplicaIdentity = Schema.Struct({
   authority: Schema.Literal("local"),
   organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
   userId: Schema.Literal(LOCAL_USER_ID),
-  replicaId: NonEmptyString,
+  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
 });
 
 const RemoteReplicaIdentity = Schema.Struct({
   authority: Schema.Literal("remote"),
-  organizationId: NonEmptyString,
-  userId: NonEmptyString,
-  replicaId: NonEmptyString,
+  organizationId: OrganizationId.check(MAX_IDENTIFIER_LENGTH),
+  userId: UserId.check(MAX_IDENTIFIER_LENGTH),
+  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
 });
 
 export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
@@ -58,11 +60,8 @@ const ReplicaCatalogCounts = Schema.Struct({
   purchaseOrders: Schema.Natural,
 });
 
-export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) => ({
-  products: summary.products,
-  sales: summary.sales,
-  purchaseOrders: summary.purchaseOrders,
-});
+export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) =>
+  Struct.pick(summary, ["products", "sales", "purchaseOrders"]);
 
 export const ReplicaPublishSummary = Schema.Struct({
   importId: ImportId,
@@ -109,10 +108,8 @@ export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
 export const ReplicaCommitStamp = Stamp;
 
-export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) => ({
-  generationId: stamp.generationId,
-  localCommitVersion: stamp.localCommitVersion,
-});
+export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) =>
+  Struct.pick(stamp, ["generationId", "localCommitVersion"]);
 
 export const ReplicaCommitNotice = Schema.Struct({
   ...ReplicaCommitStamp.fields,

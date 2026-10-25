@@ -175,5 +175,3 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
     ),
   });
 });
-
-export const authClientLayer = AuthClient.layer;

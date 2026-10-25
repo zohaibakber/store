@@ -1,4 +1,3 @@
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   NOTICE_BUFFER_CAPACITY,
   offerCoalescing,
@@ -84,7 +83,7 @@ const fileFailure = (
   return new ReplicaWorkerFailure({ message: failure.message });
 };
 
-const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer));
+const StaffGateLive = layerNodeStaffGate();
 
 type Session = Context.Context<SqliteReplicaServices | StaffGate | ShopLicence>;
 

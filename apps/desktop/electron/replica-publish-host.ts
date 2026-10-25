@@ -1,4 +1,5 @@
 import { InventorySubsetSummarySpec } from "@store/client-db/subset-spec";
+import type { OrganizationId } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -11,6 +12,7 @@ import type {
   PublishProgress,
   Published,
 } from "../src/host/workspace-publish";
+import type { OpenWorkspace, OpenWorkspaces } from "./open-workspaces";
 import {
   discardPublish,
   NO_OFFER,
@@ -20,23 +22,22 @@ import {
   type PublishPorts,
 } from "./replica-publish";
 import { asFileRefusal } from "./replica-refusal";
-import type { WorkspaceSession, WorkspaceSessions } from "./workspace-sessions";
 
 type ReplicaPublishHost = {
   readonly offer: (
-    session: WorkspaceSession | undefined,
-    organizationId: string,
+    session: OpenWorkspace | undefined,
+    organizationId: OrganizationId,
   ) => Effect.Effect<PublishOffer, never, FileSystem.FileSystem>;
   readonly publish: (
-    session: WorkspaceSession | undefined,
-    organizationId: string,
+    session: OpenWorkspace | undefined,
+    organizationId: OrganizationId,
   ) => Effect.Effect<typeof Published.Type, ReplicaFileRefused, FileSystem.FileSystem>;
   readonly discard: (
-    session: WorkspaceSession | undefined,
-    organizationId: string,
+    session: OpenWorkspace | undefined,
+    organizationId: OrganizationId,
   ) => Effect.Effect<PublishOffer, never, FileSystem.FileSystem>;
   readonly localCatalog: (
-    session: WorkspaceSession | undefined,
+    session: OpenWorkspace | undefined,
   ) => Effect.Effect<LocalCatalogReport, never, FileSystem.FileSystem>;
 };
 
@@ -45,12 +46,12 @@ const UNKNOWN_LOCAL_CATALOG: LocalCatalogReport = { _tag: "unknown" };
 const CATALOG_SOURCES = InventorySubsetSummarySpec.fields.source.literals;
 
 export const makeReplicaPublishHost = (
-  sessions: WorkspaceSessions,
+  sessions: OpenWorkspaces,
   publishProgress: (progress: PublishProgress) => Effect.Effect<void>,
 ): ReplicaPublishHost => {
   const publishTurn = Semaphore.makeUnsafe(1);
 
-  const portsFor = (session: WorkspaceSession, organizationId: string): PublishPorts => ({
+  const portsFor = (session: OpenWorkspace, organizationId: OrganizationId): PublishPorts => ({
     organizationId,
     databasePath: sessions.localDatabasePath,
     worker: (use) =>
@@ -60,7 +61,7 @@ export const makeReplicaPublishHost = (
     progress: publishProgress,
   });
 
-  const readOpenCatalog = (session: WorkspaceSession): Effect.Effect<LocalCatalogReport> =>
+  const readOpenCatalog = (session: OpenWorkspace): Effect.Effect<LocalCatalogReport> =>
     sessions
       .whenOpen(session, (current) =>
         Effect.findFirst(CATALOG_SOURCES, (source) =>
@@ -75,12 +76,15 @@ export const makeReplicaPublishHost = (
         Effect.map((stocked): LocalCatalogReport => ({
           _tag: Option.isSome(stocked) ? "stocked" : "empty",
         })),
+        Effect.tapError((failure) =>
+          Effect.logWarning("ReplicaPublishHost.catalog_unread", failure),
+        ),
         Effect.catch(() => Effect.succeed(UNKNOWN_LOCAL_CATALOG)),
       );
 
   const withLocalReplicaClosed = <A, E>(
-    session: WorkspaceSession | undefined,
-    organizationId: string,
+    session: OpenWorkspace | undefined,
+    organizationId: OrganizationId,
     use: (ports: PublishPorts) => Effect.Effect<A, E, FileSystem.FileSystem>,
   ): Effect.Effect<A, E | ReplicaFileRefused, FileSystem.FileSystem> =>
     Effect.scoped(
@@ -95,7 +99,7 @@ export const makeReplicaPublishHost = (
         yield* sessions.ownership
           .claim(sessions.localDatabasePath)
           .pipe(Effect.mapError(asFileRefusal));
-        if (sessions.holdsDatabase(sessions.localDatabasePath)) {
+        if (yield* sessions.holdsDatabase(sessions.localDatabasePath)) {
           return yield* new ReplicaFileRefused({ reason: "publish-local-open" });
         }
         return yield* use(portsFor(session, organizationId));

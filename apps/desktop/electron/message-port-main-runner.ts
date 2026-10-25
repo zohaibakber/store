@@ -26,7 +26,7 @@ const make = (port: MessagePortMain): WorkerRunner.WorkerRunnerPlatform["Service
       ): Effect.Effect<void, WorkerError, R> =>
         Effect.scopedWith(
           Effect.fnUntraced(function* (scope) {
-            const closeLatch = Deferred.makeUnsafe<void, WorkerError>();
+            const closeLatch = yield* Deferred.make<void, WorkerError>();
             const runFork = yield* FiberSet.makeRuntime<R>().pipe(Scope.provide(scope));
             const onMessage = (event: { readonly data: WorkerRunner.PlatformMessage<I> }) => {
               const message = event.data;

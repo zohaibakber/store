@@ -1,4 +1,5 @@
-import type { DeviceLabel } from "@store/contracts";
+import type { DeviceLabel, OrganizationId } from "@store/contracts";
+import type { WorkspaceToken } from "@store/contracts/replica";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,15 +13,16 @@ import type {
   PublishProgress,
   Published,
 } from "../src/host/workspace-publish";
+import {
+  makeOpenWorkspaces,
+  type AccessTokenSource,
+  type OpenWorkspacesTuning,
+  type ReplicaSender,
+  type ReplicaWorkspaceRefused,
+} from "./open-workspaces";
 import { makeReplicaBackup, makeStagedRestores, type ReplicaBackupDialogs } from "./replica-backup";
 import { makeReplicaPublishHost } from "./replica-publish-host";
 import type { ReplicaOpenInput, ReplicaWorkerFailure } from "./replica-rpc";
-import {
-  makeWorkspaceSessions,
-  type AccessTokenSource,
-  type ReplicaSender,
-  type WorkspaceSessionTuning,
-} from "./workspace-sessions";
 
 export type ReplicaHostOptions = {
   readonly userDataPath: string;
@@ -28,10 +30,10 @@ export type ReplicaHostOptions = {
   readonly apiBaseUrl: string;
   readonly deviceLabel?: DeviceLabel | undefined;
   readonly accessTokens: AccessTokenSource;
-  readonly backupDialogs: ReplicaBackupDialogs;
+  readonly dialogs: ReplicaBackupDialogs;
   readonly publishProgress: (progress: PublishProgress) => Effect.Effect<void>;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
-  readonly sessions?: WorkspaceSessionTuning;
+  readonly sessions?: OpenWorkspacesTuning;
 };
 
 export class ReplicaHost extends Context.Service<
@@ -41,11 +43,17 @@ export class ReplicaHost extends Context.Service<
       sender: ReplicaSender,
       identity: typeof ReplicaOpenInput.Type,
     ) => Effect.Effect<
-      { readonly workspaceToken: string; readonly engine: "sqlite" | "unavailable" },
-      ReplicaWorkerFailure | Error
+      { readonly workspaceToken: WorkspaceToken; readonly engine: "sqlite" | "unavailable" },
+      ReplicaWorkerFailure | ReplicaWorkspaceRefused
     >;
-    readonly close: (senderId: number, workspaceToken: string) => Effect.Effect<void>;
-    readonly retryRecovery: (senderId: number, workspaceToken: string) => Effect.Effect<void>;
+    readonly close: (
+      senderId: number,
+      workspaceToken: string,
+    ) => Effect.Effect<void, ReplicaWorkspaceRefused>;
+    readonly retryRecovery: (
+      senderId: number,
+      workspaceToken: string,
+    ) => Effect.Effect<void, ReplicaWorkspaceRefused>;
     readonly backUp: (
       senderId: number,
     ) => Effect.Effect<typeof BackupSaved.Type, ReplicaFileRefused>;
@@ -56,12 +64,18 @@ export class ReplicaHost extends Context.Service<
       senderId: number,
     ) => Effect.Effect<typeof RestoreApplied.Type, ReplicaFileRefused>;
     readonly discardRestore: (senderId: number) => Effect.Effect<void>;
-    readonly offer: (senderId: number, organizationId: string) => Effect.Effect<PublishOffer>;
+    readonly offer: (
+      senderId: number,
+      organizationId: OrganizationId,
+    ) => Effect.Effect<PublishOffer>;
     readonly publish: (
       senderId: number,
-      organizationId: string,
+      organizationId: OrganizationId,
     ) => Effect.Effect<typeof Published.Type, ReplicaFileRefused>;
-    readonly discard: (senderId: number, organizationId: string) => Effect.Effect<PublishOffer>;
+    readonly discard: (
+      senderId: number,
+      organizationId: OrganizationId,
+    ) => Effect.Effect<PublishOffer>;
     readonly localCatalog: (senderId: number) => Effect.Effect<LocalCatalogReport>;
     readonly setForeground: (visible: boolean) => Effect.Effect<void>;
   }
@@ -72,8 +86,8 @@ export const makeReplicaHost = Effect.fn("ReplicaHost.make")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const provide = Effect.provideService(FileSystem.FileSystem, fileSystem);
-  const stagedRestores = makeStagedRestores();
-  const sessions = makeWorkspaceSessions({
+  const stagedRestores = yield* makeStagedRestores();
+  const sessions = yield* makeOpenWorkspaces({
     userDataPath: options.userDataPath,
     workerPath: options.workerPath,
     apiBaseUrl: options.apiBaseUrl,
@@ -83,10 +97,10 @@ export const makeReplicaHost = Effect.fn("ReplicaHost.make")(function* (
     onDispose: (session) => stagedRestores.discard(session.workspaceToken),
     ...options.sessions,
   });
-  const backup = makeReplicaBackup({
+  const backup = yield* makeReplicaBackup({
     sessions,
     stagedRestores,
-    dialogs: options.backupDialogs,
+    dialogs: options.dialogs,
   });
   const publish = makeReplicaPublishHost(sessions, options.publishProgress);
   yield* Effect.addFinalizer(() => provide(sessions.disposeAll));
@@ -97,21 +111,26 @@ export const makeReplicaHost = Effect.fn("ReplicaHost.make")(function* (
     open: (sender, identity) => provide(sessions.open(sender, identity)),
     close: (senderId, workspaceToken) => provide(sessions.close(senderId, workspaceToken)),
     retryRecovery: (senderId, workspaceToken) =>
-      Effect.suspend(() =>
-        sessions.whenOwnedOpen(senderId, workspaceToken, "recovery retry", (session) =>
-          Effect.all([session.supervisor.retry, session.reader.retry], { discard: true }),
-        ),
+      sessions.whenOwnedOpen(senderId, workspaceToken, "recovery retry", (session) =>
+        Effect.all([session.supervisor.retry, session.reader.retry], { discard: true }),
       ),
-    backUp: (senderId) => provide(backup.backUp(current(senderId))),
-    chooseRestore: (senderId) => provide(backup.chooseRestore(current(senderId))),
-    applyRestore: (senderId) => provide(backup.applyRestore(current(senderId))),
-    discardRestore: (senderId) => provide(backup.discardRestore(current(senderId))),
-    offer: (senderId, organizationId) => provide(publish.offer(current(senderId), organizationId)),
+    backUp: (senderId) => provide(Effect.flatMap(current(senderId), backup.backUp)),
+    chooseRestore: (senderId) => provide(Effect.flatMap(current(senderId), backup.chooseRestore)),
+    applyRestore: (senderId) => provide(Effect.flatMap(current(senderId), backup.applyRestore)),
+    discardRestore: (senderId) => provide(Effect.flatMap(current(senderId), backup.discardRestore)),
+    offer: (senderId, organizationId) =>
+      provide(
+        Effect.flatMap(current(senderId), (session) => publish.offer(session, organizationId)),
+      ),
     publish: (senderId, organizationId) =>
-      provide(publish.publish(current(senderId), organizationId)),
+      provide(
+        Effect.flatMap(current(senderId), (session) => publish.publish(session, organizationId)),
+      ),
     discard: (senderId, organizationId) =>
-      provide(publish.discard(current(senderId), organizationId)),
-    localCatalog: (senderId) => provide(publish.localCatalog(current(senderId))),
+      provide(
+        Effect.flatMap(current(senderId), (session) => publish.discard(session, organizationId)),
+      ),
+    localCatalog: (senderId) => provide(Effect.flatMap(current(senderId), publish.localCatalog)),
     setForeground: sessions.setForeground,
   });
 });

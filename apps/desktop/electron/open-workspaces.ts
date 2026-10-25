@@ -3,19 +3,24 @@ import path from "node:path";
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
-import { ReplicaStorageError, ReplicaUnavailable } from "@store/contracts/replica";
+import { ReplicaStorageError, ReplicaUnavailable, WorkspaceToken } from "@store/contracts/replica";
 import type { RequestError } from "@store/workspace";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
@@ -65,13 +70,31 @@ export type ReplicaSender = {
   readonly removeListener: ReplicaSenderListener;
 };
 
-export type WorkspaceSession = {
+const REFUSAL_REASONS = ["unknown", "otherRenderer", "rendererGone"] as const;
+
+export class ReplicaWorkspaceRefused extends Schema.TaggedError<ReplicaWorkspaceRefused>()(
+  "ReplicaWorkspaceRefused",
+  { reason: Schema.Literals(REFUSAL_REASONS), action: Schema.String },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "unknown":
+        return "Unknown replica workspace.";
+      case "otherRenderer":
+        return `Rejected replica ${this.action} from a different renderer.`;
+      case "rendererGone":
+        return "The replica renderer went away while the workspace was opening.";
+    }
+  }
+}
+
+export type OpenWorkspace = {
   readonly senderId: number;
   readonly sender: ReplicaSender;
   readonly identity: typeof ReplicaOpenInput.Type;
   readonly release: () => void;
   readonly gate: Latch.Latch;
-  readonly workspaceToken: string;
+  readonly workspaceToken: WorkspaceToken;
   readonly databasePath: string;
   readonly supervisor: ReplicaSupervisor;
   readonly reader: ReplicaSupervisor<ReplicaReaderClient>;
@@ -79,9 +102,9 @@ export type WorkspaceSession = {
   readonly scope: Scope.Closeable;
 };
 
-type ReplicaWorkers = Pick<WorkspaceSession, "scope" | "supervisor" | "reader">;
+type ReplicaWorkers = Pick<OpenWorkspace, "scope" | "supervisor" | "reader">;
 
-export type WorkspaceSessionTuning = {
+export type OpenWorkspacesTuning = {
   readonly spawnWorker?: SpawnReplicaWorker;
   readonly spawnReader?: SpawnReplicaReader;
   readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
@@ -97,56 +120,53 @@ export type AccessTokenSource = {
   readonly accessTokens: Stream.Stream<Redacted.Redacted<string> | null>;
 };
 
-type WorkspaceSessionsOptions = WorkspaceSessionTuning & {
+type OpenWorkspacesOptions = OpenWorkspacesTuning & {
   readonly userDataPath: string;
   readonly workerPath: string;
   readonly apiBaseUrl: string;
   readonly deviceLabel?: DeviceLabel | undefined;
   readonly accessTokens: AccessTokenSource;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
-  readonly onDispose: (
-    session: WorkspaceSession,
-  ) => Effect.Effect<void, never, FileSystem.FileSystem>;
+  readonly onDispose: (session: OpenWorkspace) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
-export type WorkspaceSessions = {
+export type OpenWorkspaces = {
   readonly localDatabasePath: string;
   readonly ownership: ReplicaOwnership;
   readonly open: (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
   ) => Effect.Effect<
-    { readonly workspaceToken: string; readonly engine: ReplicaSupervisor["engine"] },
-    ReplicaWorkerFailure | Error,
+    { readonly workspaceToken: WorkspaceToken; readonly engine: ReplicaSupervisor["engine"] },
+    ReplicaWorkerFailure | ReplicaWorkspaceRefused,
     FileSystem.FileSystem
   >;
-  readonly owned: (senderId: number, workspaceToken: string, action: string) => WorkspaceSession;
-  readonly latestFor: (senderId: number) => WorkspaceSession | undefined;
-  readonly holdsDatabase: (databasePath: string) => boolean;
+  readonly latestFor: (senderId: number) => Effect.Effect<OpenWorkspace | undefined>;
+  readonly holdsDatabase: (databasePath: string) => Effect.Effect<boolean>;
   readonly whenOwnedOpen: <A, E>(
     senderId: number,
     workspaceToken: string,
     action: string,
-    use: (session: WorkspaceSession) => Effect.Effect<A, E>,
-  ) => Effect.Effect<A, E>;
+    use: (session: OpenWorkspace) => Effect.Effect<A, E>,
+  ) => Effect.Effect<A, E | ReplicaWorkspaceRefused>;
   readonly whenOpen: <A, E>(
-    session: WorkspaceSession,
-    use: (session: WorkspaceSession) => Effect.Effect<A, E>,
+    session: OpenWorkspace,
+    use: (session: OpenWorkspace) => Effect.Effect<A, E>,
   ) => Effect.Effect<A, E>;
   readonly closeWorkers: (workers: ReplicaWorkers) => Effect.Effect<void>;
   readonly reopen: (
-    session: WorkspaceSession,
-  ) => Effect.Effect<WorkspaceSession, ReplicaWorkerFailure, FileSystem.FileSystem>;
-  readonly forget: (session: WorkspaceSession) => void;
+    session: OpenWorkspace,
+  ) => Effect.Effect<OpenWorkspace, ReplicaWorkerFailure, FileSystem.FileSystem>;
+  readonly forget: (session: OpenWorkspace) => Effect.Effect<void>;
   readonly close: (
     senderId: number,
     workspaceToken: string,
-  ) => Effect.Effect<void, never, FileSystem.FileSystem>;
+  ) => Effect.Effect<void, ReplicaWorkspaceRefused, FileSystem.FileSystem>;
   readonly disposeAll: Effect.Effect<void, never, FileSystem.FileSystem>;
   readonly setForeground: (visible: boolean) => Effect.Effect<void>;
 };
 
-const prepareReplicaDirectory = Effect.fn("WorkspaceSessions.prepareDirectory")(function* (
+const prepareReplicaDirectory = Effect.fn("OpenWorkspaces.prepareDirectory")(function* (
   directory: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -184,7 +204,7 @@ const forwardStream = <A, E>(
 ) =>
   stream.pipe(
     Stream.runForEach(forward),
-    Effect.catchCause(() => Effect.void),
+    Effect.catchCause((cause) => Effect.logWarning("OpenWorkspaces.forward_failed", cause)),
     Effect.forkScoped,
   );
 
@@ -203,7 +223,7 @@ const pushAccessTokens = (source: AccessTokenSource, client: ReplicaWorkerClient
 };
 
 const bootFor = (
-  options: Pick<WorkspaceSessionsOptions, "apiBaseUrl" | "deviceLabel">,
+  options: Pick<OpenWorkspacesOptions, "apiBaseUrl" | "deviceLabel">,
   identity: typeof ReplicaOpenInput.Type,
   databasePath: string,
 ): typeof ReplicaWorkerBoot.Type => {
@@ -257,7 +277,10 @@ const sessionLicence = (
       ),
 });
 
-export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): WorkspaceSessions => {
+export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
+  options: OpenWorkspacesOptions,
+) {
+  const crypto = yield* Crypto.Crypto;
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const spawnReader = options.spawnReader ?? spawnNodeReplicaReader;
   const analyticsWorkerPath = path.join(path.dirname(options.workerPath), "analytics-worker.js");
@@ -267,11 +290,25 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     ...options.supervisorPolicy,
   };
   const closeGrace = options.closeGrace ?? Duration.seconds(8);
-  const ownership = makeReplicaOwnership(options.ownershipWait ?? Duration.seconds(15));
+  const ownership = yield* makeReplicaOwnership(options.ownershipWait ?? Duration.seconds(15));
   const replicaDatabasePath = (key: string) =>
     path.join(options.userDataPath, "replicas", sqliteReplicaFileName(key));
-  const sessions = new Map<string, WorkspaceSession>();
-  let foreground = true;
+  const workspaces = yield* Ref.make<ReadonlyArray<OpenWorkspace>>([]);
+  const foreground = yield* Ref.make(true);
+  const disposals = yield* FiberSet.make();
+  const runDisposal = yield* FiberSet.runtime(disposals)<FileSystem.FileSystem>();
+
+  const find = (workspaceToken: string) =>
+    Effect.map(
+      Ref.get(workspaces),
+      Arr.findFirst((workspace) => workspace.workspaceToken === workspaceToken),
+    );
+
+  const forget = (session: OpenWorkspace) =>
+    Ref.update(
+      workspaces,
+      Arr.filter((workspace) => workspace.workspaceToken !== session.workspaceToken),
+    );
 
   const closeWorkers = (workers: ReplicaWorkers) =>
     Effect.gen(function* () {
@@ -289,10 +326,10 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       );
     });
 
-  const dispose = (session: WorkspaceSession) =>
+  const dispose = (session: OpenWorkspace) =>
     Effect.scoped(
       Effect.gen(function* () {
-        sessions.delete(session.workspaceToken);
+        yield* forget(session);
         yield* options.onDispose(session);
         yield* ownership.hold(session.databasePath);
         yield* closeWorkers(session);
@@ -300,18 +337,24 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       }),
     );
 
-  const owned = (senderId: number, workspaceToken: string, action: string) => {
-    const session = sessions.get(workspaceToken);
-    if (!session) throw new Error("Unknown replica workspace.");
-    if (session.senderId !== senderId) {
-      throw new Error(`Rejected replica ${action} from a different renderer.`);
+  const owned = Effect.fn("OpenWorkspaces.owned")(function* (
+    senderId: number,
+    workspaceToken: string,
+    action: string,
+  ) {
+    const found = yield* find(workspaceToken);
+    if (Option.isNone(found)) {
+      return yield* new ReplicaWorkspaceRefused({ reason: "unknown", action });
     }
-    return session;
-  };
+    if (found.value.senderId !== senderId) {
+      return yield* new ReplicaWorkspaceRefused({ reason: "otherRenderer", action });
+    }
+    return found.value;
+  });
 
   const rendererPorts = (
     sender: ReplicaSender,
-    workspaceToken: string,
+    workspaceToken: WorkspaceToken,
     analytics: AnalyticsController,
     licence: DesktopLicence | undefined,
   ) => {
@@ -340,11 +383,13 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
         yield* forwardStream(client.Commits(), analytics.notify);
         if (authority === "remote") {
           yield* pushAccessTokens(options.accessTokens, client).pipe(
-            Effect.catchCause(() => Effect.void),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("OpenWorkspaces.access_tokens_failed", cause),
+            ),
             Effect.forkScoped,
           );
         }
-        if (!foreground) yield* applyForeground(worker, false);
+        if (!(yield* Ref.get(foreground))) yield* applyForeground(worker, false);
         const { licence } = options;
         if (licence !== undefined) {
           yield* tellLicence(licence, client);
@@ -369,7 +414,7 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
   const startWorkers = (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
-    workspaceToken: string,
+    workspaceToken: WorkspaceToken,
     databasePath: string,
     scope: Scope.Closeable,
     release: () => void,
@@ -419,19 +464,22 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
       Effect.onError(() => Scope.close(scope, Exit.void)),
     );
 
-  const open = Effect.fn("WorkspaceSessions.open")(function* (
+  const open = Effect.fn("OpenWorkspaces.open")(function* (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
   ) {
-    const workspaceToken = crypto.randomUUID();
-    const runDispose = Effect.runPromiseWith(yield* Effect.context<FileSystem.FileSystem>());
+    const workspaceToken = WorkspaceToken.make(yield* Effect.orDie(crypto.randomUUIDv4()));
     const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
     const gone = yield* Deferred.make<void>();
     const release = () => {
       Deferred.doneUnsafe(gone, Exit.void);
-      const session = sessions.get(workspaceToken);
-      if (session) void runDispose(dispose(session));
+      runDisposal(
+        Effect.flatMap(
+          find(workspaceToken),
+          Option.match({ onNone: () => Effect.void, onSome: dispose }),
+        ),
+      );
     };
     yield* ownership.claim(databasePath);
     const started = yield* startWorkers(
@@ -444,105 +492,118 @@ export const makeWorkspaceSessions = (options: WorkspaceSessionsOptions): Worksp
     );
     if (Deferred.isDoneUnsafe(gone) || sender.isDestroyed()) {
       yield* Scope.close(scope, Exit.void);
-      return yield* Effect.fail(
-        new Error("The replica renderer went away while the workspace was opening."),
-      );
+      return yield* new ReplicaWorkspaceRefused({ reason: "rendererGone", action: "open" });
     }
-    sessions.set(workspaceToken, {
-      senderId: sender.id,
-      sender,
-      identity,
-      release,
-      gate: yield* Latch.make(true),
-      workspaceToken,
-      databasePath,
-      supervisor: started.supervisor,
-      reader: started.reader,
-      analytics: started.analytics,
-      scope,
-    });
+    const gate = yield* Latch.make(true);
+    yield* Ref.update(
+      workspaces,
+      Arr.append<OpenWorkspace>({
+        senderId: sender.id,
+        sender,
+        identity,
+        release,
+        gate,
+        workspaceToken,
+        databasePath,
+        supervisor: started.supervisor,
+        reader: started.reader,
+        analytics: started.analytics,
+        scope,
+      }),
+    );
     return { workspaceToken, engine: started.supervisor.engine };
   }, Effect.scoped);
 
-  const reopen = (session: WorkspaceSession) =>
-    Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      const started = yield* startWorkers(
-        session.sender,
-        session.identity,
-        session.workspaceToken,
-        session.databasePath,
-        scope,
-        session.release,
-      );
-      const workers = { scope, supervisor: started.supervisor, reader: started.reader };
-      const stamp =
-        started.supervisor.engine === "sqlite" && started.reader.engine === "sqlite"
-          ? yield* started.supervisor.use((worker) => worker.client.Stamp()).pipe(Effect.option)
-          : Option.none();
-      if (Option.isNone(stamp)) {
-        yield* closeWorkers(workers);
-        return yield* new ReplicaWorkerFailure({
-          message: "The workspace could not be opened.",
-        });
-      }
-      if (!sessions.has(session.workspaceToken) || session.sender.isDestroyed()) {
-        yield* closeWorkers(workers);
-        return yield* new ReplicaWorkerFailure({
-          message: "The window closed before the workspace reopened.",
-        });
-      }
-      const reopened: WorkspaceSession = { ...session, ...started, scope };
-      sessions.set(session.workspaceToken, reopened);
-      return reopened;
-    });
+  const reopen = Effect.fn("OpenWorkspaces.reopen")(function* (session: OpenWorkspace) {
+    const scope = yield* Scope.make();
+    const started = yield* startWorkers(
+      session.sender,
+      session.identity,
+      session.workspaceToken,
+      session.databasePath,
+      scope,
+      session.release,
+    );
+    const workers = { scope, supervisor: started.supervisor, reader: started.reader };
+    const stamp =
+      started.supervisor.engine === "sqlite" && started.reader.engine === "sqlite"
+        ? yield* started.supervisor.use((worker) => worker.client.Stamp()).pipe(Effect.option)
+        : Option.none();
+    if (Option.isNone(stamp)) {
+      yield* closeWorkers(workers);
+      return yield* new ReplicaWorkerFailure({
+        message: "The workspace could not be opened.",
+      });
+    }
+    const reopened: OpenWorkspace = { ...session, ...started, scope };
+    const replaced =
+      !session.sender.isDestroyed() &&
+      (yield* Ref.modify(workspaces, (all) =>
+        all.some((workspace) => workspace.workspaceToken === session.workspaceToken)
+          ? [
+              true,
+              all.map((workspace) =>
+                workspace.workspaceToken === session.workspaceToken ? reopened : workspace,
+              ),
+            ]
+          : [false, all],
+      ));
+    if (!replaced) {
+      yield* closeWorkers(workers);
+      return yield* new ReplicaWorkerFailure({
+        message: "The window closed before the workspace reopened.",
+      });
+    }
+    return reopened;
+  });
 
   return {
     localDatabasePath: replicaDatabasePath(LOCAL_REPLICA_KEY),
     ownership,
     open,
-    owned,
     latestFor: (senderId) =>
-      [...sessions.values()].filter((session) => session.senderId === senderId).at(-1),
+      Effect.map(Ref.get(workspaces), (all) =>
+        Arr.findLast(all, (workspace) => workspace.senderId === senderId).pipe(
+          Option.getOrUndefined,
+        ),
+      ),
     holdsDatabase: (databasePath) =>
-      [...sessions.values()].some((session) => session.databasePath === databasePath),
+      Effect.map(
+        Ref.get(workspaces),
+        Arr.some((workspace) => workspace.databasePath === databasePath),
+      ),
     whenOwnedOpen: (senderId, workspaceToken, action, use) =>
-      owned(senderId, workspaceToken, action).gate.whenOpen(
-        Effect.suspend(() => use(owned(senderId, workspaceToken, action))),
+      Effect.flatMap(owned(senderId, workspaceToken, action), (session) =>
+        session.gate.whenOpen(Effect.flatMap(owned(senderId, workspaceToken, action), use)),
       ),
     whenOpen: (session, use) =>
       session.gate.whenOpen(
-        Effect.suspend(() => use(sessions.get(session.workspaceToken) ?? session)),
+        Effect.flatMap(find(session.workspaceToken), (found) =>
+          use(Option.getOrElse(found, () => session)),
+        ),
       ),
     closeWorkers,
     reopen,
-    forget: (session) => {
-      sessions.delete(session.workspaceToken);
-    },
-    close: (senderId, workspaceToken) =>
-      Effect.suspend(() =>
-        sessions.has(workspaceToken)
-          ? dispose(owned(senderId, workspaceToken, "close"))
-          : Effect.void,
-      ),
-    disposeAll: Effect.suspend(() =>
-      Effect.forEach([...sessions.values()], dispose, {
+    forget,
+    close: Effect.fn("OpenWorkspaces.close")(function* (senderId, workspaceToken) {
+      if (Option.isNone(yield* find(workspaceToken))) return;
+      yield* dispose(yield* owned(senderId, workspaceToken, "close"));
+    }),
+    disposeAll: Effect.gen(function* () {
+      yield* Effect.forEach(yield* Ref.get(workspaces), dispose, {
         discard: true,
         concurrency: "unbounded",
-      }),
-    ),
-    setForeground: (visible) =>
-      Effect.suspend(() => {
-        if (visible === foreground) return Effect.void;
-        foreground = visible;
-        return Effect.forEach(
-          [...sessions.values()],
-          (session) =>
-            session.supervisor
-              .use((worker) => applyForeground(worker, visible))
-              .pipe(Effect.ignore),
-          { discard: true },
-        );
-      }),
-  };
-};
+      });
+      yield* FiberSet.awaitEmpty(disposals);
+    }),
+    setForeground: Effect.fn("OpenWorkspaces.setForeground")(function* (visible: boolean) {
+      if ((yield* Ref.getAndSet(foreground, visible)) === visible) return;
+      yield* Effect.forEach(
+        yield* Ref.get(workspaces),
+        (session) =>
+          session.supervisor.use((worker) => applyForeground(worker, visible)).pipe(Effect.ignore),
+        { discard: true },
+      );
+    }),
+  } satisfies OpenWorkspaces;
+});

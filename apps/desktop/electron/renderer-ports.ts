@@ -4,6 +4,7 @@ import {
   type ReplicaPortsMessage,
   type WorkerPhase,
   type WorkspaceState,
+  type WorkspaceToken,
 } from "@store/contracts/replica";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -53,7 +54,7 @@ type Attachment = {
 
 export const makeRendererPorts = (options: {
   readonly target: RendererPortsTarget;
-  readonly workspaceToken: string;
+  readonly workspaceToken: WorkspaceToken;
   readonly channel: () => MessageChannelMain;
   readonly attachInsights: AttachPort;
   readonly licence?: DesktopLicence | undefined;
@@ -117,7 +118,12 @@ export const makeRendererPorts = (options: {
             options.licence ?? noDesktopLicence,
           ),
         ),
-      ).pipe(Effect.ignoreCause, Effect.forkIn(desktop));
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("RendererPorts.desktop_server_failed", cause),
+        ),
+        Effect.forkIn(desktop),
+      );
       const generation = yield* Ref.updateAndGet(generations, (count) => count + 1);
       yield* Effect.try(() =>
         options.target.postMessage(
@@ -130,7 +136,7 @@ export const makeRendererPorts = (options: {
           },
           [reads.port, store.port, desktopChannel.port2, insights.port],
         ),
-      ).pipe(Effect.ignore);
+      ).pipe(Effect.catch((error) => Effect.logWarning("RendererPorts.post_failed", error)));
       yield* Ref.set(attached, Option.some({ workers, desktop }));
       if (Option.isSome(previous)) yield* Scope.close(previous.value.desktop, Exit.void);
     }).pipe(turn.withPermits(1));

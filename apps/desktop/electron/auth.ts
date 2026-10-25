@@ -4,7 +4,6 @@ import {
   AuthClient,
   AuthorizationCode,
   TokenSet,
-  authClientLayer,
   nativeClient,
   type AuthClientError,
   type IdentifyInput,
@@ -52,6 +51,7 @@ import { app, net, safeStorage } from "electron";
 import { searchGlobalProducts } from "../src/host/global-search";
 import type { SignInCredentials } from "../src/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/host/invoice-upload";
+import { cachedOnSuccess } from "./cached-on-success";
 import { PrivateFiles } from "./private-files";
 import { ShellEvents } from "./shell-events";
 
@@ -93,10 +93,15 @@ const googleSignInNotStarted = () =>
 const googleProofFailed = () =>
   new GoogleSignInFailure({ message: "Could not start Google sign-in." });
 
+const PkceChallenge = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/u)).pipe(
+  Schema.brand("PkceChallenge"),
+);
+
 const proofKey = Effect.fnUntraced(function* (crypto: Crypto.Crypto) {
   const verifier = Base64Url.encode(yield* crypto.randomBytes(32));
   const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier));
-  return { verifier: Redacted.make(verifier), codeChallenge: Base64Url.encode(digest) };
+  const codeChallenge = yield* Schema.decodeUnknownEffect(PkceChallenge)(Base64Url.encode(digest));
+  return { verifier: Redacted.make(verifier), codeChallenge };
 }, Effect.mapError(googleProofFailed));
 
 const storagePath = () => path.join(app.getPath("userData"), "auth", "session.bin");
@@ -148,7 +153,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
       Effect.mapError(writePersisted({ snapshot: workspace, tokens }), persistenceError),
   };
 
-  const sessionHttp = yield* Effect.cached(
+  const sessionHttp = yield* cachedOnSuccess(
     Layer.buildWithScope(
       layerSessionHttp({
         apiBaseUrl: options.apiBaseUrl,
@@ -169,14 +174,14 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
   const withSession = <A, E>(effect: Effect.Effect<A, E, SessionHttp>): Effect.Effect<A, E> =>
     Effect.flatMap(sessionHttp, (context) => Effect.provideContext(effect, context));
 
-  const signIn = yield* Effect.cached(
+  const signIn = yield* cachedOnSuccess(
     Layer.buildWithScope(
-      authClientLayer({ baseUrl: options.authBaseUrl }).pipe(Layer.provide(netHttp)),
+      AuthClient.layer({ baseUrl: options.authBaseUrl }).pipe(Layer.provide(netHttp)),
       scope,
     ).pipe(Effect.map(Context.get(AuthClient)), Effect.uninterruptible),
   );
 
-  const restored = yield* Effect.cached(
+  const restored = yield* cachedOnSuccess(
     Effect.tap(readPersisted, (persisted) =>
       Effect.sync(() => {
         if (Option.isSome(persisted)) {
