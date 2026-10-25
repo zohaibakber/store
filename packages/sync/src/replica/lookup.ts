@@ -167,12 +167,10 @@ const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(function* (
       .where(and(eq(pendingRowMarks.entity, "batch"), inArray(pendingRowMarks.entityId, chunk)))
       .all(),
   )).flat();
-  const operationIds = [
-    ...new Set([
-      ...overlayRows.map((overlay) => overlay.commandId),
-      ...markRows.map((mark) => mark.operationId),
-    ]),
-  ];
+  const operationIds = Array.dedupe([
+    ...overlayRows.map((overlay) => overlay.commandId),
+    ...markRows.map((mark) => mark.operationId),
+  ]);
   const sequenceRows = (yield* Effect.forEach(chunked(operationIds), (chunk) =>
     tx
       .select({
@@ -209,7 +207,7 @@ export const readUnitsPerPack = Effect.fn("ReplicaLookup.readUnitsPerPack")(func
   organizationId: string,
   productIds: ReadonlyArray<string>,
 ) {
-  const rows = yield* readRowsById(tx, organizationId, "product", [...new Set(productIds)]);
+  const rows = yield* readRowsById(tx, organizationId, "product", Array.dedupe(productIds));
   const unitsPerPack = new Map<string, number>(rows.map((row) => [row.id, row.unitsPerPack]));
   return (productId: string) => unitsPerPack.get(productId) ?? 1;
 });

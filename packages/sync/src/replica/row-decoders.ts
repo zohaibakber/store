@@ -1,6 +1,7 @@
 import type { SyncEntity } from "@store/contracts";
 import { syncEntityRows, type SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 type UndecodedRow = Parameters<
@@ -36,7 +37,11 @@ export const decodeRowOrDie = <Entity extends SyncEntity>(
   decodeEntityRow(entity)(row).pipe(
     Effect.tapError((error) =>
       Effect.logError("replica.row_undecodable").pipe(
-        Effect.annotateLogs({ entity, error: error.message }),
+        Effect.annotateLogs({
+          entity,
+          rowId: Predicate.hasProperty(row, "id") ? row.id : undefined,
+          error: error.message,
+        }),
       ),
     ),
     Effect.orDie,
