@@ -2,7 +2,9 @@ import { useAtomSet, useAtomSuspense, useAtomValue } from "@effect/atom-react";
 import type {
   Category,
   Invoice,
+  InvoiceId,
   Product,
+  ProductId,
   ProductSuggestions,
   ReplicaProductRow,
 } from "@store/contracts";
@@ -58,7 +60,7 @@ export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) =>
 const NONE_ISSUED: ReadonlyArray<IssuedInvoice> = [];
 
 export const useIssuedInvoices = (
-  invoiceIds: ReadonlyArray<string>,
+  invoiceIds: ReadonlyArray<InvoiceId>,
 ): ReadonlyArray<IssuedInvoice> =>
   AsyncResult.getOrElse(
     useAtomValue(useCatalogReplica().atoms.issuedInvoices(invoiceIds)),
@@ -68,16 +70,16 @@ export const useIssuedInvoices = (
 export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
   useAtomSuspense(useCatalogReplica().atoms.categories).value;
 
-export const useSuspenseCatalogProduct = (productId: string): Product | undefined =>
+export const useSuspenseCatalogProduct = (productId: ProductId): Product | undefined =>
   useAtomSuspense(useCatalogReplica().atoms.product(productId)).value;
 
 export const useSuspenseCatalogProductsById = (
-  productIds: ReadonlyArray<string>,
+  productIds: ReadonlyArray<ProductId>,
 ): ReadonlyArray<Product> =>
   useAtomSuspense(useCatalogReplica().atoms.productsById(productIds)).value;
 
 export const useSuspenseStockMovementHistory = (
-  productId: string,
+  productId: ProductId,
   pageSize = HISTORY_PAGE_SIZE,
 ) => {
   const history = useCatalogReplica().atoms.stockMovementHistory(productId, pageSize);
@@ -94,7 +96,7 @@ export const useSuspenseInvoicePage = (request: InvoiceListRequest): ReadonlyArr
 export const useSuspenseInvoiceCount = (filters: InvoiceListFilters): number =>
   React.useDeferredValue(useAtomSuspense(useCatalogReplica().atoms.invoiceCount(filters)).value);
 
-export const useSuspenseInventoryInvoice = (invoiceId: string): Invoice | undefined =>
+export const useSuspenseInventoryInvoice = (invoiceId: InvoiceId): Invoice | undefined =>
   useAtomSuspense(useCatalogReplica().atoms.invoice(invoiceId)).value;
 
 const productsWithStock = ({

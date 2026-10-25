@@ -1,4 +1,5 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { InvoiceId } from "@store/contracts";
 import { useSuspenseInventoryInvoice } from "@store/inventory-react";
 import * as Atom from "effect/reactivity/Atom";
 import { Suspense, useEffect, useRef } from "react";
@@ -15,7 +16,7 @@ import { ReceiptSheet } from "./document";
 import { receiptOf } from "./receipt";
 
 export type ReceiptPrintJob = {
-  readonly invoiceId: string;
+  readonly invoiceId: InvoiceId;
   readonly paper: ReceiptPaper;
   readonly output: "printer" | "pdf";
 };

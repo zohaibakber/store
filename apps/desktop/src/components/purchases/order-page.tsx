@@ -17,6 +17,7 @@ import * as React from "react";
 import { ToneBadge } from "@/components/insights/status-badge";
 import { formatDelta } from "@/components/products/stock";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
+import { DetailNotFound } from "@/components/shared/detail-not-found";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -77,6 +78,16 @@ export function PurchaseOrderError({ error }: { readonly error: unknown }) {
         Back to purchases
       </Button>
     </DetailLoadError>
+  );
+}
+
+export function PurchaseOrderNotFound() {
+  return (
+    <DetailNotFound title="Order not found">
+      <Button render={<Link to="/purchases" />} size="sm" variant="outline">
+        Back to purchases
+      </Button>
+    </DetailNotFound>
   );
 }
 

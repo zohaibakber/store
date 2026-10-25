@@ -4,6 +4,7 @@ import {
   type AuthenticatedWorkspaceSnapshot,
   type WorkspaceSnapshot,
 } from "@store/contracts";
+import type { InventoryScope } from "@store/inventory-react";
 
 import type { DeviceWorkspace } from "@/session/device-workspace";
 
@@ -18,11 +19,6 @@ type AccessVerdict =
       readonly to: "/sign-in" | "/";
       readonly replace: true;
     };
-
-type HostInventoryScope = {
-  readonly organizationId: string;
-  readonly userId: string;
-};
 
 type OrganizationWorkspace = {
   readonly _tag: "Organization";
@@ -46,7 +42,7 @@ export interface HostAccessPolicy {
     readonly snapshot: WorkspaceSnapshot | null;
   }) => AccessVerdict;
 
-  readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => HostInventoryScope | null;
+  readonly inventoryScope: (snapshot: WorkspaceSnapshot | null) => InventoryScope | null;
 }
 
 const PUBLIC_PATHS = new Set(["/sign-in"]);
@@ -57,7 +53,7 @@ const NONE: Workspace = { _tag: "None" };
 
 const LOCAL: LocalWorkspace = { _tag: "Local" };
 
-const LOCAL_SCOPE: HostInventoryScope = {
+const LOCAL_SCOPE: InventoryScope = {
   organizationId: LOCAL_ORGANIZATION_ID,
   userId: LOCAL_USER_ID,
 };
@@ -72,7 +68,7 @@ const organizationWorkspace = (
 export const hasAuthenticatedWorkspace = (snapshot: WorkspaceSnapshot | null): boolean =>
   organizationWorkspace(snapshot) !== null;
 
-const inventoryScopeOf = (workspace: Workspace): HostInventoryScope | null => {
+const inventoryScopeOf = (workspace: Workspace): InventoryScope | null => {
   switch (workspace._tag) {
     case "None":
       return null;

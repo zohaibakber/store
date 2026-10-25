@@ -1,3 +1,4 @@
+import { ProductId } from "@store/contracts";
 import {
   preloadAll,
   preloadCatalogProductsById,
@@ -16,7 +17,7 @@ import { workspaceStorageKey } from "@/lib/workspace";
 import { publishedWorkspaceSnapshot } from "@/session/workspace-session";
 
 const newInvoiceSearch = Schema.toStandardSchemaV1(
-  Schema.Struct({ add: lenientSearchParam(Schema.NonEmptyString) }),
+  Schema.Struct({ add: lenientSearchParam(ProductId) }),
 );
 
 export const Route = createFileRoute("/_app/invoices/new")({

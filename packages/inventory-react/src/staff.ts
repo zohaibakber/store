@@ -111,7 +111,7 @@ export const useStaffPermission = (permission: StaffPermission): boolean => {
 
 const NO_INVOICE_STAFF: InvoiceStaff = { soldBy: null, startedBy: null };
 
-export const useInvoiceStaff = (invoiceId: string): InvoiceStaff =>
+export const useInvoiceStaff = (invoiceId: InvoiceId): InvoiceStaff =>
   AsyncResult.getOrElse(
     useAtomValue(useCatalogReplica().atoms.invoiceStaff(invoiceId)),
     () => NO_INVOICE_STAFF,

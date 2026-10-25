@@ -216,9 +216,14 @@ export function PurchaseOrdersPage({
     <PageLayout>
       <DataTable
         className="gap-3"
-        onRowClick={(row) => navigate({ to: "/purchases/$orderId", params: { orderId: row.id } })}
+        onRowClick={(row) =>
+          navigate({ to: "/purchases/$orderId", params: { orderId: row.original.id } })
+        }
         onRowPreload={(row) =>
-          void router.preloadRoute({ to: "/purchases/$orderId", params: { orderId: row.id } })
+          void router.preloadRoute({
+            to: "/purchases/$orderId",
+            params: { orderId: row.original.id },
+          })
         }
         table={table}
       >

@@ -1,4 +1,4 @@
-import { decodeInvoiceId, type InvoiceId, type StaffId } from "@store/contracts/ids";
+import { decodeInvoiceId, ProductId, type InvoiceId, type StaffId } from "@store/contracts/ids";
 import * as Option from "effect/Option";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as Atom from "effect/reactivity/Atom";
@@ -59,7 +59,7 @@ export const sidebarOpenAtom = Atom.kvs({
 }).pipe(Atom.keepAlive);
 
 const RecentProductSchema = Schema.Struct({
-  id: Schema.String,
+  id: ProductId,
   name: Schema.String,
   strength: Schema.NullOr(Schema.String),
   categoryName: Schema.String,

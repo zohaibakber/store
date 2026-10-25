@@ -2,6 +2,7 @@ import { useAtom, useAtomRefresh, useAtomSuspense } from "@effect/atom-react";
 import type {
   AnalyticsStatus,
   InsightsSummary,
+  ProductId,
   ProductInsight,
   RestockPageRead,
   RestockPageRequest,
@@ -22,7 +23,7 @@ export const useInventoryInsights = (): InventoryInsights => {
   return { summary, status, refreshing: result.waiting || status.state !== "idle" };
 };
 
-export const useProductInsight = (productId: string): ProductInsight | null =>
+export const useProductInsight = (productId: ProductId): ProductInsight | null =>
   useAtomSuspense(useCatalogReplica().atoms.productInsight(productId)).value;
 
 export const useRestockPage = (request: RestockPageRequest): RestockPageRead =>

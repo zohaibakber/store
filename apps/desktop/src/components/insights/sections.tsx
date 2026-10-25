@@ -8,8 +8,9 @@ import {
   PackageIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type {
-  InsightsSummary,
+import {
+  decodeProductId,
+  type InsightsSummary,
   RestockView,
   SalesPeriod,
   StockStatus,
@@ -118,7 +119,7 @@ function ProductLink({ productId, name }: { readonly productId: string; readonly
   return (
     <Link
       className="min-w-0 truncate leading-tight font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
-      params={{ productId }}
+      params={{ productId: decodeProductId(productId) }}
       title={name}
       to="/products/$productId"
     >
@@ -207,7 +208,7 @@ export function AttentionFeed({
                       aria-label={`Add stock to ${insight.name}`}
                       render={
                         <Link
-                          params={{ productId: insight.productId }}
+                          params={{ productId: decodeProductId(insight.productId) }}
                           search={{ addStock: true }}
                           to="/products/$productId"
                         />

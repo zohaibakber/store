@@ -1,3 +1,4 @@
+import { decodeProductId } from "@store/contracts";
 import {
   preloadAll,
   preloadCatalogProduct,
@@ -10,7 +11,11 @@ import {
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
-import { ProductDetailError, ProductDetailPage } from "@/components/products/detail-page";
+import {
+  ProductDetailError,
+  ProductDetailNotFound,
+  ProductDetailPage,
+} from "@/components/products/detail-page";
 import { toastManager } from "@/components/ui/toast";
 import { toastStoreError } from "@/lib/errors";
 import { preloadInventory } from "@/lib/inventory/preload";
@@ -21,6 +26,7 @@ const productSearch = Schema.toStandardSchemaV1(
 );
 
 export const Route = createFileRoute("/_app/products/$productId")({
+  params: { parse: ({ productId }) => ({ productId: decodeProductId(productId) }) },
   loader: ({ context, params }) =>
     preloadInventory(context, (inventory) =>
       preloadAll([
@@ -43,7 +49,7 @@ function ProductDetailRoute() {
   const { deleteProduct } = useInventoryActions();
   const navigate = useNavigate();
 
-  if (!catalogProduct) throw new Error(`Product ${productId} was not found.`);
+  if (!catalogProduct) return <ProductDetailNotFound />;
 
   const removeProduct = async () => {
     try {

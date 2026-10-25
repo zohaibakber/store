@@ -5,6 +5,7 @@ export { configureInventoryPreferences } from "./preferences";
 export {
   replicaAuthorityOf,
   type InventoryHost,
+  type InventoryScope,
   type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
