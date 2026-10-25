@@ -90,8 +90,10 @@ export const makeReplicaCommitHub = (): Effect.Effect<ReplicaCommitHub> =>
           : Effect.void,
       commits: Stream.unwrap(
         Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(hub);
-          return withoutGaps(subscription, yield* Ref.get(sequence));
+          const { subscription, baseline } = yield* publishing.withPermits(1)(
+            Effect.all({ subscription: PubSub.subscribe(hub), baseline: Ref.get(sequence) }),
+          );
+          return withoutGaps(subscription, baseline);
         }),
       ),
     } satisfies ReplicaCommitHub;
