@@ -11,7 +11,7 @@
 - `sync`. Host-agnostic replica engine: command outbox, pending projections,
   coverage and digest cadence, the polling scheduler with typed transport
   failures, and the typed `SyncHttpApi` client. The shared entrypoint
-  (`@store/sync`) stays native-free (`test/browser-boundary.test.ts` enforces
+  (`@store/sync`) stays native-free (`test/sql-client-boundary.test.ts` enforces
   it); SQLite lives behind `@store/sync/sqlite`.
 - `inventory-react`. React bindings over the replica (atoms, queries, sync
   status, insights) used by the desktop renderer.
