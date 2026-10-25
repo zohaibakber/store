@@ -55,27 +55,15 @@ const makeActions = (
   const dispatch = async <A extends Commit>(
     send: (store: StoreClient) => Effect.Effect<A, CommandFailure | RpcClientError>,
   ): Promise<A> => {
-    const attempt = crypto.randomUUID();
-    registry.set(atoms.commandExecution, { _tag: "accepting", operationId: attempt });
     const exit = await Effect.runPromiseExit(
       links.command(registry, (store) => Effect.suspend(() => send(store))),
     );
     if (Exit.isFailure(exit)) {
       const surface = causeSurface(exit.cause);
       if (surface._tag === "storageFull") registry.set(atoms.storageFull, true);
-      registry.set(atoms.commandExecution, {
-        _tag: "failed",
-        operationId: attempt,
-        message: surface.message,
-      });
       throw new InventoryCommandError(surface);
     }
     registry.set(atoms.storageFull, false);
-    registry.set(atoms.commandExecution, {
-      _tag: "pending",
-      operationId: exit.value.operationId,
-      status: exit.value.status,
-    });
     return exit.value;
   };
 

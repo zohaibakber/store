@@ -42,7 +42,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 - **Two model-generation integrations.** Global search uses `LanguageModel.generateObject`, while invoice extraction uses `GenerateModelJson` and a second Workers AI wrapper. Reuse the existing provider adapter after adding per-operation token budgets and preserving tolerant extraction/JSON-recovery behavior. Document conversion remains separate.
 - **Mutable `Map` and `let` state beside Effect primitives.** `apps/desktop/electron/{workspace-sessions,replica-ownership,replica-backup}.ts`, the access-token listener set in `apps/desktop/electron/auth.ts`, `packages/inventory-react/src/{workspace,preferences}.ts`, `apps/desktop/src/session/workspace-session.ts`.
 - **The `crypto` global in Effect code.** `packages/sync/src/engine.ts` (`makeClaimId`), `apps/desktop/electron/{workspace-sessions,replica-backup}.ts`, `packages/client-db/src/replica/node-sqlite.ts`, `packages/auth/src/jwt.ts`. Target: `Crypto.Crypto`, whose layer is `packages/auth/src/web-crypto.ts`.
-- **`Date.now()` and `setTimeout`.** `packages/inventory-react/src/atoms.ts` and UI code in `apps/desktop`.
+- **`Date.now()` and `setTimeout`.** UI code in `apps/desktop`.
 - **A hand-written cross-tab storage atom** beside `Atom.kvs` in `apps/desktop/src/lib/preferences.ts`. The installed `Atom.kvs` and `KeyValueStore.layerStorage` do not subscribe to storage events; preserve cross-tab adoption and reading current storage before applying an update. `Atom.kvs` alone is not a replacement.
 
 ## Tests

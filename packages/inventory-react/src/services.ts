@@ -133,11 +133,6 @@ const workerProtocol = (role: "reads" | "store" | "insights") => (get: Atom.Atom
 
 type Client<Rpcs extends Rpc.Any> = RpcClient.RpcClient.Flat<Rpcs, RpcClientError>;
 
-export type Link<Rpcs extends Rpc.Any, R, E> = {
-  readonly protocol: (get: Atom.AtomContext) => Layer.Layer<Exclude<R, Scope.Scope>, E>;
-  readonly makeEffect: Effect.Effect<Client<Rpcs>, never, R>;
-};
-
 const CLIENT_LINGER = "10 seconds";
 
 const outlivingItsRuntime = <A, R>(
@@ -175,32 +170,6 @@ export type InventoryServices = {
   readonly workspace: Atom.Atom<Option.Option<WorkspaceState>>;
 };
 
-export const makeInventoryServices = <R1, E1, R2, E2, R3, E3>(links: {
-  readonly reads: Link<ReadsRpcs, R1, E1>;
-  readonly store: Link<StoreRpcs, R2, E2>;
-  readonly insights: Link<InsightsRpcs, R3, E3>;
-  readonly generation: Atom.Atom<Option.Option<number>>;
-  readonly workspace: Atom.Atom<Option.Option<WorkspaceState>>;
-}): InventoryServices => ({
-  Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
-    group: InventoryReads,
-    runtime,
-    ...links.reads,
-  }),
-  Store: AtomRpc.Service<Store>()("inventory/Store", {
-    group: InventoryStore,
-    runtime,
-    ...links.store,
-  }),
-  Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
-    group: InventoryInsights,
-    runtime,
-    ...links.insights,
-  }),
-  generation: links.generation,
-  workspace: links.workspace,
-});
-
 export class Desktop extends AtomRpc.Service<Desktop>()("desktop/Rpcs", {
   group: DesktopRpcs,
   runtime,
@@ -211,22 +180,28 @@ const desktopWorkspace = Desktop.runtime.atom(
   Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("WorkspaceState", undefined)))),
 );
 
-export const desktopServices = makeInventoryServices({
-  reads: {
+export const desktopServices: InventoryServices = {
+  Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
+    group: InventoryReads,
+    runtime,
     protocol: workerProtocol("reads"),
     makeEffect: outlivingItsRuntime(RpcClient.make(InventoryReads, { flatten: true })),
-  },
-  store: {
+  }),
+  Store: AtomRpc.Service<Store>()("inventory/Store", {
+    group: InventoryStore,
+    runtime,
     protocol: workerProtocol("store"),
     makeEffect: outlivingItsRuntime(RpcClient.make(InventoryStore, { flatten: true })),
-  },
-  insights: {
+  }),
+  Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
+    group: InventoryInsights,
+    runtime,
     protocol: workerProtocol("insights"),
     makeEffect: outlivingItsRuntime(RpcClient.make(InventoryInsights, { flatten: true })),
-  },
+  }),
   generation: Atom.map(Ports, (ports) => Option.map(ports.workers, (held) => held.generation)),
   workspace: Atom.map(desktopWorkspace, AsyncResult.value),
-});
+};
 
 export const { Reads, Store, Insights } = desktopServices;
 

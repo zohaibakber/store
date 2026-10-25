@@ -4,7 +4,6 @@ import {
   syncStatusFromOutbox,
   syncStatusWithHealth,
   uniqueById,
-  type CommandExecution,
   type InventorySyncActivity,
   type InventorySyncStatus,
   type ProductRow,
@@ -31,7 +30,6 @@ import {
   type StockMovement,
   type Supplier,
   type SupplierId,
-  type SyncEntity,
 } from "@store/contracts";
 import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
 import {
@@ -47,7 +45,6 @@ import {
   MAX_HISTORY_ROWS,
   MAX_IN_VALUES,
   MAX_LIST_PAGE_SIZE,
-  MAX_SEARCH_QUERIES,
   PRODUCT_FACET_COLUMNS,
   ReplicaStorageError,
   rowKey,
@@ -109,15 +106,9 @@ export const stockPolicyAtom = Atom.kvs({
   defaultValue: () => DEFAULT_STOCK_POLICY,
 }).pipe(Atom.keepAlive);
 
-export const minuteClockAtom = Atom.make(() => Date.now()).pipe(Atom.withRefresh("1 minute"));
-
-export type CommandExecutionState = { readonly _tag: "idle" } | CommandExecution;
-
 export type ReadError = ReadFailure | RpcClientError;
 
 type Read<A> = Atom.Atom<AsyncResult.AsyncResult<A, ReadError>>;
-
-export const CANDIDATE_QUERY_SEPARATOR = "\n";
 
 const INSIGHTS_ROLLOVER = Duration.minutes(15);
 
@@ -141,10 +132,11 @@ const ORDERS = keyed(entityKey("purchaseOrder"));
 const ORDER_LINES = keyed(entityKey("purchaseOrder"), entityKey("purchaseOrderItem"));
 const INSIGHTS = keyed(INSIGHTS_KEY);
 
-const idsKey = (ids: ReadonlyArray<string>) =>
-  [...new Set(ids)].sort().join(CANDIDATE_QUERY_SEPARATOR);
+const ID_KEY_SEPARATOR = "\n";
 
-const idsOfKey = (key: string) => (key === "" ? [] : key.split(CANDIDATE_QUERY_SEPARATOR));
+const idsKey = (ids: ReadonlyArray<string>) => [...new Set(ids)].sort().join(ID_KEY_SEPARATOR);
+
+const idsOfKey = (key: string) => (key === "" ? [] : key.split(ID_KEY_SEPARATOR));
 
 const branded = <Id>(schema: Schema.Codec<Id, string>) => {
   const decode = Schema.decodeUnknownOption(schema);
@@ -174,15 +166,6 @@ const keepingEqualValue = <A>(atom: Read<A>): Read<A> =>
       left.waiting === right.waiting &&
       Equal.equals(left.value, right.value),
   );
-
-const sameRowIds = (
-  left: AsyncResult.AsyncResult<ReadonlySet<string>, ReadError>,
-  right: AsyncResult.AsyncResult<ReadonlySet<string>, ReadError>,
-) =>
-  AsyncResult.isSuccess(left) &&
-  AsyncResult.isSuccess(right) &&
-  left.value.size === right.value.size &&
-  [...left.value].every((id) => right.value.has(id));
 
 const insightsContextOf = (policy: StockPolicy): InsightsContext => ({
   policy,
@@ -285,12 +268,7 @@ export type WorkspaceAtoms = {
   readonly syncTransfer: Atom.Atom<SyncTransfer | undefined>;
   readonly storageFull: Atom.Writable<boolean>;
   readonly syncSnapshot: Read<ReplicaSyncActivity>;
-  readonly pendingRowIds: (entity: SyncEntity) => Read<ReadonlySet<string>>;
   readonly productSearch: (limit: number) => (query: string) => Read<ProductSearchStock>;
-  readonly productCandidates: (
-    limit: number,
-  ) => (queries: string) => Read<ReadonlyArray<ProductRow>>;
-  readonly commandExecution: Atom.Writable<CommandExecutionState>;
   readonly insights: Read<InsightsSummaryRead>;
   readonly restockPage: (request: RestockPageRequest) => Read<RestockPageRead>;
   readonly exportRestock: (filters: RestockFilters) => Stream.Stream<ProductInsight, ReadError>;
@@ -328,7 +306,6 @@ export type WorkspaceAtoms = {
   readonly issuedInvoices: (
     invoiceIds: ReadonlyArray<string>,
   ) => Read<ReadonlyArray<IssuedInvoice>>;
-  readonly invoiceHistory: (pageSize: number) => HistoryAtoms<Invoice>;
   readonly product: (productId: string) => Read<Product | undefined>;
   readonly productsById: (productIds: ReadonlyArray<string>) => Read<ReadonlyArray<Product>>;
   readonly stockMovementHistory: (
@@ -457,20 +434,6 @@ export const createWorkspaceAtoms = (
     ),
   );
 
-  const productCandidatesAtom = Atom.family((limit: number) =>
-    Atom.family((queries: string): Read<ReadonlyArray<ProductRow>> => {
-      const parts = Arr.chunksOf(idsOfKey(queries), MAX_SEARCH_QUERIES).map((chunk) =>
-        Reads.query("SearchProducts", { queries: chunk, limit }, PRODUCTS),
-      );
-      return Atom.make((get) =>
-        AsyncResult.map(
-          AsyncResult.all(parts.map((part) => get(part))),
-          (found): ReadonlyArray<ProductRow> => uniqueById(found.flatMap((part) => part.products)),
-        ),
-      );
-    }),
-  );
-
   const openOrderLinesAtom = Atom.family((key: string) =>
     Atom.mapResult(
       inChunks(productIdsOf(idsOfKey(key)), (productIds) =>
@@ -583,16 +546,6 @@ export const createWorkspaceAtoms = (
     );
   });
 
-  const invoiceHistoryPages = Atom.family((_pageSize: number) =>
-    Atom.make(1).pipe(Atom.setIdleTTL(IDLE_CACHE)),
-  );
-  const invoiceHistoryAtom = Atom.family((pageSize: number): Read<HistoryWindow<Invoice>> => {
-    const limit = boundedHistoryPage(pageSize);
-    return chainHistory(invoiceHistoryPages(pageSize), (before) =>
-      Reads.query("InvoiceHistory", historyPayload(limit, before), INVOICE_LINES),
-    );
-  });
-
   const NO_MOVEMENTS: HistoryWindow<StockMovement> = { rows: [], hasMore: false, pages: 1 };
 
   const movementHistoryPages = Atom.family((_key: MovementHistoryKey) =>
@@ -642,19 +595,9 @@ export const createWorkspaceAtoms = (
     }),
     storageFull,
     syncSnapshot,
-    pendingRowIds: Atom.family((entity: SyncEntity) =>
-      Atom.mapResult(
-        Store.query("PendingRows", { entity }, keyed(entityKey(entity))),
-        (ids): ReadonlySet<string> => new Set(ids),
-      ).pipe(Atom.withEquality(sameRowIds)),
-    ),
     productSearch: (limit) => {
       const bounded = canonicalSearchLimit(limit);
       return (query) => productSearchAtom(bounded)(canonicalSearchQuery(query));
-    },
-    productCandidates: (limit) => {
-      const bounded = canonicalSearchLimit(limit);
-      return (queries) => productCandidatesAtom(bounded)(queries);
     },
     productPage: Atom.family((request: ProductListRequest) =>
       Atom.mapResult(
@@ -687,7 +630,6 @@ export const createWorkspaceAtoms = (
         ),
       { concurrent: true },
     ),
-    commandExecution: Atom.make<CommandExecutionState>({ _tag: "idle" }).pipe(Atom.keepAlive),
     insights,
     restockPage: (request) => restockPageAtom(encodeRestockKey(request)),
     exportRestock: (filters) =>
@@ -785,10 +727,6 @@ export const createWorkspaceAtoms = (
     stockMovementHistory: (productId, pageSize) => ({
       pages: movementHistoryPages({ productId, pageSize }),
       window: movementHistoryAtom({ productId, pageSize }),
-    }),
-    invoiceHistory: (pageSize) => ({
-      pages: invoiceHistoryPages(pageSize),
-      window: invoiceHistoryAtom(pageSize),
     }),
   };
 };

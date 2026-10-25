@@ -115,7 +115,7 @@ export function ProductDetailPage({
     readonly data: ReadonlyArray<StockMovement>;
     readonly hasNextPage: boolean;
     readonly isFetchingNextPage: boolean;
-    readonly fetchNextPage: () => Promise<void>;
+    readonly fetchNextPage: () => void;
   };
   readonly onAddStockOpenChange: (open: boolean) => void;
   readonly onDelete: () => Promise<void>;
@@ -219,7 +219,7 @@ export function ProductDetailPage({
             hasMore={movements.hasNextPage}
             loadingMore={movements.isFetchingNextPage}
             movements={movements.data}
-            onLoadMore={() => void movements.fetchNextPage()}
+            onLoadMore={() => movements.fetchNextPage()}
             product={product}
           />
         </div>

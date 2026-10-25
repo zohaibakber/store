@@ -6,6 +6,7 @@ import {
   type CatalogLease,
   type CatalogLifetime,
   type InventoryHost,
+  type InventorySyncStatus,
 } from "@store/inventory-react";
 import type * as React from "react";
 
@@ -49,17 +50,25 @@ export function InventoryReady({ children }: { readonly children: React.ReactNod
   return <FirstSyncGate>{children}</FirstSyncGate>;
 }
 
-const HALTED_SYNC: ReadonlySet<string> = new Set([
-  "storageError",
-  "updateRequired",
-  "recoveryRequired",
-  "unavailable",
-]);
+const isHalted = (status: InventorySyncStatus) => {
+  switch (status._tag) {
+    case "storageError":
+    case "updateRequired":
+    case "recoveryRequired":
+    case "unavailable":
+      return true;
+    case "savedLocally":
+    case "pendingConfirmation":
+    case "caughtUp":
+    case "rejected":
+      return false;
+  }
+};
 
 export const useFirstSyncPending = () => {
   const { firstSyncPending } = useInventorySyncActivity();
   const status = useInventorySyncStatus();
-  return firstSyncPending && !HALTED_SYNC.has(status._tag);
+  return firstSyncPending && !isHalted(status);
 };
 
 function FirstSyncGate({ children }: { readonly children: React.ReactNode }) {
