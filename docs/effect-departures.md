@@ -26,7 +26,6 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 - **Plain `Error` in `E`.** `apps/desktop/electron/workspace-sessions.ts:120` (`ReplicaWorkerFailure | Error`), `apps/desktop/electron/auth.ts:77` (`persistenceError`) and `:296,299` (`analyseInvoices`, `searchGlobalProducts`).
 - **Mixed construction and tags.** `X.make({...})` beside `new X({...})`; dotted tags in `packages/workspace` (`Workspace.RequestError`, `packages/workspace/src/session-http.ts:54`) beside class-name tags elsewhere. Dotted tags that cross the wire are contracts.
 - **Public auth HTTP errors are plain `Schema.Struct`, not yieldable.** `packages/auth/src/http-errors.ts:56-75` builds them with `Schema.Struct` and `HttpApiSchema.status`, so `apps/auth/src/http.ts:125` raises them with `Effect.fail(AuthUnauthenticated.make(...))` and the file sits on the `no-yield-effect-fail` override in `vite.config.ts`. Converting them to `Schema.TaggedError` classes touches the wire encoding, so it is its own unit.
-- **A row id is drawn with `Effect.runSync`.** `packages/client-db/src/store/commands.ts:115` (`newRowId = () => Effect.runSync(newId)`) because the `Crypto` interface has no synchronous UUID draw and the projections take a plain `rowId` function; the file sits on the `no-effect-run-outside-edge` override in `vite.config.ts`. Target: draw row ids per command, effectfully, or thread an effectful id supply through the projections, then delist the file.
 
 ## Hand-rolled
 
