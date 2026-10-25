@@ -1,12 +1,18 @@
 import path from "node:path";
 
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
+import * as HashMap from "effect/HashMap";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 
 import { ReplicaFileRefused } from "../src/host/file-refusal";
 import type { BackupSaved, RestoreApplied, RestoreStaged } from "../src/host/workspace-backup";
+import type { Dialogs } from "./dialogs";
+import type { OpenWorkspace, OpenWorkspaces } from "./open-workspaces";
 import { asFileRefusal } from "./replica-refusal";
 import {
   backupFileName,
@@ -14,66 +20,62 @@ import {
   restorePreviousReplicaFile,
   swapReplicaFile,
 } from "./replica-restore-files";
-import type { WorkspaceSession, WorkspaceSessions } from "./workspace-sessions";
 
-export type ReplicaBackupDialogs = {
-  readonly chooseDestination: (suggestedName: string) => Promise<string | null>;
-  readonly chooseSource: () => Promise<string | null>;
-};
+export type ReplicaBackupDialogs = Pick<Dialogs, "chooseBackupDestination" | "chooseBackupSource">;
 
 type StagedRestores = {
-  readonly stage: (workspaceToken: string, stagedPath: string) => void;
-  readonly take: (workspaceToken: string) => string | undefined;
+  readonly stage: (workspaceToken: string, stagedPath: string) => Effect.Effect<void>;
+  readonly take: (workspaceToken: string) => Effect.Effect<Option.Option<string>>;
   readonly discard: (workspaceToken: string) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 export type ReplicaBackup = {
   readonly backUp: (
-    session: WorkspaceSession | undefined,
+    session: OpenWorkspace | undefined,
   ) => Effect.Effect<typeof BackupSaved.Type, ReplicaFileRefused>;
   readonly chooseRestore: (
-    session: WorkspaceSession | undefined,
+    session: OpenWorkspace | undefined,
   ) => Effect.Effect<typeof RestoreStaged.Type, ReplicaFileRefused, FileSystem.FileSystem>;
   readonly applyRestore: (
-    session: WorkspaceSession | undefined,
+    session: OpenWorkspace | undefined,
   ) => Effect.Effect<typeof RestoreApplied.Type, ReplicaFileRefused, FileSystem.FileSystem>;
   readonly discardRestore: (
-    session: WorkspaceSession | undefined,
+    session: OpenWorkspace | undefined,
   ) => Effect.Effect<void, never, FileSystem.FileSystem>;
 };
 
 const RELEASE_LIMIT = "50 seconds";
 
-export const makeStagedRestores = (): StagedRestores => {
-  const staged = new Map<string, string>();
+export const makeStagedRestores = Effect.fn("StagedRestores.make")(function* () {
+  const staged = yield* Ref.make(HashMap.empty<string, string>());
 
-  const take = (workspaceToken: string) => {
-    const stagedPath = staged.get(workspaceToken);
-    staged.delete(workspaceToken);
-    return stagedPath;
-  };
+  const take = (workspaceToken: string) =>
+    Ref.modify(staged, (all) => [
+      HashMap.get(all, workspaceToken),
+      HashMap.remove(all, workspaceToken),
+    ]);
 
   return {
-    stage: (workspaceToken, stagedPath) => {
-      staged.set(workspaceToken, stagedPath);
-    },
+    stage: (workspaceToken, stagedPath) =>
+      Ref.update(staged, HashMap.set(workspaceToken, stagedPath)),
     take,
     discard: (workspaceToken) =>
-      Effect.suspend(() => {
-        const stagedPath = take(workspaceToken);
-        return stagedPath === undefined ? Effect.void : removeReplicaFile(stagedPath);
-      }),
-  };
-};
+      Effect.flatMap(
+        take(workspaceToken),
+        Option.match({ onNone: () => Effect.void, onSome: removeReplicaFile }),
+      ),
+  } satisfies StagedRestores;
+});
 
-export const makeReplicaBackup = (deps: {
-  readonly sessions: WorkspaceSessions;
+export const makeReplicaBackup = Effect.fn("ReplicaBackup.make")(function* (deps: {
+  readonly sessions: OpenWorkspaces;
   readonly stagedRestores: StagedRestores;
   readonly dialogs: ReplicaBackupDialogs;
-}): ReplicaBackup => {
+}) {
   const { sessions, stagedRestores, dialogs } = deps;
+  const crypto = yield* Crypto.Crypto;
 
-  const resumeUnchanged = (session: WorkspaceSession, refusal: ReplicaFileRefused) =>
+  const resumeUnchanged = (session: OpenWorkspace, refusal: ReplicaFileRefused) =>
     sessions.reopen(session).pipe(
       Effect.matchEffect({
         onSuccess: () =>
@@ -85,7 +87,7 @@ export const makeReplicaBackup = (deps: {
             }),
           ),
         onFailure: () =>
-          Effect.sync(() => sessions.forget(session)).pipe(
+          sessions.forget(session).pipe(
             Effect.andThen(
               Effect.fail(
                 new ReplicaFileRefused({
@@ -99,47 +101,47 @@ export const makeReplicaBackup = (deps: {
       }),
     );
 
-  const backUp = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
+  const backUp = (session: OpenWorkspace, chooser: ReplicaBackupDialogs) =>
     Effect.gen(function* () {
       const now = new Date(yield* Clock.currentTimeMillis);
-      const destination = yield* Effect.tryPromise(() =>
-        chooser.chooseDestination(backupFileName(now)),
-      );
-      if (destination === null) return { _tag: "cancelled" as const };
+      const destination = yield* chooser.chooseBackupDestination(backupFileName(now));
+      if (Option.isNone(destination)) return { _tag: "cancelled" as const };
       const written = yield* sessions.whenOpen(session, (current) =>
-        current.supervisor.use((worker) => worker.client.BackUp({ destinationPath: destination })),
+        current.supervisor.use((worker) =>
+          worker.client.BackUp({ destinationPath: destination.value }),
+        ),
       );
       return {
         _tag: "saved" as const,
-        fileName: path.basename(destination),
+        fileName: path.basename(destination.value),
         bytes: written.bytes,
       };
     }).pipe(Effect.mapError(asFileRefusal));
 
-  const stageRestore = (session: WorkspaceSession, chooser: ReplicaBackupDialogs) =>
+  const stageRestore = (session: OpenWorkspace, chooser: ReplicaBackupDialogs) =>
     Effect.gen(function* () {
-      const source = yield* Effect.tryPromise(() => chooser.chooseSource());
-      if (source === null) return { _tag: "cancelled" as const };
+      const source = yield* chooser.chooseBackupSource;
+      if (Option.isNone(source)) return { _tag: "cancelled" as const };
       yield* stagedRestores.discard(session.workspaceToken);
       const stagedPath = path.join(
         path.dirname(session.databasePath),
-        `restore-${crypto.randomUUID()}.sqlite`,
+        `restore-${yield* Effect.orDie(crypto.randomUUIDv4())}.sqlite`,
       );
       const staged = yield* sessions.whenOpen(session, (current) =>
         current.supervisor.use((worker) =>
-          worker.client.StageRestore({ sourcePath: source, stagedPath }),
+          worker.client.StageRestore({ sourcePath: source.value, stagedPath }),
         ),
       );
-      stagedRestores.stage(session.workspaceToken, stagedPath);
+      yield* stagedRestores.stage(session.workspaceToken, stagedPath);
       return {
         _tag: "staged" as const,
-        fileName: path.basename(source),
+        fileName: path.basename(source.value),
         current: staged.current,
         backup: staged.backup,
       };
     }).pipe(Effect.mapError(asFileRefusal));
 
-  const replaceWorkspace = (session: WorkspaceSession, stagedPath: string) =>
+  const replaceWorkspace = (session: OpenWorkspace, stagedPath: string) =>
     Effect.scoped(
       Effect.gen(function* () {
         const previousPath = `${session.databasePath}.before-restore-${yield* Clock.currentTimeMillis}`;
@@ -181,7 +183,7 @@ export const makeReplicaBackup = (deps: {
               new ReplicaFileRefused({ reason: "backup-not-opened" }),
             );
           }
-          sessions.forget(session);
+          yield* sessions.forget(session);
           return yield* new ReplicaFileRefused({
             reason: "backup-not-opened",
             standing: "previous-saved",
@@ -208,23 +210,22 @@ export const makeReplicaBackup = (deps: {
           return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
       }
     },
-    applyRestore: (session) =>
-      Effect.suspend(() => {
-        if (session === undefined) {
-          return Effect.fail(new ReplicaFileRefused({ reason: "no-workspace" }));
-        }
-        const stagedPath = stagedRestores.take(session.workspaceToken);
-        if (stagedPath === undefined) {
-          return Effect.fail(new ReplicaFileRefused({ reason: "no-staged-restore" }));
-        }
-        switch (session.identity.authority) {
-          case "local":
-            return replaceWorkspace(session, stagedPath);
-          case "remote":
-            return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
-        }
-      }),
+    applyRestore: Effect.fn("ReplicaBackup.applyRestore")(function* (
+      session: OpenWorkspace | undefined,
+    ) {
+      if (session === undefined) return yield* new ReplicaFileRefused({ reason: "no-workspace" });
+      const stagedPath = yield* stagedRestores.take(session.workspaceToken);
+      if (Option.isNone(stagedPath)) {
+        return yield* new ReplicaFileRefused({ reason: "no-staged-restore" });
+      }
+      switch (session.identity.authority) {
+        case "local":
+          return yield* replaceWorkspace(session, stagedPath.value);
+        case "remote":
+          return yield* new ReplicaFileRefused({ reason: "restore-local-only" });
+      }
+    }),
     discardRestore: (session) =>
       session === undefined ? Effect.void : stagedRestores.discard(session.workspaceToken),
-  };
-};
+  } satisfies ReplicaBackup;
+});

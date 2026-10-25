@@ -10,10 +10,13 @@ export const REPLICA_PORTS_CHANNEL = "replica:ports";
 export const REPLICA_PORT_ROLES = ["reads", "store", "desktop", "insights"] as const;
 export type ReplicaPortRole = (typeof REPLICA_PORT_ROLES)[number];
 
+export const WorkspaceToken = Schema.NonEmptyString.pipe(Schema.brand("WorkspaceToken"));
+export type WorkspaceToken = typeof WorkspaceToken.Type;
+
 export const ReplicaPortsMessage = Schema.Struct({
   type: Schema.Literal(REPLICA_PORTS_CHANNEL),
   generation: Schema.Natural,
-  workspaceToken: Schema.String,
+  workspaceToken: WorkspaceToken,
   roles: Schema.Array(Schema.Literals(REPLICA_PORT_ROLES)),
 });
 export type ReplicaPortsMessage = typeof ReplicaPortsMessage.Type;

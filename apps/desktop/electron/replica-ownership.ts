@@ -1,6 +1,8 @@
+import * as Arr from "effect/Array";
 import * as Deferred from "effect/Deferred";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 
 import { ReplicaWorkerFailure } from "./replica-rpc";
@@ -10,33 +12,35 @@ export type ReplicaOwnership = {
   readonly claim: (databasePath: string) => Effect.Effect<void, ReplicaWorkerFailure, Scope.Scope>;
 };
 
-export const makeReplicaOwnership = (wait: Duration.Input): ReplicaOwnership => {
-  const owners = new Map<string, Set<Deferred.Deferred<void>>>();
+type Owner = {
+  readonly databasePath: string;
+  readonly released: Deferred.Deferred<void>;
+};
+
+export const makeReplicaOwnership = Effect.fn("ReplicaOwnership.make")(function* (
+  wait: Duration.Input,
+) {
+  const owners = yield* Ref.make<ReadonlyArray<Owner>>([]);
 
   const enter = (databasePath: string) =>
     Effect.acquireRelease(
-      Deferred.make<void>().pipe(
-        Effect.tap((owner) =>
-          Effect.sync(() => {
-            const held = owners.get(databasePath) ?? new Set();
-            held.add(owner);
-            owners.set(databasePath, held);
-          }),
-        ),
-      ),
+      Effect.gen(function* () {
+        const owner: Owner = { databasePath, released: yield* Deferred.make<void>() };
+        yield* Ref.update(owners, Arr.append(owner));
+        return owner;
+      }),
       (owner) =>
-        Effect.sync(() => {
-          const held = owners.get(databasePath);
-          held?.delete(owner);
-          if (held?.size === 0) owners.delete(databasePath);
-        }).pipe(Effect.andThen(Deferred.succeed(owner, undefined))),
+        Ref.update(
+          owners,
+          Arr.filter((held) => held !== owner),
+        ).pipe(Effect.andThen(Deferred.succeed(owner.released, undefined))),
     );
 
-  const awaitOthers = (databasePath: string, own: Deferred.Deferred<void>) =>
-    Effect.suspend(() =>
+  const awaitOthers = (own: Owner) =>
+    Effect.flatMap(Ref.get(owners), (held) =>
       Effect.forEach(
-        [...(owners.get(databasePath) ?? [])].filter((owner) => owner !== own),
-        Deferred.await,
+        held.filter((owner) => owner.databasePath === own.databasePath && owner !== own),
+        (owner) => Deferred.await(owner.released),
         { discard: true },
       ),
     ).pipe(
@@ -53,7 +57,6 @@ export const makeReplicaOwnership = (wait: Duration.Input): ReplicaOwnership => 
 
   return {
     hold: (databasePath) => Effect.asVoid(enter(databasePath)),
-    claim: (databasePath) =>
-      Effect.flatMap(enter(databasePath), (own) => awaitOthers(databasePath, own)),
-  };
-};
+    claim: (databasePath) => Effect.flatMap(enter(databasePath), awaitOthers),
+  } satisfies ReplicaOwnership;
+});

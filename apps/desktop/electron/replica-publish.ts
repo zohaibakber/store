@@ -1,4 +1,5 @@
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
+import type { OrganizationId } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
@@ -33,7 +34,7 @@ type PublishClient = Pick<
 >;
 
 export type PublishPorts = {
-  readonly organizationId: string;
+  readonly organizationId: OrganizationId;
   readonly databasePath: string;
   readonly worker: <A, E extends ReplicaFileRefused | { readonly message: string }>(
     use: (client: PublishClient) => Effect.Effect<A, E>,
@@ -45,7 +46,11 @@ type Summary = typeof ReplicaPublishSummary.Type;
 
 type Standing =
   | { readonly _tag: "absent" }
-  | { readonly _tag: "elsewhere"; readonly organizationId: string; readonly summary: Summary }
+  | {
+      readonly _tag: "elsewhere";
+      readonly organizationId: OrganizationId;
+      readonly summary: Summary;
+    }
   | {
       readonly _tag: "here";
       readonly summary: Summary;
@@ -86,6 +91,7 @@ export const readLocalCatalog = (
         : Effect.succeed(0),
     ),
     Effect.map((rows): LocalCatalogReport => ({ _tag: rows > 0 ? "stocked" : "empty" })),
+    Effect.tapError((failure) => Effect.logWarning("ReplicaPublish.catalog_unread", failure)),
     Effect.catch(() => Effect.succeed<LocalCatalogReport>({ _tag: "unknown" })),
   );
 
@@ -113,6 +119,7 @@ export const readPublishOffer = (
               };
       }
     }),
+    Effect.tapError((failure) => Effect.logWarning("ReplicaPublish.offer_unread", failure)),
     Effect.catch(() => Effect.succeed(NO_OFFER)),
   );
 

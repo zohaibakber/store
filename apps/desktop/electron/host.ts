@@ -14,6 +14,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
 import { DesktopAuth, type DesktopAuthOptions } from "./auth";
+import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell } from "./desktop-shell";
 import { LicenceService } from "./licence/service";
 import { PrivateFiles } from "./private-files";
@@ -35,7 +36,7 @@ const LicenceLive = (options: { readonly directory: string; readonly trust: Lice
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
       const platform = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
-      const built = yield* Effect.cached(
+      const built = yield* cachedOnSuccess(
         Layer.buildWithScope(
           LicenceService.layer(options).pipe(Layer.provide(Layer.succeedContext(platform))),
           scope,
@@ -63,7 +64,7 @@ const ReplicaHostLive = Layer.effect(
       apiBaseUrl: shell.apiBaseUrl,
       deviceLabel: shell.deviceLabel,
       accessTokens: auth,
-      backupDialogs: shell.backupDialogs,
+      dialogs: shell.dialogs,
       publishProgress: (progress) => PubSub.publish(events.publishProgress, progress),
       rendererChannel: shell.rendererChannel,
       sessions: { licence },

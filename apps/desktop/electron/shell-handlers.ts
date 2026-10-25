@@ -6,6 +6,7 @@ import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -22,6 +23,7 @@ import {
 } from "../src/host/shell-rpcs";
 import { makeSourceLinks } from "../src/host/source-links";
 import { DesktopAuth } from "./auth";
+import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
 import { PrivateFiles } from "./private-files";
@@ -108,7 +110,7 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const fileSystem = yield* FileSystem.FileSystem;
     const sourceLinks = makeSourceLinks();
     const platform = yield* Effect.context<Crypto.Crypto | Path.Path | PrivateFiles>();
-    const deviceId = yield* Effect.cached(
+    const deviceId = yield* cachedOnSuccess(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
     );
     const organizationOf = (organizationId: string) =>
@@ -155,8 +157,9 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
           Effect.flatMap((input) => replicas.open(sender, input)),
           Effect.mapError((failure) => new WorkspaceOpenFailed({ message: failure.message })),
         ),
-      ReplicaClose: ({ workspaceToken }) => replicas.close(sender.id, workspaceToken),
-      ReplicaRetry: ({ workspaceToken }) => replicas.retryRecovery(sender.id, workspaceToken),
+      ReplicaClose: ({ workspaceToken }) => Effect.orDie(replicas.close(sender.id, workspaceToken)),
+      ReplicaRetry: ({ workspaceToken }) =>
+        Effect.orDie(replicas.retryRecovery(sender.id, workspaceToken)),
       BackUp: () => replicas.backUp(sender.id),
       ChooseRestore: () => replicas.chooseRestore(sender.id),
       ApplyRestore: () => replicas.applyRestore(sender.id),
@@ -176,8 +179,9 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
       ShareCopyText: ({ text }) => shell.writeClipboardText(text),
       ShareSavePdf: ({ fileStem }) =>
         Effect.gen(function* () {
-          const filePath = yield* shell.choosePdfDestination(`${fileStem}.pdf`);
-          if (filePath === null) return { _tag: "cancelled" as const };
+          const chosen = yield* shell.dialogs.choosePdfDestination(`${fileStem}.pdf`);
+          if (Option.isNone(chosen)) return { _tag: "cancelled" as const };
+          const filePath = chosen.value;
           return yield* Effect.tryPromise(() =>
             sender.printToPDF({
               pageSize: "A4",
@@ -189,7 +193,11 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
             Effect.as({ _tag: "saved" as const, fileName: path.basename(filePath) }),
             Effect.catch(() => Effect.succeed({ _tag: "failed" as const, message: PDF_FAILED })),
           );
-        }),
+        }).pipe(
+          Effect.catchTag("DialogFailed", () =>
+            Effect.succeed({ _tag: "failed" as const, message: PDF_FAILED }),
+          ),
+        ),
       SharePrint: ({ page }) =>
         Effect.callback<PrintOutcome>((resume) => {
           sender.print(printOptions(page), (success, failureReason) =>

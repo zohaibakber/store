@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import {
@@ -28,6 +29,7 @@ import { SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
 import { DesktopAuth } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { DesktopShell, OpenExternalFailed } from "./desktop-shell";
+import { DialogFailed, type Dialogs } from "./dialogs";
 import { makeDesktopHost } from "./host";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
@@ -38,7 +40,6 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { lockDownRenderer } from "./renderer-lockdown";
-import type { ReplicaBackupDialogs } from "./replica-backup";
 import { ReplicaHost } from "./replica-host";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { ShellEvents } from "./shell-events";
@@ -146,29 +147,39 @@ const hostDeviceLabel = () => {
 
 const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
 
-const chooseSavePath = async (options: Electron.SaveDialogOptions) => {
-  const chosen = win
-    ? await dialog.showSaveDialog(win, options)
-    : await dialog.showSaveDialog(options);
-  return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
-};
+const showDialog = <A>(show: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: show,
+    catch: (cause) => new DialogFailed({ message: "The file dialog could not be opened.", cause }),
+  });
 
-const chooseOpenPath = async (options: Electron.OpenDialogOptions) => {
-  const chosen = win
-    ? await dialog.showOpenDialog(win, options)
-    : await dialog.showOpenDialog(options);
-  return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
-};
+const chooseSavePath = (options: Electron.SaveDialogOptions) =>
+  showDialog(() =>
+    win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options),
+  ).pipe(
+    Effect.map((chosen) =>
+      chosen.canceled || chosen.filePath === "" ? Option.none() : Option.some(chosen.filePath),
+    ),
+  );
 
-const backupDialogs: ReplicaBackupDialogs = {
-  chooseDestination: (suggestedName) =>
+const chooseOpenPath = (options: Electron.OpenDialogOptions) =>
+  showDialog(() =>
+    win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options),
+  ).pipe(
+    Effect.map((chosen) =>
+      chosen.canceled ? Option.none() : Option.fromNullishOr(chosen.filePaths[0]),
+    ),
+  );
+
+const dialogs: Dialogs = {
+  chooseBackupDestination: (suggestedName) =>
     chooseSavePath({
       title: "Back up to file",
       buttonLabel: "Back up",
       defaultPath: path.join(app.getPath("documents"), suggestedName),
       filters: BACKUP_FILE_FILTERS,
     }),
-  chooseSource: () =>
+  chooseBackupSource: Effect.suspend(() =>
     chooseOpenPath({
       title: "Restore from file",
       buttonLabel: "Choose backup",
@@ -176,15 +187,15 @@ const backupDialogs: ReplicaBackupDialogs = {
       filters: BACKUP_FILE_FILTERS,
       properties: ["openFile"],
     }),
+  ),
+  choosePdfDestination: (suggestedName) =>
+    chooseSavePath({
+      title: "Save as PDF",
+      buttonLabel: "Save",
+      defaultPath: path.join(app.getPath("documents"), suggestedName),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    }),
 };
-
-const choosePdfDestination = (suggestedName: string) =>
-  chooseSavePath({
-    title: "Save as PDF",
-    buttonLabel: "Save",
-    defaultPath: path.join(app.getPath("documents"), suggestedName),
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
 
 const withWindow = (control: (window: BrowserWindow) => void) =>
   Effect.sync(() => {
@@ -198,7 +209,7 @@ const desktopShell = DesktopShell.of({
   deviceLabel: hostDeviceLabel(),
   rendererChannel: () => new MessageChannelMain(),
   oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
-  backupDialogs,
+  dialogs,
   minimizeWindow: withWindow((window) => window.minimize()),
   toggleMaximizeWindow: withWindow((window) =>
     window.isMaximized() ? window.unmaximize() : window.maximize(),
@@ -214,8 +225,6 @@ const desktopShell = DesktopShell.of({
       catch: (cause) => new OpenExternalFailed({ message: "The link could not be opened.", cause }),
     }),
   writeClipboardText: (text) => Effect.sync(() => clipboard.writeText(text)),
-  choosePdfDestination: (suggestedName) =>
-    Effect.promise(() => choosePdfDestination(suggestedName)),
 });
 
 const host = makeDesktopHost({

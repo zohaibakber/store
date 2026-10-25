@@ -124,7 +124,6 @@ export default defineConfig({
         files: [
           "apps/desktop/electron/host.ts",
           "apps/desktop/electron/replica-worker-handlers.ts",
-          "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/components/insights/restock-page.tsx",
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
@@ -158,8 +157,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/desktop/electron/replica-backup.ts",
-          "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/lib/preferences.ts",
           "packages/auth/src/web-crypto.ts",
           "packages/contracts/src/sync/operation-hash.ts",
@@ -196,8 +193,6 @@ export default defineConfig({
         files: [
           "apps/desktop/electron/auth-ipc.ts",
           "apps/desktop/electron/auth.ts",
-          "apps/desktop/electron/replica-backup.ts",
-          "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/components/insights/restock-page.tsx",
           "apps/desktop/src/components/theme/provider.tsx",
           "apps/desktop/src/components/uploads/context.tsx",
@@ -226,7 +221,6 @@ export default defineConfig({
       {
         files: [
           "apps/auth/src/http.ts",
-          "apps/desktop/electron/workspace-sessions.ts",
           "apps/desktop/src/host/invoice-upload.ts",
           "apps/server/src/auth/organization.ts",
           "apps/server/src/routes/sync.ts",

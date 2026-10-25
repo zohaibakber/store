@@ -2,12 +2,15 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { decodeOrganizationId, decodeReplicaId, decodeUserId } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Stream from "effect/Stream";
@@ -101,7 +104,10 @@ const makeWorld = (
           liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
           accessTokens: Stream.never,
         },
-        backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
+        dialogs: {
+          chooseBackupDestination: () => Effect.succeed(Option.none()),
+          chooseBackupSource: Effect.succeed(Option.none()),
+        },
         publishProgress: () => Effect.void,
         sessions: {
           spawnWorker,
@@ -116,7 +122,7 @@ const makeWorld = (
           ownershipWait: Duration.millis(150),
         },
       }),
-    ).pipe(Layer.provide(NodeFileSystem.layer)),
+    ).pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer))),
   );
 
   const sender = (id: number) => ({
@@ -130,9 +136,9 @@ const makeWorld = (
       ReplicaHost.use((replicas) =>
         replicas.open(sender(id), {
           authority: "remote",
-          organizationId: "org-1",
-          userId: "user-1",
-          replicaId: "device-1",
+          organizationId: decodeOrganizationId("org-1"),
+          userId: decodeUserId("user-1"),
+          replicaId: decodeReplicaId("device-1"),
         }),
       ),
     );

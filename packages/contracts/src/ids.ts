@@ -40,6 +40,10 @@ export const UserId = Schema.NonEmptyString.pipe(Schema.brand("UserId"));
 export type UserId = typeof UserId.Type;
 export const decodeUserId = Schema.decodeUnknownSync(UserId);
 
+export const ReplicaId = Schema.NonEmptyString.pipe(Schema.brand("ReplicaId"));
+export type ReplicaId = typeof ReplicaId.Type;
+export const decodeReplicaId = Schema.decodeUnknownSync(ReplicaId);
+
 export const StaffId = Schema.NonEmptyString.pipe(Schema.brand("StaffId"));
 export type StaffId = typeof StaffId.Type;
 export const decodeStaffId = Schema.decodeUnknownSync(StaffId);
