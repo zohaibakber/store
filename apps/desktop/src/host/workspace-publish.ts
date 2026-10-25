@@ -19,11 +19,10 @@ export type PublishOffer = typeof PublishOffer.Type;
 export const PublishProgress = Schema.Struct({ sent: Schema.Natural, total: Schema.Natural });
 export type PublishProgress = typeof PublishProgress.Type;
 
-export const PublishOutcome = Schema.Union([
-  Schema.TaggedStruct("published", { counts: CatalogCounts }),
-  Schema.TaggedStruct("failed", { message: Schema.String }),
-]);
-export type PublishOutcome = typeof PublishOutcome.Type;
+export const Published = Schema.TaggedStruct("published", { counts: CatalogCounts });
+export type PublishOutcome =
+  | typeof Published.Type
+  | { readonly _tag: "failed"; readonly message: string };
 
 export type WorkspacePublishBridge = {
   readonly offer: (organizationId: string) => Promise<PublishOffer>;
@@ -32,20 +31,3 @@ export type WorkspacePublishBridge = {
   readonly localCatalog: () => Promise<LocalCatalogReport>;
   readonly onProgress: (listener: (progress: PublishProgress) => void) => () => void;
 };
-
-const decodeOffer = Schema.decodeUnknownSync(PublishOffer);
-const decodeOutcome = Schema.decodeUnknownSync(PublishOutcome);
-const decodeProgress = Schema.decodeUnknownOption(PublishProgress);
-const decodeLocalCatalog = Schema.decodeUnknownSync(LocalCatalogReport);
-
-export const decodedPublishBridge = (bridge: WorkspacePublishBridge): WorkspacePublishBridge => ({
-  offer: async (organizationId) => decodeOffer(await bridge.offer(organizationId)),
-  publish: async (organizationId) => decodeOutcome(await bridge.publish(organizationId)),
-  discard: async (organizationId) => decodeOffer(await bridge.discard(organizationId)),
-  localCatalog: async () => decodeLocalCatalog(await bridge.localCatalog()),
-  onProgress: (listener) =>
-    bridge.onProgress((progress) => {
-      const decoded = decodeProgress(progress);
-      if (decoded._tag === "Some") listener(decoded.value);
-    }),
-});

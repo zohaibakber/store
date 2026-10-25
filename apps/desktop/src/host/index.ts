@@ -13,8 +13,10 @@ import type {
 } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 
+import type { InventoryHttpBridge, ReplicaWorkspaceBridge } from "./electron";
 import type { InvoiceUploadFile } from "./invoice-upload";
 import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
+import type { ThemeSource } from "./shell-rpcs";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
 
@@ -45,8 +47,6 @@ export type AppUpdaterBridge = {
   readonly onEvent: (listener: (event: UpdaterEvent) => void) => () => void;
 };
 
-export type ThemeSource = "dark" | "light" | "system";
-
 export type ThemeBridge = { readonly setSource: (source: ThemeSource) => void };
 
 export type WindowControlsBridge = {
@@ -76,6 +76,8 @@ export interface AppHost {
   readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
   readonly print: (page: PrintPage) => Promise<PrintOutcome>;
   readonly publish: WorkspacePublishBridge;
+  readonly inventoryHttp: InventoryHttpBridge;
+  readonly replica: ReplicaWorkspaceBridge;
 }
 
 let installed: AppHost | null = null;

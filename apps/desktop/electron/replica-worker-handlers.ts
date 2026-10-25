@@ -42,6 +42,7 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
@@ -51,11 +52,11 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { ReplicaFileRefused } from "../src/host/file-refusal";
 import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   catalogCountsOf,
   commitStampOf,
-  RESTORE_LOCAL_ONLY,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
   type ReplicaWorkerBoot,
@@ -68,17 +69,19 @@ const workerFailure = (cause: unknown) =>
 
 type WorkerBoot = typeof ReplicaWorkerBoot.Type;
 
-const ORGANIZATION_BACKUP_MESSAGE =
-  "This backup is a copy of an organization's data. Only a backup of this device's own workspace can be restored here.";
-
-const UNOPENABLE_BACKUP_MESSAGE = "This backup could not be opened by this version of Tabaaq.";
-
 const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this device's data.";
 
-const fileFailure = (failure: { readonly message: string }) =>
-  new ReplicaWorkerFailure({ message: failure.message });
+const ORGANIZATION_REQUIRED = "ORGANIZATION_REQUIRED";
 
-const OWNER_ONLY_MESSAGE = "Only the owner can do this. Unlock as the owner and try again.";
+const fileFailure = (
+  failure: ReplicaFileRefused | { readonly message: string; readonly code?: string },
+) => {
+  if (failure instanceof ReplicaFileRefused) return failure;
+  if (failure.code === ORGANIZATION_REQUIRED) {
+    return new ReplicaFileRefused({ reason: "publish-needs-sign-in" });
+  }
+  return new ReplicaWorkerFailure({ message: failure.message });
+};
 
 const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer));
 
@@ -109,13 +112,14 @@ const linkRemoteAuthority = Effect.fnUntraced(function* (
   config: Extract<WorkerBoot, { readonly authority: "remote" }>,
 ) {
   const http = yield* makePinnedHttp(config.apiBaseUrl);
+  const runPromise = yield* FiberSet.makeRuntimePromise<never>();
   return {
     session: layerNodeReplicaSync({
       ...sessionInput(config),
       transport: http.syncTransport,
       live: {
         apiBaseUrl: config.apiBaseUrl,
-        accessToken: (options) => Effect.runPromise(http.liveAccessToken(options)),
+        accessToken: (options) => runPromise(http.liveAccessToken(options)),
       },
       deviceLabel: config.deviceLabel,
     }),
@@ -144,7 +148,7 @@ const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
 };
 
 const needsOrganization = Effect.fail(
-  new ImportRefused({ code: "ORGANIZATION_REQUIRED", message: PUBLISH_NEEDS_ORGANIZATION }),
+  new ImportRefused({ code: ORGANIZATION_REQUIRED, message: PUBLISH_NEEDS_ORGANIZATION }),
 );
 
 const localImports: ImportClient = {
@@ -163,7 +167,7 @@ const linkLocalAuthority = (
   imports: localImports,
 });
 
-const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink> => {
+const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
   switch (config.authority) {
     case "local":
       return Effect.succeed(linkLocalAuthority(config));
@@ -250,7 +254,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               Context.get(session, StaffGate)
                 .authorize("manageShop")
                 .pipe(
-                  Effect.mapError(() => new ReplicaWorkerFailure({ message: OWNER_ONLY_MESSAGE })),
+                  Effect.mapError(() => new ReplicaFileRefused({ reason: "owner-only" })),
                   Effect.asVoid,
                 ),
           }),
@@ -272,7 +276,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         Effect.gen(function* () {
           const backup = yield* stageReplicaBackup({ sourcePath, stagedPath });
           if (backup.organizationId !== local.organizationId || backup.userId !== local.userId) {
-            return yield* new ReplicaWorkerFailure({ message: ORGANIZATION_BACKUP_MESSAGE });
+            return yield* new ReplicaFileRefused({ reason: "organization-backup" });
           }
           yield* Effect.scopedWith((trial) =>
             openSession(
@@ -287,7 +291,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             Effect.catchCause((cause) =>
               Cause.hasInterrupts(cause)
                 ? Effect.interrupt
-                : Effect.fail(new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE })),
+                : Effect.fail(new ReplicaFileRefused({ reason: "unopenable-backup" })),
             ),
           );
           const current = yield* readReplicaFileSummary(local.databasePath);
@@ -344,8 +348,9 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
               Effect.mapError(
                 (failure) =>
-                  new ReplicaWorkerFailure({
-                    message: `The backup could not be written. ${failure.message}`,
+                  new ReplicaFileRefused({
+                    reason: "backup-write-failed",
+                    detail: failure.message,
                   }),
               ),
             ),
@@ -355,7 +360,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             case "local":
               return Effect.andThen(ownerOnly, stageRestore(config, sourcePath, stagedPath));
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+              return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
           }
         },
         ReleaseForRestore: ({ stagedPath }) => {
@@ -363,7 +368,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             case "local":
               return Effect.andThen(ownerOnly, releaseForRestore(config, stagedPath));
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+              return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
           }
         },
         PublishSummary: ({ sourcePath }) =>

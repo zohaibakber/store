@@ -8,10 +8,9 @@ import {
 } from "@store/inventory-react";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { InventoryHttpConfig } from "@/host/electron";
+import { appHost } from "@/host";
 
 const PORTS_WAIT = "15 seconds";
 
@@ -19,11 +18,9 @@ const NO_ENGINE = "Native Electron replica SQLite is unavailable.";
 
 const NO_PORTS = "The local database did not answer. Try again.";
 
-export const createElectronInventoryHost = async (): Promise<InventoryHost | undefined> => {
-  const http = window.inventoryHttp;
-  const replica = window.replica;
-  if (!http || !replica) return undefined;
-  const config = Schema.decodeUnknownSync(InventoryHttpConfig)(await http.getConfig());
+export const createElectronInventoryHost = async (): Promise<InventoryHost> => {
+  const { inventoryHttp, replica } = appHost();
+  const config = await inventoryHttp.getConfig();
   return {
     apiBaseUrl: config.apiBaseUrl,
     deviceId: config.deviceId,

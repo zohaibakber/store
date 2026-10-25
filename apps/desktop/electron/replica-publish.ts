@@ -6,12 +6,13 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
+import { ReplicaFileRefused } from "../src/host/file-refusal";
 import type { CatalogCounts } from "../src/host/workspace-backup";
 import type {
   LocalCatalogReport,
   PublishOffer,
-  PublishOutcome,
   PublishProgress,
+  Published,
 } from "../src/host/workspace-publish";
 import {
   archiveReplicaFile,
@@ -21,12 +22,9 @@ import {
   writePublishMarker,
   type PublishMarker,
 } from "./replica-publish-files";
+import { asFileRefusal } from "./replica-refusal";
 import { removeReplicaFile } from "./replica-restore-files";
-import {
-  catalogCountsOf,
-  type ReplicaPublishSummary,
-  type ReplicaWorkerFailure,
-} from "./replica-rpc";
+import { catalogCountsOf, type ReplicaPublishSummary } from "./replica-rpc";
 import type { ReplicaWorkerClient } from "./replica-supervisor";
 
 type PublishClient = Pick<
@@ -37,9 +35,9 @@ type PublishClient = Pick<
 export type PublishPorts = {
   readonly organizationId: string;
   readonly databasePath: string;
-  readonly worker: <A, E extends { readonly message: string }>(
+  readonly worker: <A, E extends ReplicaFileRefused | { readonly message: string }>(
     use: (client: PublishClient) => Effect.Effect<A, E>,
-  ) => Effect.Effect<A, ReplicaWorkerFailure>;
+  ) => Effect.Effect<A, ReplicaFileRefused>;
   readonly progress: (progress: PublishProgress) => Effect.Effect<void>;
 };
 
@@ -56,17 +54,7 @@ type Standing =
 
 export const NO_OFFER: PublishOffer = { _tag: "none" };
 
-const NOTHING_TO_MOVE = "This device has no data to move.";
-
-const MOVED_BEFORE_CHANGES =
-  "This device's data was already moved to this organization. Changes made on this device since then are not in the organization and stay under This device.";
-
-const MOVING_ELSEWHERE =
-  "This device's data is already being moved to another organization. Open that organization to finish, or cancel that move.";
-
-const UNFINISHED = "This device's data could not be read to the end. Try again.";
-
-export const failed = (message: string): PublishOutcome => ({ _tag: "failed", message });
+type PublishDone = typeof Published.Type;
 
 const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: PublishPorts) {
   if (!(yield* replicaFileExists(ports.databasePath))) {
@@ -143,7 +131,7 @@ const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
   });
   yield* removeReplicaFile(analyticsDatabasePath(ports.databasePath));
   yield* removePublishMarker(ports.databasePath);
-  return { _tag: "published", counts } satisfies PublishOutcome;
+  return { _tag: "published", counts } satisfies PublishDone;
 });
 
 const resume = Effect.fn("ReplicaPublish.resume")(function* (
@@ -160,14 +148,14 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
         return Option.some(yield* setAside(ports, catalogCountsOf(summary)));
       }
       yield* removePublishMarker(ports.databasePath);
-      return Option.some(failed(MOVED_BEFORE_CHANGES));
+      return yield* new ReplicaFileRefused({ reason: "moved-before-changes" });
     case "other":
       yield* removePublishMarker(ports.databasePath);
-      return Option.some(failed(status.message));
+      return yield* new ReplicaFileRefused({ reason: "failed", detail: status.message });
     case "unconfirmed":
-      return Option.some(failed(status.message));
+      return yield* new ReplicaFileRefused({ reason: "failed", detail: status.message });
     case "none":
-      return Option.none<PublishOutcome>();
+      return Option.none<PublishDone>();
   }
 });
 
@@ -217,7 +205,7 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
     startedAt: yield* Clock.currentTimeMillis,
   });
   const seal = yield* stage(ports, summary);
-  if (Option.isNone(seal)) return failed(UNFINISHED);
+  if (Option.isNone(seal)) return yield* new ReplicaFileRefused({ reason: "unfinished-read" });
   const committed = yield* ports.worker((client) =>
     client.PublishCommit({
       sourcePath: ports.databasePath,
@@ -230,25 +218,25 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
       return yield* setAside(ports, catalogCountsOf(summary));
     case "refused":
       yield* removePublishMarker(ports.databasePath);
-      return failed(committed.message);
+      return yield* new ReplicaFileRefused({ reason: "failed", detail: committed.message });
     case "unconfirmed":
-      return failed(committed.message);
+      return yield* new ReplicaFileRefused({ reason: "failed", detail: committed.message });
   }
 });
 
 export const publishLocalWorkspace = (
   ports: PublishPorts,
-): Effect.Effect<PublishOutcome, never, FileSystem.FileSystem> =>
+): Effect.Effect<PublishDone, ReplicaFileRefused, FileSystem.FileSystem> =>
   readStanding(ports).pipe(
     Effect.flatMap((standing) => {
       switch (standing._tag) {
         case "absent":
-          return Effect.succeed(failed(NOTHING_TO_MOVE));
+          return Effect.fail(new ReplicaFileRefused({ reason: "nothing-to-move" }));
         case "elsewhere":
-          return Effect.succeed(failed(MOVING_ELSEWHERE));
+          return Effect.fail(new ReplicaFileRefused({ reason: "moving-elsewhere" }));
         case "here":
           return publishFrom(ports, standing.summary, standing.pending);
       }
     }),
-    Effect.catch((cause) => Effect.succeed(failed(cause.message))),
+    Effect.mapError(asFileRefusal),
   );
