@@ -129,7 +129,6 @@ export default defineConfig({
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
           "apps/desktop/src/session/workspace-session.ts",
-          "packages/client-db/src/store/commands.ts",
           "packages/inventory-react/src/staff.ts",
           "packages/inventory-react/src/workspace.ts",
         ],

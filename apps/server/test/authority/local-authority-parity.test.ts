@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
-  catalogWriteError,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
@@ -14,6 +13,7 @@ import {
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
 } from "@store/contracts";
+import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
 import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
 import {
   decodeBatchId,
@@ -1354,11 +1354,11 @@ describe("the local authority decides like the durable object authority", () => 
         "INVALID_OPERATION: A value in this command is out of range.",
         "COMMAND_IDENTITY_MISMATCH: The command id must match the envelope operation id.",
         `ENTITY_CONFLICT: Product ${IDLE_PRODUCT} changed since units per pack was read.`,
-        `ENTITY_CONFLICT: ${catalogWriteError.categoryHasProducts}`,
+        `ENTITY_CONFLICT: ${CATALOG_REFUSALS.categoryHasProducts.message}`,
         `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
-        `ENTITY_CONFLICT: ${catalogWriteError.batchHasStock}`,
+        `ENTITY_CONFLICT: ${CATALOG_REFUSALS.batchHasStock.message}`,
         `ENTITY_CONFLICT: Batch ${LAST_UNIT_BATCH_ID} changed since it was read.`,
-        `ENTITY_CONFLICT: ${catalogWriteError.productHasStock}`,
+        `ENTITY_CONFLICT: ${CATALOG_REFUSALS.productHasStock.message}`,
         "catalogWrite",
         `ENTITY_RELATION_INVALID: Product ${IDLE_PRODUCT} is not available in this organization.`,
         "catalogWrite",

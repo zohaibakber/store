@@ -1,6 +1,7 @@
 import type { CreateCategoryInput } from "@store/contracts";
 import { MAX_CATALOG_WRITE_ROWS, type CatalogRowWrite } from "@store/contracts/catalog-write";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 import { projectCreateCategory, type CatalogProjectionContext } from "../catalog-projection";
 import type { CategoryRow, ProductRow } from "../rows";
@@ -56,3 +57,32 @@ export const importCategory = (context: CatalogProjectionContext, input: CreateC
       tables: withProjectedCategory(context, projected.row).tables,
     };
   });
+
+export class RowIdSupplyMismatch extends Schema.TaggedError<RowIdSupplyMismatch>()(
+  "RowIdSupplyMismatch",
+  { drawn: Schema.Number, taken: Schema.Number },
+) {}
+
+const placeholderRowId = (index: number) =>
+  `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+
+export const countingRowIds = () => {
+  let used = 0;
+  return {
+    used: () => used,
+    rowId: () => placeholderRowId(used++),
+  };
+};
+
+export const drawnRowIds = (drawn: ReadonlyArray<string>) => {
+  let used = 0;
+  return {
+    balanced: () => used === drawn.length,
+    used: () => used,
+    rowId: () => {
+      const id = drawn[used] ?? placeholderRowId(used);
+      used += 1;
+      return id;
+    },
+  };
+};
