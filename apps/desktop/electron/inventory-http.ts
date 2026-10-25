@@ -6,15 +6,15 @@ import { trustedIpcListener } from "./ipc-sender";
 
 export const registerInventoryHttpIpc = (options: {
   readonly apiBaseUrl: string;
-  readonly deviceId: string;
+  readonly deviceId: () => Promise<string>;
   readonly ipcMain: Pick<IpcMain, "handle" | "removeHandler">;
   readonly allowedOrigins: () => ReadonlyArray<string>;
 }) => {
   options.ipcMain.handle(
     INVENTORY_HTTP_CONFIG_CHANNEL,
-    trustedIpcListener(options.allowedOrigins, (): InventoryHttpConfig => ({
+    trustedIpcListener(options.allowedOrigins, async (): Promise<InventoryHttpConfig> => ({
       apiBaseUrl: options.apiBaseUrl,
-      deviceId: options.deviceId,
+      deviceId: await options.deviceId(),
     })),
   );
 

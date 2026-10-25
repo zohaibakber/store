@@ -2,8 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Schema from "effect/Schema";
@@ -91,6 +93,7 @@ const setupIpc = () => {
       };
     });
   const listeners = new Map<string, ReplicaIpcListener>();
+  const runtime = ManagedRuntime.make(NodeFileSystem.layer);
   const registration = registerReplicaWorkerIpc({
     ipcMain: {
       handle: (channel, listener) => {
@@ -103,9 +106,10 @@ const setupIpc = () => {
     userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-test-")),
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
+    run: (effect) => runtime.runPromise(effect),
     accessTokens: {
-      current: async () => Redacted.make("access-1"),
-      subscribe: () => () => undefined,
+      liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
+      accessTokens: Stream.never,
     },
     allowedOrigins: () => allowed,
     backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },

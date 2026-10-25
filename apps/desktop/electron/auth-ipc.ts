@@ -17,7 +17,7 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import type { IpcMain } from "electron";
 
-import { DesktopAuth, type AuthBroker } from "./auth";
+import { DesktopAuth } from "./auth";
 import {
   AUTH_AUTHENTICATE_CHANNEL,
   AUTH_BEGIN_GOOGLE_CHANNEL,
@@ -104,14 +104,14 @@ const userFacing = <A, E, R>(command: Effect.Effect<A, E, R>) =>
 
 export const registerAuthIpc = (options: {
   readonly ipcMain: Pick<IpcMain, "handle">;
-  readonly broker: Pick<AuthBroker, "run">;
+  readonly run: <A, E>(effect: Effect.Effect<A, E, DesktopAuth>) => Promise<A>;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly oauthRedirectUri: string;
   readonly openExternal: (url: string) => Promise<void>;
   readonly rememberSourceLinks: (result: GlobalProductSearchResult) => void;
 }) => {
   const { ipcMain, allowedOrigins } = options;
-  const { run } = options.broker;
+  const { run } = options;
 
   ipcMain.handle(
     AUTH_GET_SESSION_CHANNEL,

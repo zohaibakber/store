@@ -1,6 +1,4 @@
-import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import path from "node:path";
 
 import {
   classifyUpdateFailure,
@@ -11,13 +9,16 @@ import {
   type UpdatePhase,
 } from "@store/contracts/updater";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as FiberHandle from "effect/FiberHandle";
+import * as FiberSet from "effect/FiberSet";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { app, ipcMain, type BrowserWindow, type IpcMainEvent } from "electron";
 import electronUpdater from "electron-updater";
@@ -54,32 +55,43 @@ const PendingUpdateInfo = Schema.Struct({
   fileName: Schema.optional(Schema.String),
 });
 
-const providerError = (cause: unknown) =>
-  cause instanceof Error ? cause : new Error(String(cause));
+class UpdaterCheckFailed extends Schema.TaggedError<UpdaterCheckFailed>()("UpdaterCheckFailed", {
+  cause: Schema.Defect(),
+}) {}
+
+const decodePendingUpdateInfo = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PendingUpdateInfo),
+);
 
 const versionFromPendingFileName = (fileName: string) => {
   const match = /(?:^|-)(\d+\.\d+\.\d+)(?:\.AppImage)?$/u.exec(fileName);
   return match?.[1];
 };
 
-const updaterCacheRoot = () => process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
+const updaterCacheRoot = (path: Path.Path) =>
+  process.env["XDG_CACHE_HOME"] || path.join(homedir(), ".cache");
 
-const clearStalePendingUpdate = async (currentVersion: string) => {
-  const pendingDirectory = path.join(updaterCacheRoot(), "@storedesktop-updater", "pending");
-  try {
-    const info = Schema.decodeUnknownSync(Schema.fromJsonString(PendingUpdateInfo))(
-      await readFile(path.join(pendingDirectory, "update-info.json"), "utf8"),
-    );
-    const pendingVersion = info.fileName ? versionFromPendingFileName(info.fileName) : undefined;
+const clearStalePendingUpdate = Effect.fn("Updater.clearStalePendingUpdate")(
+  function* (currentVersion: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const pendingDirectory = path.join(updaterCacheRoot(path), "@storedesktop-updater", "pending");
+    const text = yield* fs.readFileString(path.join(pendingDirectory, "update-info.json"));
+    const info = decodePendingUpdateInfo(text);
+    if (Option.isNone(info) || !info.value.fileName) return;
+    const pendingVersion = versionFromPendingFileName(info.value.fileName);
     if (!pendingVersion) return;
     const pendingIsNewerThanCurrent =
       pendingVersion.localeCompare(currentVersion, undefined, {
         numeric: true,
         sensitivity: "base",
       }) > 0;
-    if (!pendingIsNewerThanCurrent) await rm(pendingDirectory, { force: true, recursive: true });
-  } catch {}
-};
+    if (!pendingIsNewerThanCurrent) {
+      yield* fs.remove(pendingDirectory, { force: true, recursive: true });
+    }
+  },
+  (effect) => Effect.ignore(effect),
+);
 
 const clampPercent = (percent: number) => Math.min(100, Math.max(0, Math.round(percent)));
 
@@ -99,11 +111,7 @@ const updaterEvents = Stream.callback<AutoUpdaterEvent>((queue) => {
       emit({ type: "progress", percent: clampPercent(info.percent) }),
     "update-downloaded": (info: { version: string }) =>
       emit({ type: "downloaded", version: info.version }),
-    error: (cause: Error) => {
-      console.error("There was a problem updating the application");
-      console.error(cause);
-      emit({ type: "error", error: cause });
-    },
+    error: (cause: Error) => emit({ type: "error", error: cause }),
   };
   return Effect.acquireRelease(
     Effect.sync(() => {
@@ -137,7 +145,7 @@ const updaterEvents = Stream.callback<AutoUpdaterEvent>((queue) => {
 
 const checkForUpdates = Effect.tryPromise({
   try: () => autoUpdater.checkForUpdates().then(() => undefined),
-  catch: providerError,
+  catch: (cause) => new UpdaterCheckFailed({ cause }),
 });
 
 const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
@@ -193,6 +201,7 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
     const handleUpdaterEvent = (event: AutoUpdaterEvent) =>
       event.type === "error"
         ? Effect.gen(function* () {
+            yield* Effect.logError("updater.failed", event.error);
             const failure = classifyUpdateFailure(event.error.message);
             yield* transition({
               type: "error",
@@ -206,8 +215,8 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
 
     yield* updaterEvents.pipe(Stream.runForEach(handleUpdaterEvent), Effect.forkScoped);
 
-    yield* check.pipe(
-      Effect.repeat(Schedule.spaced(CHECK_INTERVAL_MS)),
+    yield* clearStalePendingUpdate(app.getVersion()).pipe(
+      Effect.andThen(check.pipe(Effect.repeat(Schedule.spaced(CHECK_INTERVAL_MS)))),
       Effect.delay(INITIAL_CHECK_DELAY_MS),
       Effect.forkScoped,
     );
@@ -223,40 +232,41 @@ const makeUpdaterWorkflow = (publish: (event: UpdaterEvent) => void) =>
     return { checkNow };
   });
 
-export async function setupUpdater(
-  getWindow: () => BrowserWindow | null,
-  allowedOrigins: () => ReadonlyArray<string>,
-) {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.logger = console;
-  autoUpdater.setFeedURL({
-    provider: "github",
-    owner: "zohaibakber",
-    repo: "store",
-  });
-  await clearStalePendingUpdate(app.getVersion());
-
-  const scope = Scope.makeUnsafe();
-  const workflow = await Effect.runPromise(
-    makeUpdaterWorkflow((event) =>
-      getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
-    ).pipe(Scope.provide(scope)),
+export const UpdaterLive = (options: {
+  readonly getWindow: () => BrowserWindow | null;
+  readonly allowedOrigins: () => ReadonlyArray<string>;
+}) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      autoUpdater.autoDownload = true;
+      autoUpdater.autoInstallOnAppQuit = true;
+      autoUpdater.logger = console;
+      autoUpdater.setFeedURL({
+        provider: "github",
+        owner: "zohaibakber",
+        repo: "store",
+      });
+      const workflow = yield* makeUpdaterWorkflow((event) =>
+        options.getWindow()?.webContents.send(UPDATER_EVENT_CHANNEL, event),
+      );
+      const run = yield* FiberSet.makeRuntimePromise<never>();
+      const install = (event: IpcMainEvent) => {
+        if (!isTrustedIpcSenderFrame(event.senderFrame, options.allowedOrigins())) return;
+        autoUpdater.quitAndInstall();
+      };
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          ipcMain.handle(
+            UPDATER_CHECK_CHANNEL,
+            trustedIpcListener(options.allowedOrigins, () => run(workflow.checkNow)),
+          );
+          ipcMain.on(UPDATER_INSTALL_CHANNEL, install);
+        }),
+        () =>
+          Effect.sync(() => {
+            ipcMain.removeHandler(UPDATER_CHECK_CHANNEL);
+            ipcMain.off(UPDATER_INSTALL_CHANNEL, install);
+          }),
+      );
+    }),
   );
-
-  ipcMain.handle(
-    UPDATER_CHECK_CHANNEL,
-    trustedIpcListener(allowedOrigins, () => Effect.runPromise(workflow.checkNow)),
-  );
-  const install = (event: IpcMainEvent) => {
-    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedOrigins())) return;
-    autoUpdater.quitAndInstall();
-  };
-  ipcMain.on(UPDATER_INSTALL_CHANNEL, install);
-
-  return async () => {
-    ipcMain.removeHandler(UPDATER_CHECK_CHANNEL);
-    ipcMain.off(UPDATER_INSTALL_CHANNEL, install);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-  };
-}

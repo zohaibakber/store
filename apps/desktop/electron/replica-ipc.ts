@@ -1,8 +1,6 @@
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import { decodeOrganizationId, type DeviceLabel } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import type { MessageChannelMain } from "electron";
 
@@ -117,15 +115,14 @@ export const registerReplicaWorkerIpc = (options: {
   readonly workerPath: string;
   readonly apiBaseUrl: string;
   readonly deviceLabel?: DeviceLabel | undefined;
+  readonly run: <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) => Promise<A>;
   readonly accessTokens: AccessTokenSource;
   readonly allowedOrigins: () => ReadonlyArray<string>;
   readonly backupDialogs: ReplicaBackupDialogs;
   readonly rendererChannel?: (() => MessageChannelMain) | undefined;
   readonly sessions?: WorkspaceSessionTuning;
 }) => {
-  const runtime = ManagedRuntime.make(NodeFileSystem.layer);
-  const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) =>
-    runtime.runPromise(effect);
+  const { run } = options;
   const stagedRestores = makeStagedRestores();
   const sessions = makeWorkspaceSessions({
     userDataPath: options.userDataPath,
@@ -194,7 +191,7 @@ export const registerReplicaWorkerIpc = (options: {
     setForeground: (visible: boolean) => run(sessions.setForeground(visible)),
     dispose: () => {
       for (const channel of Object.keys(registered)) options.ipcMain.removeHandler(channel);
-      return run(sessions.disposeAll).finally(() => runtime.dispose());
+      return run(sessions.disposeAll);
     },
   };
 };

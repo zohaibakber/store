@@ -4,6 +4,7 @@ import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db"
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
 import { ReplicaStorageError, ReplicaUnavailable } from "@store/contracts/replica";
+import type { RequestError } from "@store/workspace";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -13,7 +14,6 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
 import type * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
@@ -93,8 +93,10 @@ export type WorkspaceSessionTuning = {
 };
 
 export type AccessTokenSource = {
-  readonly current: (force: boolean) => Promise<Redacted.Redacted<string> | null>;
-  readonly subscribe: (listen: (token: Redacted.Redacted<string> | null) => void) => () => void;
+  readonly liveAccessToken: (
+    force: boolean,
+  ) => Effect.Effect<Redacted.Redacted<string> | null, RequestError>;
+  readonly accessTokens: Stream.Stream<Redacted.Redacted<string> | null>;
 };
 
 type WorkspaceSessionsOptions = WorkspaceSessionTuning & {
@@ -195,20 +197,13 @@ const forwardStream = <A, E>(
 const TOKEN_RETRY = Schedule.min([Schedule.exponential("1 second"), Schedule.spaced("30 seconds")]);
 
 const pushAccessTokens = (source: AccessTokenSource, client: ReplicaWorkerClient) => {
-  const mint = (force: boolean) =>
-    Effect.tryPromise(() => source.current(force)).pipe(Effect.retry(TOKEN_RETRY));
-  const refreshed = Stream.callback<Redacted.Redacted<string> | null>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => source.subscribe((token) => Queue.offerUnsafe(queue, token))),
-      (unsubscribe) => Effect.sync(unsubscribe),
-    ),
-  );
+  const mint = (force: boolean) => source.liveAccessToken(force).pipe(Effect.retry(TOKEN_RETRY));
   const requested = client.SyncHealth().pipe(
     Stream.map((health) => health.auth === "refreshing"),
     Stream.changes,
     Stream.switchMap((refreshing) => (refreshing ? Stream.fromEffect(mint(true)) : Stream.empty)),
   );
-  return Stream.mergeAll([Stream.fromEffect(mint(false)), refreshed, requested], {
+  return Stream.mergeAll([Stream.fromEffect(mint(false)), source.accessTokens, requested], {
     concurrency: "unbounded",
   }).pipe(Stream.runForEach((token) => client.SetAccessToken({ token })));
 };

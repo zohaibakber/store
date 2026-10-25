@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   app,
@@ -22,10 +23,11 @@ import {
 } from "electron";
 
 import { makeSourceLinks } from "../src/host/source-links";
-import { makeAuthBroker } from "./auth";
+import { DesktopAuth } from "./auth";
 import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
 import { loadDeviceId } from "./device-id";
+import { makeDesktopHost } from "./host";
 import { registerInventoryHttpIpc } from "./inventory-http";
 import {
   AUTH_SESSION_CHANGED_CHANNEL,
@@ -37,7 +39,7 @@ import {
   WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
 } from "./ipc-channels";
 import { isTrustedIpcSenderFrame } from "./ipc-sender";
-import { makeLicenceHost } from "./licence/host";
+import { LicenceService } from "./licence/service";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
 import {
@@ -53,7 +55,6 @@ import { initDesktopSentry, reportDesktopError } from "./sentry";
 import { registerShareIpc } from "./share-ipc";
 import { makeShutdownCoordinator } from "./shutdown";
 import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
-import { setupUpdater } from "./updater";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -76,10 +77,8 @@ for (const file of app.isPackaged ? [] : envFallbackFiles) {
 initDesktopSentry();
 
 let win: BrowserWindow | null;
-let disposeUpdater: (() => Promise<void>) | undefined;
 let disposeInventoryHttp: (() => void) | undefined;
 let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
-let licenceHost: ReturnType<typeof makeLicenceHost> | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
 const unpackagedDevMarkPath = () =>
@@ -130,8 +129,6 @@ const publishSession = (snapshot: WorkspaceSnapshot) => {
   return snapshot;
 };
 
-const authBroker = makeAuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
-
 let pendingOAuthCallback: string | null = null;
 
 const deliverOAuthCallback = () => {
@@ -156,6 +153,19 @@ const allowedRendererOrigins = () =>
   [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
     Boolean(value),
   );
+
+const host = makeDesktopHost({
+  apiBaseUrl: API_BASE_URL,
+  authBaseUrl: AUTH_BASE_URL,
+  publishSession,
+  userDataPath: app.getPath("userData"),
+  packaged: app.isPackaged,
+  getWindow: () => win,
+  allowedOrigins: allowedRendererOrigins,
+});
+
+let deviceId: Promise<string> | undefined;
+const hostDeviceId = () => (deviceId ??= host.run(loadDeviceId(app.getPath("userData"))));
 
 const hostDeviceLabel = () => {
   const [name = ""] = hostname().split(".");
@@ -290,7 +300,7 @@ ipcMain.on(THEME_SET_SOURCE_CHANNEL, (event, input) => {
   const source = Schema.decodeUnknownOption(ThemeSource)(input);
   if (source._tag === "None") return;
   nativeTheme.themeSource = source.value;
-  void saveThemeSource(app.getPath("userData"), source.value).catch(() => undefined);
+  void host.run(Effect.ignore(saveThemeSource(app.getPath("userData"), source.value)));
 });
 
 app.on("window-all-closed", () => {
@@ -308,16 +318,15 @@ app.on("activate", () => {
 
 const shutdown = makeShutdownCoordinator({
   dispose: async () => {
-    const results = await Promise.allSettled([
-      disposeUpdater?.(),
+    const stopped = await Promise.allSettled([
       Promise.resolve(disposeInventoryHttp?.()),
       Promise.resolve(replicaWorker?.dispose()),
-      licenceHost?.dispose(),
     ]);
-    const failures = results.filter(
+    await host.dispose();
+    const failure = stopped.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
-    if (failures[0]) throw failures[0].reason;
+    if (failure) throw failure.reason;
   },
   quit: () => app.quit(),
   reportError: (cause) => reportDesktopError(cause, { op: "desktop-shutdown" }),
@@ -364,7 +373,7 @@ void app.whenReady().then(async () => {
   const sourceLinks = makeSourceLinks();
   registerAuthIpc({
     ipcMain,
-    broker: authBroker,
+    run: host.run,
     allowedOrigins: allowedRendererOrigins,
     oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
     openExternal: (url) => shell.openExternal(url),
@@ -378,18 +387,15 @@ void app.whenReady().then(async () => {
     writeClipboardText: (text) => clipboard.writeText(text),
     choosePdfDestination,
   });
-  nativeTheme.themeSource = await readThemeSource(app.getPath("userData"));
-  createWindow();
-  const deviceId = await loadDeviceId(app.getPath("userData"));
+  nativeTheme.themeSource = await host.run(readThemeSource(app.getPath("userData")));
+  const { auth, licence } = await host.run(
+    Effect.all({ auth: DesktopAuth, licence: LicenceService }),
+  );
   disposeInventoryHttp = registerInventoryHttpIpc({
     apiBaseUrl: API_BASE_URL,
-    deviceId,
+    deviceId: hostDeviceId,
     ipcMain,
     allowedOrigins: allowedRendererOrigins,
-  });
-  licenceHost = makeLicenceHost({
-    userDataPath: app.getPath("userData"),
-    packaged: app.isPackaged,
   });
   replicaWorker = registerReplicaWorkerIpc({
     ipcMain,
@@ -397,15 +403,13 @@ void app.whenReady().then(async () => {
     workerPath: path.join(MAIN_DIST, "replica-worker.js"),
     apiBaseUrl: API_BASE_URL,
     deviceLabel: hostDeviceLabel(),
-    accessTokens: {
-      current: (force) => authBroker.liveAccessToken(force),
-      subscribe: authBroker.onAccessToken,
-    },
+    run: host.run,
+    accessTokens: auth,
     allowedOrigins: allowedRendererOrigins,
     backupDialogs,
     rendererChannel: () => new MessageChannelMain(),
-    sessions: { licence: licenceHost.service },
+    sessions: { licence },
   });
-  publishSession(await authBroker.initialize());
-  if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
+  createWindow();
+  publishSession(await host.run(auth.initialize));
 });
