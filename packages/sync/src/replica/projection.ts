@@ -1,27 +1,35 @@
 import {
+  baseUnitsOf,
+  canCreatePurchaseOrderAs,
   checkCanChangeUnitsPerPack,
   checkCanDeleteBatch,
   checkCanDeleteCategory,
+  checkCanDeleteOrder,
   checkCanDeleteProduct,
-  canCreatePurchaseOrderAs,
-  canMovePurchaseOrder,
-  isPurchaseOrderOpen,
+  checkCanDeleteSupplier,
+  checkCanMoveOrder,
+  checkLineUnreceived,
+  checkOrderOpen,
+  invoiceTotal,
+  isPaisa,
+  openPackMovementId,
   purchaseOrderLineBaseUnits,
   purchasingRejection,
-  receivedBaseUnitsOf,
   syncProtocolError,
+  takeFromStock,
   type CatalogRowWrite,
   type SyncCommandEnvelope,
   type SyncEntity,
+  type Paisa,
   type SyncProtocolCode,
 } from "@store/contracts";
-import type { CatalogRefusal } from "@store/contracts/catalog-refusal";
+import type { CatalogRefusal, CatalogRefusalReason } from "@store/contracts/catalog-refusal";
 import type { SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 
 import { freeDocumentNumber, type VisibleStock } from "./decisions";
-import { mapReplicaStoreFailure, type ReplicaStoreError } from "./errors";
+import type { ReplicaStoreError } from "./errors";
 
 export type ProjectionActor = {
   readonly organizationId: string;
@@ -95,13 +103,44 @@ const trimmedName = (value: string | null): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const invalidInvoice = (refusal: CatalogRefusal): Rejection => ({
+  code: "INVALID_OPERATION",
+  message: refusal.message,
+});
+
+const invoiceTotalOf = (
+  items: ReadonlyArray<{ readonly quantity: number; readonly salePrice: number }>,
+): Result.Result<number, Rejection> =>
+  Result.gen(function* () {
+    const priced: Array<{ readonly quantity: number; readonly salePrice: Paisa }> = [];
+    for (const item of items) {
+      if (!isPaisa(item.salePrice)) {
+        return yield* Result.fail<Rejection>({
+          code: "INVALID_OPERATION",
+          message: "Sale prices cannot be negative.",
+        });
+      }
+      priced.push({ quantity: item.quantity, salePrice: item.salePrice });
+    }
+    return yield* Result.mapError(invoiceTotal(priced), invalidInvoice);
+  });
+
 const projectIssueInvoice = (
   envelope: Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }>,
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
+): Result.Result<CommandProjection, Rejection> =>
+  Result.map(invoiceTotalOf(envelope.payload.input.items), (total) =>
+    issueInvoiceRows(envelope, actor, lookup, total),
+  );
+
+const issueInvoiceRows = (
+  envelope: Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }>,
+  actor: ProjectionActor,
+  lookup: ReplicaCatalogLookup,
+  total: number,
 ): CommandProjection => {
   const command = envelope.payload;
-  const total = command.input.items.reduce((sum, line) => sum + line.quantity * line.salePrice, 0);
   const rows: Array<ProjectedRow> = [
     {
       entity: "invoice",
@@ -152,7 +191,7 @@ const projectIssueInvoice = (
       },
     });
     if (take.packsOpened > 0) {
-      const openPackId = take.openPackMovementId ?? `${take.saleMovementId}:open-pack`;
+      const openPackId = openPackMovementId(take);
       rows.push({
         entity: "stockMovement",
         entityId: openPackId,
@@ -210,11 +249,13 @@ type CatalogWorking = {
   readonly [Entity in CatalogEntity]: Map<string, SyncEntityRow<Entity> | null>;
 };
 
+type CatalogPassMode = "decide" | "evolve";
+
 type CatalogPass = {
   readonly command: CatalogWrite;
   readonly actor: ProjectionActor;
   readonly lookup: ReplicaCatalogLookup;
-  readonly enforce: boolean;
+  readonly mode: CatalogPassMode;
   readonly working: CatalogWorking;
   readonly rows: Array<ProjectedRow>;
 };
@@ -249,19 +290,24 @@ const notInOrganization = (label: string, id: string): Rejection => ({
 
 const accepted = Result.succeed(undefined);
 
+type PurchasingReason = CatalogRefusalReason & keyof typeof purchasingRejection;
+
+const isPurchasingReason = (reason: CatalogRefusalReason): reason is PurchasingReason =>
+  Object.hasOwn(purchasingRejection, reason);
+
+const rejectionOf = (refusal: CatalogRefusal): Rejection =>
+  isPurchasingReason(refusal.reason)
+    ? { code: purchasingRejection[refusal.reason].code, message: refusal.message }
+    : conflict(refusal.message);
+
 const halt = (pass: CatalogPass, rejection: Rejection): Result.Result<void, Rejection> =>
-  pass.enforce ? Result.fail(rejection) : accepted;
+  pass.mode === "decide" ? Result.fail(rejection) : accepted;
 
 const guard = (
   pass: CatalogPass,
   run: () => Result.Result<void, CatalogRefusal>,
-): Result.Result<void, Rejection> => {
-  if (!pass.enforce) return accepted;
-  const result = run();
-  return Result.isFailure(result)
-    ? Result.fail({ code: "ENTITY_CONFLICT", message: result.failure.message })
-    : accepted;
-};
+): Result.Result<void, Rejection> =>
+  pass.mode === "decide" ? Result.mapError(run(), rejectionOf) : accepted;
 
 const current = <Entity extends CatalogEntity>(
   pass: CatalogPass,
@@ -363,22 +409,26 @@ const supplierNameTaken = (pass: CatalogPass, supplierId: string, name: string):
   return holder !== undefined && holder.id !== supplierId && untouched(pass, "supplier", holder);
 };
 
-const supplierHasOrders = (pass: CatalogPass, supplierId: string): boolean =>
-  stagedRows(pass, "purchaseOrder").some((row) => row.supplierId === supplierId) ||
-  pass.lookup
+const ordersOfSupplier = (pass: CatalogPass, supplierId: string) => [
+  ...stagedRows(pass, "purchaseOrder"),
+  ...pass.lookup
     .purchaseOrdersOfSupplier(supplierId)
-    .some((order) => untouched(pass, "purchaseOrder", order));
+    .filter((order) => untouched(pass, "purchaseOrder", order))
+    .map(() => ({ supplierId })),
+];
 
-const purchaseOrderHasItems = (pass: CatalogPass, purchaseOrderId: string): boolean =>
-  stagedRows(pass, "purchaseOrderItem").some((row) => row.purchaseOrderId === purchaseOrderId) ||
+const purchaseOrderLineCount = (pass: CatalogPass, purchaseOrderId: string): number =>
+  stagedRows(pass, "purchaseOrderItem").filter((row) => row.purchaseOrderId === purchaseOrderId)
+    .length +
   pass.lookup
     .itemsOfPurchaseOrder(purchaseOrderId)
-    .some((item) => untouched(pass, "purchaseOrderItem", item));
+    .filter((line) => untouched(pass, "purchaseOrderItem", line)).length;
 
-const purchaseOrderIsClosed = (pass: CatalogPass, purchaseOrderId: string): boolean => {
-  const order = current(pass, "purchaseOrder", purchaseOrderId);
-  return order !== undefined && !isPurchaseOrderOpen(order.status);
-};
+const requireOpenOrder = (pass: CatalogPass, purchaseOrderId: string) =>
+  guard(pass, () => {
+    const order = current(pass, "purchaseOrder", purchaseOrderId);
+    return order === undefined ? Result.succeed(undefined) : checkOrderOpen(order.status);
+  });
 
 const freeOrderNumber = (pass: CatalogPass, purchaseOrderId: string, proposed: number): number => {
   const staged = stagedRows(pass, "purchaseOrder").filter((row) => row.id !== purchaseOrderId);
@@ -487,9 +537,7 @@ const receiptLine = (
     if (line.productId !== write.row.productId) {
       yield* halt(pass, purchasingRejection.receiptProductMismatch);
     }
-    if (purchaseOrderIsClosed(pass, line.purchaseOrderId)) {
-      yield* halt(pass, purchasingRejection.orderNotOpen);
-    }
+    yield* requireOpenOrder(pass, line.purchaseOrderId);
     return line;
   });
 
@@ -545,7 +593,7 @@ const writeBatch = (pass: CatalogPass, write: WriteOf<"batch">) =>
         const unitsPerPack = current(pass, "product", row.productId)?.unitsPerPack ?? 1;
         const received: SyncEntityRow<"purchaseOrderItem"> = {
           ...line,
-          receivedBaseUnits: line.receivedBaseUnits + receivedBaseUnitsOf(row, unitsPerPack),
+          receivedBaseUnits: line.receivedBaseUnits + baseUnitsOf(row, unitsPerPack),
           ...updatedMetadata(pass, line),
         };
         pass.working.purchaseOrderItem.set(received.id, received);
@@ -563,9 +611,9 @@ const writeSupplier = (pass: CatalogPass, write: WriteOf<"supplier">) =>
     switch (write.action) {
       case "delete": {
         yield* checkDeleteTarget(pass, "supplier", write, existing);
-        if (supplierHasOrders(pass, write.id)) {
-          yield* halt(pass, purchasingRejection.supplierHasOrders);
-        }
+        yield* guard(pass, () =>
+          checkCanDeleteSupplier(ordersOfSupplier(pass, write.id), write.id),
+        );
         if (existing) remove(pass, "supplier", write.id);
         return;
       }
@@ -596,24 +644,21 @@ const writePurchaseOrder = (pass: CatalogPass, write: WriteOf<"purchaseOrder">) 
     switch (write.action) {
       case "delete": {
         yield* checkDeleteTarget(pass, "purchaseOrder", write, existing);
-        if (existing && existing.status !== "draft") {
-          yield* halt(pass, purchasingRejection.orderNotDraft);
-        }
-        if (purchaseOrderHasItems(pass, write.id)) {
-          yield* halt(pass, purchasingRejection.orderHasItems);
+        if (existing) {
+          yield* guard(pass, () =>
+            checkCanDeleteOrder(existing, purchaseOrderLineCount(pass, write.id)),
+          );
         }
         if (existing) remove(pass, "purchaseOrder", write.id);
         return;
       }
       case "upsert": {
         yield* checkUpsertTarget(pass, "purchaseOrder", write, existing);
-        if (existing && !isPurchaseOrderOpen(existing.status)) {
-          yield* halt(pass, purchasingRejection.orderNotOpen);
+        if (existing) {
+          yield* guard(pass, () => checkCanMoveOrder(existing.status, write.row.status));
+        } else if (!canCreatePurchaseOrderAs(write.row.status)) {
+          yield* halt(pass, purchasingRejection.orderTransitionInvalid);
         }
-        const allowed = existing
-          ? canMovePurchaseOrder(existing.status, write.row.status)
-          : canCreatePurchaseOrderAs(write.row.status);
-        if (!allowed) yield* halt(pass, purchasingRejection.orderTransitionInvalid);
         if (
           existing?.supplierId !== write.row.supplierId &&
           current(pass, "supplier", write.row.supplierId) === undefined
@@ -649,10 +694,8 @@ const writePurchaseOrderItem = (pass: CatalogPass, write: WriteOf<"purchaseOrder
       case "delete": {
         yield* checkDeleteTarget(pass, "purchaseOrderItem", write, existing);
         if (!existing) return;
-        if (purchaseOrderIsClosed(pass, existing.purchaseOrderId)) {
-          yield* halt(pass, purchasingRejection.orderNotOpen);
-        }
-        if (existing.receivedBaseUnits > 0) yield* halt(pass, purchasingRejection.itemReceived);
+        yield* requireOpenOrder(pass, existing.purchaseOrderId);
+        yield* guard(pass, () => checkLineUnreceived(existing));
         remove(pass, "purchaseOrderItem", write.id);
         return;
       }
@@ -665,19 +708,14 @@ const writePurchaseOrderItem = (pass: CatalogPass, write: WriteOf<"purchaseOrder
             notInOrganization(purchasingLabel.purchaseOrder, write.row.purchaseOrderId),
           );
         }
-        if (
-          (order !== undefined && !isPurchaseOrderOpen(order.status)) ||
-          (existing !== undefined && purchaseOrderIsClosed(pass, existing.purchaseOrderId))
-        ) {
-          yield* halt(pass, purchasingRejection.orderNotOpen);
-        }
+        if (order !== undefined) yield* guard(pass, () => checkOrderOpen(order.status));
+        if (existing !== undefined) yield* requireOpenOrder(pass, existing.purchaseOrderId);
         if (
           existing !== undefined &&
-          existing.receivedBaseUnits > 0 &&
           (existing.productId !== write.row.productId ||
             existing.purchaseOrderId !== write.row.purchaseOrderId)
         ) {
-          yield* halt(pass, purchasingRejection.itemReceived);
+          yield* guard(pass, () => checkLineUnreceived(existing));
         }
         const product = current(pass, "product", write.row.productId);
         if (!product) yield* halt(pass, notInOrganization("Product", write.row.productId));
@@ -731,14 +769,14 @@ const runCatalogWrite = (
   command: CatalogWrite,
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
-  enforce: boolean,
+  mode: CatalogPassMode,
 ): Result.Result<ReadonlyArray<ProjectedRow>, Rejection> =>
   Result.gen(function* () {
     const pass: CatalogPass = {
       command,
       actor,
       lookup,
-      enforce,
+      mode,
       working: {
         category: new Map(),
         product: new Map(),
@@ -759,62 +797,46 @@ export const decideCatalogRow = (
   lookup: ReplicaCatalogLookup,
   write: CatalogRowWrite,
 ): Result.Result<ReadonlyArray<ProjectedRow>, CommandRejection> =>
-  runCatalogWrite({ ...command, writes: [write] }, actor, lookup, true);
+  runCatalogWrite({ ...command, writes: [write] }, actor, lookup, "decide");
 
 export const projectCommand = (
   envelope: SyncCommandEnvelope,
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
-): CommandProjection => {
+): Result.Result<CommandProjection, Rejection> => {
   switch (envelope.command._tag) {
     case "issueInvoice":
       return projectIssueInvoice(envelope.command, actor, lookup);
-    case "catalogWrite": {
-      const projected = runCatalogWrite(envelope.command.payload, actor, lookup, false);
-      if (Result.isFailure(projected)) {
-        throw new Error(`Catalog evolve refused ${projected.failure.code}`);
-      }
-      return summarize(projected.success);
-    }
+    case "catalogWrite":
+      return Result.map(
+        runCatalogWrite(envelope.command.payload, actor, lookup, "evolve"),
+        summarize,
+      );
   }
 };
-
-const insufficientStock = (message: string): Result.Result<void, Rejection> =>
-  Result.fail({ code: "INSUFFICIENT_STOCK", message });
 
 const assertInvoiceStock = (
   envelope: Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }>,
   unitsPerPackFor: (productId: string) => number,
   stockFor: (batchId: string) => VisibleStock,
-): Result.Result<void, Rejection> => {
-  const working = new Map<string, VisibleStock>();
-  for (const take of envelope.payload.allocations) {
-    const unitsPerPack = unitsPerPackFor(take.productId);
-    const current = working.get(take.batchId) ?? stockFor(take.batchId);
-    const available =
-      take.quantityType === "pack"
-        ? current.packQuantity
-        : current.packQuantity * unitsPerPack + current.unitQuantity;
-    if (available < take.quantity) {
-      return insufficientStock(
-        `Not enough stock for ${take.productId}: ${available} available, ${take.quantity} requested.`,
+): Result.Result<void, Rejection> =>
+  Result.gen(function* () {
+    const working = new Map<string, VisibleStock>();
+    for (const take of envelope.payload.allocations) {
+      const taken = yield* Result.mapError(
+        takeFromStock(
+          working.get(take.batchId) ?? stockFor(take.batchId),
+          { name: take.productId, unitsPerPack: unitsPerPackFor(take.productId) },
+          take,
+        ),
+        (refusal): Rejection => ({ code: "INSUFFICIENT_STOCK", message: refusal.message }),
       );
+      working.set(take.batchId, {
+        packQuantity: taken.nextPackQuantity,
+        unitQuantity: taken.nextUnitQuantity,
+      });
     }
-    const packDelta = take.quantityType === "pack" ? -take.quantity : -take.packsOpened;
-    const unitDelta =
-      take.quantityType === "pack" ? 0 : take.packsOpened * unitsPerPack - take.quantity;
-    const nextPackQuantity = current.packQuantity + packDelta;
-    const nextUnitQuantity = current.unitQuantity + unitDelta;
-    if (nextPackQuantity < 0 || nextUnitQuantity < 0) {
-      return insufficientStock(`Not enough stock for ${take.productId}.`);
-    }
-    working.set(take.batchId, {
-      packQuantity: nextPackQuantity,
-      unitQuantity: nextUnitQuantity,
-    });
-  }
-  return accepted;
-};
+  });
 
 const RULE_CHECK_USER_ID = "rule-check";
 
@@ -833,7 +855,7 @@ const assertEnqueueAllowed = (
           envelope.command.payload,
           { organizationId: envelope.organizationId, userId: RULE_CHECK_USER_ID },
           lookup,
-          true,
+          "decide",
         ),
         () => undefined,
       );
@@ -848,13 +870,6 @@ export const checkEnqueueAllowed = (
   unitsPerPackFor: (productId: string) => number,
   stockFor: (batchId: string) => VisibleStock,
 ): Effect.Effect<void, ReplicaStoreError> =>
-  Effect.flatMap(
-    Effect.try({
-      try: () => assertEnqueueAllowed(envelope, lookup, unitsPerPackFor, stockFor),
-      catch: mapReplicaStoreFailure,
-    }),
-    (decided) =>
-      Result.isFailure(decided)
-        ? Effect.fail(syncProtocolError(decided.failure.code, decided.failure.message))
-        : Effect.void,
+  Effect.fromResult(assertEnqueueAllowed(envelope, lookup, unitsPerPackFor, stockFor)).pipe(
+    Effect.mapError((rejection) => syncProtocolError(rejection.code, rejection.message)),
   );

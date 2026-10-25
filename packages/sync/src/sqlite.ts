@@ -5,6 +5,7 @@ import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
 import type { SqlClient } from "effect/sql/SqlClient";
 
+import { storageErrorOf, type ReplicaStorageError } from "./replica/errors";
 import {
   openReplicaStoreFromClient,
   SqliteReplica,
@@ -21,15 +22,17 @@ const checkpointOnClose = (sql: SqliteClient.SqliteClient) =>
 
 export const openReplicaStore = (
   path = ":memory:",
-): Effect.Effect<SqliteReplicaHandle, never, Scope.Scope> =>
+): Effect.Effect<SqliteReplicaHandle, ReplicaStorageError, Scope.Scope> =>
   SqliteClient.make({ filename: path }).pipe(
     Effect.tap(checkpointOnClose),
     Effect.provide(Reactivity.layer),
     Effect.flatMap(openReplicaStoreFromClient),
-    Effect.orDie,
+    Effect.mapError(storageErrorOf),
   );
 
-export const layerNodeSqliteReplica = (path?: string): Layer.Layer<SqliteReplica> =>
+export const layerNodeSqliteReplica = (
+  path?: string,
+): Layer.Layer<SqliteReplica, ReplicaStorageError> =>
   Layer.effect(SqliteReplica, openReplicaStore(path));
 
 export const layerNodeSqliteReadonlyReplica = (

@@ -197,7 +197,9 @@ export const writePendingProjection = Effect.fn("ReplicaPending.writePendingProj
   lookup: ReplicaCatalogLookup,
   resolveCollisions = false,
 ): Effect.fn.Return<CommandProjection, E> {
-  const projection = projectCommand(envelope, actor, lookup);
+  const projection = yield* Effect.fromResult(projectCommand(envelope, actor, lookup)).pipe(
+    Effect.orDie,
+  );
   for (const projected of projection.rows) {
     yield* journalPriorImage(rows, envelope.operationId, projected);
     if (projected.row === null) {

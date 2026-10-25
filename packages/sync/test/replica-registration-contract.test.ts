@@ -41,7 +41,7 @@ type Harness = {
 
 const makeSqliteHarness = Effect.fn("registration.sqlite")(function* () {
   const scope = yield* Scope.make();
-  const handle = yield* Scope.provide(openReplicaStore(), scope);
+  const handle = yield* Scope.provide(openReplicaStore().pipe(Effect.orDie), scope);
   yield* runReplicaTransaction(handle, (tx) =>
     tx.insert(replicaState).values({
       id: "singleton",

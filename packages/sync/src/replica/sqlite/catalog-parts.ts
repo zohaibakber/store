@@ -15,6 +15,7 @@ import * as Stream from "effect/Stream";
 import * as Struct from "effect/Struct";
 
 import { ReplicaStorageError } from "../errors";
+import { decodeEntityRow } from "../row-decoders";
 import type { ReplicaDb } from "../sql-client/drizzle";
 
 export type CatalogPart = {
@@ -51,8 +52,8 @@ const versionOf = (row: SyncEntityRow<SyncEntity>): number =>
   "rowVersion" in row ? row.rowVersion : STOCK_MOVEMENT_ROW_VERSION;
 
 const entityFrames = (db: ReplicaDb, organizationId: string, entity: SyncEntity) => {
-  const { table, schema } = syncEntityRows[entity];
-  const decode = Schema.decodeUnknownSync(schema);
+  const { table } = syncEntityRows[entity];
+  const decode = decodeEntityRow(entity);
   return Stream.paginate(Option.none<string>(), (after) =>
     db
       .select()
@@ -68,9 +69,9 @@ const entityFrames = (db: ReplicaDb, organizationId: string, entity: SyncEntity)
       .all()
       .pipe(
         Effect.flatMap((page) =>
-          Effect.try({
-            try: () => {
-              const rows = page.map((raw) => decode(raw));
+          Effect.all(page.map((raw) => decode(raw))).pipe(
+            Effect.mapError(() => unreadable(entity)),
+            Effect.map((rows) => {
               const last = rows.at(-1);
               const frames = rows.map((row): Frame => {
                 const text = encodeFrame({
@@ -87,9 +88,8 @@ const entityFrames = (db: ReplicaDb, organizationId: string, entity: SyncEntity)
                   ? Option.none<Option.Option<string>>()
                   : Option.some(Option.some<string>(last.id)),
               ] as const;
-            },
-            catch: () => unreadable(entity),
-          }),
+            }),
+          ),
         ),
       ),
   );

@@ -5,6 +5,7 @@ import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { decodeEntityRow } from "../row-decoders";
 import type { ReplicaDb } from "../sql-client/drizzle";
 import { standbyTable } from "./generation";
 
@@ -16,7 +17,7 @@ type SnapshotCell = typeof SnapshotCell.Type;
 const SnapshotRecord = Schema.Record(Schema.String, SnapshotCell);
 type SnapshotRecord = typeof SnapshotRecord.Type;
 
-const decodeSnapshotRecord = Schema.decodeUnknownSync(SnapshotRecord);
+const decodeSnapshotRecord = Schema.decodeUnknownEffect(SnapshotRecord);
 
 const cell = (value: SnapshotCell | undefined): string | number | null =>
   value === true ? 1 : value === false ? 0 : (value ?? null);
@@ -67,11 +68,10 @@ export const upsertSnapshotRows = Effect.fn("ReplicaSnapshotRows.upsert")(functi
   const columns = Object.values(getTableColumns(syncEntityRows[entity].table)).map(
     (column) => column.name,
   );
-  const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);
-  const decoded = yield* Effect.try({
-    try: () => rows.map((row) => decodeSnapshotRecord(decode(row))),
-    catch: invalid,
-  });
+  const decode = decodeEntityRow(entity);
+  const decoded = yield* Effect.forEach(rows, (row) =>
+    decode(row).pipe(Effect.flatMap(decodeSnapshotRecord)),
+  ).pipe(Effect.mapError(invalid));
   for (const chunk of Array.chunksOf(decoded, UPSERTED_ROWS_PER_STATEMENT)) {
     yield* tx.run(upsertStatement(entity, columns, chunk));
   }
