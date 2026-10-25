@@ -12,6 +12,8 @@ import {
   type UserId,
 } from "@store/auth";
 import { RuntimeContext } from "alchemy";
+import { RateLimitError } from "alchemy/Cloudflare";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -20,6 +22,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
 
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
@@ -60,17 +63,7 @@ const signingKeys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve:
 const privateJwk = await crypto.subtle.exportKey("jwk", signingKeys.privateKey);
 const publicJwk = await crypto.subtle.exportKey("jwk", signingKeys.publicKey);
 
-const countingLimit = (limit: number): AuthRateLimit => {
-  const counts = new Map<string, number>();
-  return (key) =>
-    Effect.sync(() => {
-      const next = (counts.get(key) ?? 0) + 1;
-      counts.set(key, next);
-      return { success: next <= limit };
-    });
-};
-
-interface HubRevocationCall {
+export interface HubRevocationCall {
   readonly organizationId: OrganizationId;
   readonly userId: UserId;
 }
@@ -112,60 +105,155 @@ const idTokenSigner = async (kid: string): Promise<IdTokenSigner> => {
 const googleSigner = await idTokenSigner("google-key-1");
 export const forgingSigner = await idTokenSigner(googleSigner.kid);
 
-export const mintIdToken = async (claims: IdTokenClaims, signer: IdTokenSigner = googleSigner) => {
-  const signingInput = [{ alg: "RS256", typ: "JWT", kid: signer.kid }, claims]
-    .map((part) => Base64Url.encode(JSON.stringify(part)))
-    .join(".");
-  const signature = await crypto.subtle.sign(
-    RS256.name,
-    signer.privateKey,
-    new TextEncoder().encode(signingInput),
-  );
-  return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
-};
+export const mintIdToken = (claims: IdTokenClaims, signer: IdTokenSigner = googleSigner) =>
+  Effect.promise(async () => {
+    const signingInput = [{ alg: "RS256", typ: "JWT", kid: signer.kid }, claims]
+      .map((part) => Base64Url.encode(JSON.stringify(part)))
+      .join(".");
+    const signature = await crypto.subtle.sign(
+      RS256.name,
+      signer.privateKey,
+      new TextEncoder().encode(signingInput),
+    );
+    return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
+  });
 
 export const googleClaims = (profile: {
   readonly sub: string;
   readonly email: string;
   readonly hd?: string;
-}): IdTokenClaims => ({
-  iss: "https://accounts.google.com",
-  aud: GOOGLE_CLIENT_ID,
-  exp: Math.floor(Date.now() / 1_000) + 600,
-  email_verified: true,
-  name: "Google User",
-  picture: "https://example.com/avatar.png",
-  hd: "example.com",
-  ...profile,
-});
+}) =>
+  Effect.map(Clock.currentTimeMillis, (now): IdTokenClaims => ({
+    iss: "https://accounts.google.com",
+    aud: GOOGLE_CLIENT_ID,
+    exp: Math.floor(now / 1_000) + 600,
+    email_verified: true,
+    name: "Google User",
+    picture: "https://example.com/avatar.png",
+    hd: "example.com",
+    ...profile,
+  }));
 
 const OperationsLive = Layer.mergeAll(Login.layer, GoogleIdentity.layer, Organizations.layer).pipe(
   Layer.provideMerge(Sessions.layer),
 );
 
-export const harness = (
-  options: {
-    readonly deliversOtp?: boolean;
-    readonly limits?: AuthLimits;
-  } = {},
-) => {
-  const d1 = authD1();
-  const deliversOtp = options.deliversOtp ?? false;
-  const revocations: Array<HubRevocationCall> = [];
-  let googleIdToken = "";
-  const googleHttp = HttpClient.make((request) =>
-    Effect.succeed(
-      HttpClientResponse.fromWeb(
-        request,
-        Response.json(
-          request.url === "https://oauth2.googleapis.com/token"
-            ? { id_token: googleIdToken }
-            : { keys: [googleSigner.publicJwk] },
-        ),
-      ),
-    ),
-  );
+class TestLimits extends Context.Service<TestLimits, AuthLimits>()(
+  "@store/auth-worker/TestLimits",
+) {}
 
+export class AuthTest extends Context.Service<
+  AuthTest,
+  {
+    readonly d1: ReturnType<typeof authD1>;
+    readonly revocations: Effect.Effect<ReadonlyArray<HubRevocationCall>>;
+    readonly setGoogleIdToken: (token: string) => Effect.Effect<void>;
+    readonly setLimiterAvailable: (available: boolean) => Effect.Effect<void>;
+  }
+>()("@store/auth-worker/AuthTest") {}
+
+const doubles = Layer.effectContext(
+  Effect.gen(function* () {
+    const revocations = yield* Ref.make<ReadonlyArray<HubRevocationCall>>([]);
+    const googleIdToken = yield* Ref.make("");
+    const limiterAvailable = yield* Ref.make(true);
+    const countingLimit = (limit: number): AuthRateLimit => {
+      const counts = new Map<string, number>();
+      return (key) =>
+        Effect.gen(function* () {
+          if (!(yield* Ref.get(limiterAvailable))) {
+            return yield* new RateLimitError({ message: "limiter unavailable", cause: "binding" });
+          }
+          const next = (counts.get(key) ?? 0) + 1;
+          counts.set(key, next);
+          return { success: next <= limit };
+        });
+    };
+    const control = AuthTest.of({
+      d1: authD1(),
+      revocations: Ref.get(revocations),
+      setGoogleIdToken: (token) => Ref.set(googleIdToken, token),
+      setLimiterAvailable: (available) => Ref.set(limiterAvailable, available),
+    });
+    const hub = HubRevocation.of({
+      revoke: (organizationId, userId) =>
+        Ref.update(revocations, (calls) => [...calls, { organizationId, userId }]),
+    });
+    const http = HttpClient.make((request) =>
+      Effect.gen(function* () {
+        const idToken = yield* Ref.get(googleIdToken);
+        return HttpClientResponse.fromWeb(
+          request,
+          Response.json(
+            request.url === "https://oauth2.googleapis.com/token"
+              ? { id_token: idToken }
+              : { keys: [googleSigner.publicJwk] },
+          ),
+        );
+      }),
+    );
+    return Context.empty().pipe(
+      Context.add(AuthTest, control),
+      Context.add(HubRevocation, hub),
+      Context.add(HttpClient.HttpClient, http),
+      Context.add(
+        TestLimits,
+        TestLimits.of({
+          tenPerMinute: countingLimit(10),
+          fivePerMinute: countingLimit(5),
+          sixtyPerMinute: countingLimit(60),
+        }),
+      ),
+    );
+  }),
+);
+
+export const databaseLayer = Layer.unwrap(AuthTest.useSync(({ d1 }) => AuthD1.layer(d1)));
+
+export const ephemeralIsolate = Layer.fresh(EphemeralStore.layer(EPHEMERAL_PEPPER)).pipe(
+  Layer.provide([databaseLayer, AuthCrypto.layer]),
+);
+
+export class AuthApi extends Context.Service<AuthApi>()("@store/auth-worker/AuthApi", {
+  make: Effect.gen(function* () {
+    const login = yield* Login;
+    const google = yield* GoogleIdentity;
+    const sessions = yield* Sessions;
+    const organizations = yield* Organizations;
+    return {
+      identify: (...args: Parameters<typeof login.identify>) =>
+        unavailableOnInfrastructureFailure(login.identify(...args)),
+      authenticate: (...args: Parameters<typeof login.authenticate>) =>
+        unavailableOnInfrastructureFailure(login.authenticate(...args)),
+      beginGoogle: (...args: Parameters<typeof google.beginGoogle>) =>
+        unavailableOnInfrastructureFailure(google.beginGoogle(...args)),
+      completeGoogle: (input: { readonly code: string; readonly state: string }) =>
+        unavailableOnInfrastructureFailure(
+          google.completeGoogle({ code: input.code, state: OAuthState.make(input.state) }),
+        ),
+      exchangeGoogle: (...args: Parameters<typeof google.exchangeGoogle>) =>
+        unavailableOnInfrastructureFailure(google.exchangeGoogle(...args)),
+      refresh: (...args: Parameters<typeof sessions.refresh>) =>
+        unavailableOnInfrastructureFailure(sessions.refresh(...args)),
+      signOut: (...args: Parameters<typeof sessions.signOut>) =>
+        unavailableOnInfrastructureFailure(sessions.signOut(...args)),
+      roster: (accessToken: string) =>
+        unavailableOnInfrastructureFailure(organizations.roster(Redacted.make(accessToken))),
+      organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
+        unavailableOnInfrastructureFailure(
+          organizations.organize({
+            command: input.command,
+            accessToken: Redacted.make(input.accessToken),
+          }),
+        ),
+    };
+  }),
+}) {
+  static readonly layer = Layer.effect(this, this.make);
+}
+
+export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
+  const deliversOtp = options.deliversOtp ?? false;
   const dependencies = Layer.mergeAll(
     AuthRepository.layer,
     EphemeralStore.layer(EPHEMERAL_PEPPER),
@@ -182,99 +270,39 @@ export const harness = (
       clientId: GOOGLE_CLIENT_ID,
       clientSecret: Redacted.make("google-client-secret"),
       callbackUrl: "https://auth.example.com/v1/oauth/google/callback",
-    }).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, googleHttp))),
-    Layer.succeed(
-      HubRevocation,
-      HubRevocation.of({
-        revoke: (organizationId, userId) =>
-          Effect.sync(() => {
-            revocations.push({ organizationId, userId });
-          }),
-      }),
-    ),
-    AuthLimiter.layer(
-      options.limits ?? {
-        tenPerMinute: countingLimit(10),
-        fivePerMinute: countingLimit(5),
-        sixtyPerMinute: countingLimit(60),
-      },
-    ),
+    }),
+    Layer.unwrap(TestLimits.useSync(AuthLimiter.layer)),
     Layer.succeed(AuthSettings, {
       developmentOtp: deliversOtp,
       trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
       refreshTokenPepper: Redacted.make("refresh-pepper"),
     }),
-  ).pipe(Layer.provide(AuthD1.layer(d1)), Layer.provideMerge(AuthCrypto.layer));
+  ).pipe(Layer.provide(databaseLayer), Layer.provideMerge(AuthCrypto.layer));
 
-  const layer = Layer.mergeAll(
-    OperationsLive.pipe(Layer.provide(dependencies)),
-    Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
-    Logger.layer([]),
+  return AuthApi.layer.pipe(
+    Layer.provideMerge(OperationsLive),
+    Layer.provideMerge(dependencies),
+    Layer.provideMerge(doubles),
+    Layer.provideMerge(
+      Layer.succeed(RuntimeContext, Context.get(testRuntimeContext, RuntimeContext)),
+    ),
+    Layer.provideMerge(Logger.layer([])),
   );
-
-  return {
-    d1,
-    revocations,
-    layer,
-    setGoogleIdToken: (token: string) => {
-      googleIdToken = token;
-    },
-  };
 };
 
-export type Harness = ReturnType<typeof harness>;
+export const scenario =
+  (options?: { readonly deliversOtp?: boolean }) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    Effect.provide(self, authLayer(options));
 
-const operations = Effect.gen(function* () {
-  const login = yield* Login;
-  const google = yield* GoogleIdentity;
-  const sessions = yield* Sessions;
-  const organizations = yield* Organizations;
-  return {
-    identify: (...args: Parameters<typeof login.identify>) =>
-      unavailableOnInfrastructureFailure(login.identify(...args)),
-    authenticate: (...args: Parameters<typeof login.authenticate>) =>
-      unavailableOnInfrastructureFailure(login.authenticate(...args)),
-    beginGoogle: (...args: Parameters<typeof google.beginGoogle>) =>
-      unavailableOnInfrastructureFailure(google.beginGoogle(...args)),
-    completeGoogle: (input: { readonly code: string; readonly state: string }) =>
-      unavailableOnInfrastructureFailure(
-        google.completeGoogle({ code: input.code, state: OAuthState.make(input.state) }),
-      ),
-    exchangeGoogle: (...args: Parameters<typeof google.exchangeGoogle>) =>
-      unavailableOnInfrastructureFailure(google.exchangeGoogle(...args)),
-    refresh: (...args: Parameters<typeof sessions.refresh>) =>
-      unavailableOnInfrastructureFailure(sessions.refresh(...args)),
-    signOut: (...args: Parameters<typeof sessions.signOut>) =>
-      unavailableOnInfrastructureFailure(sessions.signOut(...args)),
-    roster: (accessToken: string) =>
-      unavailableOnInfrastructureFailure(organizations.roster(Redacted.make(accessToken))),
-    organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
-      unavailableOnInfrastructureFailure(
-        organizations.organize({
-          command: input.command,
-          accessToken: Redacted.make(input.accessToken),
-        }),
-      ),
-  };
-});
+export const refusal = <A, R>(use: Effect.Effect<A, AuthFailure, R>) =>
+  Effect.map(Effect.flip(use), authFailureWire);
 
-export type Api = Effect.Success<typeof operations>;
+export const count = (query: string, ...params: Array<string | number>) =>
+  AuthTest.useSync(({ d1 }) => Number(d1.database.prepare(query).get(...params)?.total ?? -1));
 
-export const run = <A, E>(
-  instance: Harness,
-  use: (auth: Api) => Effect.Effect<A, E, RuntimeContext>,
-) => Effect.runPromise(operations.pipe(Effect.flatMap(use), Effect.provide(instance.layer)));
-
-export const failing = <A>(
-  instance: Harness,
-  use: (auth: Api) => Effect.Effect<A, AuthFailure, RuntimeContext>,
-) => run(instance, (auth) => Effect.flip(use(auth)).pipe(Effect.map(authFailureWire)));
-
-export const count = (instance: Harness, query: string, ...params: Array<string | number>) =>
-  Number(instance.d1.database.prepare(query).get(...params)?.total ?? -1);
-
-export const signUp = (instance: Harness, email: string, client: AuthClientKind = native) =>
-  run(instance, (auth) =>
+export const signUp = (email: string, client: AuthClientKind = native) =>
+  AuthApi.use((auth) =>
     auth.authenticate({
       _tag: "RegisterPassword",
       email: EmailAddress.make(email),
@@ -285,11 +313,10 @@ export const signUp = (instance: Harness, email: string, client: AuthClientKind 
   );
 
 export const refreshWith = (
-  instance: Harness,
   refreshToken: RefreshToken | undefined,
   client: AuthClientKind = native,
 ) =>
-  run(instance, (auth) =>
+  AuthApi.use((auth) =>
     Effect.result(
       auth
         .refresh(

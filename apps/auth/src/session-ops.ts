@@ -240,7 +240,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     ) {
       const now = yield* Clock.currentTimeMillis;
       const claims = yield* accessTokens
-        .verify(Redacted.value(accessToken), now)
+        .verify(Redacted.value(accessToken))
         .pipe(Effect.mapError(() => new AuthRefusal({ reason: "Unauthenticated" })));
       const session = yield* repository.findSession(claims.sessionId);
       if (!session || session.revokedAt !== null || session.expiresAt <= now) {

@@ -108,7 +108,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
     });
 
     const authenticate = Effect.fn("Login.authenticate")(function* (command: LoginCommand) {
-      const now = yield* Clock.currentTimeMillis;
       switch (command._tag) {
         case "Password": {
           const emailAddress = normalizedEmail(command.email);
@@ -141,7 +140,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const emailAddress = yield* ephemeral.consumeOtp({
             challengeId: command.challengeId,
             code: command.code,
-            now,
           });
           if (!emailAddress) {
             return yield* new AuthRefusal({ reason: "InvalidOtp" });

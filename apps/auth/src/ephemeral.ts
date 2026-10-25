@@ -111,7 +111,6 @@ export class EphemeralStore extends Context.Service<
     readonly consumeOtp: (input: {
       readonly challengeId: OtpChallengeIdType;
       readonly code: OtpCode;
-      readonly now: number;
     }) => Effect.Effect<EmailAddressType | null, EphemeralStoreError>;
     readonly createOAuthState: (input: {
       readonly redirectUri: string;
@@ -123,7 +122,6 @@ export class EphemeralStore extends Context.Service<
     }) => Effect.Effect<OAuthState, EphemeralStoreError>;
     readonly consumeOAuthState: (
       state: OAuthState,
-      now: number,
     ) => Effect.Effect<OAuthStateRecord | null, EphemeralStoreError>;
     readonly createAuthorizationGrant: (input: {
       readonly userId: UserIdType;
@@ -133,7 +131,6 @@ export class EphemeralStore extends Context.Service<
     }) => Effect.Effect<AuthorizationCodeType, EphemeralStoreError>;
     readonly consumeAuthorizationGrant: (
       code: AuthorizationCodeType,
-      now: number,
     ) => Effect.Effect<AuthorizationGrantRecord | null, EphemeralStoreError>;
   }
 >()("@store/auth-worker/EphemeralStore") {
@@ -218,9 +215,9 @@ export class EphemeralStore extends Context.Service<
           kind: EphemeralKind,
           id: string,
           codec: JsonCodec<A>,
-          now: number,
         ) =>
           Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis;
             const key = yield* recordKey(kind, id);
             const [row] = yield* database
               .delete(ephemeralRecord)
@@ -348,6 +345,7 @@ export class EphemeralStore extends Context.Service<
             ]).pipe(Effect.mapError((cause) => error("retractOtp", cause)));
           }),
           consumeOtp: Effect.fn("EphemeralStore.consumeOtp")(function* (input) {
+            const now = yield* Clock.currentTimeMillis;
             const key = yield* recordKey("otp", input.challengeId);
             const verifier = yield* otpVerifier(input.challengeId, input.code);
             const challenge = and(eq(ephemeralRecord.key, key), eq(ephemeralRecord.kind, "otp"));
@@ -357,7 +355,7 @@ export class EphemeralStore extends Context.Service<
                 .where(
                   and(
                     challenge,
-                    gt(ephemeralRecord.expiresAt, input.now),
+                    gt(ephemeralRecord.expiresAt, now),
                     or(
                       sql`${storedVerifier} = ${verifier}`,
                       sql`${storedFailures} >= ${OTP_FAILURE_BUDGET - 1}`,
@@ -402,13 +400,12 @@ export class EphemeralStore extends Context.Service<
             );
             return state;
           }),
-          consumeOAuthState: Effect.fn("EphemeralStore.consumeOAuthState")(function* (state, now) {
+          consumeOAuthState: Effect.fn("EphemeralStore.consumeOAuthState")(function* (state) {
             const taken = yield* takeRecord(
               "consumeOAuthState",
               "oauth-state",
               state,
               OAuthStateCodec,
-              now,
             );
             return taken ? { ...taken.payload, expiresAt: taken.expiresAt } : null;
           }),
@@ -427,13 +424,12 @@ export class EphemeralStore extends Context.Service<
             },
           ),
           consumeAuthorizationGrant: Effect.fn("EphemeralStore.consumeAuthorizationGrant")(
-            function* (code, now) {
+            function* (code) {
               const taken = yield* takeRecord(
                 "consumeAuthorizationGrant",
                 "authorization",
                 code,
                 AuthorizationGrantCodec,
-                now,
               );
               return taken ? { ...taken.payload, expiresAt: taken.expiresAt } : null;
             },
