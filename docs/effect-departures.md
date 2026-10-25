@@ -45,7 +45,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 
 ## Tests
 
-- **Only `packages/sync` uses `@effect/vitest`.** Every other package wraps `Effect.runPromise` in a local `run` helper and uses real time. Target: `it.effect`, `layer(...)`, `TestClock`.
+- **`@effect/vitest` only in `packages/sync`, `packages/licence`, `apps/auth` and `packages/auth`.** Every other package wraps `Effect.runPromise` in a local `run` helper and uses real time. Target: `it.effect`, `layer(...)`, `TestClock`.
 - **No reusable test layers.** Doubles are ad hoc objects in each harness.
 
 ## Needs the user's decision
