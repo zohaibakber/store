@@ -1,4 +1,3 @@
-import type { RuntimeContext } from "alchemy";
 import * as AiError from "effect/ai/AiError";
 import * as LanguageModel from "effect/ai/LanguageModel";
 import { toCodecOpenAI } from "effect/ai/OpenAiStructuredOutput";
@@ -8,14 +7,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
-import { MODEL, type JsonSchemaObject } from "./workers-ai";
+import { AiGateway } from "./gateway";
+import { runJsonCompletion } from "./workers-ai";
 
 const MAX_COMPLETION_TOKENS = 1024;
-
-export interface AiGatewayClient {
-  readonly raw: Effect.Effect<Ai, never, RuntimeContext>;
-  readonly id: Effect.Effect<string, never, RuntimeContext>;
-}
 
 const aiError = (method: string, description: string) =>
   AiError.make({
@@ -45,17 +40,10 @@ const chatMessages = (prompt: Prompt.Prompt) =>
     },
   );
 
-const responseFormat = (format: LanguageModel.ProviderOptions["responseFormat"]) => {
-  if (format.type === "text") return {};
-  // SAFETY: Effect's JSON Schema encoder only yields JSON values, the shape Ai.run accepts.
-  const schema = toCodecOpenAI(format.schema).jsonSchema as JsonSchemaObject;
-  return {
-    response_format: {
-      type: "json_schema" as const,
-      json_schema: { name: format.objectName, schema, strict: true },
-    },
-  };
-};
+const responseFormat = (format: LanguageModel.ProviderOptions["responseFormat"]) =>
+  format.type === "text"
+    ? undefined
+    : { name: format.objectName, jsonSchema: toCodecOpenAI(format.schema).jsonSchema };
 
 const finishReason = (reason: string | null | undefined): Response.FinishReason => {
   switch (reason) {
@@ -73,29 +61,26 @@ const finishReason = (reason: string | null | undefined): Response.FinishReason 
   }
 };
 
-export const workersAiLanguageModel = (
-  client: AiGatewayClient,
-): Layer.Layer<LanguageModel.LanguageModel, never, RuntimeContext> =>
+export const workersAiLanguageModel: Layer.Layer<LanguageModel.LanguageModel, never, AiGateway> =
   Layer.effect(
     LanguageModel.LanguageModel,
     Effect.gen(function* () {
-      const ai = yield* client.raw;
-      const gatewayId = yield* client.id;
+      const gateway = yield* AiGateway;
       return yield* LanguageModel.make({
         codecTransformer: toCodecOpenAI,
         generateText: Effect.fn("WorkersAiLanguageModel.generateText")(function* (options) {
+          const ai = yield* gateway.raw;
+          const gatewayId = yield* gateway.id;
           return yield* Effect.tryPromise({
             try: async (signal) => {
-              const output = await ai.run(
-                MODEL,
+              const output = await runJsonCompletion(
+                ai,
                 {
                   messages: chatMessages(options.prompt),
-                  ...responseFormat(options.responseFormat),
-                  chat_template_kwargs: { enable_thinking: false },
-                  temperature: 0,
-                  max_completion_tokens: MAX_COMPLETION_TOKENS,
+                  maxCompletionTokens: MAX_COMPLETION_TOKENS,
+                  format: responseFormat(options.responseFormat),
                 },
-                { gateway: { id: gatewayId }, signal },
+                { signal, gatewayId },
               );
               const choice = output.choices[0];
               const text = choice?.message.content ?? "";

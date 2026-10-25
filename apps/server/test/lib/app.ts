@@ -11,14 +11,19 @@ import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as HttpEffect from "effect/http/HttpEffect";
-import * as Option from "effect/Option";
+import * as Layer from "effect/Layer";
 
-import { makeWorkerFetch, type WorkerServices } from "../../src/http/app";
-import type { ServerRuntimeContract } from "../../src/http/runtime";
+import { AccessTokens } from "../../src/auth/access-tokens";
+import { GlobalSearch } from "../../src/global-search/service";
+import { makeWorkerFetch } from "../../src/http/app";
+import { OrgAuthorities, OrganizationAuthority } from "../../src/inventory/organization-authority";
+import { InvoiceExtraction } from "../../src/invoice-extraction/service";
+import { LiveFanout } from "../../src/live/fanout";
+import { OrgHubs } from "../../src/live/org-hubs";
 
 const unused = () => Effect.die("unused");
 
-const unusedAuthority: ReturnType<WorkerServices["authorities"]["getByName"]> = {
+const unusedAuthority: ReturnType<OrgAuthorities["Service"]["getByName"]> = {
   register: unused,
   submit: unused,
   receipt: unused,
@@ -70,35 +75,41 @@ export const testRuntimeContext = Context.make(RuntimeContext, {
   set: (id) => Effect.succeed(id),
 });
 
-type GlobalSearchRuntime = Pick<
-  ServerRuntimeContract,
-  "globalSearchCache" | "searchGlobalProducts" | "limitGlobalSearch"
->;
-
-export interface AppOptions extends Partial<Omit<WorkerServices, "runtime">> {
+export interface AppOptions {
   readonly claims?: AccessClaims;
-  readonly globalSearch?: Partial<GlobalSearchRuntime>;
+  readonly authorities?: OrgAuthorities["Service"];
+  readonly liveFanout?: LiveFanout["Service"];
+  readonly hubs?: OrgHubs["Service"];
+  readonly globalSearch?: GlobalSearch["Service"];
+  readonly invoiceExtraction?: InvoiceExtraction["Service"];
 }
 
-const runtimeFor = (options: AppOptions): ServerRuntimeContract => ({
-  trustedOrigins: ["http://localhost:5173", "http://localhost:5174"],
-  verifyAccessToken: verifierFor(options.claims ?? claimsFor("owner")),
-  invoiceAi: Effect.succeed({ toMarkdown: unused, generate: unused }),
-  limitInvoiceExtraction: unused,
-  globalSearchCache: { get: () => Effect.succeed(Option.none()), put: () => Effect.void },
-  searchGlobalProducts: unused,
-  limitGlobalSearch: unused,
-  ...options.globalSearch,
-});
+const servicesFor = (options: AppOptions) =>
+  Layer.mergeAll(
+    OrganizationAuthority.layer.pipe(
+      Layer.provide(
+        Layer.succeed(OrgAuthorities, options.authorities ?? { getByName: () => unusedAuthority }),
+      ),
+    ),
+    Layer.succeed(LiveFanout, options.liveFanout ?? { publish: () => Effect.void }),
+    Layer.succeed(
+      OrgHubs,
+      options.hubs ?? { getByName: () => ({ fetch: unused, publish: unused }) },
+    ),
+    Layer.succeed(AccessTokens, {
+      trustedOrigins: ["http://localhost:5173", "http://localhost:5174"],
+      verify: verifierFor(options.claims ?? claimsFor("owner")),
+    }),
+    Layer.succeed(GlobalSearch, options.globalSearch ?? { search: unused }),
+    Layer.succeed(InvoiceExtraction, options.invoiceExtraction ?? { extract: unused }),
+  );
 
 export const webHandlerFor = async (options: AppOptions = {}) => {
   const fetch = await Effect.runPromise(
-    makeWorkerFetch({
-      runtime: runtimeFor(options),
-      authorities: options.authorities ?? { getByName: () => unusedAuthority },
-      liveFanout: options.liveFanout ?? { publish: () => Effect.void },
-      hubs: options.hubs ?? { getByName: () => ({ fetch: unused }) },
-    }).pipe(Effect.provideContext(testRuntimeContext)),
+    makeWorkerFetch.pipe(
+      Effect.provide(servicesFor(options)),
+      Effect.provideContext(testRuntimeContext),
+    ),
   );
   return HttpEffect.toWebHandler(fetch.pipe(Effect.provideContext(testRuntimeContext)));
 };

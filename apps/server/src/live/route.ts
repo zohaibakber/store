@@ -11,7 +11,6 @@ import * as Effect from "effect/Effect";
 import * as HttpHeaders from "effect/http/Headers";
 import * as HttpBody from "effect/http/HttpBody";
 import * as HttpRouter from "effect/http/HttpRouter";
-import type { HttpServerError } from "effect/http/HttpServerError";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
@@ -19,23 +18,21 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { AccessTokens } from "../auth/access-tokens";
 import { authenticateToken } from "../auth/session";
 import { publicError } from "../http/errors";
 import { SYNC_STATUS } from "../http/sync-errors";
 import type { InventoryError } from "../inventory/errors";
 import { OrganizationAuthority } from "../inventory/organization-authority";
 import { admissionHeaders, withoutAdmissionHeaders } from "./hub-core";
-
-interface OrgHubFetcher {
-  readonly getByName: (organizationId: string) => {
-    readonly fetch: (
-      request: HttpServerRequest.HttpServerRequest,
-    ) => Effect.Effect<HttpServerResponse.HttpServerResponse, HttpServerError>;
-  };
-}
+import { OrgHubs } from "./org-hubs";
 
 export interface LiveRouteDependencies {
-  readonly hubs: OrgHubFetcher;
+  readonly hubs: {
+    readonly getByName: (
+      organizationId: string,
+    ) => Pick<ReturnType<OrgHubs["Service"]["getByName"]>, "fetch">;
+  };
   readonly verifyAccessToken: AccessTokenVerifier;
   readonly readLiveHorizon: OrganizationAuthority["Service"]["liveHorizon"];
 }
@@ -76,7 +73,9 @@ const freshUpgradeResponse = (
   );
 };
 
-export const liveSocketHandler = Effect.fnUntraced(function* (dependencies: LiveRouteDependencies) {
+export const liveSocketHandler = Effect.fn("LiveRoutes.socket")(function* (
+  dependencies: LiveRouteDependencies,
+) {
   const request = yield* HttpServerRequest.HttpServerRequest;
   if (request.headers.upgrade?.toLowerCase() !== "websocket") {
     return refuse(426, "UPGRADE_REQUIRED", "The live channel is a WebSocket.");
@@ -122,14 +121,19 @@ export const liveSocketHandler = Effect.fnUntraced(function* (dependencies: Live
     );
 });
 
-export const LiveRoutes = (dependencies: Omit<LiveRouteDependencies, "readLiveHorizon">) =>
-  Layer.unwrap(
-    Effect.gen(function* () {
-      const authority = yield* OrganizationAuthority;
-      return HttpRouter.add(
-        "GET",
-        LIVE_SOCKET_PATH,
-        liveSocketHandler({ ...dependencies, readLiveHorizon: authority.liveHorizon }),
-      );
-    }),
-  );
+export const LiveRoutes = Layer.unwrap(
+  Effect.gen(function* () {
+    const authority = yield* OrganizationAuthority;
+    const hubs = yield* OrgHubs;
+    const { verify } = yield* AccessTokens;
+    return HttpRouter.add(
+      "GET",
+      LIVE_SOCKET_PATH,
+      liveSocketHandler({
+        hubs,
+        verifyAccessToken: verify,
+        readLiveHorizon: authority.liveHorizon,
+      }),
+    );
+  }),
+);
