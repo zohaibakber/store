@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
-import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import {
   app,
   BrowserWindow,
@@ -17,29 +17,18 @@ import {
   ipcMain,
   Menu,
   MessageChannelMain,
+  type MessagePortMain,
   nativeTheme,
   session,
   shell,
+  type WebContents,
 } from "electron";
 
-import { makeSourceLinks } from "../src/host/source-links";
+import { SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
 import { DesktopAuth } from "./auth";
-import { registerAuthIpc } from "./auth-ipc";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
-import { loadDeviceId } from "./device-id";
+import { DesktopShell } from "./desktop-shell";
 import { makeDesktopHost } from "./host";
-import { registerInventoryHttpIpc } from "./inventory-http";
-import {
-  AUTH_SESSION_CHANGED_CHANNEL,
-  OAUTH_CALLBACK_CHANNEL,
-  THEME_SET_SOURCE_CHANNEL,
-  WINDOW_CLOSE_CHANNEL,
-  WINDOW_MAXIMIZED_CHANNEL,
-  WINDOW_MINIMIZE_CHANNEL,
-  WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-} from "./ipc-channels";
-import { isTrustedIpcSenderFrame } from "./ipc-sender";
-import { LicenceService } from "./licence/service";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
 import {
@@ -50,11 +39,13 @@ import {
 } from "./protocol";
 import { lockDownRenderer } from "./renderer-lockdown";
 import type { ReplicaBackupDialogs } from "./replica-backup";
-import { registerReplicaWorkerIpc } from "./replica-ipc";
+import { ReplicaHost } from "./replica-host";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
-import { registerShareIpc } from "./share-ipc";
+import { ShellEvents } from "./shell-events";
+import { makeShellPort } from "./shell-port";
+import { ShellServer } from "./shell-server";
 import { makeShutdownCoordinator } from "./shutdown";
-import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
+import { readThemeSource } from "./theme-source";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -77,8 +68,7 @@ for (const file of app.isPackaged ? [] : envFallbackFiles) {
 initDesktopSentry();
 
 let win: BrowserWindow | null;
-let disposeInventoryHttp: (() => void) | undefined;
-let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
+let events: ShellEvents["Service"] | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
 const unpackagedDevMarkPath = () =>
@@ -124,16 +114,11 @@ const windowBackground = () =>
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const publishSession = (snapshot: WorkspaceSnapshot) => {
-  win?.webContents.send(AUTH_SESSION_CHANGED_CHANNEL, snapshot);
-  return snapshot;
-};
-
 let pendingOAuthCallback: string | null = null;
 
 const deliverOAuthCallback = () => {
-  if (!pendingOAuthCallback || !win || win.webContents.isLoading()) return;
-  win.webContents.send(OAUTH_CALLBACK_CHANNEL, pendingOAuthCallback);
+  if (!pendingOAuthCallback || !events) return;
+  Queue.offerUnsafe(events.oauthCallbacks, pendingOAuthCallback);
   pendingOAuthCallback = null;
 };
 
@@ -153,19 +138,6 @@ const allowedRendererOrigins = () =>
   [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
     Boolean(value),
   );
-
-const host = makeDesktopHost({
-  apiBaseUrl: API_BASE_URL,
-  authBaseUrl: AUTH_BASE_URL,
-  publishSession,
-  userDataPath: app.getPath("userData"),
-  packaged: app.isPackaged,
-  getWindow: () => win,
-  allowedOrigins: allowedRendererOrigins,
-});
-
-let deviceId: Promise<string> | undefined;
-const hostDeviceId = () => (deviceId ??= host.run(loadDeviceId(app.getPath("userData"))));
 
 const hostDeviceLabel = () => {
   const [name = ""] = hostname().split(".");
@@ -214,16 +186,72 @@ const choosePdfDestination = (suggestedName: string) =>
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
 
+const withWindow = (control: (window: BrowserWindow) => void) =>
+  Effect.sync(() => {
+    if (win && !win.isDestroyed()) control(win);
+  });
+
+const desktopShell = DesktopShell.of({
+  apiBaseUrl: API_BASE_URL,
+  userDataPath: app.getPath("userData"),
+  workerPath: path.join(MAIN_DIST, "replica-worker.js"),
+  deviceLabel: hostDeviceLabel(),
+  rendererChannel: () => new MessageChannelMain(),
+  oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
+  backupDialogs,
+  minimizeWindow: withWindow((window) => window.minimize()),
+  toggleMaximizeWindow: withWindow((window) =>
+    window.isMaximized() ? window.unmaximize() : window.maximize(),
+  ),
+  closeWindow: withWindow((window) => window.close()),
+  setThemeSource: (source) =>
+    Effect.sync(() => {
+      nativeTheme.themeSource = source;
+    }),
+  openExternal: (url) =>
+    Effect.tryPromise({
+      try: () => shell.openExternal(url),
+      catch: (cause) =>
+        cause instanceof Error ? cause : new Error("The link could not be opened."),
+    }),
+  writeClipboardText: (text) => Effect.sync(() => clipboard.writeText(text)),
+  choosePdfDestination: (suggestedName) =>
+    Effect.promise(() => choosePdfDestination(suggestedName)),
+});
+
+const host = makeDesktopHost({
+  apiBaseUrl: API_BASE_URL,
+  authBaseUrl: AUTH_BASE_URL,
+  packaged: app.isPackaged,
+  shell: desktopShell,
+});
+
 const publishReplicaForeground = (visible: boolean) => {
-  replicaWorker
-    ?.setForeground(visible)
+  host
+    .run(ReplicaHost.use((replicas) => replicas.setForeground(visible)))
     .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
 };
 
 const publishWindowMaximized = () => {
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send(WINDOW_MAXIMIZED_CHANNEL, win.isMaximized());
+  if (!win || win.isDestroyed() || !events) return;
+  PubSub.publishUnsafe(events.maximized, win.isMaximized());
 };
+
+const shellPort = makeShellPort<WebContents, MessagePortMain>({
+  allowedOrigins: allowedRendererOrigins,
+  mainWindowContentsId: () => win?.webContents.id,
+  channel: () => new MessageChannelMain(),
+  serve: (sender, port) => {
+    void host
+      .run(ShellServer.use((server) => server.serve(sender, port)))
+      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-serve" }));
+  },
+  release: (senderId) => {
+    void host
+      .run(ShellServer.use((server) => server.release(senderId)))
+      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-release" }));
+  },
+});
 
 function createWindow() {
   win = new BrowserWindow({
@@ -249,8 +277,8 @@ function createWindow() {
   app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
-  win.webContents.on("did-finish-load", deliverOAuthCallback);
-  win.webContents.on("did-finish-load", publishWindowMaximized);
+  shellPort.attach(win.webContents);
+  publishWindowMaximized();
   win.webContents.on("console-message", (event) => {
     if (event.level === "debug" || event.level === "info") return;
     const location = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : "";
@@ -281,28 +309,6 @@ nativeTheme.on("updated", () => {
   win.setBackgroundColor(windowBackground());
 });
 
-const onWindowControl = (channel: string, control: (window: BrowserWindow) => void) => {
-  ipcMain.on(channel, (event) => {
-    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
-    if (!win || win.isDestroyed()) return;
-    control(win);
-  });
-};
-
-onWindowControl(WINDOW_MINIMIZE_CHANNEL, (window) => window.minimize());
-onWindowControl(WINDOW_TOGGLE_MAXIMIZE_CHANNEL, (window) =>
-  window.isMaximized() ? window.unmaximize() : window.maximize(),
-);
-onWindowControl(WINDOW_CLOSE_CHANNEL, (window) => window.close());
-
-ipcMain.on(THEME_SET_SOURCE_CHANNEL, (event, input) => {
-  if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
-  const source = Schema.decodeUnknownOption(ThemeSource)(input);
-  if (source._tag === "None") return;
-  nativeTheme.themeSource = source.value;
-  void host.run(Effect.ignore(saveThemeSource(app.getPath("userData"), source.value)));
-});
-
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -317,17 +323,7 @@ app.on("activate", () => {
 });
 
 const shutdown = makeShutdownCoordinator({
-  dispose: async () => {
-    const stopped = await Promise.allSettled([
-      Promise.resolve(disposeInventoryHttp?.()),
-      Promise.resolve(replicaWorker?.dispose()),
-    ]);
-    await host.dispose();
-    const failure = stopped.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failure) throw failure.reason;
-  },
+  dispose: () => host.dispose(),
   quit: () => app.quit(),
   reportError: (cause) => reportDesktopError(cause, { op: "desktop-shutdown" }),
 });
@@ -369,47 +365,18 @@ void app.whenReady().then(async () => {
     allowedOrigins: allowedRendererOrigins,
     contentSecurityPolicy: rendererCsp,
   });
-  registerNewSaleAccelerator();
-  const sourceLinks = makeSourceLinks();
-  registerAuthIpc({
-    ipcMain,
-    run: host.run,
-    allowedOrigins: allowedRendererOrigins,
-    oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
-    openExternal: (url) => shell.openExternal(url),
-    rememberSourceLinks: sourceLinks.remember,
-  });
-  registerShareIpc({
-    ipcMain,
-    allowedOrigins: allowedRendererOrigins,
-    openExternal: (url) => shell.openExternal(url),
-    isSourceLink: sourceLinks.allows,
-    writeClipboardText: (text) => clipboard.writeText(text),
-    choosePdfDestination,
+  events = await host.run(ShellEvents);
+  deliverOAuthCallback();
+  registerNewSaleAccelerator(
+    (contents) => contents.id === win?.webContents.id,
+    () => {
+      if (events) PubSub.publishUnsafe(events.newSale, undefined);
+    },
+  );
+  ipcMain.on(SHELL_PORT_REQUEST_CHANNEL, (event) => {
+    shellPort.request(event);
   });
   nativeTheme.themeSource = await host.run(readThemeSource(app.getPath("userData")));
-  const { auth, licence } = await host.run(
-    Effect.all({ auth: DesktopAuth, licence: LicenceService }),
-  );
-  disposeInventoryHttp = registerInventoryHttpIpc({
-    apiBaseUrl: API_BASE_URL,
-    deviceId: hostDeviceId,
-    ipcMain,
-    allowedOrigins: allowedRendererOrigins,
-  });
-  replicaWorker = registerReplicaWorkerIpc({
-    ipcMain,
-    userDataPath: app.getPath("userData"),
-    workerPath: path.join(MAIN_DIST, "replica-worker.js"),
-    apiBaseUrl: API_BASE_URL,
-    deviceLabel: hostDeviceLabel(),
-    run: host.run,
-    accessTokens: auth,
-    allowedOrigins: allowedRendererOrigins,
-    backupDialogs,
-    rendererChannel: () => new MessageChannelMain(),
-    sessions: { licence },
-  });
   createWindow();
-  publishSession(await host.run(auth.initialize));
+  void host.run(DesktopAuth.use((auth) => auth.initialize));
 });

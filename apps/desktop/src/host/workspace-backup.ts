@@ -10,26 +10,24 @@ export type CatalogCounts = typeof CatalogCounts.Type;
 const Cancelled = Schema.TaggedStruct("cancelled", {});
 const Failed = Schema.TaggedStruct("failed", { message: Schema.String });
 
-export const BackupOutcome = Schema.Union([
+export const BackupSaved = Schema.Union([
   Schema.TaggedStruct("saved", { fileName: Schema.String, bytes: Schema.Natural }),
   Cancelled,
-  Failed,
 ]);
-export type BackupOutcome = typeof BackupOutcome.Type;
+export type BackupOutcome = typeof BackupSaved.Type | typeof Failed.Type;
 
-export const RestoreChoice = Schema.Union([
+export const RestoreStaged = Schema.Union([
   Schema.TaggedStruct("staged", {
     fileName: Schema.String,
     current: CatalogCounts,
     backup: CatalogCounts,
   }),
   Cancelled,
-  Failed,
 ]);
-export type RestoreChoice = typeof RestoreChoice.Type;
+export type RestoreChoice = typeof RestoreStaged.Type | typeof Failed.Type;
 
-export const RestoreOutcome = Schema.Union([Schema.TaggedStruct("restored", {}), Failed]);
-export type RestoreOutcome = typeof RestoreOutcome.Type;
+export const RestoreApplied = Schema.TaggedStruct("restored", {});
+export type RestoreOutcome = typeof RestoreApplied.Type | typeof Failed.Type;
 
 export type WorkspaceBackupBridge = {
   readonly backUp: () => Promise<BackupOutcome>;
@@ -37,14 +35,3 @@ export type WorkspaceBackupBridge = {
   readonly applyRestore: () => Promise<RestoreOutcome>;
   readonly discardRestore: () => Promise<void>;
 };
-
-const decodeBackupOutcome = Schema.decodeUnknownSync(BackupOutcome);
-const decodeRestoreChoice = Schema.decodeUnknownSync(RestoreChoice);
-const decodeRestoreOutcome = Schema.decodeUnknownSync(RestoreOutcome);
-
-export const decodedBackupBridge = (bridge: WorkspaceBackupBridge): WorkspaceBackupBridge => ({
-  backUp: async () => decodeBackupOutcome(await bridge.backUp()),
-  chooseRestore: async () => decodeRestoreChoice(await bridge.chooseRestore()),
-  applyRestore: async () => decodeRestoreOutcome(await bridge.applyRestore()),
-  discardRestore: () => bridge.discardRestore(),
-});

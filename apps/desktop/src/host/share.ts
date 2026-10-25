@@ -32,13 +32,3 @@ export type ShareBridge = {
   readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
   readonly print: (page: PrintPage) => Promise<PrintOutcome>;
 };
-
-const decodeSavePdfOutcome = Schema.decodeUnknownSync(SavePdfOutcome);
-const decodePrintOutcome = Schema.decodeUnknownSync(PrintOutcome);
-
-export const decodedShareBridge = (bridge: ShareBridge): ShareBridge => ({
-  openExternal: (url) => bridge.openExternal(url),
-  copyText: (text) => bridge.copyText(text),
-  savePdf: async (fileStem) => decodeSavePdfOutcome(await bridge.savePdf(fileStem)),
-  print: async (page) => decodePrintOutcome(await bridge.print(page)),
-});

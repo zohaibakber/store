@@ -53,6 +53,7 @@ import { searchGlobalProducts } from "../src/host/global-search";
 import type { SignInCredentials } from "../src/host/index";
 import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/host/invoice-upload";
 import { PrivateFiles } from "./private-files";
+import { ShellEvents } from "./shell-events";
 
 const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&
@@ -123,12 +124,12 @@ const persistence = (files: PrivateFiles["Service"]) => ({
 export interface DesktopAuthOptions {
   readonly apiBaseUrl: string;
   readonly authBaseUrl: string;
-  readonly publishSession: (snapshot: WorkspaceSnapshot) => void;
 }
 
 const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
   const { forgetPersisted, readPersisted, writePersisted } = persistence(yield* PrivateFiles);
   const crypto = yield* Crypto.Crypto;
+  const events = yield* ShellEvents;
   const scope = yield* Effect.scope;
   const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
   const googleVerifier = yield* Ref.make(Option.none<Redacted.Redacted<string>>());
@@ -139,7 +140,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     getLocalSnapshot: () => MutableRef.get(snapshot),
     publish: (next) => {
       MutableRef.set(snapshot, next);
-      options.publishSession(next);
+      PubSub.publishUnsafe(events.session, next);
       return next;
     },
     clearAuthenticated: forgetPersisted,
@@ -207,7 +208,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
         onNone: () => current,
         onSome: (persisted) => withSession(resumeSessionSnapshot(hooks, persisted.tokens)),
       }),
-    ),
+    ).pipe(Effect.tap((initial) => PubSub.publish(events.session, initial))),
     identify: Effect.fn("DesktopAuth.identify")(function* (input: IdentifyInput) {
       const client = yield* signIn;
       return yield* client.identify(input);
