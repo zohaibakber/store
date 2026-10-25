@@ -12,6 +12,7 @@ import {
   type SyncCommand,
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
+  OperationId,
 } from "@store/contracts";
 import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
 import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
@@ -237,7 +238,7 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
       epoch: LAST_UNIT_EPOCH,
       replicaId: LAST_UNIT_REPLICA_A,
       clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
-      operationId: command.payload.commandId,
+      operationId: OperationId.make(command.payload.commandId),
       payloadHash: canonicalPayloadHash(command),
       command,
       afterCommitSequence: OrgCommitSequence.make(
@@ -279,7 +280,7 @@ const queued = (
   command: SyncCommand,
   operationId = command.payload.commandId,
 ): EnqueueCommandRequest => ({
-  operationId,
+  operationId: OperationId.make(operationId),
   command,
   occurredAt: command.payload.occurredAt,
 });
@@ -1150,7 +1151,9 @@ describe("the local authority decides like the durable object authority", () => 
             authority: yield* Effect.forEach(refused, ({ request }) =>
               authority.submit(actor, request),
             ),
-            status: yield* store.readCommandStatus(stalePriceDelivery.payload.commandId),
+            status: yield* store.readCommandStatus(
+              OperationId.make(stalePriceDelivery.payload.commandId),
+            ),
             before,
             after: yield* store.readSyncCursor,
           };

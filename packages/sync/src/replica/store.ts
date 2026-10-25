@@ -1,11 +1,15 @@
 import type {
   CommandReceipt,
   EnqueueCommandRequest,
+  OperationId,
+  OrgCommitSequence,
   RegisterReplicaResult,
+  ReplicaId,
   SnapshotId,
   SnapshotManifest,
   SnapshotPartPayload,
   SyncEntity,
+  SyncEpoch,
   SyncPullResult,
   SyncSubscription,
 } from "@store/contracts";
@@ -28,7 +32,7 @@ import type { ReplicaAnnouncement, ReplicaRegistrationOutcome } from "./registra
 export type { ReplicaRegistrationOutcome, ReplicaStoreError };
 
 export type AppliedCursor = {
-  readonly appliedThrough: string;
+  readonly appliedThrough: OrgCommitSequence;
   readonly repairRequired: boolean;
   readonly digestVerified?: boolean;
 };
@@ -45,19 +49,19 @@ export type IntegrateAuthorityInput = {
 type PendingRowMarkEntry = {
   readonly entity: SyncEntity;
   readonly entityId: string;
-  readonly operationId: string;
+  readonly operationId: OperationId;
 };
 
 export type QueuedCommand = {
-  readonly operationId: string;
+  readonly operationId: OperationId;
   readonly status: CommandStatus;
   readonly stamp: ReplicaReadStamp;
 };
 
 type ReplicaSyncCursor = ReplicaAnnouncement & {
-  readonly epoch: string;
-  readonly appliedCommitSequence: string;
-  readonly replicaId: string;
+  readonly epoch: SyncEpoch;
+  readonly appliedCommitSequence: OrgCommitSequence;
+  readonly replicaId: ReplicaId;
   readonly bootstrapped: boolean;
 };
 
@@ -85,7 +89,7 @@ export class ReplicaStore extends Context.Service<
       request: EnqueueCommandRequest,
     ) => Effect.Effect<Committed<QueuedCommand>, ReplicaStoreError>;
     readonly readCommandStatus: (
-      operationId: string,
+      operationId: OperationId,
     ) => Effect.Effect<CommandStatus | undefined, ReplicaStoreError>;
     readonly claimNextUpload: (
       input: ClaimNextUploadInput,
@@ -95,7 +99,7 @@ export class ReplicaStore extends Context.Service<
       receipt: CommandReceipt,
     ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
     readonly releaseUploadClaim: (
-      operationId: string,
+      operationId: OperationId,
       claimId: string,
     ) => Effect.Effect<Committed<CommandStatus | undefined>, ReplicaStoreError>;
     readonly integrateAuthority: (

@@ -1,5 +1,4 @@
 import {
-  OrgCommitSequence,
   type PartitionDigestReport,
   type SyncCoverage,
   type SyncPullResult,
@@ -233,7 +232,7 @@ const settleScannedDigest = Effect.fn("ReplicaCoverage.settleScannedDigest")(fun
   yield* saveCoverage(tx, {
     _tag: "downloaded",
     subscription: pulled.subscription,
-    throughCommitSequence: OrgCommitSequence.make(current.appliedCommitSequence),
+    throughCommitSequence: current.appliedCommitSequence,
     digest: next.digest,
   });
   return { repairRequired: false, digestVerified: next.verified } satisfies PulledCoverage;

@@ -1,6 +1,7 @@
-import type {
-  CreateBatchInput,
-  StaffId,
+import {
+  OperationId,
+  type CreateBatchInput,
+  type StaffId,
   StaffPermission,
   SyncCommandEnvelope,
 } from "@store/contracts";
@@ -184,7 +185,7 @@ export const makeCommandHandlers = ({
   });
 
   const enqueue = Effect.fn("InventoryStore.enqueue")(function* (
-    operationId: string,
+    operationId: OperationId,
     command: Command,
     occurredAt: number,
     staff: Option.Option<StaffId>,
@@ -212,9 +213,9 @@ export const makeCommandHandlers = ({
     staff: Option.Option<StaffId>,
   ): Effect.Effect<Commit, CommandFailure> =>
     writes.length === 0
-      ? unchanged(context.commandId)
+      ? unchanged(OperationId.make(context.commandId))
       : enqueue(
-          context.commandId,
+          OperationId.make(context.commandId),
           {
             _tag: "catalogWrite",
             payload: {
@@ -350,7 +351,7 @@ export const makeCommandHandlers = ({
         }),
       );
       const commit = yield* enqueue(
-        context.commandId,
+        OperationId.make(context.commandId),
         { _tag: "issueInvoice", payload: projection.command },
         context.occurredAt,
         staff,

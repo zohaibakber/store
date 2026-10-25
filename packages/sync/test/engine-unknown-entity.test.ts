@@ -11,6 +11,7 @@ import {
   SyncPullRequest,
   SyncPullResult,
   SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   LAST_UNIT_EPOCH,
@@ -60,7 +61,7 @@ const foreignChange = (entityId: string) => ({
 
 const foreignOnlyGroup = (commitSequence: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `foreign-write-${commitSequence}`,
+  operationId: OperationId.make(`foreign-write-${commitSequence}`),
   decision: "accepted",
   changes: [],
 });

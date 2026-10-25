@@ -5,6 +5,7 @@ import {
   OrgCommitSequence,
   SyncEpoch,
   type SyncPullResult,
+  OperationId,
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH, LAST_UNIT_PRODUCT_ID } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
@@ -106,7 +107,9 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           appliedThrough: "3",
           repairRequired: false,
         });
-        expect(yield* harness.store.readCommandStatus("catalog-submitted")).toBe("integrated");
+        expect(yield* harness.store.readCommandStatus(OperationId.make("catalog-submitted"))).toBe(
+          "integrated",
+        );
         expect((yield* harness.store.readSyncCursor).appliedCommitSequence).toBe("3");
         expect(yield* harness.readPendingRowIds("product")).toEqual([]);
       }),
@@ -120,7 +123,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
 
         expect(integrated.value).toMatchObject({ outcome: { _tag: "pull" }, appliedThrough: "2" });
         expect((yield* harness.store.readSyncCursor).appliedCommitSequence).toBe("2");
-        expect(yield* harness.store.readCommandStatus("catalog-submitted")).toBe(
+        expect(yield* harness.store.readCommandStatus(OperationId.make("catalog-submitted"))).toBe(
           "accepted_awaiting_integration",
         );
         expect(yield* harness.readPendingRowIds("product")).toEqual([LAST_UNIT_PRODUCT_ID]);
@@ -138,7 +141,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           appliedThrough: "2",
         });
         expect((yield* harness.store.readSyncCursor).appliedCommitSequence).toBe("2");
-        expect(yield* harness.store.readCommandStatus("catalog-submitted")).toBe(
+        expect(yield* harness.store.readCommandStatus(OperationId.make("catalog-submitted"))).toBe(
           "accepted_awaiting_integration",
         );
         expect(yield* harness.readPendingRowIds("product")).toEqual([LAST_UNIT_PRODUCT_ID]);

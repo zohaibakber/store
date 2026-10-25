@@ -5,6 +5,7 @@ import {
   ReplicaClientSequence,
   SyncEpoch,
   syncProtocolError,
+  OperationId,
 } from "@store/contracts";
 import { ReplicaStore, SyncScheduler, SyncTransportService, type SyncTransport } from "@store/sync";
 import * as Context from "effect/Context";
@@ -79,7 +80,7 @@ describe("layerNodeReplicaSync", () => {
     });
     expect(
       await Effect.runPromise(
-        Context.get(session, ReplicaStore).readCommandStatus("unknown-operation"),
+        Context.get(session, ReplicaStore).readCommandStatus(OperationId.make("unknown-operation")),
       ),
     ).toBeUndefined();
     const requestsWhenSuspended = snapshotRequests;

@@ -15,6 +15,7 @@ import {
   type PurchaseOrderStatus,
   type SyncCommandEnvelope,
   type SyncPullRequest,
+  OperationId,
 } from "@store/contracts";
 import {
   decodeBatchId,
@@ -98,7 +99,7 @@ const catalogEnvelope = (
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(clientSequence),
-    operationId: payload.commandId,
+    operationId: OperationId.make(payload.commandId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };

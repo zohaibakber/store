@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
 
+import { SyncIdentifier } from "./schema-primitives";
+
 export const CategoryId = Schema.NonEmptyString.pipe(Schema.brand("CategoryId"));
 export type CategoryId = typeof CategoryId.Type;
 export const decodeCategoryId = Schema.decodeUnknownSync(CategoryId);
@@ -40,9 +42,13 @@ export const UserId = Schema.NonEmptyString.pipe(Schema.brand("UserId"));
 export type UserId = typeof UserId.Type;
 export const decodeUserId = Schema.decodeUnknownSync(UserId);
 
-export const ReplicaId = Schema.NonEmptyString.pipe(Schema.brand("ReplicaId"));
+export const ReplicaId = SyncIdentifier.pipe(Schema.brand("ReplicaId"));
 export type ReplicaId = typeof ReplicaId.Type;
 export const decodeReplicaId = Schema.decodeUnknownSync(ReplicaId);
+
+export const OperationId = SyncIdentifier.pipe(Schema.brand("OperationId"));
+export type OperationId = typeof OperationId.Type;
+export const decodeOperationId = Schema.decodeUnknownSync(OperationId);
 
 export const StaffId = Schema.NonEmptyString.pipe(Schema.brand("StaffId"));
 export type StaffId = typeof StaffId.Type;

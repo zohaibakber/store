@@ -10,6 +10,7 @@ import {
   type SyncCommandEnvelope,
   type SyncEntity,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { decodeInvoiceId, decodeInvoiceItemId } from "@store/contracts/ids";
@@ -135,7 +136,7 @@ const invoiceEnvelopeFor = (input: {
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
-    operationId: input.operationId,
+    operationId: OperationId.make(input.operationId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };
@@ -148,7 +149,7 @@ const authoritativeInvoiceGroup = (input: {
   readonly invoiceId?: string;
 }): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(input.commitSequence),
-  operationId: input.operationId,
+  operationId: OperationId.make(input.operationId),
   decision: "accepted",
   changes: [
     {
@@ -177,7 +178,7 @@ const authoritativeInvoiceGroup = (input: {
 
 const remoteProductGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("7"),
-  operationId: "remote-op",
+  operationId: OperationId.make("remote-op"),
   decision: "accepted",
   changes: [
     {
@@ -213,7 +214,7 @@ const remoteProductGroup: SyncTransactionGroup = {
 
 const remoteColdChainGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("8"),
-  operationId: "remote-category-op",
+  operationId: OperationId.make("remote-category-op"),
   decision: "accepted",
   changes: [
     {
@@ -273,7 +274,7 @@ const deleteGroup = (input: {
   readonly operationId: string;
 }): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(input.commitSequence),
-  operationId: input.operationId,
+  operationId: OperationId.make(input.operationId),
   decision: "accepted",
   changes: [
     {

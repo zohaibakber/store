@@ -2,6 +2,7 @@ import type {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
+  OperationId,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
@@ -333,7 +334,7 @@ export type SyncTransport = {
     request: SyncSubmitCommandRequest,
   ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
   readonly getReceipt: (
-    operationId: string,
+    operationId: OperationId,
   ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
   readonly pull: (
     request: SyncPullRequest,

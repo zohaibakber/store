@@ -6,6 +6,7 @@ import {
   SyncEpoch,
   type SyncLiveServerFrame,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
@@ -35,7 +36,7 @@ const historyBefore = (
   while (compareDecimalSequence(next, commitSequence) < 0) {
     history.push({
       commitSequence: OrgCommitSequence.make(next),
-      operationId: `unrelated-commit-${next}`,
+      operationId: OperationId.make(`unrelated-commit-${next}`),
       decision: "accepted",
       changes: [],
     });

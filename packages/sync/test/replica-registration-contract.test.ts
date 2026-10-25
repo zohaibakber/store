@@ -12,6 +12,7 @@ import {
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
   type SyncProtocolError,
+  OperationId,
 } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
@@ -209,7 +210,7 @@ const categoryEnvelope = (
     epoch: SyncEpoch.make(epoch),
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(clientSequence),
-    operationId,
+    operationId: OperationId.make(operationId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };
@@ -233,8 +234,12 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         yield* engine.ensureRegistered;
         expect(yield* engine.drainUploads).toBe(2);
         expect(authority.accepted).toEqual(["7", "8"]);
-        expect(yield* store.readCommandStatus("op-1")).toBe("accepted_awaiting_integration");
-        expect(yield* store.readCommandStatus("op-2")).toBe("accepted_awaiting_integration");
+        expect(yield* store.readCommandStatus(OperationId.make("op-1"))).toBe(
+          "accepted_awaiting_integration",
+        );
+        expect(yield* store.readCommandStatus(OperationId.make("op-2"))).toBe(
+          "accepted_awaiting_integration",
+        );
         yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(3, "2", "9"), FIXTURE_NOW));
         expect(yield* engine.drainUploads).toBe(1);
         expect(authority.accepted).toEqual(["7", "8", "9"]);
@@ -253,7 +258,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           claimedAt: FIXTURE_NOW,
           staleBefore: 0,
         });
-        yield* store.releaseUploadClaim("op-1", "claim-1");
+        yield* store.releaseUploadClaim(OperationId.make("op-1"), "claim-1");
         const authority = makeAuthority({
           epoch: "1",
           incarnation: "authority-d",
@@ -264,7 +269,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(failure).toBeInstanceOf(SyncRecoveryRequired);
         expect(failure).toMatchObject({ code: "COMMAND_IDENTITY_MISMATCH" });
         expect((yield* store.readSyncCursor).registered).toBe(false);
-        expect(yield* store.readCommandStatus("op-1")).toBe("pending");
+        expect(yield* store.readCommandStatus(OperationId.make("op-1"))).toBe("pending");
       }),
     ),
   );

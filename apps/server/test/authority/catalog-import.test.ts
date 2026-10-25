@@ -14,6 +14,7 @@ import {
   type ImportCatalogRequest,
   type SyncCommand,
   type SyncEntity,
+  OperationId,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
@@ -107,7 +108,7 @@ const catalog = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>): Syn
 });
 
 const queued = (command: SyncCommand): EnqueueCommandRequest => ({
-  operationId: command.payload.commandId,
+  operationId: OperationId.make(command.payload.commandId),
   command,
   occurredAt: command.payload.occurredAt,
 });

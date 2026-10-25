@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type CatalogRowWrite, type EnqueueCommandRequest } from "@store/contracts";
+import { type CatalogRowWrite, type EnqueueCommandRequest, OperationId } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
 import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
@@ -52,7 +52,7 @@ const categoryWrite = (index: number, name = `Category ${index}`): CatalogRowWri
 });
 
 const categoryRequest = (index: number, name?: string): EnqueueCommandRequest => ({
-  operationId: `op-${index}`,
+  operationId: OperationId.make(`op-${index}`),
   occurredAt: FIXTURE_NOW + index,
   command: {
     _tag: "catalogWrite",

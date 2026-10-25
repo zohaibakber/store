@@ -6,6 +6,7 @@ import {
   SyncEpoch,
   type SyncPullResult,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   LAST_UNIT_BATCH_ID,
@@ -126,7 +127,7 @@ const managed = (operationId: string, rowVersion: number) => ({
 const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   {
     commitSequence: OrgCommitSequence.make("3"),
-    operationId: "remote-rename",
+    operationId: OperationId.make("remote-rename"),
     decision: "accepted",
     changes: [
       {
@@ -153,7 +154,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("4"),
-    operationId: "remote-restock",
+    operationId: OperationId.make("remote-restock"),
     decision: "accepted",
     changes: [
       {
@@ -196,7 +197,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("5"),
-    operationId: "remote-delete",
+    operationId: OperationId.make("remote-delete"),
     decision: "accepted",
     changes: [
       {
@@ -210,7 +211,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("6"),
-    operationId: "remote-category",
+    operationId: OperationId.make("remote-category"),
     decision: "accepted",
     changes: [
       {
@@ -229,7 +230,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("7"),
-    operationId: "remote-delivery",
+    operationId: OperationId.make("remote-delivery"),
     decision: "accepted",
     changes: [
       {
@@ -509,7 +510,7 @@ describe.each(harnesses)(
               transactions: [
                 {
                   commitSequence: OrgCommitSequence.make("1"),
-                  operationId: "server-dataset",
+                  operationId: OperationId.make("server-dataset"),
                   decision: "accepted",
                   changes: serverChangeLog(serverTables),
                 },
