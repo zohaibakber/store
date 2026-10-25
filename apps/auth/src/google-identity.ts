@@ -109,7 +109,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         readonly state: OAuthState;
       }) {
         const now = yield* Clock.currentTimeMillis;
-        const state = yield* ephemeral.consumeOAuthState(input.state, now);
+        const state = yield* ephemeral.consumeOAuthState(input.state);
         if (!state) {
           return yield* new AuthRefusal({ reason: "InvalidOAuthState" });
         }
@@ -137,8 +137,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       const exchangeGoogle = Effect.fn("GoogleIdentity.exchangeGoogle")(function* (
         input: ExchangeGoogleInput,
       ) {
-        const now = yield* Clock.currentTimeMillis;
-        const grant = yield* ephemeral.consumeAuthorizationGrant(input.code, now);
+        const grant = yield* ephemeral.consumeAuthorizationGrant(input.code);
         if (!grant) {
           return yield* new AuthRefusal({ reason: "InvalidAuthorizationCode" });
         }
