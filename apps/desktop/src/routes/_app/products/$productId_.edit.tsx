@@ -1,4 +1,4 @@
-import { ProductId } from "@store/contracts/ids";
+import { decodeProductId } from "@store/contracts";
 import {
   preloadAll,
   preloadCatalogCategories,
@@ -9,13 +9,14 @@ import {
   useSuspenseCatalogProduct,
 } from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
 
+import { ProductDetailNotFound } from "@/components/products/detail-page";
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
 import { preloadInventory } from "@/lib/inventory/preload";
 
 export const Route = createFileRoute("/_app/products/$productId_/edit")({
+  params: { parse: ({ productId }) => ({ productId: decodeProductId(productId) }) },
   loader: ({ context, params }) =>
     preloadInventory(context, (inventory) =>
       preloadAll([
@@ -30,11 +31,10 @@ export const Route = createFileRoute("/_app/products/$productId_/edit")({
 
 function EditProductPage() {
   const { productId } = Route.useParams();
-  const id = Schema.decodeUnknownSync(ProductId)(productId);
   const categories = useSuspenseCatalogCategories();
-  const product = useSuspenseCatalogProduct(id);
+  const product = useSuspenseCatalogProduct(productId);
   const suggestions = useSuspenseCatalogSuggestions();
-  if (!product) throw new Error(`Product ${productId} was not found in this catalog.`);
+  if (!product) return <ProductDetailNotFound />;
   return <EditProductForm categories={categories} product={product} suggestions={suggestions} />;
 }
 

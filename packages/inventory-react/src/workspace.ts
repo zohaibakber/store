@@ -21,11 +21,10 @@ import * as Scope from "effect/Scope";
 import { createWorkspaceAtoms, type WorkspaceAtoms } from "./atoms";
 import type { CatalogCommands } from "./catalog-commands";
 import {
-  catalogOpenFailure,
+  CatalogOpenFailure,
   causeSurface,
   InventoryCommandError,
   staleCatalogLease,
-  type CatalogOpenFailure,
   type StaleCatalogLease,
 } from "./errors";
 import {
@@ -122,33 +121,38 @@ const makeActions = (
   };
 };
 
-const openWorkspace = (host: InventoryHost, scope: InventoryScope) =>
-  Effect.gen(function* () {
-    const registry = yield* Effect.acquireRelease(
-      Effect.sync(() => AtomRegistry.make()),
-      (made) => Effect.sync(() => made.dispose()),
-    );
-    const opened = yield* host.open(
-      { organizationId: scope.organizationId, userId: scope.userId, replicaId: host.deviceId },
-      registry,
-    );
-    const links = makeInventoryLinks(host.services);
-    const atoms = createWorkspaceAtoms(host.services, links, registry);
-    yield* AtomRegistry.mount(registry, host.services.Reads.runtime);
-    yield* AtomRegistry.mount(registry, links.commits);
-    yield* AtomRegistry.mount(registry, links.insightChanges);
-    yield* AtomRegistry.getResult(registry, atoms.syncSnapshot).pipe(
-      Effect.timeout(FIRST_READ_WAIT),
-      Effect.mapError(() => catalogOpenFailure(undefined)),
-    );
-    const authority = replicaAuthorityOf(scope);
-    return {
-      atoms,
-      actions: makeActions(registry, links, atoms, opened, authority),
-      authority,
-      deviceId: opened.replicaId ?? host.deviceId,
-    };
-  });
+const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
+  host: InventoryHost,
+  scope: InventoryScope,
+) {
+  const registry = yield* Effect.acquireRelease(
+    Effect.sync(() => AtomRegistry.make()),
+    (made) => Effect.sync(() => made.dispose()),
+  );
+  const opened = yield* host.open(
+    { organizationId: scope.organizationId, userId: scope.userId, replicaId: host.deviceId },
+    registry,
+  );
+  const links = makeInventoryLinks(host.services);
+  const atoms = createWorkspaceAtoms(host.services, links, registry);
+  yield* AtomRegistry.mount(registry, host.services.Reads.runtime);
+  yield* AtomRegistry.mount(registry, links.commits);
+  yield* AtomRegistry.mount(registry, links.insightChanges);
+  yield* AtomRegistry.getResult(registry, atoms.syncSnapshot).pipe(
+    Effect.mapError(() => new CatalogOpenFailure({ reason: "firstReadFailed" })),
+    Effect.timeoutOrElse({
+      duration: FIRST_READ_WAIT,
+      orElse: () => Effect.fail(new CatalogOpenFailure({ reason: "firstReadTimeout" })),
+    }),
+  );
+  const authority = replicaAuthorityOf(scope);
+  return {
+    atoms,
+    actions: makeActions(registry, links, atoms, opened, authority),
+    authority,
+    deviceId: opened.replicaId ?? host.deviceId,
+  };
+});
 
 export type CatalogLease = {
   readonly scope: InventoryScope;

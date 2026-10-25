@@ -1,5 +1,5 @@
 import type { IssueInvoiceResult, Product } from "@store/contracts";
-import type { InvoiceId } from "@store/contracts/ids";
+import type { InvoiceId, ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
   useInventoryActions,
@@ -129,13 +129,18 @@ const NO_SEEDS: ProductSeeds = { since: "", products: new Map() };
 
 const ID_SEPARATOR = "\n";
 
+const idsKey = (ids: ReadonlyArray<ProductId>) => ids.join(ID_SEPARATOR);
+
 function useDraftProducts(drafts: SaleDrafts) {
-  const requested = saleProductIds(drafts).join(ID_SEPARATOR);
+  const ids = saleProductIds(drafts);
+  const [requested, setRequested] = useState(ids);
+  if (idsKey(requested) !== idsKey(ids)) setRequested(ids);
   const settled = useDeferredValue(requested);
-  const products = useSuspenseCatalogProductsById(settled ? settled.split(ID_SEPARATOR) : []);
+  const settledKey = idsKey(settled);
+  const products = useSuspenseCatalogProductsById(settled);
   const [seeds, setSeeds] = useState(NO_SEEDS);
   const live = new Map<string, Product>(products.map((product) => [product.id, product]));
-  const seeded = seeds.since === settled ? seeds.products : NO_SEEDS.products;
+  const seeded = seeds.since === settledKey ? seeds.products : NO_SEEDS.products;
 
   const lookup: ProductLookup = (productId) =>
     live.get(productId) ??
@@ -144,8 +149,8 @@ function useDraftProducts(drafts: SaleDrafts) {
   const seed = (product: Product) => {
     if (live.has(product.id)) return;
     setSeeds((known) => ({
-      since: settled,
-      products: new Map(known.since === settled ? known.products : []).set(product.id, product),
+      since: settledKey,
+      products: new Map(known.since === settledKey ? known.products : []).set(product.id, product),
     }));
   };
 

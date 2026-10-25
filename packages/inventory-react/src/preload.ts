@@ -1,4 +1,4 @@
-import type { RestockPageRequest } from "@store/contracts";
+import type { InvoiceId, ProductId, PurchaseOrderId, RestockPageRequest } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import type * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as Atom from "effect/reactivity/Atom";
@@ -38,21 +38,21 @@ export const preloadProductList = (inventory: Inventory, request: ProductListReq
     warmAtom(inventory, inventory.atoms.productCount(request.filters)),
   ]);
 
-export const preloadCatalogProduct = (inventory: Inventory, productId: string): Preload =>
+export const preloadCatalogProduct = (inventory: Inventory, productId: ProductId): Preload =>
   warmAtom(inventory, inventory.atoms.product(productId));
 
 export const preloadCatalogProductsById = (
   inventory: Inventory,
-  productIds: ReadonlyArray<string>,
+  productIds: ReadonlyArray<ProductId>,
 ): Preload => warmAtom(inventory, inventory.atoms.productsById(productIds));
 
 export const preloadProductSearch = (inventory: Inventory, query: string, limit: number): Preload =>
   warmAtom(inventory, inventory.atoms.productSearch(limit)(query));
 
-export const preloadStockMovementHistory = (inventory: Inventory, productId: string): Preload =>
+export const preloadStockMovementHistory = (inventory: Inventory, productId: ProductId): Preload =>
   warmAtom(inventory, inventory.atoms.stockMovementHistory(productId, HISTORY_PAGE_SIZE).window);
 
-export const preloadProductStockPlan = (inventory: Inventory, productId: string): Preload =>
+export const preloadProductStockPlan = (inventory: Inventory, productId: ProductId): Preload =>
   preloadAll([
     preloadSuppliers(inventory),
     warmAtom(inventory, inventory.atoms.productsOnOrder([productId])),
@@ -71,7 +71,7 @@ export const preloadInvoiceList = (inventory: Inventory, request: InvoiceListReq
     warmAtom(inventory, inventory.atoms.invoicePage(request)),
   ]);
 
-export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: string): Preload =>
+export const preloadInventoryInvoice = (inventory: Inventory, invoiceId: InvoiceId): Preload =>
   warmAtom(inventory, inventory.atoms.invoice(invoiceId));
 
 export const preloadInventoryInsights = (inventory: Inventory): Preload =>
@@ -99,7 +99,7 @@ export const preloadPurchaseOrderList = (
     warmAtom(inventory, inventory.atoms.purchaseOrderPage(request)),
   ]);
 
-export const preloadPurchaseOrder = (inventory: Inventory, orderId: string): Preload =>
+export const preloadPurchaseOrder = (inventory: Inventory, orderId: PurchaseOrderId): Preload =>
   preloadAll([
     preloadSuppliers(inventory),
     warmAtom(inventory, inventory.atoms.purchaseOrderDetail(orderId)),

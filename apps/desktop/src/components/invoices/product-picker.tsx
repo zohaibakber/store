@@ -1,6 +1,6 @@
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Product } from "@store/contracts";
+import type { Product, ProductId } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
 import { useSuspenseProductSearch } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
@@ -74,7 +74,7 @@ function ProductPickerSearch({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [pendingRecent, setPendingRecent] = useState<{
-    readonly id: string;
+    readonly id: ProductId;
     readonly quantity: number;
     readonly nonce: number;
   } | null>(null);

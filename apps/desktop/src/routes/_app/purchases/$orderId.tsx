@@ -1,3 +1,4 @@
+import { decodePurchaseOrderId } from "@store/contracts";
 import {
   preloadPurchaseOrder,
   useSuspensePurchaseOrder,
@@ -7,7 +8,11 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
-import { PurchaseOrderError, PurchaseOrderPage } from "@/components/purchases/order-page";
+import {
+  PurchaseOrderError,
+  PurchaseOrderNotFound,
+  PurchaseOrderPage,
+} from "@/components/purchases/order-page";
 import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -16,6 +21,7 @@ const orderSearch = Schema.toStandardSchemaV1(
 );
 
 export const Route = createFileRoute("/_app/purchases/$orderId")({
+  params: { parse: ({ orderId }) => ({ orderId: decodePurchaseOrderId(orderId) }) },
   validateSearch: orderSearch,
   loader: ({ context, params }) =>
     preloadInventory(context, (inventory) => preloadPurchaseOrder(inventory, params.orderId)),
@@ -31,7 +37,7 @@ function PurchaseOrderRoute() {
   const order = useSuspensePurchaseOrder(orderId);
   const deliveries = useSuspensePurchaseOrderDeliveries(orderId);
   const suppliers = useSuspenseSuppliers();
-  if (!order) throw new Error(`Purchase order ${orderId} was not found.`);
+  if (!order) return <PurchaseOrderNotFound />;
   return (
     <PurchaseOrderPage
       deliveries={deliveries}

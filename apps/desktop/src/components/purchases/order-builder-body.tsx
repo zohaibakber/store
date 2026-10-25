@@ -1,6 +1,11 @@
 import { Cancel01Icon, Search01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { purchaseOrderTotal, type Product, type Supplier } from "@store/contracts";
+import {
+  purchaseOrderTotal,
+  type Product,
+  type PurchaseOrderId,
+  type Supplier,
+} from "@store/contracts";
 import {
   useInventoryActions,
   useLearnedSuppliers,
@@ -348,7 +353,7 @@ export function OrderBuilderBody({
   const create = async () => {
     if (!canCreate) return;
     setPending(true);
-    const created: Array<string> = [];
+    const created: Array<PurchaseOrderId> = [];
     try {
       for (const group of groups) {
         if (group.supplier === null) continue;

@@ -1,6 +1,7 @@
 import {
   isPurchaseOrderOpen,
   purchaseOrderLineRemaining,
+  type ProductId,
   type PurchaseOrder,
   type PurchaseOrderStatus,
   type ReplicaPurchaseOrderItemRow,
@@ -38,13 +39,13 @@ type OpenOrderLines = {
   readonly lines: ReadonlyArray<ReplicaPurchaseOrderItemRow>;
 };
 
-export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<string, ProductOnOrder> => {
+export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<ProductId, ProductOnOrder> => {
   const openOrders = new Map(
     read.orders
       .filter((order) => isPurchaseOrderOpen(order.status))
       .map((order) => [order.id, order]),
   );
-  const byProduct = new Map<string, Array<ProductOrderLine>>();
+  const byProduct = new Map<ProductId, Array<ProductOrderLine>>();
   for (const line of read.lines) {
     const order = openOrders.get(line.purchaseOrderId);
     if (order === undefined) continue;
@@ -82,7 +83,7 @@ export const productsOnOrder = (read: OpenOrderLines): ReadonlyMap<string, Produ
 
 export type PurchaseOrderListFilters = {
   readonly tab: PurchaseOrderTab;
-  readonly supplierIds?: ReadonlyArray<string>;
+  readonly supplierIds?: ReadonlyArray<SupplierId>;
 };
 
 export type PurchaseOrderListRequest = ListPage<PurchaseOrderSortColumn> & {

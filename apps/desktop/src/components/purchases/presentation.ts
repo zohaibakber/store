@@ -1,10 +1,12 @@
 import {
-  purchaseOrderLineTotal,
-  purchaseOrderProgress,
+  type ProductId,
   type PurchaseOrder,
   type PurchaseOrderItem,
+  purchaseOrderLineTotal,
+  purchaseOrderProgress,
   type PurchaseOrderProgress,
   type Supplier,
+  type SupplierId,
 } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 
@@ -66,7 +68,7 @@ export const UNKNOWN_SUPPLIER = "Unknown supplier";
 export const supplierIdsMatching = (
   suppliers: ReadonlyArray<Pick<Supplier, "id" | "name">>,
   term: string | undefined,
-): ReadonlyArray<string> | undefined => {
+): ReadonlyArray<SupplierId> | undefined => {
   const wanted = (term ?? "").trim().toLowerCase();
   if (wanted === "") return undefined;
   return suppliers
@@ -76,7 +78,7 @@ export const supplierIdsMatching = (
 };
 
 export type DraftLine = {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly name: string;
   readonly quantity: number;
   readonly quantityType: LineQuantity["quantityType"];

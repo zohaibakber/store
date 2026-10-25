@@ -5,13 +5,16 @@ export { configureInventoryPreferences } from "./preferences";
 export {
   replicaAuthorityOf,
   type InventoryHost,
+  type InventoryScope,
   type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
 export {
-  catalogOpenFailure,
+  catalogOpenRefused,
+  CatalogOpenFailure,
   commandFailureSurface,
   licenceRefusalCopy,
+  restockExportFailureCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";

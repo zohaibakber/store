@@ -1,3 +1,4 @@
+import type { ProductId } from "@store/contracts";
 import { useProductInsight } from "@store/inventory-react";
 import type * as React from "react";
 
@@ -9,7 +10,7 @@ import { formatStock } from "./stock";
 
 const PLACEHOLDER = <span className="text-muted-foreground">{EMPTY}</span>;
 
-function LiveStock({ productId }: { readonly productId: string }) {
+function LiveStock({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
   if (insight === null) return PLACEHOLDER;
   return (
@@ -19,7 +20,7 @@ function LiveStock({ productId }: { readonly productId: string }) {
   );
 }
 
-function LiveStatus({ productId }: { readonly productId: string }) {
+function LiveStatus({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
   if (insight === null || insight.status === "inactive") return PLACEHOLDER;
   return <StatusLabel status={insight.status} />;
@@ -29,7 +30,7 @@ function InsightCell({ children }: { readonly children: React.ReactNode }) {
   return <AsyncBoundary fallback={PLACEHOLDER}>{children}</AsyncBoundary>;
 }
 
-export function ProductStockCell({ productId }: { readonly productId: string }) {
+export function ProductStockCell({ productId }: { readonly productId: ProductId }) {
   return (
     <InsightCell>
       <LiveStock productId={productId} />
@@ -37,7 +38,7 @@ export function ProductStockCell({ productId }: { readonly productId: string }) 
   );
 }
 
-export function ProductStatusCell({ productId }: { readonly productId: string }) {
+export function ProductStatusCell({ productId }: { readonly productId: ProductId }) {
   return (
     <InsightCell>
       <LiveStatus productId={productId} />

@@ -32,12 +32,7 @@ import {
   type SupplierId,
 } from "@store/contracts";
 import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
-import {
-  InvoiceId,
-  ProductId,
-  PurchaseOrderId,
-  SupplierId as SupplierIdSchema,
-} from "@store/contracts/ids";
+import type { InvoiceId, ProductId, PurchaseOrderId } from "@store/contracts/ids";
 import {
   entityKey,
   FULL_INVALIDATION_KEY,
@@ -46,7 +41,6 @@ import {
   MAX_IN_VALUES,
   MAX_LIST_PAGE_SIZE,
   PRODUCT_FACET_COLUMNS,
-  ReplicaStorageError,
   rowKey,
   type HistoryCursor,
   type IssuedInvoice,
@@ -62,16 +56,16 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import * as Order from "effect/Order";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import * as Request from "effect/Request";
 import * as RequestResolver from "effect/RequestResolver";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { replicaUnavailableCopy, STORAGE_FAILED, STORAGE_FULL } from "./errors";
+import { replicaUnavailableCopy, RestockExportStale, STORAGE_FAILED, STORAGE_FULL } from "./errors";
 import {
   invoiceFiltersPayload,
   invoicePagePayload,
@@ -132,22 +126,8 @@ const ORDERS = keyed(entityKey("purchaseOrder"));
 const ORDER_LINES = keyed(entityKey("purchaseOrder"), entityKey("purchaseOrderItem"));
 const INSIGHTS = keyed(INSIGHTS_KEY);
 
-const ID_KEY_SEPARATOR = "\n";
-
-const idsKey = (ids: ReadonlyArray<string>) => [...new Set(ids)].sort().join(ID_KEY_SEPARATOR);
-
-const idsOfKey = (key: string) => (key === "" ? [] : key.split(ID_KEY_SEPARATOR));
-
-const branded = <Id>(schema: Schema.Codec<Id, string>) => {
-  const decode = Schema.decodeUnknownOption(schema);
-  return (ids: ReadonlyArray<string>): ReadonlyArray<Id> =>
-    ids.flatMap((id) => Option.toArray(decode(id)));
-};
-
-const productIdsOf = branded(ProductId);
-const invoiceIdsOf = branded(InvoiceId);
-const orderIdsOf = branded(PurchaseOrderId);
-const supplierIdsOf = branded(SupplierIdSchema);
+const canonicalIds = <Id extends string>(ids: ReadonlyArray<Id>): ReadonlyArray<Id> =>
+  Arr.sort(Arr.dedupe(ids), Order.String);
 
 const inChunks = <Id, A>(
   ids: ReadonlyArray<Id>,
@@ -173,15 +153,12 @@ const insightsContextOf = (policy: StockPolicy): InsightsContext => ({
 });
 
 class ProductInsightRequest extends Request.Class<
-  { readonly productId: string; readonly context: InsightsContext },
+  { readonly productId: ProductId; readonly context: InsightsContext },
   ProductInsight | null,
   ReadError
 > {}
 
-const decodeRestockKey = Schema.decodeUnknownSync(Schema.fromJsonString(RestockPageRequest));
-const encodeRestockKey = Schema.encodeSync(Schema.fromJsonString(RestockPageRequest));
-
-type MovementHistoryKey = { readonly productId: string; readonly pageSize: number };
+type MovementHistoryKey = { readonly productId: ProductId; readonly pageSize: number };
 
 const boundedHistoryPage = (pageSize: number) =>
   Math.min(MAX_HISTORY_ROWS, Math.max(1, Math.floor(pageSize)));
@@ -271,7 +248,11 @@ export type WorkspaceAtoms = {
   readonly productSearch: (limit: number) => (query: string) => Read<ProductSearchStock>;
   readonly insights: Read<InsightsSummaryRead>;
   readonly restockPage: (request: RestockPageRequest) => Read<RestockPageRead>;
-  readonly exportRestock: (filters: RestockFilters) => Stream.Stream<ProductInsight, ReadError>;
+  readonly exportBuyList: Atom.AtomResultFn<
+    RestockFilters,
+    ReadonlyArray<ProductInsight>,
+    ReadError | RestockExportStale
+  >;
   readonly productPage: (request: ProductListRequest) => Read<ReadonlyArray<ReplicaProductRow>>;
   readonly productCount: (filters: ProductListFilters) => Read<number>;
   readonly productFacets: Read<ProductFacets>;
@@ -280,36 +261,36 @@ export type WorkspaceAtoms = {
     ReadonlyArray<ReplicaProductRow>,
     ReadError
   >;
-  readonly productInsight: (productId: string) => Read<ProductInsight | null>;
+  readonly productInsight: (productId: ProductId) => Read<ProductInsight | null>;
   readonly productsOnOrder: (
-    productIds: ReadonlyArray<string>,
-  ) => Read<ReadonlyMap<string, ProductOnOrder>>;
+    productIds: ReadonlyArray<ProductId>,
+  ) => Read<ReadonlyMap<ProductId, ProductOnOrder>>;
   readonly learnedSuppliers: (
-    productIds: ReadonlyArray<string>,
-  ) => Read<ReadonlyMap<string, SupplierId>>;
+    productIds: ReadonlyArray<ProductId>,
+  ) => Read<ReadonlyMap<ProductId, SupplierId>>;
   readonly purchaseOrderCount: (tab: PurchaseOrderTab) => Read<number>;
   readonly purchaseOrderPage: (
     request: PurchaseOrderListRequest,
   ) => Read<ReadonlyArray<PurchaseOrder>>;
   readonly openPurchaseOrders: (limit: number) => Read<ReadonlyArray<PurchaseOrder>>;
-  readonly purchaseOrderDetail: (orderId: string) => Read<PurchaseOrderDetail>;
+  readonly purchaseOrderDetail: (orderId: PurchaseOrderId) => Read<PurchaseOrderDetail>;
   readonly purchaseOrderListCount: (filters: PurchaseOrderListFilters) => Read<number>;
   readonly supplierCount: Read<number>;
   readonly suppliers: Read<ReadonlyArray<Supplier>>;
   readonly categories: Read<ReadonlyArray<Category>>;
   readonly invoicePage: (request: InvoiceListRequest) => Read<ReadonlyArray<Invoice>>;
   readonly invoiceCount: (filters: InvoiceListFilters) => Read<number>;
-  readonly invoice: (invoiceId: string) => Read<Invoice | undefined>;
-  readonly invoiceStaff: (invoiceId: string) => Read<InvoiceStaff>;
+  readonly invoice: (invoiceId: InvoiceId) => Read<Invoice | undefined>;
+  readonly invoiceStaff: (invoiceId: InvoiceId) => Read<InvoiceStaff>;
   readonly staff: Atom.Atom<Option.Option<StaffState>>;
   readonly recentInvoices: (limit: number) => Read<ReadonlyArray<Invoice>>;
   readonly issuedInvoices: (
-    invoiceIds: ReadonlyArray<string>,
+    invoiceIds: ReadonlyArray<InvoiceId>,
   ) => Read<ReadonlyArray<IssuedInvoice>>;
-  readonly product: (productId: string) => Read<Product | undefined>;
-  readonly productsById: (productIds: ReadonlyArray<string>) => Read<ReadonlyArray<Product>>;
+  readonly product: (productId: ProductId) => Read<Product | undefined>;
+  readonly productsById: (productIds: ReadonlyArray<ProductId>) => Read<ReadonlyArray<Product>>;
   readonly stockMovementHistory: (
-    productId: string,
+    productId: ProductId,
     pageSize: number,
   ) => HistoryAtoms<StockMovement>;
 };
@@ -362,12 +343,12 @@ export const createWorkspaceAtoms = (
     }),
   ).pipe(Atom.withRefresh(INSIGHTS_ROLLOVER), Atom.setIdleTTL(IDLE_CACHE));
 
-  const restockPageAtom = Atom.family((key: string) =>
+  const restockPageAtom = Atom.family((request: RestockPageRequest) =>
     Atom.make((get) =>
       get(
         Insights.query(
           "RestockPage",
-          { context: insightsContextOf(get(stockPolicyAtom)), request: decodeRestockKey(key) },
+          { context: insightsContextOf(get(stockPolicyAtom)), request },
           INSIGHTS,
         ),
       ),
@@ -375,11 +356,6 @@ export const createWorkspaceAtoms = (
   );
 
   type InsightsClient = Parameters<Parameters<typeof Insights.use>[0]>[0];
-
-  const resolvers = new WeakMap<
-    InsightsClient,
-    RequestResolver.RequestResolver<ProductInsightRequest>
-  >();
 
   const makeResolver = (client: InsightsClient) =>
     RequestResolver.makeGrouped<ProductInsightRequest, string>({
@@ -409,21 +385,21 @@ export const createWorkspaceAtoms = (
       RequestResolver.batchN(MAX_PRODUCT_INSIGHT_IDS),
     );
 
-  const resolverOf = (client: InsightsClient) => {
-    const existing = resolvers.get(client);
-    if (existing !== undefined) return existing;
-    const created = makeResolver(client);
-    resolvers.set(client, created);
-    return created;
-  };
+  const productInsightResolver = Insights.runtime.atom(
+    Insights.use((client) => Effect.succeed(makeResolver(client))),
+  );
 
-  const productInsightAtom = Atom.family((productId: string) =>
+  const productInsightAtom = Atom.family((productId: ProductId) =>
     onInsights(
       Insights.runtime.atom((get) => {
         const context = insightsContextOf(get(stockPolicyAtom));
-        return Insights.use((client) =>
-          Effect.request(new ProductInsightRequest({ productId, context }), resolverOf(client)),
-        );
+        return get
+          .result(productInsightResolver)
+          .pipe(
+            Effect.flatMap((resolver) =>
+              Effect.request(new ProductInsightRequest({ productId, context }), resolver),
+            ),
+          );
       }),
     ).pipe(Atom.setIdleTTL(IDLE_CACHE)),
   );
@@ -434,9 +410,9 @@ export const createWorkspaceAtoms = (
     ),
   );
 
-  const openOrderLinesAtom = Atom.family((key: string) =>
+  const openOrderLinesAtom = Atom.family((productIds: ReadonlyArray<ProductId>) =>
     Atom.mapResult(
-      inChunks(productIdsOf(idsOfKey(key)), (productIds) =>
+      inChunks(productIds, (productIds) =>
         Reads.query("OpenOrderLines", { productIds }, ORDER_LINES),
       ),
       (parts) =>
@@ -447,12 +423,12 @@ export const createWorkspaceAtoms = (
     ),
   );
 
-  const learnedSuppliersAtom = Atom.family((key: string) =>
+  const learnedSuppliersAtom = Atom.family((productIds: ReadonlyArray<ProductId>) =>
     Atom.mapResult(
-      inChunks(productIdsOf(idsOfKey(key)), (productIds) =>
+      inChunks(productIds, (productIds) =>
         Reads.query("LearnedSupplierIds", { productIds }, ORDER_LINES),
       ),
-      (parts): ReadonlyMap<string, SupplierId> =>
+      (parts): ReadonlyMap<ProductId, SupplierId> =>
         new Map(
           parts.flatMap((part) =>
             part.suppliers.map((learned) => [learned.productId, learned.supplierId]),
@@ -461,34 +437,30 @@ export const createWorkspaceAtoms = (
     ),
   );
 
-  const issuedInvoicesAtom = Atom.family((key: string) =>
+  const issuedInvoicesAtom = Atom.family((invoiceIds: ReadonlyArray<InvoiceId>) =>
     keepingEqualValue(
       Atom.mapResult(
-        inChunks(invoiceIdsOf(idsOfKey(key)), (ids) =>
-          Reads.query("IssuedInvoices", { ids }, INVOICES),
-        ),
+        inChunks(invoiceIds, (ids) => Reads.query("IssuedInvoices", { ids }, INVOICES)),
         (parts): ReadonlyArray<IssuedInvoice> => parts.flatMap((part) => part.invoices),
       ),
     ),
   );
 
-  const productsByIdAtom = Atom.family((key: string) =>
+  const productsByIdAtom = Atom.family((productIds: ReadonlyArray<ProductId>) =>
     keepingEqualValue(
       Atom.mapResult(
-        inChunks(productIdsOf(idsOfKey(key)), (ids) =>
-          Reads.query("ProductsById", { ids }, CATALOG),
-        ),
+        inChunks(productIds, (ids) => Reads.query("ProductsById", { ids }, CATALOG)),
         (parts): ReadonlyArray<Product> => parts.flatMap((part) => part.products),
       ),
     ),
   );
 
-  const productAtom = Atom.family((productId: string) =>
+  const productAtom = Atom.family((productId: ProductId) =>
     keepingEqualValue(
       Atom.mapResult(
         Reads.query(
           "ProductsById",
-          { ids: productIdsOf([productId]) },
+          { ids: [productId] },
           keyed(rowKey("product", productId), entityKey("category"), entityKey("batch")),
         ),
         (read): Product | undefined => read.products[0],
@@ -496,44 +468,30 @@ export const createWorkspaceAtoms = (
     ),
   );
 
-  const invoiceAtom = Atom.family((invoiceId: string): Read<Invoice | undefined> => {
-    const [id] = invoiceIdsOf([invoiceId]);
-    if (id === undefined) return Atom.make(AsyncResult.success(undefined));
-    return keepingEqualValue(
+  const invoiceAtom = Atom.family((id: InvoiceId): Read<Invoice | undefined> =>
+    keepingEqualValue(
       Atom.mapResult(
-        Reads.query(
-          "InvoiceById",
-          { id },
-          keyed(rowKey("invoice", invoiceId), entityKey("invoiceItem")),
-        ),
+        Reads.query("InvoiceById", { id }, keyed(rowKey("invoice", id), entityKey("invoiceItem"))),
         (read): Invoice | undefined => read.invoice ?? undefined,
       ),
-    );
-  });
+    ),
+  );
 
-  const NO_INVOICE_STAFF: InvoiceStaff = { soldBy: null, startedBy: null };
-
-  const invoiceStaffAtom = Atom.family((invoiceId: string): Read<InvoiceStaff> => {
-    const [id] = invoiceIdsOf([invoiceId]);
-    if (id === undefined) return Atom.make(AsyncResult.success(NO_INVOICE_STAFF));
-    return Atom.mapResult(
-      Reads.query("InvoiceStaff", { id }, keyed(rowKey("invoice", invoiceId))),
+  const invoiceStaffAtom = Atom.family((id: InvoiceId): Read<InvoiceStaff> =>
+    Atom.mapResult(
+      Reads.query("InvoiceStaff", { id }, keyed(rowKey("invoice", id))),
       (read) => read.staff,
-    );
-  });
+    ),
+  );
 
-  const NO_ORDER: PurchaseOrderDetail = { order: undefined, deliveries: [] };
-
-  const purchaseOrderDetailAtom = Atom.family((orderId: string): Read<PurchaseOrderDetail> => {
-    const [id] = orderIdsOf([orderId]);
-    if (id === undefined) return Atom.make(AsyncResult.success(NO_ORDER));
-    return keepingEqualValue(
+  const purchaseOrderDetailAtom = Atom.family((id: PurchaseOrderId): Read<PurchaseOrderDetail> =>
+    keepingEqualValue(
       Atom.mapResult(
         Reads.query(
           "PurchaseOrderDetail",
           { id },
           keyed(
-            rowKey("purchaseOrder", orderId),
+            rowKey("purchaseOrder", id),
             entityKey("purchaseOrderItem"),
             entityKey("stockMovement"),
           ),
@@ -543,23 +501,19 @@ export const createWorkspaceAtoms = (
           deliveries: read.deliveries,
         }),
       ),
-    );
-  });
-
-  const NO_MOVEMENTS: HistoryWindow<StockMovement> = { rows: [], hasMore: false, pages: 1 };
+    ),
+  );
 
   const movementHistoryPages = Atom.family((_key: MovementHistoryKey) =>
     Atom.make(1).pipe(Atom.setIdleTTL(IDLE_CACHE)),
   );
   const movementHistoryAtom = Atom.family(
     (key: MovementHistoryKey): Read<HistoryWindow<StockMovement>> => {
-      const [productId] = productIdsOf([key.productId]);
-      if (productId === undefined) return Atom.make(AsyncResult.success(NO_MOVEMENTS));
       const limit = boundedHistoryPage(key.pageSize);
       return chainHistory(movementHistoryPages(key), (before) =>
         Reads.query(
           "StockMovementHistory",
-          { productId, ...historyPayload(limit, before) },
+          { productId: key.productId, ...historyPayload(limit, before) },
           MOVEMENTS,
         ),
       );
@@ -571,10 +525,7 @@ export const createWorkspaceAtoms = (
       Reads.query(
         "PurchaseOrderCount",
         {
-          filters:
-            filters.supplierIds === undefined
-              ? { tab: filters.tab }
-              : { tab: filters.tab, supplierIds: supplierIdsOf(filters.supplierIds) },
+          filters,
         },
         ORDERS,
       ),
@@ -584,6 +535,24 @@ export const createWorkspaceAtoms = (
 
   const restockPage = (context: InsightsContext, request: RestockPageRequest) =>
     AtomRegistry.getResult(registry, Insights.query("RestockPage", { context, request }, INSIGHTS));
+
+  const exportBuyList = Atom.fn<RestockFilters>()((filters) =>
+    Stream.paginate<RestockCursor | null, ProductInsight, ReadError | RestockExportStale>(
+      null,
+      Effect.fn("WorkspaceAtoms.exportBuyListPage")(function* (cursor: RestockCursor | null) {
+        const page = yield* restockPage(insightsContextOf(registry.get(stockPolicyAtom)), {
+          filters: { ...filters, ordersOnly: true },
+          cursor,
+          limit: MAX_RESTOCK_PAGE_ROWS,
+        });
+        if (page.cursorExpired) return yield* new RestockExportStale();
+        return [
+          page.rows,
+          page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
+        ] as const;
+      }),
+    ).pipe(Stream.runCollect),
+  );
 
   return {
     registry,
@@ -633,33 +602,11 @@ export const createWorkspaceAtoms = (
       { concurrent: true },
     ),
     insights,
-    restockPage: (request) => restockPageAtom(encodeRestockKey(request)),
-    exportRestock: (filters) =>
-      Stream.paginate<RestockCursor | null, ProductInsight, ReadError>(null, (cursor) =>
-        Effect.suspend(() =>
-          restockPage(insightsContextOf(registry.get(stockPolicyAtom)), {
-            filters: { ...filters, ordersOnly: true },
-            cursor,
-            limit: MAX_RESTOCK_PAGE_ROWS,
-          }),
-        ).pipe(
-          Effect.flatMap((page) =>
-            page.cursorExpired
-              ? Effect.fail(
-                  new ReplicaStorageError({
-                    message: "The insights were recalculated during the export. Try again.",
-                  }),
-                )
-              : Effect.succeed([
-                  page.rows,
-                  page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
-                ] as const),
-          ),
-        ),
-      ),
+    restockPage: restockPageAtom,
+    exportBuyList,
     productInsight: productInsightAtom,
-    productsOnOrder: (productIds) => openOrderLinesAtom(idsKey(productIds)),
-    learnedSuppliers: (productIds) => learnedSuppliersAtom(idsKey(productIds)),
+    productsOnOrder: (productIds) => openOrderLinesAtom(canonicalIds(productIds)),
+    learnedSuppliers: (productIds) => learnedSuppliersAtom(canonicalIds(productIds)),
     purchaseOrderCount: (tab) => purchaseOrderCountAtom({ tab }),
     purchaseOrderPage: Atom.family((request: PurchaseOrderListRequest) =>
       Atom.mapResult(
@@ -667,13 +614,7 @@ export const createWorkspaceAtoms = (
           "PurchaseOrderPage",
           {
             ...boundedPage(request),
-            filters:
-              request.filters.supplierIds === undefined
-                ? { tab: request.filters.tab }
-                : {
-                    tab: request.filters.tab,
-                    supplierIds: supplierIdsOf(request.filters.supplierIds),
-                  },
+            filters: request.filters,
           },
           ORDER_LINES,
         ),
@@ -723,9 +664,9 @@ export const createWorkspaceAtoms = (
         (read) => read.rows,
       ),
     ),
-    issuedInvoices: (invoiceIds) => issuedInvoicesAtom(idsKey(invoiceIds)),
+    issuedInvoices: (invoiceIds) => issuedInvoicesAtom(canonicalIds(invoiceIds)),
     product: productAtom,
-    productsById: (productIds) => productsByIdAtom(idsKey(productIds)),
+    productsById: (productIds) => productsByIdAtom(canonicalIds(productIds)),
     stockMovementHistory: (productId, pageSize) => ({
       pages: movementHistoryPages({ productId, pageSize }),
       window: movementHistoryAtom({ productId, pageSize }),
