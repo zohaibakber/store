@@ -135,16 +135,15 @@ type Client<Rpcs extends Rpc.Any> = RpcClient.RpcClient.Flat<Rpcs, RpcClientErro
 
 const CLIENT_LINGER = "10 seconds";
 
-const outlivingItsRuntime = <A, R>(
+const outlivingItsRuntime = Effect.fn("InventoryServices.outlivingItsRuntime")(function* <A, R>(
   make: Effect.Effect<A, never, R>,
-): Effect.Effect<A, never, Exclude<R, Scope.Scope> | Scope.Scope> =>
-  Effect.gen(function* () {
-    const own = yield* Scope.make();
-    yield* Effect.addFinalizer(() =>
-      Scope.close(own, Exit.void).pipe(Effect.delay(CLIENT_LINGER), Effect.forkDetach),
-    );
-    return yield* Scope.provide(make, own);
-  });
+) {
+  const own = yield* Scope.make();
+  yield* Effect.addFinalizer(() =>
+    Scope.close(own, Exit.void).pipe(Effect.delay(CLIENT_LINGER), Effect.forkDetach),
+  );
+  return yield* Scope.provide(make, own);
+});
 
 export interface Reads {
   readonly Reads: unique symbol;

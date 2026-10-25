@@ -15,6 +15,7 @@ import {
   type StockStatus,
 } from "@store/contracts";
 import {
+  restockExportFailureCopy,
   useInventoryInsights,
   usePurchasingGate,
   useRestockExport,
@@ -30,9 +31,9 @@ import {
   type PaginationState,
   type Updater,
 } from "@tanstack/react-table";
-import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 import * as Predicate from "effect/Predicate";
-import * as Stream from "effect/Stream";
 import * as React from "react";
 
 import { PurchasingGateNotice } from "@/components/purchases/gate-notice";
@@ -238,39 +239,27 @@ const columns = columnHelper.columns([
 
 function ExportButton() {
   const { summary } = useInventoryInsights();
-  const exportRestock = useRestockExport();
-  const [exporting, setExporting] = React.useState(false);
-  const runExport = React.useCallback(() => {
-    setExporting(true);
-    Effect.runFork(
-      exportRestock({ view: "all" }).pipe(
-        Stream.map(buyListLine),
-        Stream.filter(Predicate.isNotNull),
-        Stream.runCollect,
-        Effect.map((lines) =>
-          downloadText(
-            "buy-list.csv",
-            [buyListHeader(), ...lines].join("\r\n"),
-            "text/csv;charset=utf-8",
-          ),
-        ),
-        Effect.catchCause(() =>
-          Effect.sync(() =>
-            toastManager.add({
-              title: "Couldn't export the buy list",
-              description: "The insights were recalculated. Try again in a moment.",
-              type: "error",
-            }),
-          ),
-        ),
-        Effect.ensuring(Effect.sync(() => setExporting(false))),
-      ),
-    );
-  }, [exportRestock]);
+  const { exporting, run } = useRestockExport();
+  const runExport = async () => {
+    const exit = await run({ view: "all" });
+    if (Exit.isSuccess(exit)) {
+      downloadText(
+        "buy-list.csv",
+        [buyListHeader(), ...exit.value.map(buyListLine).filter(Predicate.isNotNull)].join("\r\n"),
+        "text/csv;charset=utf-8",
+      );
+    } else if (!Cause.hasInterruptsOnly(exit.cause)) {
+      toastManager.add({
+        title: "Couldn't export the buy list",
+        description: restockExportFailureCopy(exit.cause),
+        type: "error",
+      });
+    }
+  };
   return (
     <Button
       disabled={exporting || summary === null || summary.inventory.reorderCount === 0}
-      onClick={runExport}
+      onClick={() => void runExport()}
       size="sm"
       variant="outline"
     >

@@ -18,21 +18,50 @@ export class StaleCatalogLease extends Schema.TaggedError<StaleCatalogLease>()(
   },
 ) {}
 
+const CATALOG_STORAGE_UNAVAILABLE = "Catalog storage is unavailable.";
+
 export class CatalogOpenFailure extends Schema.TaggedError<CatalogOpenFailure>()(
   "CatalogOpenFailure",
   {
-    message: Schema.String,
+    reason: Schema.Literals([
+      "engineUnavailable",
+      "portsTimeout",
+      "firstReadTimeout",
+      "firstReadFailed",
+      "openRefused",
+    ]),
+    detail: Schema.optionalKey(Schema.String),
   },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "engineUnavailable":
+        return "Native Electron replica SQLite is unavailable.";
+      case "portsTimeout":
+        return "The local database did not answer. Try again.";
+      case "openRefused":
+        return this.detail ?? CATALOG_STORAGE_UNAVAILABLE;
+      case "firstReadTimeout":
+      case "firstReadFailed":
+        return CATALOG_STORAGE_UNAVAILABLE;
+    }
+  }
+}
+
+export class RestockExportStale extends Schema.TaggedError<RestockExportStale>()(
+  "RestockExportStale",
+  {},
 ) {}
 
 export const staleCatalogLease = () =>
   new StaleCatalogLease({ message: "Catalog lease is no longer current." });
 
-export const catalogOpenFailure = (cause: unknown) =>
-  new CatalogOpenFailure({
-    message:
-      cause instanceof Error && cause.message ? cause.message : "Catalog storage is unavailable.",
-  });
+export const catalogOpenRefused = (cause: unknown) =>
+  new CatalogOpenFailure(
+    cause instanceof Error && cause.message !== ""
+      ? { reason: "openRefused", detail: cause.message }
+      : { reason: "openRefused" },
+  );
 
 export type InventoryFailure =
   | CommandFailure
@@ -187,6 +216,19 @@ export const failureSurface = (failure: InventoryFailure): FailureSurface => {
       return { _tag: "defect", message: UNEXPECTED_FAILURE };
   }
 };
+
+export const RESTOCK_EXPORT_STALE_COPY = "The insights were recalculated. Try again in a moment.";
+
+export const restockExportFailureCopy = (
+  cause: Cause.Cause<InventoryFailure | RestockExportStale>,
+): string =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => UNEXPECTED_FAILURE,
+    onSome: (failure) =>
+      failure._tag === "RestockExportStale"
+        ? RESTOCK_EXPORT_STALE_COPY
+        : failureSurface(failure).message,
+  });
 
 export const causeSurface = (cause: Cause.Cause<InventoryFailure>): FailureSurface =>
   Option.match(Cause.findErrorOption(cause), {

@@ -1,4 +1,10 @@
-import { useAtom, useAtomRefresh, useAtomSuspense } from "@effect/atom-react";
+import {
+  useAtom,
+  useAtomRefresh,
+  useAtomSet,
+  useAtomSuspense,
+  useAtomValue,
+} from "@effect/atom-react";
 import type {
   AnalyticsStatus,
   InsightsSummary,
@@ -7,6 +13,7 @@ import type {
   RestockPageRead,
   RestockPageRequest,
 } from "@store/contracts";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 
 import { stockPolicyAtom } from "./atoms";
 import { useCatalogReplica } from "./provider";
@@ -29,7 +36,13 @@ export const useProductInsight = (productId: ProductId): ProductInsight | null =
 export const useRestockPage = (request: RestockPageRequest): RestockPageRead =>
   useAtomSuspense(useCatalogReplica().atoms.restockPage(request)).value;
 
-export const useRestockExport = () => useCatalogReplica().atoms.exportRestock;
+export const useRestockExport = () => {
+  const { exportBuyList } = useCatalogReplica().atoms;
+  return {
+    exporting: AsyncResult.isWaiting(useAtomValue(exportBuyList)),
+    run: useAtomSet(exportBuyList, { mode: "promiseExit" }),
+  };
+};
 
 export const useRefreshInventoryInsights = () => useAtomRefresh(useCatalogReplica().atoms.insights);
 

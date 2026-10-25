@@ -41,7 +41,6 @@ import {
   MAX_IN_VALUES,
   MAX_LIST_PAGE_SIZE,
   PRODUCT_FACET_COLUMNS,
-  ReplicaStorageError,
   rowKey,
   type HistoryCursor,
   type IssuedInvoice,
@@ -66,7 +65,7 @@ import * as RequestResolver from "effect/RequestResolver";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Stream from "effect/Stream";
 
-import { replicaUnavailableCopy, STORAGE_FAILED, STORAGE_FULL } from "./errors";
+import { replicaUnavailableCopy, RestockExportStale, STORAGE_FAILED, STORAGE_FULL } from "./errors";
 import {
   invoiceFiltersPayload,
   invoicePagePayload,
@@ -249,7 +248,11 @@ export type WorkspaceAtoms = {
   readonly productSearch: (limit: number) => (query: string) => Read<ProductSearchStock>;
   readonly insights: Read<InsightsSummaryRead>;
   readonly restockPage: (request: RestockPageRequest) => Read<RestockPageRead>;
-  readonly exportRestock: (filters: RestockFilters) => Stream.Stream<ProductInsight, ReadError>;
+  readonly exportBuyList: Atom.AtomResultFn<
+    RestockFilters,
+    ReadonlyArray<ProductInsight>,
+    ReadError | RestockExportStale
+  >;
   readonly productPage: (request: ProductListRequest) => Read<ReadonlyArray<ReplicaProductRow>>;
   readonly productCount: (filters: ProductListFilters) => Read<number>;
   readonly productFacets: Read<ProductFacets>;
@@ -533,6 +536,24 @@ export const createWorkspaceAtoms = (
   const restockPage = (context: InsightsContext, request: RestockPageRequest) =>
     AtomRegistry.getResult(registry, Insights.query("RestockPage", { context, request }, INSIGHTS));
 
+  const exportBuyList = Atom.fn<RestockFilters>()((filters) =>
+    Stream.paginate<RestockCursor | null, ProductInsight, ReadError | RestockExportStale>(
+      null,
+      Effect.fn("WorkspaceAtoms.exportBuyListPage")(function* (cursor: RestockCursor | null) {
+        const page = yield* restockPage(insightsContextOf(registry.get(stockPolicyAtom)), {
+          filters: { ...filters, ordersOnly: true },
+          cursor,
+          limit: MAX_RESTOCK_PAGE_ROWS,
+        });
+        if (page.cursorExpired) return yield* new RestockExportStale();
+        return [
+          page.rows,
+          page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
+        ] as const;
+      }),
+    ).pipe(Stream.runCollect),
+  );
+
   return {
     registry,
     syncStatus,
@@ -582,29 +603,7 @@ export const createWorkspaceAtoms = (
     ),
     insights,
     restockPage: restockPageAtom,
-    exportRestock: (filters) =>
-      Stream.paginate<RestockCursor | null, ProductInsight, ReadError>(null, (cursor) =>
-        Effect.suspend(() =>
-          restockPage(insightsContextOf(registry.get(stockPolicyAtom)), {
-            filters: { ...filters, ordersOnly: true },
-            cursor,
-            limit: MAX_RESTOCK_PAGE_ROWS,
-          }),
-        ).pipe(
-          Effect.flatMap((page) =>
-            page.cursorExpired
-              ? Effect.fail(
-                  new ReplicaStorageError({
-                    message: "The insights were recalculated during the export. Try again.",
-                  }),
-                )
-              : Effect.succeed([
-                  page.rows,
-                  page.nextCursor === null ? Option.none() : Option.some(page.nextCursor),
-                ] as const),
-          ),
-        ),
-      ),
+    exportBuyList,
     productInsight: productInsightAtom,
     productsOnOrder: (productIds) => openOrderLinesAtom(canonicalIds(productIds)),
     learnedSuppliers: (productIds) => learnedSuppliersAtom(canonicalIds(productIds)),

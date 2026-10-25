@@ -10,9 +10,11 @@ export {
   type ReplicaOpenIdentity,
 } from "./host";
 export {
-  catalogOpenFailure,
+  catalogOpenRefused,
+  CatalogOpenFailure,
   commandFailureSurface,
   licenceRefusalCopy,
+  restockExportFailureCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";
