@@ -1,4 +1,3 @@
-import * as NodePath from "@effect/platform-node/NodePath";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -18,22 +17,20 @@ const themeSourceFile = Effect.fn("ThemeSource.file")(function* (userDataDirecto
   return path.join(userDataDirectory, "theme-source");
 });
 
-export const readThemeSource = (userDataDirectory: string): Promise<ThemeSource> =>
-  Effect.runPromise(
-    themeSourceFile(userDataDirectory).pipe(
-      Effect.flatMap((file) => PrivateFiles.use((files) => files.readText(file))),
-      Effect.map((stored) =>
-        Option.getOrElse(Option.flatMap(stored, decodeThemeSource), () => DEFAULT_THEME_SOURCE),
-      ),
-      Effect.orElseSucceed(() => DEFAULT_THEME_SOURCE),
-      Effect.provide([PrivateFiles.layer, NodePath.layer]),
-    ),
-  );
+export const readThemeSource = Effect.fn("ThemeSource.read")(
+  function* (userDataDirectory: string) {
+    const files = yield* PrivateFiles;
+    const file = yield* themeSourceFile(userDataDirectory);
+    const stored = yield* files.readText(file);
+    return Option.getOrElse(Option.flatMap(stored, decodeThemeSource), () => DEFAULT_THEME_SOURCE);
+  },
+  Effect.orElseSucceed((): ThemeSource => DEFAULT_THEME_SOURCE),
+);
 
-export const saveThemeSource = (userDataDirectory: string, source: ThemeSource) =>
-  Effect.runPromise(
-    themeSourceFile(userDataDirectory).pipe(
-      Effect.flatMap((file) => PrivateFiles.use((files) => files.replaceText(file, source))),
-      Effect.provide([PrivateFiles.layer, NodePath.layer]),
-    ),
-  );
+export const saveThemeSource = Effect.fn("ThemeSource.save")(function* (
+  userDataDirectory: string,
+  source: ThemeSource,
+) {
+  const files = yield* PrivateFiles;
+  yield* files.replaceText(yield* themeSourceFile(userDataDirectory), source);
+});
