@@ -3,7 +3,9 @@ import * as Result from "effect/Result";
 import { CatalogRefusal } from "../catalog/refusal";
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
+import { isPaisa } from "./pricing";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
+import { availableFor, takeFromStock } from "./stock";
 
 export type AllocatableBatch = {
   readonly id: BatchId;
@@ -23,7 +25,7 @@ type InvoiceLineTake = {
   readonly nextUnitQuantity: number;
 };
 
-export const nextInvoiceNumber = (replicaNumbers: Iterable<number>): number => {
+export const nextSequenceNumber = (replicaNumbers: Iterable<number>): number => {
   let last = 0;
   for (const number of replicaNumbers) {
     if (number > last) last = number;
@@ -40,15 +42,6 @@ const compareBatchesFefo = (left: AllocatableBatch, right: AllocatableBatch) => 
   return left.createdAt - right.createdAt;
 };
 
-const availableForLine = (
-  batch: AllocatableBatch,
-  product: { readonly unitsPerPack: number },
-  quantityType: CreateInvoiceLineInput["quantityType"],
-) =>
-  quantityType === "pack"
-    ? batch.packQuantity
-    : batch.packQuantity * product.unitsPerPack + batch.unitQuantity;
-
 export const allocateInvoiceLine = (
   line: CreateInvoiceLineInput,
   product: { readonly name: string; readonly unitsPerPack: number },
@@ -63,7 +56,7 @@ export const allocateInvoiceLine = (
         }),
       );
     }
-    if (!Number.isSafeInteger(line.salePrice) || line.salePrice < 0) {
+    if (!isPaisa(line.salePrice)) {
       return yield* Result.fail(
         new CatalogRefusal({ reason: "invalidInput", message: "Sale prices cannot be negative." }),
       );
@@ -72,7 +65,7 @@ export const allocateInvoiceLine = (
     const sorted = [...batches].sort(compareBatchesFefo);
     const candidates = line.batchId
       ? sorted.filter((batch) => batch.id === line.batchId)
-      : sorted.filter((batch) => availableForLine(batch, product, line.quantityType) > 0);
+      : sorted.filter((batch) => availableFor(batch, product.unitsPerPack, line.quantityType) > 0);
     if (line.batchId && candidates.length === 0) {
       return yield* Result.fail(
         new CatalogRefusal({
@@ -83,7 +76,7 @@ export const allocateInvoiceLine = (
     }
 
     const available = candidates.reduce(
-      (sum, batch) => sum + availableForLine(batch, product, line.quantityType),
+      (sum, batch) => sum + availableFor(batch, product.unitsPerPack, line.quantityType),
       0,
     );
     if (available < line.quantity) {
@@ -107,35 +100,26 @@ export const allocateInvoiceLine = (
       if (remaining === 0) break;
       const stock = remainingById.get(batch.id);
       if (!stock) continue;
-      const batchAvailable =
-        line.quantityType === "pack"
-          ? stock.packQuantity
-          : stock.packQuantity * product.unitsPerPack + stock.unitQuantity;
-      const taken = Math.min(batchAvailable, remaining);
+      const taken = Math.min(
+        availableFor(stock, product.unitsPerPack, line.quantityType),
+        remaining,
+      );
       remaining -= taken;
-      const packsOpened =
-        line.quantityType === "unit"
-          ? Math.max(0, Math.ceil((taken - stock.unitQuantity) / product.unitsPerPack))
-          : 0;
-      const nextPackQuantity =
-        line.quantityType === "pack"
-          ? stock.packQuantity - taken
-          : stock.packQuantity - packsOpened;
-      const nextUnitQuantity =
-        line.quantityType === "pack"
-          ? stock.unitQuantity
-          : stock.unitQuantity + packsOpened * product.unitsPerPack - taken;
+      const take = yield* takeFromStock(stock, product, {
+        quantity: taken,
+        quantityType: line.quantityType,
+      });
       remainingById.set(batch.id, {
-        packQuantity: nextPackQuantity,
-        unitQuantity: nextUnitQuantity,
+        packQuantity: take.nextPackQuantity,
+        unitQuantity: take.nextUnitQuantity,
       });
       takes.push({
         batchId: batch.id,
         batchNumber: batch.batchNumber,
         quantity: taken,
-        packsOpened,
-        nextPackQuantity,
-        nextUnitQuantity,
+        packsOpened: take.packsOpened,
+        nextPackQuantity: take.nextPackQuantity,
+        nextUnitQuantity: take.nextUnitQuantity,
       });
     }
     return takes;

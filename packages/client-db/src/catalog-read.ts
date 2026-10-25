@@ -1,4 +1,4 @@
-import { nextInvoiceNumber } from "@store/contracts";
+import { nextSequenceNumber } from "@store/contracts";
 import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
@@ -136,7 +136,7 @@ export const readNextInvoiceNumber = (
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
   readLatest(read, "invoices", "invoiceNumber", organizationId).pipe(
-    Effect.map((latest) => nextInvoiceNumber(latest.map((invoice) => invoice.invoiceNumber))),
+    Effect.map((latest) => nextSequenceNumber(latest.map((invoice) => invoice.invoiceNumber))),
   );
 
 export type PurchasingRowsRequest = {
@@ -192,5 +192,5 @@ export const readNextPurchaseOrderNumber = (
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
   readLatest(read, "purchaseOrders", "orderNumber", organizationId).pipe(
-    Effect.map((latest) => nextInvoiceNumber(latest.map((order) => order.orderNumber))),
+    Effect.map((latest) => nextSequenceNumber(latest.map((order) => order.orderNumber))),
   );
