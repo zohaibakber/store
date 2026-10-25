@@ -81,11 +81,11 @@ say so in the PR.
 
 - Replicas hard-delete. A `delete` change removes the row; client schemas carry
   no `deletedAt`.
-- The shared entrypoint of `packages/sync` (`@store/sync`) must stay native-free.
+- The shared entrypoints of `packages/sync` (`@store/sync` and
+  `@store/sync/sql-client`) must stay native-free.
   `packages/sync/test/sql-client-boundary.test.ts` enforces it, because the
-  renderer reaches that entry through `@store/client-db`; SQLite belongs in
-  `@store/sync/sqlite`. No
-  browser replica exists.
+  renderer reaches `@store/sync` only through `@store/client-db`; SQLite belongs
+  in `@store/sync/sqlite`. No browser replica exists.
 - Command state never crosses process boundaries as SQL or query IR. The
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
