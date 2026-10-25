@@ -1,6 +1,5 @@
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
-import * as Schema from "effect/Schema";
 
 export const DEFAULT_ELECTRON_PROTOCOL = "com.tabaaq.desktop";
 export const ELECTRON_RENDERER_HOST = "app";
@@ -199,17 +198,6 @@ export const decideAuthSecurity = (
     };
   });
 };
-
-class AuthSecurityConfigError extends Schema.TaggedError<AuthSecurityConfigError>()(
-  "AuthSecurityConfigError",
-  { reason: Schema.String },
-) {}
-
-export const resolveAuthSecurity = (input: AuthSecurityInput): AuthSecurityConfig =>
-  Result.getOrThrowWith(
-    decideAuthSecurity(input),
-    (reason) => new AuthSecurityConfigError({ reason }),
-  );
 
 const globToRegExp = (pattern: string) => {
   let source = "";
