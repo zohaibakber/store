@@ -17,7 +17,7 @@ export type EncodedCommit = {
 
 export type StoredChange = {
   readonly entity: string;
-  readonly action: string;
+  readonly action: "upsert" | "delete";
   readonly entityId: string;
   readonly rowVersion: number;
   readonly rowJson: string;
@@ -28,7 +28,7 @@ export type StoredReceipt = {
   readonly replicaId: string;
   readonly clientSequence: number;
   readonly payloadHash: string;
-  readonly decision: string;
+  readonly decision: "accepted" | "rejected";
   readonly commitSequence: number;
   readonly resultJson: string;
 };

@@ -37,6 +37,7 @@ import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
+import * as SqlSchema from "effect/sql/SqlSchema";
 
 import { partitionDigest } from "./digest";
 import {
@@ -95,6 +96,13 @@ const CONSTRAINT_REJECTIONS = {
   { readonly code: SyncProtocolCode; readonly message: string }
 >;
 
+const ActiveReplica = Schema.Struct({
+  replicaId: Schema.String,
+  schemaVersion: Schema.Number,
+  deviceLabel: Schema.NullOr(Schema.String),
+  lastSeenAt: Schema.Number,
+});
+
 export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
   const loadState = db
     .select()
@@ -130,16 +138,19 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     return yield* requireState(actor);
   });
 
-  const activeReplicas = (now: number) =>
-    sql<typeof replicas.$inferSelect>`
-      select * from replicas as r
+  const activeReplicas = SqlSchema.findAll({
+    Request: Schema.Number,
+    Result: ActiveReplica,
+    execute: (now) => sql`
+      select r.replicaId, r.schemaVersion, r.deviceLabel, r.lastSeenAt from replicas as r
       where r.lastSeenAt >= ${now - ACTIVE_REPLICA_WINDOW_MILLIS}
         and (r.ignoredAt is null or r.ignoredAt < coalesce(r.schemaVersionAt, 0))
         and (r.removedAt is null or r.lastSeenAt > r.removedAt)
         and r.lastSeenAt >= coalesce((
           select min(n.schemaVersionAt) - ${DAY_MILLIS} from replicas as n
           where n.schemaVersion > r.schemaVersion
-        ), 0)`;
+        ), 0)`,
+  });
 
   const pullWithin = Effect.fn("Authority.pullWithin")(function* (
     state: AuthorityState,

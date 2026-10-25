@@ -1,27 +1,44 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
+import { WebCrypto } from "@store/auth";
 import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
+import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/reactivity/Reactivity";
 import type * as Scope from "effect/Scope";
-import type { SqlClient } from "effect/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeOrgAuthority, type OrgAuthorityApi } from "../../src/authority/facade";
+import {
+  MaintenanceAlarm,
+  OrgAuthorityFacade,
+  type OrgAuthorityApi,
+} from "../../src/authority/facade";
 import { OrgAuthorities, OrganizationAuthority } from "../../src/inventory/organization-authority";
 
 export type TestAuthority = {
   readonly api: OrgAuthorityApi;
   readonly db: ReplicaDb;
-  readonly sql: SqlClient;
+  readonly sql: SqlClient.SqlClient;
   readonly alarms: Array<number>;
 };
 
 let minted = 0;
 
-const mintId = Effect.sync(() => {
-  minted += 1;
-  return `${Date.now().toString(16)}${minted.toString(16).padStart(8, "0")}`.padEnd(32, "0");
-});
+const SequentialCrypto = Layer.effect(
+  Crypto.Crypto,
+  Effect.map(Crypto.Crypto, (real) =>
+    Crypto.make({
+      digest: (algorithm, data) => real.digest(algorithm, data),
+      randomBytes: (size) => {
+        minted += 1;
+        const bytes = new Uint8Array(size);
+        new DataView(bytes.buffer).setUint32(0, minted);
+        return bytes;
+      },
+    }),
+  ),
+).pipe(Layer.provide(WebCrypto.layer));
 
 export type TestAuthorities = OrgAuthorities["Service"] & {
   readonly open: (organizationId: string) => Effect.Effect<TestAuthority, never, Scope.Scope>;
@@ -45,14 +62,20 @@ export const makeTestAuthorities = (): TestAuthorities => {
       );
       const db = yield* makeReplicaDb(sql);
       const alarms: Array<number> = [];
-      const api = yield* makeOrgAuthority({
-        sql,
-        mintId,
-        alarm: {
-          scheduleAt: (at) => Effect.sync(() => void alarms.push(at)),
-          scheduleBy: (at) => Effect.sync(() => void alarms.push(at)),
-        },
-      });
+      const recordAlarm = (at: number) => Effect.sync(() => void alarms.push(at));
+      const context = yield* Layer.build(
+        OrgAuthorityFacade.layer.pipe(
+          Layer.provide([
+            Layer.succeed(SqlClient.SqlClient, sql),
+            Layer.succeed(MaintenanceAlarm, {
+              scheduleAt: recordAlarm,
+              scheduleBy: recordAlarm,
+            }),
+            SequentialCrypto,
+          ]),
+        ),
+      );
+      const api = Context.get(context, OrgAuthorityFacade);
       const authority = { api, db, sql, alarms } satisfies TestAuthority;
       authorities.set(organizationId, authority);
       return authority;
