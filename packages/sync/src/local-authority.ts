@@ -11,6 +11,7 @@ import {
   INT4_MAX,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
+  openPackMovementId,
   purchasingRejection,
   ReplicaClientSequence,
   STOCK_MOVEMENT_ROW_VERSION,
@@ -18,6 +19,7 @@ import {
   SyncEpoch,
   SyncProtocolError,
   syncProtocolError,
+  takeFromStock,
   type CatalogRowWrite,
   type RegisterReplicaRequest,
   type RegisterReplicaResult,
@@ -607,36 +609,19 @@ const decideIssueInvoice = (
           `The selected batch for ${product.name} is gone.`,
         );
       }
-      const available =
-        take.quantityType === "pack"
-          ? held.packQuantity
-          : held.packQuantity * product.unitsPerPack + held.unitQuantity;
-      if (available < take.quantity) {
-        return yield* rejected(
-          "INSUFFICIENT_STOCK",
-          `Not enough stock for ${product.name}: ${available} available, ${take.quantity} requested.`,
-        );
-      }
-      const opened =
-        take.quantityType === "unit"
-          ? Math.max(0, Math.ceil((take.quantity - held.unitQuantity) / product.unitsPerPack))
-          : 0;
-      const packQuantity =
-        take.quantityType === "pack"
-          ? held.packQuantity - take.quantity
-          : held.packQuantity - opened;
-      const unitQuantity =
-        take.quantityType === "pack"
-          ? held.unitQuantity
-          : held.unitQuantity + opened * product.unitsPerPack - take.quantity;
-      if (packQuantity < 0 || unitQuantity < 0) {
-        return yield* rejected("INSUFFICIENT_STOCK", `Not enough stock for ${product.name}.`);
-      }
-      const remaining = { ...held, packQuantity, unitQuantity };
+      const taken = yield* Result.mapError(
+        takeFromStock(held, product, take),
+        (refusal): Rejection => ({ code: "INSUFFICIENT_STOCK", message: refusal.message }),
+      );
+      const remaining = {
+        ...held,
+        packQuantity: taken.nextPackQuantity,
+        unitQuantity: taken.nextUnitQuantity,
+      };
       working.set(take.batchId, remaining);
       plans.push({
         take,
-        opened,
+        opened: taken.packsOpened,
         batch: { ...remaining, ...stampOf(payload, actor, held) },
       });
     }
@@ -644,7 +629,7 @@ const decideIssueInvoice = (
     const invoiceNumber = facts.invoiceNumberTaken
       ? facts.highestInvoiceNumber + 1
       : payload.invoiceNumber;
-    const projection = projectCommand(
+    const projection = yield* projectCommand(
       {
         ...envelope,
         command: {
@@ -697,7 +682,7 @@ const decideIssueInvoice = (
       );
       changes.push(changeOf("batch", "upsert", batch.id, batch.rowVersion, batch), item);
       if (opened > 0) {
-        const openPackId = take.openPackMovementId ?? `${take.saleMovementId}:open-pack`;
+        const openPackId = openPackMovementId(take);
         changes.push(
           yield* create("stockMovement", openPackId, facts.recordedMovementIds.has(openPackId)),
         );
@@ -1291,10 +1276,7 @@ const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(function* 
     ),
     recordedMovementIds: new Set(
       (yield* movementView.rowsOf(
-        payload.allocations.flatMap((take) => [
-          take.saleMovementId,
-          take.openPackMovementId ?? `${take.saleMovementId}:open-pack`,
-        ]),
+        payload.allocations.flatMap((take) => [take.saleMovementId, openPackMovementId(take)]),
       )).keys(),
     ),
   } satisfies LocalInvoiceFacts;

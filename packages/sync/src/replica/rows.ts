@@ -2,9 +2,9 @@ import type { SyncEntity, SyncEntityChange } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
 import type { ReplicaEntityRowImage } from "./projection";
+import { decodeRowOrDie } from "./row-decoders";
 import type { ReplicaDb } from "./sql-client/drizzle";
 
 type EntityTable = (typeof syncEntityRows)[SyncEntity]["table"];
@@ -24,9 +24,9 @@ export const selectEntityRow = Effect.fnUntraced(function* (
     .from(table)
     .where(inOrganization(table, organizationId, entityId))
     .get();
-  return row
-    ? (Schema.decodeUnknownSync(syncEntityRows[entity].schema)(row) satisfies ReplicaEntityRowImage)
-    : undefined;
+  if (!row) return undefined;
+  const decoded: ReplicaEntityRowImage = yield* decodeRowOrDie(entity, row);
+  return decoded;
 });
 
 export const writeEntityRow = Effect.fnUntraced(function* (
@@ -35,7 +35,7 @@ export const writeEntityRow = Effect.fnUntraced(function* (
   row: SyncEntityChange["row"],
 ) {
   const { table } = syncEntityRows[entity];
-  const parsed = Schema.decodeUnknownSync(syncEntityRows[entity].schema)(row);
+  const parsed = yield* decodeRowOrDie(entity, row);
   yield* tx
     .insert(table)
     .values(parsed)
