@@ -4,27 +4,29 @@ The local facts the [Effect skill](../.agents/skills/effect/SKILL.md) asks a rep
 
 ## Facts
 
-- **Versions.** `effect@4.0.6` and `alchemy@2.0.0-beta.83`, pinned in the `pnpm-workspace.yaml` catalog.- **Service ids** are `@store/<package>/<Name>`.
+- **Versions.** `effect@4.0.6` and `alchemy@2.0.0-beta.83`, pinned in the `pnpm-workspace.yaml` catalog.
+- **Service ids** are `@store/<package>/<Name>`.
 - **IDs** are branded strings from `packages/contracts/src/ids.ts`.
 - **Timestamps** on the wire and in storage stay epoch milliseconds.
 - **Comments.** Code carries none; the `// SAFETY:` line above a cast is the one exception.
-- **`Crypto.Crypto`** is provided by `packages/auth/src/web-crypto.ts` in the auth and server code and by `NodeCrypto.layer` (`@effect/platform-node/NodeCrypto`) in the desktop writer's staff gate (`apps/desktop/electron/replica-worker-handlers.ts`); the replica sync graph does not provide it yet.
+- **`Crypto.Crypto`** is provided by `packages/auth/src/web-crypto.ts` in the auth and server code and by `NodeCrypto.layer` (`@effect/platform-node/NodeCrypto`) in the desktop. The replica worker edge provides it once (`apps/desktop/electron/replica-worker.ts:18`) and hands it to the session, so sync claim ids come from `Crypto.Crypto` (`packages/sync/src/engine.ts:165`); `StaffGateLive` still builds its own `NodeCrypto.layer` (`replica-worker-handlers.ts:87`).
 - **Typed infrastructure failures.** Storage and network failures stay in `E`: the UI shows offline, retries, or asks the user to free space.
 - **Process boundaries** are the "Sync engine boundaries" section of `AGENTS.md`.
-- **Tests.** The policy is the "Tests" section of `AGENTS.md`. Authority tests run the `OrgAuthority` facade on node SQLite through `apps/server/test/authority/harness.ts`; convergence of two replicas is the invariant worth a committed test.
+- **Tests.** The policy is the "Tests" section of `AGENTS.md`. `@effect/vitest` is used in `packages/sync`, `packages/licence`, `packages/auth`, `apps/auth` and `apps/server`. Authority tests run the `OrgAuthority` facade on node SQLite through `apps/server/test/authority/harness.ts`; convergence of two replicas is the invariant worth a committed test.
 
 ## Edges
 
 The target is one layer graph per process, launched once. This is where each edge is today.
 
-| Host                                                | Edge                                                                                                                                              | Read                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Desktop worker threads (replica, reader, analytics) | `RpcServer.layer(...)` chain, `Layer.launch`, `NodeRuntime.runMain`                                                                               | `apps/desktop/electron/replica-worker.ts`                                               |
-| Electron main                                       | one `ManagedRuntime` over `MainLive` behind `run`/`dispose`; auth and licence are lazy sub-layers                                                 | `apps/desktop/electron/host.ts` (`makeDesktopHost`)                                     |
-| Electron IPC handlers                               | `ipcMain.handle` callbacks enter through `host.run`; the updater uses `FiberSet.makeRuntimePromise` (a departure until shell IPC is one RPC port) | `apps/desktop/electron/replica-ipc.ts`                                                  |
-| Renderer to workers                                 | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port                                                      | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
-| Cloudflare Workers (`apps/server`, `apps/auth`)     | Alchemy calls the returned `HttpEffect`; app code never calls `run*`                                                                              | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts`                     |
-| React                                               | atoms from `effect/reactivity/Atom` through `@effect/atom-react`                                                                                  | `packages/inventory-react/src/atoms.ts`                                                 |
+| Host                                                | Edge                                                                                                                                                               | Read                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Desktop worker threads (replica, reader, analytics) | `RpcServer.layer(...)` chain, `Layer.launch`, `NodeRuntime.runMain`                                                                                                | `apps/desktop/electron/replica-worker.ts`                                               |
+| Electron main                                       | one `ManagedRuntime` over `MainLive` behind `run`/`dispose`; auth and licence are lazy sub-layers                                                                  | `apps/desktop/electron/host.ts` (`makeDesktopHost`)                                     |
+| Electron shell port                                 | `ipcMain.on(SHELL_PORT_REQUEST_CHANNEL)` hands the trusted main frame one `MessagePort` per document; `ShellServer` serves `ShellRpcs` on it, one fiber per sender | `apps/desktop/electron/shell-port.ts`, `apps/desktop/electron/shell-server.ts`          |
+| Renderer shell runtime                              | one `ManagedRuntime` over an `RpcClient` on the shell port, behind a Promise facade (`call`, `fire`, `listen`)                                                     | `apps/desktop/src/host/electron.ts` (`electronAppHost`)                                 |
+| Renderer to workers                                 | `AtomRpc` clients over forwarded `MessagePort`s; each worker serves one `RpcServer` per port                                                                       | `packages/inventory-react/src/services.ts`, `apps/desktop/electron/renderer-servers.ts` |
+| Cloudflare Workers (`apps/server`, `apps/auth`)     | Alchemy calls the returned `HttpEffect`; app code never calls `run*`                                                                                               | `apps/server/src/http/app.ts`, `apps/server/src/runtime/isolate.ts`                     |
+| React                                               | atoms from `effect/reactivity/Atom` through `@effect/atom-react`                                                                                                   | `packages/inventory-react/src/atoms.ts`                                                 |
 
 Desktop budget: nothing on the path to first paint waits for auth or the network, and a query result that drives the UI is paged, because the app runs on low-end machines. Measure cold start and command latency before and after a change to an entry point or a layer graph.
 
@@ -54,6 +56,7 @@ The files nearest the target. Read one for the idea it is listed for; where it d
 | Lazy sub-layer kept off first paint                                           | `apps/desktop/electron/auth.ts`                                                                               |
 | Per-session sub-graph built with `Layer.build`                                | `apps/desktop/electron/worker-process.ts`                                                                     |
 | State machine, restart and retry                                              | `apps/desktop/electron/replica-supervisor.ts`                                                                 |
+| Per-connection RPC server on a `MessagePort`, one `FiberMap` fiber per sender | `apps/desktop/electron/shell-server.ts`                                                                       |
 | `Rpc` contract shared by main and worker                                      | `apps/desktop/electron/replica-rpc.ts`                                                                        |
 | Pure refusal returned as `Result`                                             | `apps/desktop/electron/replica-admission.ts`, `decideCatalogRow` in `packages/sync/src/replica/projection.ts` |
 | Closed-reason refusal, `REFUSALS` table, exhaustive wire mapping              | `apps/auth/src/failures.ts`                                                                                   |
