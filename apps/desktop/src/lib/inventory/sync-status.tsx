@@ -10,13 +10,12 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   inventorySyncIssueLabel,
   useCatalogIsReady,
-  useInventoryActions,
+  useCommand,
   useInventorySyncActivity,
   useInventorySyncStatus,
   type InventorySyncActivity,
   type InventorySyncStatus,
 } from "@store/inventory-react";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -129,16 +128,10 @@ function SyncActionButton({
 }
 
 function ReadySyncAction() {
-  const { retrySync } = useInventoryActions();
+  const [retrySync, retrying] = useCommand((commands) => commands.retrySync);
   const checkForAppUpdate = useCheckForAppUpdate();
   const { status, issue, label, dismissible, dismiss } = useSyncIssue();
-  const [retrying, setRetrying] = useState(false);
-  const retry = () => {
-    setRetrying(true);
-    void retrySync()
-      .catch(() => undefined)
-      .finally(() => setRetrying(false));
-  };
+  const retry = () => void retrySync();
   if (issue === null) return null;
   if (dismissible) {
     return (

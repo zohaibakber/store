@@ -3,18 +3,19 @@ import type { StaffState } from "@store/contracts";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
-  commandFailureSurface,
+  useCommand,
   useReadyInventory,
-  useStaffActions,
   useStaffState,
+  type InventoryFailure,
 } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
-import { storeErrorMessage } from "@/lib/errors";
+import { failureMessage } from "@/lib/errors";
 import { newSaleId, saleDraftsAtom, storedSaleDraftAtoms } from "@/lib/preferences";
 import {
   canOpenSaleDraft,
@@ -181,7 +182,7 @@ const takeOverSaleDraft = async (
     readonly id: InvoiceId;
     readonly from: SaleDraftMember;
     readonly to: SaleDraftOwner;
-    readonly handOver: () => Promise<void>;
+    readonly handOver: () => Promise<Exit.Exit<void, InventoryFailure>>;
   },
 ): Promise<boolean> => {
   const source = saleDraftsAtom(move.from);
@@ -197,15 +198,9 @@ const takeOverSaleDraft = async (
     toastManager.add({ title: saleDraftLimitMessage, type: "info" });
     return false;
   }
-  try {
-    await move.handOver();
-  } catch (error) {
-    toastManager.add({
-      title:
-        commandFailureSurface(error)?.message ??
-        storeErrorMessage(error, "Could not take over the sale."),
-      type: "error",
-    });
+  const exit = await move.handOver();
+  if (Exit.isFailure(exit)) {
+    toastManager.add({ title: failureMessage(exit.cause), type: "error" });
     return false;
   }
   const draft = parked();
@@ -226,7 +221,7 @@ const takeOverSaleDraft = async (
 export const useParkedElsewhere = () => {
   const registry = useContext(RegistryContext);
   const staff = useStaffState();
-  const { handOverDraft } = useStaffActions();
+  const [handOverDraft] = useCommand((commands) => commands.staff.handOverDraft);
   const workspace = useWorkspaceStorageKey();
   const owner = saleDraftOwner(workspace, staff);
   const parkedAtom = useMemo(() => {
@@ -245,7 +240,7 @@ export const useParkedElsewhere = () => {
         id,
         from,
         to: owner,
-        handOver: () => handOverDraft(id, from.member.id),
+        handOver: () => handOverDraft({ draftId: id, from: from.member.id }),
       });
       if (moved) registry.update(searchFocusAtom, (count) => count + 1);
       return moved;

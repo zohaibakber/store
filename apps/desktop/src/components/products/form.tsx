@@ -5,9 +5,10 @@ import {
   type Product,
   type ProductSuggestions,
 } from "@store/contracts";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 import { CategoryField } from "@/components/products/category-field";
@@ -26,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -207,7 +208,7 @@ const prefilledFormValues = (
 
 function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: ProductPrefill = {}) {
   const navigate = useNavigate();
-  const { createProduct } = useInventoryActions();
+  const [createProduct] = useCommand((commands) => commands.createProduct);
 
   return useForm({
     ...productFormOpts,
@@ -216,15 +217,15 @@ function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: Prod
       prefill,
     ),
     onSubmit: async ({ value }) => {
-      try {
-        const product = await createProduct(
-          formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
-        );
-        toastManager.add({ title: "Product created", type: "success" });
-        await navigate({ to: "/products/$productId", params: { productId: product.id } });
-      } catch (error) {
-        toastStoreError(error, "Could not create the product.");
+      const exit = await createProduct(
+        formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+      );
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        return;
       }
+      toastManager.add({ title: "Product created", type: "success" });
+      await navigate({ to: "/products/$productId", params: { productId: exit.value.id } });
     },
   });
 }
@@ -234,21 +235,21 @@ function useProductUpdateForm(
   categories: ReadonlyArray<Category>,
   onUpdated: () => void,
 ) {
-  const { updateProduct } = useInventoryActions();
+  const [updateProduct] = useCommand((commands) => commands.updateProduct);
   return useForm({
     ...productFormOpts,
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
-      try {
-        await updateProduct({
-          id: product.id,
-          ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
-        });
-        toastManager.add({ title: "Product updated", type: "success" });
-        onUpdated();
-      } catch (error) {
-        toastStoreError(error, "Could not update the product.");
+      const exit = await updateProduct({
+        id: product.id,
+        ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+      });
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        return;
       }
+      toastManager.add({ title: "Product updated", type: "success" });
+      onUpdated();
     },
   });
 }

@@ -1,7 +1,8 @@
 import { Delete02Icon, InformationCircleIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
-import { useInventoryActions, useSuspenseProductCount } from "@store/inventory-react";
+import { useCommand, useSuspenseProductCount } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import { Suspense, useId, useMemo, useRef, useState } from "react";
 
 import {
@@ -29,8 +30,7 @@ import {
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { useStoreCommand } from "@/hooks/use-store-command";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatNumber } from "@/lib/format";
 
 const MAX_NAME = 64;
@@ -39,8 +39,6 @@ const PACKS_HINT =
   "Off for items sold one at a time: products skip pack size and pack price, and stock arrives as a quantity with an expiry. Purchase price stays the pack cost.";
 
 const normalized = (name: string) => name.trim().toLocaleLowerCase();
-
-type InventoryActions = ReturnType<typeof useInventoryActions>;
 
 function ProductCount({ categoryId }: { readonly categoryId: string }) {
   return <>{formatNumber(useSuspenseProductCount({ categoryId }))}</>;
@@ -62,28 +60,24 @@ function SoldAsHeader() {
   );
 }
 
-function NewCategoryRow({
-  createCategory,
-  taken,
-}: {
-  readonly createCategory: InventoryActions["createCategory"];
-  readonly taken: ReadonlySet<string>;
-}) {
+function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
+  const [createCategory, pending] = useCommand((commands) => commands.createCategory);
   const [name, setName] = useState("");
   const [tracksPacks, setTracksPacks] = useState(true);
-  const [pending, run] = useStoreCommand();
   const switchId = useId();
   const trimmed = name.trim();
   const duplicate = taken.has(normalized(name));
   const canSave = trimmed.length > 0 && trimmed.length <= MAX_NAME && !duplicate && !pending;
 
-  const save = () => {
+  const save = async () => {
     if (!canSave) return;
-    void run(async () => {
-      const category = await createCategory({ name: trimmed, tracksPacks });
-      toastManager.add({ title: `${category.name} added`, type: "success" });
-      setName("");
-    }, "Could not add the category.");
+    const exit = await createCategory({ name: trimmed, tracksPacks });
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
+    }
+    toastManager.add({ title: `${exit.value.name} added`, type: "success" });
+    setName("");
   };
 
   return (
@@ -98,7 +92,7 @@ function NewCategoryRow({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              save();
+              void save();
             }
             if (event.key === "Escape" && name) {
               event.preventDefault();
@@ -120,7 +114,7 @@ function NewCategoryRow({
       <TableCell />
       <TableCell>
         <div className="flex justify-end">
-          <Button disabled={!canSave} onClick={save} size="sm" type="button">
+          <Button disabled={!canSave} onClick={() => void save()} size="sm" type="button">
             Add
           </Button>
         </div>
@@ -134,14 +128,13 @@ function CategoryName({
   editing,
   onEditingChange,
   taken,
-  updateCategory,
 }: {
   readonly category: Category;
   readonly editing: boolean;
   readonly onEditingChange: (editing: boolean) => void;
   readonly taken: ReadonlySet<string>;
-  readonly updateCategory: InventoryActions["updateCategory"];
 }) {
+  const [updateCategory] = useCommand((commands) => commands.updateCategory);
   const [draft, setDraft] = useState(category.name);
   const cancelled = useRef(false);
 
@@ -162,13 +155,17 @@ function CategoryName({
       setDraft(category.name);
       return;
     }
-    try {
-      await updateCategory({ id: category.id, name: trimmed, tracksPacks: category.tracksPacks });
-      toastManager.add({ title: "Category renamed", type: "success" });
-    } catch (error) {
+    const exit = await updateCategory({
+      id: category.id,
+      name: trimmed,
+      tracksPacks: category.tracksPacks,
+    });
+    if (Exit.isFailure(exit)) {
       setDraft(category.name);
-      toastStoreError(error, "Could not rename the category.");
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({ title: "Category renamed", type: "success" });
   };
 
   if (editing) {
@@ -213,20 +210,15 @@ function CategoryName({
   );
 }
 
-function DeleteCategoryDialog({
-  category,
-  deleteCategory,
-}: {
-  readonly category: Category;
-  readonly deleteCategory: InventoryActions["deleteCategory"];
-}) {
+function DeleteCategoryDialog({ category }: { readonly category: Category }) {
+  const [deleteCategory] = useCommand((commands) => commands.deleteCategory);
   const remove = async () => {
-    try {
-      await deleteCategory(category.id);
-      toastManager.add({ title: `${category.name} deleted`, type: "success" });
-    } catch (error) {
-      toastStoreError(error, "Could not delete the category.");
+    const exit = await deleteCategory(category.id);
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({ title: `${category.name} deleted`, type: "success" });
   };
 
   return (
@@ -255,23 +247,19 @@ function DeleteCategoryDialog({
 }
 
 function CategoryRow({
-  actions,
   category,
   taken,
 }: {
-  readonly actions: InventoryActions;
   readonly category: Category;
   readonly taken: ReadonlySet<string>;
 }) {
+  const [updateCategory] = useCommand((commands) => commands.updateCategory);
   const [editing, setEditing] = useState(false);
   const switchLabel = `Sell ${category.name} in packs`;
 
   const setTracksPacks = async (tracksPacks: boolean) => {
-    try {
-      await actions.updateCategory({ id: category.id, name: category.name, tracksPacks });
-    } catch (error) {
-      toastStoreError(error, "Could not update the category.");
-    }
+    const exit = await updateCategory({ id: category.id, name: category.name, tracksPacks });
+    if (Exit.isFailure(exit)) toastFailure(exit.cause);
   };
 
   return (
@@ -282,7 +270,6 @@ function CategoryRow({
           editing={editing}
           onEditingChange={setEditing}
           taken={taken}
-          updateCategory={actions.updateCategory}
         />
       </TableCell>
       <TableCell>
@@ -321,7 +308,7 @@ function CategoryRow({
             </TooltipTrigger>
             <TooltipPopup>Rename</TooltipPopup>
           </Tooltip>
-          <DeleteCategoryDialog category={category} deleteCategory={actions.deleteCategory} />
+          <DeleteCategoryDialog category={category} />
         </div>
       </TableCell>
     </TableRow>
@@ -329,7 +316,6 @@ function CategoryRow({
 }
 
 export function CategoriesTable({ categories }: { readonly categories: ReadonlyArray<Category> }) {
-  const actions = useInventoryActions();
   const sorted = useMemo(
     () => [...categories].sort((a, b) => a.name.localeCompare(b.name)),
     [categories],
@@ -357,9 +343,9 @@ export function CategoriesTable({ categories }: { readonly categories: ReadonlyA
           </TableRow>
         </TableHeader>
         <TableBody>
-          <NewCategoryRow createCategory={actions.createCategory} taken={taken} />
+          <NewCategoryRow taken={taken} />
           {sorted.map((category) => (
-            <CategoryRow actions={actions} category={category} key={category.id} taken={taken} />
+            <CategoryRow category={category} key={category.id} taken={taken} />
           ))}
         </TableBody>
       </Table>

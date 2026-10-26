@@ -1,4 +1,6 @@
 import { isConnectivityFailure } from "@store/contracts";
+import { causeSurface, type InventoryFailure } from "@store/inventory-react";
+import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 
 import { toastManager } from "@/components/ui/toast";
@@ -21,4 +23,12 @@ export const toastStoreError = (cause: unknown, fallback?: string) => {
   const raw = Schema.is(Messaged)(cause) ? cause.message : "";
   if (isConnectivityFailure(raw) || raw.startsWith("net::")) return;
   toastManager.add({ title: storeErrorMessage(cause, fallback), type: "error" });
+};
+
+export const failureMessage = (cause: Cause.Cause<InventoryFailure>): string =>
+  causeSurface(cause).message;
+
+export const toastFailure = (cause: Cause.Cause<InventoryFailure>) => {
+  if (Cause.hasInterruptsOnly(cause)) return;
+  toastManager.add({ title: failureMessage(cause), type: "error" });
 };

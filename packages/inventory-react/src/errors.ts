@@ -7,6 +7,7 @@ import type {
   StaffFailure,
 } from "@store/contracts/replica";
 import * as Cause from "effect/Cause";
+import type * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Schema from "effect/Schema";
@@ -69,6 +70,8 @@ export type InventoryFailure =
   | StaffFailure
   | LicenceRefusal
   | RpcClientError;
+
+export type CommandExit<A> = Exit.Exit<A, InventoryFailure>;
 
 export type FailureSurface =
   | {
@@ -235,15 +238,3 @@ export const causeSurface = (cause: Cause.Cause<InventoryFailure>): FailureSurfa
     onNone: (): FailureSurface => ({ _tag: "defect", message: UNEXPECTED_FAILURE }),
     onSome: failureSurface,
   });
-
-export class InventoryCommandError extends Error {
-  readonly surface: FailureSurface;
-  constructor(surface: FailureSurface) {
-    super(surface.message);
-    this.name = "InventoryCommandError";
-    this.surface = surface;
-  }
-}
-
-export const commandFailureSurface = (cause: unknown): FailureSurface | undefined =>
-  cause instanceof InventoryCommandError ? cause.surface : undefined;

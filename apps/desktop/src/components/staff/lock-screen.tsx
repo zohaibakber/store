@@ -1,8 +1,16 @@
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { StaffId, StaffMember } from "@store/contracts";
-import { staffRefusalCopy, useStaffActions } from "@store/inventory-react";
+import {
+  causeSurface,
+  staffRefusalCopy,
+  useCommand,
+  type InventoryFailure,
+} from "@store/inventory-react";
 import { initials } from "@store/services/format";
+import type * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
+import * as Redacted from "effect/Redacted";
 import { useEffect, useRef, useState, type KeyboardEvent, type SubmitEvent } from "react";
 
 import {
@@ -10,7 +18,6 @@ import {
   newPinProblem,
   ownerFirst,
   PIN_HINT,
-  staffFailure,
   staffRoleLabel,
 } from "@/components/staff/access";
 import { PinInput, StaffScreen, StaffScreenHeader, useThrottle } from "@/components/staff/screen";
@@ -29,8 +36,8 @@ function useRefusal() {
   const throttle = useThrottle();
   const throttled = throttle.remainingMillis > 0;
 
-  const refuse = (cause: unknown) => {
-    const surface = staffFailure(cause);
+  const refuse = (cause: Cause.Cause<InventoryFailure>) => {
+    const surface = causeSurface(cause);
     if (
       surface._tag === "staff" &&
       surface.reason === "throttled" &&
@@ -117,7 +124,7 @@ function PinEntry({
   readonly member: StaffMember;
   readonly onBack: (() => void) | null;
 }) {
-  const { unlock } = useStaffActions();
+  const [unlock] = useCommand((commands) => commands.staff.unlock);
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const refusal = useRefusal();
@@ -135,11 +142,8 @@ function PinEntry({
     setPin("");
     setBusy(true);
     refusal.clear();
-    try {
-      await unlock(member.id, entered);
-    } catch (cause) {
-      refusal.refuse(cause);
-    }
+    const exit = await unlock({ staffId: member.id, pin: Redacted.make(entered) });
+    if (Exit.isFailure(exit)) refusal.refuse(exit.cause);
     setBusy(false);
   };
 
@@ -201,7 +205,7 @@ function OwnerRecovery({
   readonly onBack: () => void;
   readonly onRecovered: (recoveryCode: string) => void;
 }) {
-  const { recoverOwner } = useStaffActions();
+  const [recoverOwner] = useCommand((commands) => commands.staff.recoverOwner);
   const [code, setCode] = useState("");
   const [pin, setPin] = useState("");
   const [again, setAgain] = useState("");
@@ -218,13 +222,16 @@ function OwnerRecovery({
     if (problem !== null) return;
     setBusy(true);
     refusal.clear();
-    try {
-      const { recoveryCode } = await recoverOwner(code.trim(), pin);
-      onRecovered(recoveryCode);
-    } catch (cause) {
-      refusal.refuse(cause);
+    const exit = await recoverOwner({
+      recoveryCode: Redacted.make(code.trim()),
+      pin: Redacted.make(pin),
+    });
+    if (Exit.isFailure(exit)) {
+      refusal.refuse(exit.cause);
       setBusy(false);
+      return;
     }
+    onRecovered(exit.value.recoveryCode);
   };
 
   return (

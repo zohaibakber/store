@@ -8,7 +8,9 @@ import {
   type StaffEvent,
   type StaffMember,
 } from "@store/contracts";
-import { useStaffActions } from "@store/inventory-react";
+import { causeSurface, useCommand } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
+import * as Redacted from "effect/Redacted";
 import { useEffect, useState, type ReactNode, type SubmitEvent } from "react";
 
 import { FrameCard } from "@/components/shared/frame-card";
@@ -17,7 +19,6 @@ import {
   newPinProblem,
   ownerFirst,
   PIN_HINT,
-  staffFailure,
   staffRoleLabel,
   useStaffAccess,
 } from "@/components/staff/access";
@@ -57,11 +58,9 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { useReleaseSaleDrafts } from "@/hooks/use-sale-drafts";
+import { toastFailure } from "@/lib/errors";
 import { formatCount } from "@/lib/format";
 import { formatInvoiceTime } from "@/lib/format-date";
-
-const toastFailure = (cause: unknown) =>
-  toastManager.add({ title: staffFailure(cause).message, type: "error" });
 
 function FormError({ message }: { readonly message: string | null }) {
   if (message === null) return null;
@@ -144,7 +143,7 @@ function OwnerSetupDialog({
   readonly onDone: (recoveryCode: string) => void;
   readonly onOpenChange: (open: boolean) => void;
 }) {
-  const { setUpOwner } = useStaffActions();
+  const [setUpOwner] = useCommand((commands) => commands.staff.setUpOwner);
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
   const [again, setAgain] = useState("");
@@ -157,13 +156,13 @@ function OwnerSetupDialog({
     setError(problem);
     if (problem !== null || busy) return;
     setBusy(true);
-    try {
-      const { recoveryCode } = await setUpOwner({ name: name.trim(), pin });
-      onDone(recoveryCode);
-    } catch (cause) {
-      setError(staffFailure(cause).message);
+    const exit = await setUpOwner({ name: name.trim(), pin: Redacted.make(pin) });
+    if (Exit.isFailure(exit)) {
+      setError(causeSurface(exit.cause).message);
       setBusy(false);
+      return;
     }
+    onDone(exit.value.recoveryCode);
   };
 
   return (
@@ -239,7 +238,8 @@ function MemberDialog({
   readonly onClose: () => void;
   readonly onSaved: () => void;
 }) {
-  const { add, update } = useStaffActions();
+  const [add] = useCommand((commands) => commands.staff.add);
+  const [update] = useCommand((commands) => commands.staff.update);
   const member = edit._tag === "edit" ? edit.member : null;
   const isOwner = member?.role === "owner";
   const [name, setName] = useState(member?.name ?? "");
@@ -258,21 +258,23 @@ function MemberDialog({
     setError(problem);
     if (problem !== null || busy) return;
     setBusy(true);
-    try {
-      if (member === null) {
-        const added = await add({ name: name.trim(), role, pin });
-        toastManager.add({ title: `${added.name} added`, type: "success" });
-      } else {
-        const change = { id: member.id, name: name.trim(), role: isOwner ? member.role : role };
-        const saved = await update(keepsPin ? change : { ...change, pin });
-        toastManager.add({ title: `${saved.name} updated`, type: "success" });
-      }
-      onSaved();
-      onClose();
-    } catch (cause) {
-      setError(staffFailure(cause).message);
+    const save = () => {
+      if (member === null) return add({ name: name.trim(), role, pin: Redacted.make(pin) });
+      const change = { id: member.id, name: name.trim(), role: isOwner ? member.role : role };
+      return update(keepsPin ? change : { ...change, pin: Redacted.make(pin) });
+    };
+    const exit = await save();
+    if (Exit.isFailure(exit)) {
+      setError(causeSurface(exit.cause).message);
       setBusy(false);
+      return;
     }
+    toastManager.add({
+      title: member === null ? `${exit.value.name} added` : `${exit.value.name} updated`,
+      type: "success",
+    });
+    onSaved();
+    onClose();
   };
 
   return (
@@ -390,19 +392,19 @@ function RosterCard({
   readonly onChanged: () => void;
   readonly staff: ReadonlyArray<StaffMember>;
 }) {
-  const { remove } = useStaffActions();
+  const [remove] = useCommand((commands) => commands.staff.remove);
   const [edit, setEdit] = useState<MemberEdit | null>(null);
   const [removing, setRemoving] = useState<StaffMember | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
 
   const removeMember = async (member: StaffMember) => {
-    try {
-      await remove(member.id);
-      toastManager.add({ title: `${member.name} removed`, type: "success" });
-      onChanged();
-    } catch (cause) {
-      toastFailure(cause);
+    const exit = await remove(member.id);
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({ title: `${member.name} removed`, type: "success" });
+    onChanged();
   };
 
   return (
@@ -485,7 +487,7 @@ function AutoLockRow({
   readonly minutes: number;
   readonly onChanged: () => void;
 }) {
-  const { setAutoLock } = useStaffActions();
+  const [setAutoLock] = useCommand((commands) => commands.staff.setAutoLock);
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const shown = draft ?? String(minutes);
@@ -496,13 +498,13 @@ function AutoLockRow({
     event.preventDefault();
     if (!valid || busy || next === minutes) return;
     setBusy(true);
-    try {
-      await setAutoLock(next);
+    const exit = await setAutoLock(next);
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+    } else {
       setDraft(null);
       toastManager.add({ title: `The app locks after ${next} idle minutes`, type: "success" });
       onChanged();
-    } catch (cause) {
-      toastFailure(cause);
     }
     setBusy(false);
   };
@@ -555,32 +557,31 @@ function AccessCard({
   readonly onChanged: () => void;
   readonly onRecoveryCode: (code: string) => void;
 }) {
-  const { renewRecoveryCode, turnOff } = useStaffActions();
+  const [renewRecoveryCode] = useCommand((commands) => commands.staff.renewRecoveryCode);
+  const [turnOff] = useCommand((commands) => commands.staff.turnOff);
   const releaseSaleDrafts = useReleaseSaleDrafts();
   const [renewing, setRenewing] = useState(false);
   const [turningOff, setTurningOff] = useState(false);
   const [busy, setBusy] = useState<"idle" | "renew" | "turnOff">("idle");
 
-  const during = async (activity: "renew" | "turnOff", task: () => Promise<void>) => {
-    setBusy(activity);
-    try {
-      await task();
-    } catch (cause) {
-      toastFailure(cause);
+  const renew = async () => {
+    setBusy("renew");
+    const exit = await renewRecoveryCode();
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+    } else {
+      onRecoveryCode(exit.value.recoveryCode);
+      onChanged();
     }
     setBusy("idle");
   };
 
-  const renew = () =>
-    during("renew", async () => {
-      const { recoveryCode } = await renewRecoveryCode();
-      onRecoveryCode(recoveryCode);
-      onChanged();
-    });
-
-  const stop = () =>
-    during("turnOff", async () => {
-      await turnOff();
+  const stop = async () => {
+    setBusy("turnOff");
+    const exit = await turnOff();
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+    } else {
       const dropped = releaseSaleDrafts();
       toastManager.add({
         title: "Staff PINs are off",
@@ -590,7 +591,9 @@ function AccessCard({
             : undefined,
         type: dropped > 0 ? "warning" : "success",
       });
-    });
+    }
+    setBusy("idle");
+  };
 
   return (
     <FrameCard title="Locking and recovery">
@@ -700,19 +703,19 @@ type Activity =
   | { readonly _tag: "failed"; readonly message: string };
 
 function ActivityCard({ version }: { readonly version: number }) {
-  const { events } = useStaffActions();
+  const [events] = useCommand((commands) => commands.staff.events);
   const [activity, setActivity] = useState<Activity>({ _tag: "loading" });
 
   useEffect(() => {
     let current = true;
-    events().then(
-      (loaded) => {
-        if (current) setActivity({ _tag: "loaded", events: loaded });
-      },
-      (cause: unknown) => {
-        if (current) setActivity({ _tag: "failed", message: staffFailure(cause).message });
-      },
-    );
+    void events().then((exit) => {
+      if (!current) return;
+      setActivity(
+        Exit.isSuccess(exit)
+          ? { _tag: "loaded", events: exit.value }
+          : { _tag: "failed", message: causeSurface(exit.cause).message },
+      );
+    });
     return () => {
       current = false;
     };

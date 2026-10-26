@@ -2,9 +2,6 @@ import type { LicenceState } from "@store/contracts";
 
 import { formatCount } from "@/lib/format";
 
-export const LICENCE_HOW_TO_GET =
-  "No licence yet? Ask the person who set up Tabaaq for you. A licence lasts one year.";
-
 export const ENTER_LICENCE = "Enter licence";
 export const OPEN_LICENCE_FILE = "Open licence file";
 export const RENEW_LICENCE = "Renew";

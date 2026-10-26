@@ -4,11 +4,12 @@ import {
   preloadCatalogProduct,
   preloadProductStockPlan,
   preloadStockMovementHistory,
-  useInventoryActions,
+  useCommand,
   useSuspenseCatalogProduct,
   useSuspenseStockMovementHistory,
 } from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
 import {
@@ -17,7 +18,7 @@ import {
   ProductDetailPage,
 } from "@/components/products/detail-page";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -46,19 +47,19 @@ function ProductDetailRoute() {
   const { addStock } = Route.useSearch();
   const catalogProduct = useSuspenseCatalogProduct(productId);
   const movements = useSuspenseStockMovementHistory(productId);
-  const { deleteProduct } = useInventoryActions();
+  const [deleteProduct] = useCommand((commands) => commands.deleteProduct);
   const navigate = useNavigate();
 
   if (!catalogProduct) return <ProductDetailNotFound />;
 
   const removeProduct = async () => {
-    try {
-      await deleteProduct(catalogProduct.id);
-      toastManager.add({ title: `${catalogProduct.name} deleted`, type: "success" });
-      await navigate({ to: "/products" });
-    } catch (error) {
-      toastStoreError(error, "Could not delete the product.");
+    const exit = await deleteProduct(catalogProduct.id);
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({ title: `${catalogProduct.name} deleted`, type: "success" });
+    await navigate({ to: "/products" });
   };
 
   return (

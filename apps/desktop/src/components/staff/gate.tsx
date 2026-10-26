@@ -1,7 +1,7 @@
 import { SquareLock02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type StaffId, type StaffState } from "@store/contracts";
-import { useCatalogIsReady, useStaffActions, useStaffState } from "@store/inventory-react";
+import { useCatalogIsReady, useCommand, useStaffState } from "@store/inventory-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -69,12 +69,12 @@ function useArrival(state: StaffState | undefined) {
 
 function ReadyStaffGate({ children }: { readonly children: ReactNode }) {
   const state = useStaffState();
-  const { lock } = useStaffActions();
+  const [lock] = useCommand((commands) => commands.staff.lock);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
   const { arriving, lastActorId } = useArrival(state);
 
   useIdleLock(state?._tag === "unlocked" ? state.autoLockMinutes : null, () => {
-    void lock().catch(() => undefined);
+    void lock();
   });
 
   if (recoveryCode !== null) {

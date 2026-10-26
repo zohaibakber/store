@@ -10,13 +10,14 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type StaffMember } from "@store/contracts";
-import { useStaffActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
 import type * as React from "react";
 
 import { LicenceStatus } from "@/components/licence/status";
-import { staffFailure, staffRoleLabel, useStaffAccess } from "@/components/staff/access";
+import { staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -30,8 +31,8 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
-import { toastManager } from "@/components/ui/toast";
 import { signOut, useAuth } from "@/lib/auth";
+import { toastFailure } from "@/lib/errors";
 import { OnDeviceStatus } from "@/lib/inventory/sync-status";
 import { usePublishInProgress } from "@/lib/local-publish";
 import { useWindowKeydown } from "@/lib/shortcuts";
@@ -86,11 +87,10 @@ const staffIdentity = (member: StaffMember): Identity => {
 };
 
 const useLock = () => {
-  const { lock } = useStaffActions();
-  return () => {
-    lock().catch((cause: unknown) =>
-      toastManager.add({ title: staffFailure(cause).message, type: "error" }),
-    );
+  const [lock] = useCommand((commands) => commands.staff.lock);
+  return async () => {
+    const exit = await lock();
+    if (Exit.isFailure(exit)) toastFailure(exit.cause);
   };
 };
 
@@ -105,7 +105,7 @@ function LockShortcut() {
   useWindowKeydown((event) => {
     if (!isLockChord(event)) return;
     event.preventDefault();
-    if (!event.repeat) lock();
+    if (!event.repeat) void lock();
   }, true);
   return null;
 }
@@ -114,7 +114,7 @@ function LockGroup() {
   const lock = useLock();
   return (
     <MenuGroup>
-      <MenuItem aria-keyshortcuts="Control+L" onClick={lock}>
+      <MenuItem aria-keyshortcuts="Control+L" onClick={() => void lock()}>
         <HugeiconsIcon aria-hidden="true" icon={LockIcon} />
         Lock
         <MenuShortcut>Ctrl+L</MenuShortcut>

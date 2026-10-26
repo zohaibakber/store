@@ -1,7 +1,8 @@
 import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
 import { INT4_MAX, invoiceUploadRejection, MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
-import { useCatalogProductLookup, useInventoryActions } from "@store/inventory-react";
+import { useCatalogProductLookup, useCommand } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import { createContext, use, useRef, useState, type ReactNode } from "react";
 
@@ -15,7 +16,7 @@ import {
   ambiguousImportProductMessage,
   importProductMatch,
 } from "@/components/uploads/same-product";
-import { storeErrorMessage } from "@/lib/errors";
+import { storeErrorMessage, toastFailure } from "@/lib/errors";
 import { formatCount, formatNumber } from "@/lib/format";
 import { parseExpiryDate } from "@/lib/format-date";
 import { useInvoiceReading } from "@/lib/invoice-reading";
@@ -114,7 +115,7 @@ function UploadProvider({
   children: ReactNode;
   categories: readonly Category[];
 }) {
-  const inventory = useInventoryActions();
+  const [importInventory] = useCommand((commands) => commands.importInventory);
   const lookupProducts = useCatalogProductLookup();
   const { analyseInvoices, isOnline } = useInvoiceReading();
   const busyRef = useRef(false);
@@ -239,11 +240,17 @@ function UploadProvider({
         purchasePrice: change.packPrice,
         productId: change.productId ?? null,
       }));
-      const result = await inventory.importInventory(
+      const exit = await importInventory(
         category._tag === "Existing"
           ? { categoryId: category.id, lines }
           : { newCategory: { name: category.name }, lines },
       );
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        setPhase("ready");
+        return;
+      }
+      const result = exit.value;
       setChanges([]);
       setFiles([]);
       setInvoice(null);

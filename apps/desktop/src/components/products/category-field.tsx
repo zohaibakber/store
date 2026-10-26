@@ -1,7 +1,8 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import * as React from "react";
 import { useMemo, useState } from "react";
 
@@ -14,7 +15,7 @@ import {
   ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
-import { useStoreCommand } from "@/hooks/use-store-command";
+import { toastFailure } from "@/lib/errors";
 
 interface CategoryOption {
   readonly id: string;
@@ -39,7 +40,7 @@ export function CategoryField({
   seed: ReadonlyArray<Category>;
   value: string;
 }) {
-  const { createCategory } = useInventoryActions();
+  const [createCategory, pending] = useCommand((commands) => commands.createCategory);
   const [createdOverSeed, setCreatedOverSeed] = useState<ReadonlyArray<CategoryOption>>([]);
   const categories = useMemo(() => {
     const byId = new Map<string, CategoryOption>();
@@ -48,7 +49,6 @@ export function CategoryField({
     return [...byId.values()].sort(byName);
   }, [seed, createdOverSeed]);
   const [query, setQuery] = useState("");
-  const [pending, run] = useStoreCommand();
 
   const term = query.trim();
   const selected = categories.find((category) => category.id === value) ?? null;
@@ -69,16 +69,19 @@ export function CategoryField({
       return;
     }
 
-    await run(async () => {
-      const category = await createCategory({ name: option.name });
-      setCreatedOverSeed((current) =>
-        current.some((existing) => existing.id === category.id)
-          ? current
-          : [...current, { id: category.id, name: category.name }],
-      );
-      onChange(category.id);
-      toastManager.add({ title: `${category.name} added`, type: "success" });
-    });
+    const exit = await createCategory({ name: option.name });
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
+    }
+    const category = exit.value;
+    setCreatedOverSeed((current) =>
+      current.some((existing) => existing.id === category.id)
+        ? current
+        : [...current, { id: category.id, name: category.name }],
+    );
+    onChange(category.id);
+    toastManager.add({ title: `${category.name} added`, type: "success" });
   };
 
   return (
