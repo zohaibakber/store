@@ -1,15 +1,14 @@
-import type { WorkspaceSnapshot } from "@store/contracts";
+import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
 import type { CatalogLifetime } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
-import * as FiberHandle from "effect/FiberHandle";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
-import * as Scope from "effect/Scope";
+import * as Queue from "effect/Queue";
+import * as Atom from "effect/reactivity/Atom";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import * as Stream from "effect/Stream";
 
 import type { AuthSessionBridge } from "@/host";
 import { hasAuthenticatedWorkspace, type HostAccessPolicy } from "@/host-access";
-import type { ReplayChannel } from "@/host/replay-channel";
 
 import {
   deviceWorkspaceAfter,
@@ -22,16 +21,10 @@ export type WorkspaceSession =
   | { readonly _tag: "Steady"; readonly snapshot: WorkspaceSnapshot }
   | { readonly _tag: "Switching"; readonly snapshot: WorkspaceSnapshot };
 
-export const publishedWorkspaceSnapshot = (
-  session: WorkspaceSession | undefined,
-): WorkspaceSnapshot | null => session?.snapshot ?? null;
-
 type WorkspaceScope =
   | { readonly _tag: "None" }
   | { readonly _tag: "Local" }
   | { readonly _tag: "Organization"; readonly key: string };
-
-const NO_SCOPE: WorkspaceScope = { _tag: "None" };
 
 const workspaceScope = (snapshot: WorkspaceSnapshot, access: HostAccessPolicy): WorkspaceScope => {
   const workspace = access.workspace(snapshot);
@@ -61,17 +54,29 @@ type WorkspaceChange =
 
 type DeviceChange = Exclude<WorkspaceChange, { readonly _tag: "Session" }>;
 
-type WorkspaceSessionPorts = {
-  readonly session: ReplayChannel<WorkspaceSession>;
+export type WorkspaceSessionPorts = {
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly device: DeviceWorkspaceStore;
-};
-
-type ApplyWorkspaceSnapshotPorts = WorkspaceSessionPorts & {
+  readonly bridge: Pick<AuthSessionBridge, "getSession" | "onSessionChange">;
   readonly invalidate: () => Promise<void>;
   readonly flush: (fn: () => void) => void;
 };
+
+export const workspaceSessionAtom = Atom.make<WorkspaceSession>({
+  _tag: "Steady",
+  snapshot: unauthenticatedWorkspace({ isOnline: false }),
+}).pipe(Atom.keepAlive);
+
+const workspaceSessionPortsAtom = Atom.make(Option.none<WorkspaceSessionPorts>()).pipe(
+  Atom.keepAlive,
+);
+
+const portsOf = (registry: AtomRegistry.AtomRegistry) =>
+  Option.match(registry.get(workspaceSessionPortsAtom), {
+    onNone: () => Effect.die("Workspace session ports are not mounted."),
+    onSome: Effect.succeed,
+  });
 
 const deviceChangeOf = (
   change: WorkspaceChange,
@@ -107,33 +112,35 @@ const recordOnDevice = (device: DeviceWorkspaceStore, change: DeviceWorkspaceCha
 };
 
 export const startWorkspaceSession = (
+  registry: AtomRegistry.AtomRegistry,
   ports: WorkspaceSessionPorts,
   snapshot: WorkspaceSnapshot,
 ): void => {
+  registry.set(workspaceSessionPortsAtom, Option.some(ports));
   recordOnDevice(ports.device, deviceChangeOf({ _tag: "Session", snapshot }, null));
-  ports.session.publish({ _tag: "Steady", snapshot });
+  registry.set(workspaceSessionAtom, { _tag: "Steady", snapshot });
   const scope = ports.access.inventoryScope(snapshot);
   if (scope) ports.catalog.claim(scope);
 };
 
-const applyWorkspaceChange = (
-  ports: ApplyWorkspaceSnapshotPorts,
-  change: WorkspaceChange,
-): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    const current = ports.session.current();
-    const next = change._tag === "Session" ? change.snapshot : current?.snapshot;
-    if (next === undefined) return;
-    const from = current ? workspaceScope(current.snapshot, ports.access) : NO_SCOPE;
-    recordOnDevice(ports.device, deviceChangeOf(change, current?.snapshot ?? null));
+const leaveBatch = Effect.promise(() => Promise.resolve());
+
+const commitWorkspaceChange = Atom.fn<WorkspaceChange>()(
+  Effect.fn("WorkspaceSession.commit")(function* (change: WorkspaceChange, get: Atom.FnContext) {
+    const ports = yield* portsOf(get.registry);
+    const current = get.registry.get(workspaceSessionAtom);
+    const next = change._tag === "Session" ? change.snapshot : current.snapshot;
+    const from = workspaceScope(current.snapshot, ports.access);
+    recordOnDevice(ports.device, deviceChangeOf(change, current.snapshot));
     const to = workspaceScope(next, ports.access);
-    if (sameScope(from, to) && current) {
-      ports.session.publish({ _tag: "Steady", snapshot: next });
+    if (sameScope(from, to)) {
+      get.set(workspaceSessionAtom, { _tag: "Steady", snapshot: next });
       return;
     }
 
+    yield* leaveBatch;
     ports.flush(() => {
-      ports.session.publish({ _tag: "Switching", snapshot: next });
+      get.set(workspaceSessionAtom, { _tag: "Switching", snapshot: next });
     });
 
     const scope = ports.access.inventoryScope(next);
@@ -141,55 +148,58 @@ const applyWorkspaceChange = (
     else ports.catalog.release();
 
     yield* Effect.ignore(Effect.tryPromise(() => ports.invalidate()));
-    const latest = ports.session.current();
-    if (latest?._tag === "Switching" && latest.snapshot === next) {
-      ports.session.publish({ _tag: "Steady", snapshot: next });
+    const latest = get.registry.get(workspaceSessionAtom);
+    if (latest._tag === "Switching" && latest.snapshot === next) {
+      get.set(workspaceSessionAtom, { _tag: "Steady", snapshot: next });
     }
-  });
+  }),
+).pipe(Atom.keepAlive);
 
-type WorkspaceSessionBinding = {
-  readonly refresh: () => Promise<void>;
-  readonly change: (change: DeviceChange) => Promise<void>;
+const settled = (get: Atom.FnContext, change: WorkspaceChange) => {
+  get.set(commitWorkspaceChange, change);
+  return get.result(commitWorkspaceChange, { suspendOnWaiting: true });
 };
 
-const boundSession = Ref.makeUnsafe(Option.none<WorkspaceSessionBinding>());
+export const refreshWorkspaceSession = Atom.fn<void>()(
+  Effect.fn("WorkspaceSession.refresh")(function* (_: void, get: Atom.FnContext) {
+    const { bridge } = yield* portsOf(get.registry);
+    const snapshot = yield* Effect.tryPromise({
+      try: () => bridge.getSession(),
+      catch: (cause) => cause,
+    });
+    yield* settled(get, { _tag: "Session", snapshot });
+  }),
+);
 
-const bound = (): WorkspaceSessionBinding => {
-  const binding = Ref.getUnsafe(boundSession);
-  if (Option.isNone(binding)) throw new Error("Workspace session is not bound.");
-  return binding.value;
-};
+const changeDevice = Effect.fn("WorkspaceSession.changeDevice")(function* (
+  change: DeviceChange,
+  get: Atom.FnContext,
+) {
+  const { device } = yield* portsOf(get.registry);
+  if (recordFor(device, change) === null) return;
+  yield* settled(get, change);
+});
 
-export const refreshBoundWorkspaceSession = async () => {
-  await bound().refresh();
-};
+export const selectWorkspace = Atom.fn<DeviceWorkspace["active"]>()((active, get) =>
+  changeDevice({ _tag: "Selected", active }, get),
+);
 
-export const selectBoundWorkspace = async (active: DeviceWorkspace["active"]) => {
-  await bound().change({ _tag: "Selected", active });
-};
+export const witnessLocalCatalog = Atom.fn<DeviceWorkspace["localCatalog"]>()((state, get) =>
+  changeDevice({ _tag: "LocalCatalog", state }, get),
+);
 
-export const witnessBoundLocalCatalog = async (state: DeviceWorkspace["localCatalog"]) => {
-  await bound().change({ _tag: "LocalCatalog", state });
-};
-
-export const bindWorkspaceSession = (
-  input: ApplyWorkspaceSnapshotPorts & {
-    readonly bridge: Pick<AuthSessionBridge, "getSession" | "onSessionChange">;
-  },
-): void => {
-  const scope = Scope.makeUnsafe();
-  const latestCommit = Effect.runSync(FiberHandle.make<void>().pipe(Scope.provide(scope)));
-  const commit = (change: WorkspaceChange) =>
-    FiberHandle.run(latestCommit, applyWorkspaceChange(input, change), { startImmediately: true });
-  const settled = (change: WorkspaceChange) =>
-    Effect.runPromise(Effect.flatMap(commit(change), Fiber.await)).then(() => undefined);
-  input.bridge.onSessionChange((snapshot) => {
-    Effect.runSync(commit({ _tag: "Session", snapshot }));
-  });
-  const binding: WorkspaceSessionBinding = {
-    refresh: async () => settled({ _tag: "Session", snapshot: await input.bridge.getSession() }),
-    change: (change) =>
-      recordFor(input.device, change) === null ? Promise.resolve() : settled(change),
-  };
-  Effect.runSync(Ref.set(boundSession, Option.some(binding)));
-};
+export const workspaceSessionFeed = Atom.make(
+  Effect.fn("WorkspaceSession.feed")(function* (get: Atom.AtomContext) {
+    const { bridge } = yield* portsOf(get.registry);
+    yield* Stream.callback<WorkspaceSnapshot>((queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() => bridge.onSessionChange((snapshot) => Queue.offerUnsafe(queue, snapshot))),
+        (stop) => Effect.sync(stop),
+      ),
+    ).pipe(
+      Stream.runForEach((snapshot) =>
+        Effect.sync(() => get.set(commitWorkspaceChange, { _tag: "Session", snapshot })),
+      ),
+    );
+  }),
+).pipe(Atom.keepAlive);

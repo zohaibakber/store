@@ -4,14 +4,11 @@ import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";
-import type { ReplayChannel } from "@/host/replay-channel";
 import type { HostInventory } from "@/lib/inventory/host-inventory";
 import { routeTree } from "@/routeTree.gen";
-import type { WorkspaceSession } from "@/session/workspace-session";
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
-  readonly session: ReplayChannel<WorkspaceSession>;
   readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly inventory: HostInventory;
@@ -20,7 +17,6 @@ export const getRouter = (input: {
   createRouter({
     routeTree,
     context: {
-      session: input.session,
       catalog: input.catalog,
       access: input.access,
       inventory: input.inventory,

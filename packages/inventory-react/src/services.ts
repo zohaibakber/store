@@ -232,8 +232,8 @@ export type InventoryLinks = ReturnType<typeof makeInventoryLinks>;
 
 export const makeInventoryLinks = (services: InventoryServices) => {
   const { Store: StoreService, Insights: InsightsService } = services;
-  const commitTick = Atom.make(0).pipe(Atom.keepAlive);
-  const lastStamp = Atom.make(Option.none<Stamp>()).pipe(Atom.keepAlive);
+  const commitTick = Atom.make(0).pipe(Atom.setIdleTTL(0));
+  const lastStamp = Atom.make(Option.none<Stamp>()).pipe(Atom.setIdleTTL(0));
 
   const commits = StoreService.runtime
     .atom((get) =>
@@ -255,17 +255,17 @@ export const makeInventoryLinks = (services: InventoryServices) => {
         );
       }),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const syncHealth = StoreService.runtime
     .atom(Stream.unwrap(StoreService.use((store) => Effect.succeed(store("Health", undefined)))))
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const staffState = StoreService.runtime
     .atom(
       Stream.unwrap(StoreService.use((store) => Effect.succeed(store("StaffState", undefined)))),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const staff = Atom.make((get) => AsyncResult.value(get(staffState)));
 
@@ -291,7 +291,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
         );
       }),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const generationMoved = (registry: AtomRegistry.AtomRegistry, started: number) =>
     AtomRegistry.toStream(registry, services.generation).pipe(
@@ -334,10 +334,18 @@ export const makeInventoryLinks = (services: InventoryServices) => {
       Effect.ignore,
     );
 
+  const retained: ReadonlyArray<Atom.Atom<unknown>> = [
+    commitTick,
+    lastStamp,
+    commits,
+    syncHealth,
+    staffState,
+    insightChanges,
+  ];
+
   return {
     wake,
-    commits,
-    insightChanges,
+    retained,
     commitTick,
     sync,
     healthTag,

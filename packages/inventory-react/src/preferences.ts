@@ -1,11 +1,22 @@
-import type * as Layer from "effect/Layer";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
-import * as Atom from "effect/reactivity/Atom";
 
-let preferenceStore: Layer.Layer<KeyValueStore.KeyValueStore> = KeyValueStore.layerMemory;
+import { runtime } from "./services";
 
-export const configureInventoryPreferences = (store: Layer.Layer<KeyValueStore.KeyValueStore>) => {
-  preferenceStore = store;
+export const browserStorage = (): Storage | null => {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
 };
 
-export const preferencesRuntime = Atom.runtime(() => preferenceStore);
+const preferenceStore = Layer.unwrap(
+  Effect.sync(() => {
+    const storage = browserStorage();
+    return storage === null ? KeyValueStore.layerMemory : KeyValueStore.layerStorage(() => storage);
+  }),
+);
+
+export const preferencesRuntime = runtime(preferenceStore);

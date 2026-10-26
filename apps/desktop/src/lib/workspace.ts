@@ -1,10 +1,11 @@
+import { useAtomSet } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 
 import type { OpenWorkspace, Workspace } from "@/host-access";
 import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import type { DeviceWorkspace } from "@/session/device-workspace";
-import { selectBoundWorkspace } from "@/session/workspace-session";
+import { selectWorkspace } from "@/session/workspace-session";
 
 export const workspaceName = (workspace: Workspace): string => {
   switch (workspace._tag) {
@@ -41,8 +42,9 @@ export const useWorkspaceStorageKey = () => workspaceStorageKey(useAuth().worksp
 
 export const useOpenWorkspace = () => {
   const navigate = useNavigate();
+  const select = useAtomSet(selectWorkspace, { mode: "promise" });
   return (active: DeviceWorkspace["active"]) => {
-    void selectBoundWorkspace(active).catch(toastStoreError);
+    void select(active).catch(toastStoreError);
     void navigate({ to: "/", replace: true });
   };
 };

@@ -303,7 +303,7 @@ export const createWorkspaceAtoms = (
   const { Reads, Store, Insights } = services;
   const onInsights = Insights.runtime.factory.withReactivity(INSIGHTS.reactivityKeys);
 
-  const storageFull = Atom.make(false).pipe(Atom.keepAlive);
+  const storageFull = Atom.make(false).pipe(Atom.setIdleTTL(0));
 
   const syncSnapshot = Store.runtime
     .atom((get) => {
@@ -311,7 +311,7 @@ export const createWorkspaceAtoms = (
       get(links.healthTag);
       return Store.use((store) => store("SyncActivity", undefined));
     })
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const syncStatus = Atom.make((get): InventorySyncStatus => {
     const unavailable = get(links.unavailable);

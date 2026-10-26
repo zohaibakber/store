@@ -1,6 +1,6 @@
 import { init } from "@sentry/electron/renderer";
 import { init as reactInit } from "@sentry/react";
-import { createAppCatalogLifetime } from "@store/inventory-react";
+import { browserStorage } from "@store/inventory-react";
 import { createHashHistory } from "@tanstack/react-router";
 
 import { installAppHost } from "@/host";
@@ -8,7 +8,6 @@ import { electronAppHost } from "@/host/electron";
 import { bootstrapAuth } from "@/lib/auth";
 import { createElectronInventoryHost } from "@/lib/inventory/host-electron";
 import { hostInventoryOf } from "@/lib/inventory/host-inventory";
-import { browserStorage } from "@/lib/preferences";
 import { reportError } from "@/lib/report-error";
 import { deviceWorkspaceStore } from "@/session/device-workspace";
 
@@ -30,7 +29,6 @@ export const startElectron = async () => {
     snapshot,
     history: createHashHistory(),
     access: hostAccess(device),
-    catalog: createAppCatalogLifetime(),
     inventory: hostInventoryOf(inventory),
     device,
   });

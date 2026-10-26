@@ -17,7 +17,7 @@ import { storeErrorMessage, toastStoreError } from "@/lib/errors";
 import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
 import { publishOfferDismissedAtom } from "@/lib/preferences";
 import { workspaceStorageKey } from "@/lib/workspace";
-import { witnessBoundLocalCatalog } from "@/session/workspace-session";
+import { witnessLocalCatalog } from "@/session/workspace-session";
 
 export type PublishTarget = { readonly id: string; readonly name: string };
 
@@ -75,7 +75,7 @@ const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: P
               description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,
               type: "success",
             });
-            void witnessBoundLocalCatalog("empty").catch(() => undefined);
+            registry.set(witnessLocalCatalog, "empty");
             return;
           case "failed":
             registry.set(phase, { _tag: "Failed", message: outcome.message });
