@@ -28,7 +28,6 @@ import { DesktopAuth } from "./auth";
 import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
-import type { InvoiceUploadRejected } from "./invoice-upload";
 import { PrivateFiles } from "./private-files";
 import { ReplicaHost } from "./replica-host";
 import { ReplicaOpenInput } from "./replica-rpc";
@@ -61,7 +60,7 @@ const signInFailure = <A, E, R>(command: Effect.Effect<A, E, R>) =>
   });
 
 const serverFailure = Effect.mapError(
-  (failure: RequestError | ServerResponseInvalid | InvoiceUploadRejected) =>
+  (failure: RequestError | ServerResponseInvalid) =>
     new ServerRequestFailed({
       message: failure.message,
       unreachable: failure instanceof RequestError && isUnreachable(failure),
@@ -151,7 +150,6 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
       AuthOrganize: ({ command }) => serverFailure(auth.organize(command)),
       SessionChanges: () => Stream.fromPubSub(events.session),
       OAuthCallbacks: () => Stream.fromQueue(events.oauthCallbacks),
-      AnalyseInvoices: ({ files }) => serverFailure(auth.analyseInvoices(files)),
       SearchGlobalProducts: ({ query }) =>
         serverFailure(
           Effect.tap(auth.searchGlobalProducts(query), (result) =>

@@ -1,11 +1,3 @@
-import {
-  ModelRequestError,
-  type ConvertedDocument,
-  type InvoiceAiClient,
-  type ModelPrompt,
-} from "@store/services";
-import * as Effect from "effect/Effect";
-
 export const MODEL = "@cf/google/gemma-4-26b-a4b-it";
 
 type JsonSchemaValue = string | number | boolean | null | JsonSchemaObject | JsonSchemaValue[];
@@ -54,38 +46,3 @@ export const runJsonCompletion = (
       ? { signal: options.signal }
       : { gateway: { id: options.gatewayId }, signal: options.signal },
   );
-
-const generateJson =
-  (ai: Ai, name: string, maxCompletionTokens: number) =>
-  ({ messages, jsonSchema }: ModelPrompt) =>
-    Effect.tryPromise({
-      try: async (signal) => {
-        const output = await runJsonCompletion(
-          ai,
-          { messages, maxCompletionTokens, format: { name, jsonSchema } },
-          { signal },
-        );
-        return output.choices[0]?.message.content ?? "";
-      },
-      catch: (cause) =>
-        new ModelRequestError({ message: `Workers AI did not answer the ${name} prompt.`, cause }),
-    });
-
-export const invoiceAiClient = (ai: Ai): InvoiceAiClient => ({
-  toMarkdown: (documents) =>
-    Effect.tryPromise({
-      try: async () => {
-        const converted = await ai.toMarkdown(
-          documents.map((document) => ({ name: document.name, blob: document.blob })),
-        );
-        return converted.map((result): ConvertedDocument =>
-          result.format === "error"
-            ? { kind: "error", name: result.name, error: result.error }
-            : { kind: "ok", name: result.name, data: result.data },
-        );
-      },
-      catch: (cause) =>
-        new ModelRequestError({ message: "Workers AI did not convert the attachments.", cause }),
-    }),
-  generate: generateJson(ai, "invoice_extraction", 4096),
-});

@@ -7,10 +7,7 @@ import type {
   OrganizationRoster,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import type {
-  GlobalProductSearchResult,
-  InvoiceExtraction,
-} from "@store/contracts/server-api.schema";
+import type { GlobalProductSearchResult } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
@@ -22,13 +19,10 @@ import {
   ServerRequestFailed,
   SignInFailed,
   WorkspaceOpenFailed,
-  type InvoiceUpload,
   type ThemeSource,
 } from "./shell-rpcs";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
-
-export type InvoiceUploadFile = (typeof InvoiceUpload.Type)["files"][number];
 
 export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
@@ -75,7 +69,6 @@ export type DesktopShellBridge = {
 export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
-  readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
   readonly searchGlobalProducts: (query: string) => Promise<GlobalProductSearchResult>;
   readonly shell: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;

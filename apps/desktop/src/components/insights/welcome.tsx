@@ -1,4 +1,4 @@
-import { Add01Icon, FileImportIcon, Login01Icon, PackageIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Login01Icon, PackageIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Link } from "@tanstack/react-router";
 
@@ -35,19 +35,13 @@ export function Welcome() {
           <HugeiconsIcon aria-hidden="true" icon={PackageIcon} />
         </EmptyMedia>
         <EmptyTitle>Add your first product</EmptyTitle>
-        <EmptyDescription>
-          Enter products one at a time or import them from a CSV file. {savedWhere(workspace)}
-        </EmptyDescription>
+        <EmptyDescription>Enter products one at a time. {savedWhere(workspace)}</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <Button render={<Link to="/products/new" />} size="sm">
             <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
             Add a product
-          </Button>
-          <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
-            <HugeiconsIcon aria-hidden="true" icon={FileImportIcon} />
-            Import a CSV
           </Button>
         </div>
         {signedIn ? null : (

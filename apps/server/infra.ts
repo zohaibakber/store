@@ -13,7 +13,6 @@ import { GlobalSearch } from "./src/global-search/service";
 import { cloudflareWebSearch } from "./src/global-search/web-search";
 import { makeWorkerFetch } from "./src/http/app";
 import { OrgAuthorities, OrganizationAuthority } from "./src/inventory/organization-authority";
-import { InvoiceExtraction } from "./src/invoice-extraction/service";
 import { LiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
 import { OrgHubs } from "./src/live/org-hubs";
@@ -49,7 +48,6 @@ const ApiServicesLive = Layer.mergeAll(
   OrganizationAuthority.layer.pipe(Layer.provide(OrgAuthoritiesLive)),
   LiveFanout.layer,
   GlobalSearch.layer.pipe(Layer.provide(SearchBackendsLive)),
-  InvoiceExtraction.layer,
   AccessTokens.layer,
 ).pipe(Layer.provideMerge(OrgHubsLive));
 

@@ -3,7 +3,6 @@ import {
   Add01Icon,
   ArrowLeft01Icon,
   PackageIcon,
-  FileImportIcon,
   GlobalSearchIcon,
   HomeIcon,
   Invoice01Icon,
@@ -225,18 +224,6 @@ function useActions(close: () => void): ReadonlyArray<ActionEntry> {
         run: () => {
           close();
           void navigate({ to: "/products/new" });
-        },
-      },
-      {
-        kind: "action",
-        id: "import-products",
-        permission: "manageStock",
-        label: "Import products",
-        keywords: "upload file invoice purchase bulk",
-        icon: FileImportIcon,
-        run: () => {
-          close();
-          void navigate({ to: "/products/upload" });
         },
       },
       {

@@ -103,7 +103,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/server/src/routes/uploads.ts",
           "packages/client-db/src/replica/pinned-http.ts",
           "packages/sync/src/replica/projection.ts",
         ],
@@ -176,7 +175,7 @@ export default defineConfig({
           "apps/server/src/authority/imports.ts",
           "packages/contracts/src/store/invoice-allocation.ts",
           "packages/contracts/src/store/pricing.ts",
-          "packages/services/src/invoice-extraction/pack-size.ts",
+          "packages/services/src/pack-size.ts",
         ],
         rules: {
           "anti-slop/no-number-is-safe-integer": "off",
@@ -189,7 +188,6 @@ export default defineConfig({
           "apps/desktop/src/components/insights/restock-page.tsx",
           "apps/desktop/src/components/theme/provider.tsx",
           "apps/desktop/src/host/electron.ts",
-          "apps/desktop/src/lib/invoice-reading.ts",
           "apps/server/src/auth/access-tokens.ts",
           "apps/server/src/runtime/isolate.ts",
           "apps/server/src/runtime/production-domain.ts",

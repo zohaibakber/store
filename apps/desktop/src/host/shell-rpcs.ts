@@ -8,11 +8,9 @@ import {
   PasswordLoginCommand,
   RegisterPasswordCommand,
 } from "@store/auth";
-import { MAX_INVOICE_UPLOAD_FILES } from "@store/contracts";
 import {
   GlobalProductSearchInput,
   GlobalProductSearchResult,
-  InvoiceExtraction,
 } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import { WorkspaceSnapshot } from "@store/contracts/workspace";
@@ -81,18 +79,6 @@ export type SignInCredentials = typeof SignInCredentials.Type;
 export const ThemeSource = Schema.Literals(["dark", "light", "system"]);
 export type ThemeSource = typeof ThemeSource.Type;
 
-export const InvoiceUpload = Schema.Struct({
-  files: Schema.Array(
-    Schema.Struct({
-      name: Schema.String,
-      type: Schema.String,
-      bytes: Schema.instanceOf(Uint8Array, {
-        toCodecJson: () => undefined,
-      }),
-    }),
-  ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
-});
-
 export const UpdaterEventSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal("checking") }),
   Schema.Struct({ type: Schema.Literal("available"), version: Schema.String }),
@@ -135,11 +121,6 @@ export const ShellRpcs = RpcGroup.make(
   }),
   Rpc.make("SessionChanges", { success: WorkspaceSnapshot, stream: true }),
   Rpc.make("OAuthCallbacks", { success: Schema.String, stream: true }),
-  Rpc.make("AnalyseInvoices", {
-    payload: InvoiceUpload.fields,
-    success: InvoiceExtraction,
-    error: ServerRequestFailed,
-  }),
   Rpc.make("SearchGlobalProducts", {
     payload: GlobalProductSearchInput.fields,
     success: GlobalProductSearchResult,

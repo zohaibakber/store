@@ -17,7 +17,6 @@ import { AccessTokens } from "../../src/auth/access-tokens";
 import { GlobalSearch } from "../../src/global-search/service";
 import { makeWorkerFetch } from "../../src/http/app";
 import { OrgAuthorities, OrganizationAuthority } from "../../src/inventory/organization-authority";
-import { InvoiceExtraction } from "../../src/invoice-extraction/service";
 import { LiveFanout } from "../../src/live/fanout";
 import { OrgHubs } from "../../src/live/org-hubs";
 
@@ -83,7 +82,6 @@ export interface AppOptions {
   readonly liveFanout?: LiveFanout["Service"];
   readonly hubs?: OrgHubs["Service"];
   readonly globalSearch?: GlobalSearch["Service"];
-  readonly invoiceExtraction?: InvoiceExtraction["Service"];
 }
 
 const servicesFor = (options: AppOptions) =>
@@ -103,7 +101,6 @@ const servicesFor = (options: AppOptions) =>
       verify: verifierFor(options.claims ?? claimsFor("owner")),
     }),
     Layer.succeed(GlobalSearch, options.globalSearch ?? { search: unused }),
-    Layer.succeed(InvoiceExtraction, options.invoiceExtraction ?? { extract: unused }),
   );
 
 export const webHandlerFor = (options: AppOptions = {}) =>

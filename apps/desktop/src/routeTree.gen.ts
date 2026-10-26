@@ -26,7 +26,6 @@ import { Route as AppInvoicesNewRouteImport } from './routes/_app/invoices/new'
 import { Route as AppProductsIndexRouteImport } from './routes/_app/products/index'
 import { Route as AppProductsProductIdRouteImport } from './routes/_app/products/$productId'
 import { Route as AppProductsNewRouteImport } from './routes/_app/products/new'
-import { Route as AppProductsUploadRouteImport } from './routes/_app/products/upload'
 import { Route as AppPurchasesIndexRouteImport } from './routes/_app/purchases/index'
 import { Route as AppPurchasesOrderIdRouteImport } from './routes/_app/purchases/$orderId'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
@@ -117,11 +116,6 @@ const AppProductsNewRoute = AppProductsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AppProductsRoute,
 } as any)
-const AppProductsUploadRoute = AppProductsUploadRouteImport.update({
-  id: '/upload',
-  path: '/upload',
-  getParentRoute: () => AppProductsRoute,
-} as any)
 const AppPurchasesIndexRoute = AppPurchasesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -164,7 +158,6 @@ export interface FileRoutesByFullPath {
   '/invoices/new': typeof AppInvoicesNewRoute
   '/products/$productId': typeof AppProductsProductIdRoute
   '/products/new': typeof AppProductsNewRoute
-  '/products/upload': typeof AppProductsUploadRoute
   '/purchases/$orderId': typeof AppPurchasesOrderIdRoute
   '/settings/$section': typeof AppSettingsSectionRoute
   '/invoices/': typeof AppInvoicesIndexRoute
@@ -184,7 +177,6 @@ export interface FileRoutesByTo {
   '/invoices/new': typeof AppInvoicesNewRoute
   '/products/$productId': typeof AppProductsProductIdRoute
   '/products/new': typeof AppProductsNewRoute
-  '/products/upload': typeof AppProductsUploadRoute
   '/purchases/$orderId': typeof AppPurchasesOrderIdRoute
   '/settings/$section': typeof AppSettingsSectionRoute
   '/invoices': typeof AppInvoicesIndexRoute
@@ -210,7 +202,6 @@ export interface FileRoutesById {
   '/_app/invoices/new': typeof AppInvoicesNewRoute
   '/_app/products/$productId': typeof AppProductsProductIdRoute
   '/_app/products/new': typeof AppProductsNewRoute
-  '/_app/products/upload': typeof AppProductsUploadRoute
   '/_app/purchases/$orderId': typeof AppPurchasesOrderIdRoute
   '/_app/settings/$section': typeof AppSettingsSectionRoute
   '/_app/invoices/': typeof AppInvoicesIndexRoute
@@ -236,7 +227,6 @@ export interface FileRouteTypes {
     | '/invoices/new'
     | '/products/$productId'
     | '/products/new'
-    | '/products/upload'
     | '/purchases/$orderId'
     | '/settings/$section'
     | '/invoices/'
@@ -256,7 +246,6 @@ export interface FileRouteTypes {
     | '/invoices/new'
     | '/products/$productId'
     | '/products/new'
-    | '/products/upload'
     | '/purchases/$orderId'
     | '/settings/$section'
     | '/invoices'
@@ -281,7 +270,6 @@ export interface FileRouteTypes {
     | '/_app/invoices/new'
     | '/_app/products/$productId'
     | '/_app/products/new'
-    | '/_app/products/upload'
     | '/_app/purchases/$orderId'
     | '/_app/settings/$section'
     | '/_app/invoices/'
@@ -417,13 +405,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProductsNewRouteImport
       parentRoute: typeof AppProductsRoute
     }
-    '/_app/products/upload': {
-      id: '/_app/products/upload'
-      path: '/upload'
-      fullPath: '/products/upload'
-      preLoaderRoute: typeof AppProductsUploadRouteImport
-      parentRoute: typeof AppProductsRoute
-    }
     '/_app/purchases/': {
       id: '/_app/purchases/'
       path: '/'
@@ -481,7 +462,6 @@ const AppInvoicesRouteWithChildren = AppInvoicesRoute._addFileChildren(
 interface AppProductsRouteChildren {
   AppProductsProductIdRoute: typeof AppProductsProductIdRoute
   AppProductsNewRoute: typeof AppProductsNewRoute
-  AppProductsUploadRoute: typeof AppProductsUploadRoute
   AppProductsIndexRoute: typeof AppProductsIndexRoute
   AppProductsProductIdEditRoute: typeof AppProductsProductIdEditRoute
 }
@@ -489,7 +469,6 @@ interface AppProductsRouteChildren {
 const AppProductsRouteChildren: AppProductsRouteChildren = {
   AppProductsProductIdRoute: AppProductsProductIdRoute,
   AppProductsNewRoute: AppProductsNewRoute,
-  AppProductsUploadRoute: AppProductsUploadRoute,
   AppProductsIndexRoute: AppProductsIndexRoute,
   AppProductsProductIdEditRoute: AppProductsProductIdEditRoute,
 }
