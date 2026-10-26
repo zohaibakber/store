@@ -9,6 +9,14 @@ import {
   RegisterPasswordCommand,
 } from "@store/auth";
 import {
+  LOCAL_ORGANIZATION_ID,
+  LOCAL_USER_ID,
+  OrganizationId,
+  ReplicaId,
+  UserId,
+} from "@store/contracts";
+import { WorkspaceToken } from "@store/contracts/replica";
+import {
   GlobalProductSearchInput,
   GlobalProductSearchResult,
 } from "@store/contracts/server-api.schema";
@@ -47,16 +55,33 @@ export class WorkspaceOpenFailed extends Schema.TaggedError<WorkspaceOpenFailed>
   { message: Schema.String },
 ) {}
 
-export const ReplicaIdentity = Schema.Struct({
-  authority: Schema.Literals(["local", "remote"]),
-  organizationId: Schema.String,
-  userId: Schema.String,
-  replicaId: Schema.String,
+const MAX_IDENTIFIER_LENGTH = Schema.isMaxLength(200);
+
+export const LocalReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("local"),
+  organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
+  userId: Schema.Literal(LOCAL_USER_ID),
+  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
 });
-export type ReplicaIdentity = typeof ReplicaIdentity.Type;
+
+export const RemoteReplicaIdentity = Schema.Struct({
+  authority: Schema.Literal("remote"),
+  organizationId: OrganizationId.check(MAX_IDENTIFIER_LENGTH),
+  userId: UserId.check(MAX_IDENTIFIER_LENGTH),
+  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
+});
+
+export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
+
+export const ReplicaIdentity = ReplicaOpenInput;
+export type ReplicaIdentity = typeof ReplicaIdentity.Encoded;
+
+export class WorkspaceRefused extends Schema.TaggedError<WorkspaceRefused>()("WorkspaceRefused", {
+  message: Schema.String,
+}) {}
 
 export const ReplicaOpened = Schema.Struct({
-  workspaceToken: Schema.String,
+  workspaceToken: WorkspaceToken,
   engine: Schema.Literals(["sqlite", "unavailable"]),
 });
 export type ReplicaOpened = typeof ReplicaOpened.Type;
@@ -132,23 +157,29 @@ export const ShellRpcs = RpcGroup.make(
     success: ReplicaOpened,
     error: WorkspaceOpenFailed,
   }),
-  Rpc.make("ReplicaClose", { payload: { workspaceToken: Schema.String } }),
-  Rpc.make("ReplicaRetry", { payload: { workspaceToken: Schema.String } }),
+  Rpc.make("ReplicaClose", {
+    payload: { workspaceToken: WorkspaceToken },
+    error: WorkspaceRefused,
+  }),
+  Rpc.make("ReplicaRetry", {
+    payload: { workspaceToken: WorkspaceToken },
+    error: WorkspaceRefused,
+  }),
   Rpc.make("BackUp", { success: BackupSaved, error: ReplicaFileRefused }),
   Rpc.make("ChooseRestore", { success: RestoreStaged, error: ReplicaFileRefused }),
   Rpc.make("ApplyRestore", { success: RestoreApplied, error: ReplicaFileRefused }),
   Rpc.make("DiscardRestore"),
   Rpc.make("PublishOffer", {
-    payload: { organizationId: Schema.String },
+    payload: { organizationId: OrganizationId },
     success: PublishOffer,
   }),
   Rpc.make("PublishStart", {
-    payload: { organizationId: Schema.String },
+    payload: { organizationId: OrganizationId },
     success: Published,
     error: ReplicaFileRefused,
   }),
   Rpc.make("PublishDiscard", {
-    payload: { organizationId: Schema.String },
+    payload: { organizationId: OrganizationId },
     success: PublishOffer,
   }),
   Rpc.make("PublishLocalCatalog", { success: LocalCatalogReport }),

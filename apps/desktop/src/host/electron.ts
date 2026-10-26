@@ -1,4 +1,6 @@
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
+import { OrganizationId } from "@store/contracts";
+import { WorkspaceToken } from "@store/contracts/replica";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -10,6 +12,7 @@ import * as PubSub from "effect/PubSub";
 import * as RpcClient from "effect/rpc/RpcClient";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -20,9 +23,13 @@ import { SHELL_PORT_CHANNEL } from "./shell-port-channels";
 import {
   ShellRpcs,
   type InventoryHttpConfig,
-  type ReplicaIdentity,
+  ReplicaIdentity,
   type ReplicaOpened,
 } from "./shell-rpcs";
+
+const decodeOrganizationId = Schema.decodeUnknownEffect(OrganizationId);
+const decodeWorkspaceToken = Schema.decodeUnknownEffect(WorkspaceToken);
+const decodeIdentity = Schema.decodeUnknownEffect(ReplicaIdentity);
 
 export type ShellPortBridge = { readonly connect: () => void };
 
@@ -232,22 +239,47 @@ export const electronAppHost = (source: Window): AppHost => {
     savePdf: (fileStem) => call((client) => client.ShareSavePdf({ fileStem })),
     print: (page) => call((client) => client.SharePrint({ page })),
     publish: {
-      offer: (organizationId) => call((client) => client.PublishOffer({ organizationId })),
+      offer: (organizationId) =>
+        call((client) =>
+          Effect.flatMap(decodeOrganizationId(organizationId), (id) =>
+            client.PublishOffer({ organizationId: id }),
+          ),
+        ),
       publish: (organizationId) =>
         call((client) =>
-          client
-            .PublishStart({ organizationId })
-            .pipe(Effect.catchTag("ReplicaFileRefused", refusedAsFailure)),
+          Effect.flatMap(decodeOrganizationId(organizationId), (id) =>
+            client.PublishStart({ organizationId: id }),
+          ).pipe(Effect.catchTag("ReplicaFileRefused", refusedAsFailure)),
         ),
-      discard: (organizationId) => call((client) => client.PublishDiscard({ organizationId })),
+      discard: (organizationId) =>
+        call((client) =>
+          Effect.flatMap(decodeOrganizationId(organizationId), (id) =>
+            client.PublishDiscard({ organizationId: id }),
+          ),
+        ),
       localCatalog: () => call((client) => client.PublishLocalCatalog()),
       onProgress: (listener) => listen((client) => client.PublishProgress(), listener),
     },
     inventoryHttp: { getConfig: () => call((client) => client.InventoryHttpConfig()) },
     replica: {
-      open: (identity) => call((client) => client.ReplicaOpen({ identity })),
-      close: (workspaceToken) => call((client) => client.ReplicaClose({ workspaceToken })),
-      retryRecovery: (workspaceToken) => call((client) => client.ReplicaRetry({ workspaceToken })),
+      open: (identity) =>
+        call((client) =>
+          Effect.flatMap(decodeIdentity(identity), (decoded) =>
+            client.ReplicaOpen({ identity: decoded }),
+          ),
+        ),
+      close: (workspaceToken) =>
+        call((client) =>
+          Effect.flatMap(decodeWorkspaceToken(workspaceToken), (token) =>
+            client.ReplicaClose({ workspaceToken: token }),
+          ),
+        ),
+      retryRecovery: (workspaceToken) =>
+        call((client) =>
+          Effect.flatMap(decodeWorkspaceToken(workspaceToken), (token) =>
+            client.ReplicaRetry({ workspaceToken: token }),
+          ),
+        ),
     },
   };
   return updater ? { ...host, updater } : host;

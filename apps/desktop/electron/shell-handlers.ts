@@ -1,7 +1,6 @@
 import path from "node:path";
 
 import { AuthClientError } from "@store/auth";
-import { decodeOrganizationId } from "@store/contracts";
 import { isWhatsAppUrl } from "@store/services/purchasing";
 import { isUnreachable, RequestError } from "@store/workspace";
 import * as Cause from "effect/Cause";
@@ -21,6 +20,7 @@ import {
   ShellRpcs,
   SignInFailed,
   WorkspaceOpenFailed,
+  WorkspaceRefused,
   MAX_CALLBACK_URL_LENGTH,
 } from "../src/host/shell-rpcs";
 import { makeSourceLinks } from "../src/host/source-links";
@@ -30,7 +30,6 @@ import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
 import { PrivateFiles } from "./private-files";
 import { ReplicaHost } from "./replica-host";
-import { ReplicaOpenInput } from "./replica-rpc";
 import type { ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
 import { saveThemeSource } from "./theme-source";
@@ -45,8 +44,6 @@ const PDF_FAILED = "The PDF could not be saved.";
 const MICRONS_PER_MM = 1000;
 
 const Messaged = Schema.Struct({ message: Schema.String });
-
-const decodeOpenInput = Schema.decodeUnknownEffect(ReplicaOpenInput);
 
 const signInFailure = <A, E, R>(command: Effect.Effect<A, E, R>) =>
   Effect.catchCause(command, (cause) => {
@@ -121,8 +118,6 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const deviceId = yield* cachedOnSuccess(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
     );
-    const organizationOf = (organizationId: string) =>
-      Effect.sync(() => decodeOrganizationId(organizationId));
 
     return ShellRpcs.of({
       AuthSession: () => auth.session,
@@ -159,24 +154,26 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
       InventoryHttpConfig: () =>
         Effect.map(deviceId, (id) => ({ apiBaseUrl: shell.apiBaseUrl, deviceId: id })),
       ReplicaOpen: ({ identity }) =>
-        decodeOpenInput(identity).pipe(
-          Effect.orDie,
-          Effect.flatMap((input) => replicas.open(sender, input)),
-          Effect.mapError((failure) => new WorkspaceOpenFailed({ message: failure.message })),
-        ),
-      ReplicaClose: ({ workspaceToken }) => Effect.orDie(replicas.close(sender.id, workspaceToken)),
+        replicas
+          .open(sender, identity)
+          .pipe(
+            Effect.mapError((failure) => new WorkspaceOpenFailed({ message: failure.message })),
+          ),
+      ReplicaClose: ({ workspaceToken }) =>
+        replicas
+          .close(sender.id, workspaceToken)
+          .pipe(Effect.mapError((failure) => new WorkspaceRefused({ message: failure.message }))),
       ReplicaRetry: ({ workspaceToken }) =>
-        Effect.orDie(replicas.retryRecovery(sender.id, workspaceToken)),
+        replicas
+          .retryRecovery(sender.id, workspaceToken)
+          .pipe(Effect.mapError((failure) => new WorkspaceRefused({ message: failure.message }))),
       BackUp: () => replicas.backUp(sender.id),
       ChooseRestore: () => replicas.chooseRestore(sender.id),
       ApplyRestore: () => replicas.applyRestore(sender.id),
       DiscardRestore: () => replicas.discardRestore(sender.id),
-      PublishOffer: ({ organizationId }) =>
-        Effect.flatMap(organizationOf(organizationId), (id) => replicas.offer(sender.id, id)),
-      PublishStart: ({ organizationId }) =>
-        Effect.flatMap(organizationOf(organizationId), (id) => replicas.publish(sender.id, id)),
-      PublishDiscard: ({ organizationId }) =>
-        Effect.flatMap(organizationOf(organizationId), (id) => replicas.discard(sender.id, id)),
+      PublishOffer: ({ organizationId }) => replicas.offer(sender.id, organizationId),
+      PublishStart: ({ organizationId }) => replicas.publish(sender.id, organizationId),
+      PublishDiscard: ({ organizationId }) => replicas.discard(sender.id, organizationId),
       PublishLocalCatalog: () => replicas.localCatalog(sender.id),
       PublishProgress: () => Stream.fromPubSub(events.publishProgress),
       ShareOpenExternal: ({ url }) =>

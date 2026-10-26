@@ -6,10 +6,12 @@ import {
   type WorkspaceState,
   type WorkspaceToken,
 } from "@store/contracts/replica";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
@@ -119,7 +121,7 @@ export const makeRendererPorts = (options: {
           ),
         ),
       ).pipe(
-        Effect.catchCause((cause) =>
+        Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
           Effect.logWarning("RendererPorts.desktop_server_failed", cause),
         ),
         Effect.forkIn(desktop),

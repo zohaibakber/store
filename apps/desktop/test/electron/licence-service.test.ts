@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { expect, layer } from "@effect/vitest";
@@ -14,6 +15,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
 import { LicenceService } from "../../electron/licence/service";
+import { PrivateFiles } from "../../electron/private-files";
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 5);
@@ -37,7 +39,9 @@ const licenceText = (shopId: ShopId, expiresAt: number) =>
     Option.none(),
   ).text;
 
-const Files = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer);
+const Files = PrivateFiles.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
+);
 
 const atStart = <A, E, R>(test: Effect.Effect<A, E, R>) =>
   TestClock.setTime(NOW).pipe(Effect.andThen(test));
