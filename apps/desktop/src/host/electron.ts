@@ -4,15 +4,16 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as PubSub from "effect/PubSub";
 import * as RpcClient from "effect/rpc/RpcClient";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import type { ReplicaFileRefused } from "./file-refusal";
 import { fileRefusalMessage } from "./file-refusal-copy";
 import type { AppHost, AppUpdaterBridge } from "./index";
-import { makeReplayChannel } from "./replay-channel";
 import { SHELL_PORT_CHANNEL } from "./shell-port-channels";
 import {
   ShellRpcs,
@@ -110,13 +111,14 @@ export const electronAppHost = (source: Window): AppHost => {
     return () => fiber.interruptUnsafe();
   };
 
-  const sessionReplay = makeReplayChannel<WorkspaceSnapshot>();
-  const watchSession = once(() => {
-    listen((client) => client.SessionChanges(), sessionReplay.publish);
-  });
+  const sessions = Effect.runSync(PubSub.unbounded<WorkspaceSnapshot>({ replay: 1 }));
+  listen(
+    (client) => client.SessionChanges(),
+    (snapshot) => PubSub.publishUnsafe(sessions, snapshot),
+  );
   const published = async (snapshot: Promise<WorkspaceSnapshot>) => {
     const settled = await snapshot;
-    sessionReplay.publish(settled);
+    PubSub.publishUnsafe(sessions, settled);
     return settled;
   };
 
@@ -135,9 +137,12 @@ export const electronAppHost = (source: Window): AppHost => {
     );
   });
 
-  const windowMaximized = makeReplayChannel<boolean>();
+  const windowMaximized = Effect.runSync(SubscriptionRef.make(false));
   const watchWindowMaximized = once(() => {
-    listen((client) => client.WindowMaximized(), windowMaximized.publish);
+    listen(
+      (client) => client.WindowMaximized(),
+      (maximized) => Effect.runSync(SubscriptionRef.set(windowMaximized, maximized)),
+    );
   });
 
   const updater: AppUpdaterBridge | undefined = import.meta.env.PROD
@@ -155,10 +160,7 @@ export const electronAppHost = (source: Window): AppHost => {
       signOut: () => call((client) => client.AuthSignOut()),
       organizationRoster: () => call((client) => client.AuthOrganization()),
       organize: (command) => call((client) => client.AuthOrganize({ command })),
-      onSessionChange: (listener) => {
-        watchSession();
-        return sessionReplay.subscribe(listener);
-      },
+      sessionChanges: Stream.fromPubSub(sessions),
     },
     signIn: {
       identify: (input) => call((client) => client.AuthIdentify(input)),
@@ -167,7 +169,7 @@ export const electronAppHost = (source: Window): AppHost => {
       beginGoogle: () => call((client) => client.AuthBeginGoogle()),
       completeGoogle: async (callbackUrl) => {
         const snapshot = await call((client) => client.AuthCompleteGoogle({ callbackUrl }));
-        if (snapshot !== null) sessionReplay.publish(snapshot);
+        if (snapshot !== null) PubSub.publishUnsafe(sessions, snapshot);
         return snapshot;
       },
       onOAuthCallback: (callback) => {
@@ -193,10 +195,15 @@ export const electronAppHost = (source: Window): AppHost => {
         minimize: () => fire((client) => client.WindowMinimize()),
         toggleMaximize: () => fire((client) => client.WindowToggleMaximize()),
         close: () => fire((client) => client.WindowClose()),
-        isMaximized: () => windowMaximized.current() ?? false,
+        isMaximized: () => SubscriptionRef.getUnsafe(windowMaximized),
         onMaximizedChange: (listener) => {
           watchWindowMaximized();
-          return windowMaximized.subscribe(() => listener());
+          const fiber = runtime.runFork(
+            SubscriptionRef.changes(windowMaximized).pipe(
+              Stream.runForEach(() => Effect.sync(listener)),
+            ),
+          );
+          return () => fiber.interruptUnsafe();
         },
       },
     },

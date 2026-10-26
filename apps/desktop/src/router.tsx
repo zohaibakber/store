@@ -1,4 +1,3 @@
-import type { CatalogLifetime } from "@store/inventory-react";
 import { createRouter, type RouterHistory } from "@tanstack/react-router";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
@@ -9,7 +8,6 @@ import { routeTree } from "@/routeTree.gen";
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
-  readonly catalog: CatalogLifetime;
   readonly access: HostAccessPolicy;
   readonly inventory: HostInventory;
   readonly registry: AtomRegistry.AtomRegistry;
@@ -17,7 +15,6 @@ export const getRouter = (input: {
   createRouter({
     routeTree,
     context: {
-      catalog: input.catalog,
       access: input.access,
       inventory: input.inventory,
       registry: input.registry,

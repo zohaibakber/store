@@ -3,9 +3,7 @@ import {
   useInventoryState,
   useInventorySyncActivity,
   useInventorySyncStatus,
-  type CatalogLease,
-  type CatalogLifetime,
-  type InventoryHost,
+  type CatalogOpening,
   type InventorySyncStatus,
 } from "@store/inventory-react";
 import type * as React from "react";
@@ -15,17 +13,13 @@ import { PageLoading } from "@/components/app/loading-spinner";
 
 export function InventoryProvider({
   children,
-  catalog,
-  host,
-  lease,
+  opening,
 }: {
   readonly children: React.ReactNode;
-  readonly catalog: CatalogLifetime;
-  readonly host: InventoryHost;
-  readonly lease: CatalogLease;
+  readonly opening: CatalogOpening;
 }) {
   return (
-    <SharedInventoryProvider catalog={catalog} host={host} lease={lease} scope={lease.scope}>
+    <SharedInventoryProvider opening={opening}>
       <InventoryOpenFailure>{children}</InventoryOpenFailure>
     </SharedInventoryProvider>
   );

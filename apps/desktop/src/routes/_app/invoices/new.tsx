@@ -23,7 +23,7 @@ const newInvoiceSearch = Schema.toStandardSchemaV1(
 export const Route = createFileRoute("/_app/invoices/new")({
   validateSearch: newInvoiceSearch,
   loader: ({ context }) => {
-    const workspace = context.access.workspace(context.registry.get(workspaceSessionAtom).snapshot);
+    const { workspace } = context.registry.get(workspaceSessionAtom);
     return preloadInventory(context, (inventory) => {
       const staff = inventory.atoms.registry.get(inventory.atoms.staff);
       const owner = saleDraftOwner(workspaceStorageKey(workspace), Option.getOrUndefined(staff));

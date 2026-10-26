@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   Add01Icon,
   ArrowLeft01Icon,
@@ -21,8 +22,14 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type Invoice, type StaffState } from "@store/contracts";
 import type { GlobalProduct } from "@store/contracts/server-api.schema";
-import { useCatalogIsReady, useInventoryInvoices, useProductSearch } from "@store/inventory-react";
+import {
+  claimedCatalogScope,
+  useCatalogIsReady,
+  useInventoryInvoices,
+  useProductSearch,
+} from "@store/inventory-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
+import * as Option from "effect/Option";
 import {
   Activity,
   Fragment,
@@ -59,7 +66,6 @@ import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
-import { useAuth } from "@/lib/auth";
 import { toastStoreError } from "@/lib/errors";
 import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
@@ -110,9 +116,8 @@ export function InventoryCommandDialog({
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
 }) {
-  const auth = useAuth();
-  const { access, inventory } = RootRoute.useRouteContext();
-  const scope = access.inventoryScope(auth.snapshot);
+  const { inventory } = RootRoute.useRouteContext();
+  const scope = useAtomValue(claimedCatalogScope);
   const [session, setSession] = useState(0);
   const [presented, setPresented] = useState(open);
   if (open && !presented) setPresented(true);
@@ -135,7 +140,7 @@ export function InventoryCommandDialog({
         <Activity mode={presented ? "visible" : "hidden"}>
           {inventory._tag === "Unavailable" ? (
             <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
-          ) : !scope ? (
+          ) : Option.isNone(scope) ? (
             <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
           ) : (
             <LiveCommandMenu key={session} onOpenChange={onOpenChange} />

@@ -1,6 +1,6 @@
 export type { InventorySyncActivity, InventorySyncStatus, RejectedCommand } from "@store/client-db";
 export type { ReceiveDeliveryLineInput } from "./catalog-commands";
-export { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
+export { claimedCatalogScope, makeCatalogs, type Catalogs, type CatalogOpening } from "./opening";
 export { browserStorage, preferencesRuntime } from "./preferences";
 export {
   replicaAuthorityOf,

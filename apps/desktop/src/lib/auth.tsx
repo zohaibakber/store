@@ -1,14 +1,17 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
 import { unauthenticatedWorkspace } from "@store/contracts";
-import { useRouter } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
 
 import { appHost } from "@/host";
 import type { OpenWorkspace, Workspace } from "@/host-access";
 import { storeErrorMessage, toastStoreError } from "@/lib/errors";
-import { refreshWorkspaceSession, workspaceSessionAtom } from "@/session/workspace-session";
+import {
+  refreshWorkspaceSession,
+  WorkspaceSessionUnreachable,
+  workspaceSessionAtom,
+} from "@/session/workspace-session";
 
 type AuthContextValue = {
   readonly refresh: () => Promise<void>;
@@ -47,16 +50,14 @@ export async function bootstrapAuth(): Promise<WorkspaceSnapshot> {
 }
 
 export function AuthProvider({ children }: { readonly children: React.ReactNode }) {
-  const router = useRouter();
-  const { access } = router.options.context;
   const current = useAtomValue(workspaceSessionAtom);
   const refreshSession = useAtomSet(refreshWorkspaceSession, { mode: "promise" });
 
   const refresh = React.useCallback(async () => {
     try {
       await refreshSession();
-    } catch (cause) {
-      toastStoreError(cause);
+    } catch (failure) {
+      toastStoreError(failure instanceof WorkspaceSessionUnreachable ? failure.cause : failure);
     }
   }, [refreshSession]);
 
@@ -65,8 +66,8 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
   const shared = {
     snapshot,
     refresh,
-    workspace: access.workspace(snapshot),
-    workspaces: access.workspaces(snapshot),
+    workspace: current.workspace,
+    workspaces: current.workspaces,
   };
   const value: AuthContextValue =
     current._tag === "Switching"
