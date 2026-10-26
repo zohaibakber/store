@@ -31,11 +31,12 @@ export const MAX_COPIED_TEXT_LENGTH = 200_000;
 
 export class SignInFailed extends Schema.TaggedError<SignInFailed>()("SignInFailed", {
   message: Schema.String,
+  unreachable: Schema.Boolean,
 }) {}
 
 export class ServerRequestFailed extends Schema.TaggedError<ServerRequestFailed>()(
   "ServerRequestFailed",
-  { message: Schema.String },
+  { message: Schema.String, unreachable: Schema.Boolean },
 ) {}
 
 export class ExternalLinkRefused extends Schema.TaggedError<ExternalLinkRefused>()(

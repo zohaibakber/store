@@ -66,7 +66,7 @@ import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
-import { toastStoreError } from "@/lib/errors";
+import { toastBridgeFailure } from "@/lib/errors";
 import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
 
@@ -503,7 +503,7 @@ function PaletteResults({
   const openSource = (product: GlobalProduct) => {
     appHost()
       .openExternal(product.sourceUrl)
-      .catch((cause: unknown) => toastStoreError(cause, "Could not open the source page."));
+      .catch((cause: unknown) => toastBridgeFailure(cause, "Could not open the source page."));
   };
 
   const groups = useMemo(

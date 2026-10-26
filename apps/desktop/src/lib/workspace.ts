@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import type { OpenWorkspace, Workspace } from "@/host-access";
 import { useAuth } from "@/lib/auth";
-import { toastStoreError } from "@/lib/errors";
+import { toastBridgeFailure } from "@/lib/errors";
 import type { DeviceWorkspace } from "@/session/device-workspace";
 import { selectWorkspace } from "@/session/workspace-session";
 
@@ -44,7 +44,7 @@ export const useOpenWorkspace = () => {
   const navigate = useNavigate();
   const select = useAtomSet(selectWorkspace, { mode: "promise" });
   return (active: DeviceWorkspace["active"]) => {
-    void select(active).catch(toastStoreError);
+    void select(active).catch((cause: unknown) => toastBridgeFailure(cause));
     void navigate({ to: "/", replace: true });
   };
 };

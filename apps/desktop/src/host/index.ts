@@ -17,7 +17,14 @@ import type * as Stream from "effect/Stream";
 
 import type { InventoryHttpBridge, ReplicaWorkspaceBridge } from "./electron";
 import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
-import type { InvoiceUpload, ThemeSource } from "./shell-rpcs";
+import {
+  ExternalLinkRefused,
+  ServerRequestFailed,
+  SignInFailed,
+  WorkspaceOpenFailed,
+  type InvoiceUpload,
+  type ThemeSource,
+} from "./shell-rpcs";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
 
@@ -82,6 +89,22 @@ export interface AppHost {
   readonly inventoryHttp: InventoryHttpBridge;
   readonly replica: ReplicaWorkspaceBridge;
 }
+
+export class BridgeInterrupted extends Schema.TaggedError<BridgeInterrupted>()(
+  "BridgeInterrupted",
+  {},
+) {}
+
+export const BridgeFailure = Schema.Union([
+  SignInFailed,
+  ServerRequestFailed,
+  ExternalLinkRefused,
+  WorkspaceOpenFailed,
+  BridgeInterrupted,
+]);
+export type BridgeFailure = typeof BridgeFailure.Type;
+
+export const isBridgeFailure = Schema.is(BridgeFailure);
 
 class AppHostMissing extends Schema.TaggedError<AppHostMissing>()("AppHostMissing", {}) {}
 
