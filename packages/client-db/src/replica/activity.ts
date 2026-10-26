@@ -6,6 +6,7 @@ import {
   type SyncCommand,
 } from "@store/contracts";
 import type { CatalogRowWrite } from "@store/contracts/catalog-write";
+import type { ProductId } from "@store/contracts/ids";
 import {
   InventorySyncActivity,
   MAX_REJECTED_COMMAND_TARGETS,
@@ -79,7 +80,7 @@ const writeTargets = (write: CatalogRowWrite): ReadonlyArray<RejectedCommandTarg
 
 type CommandTargets = {
   readonly targets: ReadonlyArray<RejectedCommandTarget>;
-  readonly productId: string | null;
+  readonly productId: ProductId | null;
 };
 
 const commandTargets = (command: SyncCommand): CommandTargets => {

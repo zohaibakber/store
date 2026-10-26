@@ -1,3 +1,4 @@
+import type { ProductId } from "@store/contracts/ids";
 import { baseUnitsOf } from "@store/contracts/store-stock";
 import {
   SALES_RANGE_DAYS,
@@ -426,7 +427,7 @@ export const salesPeriodSeries = (input: {
 const TOP_PRODUCT_LIMIT = 8;
 
 type PeriodProductEntry = {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly name: string;
   readonly revenue: number;
   readonly units: number;

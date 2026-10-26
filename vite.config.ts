@@ -136,7 +136,6 @@ export default defineConfig({
           "apps/desktop/src/components/shared/detail-load-error.tsx",
           "apps/server/src/ai/language-model.ts",
           "apps/server/src/global-search/web-search.ts",
-          "packages/client-db/src/analytics/errors.ts",
           "packages/client-db/src/replica/node-backup.ts",
           "packages/client-db/src/replica/node-readonly.ts",
           "packages/sync/src/replica/errors.ts",

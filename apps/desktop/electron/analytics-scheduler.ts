@@ -1,6 +1,5 @@
 import { accumulateNotice, mergeAccumulators, noticeAffects } from "@store/client-db";
 import type { NoticeAccumulator, ReplicaCommitNotice } from "@store/client-db";
-import { attemptStore } from "@store/client-db/node-analytics";
 import type { AnalyticsStore, InventorySource } from "@store/client-db/node-analytics";
 import {
   insightsDayOf,
@@ -15,7 +14,6 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schedule from "effect/Schedule";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SynchronizedRef from "effect/SynchronizedRef";
@@ -71,219 +69,214 @@ export type AnalyticsScheduler = {
   readonly events: Stream.Stream<InsightsChange>;
 };
 
-export const makeAnalyticsScheduler = (deps: {
+export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(function* (deps: {
   readonly source: InventorySource;
   readonly store: AnalyticsStore;
-}): Effect.Effect<AnalyticsScheduler, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    const wake = yield* Queue.dropping<void>(1);
-    const journal = yield* makeChangeJournal();
-    const state = yield* SynchronizedRef.make<SchedulerState>({
-      desired: undefined,
-      pending: undefined,
-      verify: true,
-      failure: null,
-      phase: Phase.Idle(),
+}) {
+  const latestRun = deps.store.publishedRun().pipe(Effect.orDie);
+  const wake = yield* Queue.dropping<void>(1);
+  const journal = yield* makeChangeJournal();
+  const state = yield* SynchronizedRef.make<SchedulerState>({
+    desired: undefined,
+    pending: undefined,
+    verify: true,
+    failure: null,
+    phase: Phase.Idle(),
+  });
+  const event = yield* SubscriptionRef.make<InsightsChange>({
+    revision: (yield* latestRun)?.revision ?? 0,
+    state: "idle",
+    progress: null,
+  });
+
+  const publishEvent = Effect.fn("AnalyticsScheduler.publishEvent")(function* (phase: Phase) {
+    const run = yield* latestRun;
+    yield* SubscriptionRef.set(event, {
+      revision: run?.revision ?? 0,
+      state: stateOf(phase, run !== undefined),
+      progress: progressOf(phase),
     });
-    const event = yield* SubscriptionRef.make<InsightsChange>({
-      revision: deps.store.publishedRun()?.revision ?? 0,
-      state: "idle",
-      progress: null,
+  });
+
+  const modifyAndPublish = <B>(f: (current: SchedulerState) => readonly [B, SchedulerState]) =>
+    SynchronizedRef.modifyEffect(state, (current) => {
+      const result = f(current);
+      return publishEvent(result[1].phase).pipe(Effect.as(result));
     });
 
-    const eventOf = (phase: Phase): InsightsChange => {
-      const run = deps.store.publishedRun();
-      return {
-        revision: run?.revision ?? 0,
-        state: stateOf(phase, run !== undefined),
-        progress: progressOf(phase),
-      };
-    };
+  const transition = (f: (current: SchedulerState) => SchedulerState) =>
+    modifyAndPublish((current) => [undefined, f(current)]);
 
-    const modifyAndPublish = <B>(f: (current: SchedulerState) => readonly [B, SchedulerState]) =>
-      SynchronizedRef.modifyEffect(state, (current) => {
-        const result = f(current);
-        return SubscriptionRef.set(event, eventOf(result[1].phase)).pipe(Effect.as(result));
-      });
+  const reportProgress = (done: number, total: number) =>
+    SynchronizedRef.updateEffect(state, (current) => {
+      const { phase } = current;
+      if (phase._tag !== "Running") return Effect.succeed(current);
+      const step = total === 0 ? PROGRESS_STEPS : Math.floor((done * PROGRESS_STEPS) / total);
+      const next = { ...current, phase: Phase.Running({ progress: { done, total }, step }) };
+      return step === phase.step
+        ? Effect.succeed(next)
+        : publishEvent(next.phase).pipe(Effect.as(next));
+    });
 
-    const transition = (f: (current: SchedulerState) => SchedulerState) =>
-      modifyAndPublish((current) => [undefined, f(current)]);
+  const cleanup = Effect.fn("AnalyticsScheduler.cleanup")(function* () {
+    const run = yield* latestRun;
+    yield* deps.store
+      .discardSuperseded({
+        keepResults: run === undefined ? [] : [run.runId],
+        keepWork: [],
+        limit: CLEANUP_BATCH,
+      })
+      .pipe(Effect.tap(Effect.yieldNow), Effect.repeat({ while: (removed) => removed > 0 }));
+    yield* deps.store.checkpoint().pipe(Effect.ignore);
+  });
 
-    const reportProgress = (done: number, total: number) =>
-      SynchronizedRef.updateEffect(state, (current) => {
-        const { phase } = current;
-        if (phase._tag !== "Running") return Effect.succeed(current);
-        const step = total === 0 ? PROGRESS_STEPS : Math.floor((done * PROGRESS_STEPS) / total);
-        const next = { ...current, phase: Phase.Running({ progress: { done, total }, step }) };
-        return step === phase.step
-          ? Effect.succeed(next)
-          : SubscriptionRef.set(event, eventOf(next.phase)).pipe(Effect.as(next));
-      });
-
-    const cleanup = Effect.gen(function* () {
-      const run = deps.store.publishedRun();
-      let removed = 1;
-      while (removed > 0) {
-        removed = yield* attemptStore(() =>
-          deps.store.discardSuperseded({
-            keepResults: run === undefined ? [] : [run.runId],
-            keepWork: [],
-            limit: CLEANUP_BATCH,
+  const runOnce = Effect.fn("AnalyticsScheduler.runOnce")(function* () {
+    const context = (yield* SynchronizedRef.get(state)).desired;
+    if (context === undefined) return;
+    const { consumed, verifyStamp, outcome } = yield* journal.track(
+      Effect.fn("AnalyticsScheduler.refresh")(function* (changes) {
+        const { consumed, verifyStamp } = yield* modifyAndPublish((current) => [
+          { consumed: current.pending, verifyStamp: current.verify },
+          {
+            ...current,
+            pending: undefined,
+            verify: false,
+            phase: Phase.Running({ progress: null, step: -1 }),
+          },
+        ]);
+        const outcome = yield* refreshAnalytics(
+          { ...deps, changes, progress: reportProgress },
+          { context, pending: consumed, verifyStamp },
+        ).pipe(
+          Effect.retry({
+            schedule: Schedule.spaced(TIMING.retryDelay).pipe(
+              Schedule.upTo({ times: TIMING.retries }),
+            ),
           }),
+          Effect.exit,
         );
-        yield* Effect.yieldNow;
-      }
-      yield* attemptStore(() => deps.store.checkpoint()).pipe(Effect.ignore);
-    });
-
-    const runOnce = Effect.gen(function* () {
-      const context = (yield* SynchronizedRef.get(state)).desired;
-      if (context === undefined) return;
-      const { consumed, verifyStamp, outcome } = yield* journal.track((changes) =>
-        Effect.gen(function* () {
-          const { consumed, verifyStamp } = yield* modifyAndPublish((current) => [
-            { consumed: current.pending, verifyStamp: current.verify },
-            {
-              ...current,
-              pending: undefined,
-              verify: false,
-              phase: Phase.Running({ progress: null, step: -1 }),
-            },
-          ]);
-          const outcome = yield* refreshAnalytics(
-            { ...deps, changes, progress: reportProgress },
-            { context, pending: consumed, verifyStamp },
-          ).pipe(
-            Effect.retry({
-              schedule: Schedule.spaced(TIMING.retryDelay).pipe(
-                Schedule.upTo({ times: TIMING.retries }),
-              ),
-            }),
-            Effect.exit,
-          );
-          return { consumed, verifyStamp, outcome };
-        }),
-      );
-      if (outcome._tag === "Failure") {
-        yield* transition((current) => ({
-          ...current,
-          failure: FAILURE_MESSAGE,
-          verify: current.verify || verifyStamp,
-          pending:
-            consumed === undefined ? current.pending : mergeAccumulators(consumed, current.pending),
-          phase: Phase.Idle(),
-        }));
-        return;
-      }
-      const value = outcome.value;
-      yield* SynchronizedRef.update(state, (current) => ({
+        return { consumed, verifyStamp, outcome };
+      }),
+    );
+    if (outcome._tag === "Failure") {
+      yield* transition((current) => ({
         ...current,
-        failure: null,
-        phase: Phase.Running({ progress: null, step: -1 }),
+        failure: FAILURE_MESSAGE,
+        verify: current.verify || verifyStamp,
         pending:
-          value.kind !== "none" &&
-          current.pending !== undefined &&
-          current.pending.generationId === value.run.sourceGeneration &&
-          current.pending.version <= value.run.sourceVersion
-            ? undefined
-            : current.pending,
+          consumed === undefined ? current.pending : mergeAccumulators(consumed, current.pending),
+        phase: Phase.Idle(),
       }));
-      if (value.kind !== "none") yield* cleanup;
-      const again = yield* modifyAndPublish((current) => {
-        const rerun = current.pending !== undefined || contextMoved(current.desired, context);
-        return [rerun, { ...current, phase: rerun ? Phase.Scheduled() : Phase.Idle() }];
-      });
-      if (again) yield* Queue.offer(wake, undefined);
-      yield* Effect.sleep(TIMING.minGap);
+      return;
+    }
+    const value = outcome.value;
+    yield* SynchronizedRef.update(state, (current) => ({
+      ...current,
+      failure: null,
+      phase: Phase.Running({ progress: null, step: -1 }),
+      pending:
+        value.kind !== "none" &&
+        current.pending !== undefined &&
+        current.pending.generationId === value.run.sourceGeneration &&
+        current.pending.version <= value.run.sourceVersion
+          ? undefined
+          : current.pending,
+    }));
+    if (value.kind !== "none") yield* cleanup();
+    const again = yield* modifyAndPublish((current) => {
+      const rerun = current.pending !== undefined || contextMoved(current.desired, context);
+      return [rerun, { ...current, phase: rerun ? Phase.Scheduled() : Phase.Idle() }];
     });
+    if (again) yield* Queue.offer(wake, undefined);
+    yield* Effect.sleep(TIMING.minGap);
+  });
 
-    const cycle = (delay: Duration.Duration, prelude: Effect.Effect<void, unknown>) =>
-      Queue.take(wake).pipe(
-        Effect.andThen(Effect.sleep(delay)),
-        Effect.andThen(Queue.clear(wake)),
-        Effect.andThen(prelude),
-        Effect.andThen(runOnce),
-        Effect.catchCause(() =>
-          transition((current) => ({ ...current, failure: FAILURE_MESSAGE, phase: Phase.Idle() })),
-        ),
-      );
-
-    yield* cycle(TIMING.startDelay, cleanup).pipe(
-      Effect.andThen(cycle(TIMING.settle, Effect.void).pipe(Effect.forever)),
-      Effect.forkScoped,
+  const cycle = (delay: Duration.Duration, prelude: Effect.Effect<void, unknown>) =>
+    Queue.take(wake).pipe(
+      Effect.andThen(Effect.sleep(delay)),
+      Effect.andThen(Queue.clear(wake)),
+      Effect.andThen(prelude),
+      Effect.andThen(runOnce()),
+      Effect.catchCause(() =>
+        transition((current) => ({ ...current, failure: FAILURE_MESSAGE, phase: Phase.Idle() })),
+      ),
     );
 
-    const schedule = transition((current) =>
-      current.phase._tag === "Idle" ? { ...current, phase: Phase.Scheduled() } : current,
-    ).pipe(Effect.andThen(Queue.offer(wake, undefined)));
+  yield* cycle(TIMING.startDelay, cleanup()).pipe(
+    Effect.andThen(cycle(TIMING.settle, Effect.void).pipe(Effect.forever)),
+    Effect.forkScoped,
+  );
 
-    yield* Effect.gen(function* () {
-      const context = (yield* SynchronizedRef.get(state)).desired;
-      const run = deps.store.publishedRun();
-      const now = yield* Clock.currentTimeMillis;
-      if (
-        context !== undefined &&
-        run !== undefined &&
-        run.today !== insightsDayOf(now, context.utcOffsetMinutes)
-      ) {
-        yield* schedule;
-      }
-    }).pipe(Effect.repeat(Schedule.spaced(ROLLOVER_CHECK)), Effect.forkScoped);
+  const schedule = transition((current) =>
+    current.phase._tag === "Idle" ? { ...current, phase: Phase.Scheduled() } : current,
+  ).pipe(Effect.andThen(Queue.offer(wake, undefined)));
 
-    const statusFor = (context: InsightsContext | undefined) =>
-      Effect.gen(function* () {
-        const run = deps.store.publishedRun();
-        const current = yield* SynchronizedRef.get(state);
-        const now = yield* Clock.currentTimeMillis;
-        return {
-          state: stateOf(current.phase, run !== undefined),
-          progress: progressOf(current.phase),
-          policyCurrent:
-            run === undefined ||
-            context === undefined ||
-            (run.policyVersion === stockPolicyVersion(context.policy) &&
-              run.utcOffsetMinutes === context.utcOffsetMinutes),
-          dateCurrent:
-            run === undefined ||
-            context === undefined ||
-            run.today === insightsDayOf(now, context.utcOffsetMinutes),
-          failure: current.failure,
-        } satisfies AnalyticsStatus;
-      });
+  yield* Effect.fn("AnalyticsScheduler.checkRollover")(function* () {
+    const context = (yield* SynchronizedRef.get(state)).desired;
+    const run = yield* latestRun;
+    const now = yield* Clock.currentTimeMillis;
+    if (
+      context !== undefined &&
+      run !== undefined &&
+      run.today !== insightsDayOf(now, context.utcOffsetMinutes)
+    ) {
+      yield* schedule;
+    }
+  })().pipe(Effect.repeat(Schedule.spaced(ROLLOVER_CHECK)), Effect.forkScoped);
 
+  const statusFor = Effect.fn("AnalyticsScheduler.statusFor")(function* (
+    context: InsightsContext | undefined,
+  ) {
+    const run = yield* latestRun;
+    const current = yield* SynchronizedRef.get(state);
+    const now = yield* Clock.currentTimeMillis;
     return {
-      notify: (notice) =>
-        Effect.gen(function* () {
-          yield* journal.record(notice);
-          const relevant =
-            notice.fullInvalidation === true ||
-            RELEVANT_ENTITIES.some((entity) => noticeAffects(notice, entity));
-          if (!relevant) return;
-          const current = yield* SynchronizedRef.updateAndGet(state, (latest) => ({
-            ...latest,
-            pending: accumulateNotice(latest.pending, notice),
-          }));
-          if (current.desired !== undefined) yield* schedule;
-        }),
-      observe: (context) =>
-        Effect.gen(function* () {
-          const before = yield* SynchronizedRef.getAndUpdate(state, (current) => ({
-            ...current,
-            desired: context,
-          }));
-          const run = deps.store.publishedRun();
-          const now = yield* Clock.currentTimeMillis;
-          const stale =
-            before.desired === undefined ||
-            run === undefined ||
-            run.policyVersion !== stockPolicyVersion(context.policy) ||
-            run.utcOffsetMinutes !== context.utcOffsetMinutes ||
-            run.today !== insightsDayOf(now, context.utcOffsetMinutes) ||
-            before.pending !== undefined ||
-            before.verify;
-          if (stale) yield* schedule;
-          return yield* statusFor(context);
-        }),
-      events: SubscriptionRef.changes(event),
-    } satisfies AnalyticsScheduler;
+      state: stateOf(current.phase, run !== undefined),
+      progress: progressOf(current.phase),
+      policyCurrent:
+        run === undefined ||
+        context === undefined ||
+        (run.policyVersion === stockPolicyVersion(context.policy) &&
+          run.utcOffsetMinutes === context.utcOffsetMinutes),
+      dateCurrent:
+        run === undefined ||
+        context === undefined ||
+        run.today === insightsDayOf(now, context.utcOffsetMinutes),
+      failure: current.failure,
+    } satisfies AnalyticsStatus;
   });
+
+  return {
+    notify: Effect.fn("AnalyticsScheduler.notify")(function* (notice: ReplicaCommitNotice) {
+      yield* journal.record(notice);
+      const relevant =
+        notice.fullInvalidation === true ||
+        RELEVANT_ENTITIES.some((entity) => noticeAffects(notice, entity));
+      if (!relevant) return;
+      const current = yield* SynchronizedRef.updateAndGet(state, (latest) => ({
+        ...latest,
+        pending: accumulateNotice(latest.pending, notice),
+      }));
+      if (current.desired !== undefined) yield* schedule;
+    }),
+    observe: Effect.fn("AnalyticsScheduler.observe")(function* (context: InsightsContext) {
+      const before = yield* SynchronizedRef.getAndUpdate(state, (current) => ({
+        ...current,
+        desired: context,
+      }));
+      const run = yield* latestRun;
+      const now = yield* Clock.currentTimeMillis;
+      const stale =
+        before.desired === undefined ||
+        run === undefined ||
+        run.policyVersion !== stockPolicyVersion(context.policy) ||
+        run.utcOffsetMinutes !== context.utcOffsetMinutes ||
+        run.today !== insightsDayOf(now, context.utcOffsetMinutes) ||
+        before.pending !== undefined ||
+        before.verify;
+      if (stale) yield* schedule;
+      return yield* statusFor(context);
+    }),
+    events: SubscriptionRef.changes(event),
+  } satisfies AnalyticsScheduler;
+});

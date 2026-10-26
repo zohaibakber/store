@@ -1,3 +1,4 @@
+import type { ProductId } from "@store/contracts/ids";
 import {
   SUMMARY_ATTENTION_LIMIT,
   SUMMARY_EXPIRING_LIMIT,
@@ -57,7 +58,7 @@ export type ProductAnalysis = {
 };
 
 type PeriodProductRow = {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly name: string;
   readonly revenue: number;
   readonly units: number;

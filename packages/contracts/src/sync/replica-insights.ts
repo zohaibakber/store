@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { OPEN_PURCHASE_ORDER_STATUSES } from "../catalog/purchasing";
+import { CategoryId, ProductId } from "../ids";
 import { EpochMillis, PositiveInt, UtcOffsetMinutes } from "../schema-primitives";
 
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
@@ -27,9 +28,9 @@ export const ReplicaInsightsWindow = Schema.Struct({
 export type ReplicaInsightsWindow = typeof ReplicaInsightsWindow.Type;
 
 export const InsightsProductFact = Schema.Struct({
-  id: Schema.String,
+  id: ProductId,
   name: Schema.String,
-  categoryId: Schema.String,
+  categoryId: CategoryId,
   categoryName: Schema.NullOr(Schema.String),
   tracksPacks: Schema.Boolean,
   unitsPerPack: PositiveInt,
@@ -42,7 +43,7 @@ export const InsightsProductFact = Schema.Struct({
 export type InsightsProductFact = typeof InsightsProductFact.Type;
 
 export const InsightsBatchFact = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   batchNumber: Schema.NullOr(Schema.String),
   packQuantity: Schema.Int,
   unitQuantity: Schema.Int,
@@ -51,14 +52,14 @@ export const InsightsBatchFact = Schema.Struct({
 export type InsightsBatchFact = typeof InsightsBatchFact.Type;
 
 const InsightsSaleFact = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   day: Schema.Int,
   units: Schema.Int,
   revenue: Schema.Number,
 });
 
 export const InsightsOnOrderFact = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   units: PositiveInt,
 });
 export type InsightsOnOrderFact = typeof InsightsOnOrderFact.Type;
