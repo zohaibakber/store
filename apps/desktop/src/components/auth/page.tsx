@@ -11,6 +11,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { appHost } from "@/host";
+import { signInMessage } from "@/lib/errors";
 import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
 
@@ -25,8 +26,7 @@ type AuthStep =
     }
   | { readonly _tag: "Registration"; readonly email: typeof EmailAddress.Type };
 
-const messageOf = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "Could not sign in.";
+const messageOf = (cause: unknown) => signInMessage(cause, "Could not sign in.");
 
 export function AuthScreen({ children }: { children: React.ReactNode }) {
   return (
@@ -330,8 +330,7 @@ export function useGoogleCallback(): GoogleCallback {
               reportError(cause, { op: "google-sign-in-callback" });
               setState({
                 completing: false,
-                error:
-                  cause instanceof Error ? cause.message : "Google sign-in could not be completed.",
+                error: signInMessage(cause, "Google sign-in could not be completed."),
               });
             },
           );
