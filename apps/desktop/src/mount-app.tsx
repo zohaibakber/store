@@ -1,5 +1,5 @@
-import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
+import { AtomRegistryProvider } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import * as Effect from "effect/Effect";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -58,9 +58,9 @@ export const mountApp = (input: {
           </main>
         }
       >
-        <RegistryContext.Provider value={registry}>
+        <AtomRegistryProvider registry={registry}>
           <ThemeProvider>{app}</ThemeProvider>
-        </RegistryContext.Provider>
+        </AtomRegistryProvider>
       </AppErrorBoundary>
     </React.StrictMode>,
   );
