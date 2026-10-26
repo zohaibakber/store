@@ -47,7 +47,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 
 ## Tests
 
-- **Licence-service tests wait on real time.** `apps/desktop/test/electron/licence-service.test.ts` waits 5 ms for file IO to settle instead of observing the write. Target: wait on the file event, not a delay.
+- **Licence-service tests yield to the recheck fiber instead of observing it.** `apps/desktop/test/electron/licence-service.test.ts` (`advance`) runs a real filesystem round trip (`fs.exists("/")`) between `TestClock` steps so the forked recheck can run; plain `Effect.yieldNow` was flaky under load. No wall-clock delay remains. Target: a completion signal from the recheck, which needs a seam in `licence/service.ts`.
 
 ## Needs the user's decision
 
