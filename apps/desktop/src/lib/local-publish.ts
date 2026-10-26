@@ -14,7 +14,7 @@ import type { CatalogCounts } from "@/host/workspace-backup";
 import type { PublishOffer, PublishOutcome, PublishProgress } from "@/host/workspace-publish";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
-import { storeErrorMessage, toastStoreError } from "@/lib/errors";
+import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 import { publishOfferDismissedAtom } from "@/lib/preferences";
 import { singleFlight } from "@/lib/single-flight";
 import { workspaceStorageKey } from "@/lib/workspace";
@@ -64,7 +64,7 @@ const progressAtom = Atom.make(
 
 const failedMove = (cause: unknown): PublishOutcome => ({
   _tag: "failed",
-  message: storeErrorMessage(cause),
+  message: bridgeMessage(cause),
 });
 
 const moveToOrganization = Atom.fn<PublishTarget>()(
@@ -100,7 +100,7 @@ const discardElsewhere = Atom.fn<PublishTarget>()(
       try: () => appHost().publish.discard(organization.id),
       catch: (cause) => cause,
     }).pipe(
-      Effect.tapError((cause) => Effect.sync(() => toastStoreError(cause))),
+      Effect.tapError((cause) => Effect.sync(() => toastBridgeFailure(cause))),
       Effect.ignore,
       Effect.ensuring(Effect.sync(() => get.refresh(offerAtom(organization.id)))),
     );

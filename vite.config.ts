@@ -134,7 +134,6 @@ export default defineConfig({
         files: [
           "apps/desktop/electron/auth-ipc.ts",
           "apps/desktop/electron/replica-worker-handlers.ts",
-          "apps/desktop/src/components/auth/page.tsx",
           "apps/desktop/src/components/shared/detail-load-error.tsx",
           "apps/server/src/ai/language-model.ts",
           "apps/server/src/global-search/web-search.ts",
