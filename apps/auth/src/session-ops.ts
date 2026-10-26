@@ -25,12 +25,6 @@ import {
   type SessionRecord,
   type UserRecord,
 } from "./repository";
-import { AuthSettings } from "./settings";
-
-export interface PresentedRefresh {
-  readonly client: AuthClientKind;
-  readonly refreshToken: Redacted.Redacted<string>;
-}
 
 const formatRefreshToken = (sessionId: SessionId, secret: Redacted.Redacted<string>) =>
   RefreshToken.make(`${sessionId}.${Redacted.value(secret)}`);
@@ -54,13 +48,11 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     const repository = yield* AuthRepository;
     const accessTokens = yield* AccessTokenService;
     const crypto = yield* AuthCrypto;
-    const { refreshTokenPepper } = yield* AuthSettings;
-
-    const hashSecret = (secret: Redacted.Redacted<string>) =>
-      crypto.refreshHash(refreshTokenPepper, secret);
 
     const secretMatches = (secret: Redacted.Redacted<string>, storedHash: string) =>
-      Effect.flatMap(hashSecret(secret), (actualHash) => crypto.matches(actualHash, storedHash));
+      Effect.flatMap(crypto.refreshHash(secret), (actualHash) =>
+        crypto.matches(actualHash, storedHash),
+      );
 
     const accessClaims = (
       user: UserRecord,
@@ -108,7 +100,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const sessionId = SessionId.make(replayKey ?? (yield* crypto.randomId));
       const familyId = SessionFamilyId.make(yield* crypto.randomId);
       const refreshSecret = yield* crypto.randomSecret(32);
-      const refreshTokenHash = yield* hashSecret(refreshSecret);
+      const refreshTokenHash = yield* crypto.refreshHash(refreshSecret);
       const refreshExpiresAt = now + RefreshRotation.REFRESH_TTL_MS;
       yield* repository.createSession({
         id: sessionId,
@@ -144,13 +136,10 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     );
 
     const openRefresh = Effect.fn("Sessions.openRefresh")(function* (
-      presented: PresentedRefresh | undefined,
+      refreshToken: Redacted.Redacted<string>,
     ) {
       const now = yield* Clock.currentTimeMillis;
-      if (!presented) {
-        return yield* new AuthRefusal({ reason: "RefreshRequired" });
-      }
-      const parsed = yield* parseRefreshToken(presented.refreshToken);
+      const parsed = yield* parseRefreshToken(refreshToken);
       const context = yield* repository.findRefreshContext(parsed.sessionId);
       if (!context) {
         return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
@@ -160,7 +149,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
         return yield* new AuthRefusal({ reason: "InvalidRefreshToken" });
       }
       const presentedDecision = yield* Effect.fromResult(
-        RefreshRotation.decidePresentedRefresh(current, presented.client._tag, now),
+        RefreshRotation.decidePresentedRefresh(current, now),
       ).pipe(
         Effect.tapError((refusal) =>
           refusal.reason === "RefreshReuseDetected"
@@ -186,7 +175,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
       const now = yield* Clock.currentTimeMillis;
       const nextId = SessionId.make(yield* crypto.randomId);
       const nextSecret = yield* crypto.randomSecret(32);
-      const nextHash = yield* hashSecret(nextSecret);
+      const nextHash = yield* crypto.refreshHash(nextSecret);
       const refreshExpiresAt = now + RefreshRotation.REFRESH_TTL_MS;
       const rotated = yield* repository.rotateSession({
         currentId: input.session.id,
@@ -215,19 +204,18 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     });
 
     const refresh = Effect.fn("Sessions.refresh")(function* (
-      presented: PresentedRefresh | undefined,
+      refreshToken: Redacted.Redacted<string>,
     ) {
-      const open = yield* openRefresh(presented);
+      const open = yield* openRefresh(refreshToken);
       const membership =
         open.activeMembership ?? (yield* repository.membershipForUser(open.user.id));
       return yield* rotateInto({ session: open.session, user: open.user, membership });
     });
 
     const signOut = Effect.fn("Sessions.signOut")(function* (
-      refreshToken: Redacted.Redacted<string> | undefined,
+      refreshToken: Redacted.Redacted<string>,
     ) {
       const now = yield* Clock.currentTimeMillis;
-      if (!refreshToken) return;
       const parsed = yield* parseRefreshToken(refreshToken);
       const session = yield* repository.findSession(parsed.sessionId);
       if (!session) return;

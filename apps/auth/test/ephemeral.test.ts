@@ -131,7 +131,7 @@ describe("ephemeral store on D1", () => {
       const input = {
         redirectUri: "https://app.example.com/callback",
         codeChallenge: "challenge",
-        client: { _tag: "Browser" } satisfies AuthClientKind,
+        client: { _tag: "Native", deviceName: "Front counter" } satisfies AuthClientKind,
         googleCodeVerifier: "google-verifier",
         googleNonce: "google-nonce",
         expiresAt: (yield* Clock.currentTimeMillis) + OTP_TTL_MS,

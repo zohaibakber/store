@@ -1,7 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import type * as HttpClientError from "effect/http/HttpClientError";
 import * as Layer from "effect/Layer";
@@ -119,10 +118,7 @@ const make = Effect.fnUntraced(function* (baseUrl: string) {
   const httpClient = yield* HttpClient.HttpClient;
   const session = yield* HttpApiClient.group(AuthHttpApi, {
     group: "session",
-    httpClient: HttpClient.transformResponse(
-      httpClient,
-      Effect.provideService(FetchHttpClient.RequestInit, { credentials: "include" }),
-    ),
+    httpClient,
     baseUrl: baseUrl.replace(/\/+$/u, ""),
   });
 

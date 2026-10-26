@@ -74,12 +74,9 @@ export const InvitationToken = NonEmptyString.check(Schema.isMaxLength(256)).pip
 );
 export type InvitationToken = typeof InvitationToken.Type;
 
-export const AuthClientKind = Schema.Union([
-  Schema.TaggedStruct("Browser", {}),
-  Schema.TaggedStruct("Native", {
-    deviceName: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  }),
-]);
+export const AuthClientKind = Schema.TaggedStruct("Native", {
+  deviceName: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+});
 export type AuthClientKind = typeof AuthClientKind.Type;
 
 export const nativeClient = (deviceName: string): AuthClientKind => ({
@@ -137,7 +134,7 @@ export type LoginCredentials = typeof LoginCommand.Encoded;
 export const TokenSet = Schema.Struct({
   accessToken: AccessToken,
   accessExpiresAt: Schema.Number,
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
   refreshExpiresAt: Schema.Number,
 });
 export interface TokenSet extends Schema.Schema.Type<typeof TokenSet> {}
@@ -178,12 +175,12 @@ export const ExchangeGoogleInput = Schema.Struct({
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}
 
 export const RefreshInput = Schema.Struct({
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
 });
 export interface RefreshInput extends Schema.Schema.Type<typeof RefreshInput> {}
 
 export const SignOutInput = Schema.Struct({
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
 });
 export interface SignOutInput extends Schema.Schema.Type<typeof SignOutInput> {}
 

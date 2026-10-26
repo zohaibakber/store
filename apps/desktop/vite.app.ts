@@ -22,9 +22,13 @@ const keepShellInStartupBundle: CodeSplittingOptions = {
   splitBehavior: ({ routeId }) => (routeId === "/_app" ? [] : undefined),
 };
 
-export const rendererAppConfig = (input: { readonly version: string }) => ({
+export const rendererAppConfig = (input: {
+  readonly version: string;
+  readonly sentryDsn: string;
+}) => ({
   define: {
     __APP_VERSION__: JSON.stringify(input.version),
+    __SENTRY_DSN__: JSON.stringify(input.sentryDsn),
     __SENTRY_DEBUG__: false,
     __SENTRY_TRACING__: false,
   },

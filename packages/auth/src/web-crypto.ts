@@ -96,6 +96,16 @@ const ES256 = { name: "ECDSA", hash: "SHA-256" } as const;
 export const importEs256Key = (jwk: JsonWebKey, usage: "sign" | "verify") =>
   attempt("importEs256Key", () => crypto.subtle.importKey("jwk", jwk, ES256_KEY, false, [usage]));
 
+export const exportEs256Jwk = (format: "spki" | "pkcs8", der: Uint8Array) =>
+  attempt("exportEs256Jwk", async () =>
+    crypto.subtle.exportKey(
+      "jwk",
+      await crypto.subtle.importKey(format, owned(der), ES256_KEY, true, [
+        format === "spki" ? "verify" : "sign",
+      ]),
+    ),
+  );
+
 export const signEs256 = (key: CryptoKey, message: Uint8Array) =>
   attempt(
     "signEs256",

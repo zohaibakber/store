@@ -5,9 +5,11 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
-import { AUTH_JWT_KEY_ID, issueAccessToken, makeAccessTokenVerifier } from "../src/jwt";
+import { issueAccessToken, makeAccessTokenVerifier } from "../src/jwt";
 import { EmailAddress, OrganizationId, SessionId, UserId } from "../src/model";
 import { layer as webCryptoLayer } from "../src/web-crypto";
+
+const AUTH_JWT_KEY_ID = "test-key";
 
 const NEXT_KEY_ID = "tabaaq-auth-next";
 const textEncoder = new TextEncoder();
@@ -63,8 +65,6 @@ layer(webCryptoLayer)("ES256 access tokens", (it) => {
       const current = yield* generateKeyPair;
       const next = yield* generateKeyPair;
       const ring = {
-        issuer: "https://auth.example.com",
-        audience: "tabaaq-api",
         keys: [
           { kid: AUTH_JWT_KEY_ID, jwk: current.publicJwk },
           { kid: NEXT_KEY_ID, jwk: next.publicJwk },
@@ -122,12 +122,10 @@ layer(webCryptoLayer)("ES256 access tokens", (it) => {
     }),
   );
 
-  it.effect("refuses a token once it expires and one minted for another audience or issuer", () =>
+  it.effect("refuses a token once it expires", () =>
     Effect.gen(function* () {
       const pair = yield* generateKeyPair;
       const ring = {
-        issuer: "https://auth.example.com",
-        audience: "tabaaq-api",
         keys: [{ kid: AUTH_JWT_KEY_ID, jwk: pair.publicJwk }],
       };
       const signing = {
@@ -138,19 +136,12 @@ layer(webCryptoLayer)("ES256 access tokens", (it) => {
       };
       const verify = yield* makeAccessTokenVerifier(ring);
       const issued = yield* issueAccessToken(input, signing);
-      const otherAudience = yield* issueAccessToken(input, { ...signing, audience: "another-api" });
-      const otherIssuer = yield* issueAccessToken(input, {
-        ...signing,
-        issuer: "https://elsewhere.example.com",
-      });
 
       yield* TestClock.adjust("599 seconds");
       expect((yield* verify(issued.token)).sessionId).toBe("session-1");
       yield* TestClock.adjust("1 second");
 
       expect((yield* Effect.flip(verify(issued.token))).reason).toBe("Expired");
-      expect((yield* Effect.flip(verify(otherAudience.token))).reason).toBe("InvalidClaims");
-      expect((yield* Effect.flip(verify(otherIssuer.token))).reason).toBe("InvalidClaims");
     }),
   );
 });

@@ -34,28 +34,9 @@ jobs:
     env:
       CI: "1"
       STAGE: ${{ inputs.stage }}
-      AUTH_JWT_PRIVATE_JWK: ${{ secrets.AUTH_JWT_PRIVATE_JWK }}
-      AUTH_JWT_PUBLIC_JWK: ${{ vars.AUTH_JWT_PUBLIC_JWK }}
-      AUTH_BASE_URL: ${{ vars.AUTH_BASE_URL }}
-      AUTH_REFRESH_TOKEN_PEPPER: ${{ secrets.AUTH_REFRESH_TOKEN_PEPPER }}
-      AUTH_EPHEMERAL_PEPPER: ${{ secrets.AUTH_EPHEMERAL_PEPPER }}
-      AUTH_DEV_OTP: ${{ vars.AUTH_DEV_OTP }}
-      GOOGLE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_OAUTH_CLIENT_ID }}
       GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
-      PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
-      PLANETSCALE_ORGANIZATION: ${{ vars.PLANETSCALE_ORGANIZATION }}
-      NEON_API_KEY: ${{ inputs.stage == 'dev' && secrets.NEON_API_KEY || '' }}
-      AUTH_TRUSTED_ORIGINS: ${{ vars.AUTH_TRUSTED_ORIGINS }}
-      ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
-      PRODUCTION_DOMAIN: ${{ vars.PRODUCTION_DOMAIN }}
-      PRODUCTION_API_DOMAIN: ${{ vars.PRODUCTION_API_DOMAIN }}
-      PRODUCTION_AUTH_DOMAIN: ${{ vars.PRODUCTION_AUTH_DOMAIN }}
-      VITE_API_URL: ${{ inputs.stage != 'dev' && vars.VITE_API_URL || '' }}
-      VITE_AUTH_URL: ${{ inputs.stage != 'dev' && vars.VITE_AUTH_URL || '' }}
-      VITE_SENTRY_DSN: ${{ inputs.stage != 'dev' && vars.VITE_SENTRY_DSN || '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -72,7 +53,7 @@ jobs:
         run: bash scripts/ci/check-stage-config.sh
 
       - name: Check provider credentials
-        run: bun alchemy provider check-env --provider Cloudflare --provider "${{ inputs.stage == 'dev' && 'Neon' || 'Planetscale' }}"
+        run: bun alchemy provider check-env --provider Cloudflare
 
       - name: ${{ inputs.action }} ${{ inputs.stage }}
         run: bun alchemy "${{ inputs.action }}" --stage "${STAGE}" --yes

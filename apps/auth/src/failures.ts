@@ -26,7 +26,6 @@ const wire = (
 });
 
 const REFUSALS = {
-  RefreshRequired: wire("Unauthenticated", "REFRESH_REQUIRED", "The session has expired."),
   InvalidRefreshToken: wire("Unauthenticated", "INVALID_REFRESH_TOKEN", "The session has expired."),
   RefreshReuseDetected: wire(
     "Unauthenticated",

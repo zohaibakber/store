@@ -1,106 +1,40 @@
 import {
-  decodeJwtKeyRingText,
-  type AccessTokenVerifier,
+  decodePublicKeyPem,
+  JwtError,
   makeAccessTokenVerifier,
+  WebCrypto,
+  type AccessTokenVerifier,
 } from "@store/auth";
-import {
-  decideAuthSecurity,
-  DEFAULT_ELECTRON_PROTOCOL,
-  fallbackIfBlank,
-  LOCAL_WEB_ORIGINS,
-  parseTrustedOrigins,
-  publicHostnameFrom,
-} from "@store/auth/security";
-import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
-import {
-  PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
-  PRODUCTION_DOMAIN_MISSING_MESSAGE,
-  productionDomainConfig,
-  productionSiteOrigin,
-  resolveProductionApiHostname,
-  resolveProductionHostname,
-} from "../runtime/production-domain";
+const unbound: AccessTokenVerifier = () =>
+  Effect.fail(new JwtError({ reason: "NoKey", message: "The auth public key is not bound." }));
 
 export class AccessTokens extends Context.Service<
   AccessTokens,
   {
-    readonly trustedOrigins: ReadonlyArray<string>;
     readonly verify: AccessTokenVerifier;
   }
 >()("@store/server/AccessTokens") {
   static readonly layer = Layer.effect(
     AccessTokens,
     Effect.gen(function* () {
-      const { stage } = yield* Alchemy.Stack;
-      const authPublicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
-      const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
-      const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
-        Config.withDefault(""),
-      );
-      const productionDomainEnv = yield* productionDomainConfig;
-      const trustedOrigins = parseTrustedOrigins(productionDomainEnv.AUTH_TRUSTED_ORIGINS);
-      const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
-        Config.withDefault(""),
-        Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
-      );
-      const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-      const published = stage === "prod";
-      const productionHostname = resolveProductionHostname(productionDomainEnv);
-      const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
-      if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && published) {
-        if (!productionHostname) {
-          return yield* Effect.die(new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE));
+      const publicKey = yield* Config.option(Config.String("AUTH_JWT_PUBLIC_KEY"));
+      if (Option.isNone(publicKey)) {
+        if (globalThis.__ALCHEMY_RUNTIME__) {
+          return yield* Effect.die(new Error("The auth public key is not bound."));
         }
-        if (!productionApiHostname) {
-          return yield* Effect.die(new Error(PRODUCTION_API_DOMAIN_MISSING_MESSAGE));
-        }
+        return AccessTokens.of({ verify: unbound });
       }
-      const siteOrigin = productionSiteOrigin(productionDomainEnv);
-      const authHostname =
-        publicHostnameFrom(productionAuthDomain) ??
-        (productionHostname ? `auth.${productionHostname}` : undefined);
-      const authOrigin =
-        authBaseUrl.trim() ||
-        (localDevelopment || !authHostname ? "http://localhost:8788" : `https://${authHostname}`);
-      const security = yield* Effect.fromResult(
-        decideAuthSecurity({
-          baseURL: authOrigin,
-          electronProtocol,
-          trustedOrigins: [
-            ...trustedOrigins,
-            ...(siteOrigin ? [siteOrigin] : []),
-            ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
-          ],
-        }),
-      ).pipe(
-        Effect.mapError((reason) => new Error(reason)),
+      const keys = yield* decodePublicKeyPem(publicKey.value).pipe(
+        Effect.provide(WebCrypto.layer),
         Effect.orDie,
       );
-      yield* Effect.forEach(
-        security.rejectedSettings,
-        (setting) =>
-          Effect.logError("auth.setting_rejected").pipe(
-            Effect.annotateLogs({
-              message: `${setting.setting} value "${setting.value}" ${setting.reason} and was ignored.`,
-              setting: setting.setting,
-              value: setting.value,
-              reason: setting.reason,
-            }),
-          ),
-        { discard: true },
-      );
-      const keys = yield* decodeJwtKeyRingText(authPublicJwkText).pipe(Effect.orDie);
-      const verify = yield* makeAccessTokenVerifier({
-        issuer: security.baseURL,
-        audience: "tabaaq-api",
-        keys,
-      });
-      return AccessTokens.of({ trustedOrigins: security.trustedOrigins, verify });
+      return AccessTokens.of({ verify: yield* makeAccessTokenVerifier({ keys }) });
     }),
   );
 }

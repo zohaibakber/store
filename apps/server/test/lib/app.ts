@@ -97,7 +97,6 @@ const servicesFor = (options: AppOptions) =>
       options.hubs ?? { getByName: () => ({ fetch: unused, publish: unused }) },
     ),
     Layer.succeed(AccessTokens, {
-      trustedOrigins: ["http://localhost:5173", "http://localhost:5174"],
       verify: verifierFor(options.claims ?? claimsFor("owner")),
     }),
     Layer.succeed(GlobalSearch, options.globalSearch ?? { search: unused }),

@@ -1,6 +1,5 @@
 import {
   AccessTokenService,
-  AUTH_JWT_KEY_ID,
   EmailAddress,
   EmailProvider,
   PasswordHasher,
@@ -46,7 +45,6 @@ const GOOGLE_CLIENT_ID = "web-client.apps.googleusercontent.com";
 export const PASSWORD = Redacted.make("correct horse battery");
 
 export const native: AuthClientKind = { _tag: "Native", deviceName: "Front counter" };
-export const browser: AuthClientKind = { _tag: "Browser" };
 
 const testRuntimeContext = Context.make(RuntimeContext, {
   Type: "test",
@@ -259,10 +257,8 @@ export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
     EphemeralStore.layer(EPHEMERAL_PEPPER),
     PasswordHasher.layer,
     AccessTokenService.layer({
-      issuer: "https://auth.example.com",
-      audience: "tabaaq-api",
-      keys: [{ kid: AUTH_JWT_KEY_ID, jwk: publicJwk }],
-      activeKeyId: AUTH_JWT_KEY_ID,
+      keys: [{ kid: "test-key", jwk: publicJwk }],
+      activeKeyId: "test-key",
       privateJwk: Redacted.make(privateJwk),
     }).pipe(Layer.provide(WebCrypto.layer)),
     deliversOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
@@ -274,8 +270,6 @@ export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
     Layer.unwrap(TestLimits.useSync(AuthLimiter.layer)),
     Layer.succeed(AuthSettings, {
       developmentOtp: deliversOtp,
-      trustedRedirects: ["https://app.example.com", "com.tabaaq.desktop://"],
-      refreshTokenPepper: Redacted.make("refresh-pepper"),
     }),
   ).pipe(Layer.provide(databaseLayer), Layer.provideMerge(AuthCrypto.layer));
 
@@ -312,18 +306,7 @@ export const signUp = (email: string, client: AuthClientKind = native) =>
     }),
   );
 
-export const refreshWith = (
-  refreshToken: RefreshToken | undefined,
-  client: AuthClientKind = native,
-) =>
+export const refreshWith = (refreshToken: RefreshToken) =>
   AuthApi.use((auth) =>
-    Effect.result(
-      auth
-        .refresh(
-          refreshToken === undefined
-            ? undefined
-            : { client, refreshToken: Redacted.make(refreshToken) },
-        )
-        .pipe(Effect.mapError(authFailureWire)),
-    ),
+    Effect.result(auth.refresh(Redacted.make(refreshToken)).pipe(Effect.mapError(authFailureWire))),
   );

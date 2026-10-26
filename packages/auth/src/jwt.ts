@@ -2,6 +2,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Base64 from "effect/encoding/Base64";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -23,29 +24,7 @@ import * as WebCrypto from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-export const AUTH_JWT_KEY_ID = "tabaaq-auth-v1";
 const ACCESS_TOKEN_TTL_SECONDS = 3_600;
-
-const JsonWebKeySchema = Schema.Struct({
-  kty: Schema.String,
-  crv: Schema.optionalKey(Schema.String),
-  x: Schema.optionalKey(Schema.String),
-  y: Schema.optionalKey(Schema.String),
-  d: Schema.optionalKey(Schema.String),
-  use: Schema.optionalKey(Schema.String),
-  alg: Schema.optionalKey(Schema.String),
-  kid: Schema.optionalKey(Schema.String),
-});
-
-const JsonWebKeySetSchema = Schema.Struct({
-  keys: Schema.NonEmptyArray(
-    Schema.Struct({ ...JsonWebKeySchema.fields, kid: Schema.String.check(Schema.isMinLength(1)) }),
-  ).check(
-    Schema.makeFilter((keys) => new Set(keys.map((key) => key.kid)).size === keys.length, {
-      title: "Key ring with distinct key ids",
-    }),
-  ),
-});
 
 export interface JwtKey {
   readonly kid: string;
@@ -54,9 +33,10 @@ export interface JwtKey {
 
 export type JwtKeyRing = ReadonlyArray<JwtKey>;
 
+const ISSUER = "tabaaq-auth";
+const AUDIENCE = "tabaaq-api";
+
 export interface JwtConfiguration {
-  readonly issuer: string;
-  readonly audience: string;
   readonly keys: JwtKeyRing;
   readonly activeKeyId?: string | undefined;
   readonly privateJwk?: Redacted.Redacted<JsonWebKey>;
@@ -226,8 +206,8 @@ export const issueAccessToken = Effect.fn("AccessToken.issue")(function* (
     ),
   );
   const payload = {
-    iss: configuration.issuer,
-    aud: configuration.audience,
+    iss: ISSUER,
+    aud: AUDIENCE,
     sub: input.subject,
     sid: input.sessionId,
     org: input.activeOrganizationId,
@@ -311,7 +291,7 @@ export const verifyAccessToken = Effect.fn("AccessToken.verify")(function* (
   const payload = yield* decodeJwtPayload(
     textDecoder.decode(yield* decodeBase64Url(encodedPayload)),
   ).pipe(Effect.mapError(claimsError));
-  if (payload.iss !== configuration.issuer || payload.aud !== configuration.audience) {
+  if (payload.iss !== ISSUER || payload.aud !== AUDIENCE) {
     return yield* new JwtError({
       reason: "InvalidClaims",
       message: "The access token issuer or audience is invalid.",
@@ -372,50 +352,39 @@ export class AccessTokenService extends Context.Service<
     );
 }
 
-const decodeJsonWebKeyText = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonWebKeySchema));
+const noKey = (message: string) => (cause: unknown) =>
+  new JwtError({ reason: "NoKey", message, cause });
 
-export interface SigningJwk {
-  readonly jwk: Redacted.Redacted<JsonWebKey>;
-  readonly publicHalf: Pick<JsonWebKey, "x" | "y">;
-}
+const pemBytes = (pem: string, message: string) =>
+  Effect.fromResult(
+    Base64.decode(pem.replace(/-----(BEGIN|END) [A-Z ]+-----/gu, "").replace(/\s+/gu, "")),
+  ).pipe(Effect.mapError(noKey(message)));
 
-export const decodeSigningJwkText = (text: Redacted.Redacted<string>) =>
-  decodeJsonWebKeyText(Redacted.value(text)).pipe(
-    Effect.map((jwk): SigningJwk => ({
-      jwk: Redacted.make(jwk),
-      publicHalf: { x: jwk.x, y: jwk.y },
-    })),
-    Effect.mapError(
-      () =>
-        new JwtError({
-          reason: "NoKey",
-          message: "The JWT signing key is not a valid JSON Web Key.",
-        }),
-    ),
+const jwkThumbprint = Effect.fnUntraced(function* (jwk: JsonWebKey) {
+  const crypto = yield* Crypto.Crypto;
+  const canonical = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
+  return Base64Url.encode(yield* crypto.digest("SHA-256", textEncoder.encode(canonical)));
+});
+
+export const decodePublicKeyPem = Effect.fn("AccessToken.decodePublicKeyPem")(function* (
+  pem: string,
+) {
+  const message = "The JWT public key is not a P-256 SPKI PEM.";
+  const der = yield* pemBytes(pem, message);
+  const jwk = yield* WebCrypto.exportEs256Jwk("spki", der).pipe(Effect.mapError(noKey(message)));
+  const kid = yield* jwkThumbprint(jwk).pipe(Effect.mapError(noKey(message)));
+  return [{ kid, jwk }] satisfies JwtKeyRing;
+});
+
+export const decodeSigningKeyPem = Effect.fn("AccessToken.decodeSigningKeyPem")(function* (
+  pem: Redacted.Redacted<string>,
+) {
+  const message = "The JWT signing key is not a P-256 PKCS #8 PEM.";
+  const der = yield* pemBytes(Redacted.value(pem), message);
+  return Redacted.make(
+    yield* WebCrypto.exportEs256Jwk("pkcs8", der).pipe(Effect.mapError(noKey(message))),
   );
-
-export const decodeJwtKeyRingText = (text: string) =>
-  Schema.decodeUnknownEffect(
-    Schema.fromJsonString(Schema.Union([JsonWebKeySetSchema, JsonWebKeySchema])),
-  )(text).pipe(
-    Effect.map((source): JwtKeyRing =>
-      "keys" in source
-        ? source.keys.map((jwk) => ({ kid: jwk.kid, jwk }))
-        : [{ kid: AUTH_JWT_KEY_ID, jwk: source }],
-    ),
-  );
-
-export const activeJwtKeyId = (
-  keys: JwtKeyRing,
-  publicHalf: SigningJwk["publicHalf"],
-): string | undefined => {
-  const [first, ...rest] = keys;
-  if (rest.length === 0) return first?.kid;
-  const { x, y } = publicHalf;
-  return x === undefined || y === undefined
-    ? undefined
-    : keys.find(({ jwk }) => jwk.x === x && jwk.y === y)?.kid;
-};
+});
 
 export const AuthJwks = Schema.Struct({
   keys: Schema.Array(

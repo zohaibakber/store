@@ -138,9 +138,11 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   stores state remotely and binds real dev-stage D1 and the `OrgAuthority` and `OrgHub` Durable
   Objects.
   There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
-  `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
-  refresh and ephemeral peppers, and Google OAuth credentials. Use different
-  secrets per stage. Do not commit env files or env templates.
+  `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with
+  `GOOGLE_OAUTH_CLIENT_SECRET`. Hostnames and the Google client ID live in
+  `infra/deployment.ts`. Alchemy generates the JWT key pair and the
+  ephemeral-record secret per stage. Local dev returns OTP codes in the
+  response. Do not commit env files or env templates.
 - **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials

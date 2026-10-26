@@ -1,13 +1,13 @@
 import {
   AccessTokenService,
-  activeJwtKeyId,
-  decodeSigningJwkText,
-  decodeJwtKeyRingText,
+  decodePublicKeyPem,
+  decodeSigningKeyPem,
   EmailProvider,
   PasswordHasher,
   WebCrypto,
+  type JwtKeyRing,
 } from "@store/auth";
-import { AuthDatabase } from "@store/db/auth/infra";
+import { AuthDatabase, AuthEphemeralSecret, AuthSigningKeyPair } from "@store/db/auth/infra";
 import { Api, OrgHub } from "@store/server/api";
 import { buildOncePerIsolate, workerRuntimeServices } from "@store/server/runtime/isolate";
 import * as Alchemy from "alchemy";
@@ -20,22 +20,22 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
+import * as Option from "effect/Option";
+import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import {
+  GOOGLE_OAUTH_CLIENT_ID,
+  LOCAL_AUTH_PORT,
+  PRODUCTION_AUTH_HOSTNAME,
+} from "../../infra/deployment";
 import { AuthCrypto } from "./src/crypto";
 import { AuthD1 } from "./src/d1";
-import {
-  AuthDeploymentConfig,
-  resolveAuthDeployment,
-  resolveProductionAuthHostname,
-} from "./src/deployment";
 import { EphemeralStore } from "./src/ephemeral";
 import { GoogleOAuth } from "./src/google";
 import { GoogleIdentity } from "./src/google-identity";
 import { authRoutes, recoverUnexpected } from "./src/http";
 import { HubRevocation } from "./src/hub-revocation";
-import { writeJwksAssets } from "./src/jwks-asset";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS, AuthLimiter } from "./src/limits";
 import { Login } from "./src/login";
 import { Organizations } from "./src/organization-ops";
@@ -48,6 +48,13 @@ const OperationsLive = Layer.mergeAll(Login.layer, GoogleIdentity.layer, Organiz
   Layer.provideMerge(Sessions.layer),
 );
 
+const AuthBindings = Config.all({
+  origin: Config.String("AUTH_ORIGIN"),
+  signingKey: Config.Redacted("AUTH_JWT_PRIVATE_KEY"),
+  publicKey: Config.String("AUTH_JWT_PUBLIC_KEY"),
+  ephemeralSecret: Config.Redacted("AUTH_EPHEMERAL_SECRET"),
+});
+
 class AuthDeploymentError extends Schema.TaggedError<AuthDeploymentError>()("AuthDeploymentError", {
   reason: Schema.String,
 }) {}
@@ -58,31 +65,8 @@ export const AuthLive = Auth.make(
   Effect.gen(function* () {
     const database = yield* AuthDatabase;
     const { stage } = yield* Alchemy.Stack;
-    const published = stage === "prod";
-    const settings = yield* AuthDeploymentConfig;
-    const authHostname =
-      !globalThis.__ALCHEMY_RUNTIME__ && published
-        ? resolveProductionAuthHostname(settings)
-        : undefined;
-    if (!globalThis.__ALCHEMY_RUNTIME__ && published && !authHostname) {
-      return yield* Effect.die(
-        new AuthDeploymentError({
-          reason:
-            "Published auth hostname is missing. Set PRODUCTION_DOMAIN or PRODUCTION_AUTH_DOMAIN.",
-        }),
-      );
-    }
-    const assets = globalThis.__ALCHEMY_RUNTIME__
-      ? undefined
-      : yield* Effect.flatMap(Config.String("AUTH_JWT_PUBLIC_JWK"), (publicJwkText) =>
-          Effect.gen(function* () {
-            const path = yield* Path.Path;
-            return yield* writeJwksAssets(
-              path.join(import.meta.dirname, ".alchemy", "jwks-assets"),
-              yield* decodeJwtKeyRingText(publicJwkText),
-            );
-          }).pipe(Effect.orDie),
-        );
+    const signingKey = yield* AuthSigningKeyPair;
+    const ephemeralSecret = yield* AuthEphemeralSecret;
     const worker = {
       main: import.meta.url,
       compatibility: {
@@ -91,44 +75,29 @@ export const AuthLive = Auth.make(
       },
       placement: { mode: "smart" as const },
       observability: { enabled: true },
-      dev: { port: 8788 },
+      dev: { port: LOCAL_AUTH_PORT },
       env: {
         AUTH_DB: database,
-        AUTH_BASE_URL: settings.authBaseUrl,
-        AUTH_TRUSTED_ORIGINS: settings.trustedOrigins,
+        AUTH_ORIGIN: Cloudflare.Workers.URL,
+        AUTH_JWT_PRIVATE_KEY: signingKey.privateKey,
+        AUTH_JWT_PUBLIC_KEY: signingKey.publicKey,
+        AUTH_EPHEMERAL_SECRET: ephemeralSecret.text,
       },
     };
-    const served = assets ? { ...worker, assets } : worker;
-    return authHostname
+    return !globalThis.__ALCHEMY_RUNTIME__ && stage === "prod"
       ? {
-          ...served,
+          ...worker,
           name: "tabaaq-auth-prod-lsvjysktazcvrrda",
-          domain: authHostname,
+          domain: PRODUCTION_AUTH_HOSTNAME,
           workersDev: false,
         }
-      : served;
+      : worker;
   }),
   Effect.gen(function* () {
     const databaseResource = yield* AuthDatabase;
     const databaseBinding = yield* Cloudflare.D1.QueryDatabase(databaseResource);
-    const { stage } = yield* Alchemy.Stack;
-    const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const { security, developmentOtp } = yield* Effect.fromResult(
-      resolveAuthDeployment(yield* AuthDeploymentConfig, { stage, localDevelopment }),
-    ).pipe(
-      Effect.mapError((reason) => new AuthDeploymentError({ reason })),
-      Effect.orDie,
-    );
-
-    const signingJwk = yield* Effect.flatMap(
-      Config.Redacted("AUTH_JWT_PRIVATE_JWK"),
-      decodeSigningJwkText,
-    ).pipe(Effect.orDie);
-    const publicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
-    const keys = yield* decodeJwtKeyRingText(publicJwkText).pipe(Effect.orDie);
-    const refreshTokenPepper = yield* Config.Redacted("AUTH_REFRESH_TOKEN_PEPPER");
-    const ephemeralPepper = yield* Config.Redacted("AUTH_EPHEMERAL_PEPPER");
-    const googleClientId = yield* Config.String("GOOGLE_OAUTH_CLIENT_ID");
+    const developmentOtp = yield* Alchemy.ALCHEMY_DEV;
+    const bindings = yield* Config.option(AuthBindings);
     const googleClientSecret = yield* Config.Redacted("GOOGLE_OAUTH_CLIENT_SECRET");
     const tenPerMinute = yield* Cloudflare.Workers.RateLimit("AUTH_TEN_PER_MINUTE", {
       namespaceId: 1003,
@@ -147,50 +116,65 @@ export const AuthLive = Auth.make(
 
     const isolateServices = yield* workerRuntimeServices;
     const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
-    const DependenciesLive = Layer.mergeAll(
-      AuthRepository.layer,
-      EphemeralStore.layer(ephemeralPepper),
-      PasswordHasher.layer,
-      AccessTokenService.layer({
-        issuer: security.baseURL,
-        audience: "tabaaq-api",
-        keys,
-        activeKeyId: activeJwtKeyId(keys, signingJwk.publicHalf),
-        privateJwk: signingJwk.jwk,
-      }).pipe(Layer.provide(WebCrypto.layer)),
-      developmentOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
-      GoogleOAuth.layer({
-        clientId: googleClientId,
-        clientSecret: googleClientSecret,
-        callbackUrl: `${security.baseURL}/v1/oauth/google/callback`,
-      }).pipe(Layer.provide(FetchHttpClient.layer)),
-      HubRevocation.layer(orgHubs, (effect) => execution.waitUntil(effect)),
-      AuthLimiter.layer({
-        tenPerMinute: (key) => tenPerMinute.limit({ key }),
-        fivePerMinute: (key) => fivePerMinute.limit({ key }),
-        sixtyPerMinute: (key) => sixtyPerMinute.limit({ key }),
-      }),
-      Layer.succeed(AuthSettings, {
-        developmentOtp,
-        trustedRedirects: security.trustedRedirects,
-        refreshTokenPepper,
-      }),
-    ).pipe(Layer.provide(AuthD1.layer(database)), Layer.provideMerge(AuthCrypto.layer));
+    const dependencies = (keys: {
+      readonly origin: string;
+      readonly ring: JwtKeyRing;
+      readonly signingJwk: Redacted.Redacted<JsonWebKey>;
+      readonly ephemeralSecret: Redacted.Redacted<string>;
+    }) =>
+      Layer.mergeAll(
+        AuthRepository.layer,
+        EphemeralStore.layer(keys.ephemeralSecret),
+        PasswordHasher.layer,
+        AccessTokenService.layer({
+          keys: keys.ring,
+          activeKeyId: keys.ring[0]?.kid,
+          privateJwk: keys.signingJwk,
+        }).pipe(Layer.provide(WebCrypto.layer)),
+        developmentOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
+        GoogleOAuth.layer({
+          clientId: GOOGLE_OAUTH_CLIENT_ID,
+          clientSecret: googleClientSecret,
+          callbackUrl: `${keys.origin}/v1/oauth/google/callback`,
+        }).pipe(Layer.provide(FetchHttpClient.layer)),
+        HubRevocation.layer(orgHubs, (effect) => execution.waitUntil(effect)),
+        AuthLimiter.layer({
+          tenPerMinute: (key) => tenPerMinute.limit({ key }),
+          fivePerMinute: (key) => fivePerMinute.limit({ key }),
+          sixtyPerMinute: (key) => sixtyPerMinute.limit({ key }),
+        }),
+        Layer.succeed(AuthSettings, { developmentOtp }),
+      ).pipe(Layer.provide(AuthD1.layer(database)), Layer.provideMerge(AuthCrypto.layer));
     const runtime = yield* Effect.exit(
       buildOncePerIsolate(
         Effect.gen(function* () {
-          const dependencies = yield* Layer.build(DependenciesLive);
-          const ServiceLive = OperationsLive.pipe(
-            Layer.provideMerge(Layer.succeedContext(dependencies)),
+          const material = yield* Option.match(bindings, {
+            onNone: () =>
+              Effect.die(
+                new AuthDeploymentError({
+                  reason: "The auth Worker bindings are missing.",
+                }),
+              ),
+            onSome: Effect.succeed,
+          });
+          const ring = yield* decodePublicKeyPem(material.publicKey);
+          const signingJwk = yield* decodeSigningKeyPem(material.signingKey);
+          const built = yield* Layer.build(
+            dependencies({
+              origin: material.origin,
+              ring,
+              signingJwk,
+              ephemeralSecret: material.ephemeralSecret,
+            }),
           );
-          const RoutesLive = authRoutes({
-            keys,
-            secureCookies: security.secureCookies,
-            trustedOrigins: security.trustedOrigins,
-          }).pipe(Layer.provide(ServiceLive), Layer.provide(HttpServer.layerServices));
+          const ServiceLive = OperationsLive.pipe(Layer.provideMerge(Layer.succeedContext(built)));
+          const RoutesLive = authRoutes({ keys: ring }).pipe(
+            Layer.provide(ServiceLive),
+            Layer.provide(HttpServer.layerServices),
+          );
           const serveRequest = yield* HttpRouter.toHttpEffect(RoutesLive);
-          return { serveRequest, repository: Context.get(dependencies, AuthRepository) };
-        }),
+          return { serveRequest, repository: Context.get(built, AuthRepository) };
+        }).pipe(Effect.provide(WebCrypto.layer)),
         isolateServices,
       ),
     );

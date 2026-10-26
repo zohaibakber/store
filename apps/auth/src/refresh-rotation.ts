@@ -1,4 +1,3 @@
-import type { AuthClientKind } from "@store/auth";
 import * as Result from "effect/Result";
 
 import { AuthRefusal } from "./failures";
@@ -9,7 +8,6 @@ export const REUSE_WINDOW_MS = 90_000;
 export const REPLAY_HOPS = 4;
 
 interface PresentedSession {
-  readonly client: AuthClientKind;
   readonly revokedAt: number | null;
 }
 
@@ -23,12 +21,8 @@ export type RefreshDisposition = "live" | "replay";
 
 export const decidePresentedRefresh = (
   session: PresentedSession,
-  presentedClient: AuthClientKind["_tag"],
   now: number,
 ): Result.Result<RefreshDisposition, AuthRefusal> => {
-  if (session.client._tag !== presentedClient) {
-    return Result.fail(new AuthRefusal({ reason: "InvalidRefreshToken" }));
-  }
   if (session.revokedAt === null) return Result.succeed("live");
   if (session.revokedAt + REUSE_WINDOW_MS <= now) {
     return Result.fail(new AuthRefusal({ reason: "RefreshReuseDetected" }));

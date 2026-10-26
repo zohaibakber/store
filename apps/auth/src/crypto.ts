@@ -45,11 +45,11 @@ export class AuthCrypto extends Context.Service<AuthCrypto>()("@store/auth-worke
         Effect.withSpan("AuthCrypto.otpCode"),
       ),
       pkceChallenge: Effect.fn("AuthCrypto.pkceChallenge")((verifier: string) => sha256(verifier)),
-      refreshHash: Effect.fn("AuthCrypto.refreshHash")((pepper: Pepper, secret: Secret) =>
-        peppered(pepper, Redacted.value(secret)),
+      refreshHash: Effect.fn("AuthCrypto.refreshHash")((secret: Secret) =>
+        sha256(`refresh:${Redacted.value(secret)}`),
       ),
-      invitationHash: Effect.fn("AuthCrypto.invitationHash")((pepper: Pepper, secret: Secret) =>
-        peppered(pepper, `invite:${Redacted.value(secret)}`),
+      invitationHash: Effect.fn("AuthCrypto.invitationHash")((secret: Secret) =>
+        sha256(`invite:${Redacted.value(secret)}`),
       ),
       recordKey: Effect.fn("AuthCrypto.recordKey")((pepper: Pepper, kind: string, id: string) =>
         peppered(pepper, `${kind}:${id}`),

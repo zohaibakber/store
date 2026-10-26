@@ -4,7 +4,7 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
+import { ELECTRON_PROTOCOL } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -77,24 +77,6 @@ const unpackagedDevMarkPath = () =>
 const appIconPath = () =>
   app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
 
-const runtimeApiUrlOverride = process.env["STORE_API_URL"];
-const viteInlinedApiUrl = import.meta.env.VITE_API_URL;
-const API_BASE_URL = fallbackIfBlank(
-  runtimeApiUrlOverride ||
-    (VITE_DEV_SERVER_URL
-      ? "http://localhost:8787"
-      : (process.env["VITE_API_URL"] ?? viteInlinedApiUrl)),
-  "http://localhost:8787",
-);
-const ELECTRON_PROTOCOL = fallbackIfBlank(
-  process.env["ELECTRON_PROTOCOL"],
-  DEFAULT_ELECTRON_PROTOCOL,
-);
-const AUTH_BASE_URL = fallbackIfBlank(
-  process.env["AUTH_BASE_URL"] ?? import.meta.env.VITE_AUTH_URL,
-  "http://localhost:8788",
-);
-
 const EXPERIMENTAL_WAYLAND_COLOR_MANAGER = "WaylandWpColorManagerV1";
 if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
   const disabled = app.commandLine.getSwitchValue("disable-features").split(",").filter(Boolean);
@@ -131,7 +113,7 @@ const publishOAuthCallback = (url: string) => {
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
-  apiOrigin: new URL(API_BASE_URL).origin,
+  apiOrigin: new URL(__API_URL__).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
 
@@ -203,7 +185,7 @@ const withWindow = (control: (window: BrowserWindow) => void) =>
   });
 
 const desktopShell = DesktopShell.of({
-  apiBaseUrl: API_BASE_URL,
+  apiBaseUrl: __API_URL__,
   userDataPath: app.getPath("userData"),
   workerPath: path.join(MAIN_DIST, "replica-worker.js"),
   deviceLabel: hostDeviceLabel(),
@@ -228,8 +210,8 @@ const desktopShell = DesktopShell.of({
 });
 
 const host = makeDesktopHost({
-  apiBaseUrl: API_BASE_URL,
-  authBaseUrl: AUTH_BASE_URL,
+  apiBaseUrl: __API_URL__,
+  authBaseUrl: __AUTH_URL__,
   packaged: app.isPackaged,
   shell: desktopShell,
 });

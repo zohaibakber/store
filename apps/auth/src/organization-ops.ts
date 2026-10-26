@@ -26,7 +26,6 @@ import { AuthLimiter } from "./limits";
 import * as Permissions from "./organization-permissions";
 import { AuthRepository, type InvitationRecord, type MembershipRecord } from "./repository";
 import { Sessions } from "./session-ops";
-import { AuthSettings } from "./settings";
 
 export class Organizations extends Context.Service<Organizations>()(
   "@store/auth-worker/Organizations",
@@ -38,10 +37,6 @@ export class Organizations extends Context.Service<Organizations>()(
       const limiter = yield* AuthLimiter;
       const hubs = yield* HubRevocation;
       const crypto = yield* AuthCrypto;
-      const { refreshTokenPepper } = yield* AuthSettings;
-
-      const hashInvite = (secret: Redacted.Redacted<string>) =>
-        crypto.invitationHash(refreshTokenPepper, secret);
 
       const membershipOf = Effect.fn("Organizations.membershipOf")(function* (
         userId: UserId,
@@ -137,7 +132,7 @@ export class Organizations extends Context.Service<Organizations>()(
         }
         const secret = yield* crypto.randomSecret(32);
         const token = InvitationToken.make(Redacted.value(secret));
-        const tokenHash = yield* hashInvite(secret);
+        const tokenHash = yield* crypto.invitationHash(secret);
         const expiresAt = now + Permissions.INVITATION_TTL_MS;
         const invitation = yield* repository.createInvitation({
           organizationId: input.organizationId,
@@ -177,7 +172,7 @@ export class Organizations extends Context.Service<Organizations>()(
       ) {
         const now = yield* Clock.currentTimeMillis;
         yield* limiter.admit("tenPerMinute", `accept-invitation:${claims.subject}`, "invitation");
-        const tokenHash = yield* hashInvite(Redacted.make(token));
+        const tokenHash = yield* crypto.invitationHash(Redacted.make(token));
         const found = yield* repository.findInvitationByTokenHash(tokenHash);
         const invitation = yield* Effect.fromResult(
           Permissions.decideInvitationAcceptance(Option.fromNullishOr(found), claims.email, now),

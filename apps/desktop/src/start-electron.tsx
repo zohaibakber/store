@@ -15,7 +15,7 @@ import { hostAccess } from "./host-access";
 import { mountApp } from "./mount-app";
 
 export const startElectron = async () => {
-  if (import.meta.env.VITE_SENTRY_DSN?.trim()) init({}, reactInit);
+  if (__SENTRY_DSN__) init({}, reactInit);
   installAppHost(electronAppHost(window));
   const device = deviceWorkspaceStore(browserStorage());
   const [inventory, snapshot] = await Promise.all([

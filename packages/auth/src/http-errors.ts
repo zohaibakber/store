@@ -15,7 +15,6 @@ const statusByTag = {
 type AuthHttpErrorTag = keyof typeof statusByTag;
 
 export const AuthErrorCode = Schema.Literals([
-  "REFRESH_REQUIRED",
   "INVALID_REFRESH_TOKEN",
   "REFRESH_REUSE_DETECTED",
   "REFRESH_EXPIRED",
@@ -104,7 +103,6 @@ export type AuthHttpError = (typeof AuthHttpErrors)[number]["Type"];
 export const authHttpErrorStatus = (tag: AuthHttpError["_tag"]): number => statusByTag[tag];
 
 const SESSION_ENDING_CODES: ReadonlyArray<AuthErrorCode> = [
-  "REFRESH_REQUIRED",
   "INVALID_REFRESH_TOKEN",
   "REFRESH_REUSE_DETECTED",
   "REFRESH_EXPIRED",

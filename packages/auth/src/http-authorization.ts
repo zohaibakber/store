@@ -21,23 +21,6 @@ export class Authorization extends HttpApiMiddleware.Service<
   error: AuthUnauthenticated,
 }) {}
 
-export const refreshCookieSecurity = (secureCookies: boolean) =>
-  HttpApiSecurity.apiKey({
-    in: "cookie",
-    key: secureCookies ? "__Host-tabaaq_refresh" : "tabaaq_refresh",
-  });
-
-export const refreshCookieName = (secureCookies: boolean) =>
-  refreshCookieSecurity(secureCookies).key;
-
-export const refreshCookieOptions = (secureCookies: boolean) =>
-  ({
-    httpOnly: true,
-    secure: secureCookies,
-    sameSite: "lax" as const,
-    path: "/",
-  }) as const;
-
 export const presentedCredential = (credential: Redacted.Redacted<string>) =>
   Redacted.value(credential).length > 0 ? Option.some(credential) : Option.none();
 

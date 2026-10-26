@@ -3,7 +3,7 @@ import {
   type BeginGoogleInput,
   type ExchangeGoogleInput,
 } from "@store/auth";
-import { isTrustedRedirect } from "@store/auth/security";
+import { isDesktopRedirect } from "@store/auth/security";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,7 +18,6 @@ import * as GoogleLinking from "./google-linking";
 import type { OAuthState } from "./identifiers";
 import { AuthRepository, type UserRecord } from "./repository";
 import { Sessions } from "./session-ops";
-import { AuthSettings } from "./settings";
 
 export interface GoogleCallback {
   readonly redirectUri: string;
@@ -34,7 +33,6 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
       const google = yield* GoogleOAuth;
       const sessions = yield* Sessions;
       const crypto = yield* AuthCrypto;
-      const { trustedRedirects } = yield* AuthSettings;
 
       const linkGoogleUser = Effect.fn("GoogleIdentity.linkGoogleUser")(function* (
         profile: GoogleProfile,
@@ -80,7 +78,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
         input: BeginGoogleInput,
       ) {
         const now = yield* Clock.currentTimeMillis;
-        if (!isTrustedRedirect(input.redirectUri, trustedRedirects)) {
+        if (!isDesktopRedirect(input.redirectUri)) {
           return yield* new AuthRefusal({ reason: "InvalidRedirect" });
         }
         const googleCodeVerifier = yield* crypto.randomToken(32);

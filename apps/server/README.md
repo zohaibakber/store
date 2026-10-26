@@ -41,8 +41,8 @@ pnpm run plan:prod
 pnpm run deploy:prod
 ```
 
-Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
-JWT keys and peppers for each stage.
+Google OAuth credentials come from gitignored `.env.dev` and `.env.prod` files.
+Alchemy generates the JWT key pair and the ephemeral-record secret per stage.
 
 ## Local development
 

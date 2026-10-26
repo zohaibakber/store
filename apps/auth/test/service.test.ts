@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { EmailAddress, IdentifyInput, OtpCode, type OtpChallengeId } from "@store/auth";
+import {
+  EmailAddress,
+  IdentifyInput,
+  OtpCode,
+  type AuthClientKind,
+  type OtpChallengeId,
+} from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -10,7 +16,6 @@ import { EphemeralStore } from "../src/ephemeral";
 import {
   AuthApi,
   AuthTest,
-  browser,
   count,
   forgingSigner,
   googleClaims,
@@ -38,6 +43,8 @@ interface GoogleSignInOptions {
   readonly exchangeVerifier?: string;
 }
 
+const googleDevice: AuthClientKind = { _tag: "Native", deviceName: "Google device" };
+
 const googleSignIn = Effect.fn("googleSignIn")(function* (
   profile: { readonly sub: string; readonly email: string },
   options: GoogleSignInOptions = {},
@@ -46,9 +53,9 @@ const googleSignIn = Effect.fn("googleSignIn")(function* (
   const control = yield* AuthTest;
   const challenge = yield* pkceChallenge(VERIFIER);
   const authorization = yield* auth.beginGoogle({
-    redirectUri: "https://app.example.com/callback",
+    redirectUri: "com.tabaaq.desktop://auth/callback",
     codeChallenge: challenge,
-    client: browser,
+    client: googleDevice,
   });
   const parameters = new URL(authorization.href).searchParams;
   const state = parameters.get("state");
@@ -67,7 +74,7 @@ const googleSignIn = Effect.fn("googleSignIn")(function* (
   return yield* auth.exchangeGoogle({
     code: callback.code,
     codeVerifier: options.exchangeVerifier ?? VERIFIER,
-    client: browser,
+    client: googleDevice,
   });
 });
 
@@ -234,7 +241,7 @@ describe("Google sign-in", () => {
           auth.beginGoogle({
             redirectUri: "https://phishing.example/callback",
             codeChallenge: "challenge",
-            client: browser,
+            client: native,
           }),
         ),
       );
@@ -257,7 +264,7 @@ describe("Google sign-in", () => {
       ).toBe(1);
       expect(yield* sessions()).toBe(2);
       expect(yield* sessions("revokedAt IS NULL")).toBe(1);
-      expect(yield* sessions("revokedAt IS NULL AND clientKind = 'Browser'")).toBe(1);
+      expect(yield* sessions("revokedAt IS NULL AND deviceName = 'Google device'")).toBe(1);
     }).pipe(scenario()),
   );
 

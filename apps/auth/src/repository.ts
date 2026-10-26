@@ -132,7 +132,7 @@ const SessionRow = Schema.Struct({
   userId: UserId,
   activeOrganizationId: OrganizationId,
   refreshTokenHash: Schema.String,
-  clientKind: Schema.Literals(["Browser", "Native"]),
+  clientKind: Schema.Literal("Native"),
   deviceName: Schema.NullOr(Schema.String),
   expiresAt: instant,
   revokedAt: nullableInstant,
@@ -141,10 +141,7 @@ const SessionRow = Schema.Struct({
   Schema.decodeTo(SessionRecord, {
     decode: SchemaGetter.transform(({ clientKind, deviceName, ...row }) => ({
       ...row,
-      client:
-        clientKind === "Browser"
-          ? ({ _tag: "Browser" } as const)
-          : ({ _tag: "Native", deviceName: deviceName ?? "Native client" } as const),
+      client: { _tag: clientKind, deviceName: deviceName ?? "Native client" },
     })),
     encode: rowOnly("A session row is only decoded."),
   }),
@@ -260,7 +257,7 @@ const sessionValues = (input: NewSession) => ({
   activeOrganizationId: input.activeOrganizationId,
   refreshTokenHash: input.refreshTokenHash,
   clientKind: input.client._tag,
-  deviceName: input.client._tag === "Native" ? input.client.deviceName : null,
+  deviceName: input.client.deviceName,
   expiresAt: at(input.expiresAt),
 });
 

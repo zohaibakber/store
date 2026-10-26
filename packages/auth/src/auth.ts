@@ -5,9 +5,6 @@ export {
   bearerTokenFromHeaders,
   CurrentAccessToken,
   presentedCredential,
-  refreshCookieName,
-  refreshCookieOptions,
-  refreshCookieSecurity,
 } from "./http-authorization";
 export { AuthHttpApi, MalformedRequest } from "./http-api";
 export {
@@ -22,10 +19,8 @@ export {
   AccessTokenService,
   AuthJwks,
   JwtError,
-  activeJwtKeyId,
-  AUTH_JWT_KEY_ID,
-  decodeSigningJwkText,
-  decodeJwtKeyRingText,
+  decodePublicKeyPem,
+  decodeSigningKeyPem,
   makeAccessTokenVerifier,
   publicJwks,
   type AccessTokenVerifier,
