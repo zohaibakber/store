@@ -64,7 +64,7 @@ into typed errors.
 | `GET /api/sync/imports/:id`            | `importStatus`        |
 | `GET /api/sync/live`                   | WebSocket to `OrgHub` |
 
-Other routes: `/api/health`, `/api/auth/session`, and `/api/uploads` (Workers AI, rate limited).
+Other routes: `/api/health`, `/api/auth/session` and `/api/global-search`.
 
 ## Organization authority (`apps/server/src/authority`)
 

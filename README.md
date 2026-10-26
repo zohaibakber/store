@@ -33,7 +33,7 @@ design is in [`docs/architecture.md`](docs/architecture.md).
 - `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
-- `packages/services` owns shared application services such as invoice extraction.
+- `packages/services` owns shared application services such as global product search.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
 Shared helpers stay next to the tests that use them. The desktop renderer has no unit
