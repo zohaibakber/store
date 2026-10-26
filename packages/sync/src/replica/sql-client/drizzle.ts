@@ -1,10 +1,11 @@
 import { entityKind } from "drizzle-orm";
 import { EffectCache } from "drizzle-orm/cache/core/cache-effect";
-import type { WithCacheConfig } from "drizzle-orm/cache/core/types";
+import type { QueryMetadata, WithCacheConfig } from "drizzle-orm/cache/core/types";
 import { DefaultServices } from "drizzle-orm/effect-core/defaults";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import { EffectLogger } from "drizzle-orm/effect-core/logger";
 import type { QueryEffectHKTBase } from "drizzle-orm/effect-core/query-effect";
+import { effectSQLiteDoCodecs } from "drizzle-orm/effect-sqlite-do/codecs";
 import type { EmptyRelations } from "drizzle-orm/relations";
 import type { Query } from "drizzle-orm/sql/sql";
 import { SQLiteDialect } from "drizzle-orm/sqlite-core/dialect";
@@ -28,11 +29,6 @@ interface ReplicaQueryEffectHKT extends QueryEffectHKTBase {
 export type ReplicaDb = SQLiteEffectDatabase<ReplicaQueryEffectHKT, unknown, EmptyRelations>;
 
 type QueryMode = "arrays" | "objects" | "raw";
-
-type QueryMetadata = {
-  readonly type: "select" | "update" | "delete" | "insert";
-  readonly tables: Array<string>;
-};
 
 type SessionServices = {
   readonly logger: EffectLogger["Service"];
@@ -78,7 +74,6 @@ class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHK
           if (mode === "objects") return Effect.map(q.withoutTransform, (rows) => copyRow(rows[0]));
           return Effect.map(q.withoutTransform, (rows) => rows[0]);
         },
-        values: (params) => statement(params).values,
         run: (params) => statement(params).raw,
       },
       query,
@@ -88,6 +83,7 @@ class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHK
       this.services.cache,
       queryMetadata,
       cacheConfig,
+      false,
     );
   }
 
@@ -122,7 +118,7 @@ export const makeReplicaDb = (client: SqlClient): Effect.Effect<ReplicaDb> =>
   Effect.gen(function* () {
     const logger = yield* EffectLogger;
     const cache = yield* EffectCache;
-    const dialect = new SQLiteDialect({ useJitMappers: false });
+    const dialect = new SQLiteDialect({ codecs: effectSQLiteDoCodecs, useJitMappers: false });
     return new SqlClientDatabase(
       dialect,
       new SqlClientSession(client, dialect, { logger, cache }),

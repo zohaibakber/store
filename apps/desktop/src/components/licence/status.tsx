@@ -2,11 +2,6 @@ import { useLicenceState } from "@store/inventory-react";
 
 import { licenceStatusCopy } from "@/components/licence/copy";
 
-export const useShopName = (): string | undefined => {
-  const state = useLicenceState();
-  return state === undefined || state._tag === "missing" ? undefined : state.licence.shopName;
-};
-
 export function LicenceStatus() {
   const state = useLicenceState();
   if (state === undefined || state._tag === "missing") return null;

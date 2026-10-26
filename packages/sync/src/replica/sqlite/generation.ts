@@ -134,7 +134,7 @@ const tableExists = Effect.fn("ReplicaGeneration.tableExists")(function* (
   tx: ReplicaDb,
   name: string,
 ) {
-  const rows = yield* tx.all<unknown>(
+  const rows = yield* tx.all(
     sql`select 1 from sqlite_master where type = 'table' and name = ${name}`,
   );
   return rows.length > 0;
@@ -197,7 +197,7 @@ const cleanupTargets = (standby: typeof generationState.$inferSelect.standby) =>
   standby === "retired" ? RETIRED_TARGETS : LEFTOVER_TARGETS;
 
 const isEmpty = Effect.fn("ReplicaGeneration.isEmpty")(function* (tx: ReplicaDb, table: string) {
-  const rows = yield* tx.all<unknown>(sql`select rowid from ${sql.identifier(table)} limit 1`);
+  const rows = yield* tx.all(sql`select rowid from ${sql.identifier(table)} limit 1`);
   return rows.length === 0;
 });
 
@@ -205,7 +205,7 @@ const hasTriggers = Effect.fn("ReplicaGeneration.hasTriggers")(function* (
   tx: ReplicaDb,
   table: string,
 ) {
-  const rows = yield* tx.all<unknown>(
+  const rows = yield* tx.all(
     sql`select 1 from sqlite_master where type = 'trigger' and tbl_name = ${table} limit 1`,
   );
   return rows.length > 0;
@@ -216,7 +216,7 @@ const deleteChunk = Effect.fn("ReplicaGeneration.deleteChunk")(function* (
   table: string,
   rows: number,
 ) {
-  const deleted = yield* tx.all<unknown>(
+  const deleted = yield* tx.all(
     sql`delete from ${sql.identifier(table)} where rowid in (select rowid from ${sql.identifier(table)} order by rowid limit ${rows}) returning 1`,
   );
   return deleted.length;

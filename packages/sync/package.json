@@ -14,7 +14,7 @@
     "@effect/sql-sqlite-node": "catalog:",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

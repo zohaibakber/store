@@ -412,7 +412,7 @@ describe("replica snapshot generations", () => {
         Effect.gen(function* () {
           const definitionOf = (table: string) =>
             Effect.gen(function* () {
-              const columns = yield* tx.all<unknown>(sql.raw(`pragma table_info(${table})`));
+              const columns = yield* tx.all(sql.raw(`pragma table_info(${table})`));
               const indexes = yield* tx.all<{
                 readonly name: string;
                 readonly unique: number;
@@ -420,7 +420,7 @@ describe("replica snapshot generations", () => {
               }>(sql.raw(`pragma index_list(${table})`));
               const named = indexes.filter((index) => !index.name.startsWith("sqlite_autoindex_"));
               const detail = yield* Effect.forEach(named, (index) =>
-                tx.all<unknown>(sql.raw(`pragma index_xinfo(${index.name})`)).pipe(
+                tx.all(sql.raw(`pragma index_xinfo(${index.name})`)).pipe(
                   Effect.map((info) => ({
                     unique: index.unique,
                     partial: index.partial,
@@ -443,9 +443,7 @@ describe("replica snapshot generations", () => {
           }
           for (const table of GENERATION_TABLES) {
             for (const name of [table, standbyTable(table)]) {
-              expect(yield* tx.all<unknown>(sql.raw(`pragma foreign_key_list(${name})`))).toEqual(
-                [],
-              );
+              expect(yield* tx.all(sql.raw(`pragma foreign_key_list(${name})`))).toEqual([]);
             }
             const active = yield* definitionOf(table);
             const standby = yield* definitionOf(standbyTable(table));
@@ -508,7 +506,7 @@ describe("replica snapshot generations", () => {
       );
       expect(clean.products[0]?.name).toBe("Local rename");
       expect(clean.searchable.map((row) => row.id)).toEqual(clean.products.map((row) => row.id));
-      expect(clean.searchEntries.count).toBe(clean.products.length);
+      expect(clean.searchEntries?.count).toBe(clean.products.length);
       expectSearchTriggersFollowTheirTable(clean.triggers);
       expect(clean.batches[0]?.unitQuantity).toBe(8);
       expect(clean.overlays).toHaveLength(1);
@@ -622,7 +620,7 @@ describe("replica snapshot generations", () => {
           ),
         ),
       );
-      expect(standbyRows.map((row) => row.count)).toEqual(GENERATION_TABLES.map(() => 0));
+      expect(standbyRows.map((row) => row?.count)).toEqual(GENERATION_TABLES.map(() => 0));
       yield* session.store.importSnapshotPart(manifest, {
         ...parts[0]!,
         rows: parts[0]!.rows.map((row) =>
@@ -657,7 +655,7 @@ const importStage = (handle: Open["handle"]) =>
   runReplicaTransaction(handle, (tx) =>
     tx.get<{ readonly stage: string }>(sql`select stage from snapshot_imports`),
   ).pipe(
-    Effect.map((row) => row.stage),
+    Effect.map((row) => row?.stage),
     Effect.orDie,
   );
 

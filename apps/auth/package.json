@@ -10,11 +10,12 @@
     "@effect/sql-d1": "catalog:",
     "@store/auth": "workspace:*",
     "@store/db": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261023.1",
+    "@alchemy.run/cloudflare": "catalog:",
+    "@cloudflare/workers-types": "^5.20261026.1",
     "@effect/vitest": "catalog:",
     "@store/server": "workspace:*",
     "@types/node": "^26.6.5",

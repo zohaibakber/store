@@ -18,10 +18,11 @@
     "@store/db": "workspace:*",
     "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "^26.6.5",

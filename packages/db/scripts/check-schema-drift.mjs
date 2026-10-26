@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const wrapper = path.join(packageRoot, "scripts", "drizzle-kit.cjs");
+const kit = path.join(packageRoot, "node_modules", "drizzle-kit", "bin.cjs");
 
 const targets = [
   { config: "drizzle.auth.config.ts", dialect: "sqlite" },
@@ -25,7 +25,7 @@ const describeStatements = (statements) =>
 const inspect = ({ config, dialect }) => {
   const result = spawnSync(
     process.execPath,
-    [wrapper, "generate", "--config", config, "--explain", "--output", "json"],
+    [kit, "generate", "--config", config, "--explain", "--output", "json"],
     { cwd: packageRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 },
   );
   if (result.error) return `could not run drizzle-kit: ${result.error.message}`;
