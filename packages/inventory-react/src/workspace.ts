@@ -31,6 +31,7 @@ const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
       opened.services.Reads.runtime,
       atoms.storageFull,
       atoms.syncSnapshot,
+      atoms.licence,
       ...links.retained,
       ...commandAtoms(commands),
     ] satisfies ReadonlyArray<Atom.Atom<unknown>>,

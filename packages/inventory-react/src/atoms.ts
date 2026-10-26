@@ -26,6 +26,7 @@ import {
   type RestockCursor,
   type RestockFilters,
   type RestockPageRead,
+  type LicenceState,
   type StaffState,
   type StockMovement,
   type Supplier,
@@ -285,6 +286,7 @@ export type WorkspaceAtoms = {
   readonly invoice: (invoiceId: InvoiceId) => Read<Invoice | undefined>;
   readonly invoiceStaff: (invoiceId: InvoiceId) => Read<InvoiceStaff>;
   readonly staff: Atom.Atom<Option.Option<StaffState>>;
+  readonly licence: Atom.Atom<Option.Option<LicenceState>>;
   readonly recentInvoices: (limit: number) => Read<ReadonlyArray<Invoice>>;
   readonly issuedInvoices: (
     invoiceIds: ReadonlyArray<InvoiceId>,
@@ -670,6 +672,7 @@ export const createWorkspaceAtoms = (
     invoice: invoiceAtom,
     invoiceStaff: invoiceStaffAtom,
     staff: links.staff,
+    licence: services.licence,
     recentInvoices: Atom.family((limit: number) =>
       Atom.mapResult(
         Reads.query("InvoiceHistory", { limit: boundedHistoryPage(limit) }, INVOICE_LINES),

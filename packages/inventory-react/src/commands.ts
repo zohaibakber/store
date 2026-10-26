@@ -127,6 +127,7 @@ export const makeWorkspaceCommands = (
       ),
     ),
     staff: makeStaffCommands(links),
+    enterLicence: opened.services.Desktop.mutation("EnterLicence"),
     retrySync: Atom.fn<void>()((_, get) =>
       opened.retryRecovery.pipe(Effect.andThen(wake(get.registry))),
     ),

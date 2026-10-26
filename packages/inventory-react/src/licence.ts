@@ -1,22 +1,16 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { LicenceState } from "@store/contracts";
-import * as Effect from "effect/Effect";
-import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Option from "effect/Option";
 import * as Atom from "effect/reactivity/Atom";
-import * as Stream from "effect/Stream";
 
-import { Desktop } from "./services";
+import { useCatalogReplica, useReadyInventory } from "./provider";
 
-const licenceState = Desktop.runtime
-  .atom(Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("LicenceState", undefined)))))
-  .pipe(Atom.keepAlive);
-
-const enterLicence = Desktop.mutation("EnterLicence");
+const noLicence = Atom.make(Option.none<LicenceState>());
 
 export const useLicenceState = (): LicenceState | undefined =>
-  AsyncResult.getOrElse(useAtomValue(licenceState), () => undefined);
+  Option.getOrUndefined(useAtomValue(useReadyInventory()?.inventory.atoms.licence ?? noLicence));
 
 export const useEnterLicence = () => {
-  const enter = useAtomSet(enterLicence, { mode: "promiseExit" });
+  const enter = useAtomSet(useCatalogReplica().commands.enterLicence, { mode: "promiseExit" });
   return (text: string) => enter({ payload: { text } });
 };
