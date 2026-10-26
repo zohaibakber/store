@@ -203,7 +203,6 @@ export default defineConfig({
           "packages/client-db/src/analytics/store.ts",
           "packages/client-db/src/replica/pinned-http.ts",
           "packages/inventory-react/src/errors.ts",
-          "packages/inventory-react/src/provider.tsx",
         ],
         rules: {
           "anti-slop/no-plain-error-in-effect": "off",

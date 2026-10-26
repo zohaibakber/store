@@ -8,7 +8,6 @@ export type Inventory = {
   readonly atoms: WorkspaceAtoms;
   readonly authority: ReplicaAuthority;
   readonly deviceId: string;
-  readonly dispose: () => Promise<void>;
 };
 
 export interface InventoryActions extends CatalogCommands {

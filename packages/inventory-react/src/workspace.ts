@@ -6,28 +6,18 @@ import {
   type CommandFailure,
   type Commit,
 } from "@store/contracts/replica";
-import * as Cause from "effect/Cause";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
-import * as FiberHandle from "effect/FiberHandle";
-import * as Option from "effect/Option";
 import type * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { createWorkspaceAtoms, type WorkspaceAtoms } from "./atoms";
 import type { CatalogCommands } from "./catalog-commands";
-import {
-  CatalogOpenFailure,
-  causeSurface,
-  InventoryCommandError,
-  staleCatalogLease,
-  type StaleCatalogLease,
-} from "./errors";
+import { CatalogOpenFailure, causeSurface, InventoryCommandError } from "./errors";
 import {
   replicaAuthorityOf,
   type InventoryHost,
@@ -37,7 +27,7 @@ import {
 } from "./host";
 import { makeInventoryLinks, type InventoryLinks, type StoreClient } from "./services";
 import { makeStaffActions } from "./staff";
-import type { Inventory, InventoryActions } from "./types";
+import type { InventoryActions } from "./types";
 
 const FIRST_READ_WAIT = "20 seconds";
 
@@ -159,96 +149,22 @@ const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
   };
 });
 
-export type CatalogLease = {
-  readonly scope: InventoryScope;
-};
+const openRetrySchedule = Schedule.exponential("200 millis").pipe(
+  Schedule.jittered,
+  Schedule.upTo({ times: 3 }),
+);
 
-export type CatalogLifetime = {
-  readonly lease: () => CatalogLease | null;
-  readonly claim: (scope: InventoryScope) => CatalogLease;
-  readonly release: () => void;
-  readonly open: (
-    lease: CatalogLease,
-    host: InventoryHost,
-  ) => Effect.Effect<Inventory, StaleCatalogLease | CatalogOpenFailure>;
-};
-
-type Tenancy = {
-  readonly lease: CatalogLease;
-  readonly scope: Scope.Closeable;
-  readonly opened: Deferred.Deferred<Inventory>;
-  readonly opening: FiberHandle.FiberHandle<Inventory, CatalogOpenFailure>;
-};
-
-const makeTenancy = Effect.fn("CatalogLifetime.makeTenancy")(function* (
-  root: Scope.Scope,
+const openAttempt = Effect.fn("InventoryWorkspace.openAttempt")(function* (
+  host: InventoryHost,
   scope: InventoryScope,
 ) {
-  const leaseScope = yield* Scope.fork(root);
-  const opening = yield* FiberHandle.make<Inventory, CatalogOpenFailure>().pipe(
-    Scope.provide(leaseScope),
+  const registry = yield* AtomRegistry.AtomRegistry;
+  const attempt = yield* Scope.fork(yield* Effect.scope);
+  return yield* openWorkspace(registry, host, scope).pipe(
+    Scope.provide(attempt),
+    Effect.onError(() => Scope.close(attempt, Exit.void)),
   );
-  const opened = yield* Deferred.make<Inventory>();
-  const tenancy: Tenancy = { lease: { scope }, scope: leaseScope, opened, opening };
-  return tenancy;
 });
 
-export const createAppCatalogLifetime = (registry: AtomRegistry.AtomRegistry): CatalogLifetime => {
-  const root = Scope.makeUnsafe();
-  let current: Tenancy | null = null;
-
-  const acquire = Effect.fn("CatalogLifetime.acquire")(function* (
-    tenancy: Tenancy,
-    host: InventoryHost,
-  ) {
-    const attempt = yield* Scope.fork(tenancy.scope);
-    const close = () => Effect.runPromise(Scope.close(attempt, Exit.void));
-    const workspace = yield* openWorkspace(registry, host, tenancy.lease.scope).pipe(
-      Scope.provide(attempt),
-      Effect.onError(() => Scope.close(attempt, Exit.void)),
-    );
-    const inventory: Inventory = { ...workspace, dispose: close };
-    yield* Deferred.succeed(tenancy.opened, inventory);
-    return inventory;
-  });
-
-  const joinOpening = Effect.fn("CatalogLifetime.joinOpening")(function* (
-    tenancy: Tenancy,
-    host: InventoryHost,
-  ) {
-    const running = yield* FiberHandle.get(tenancy.opening);
-    const fiber = Option.isSome(running)
-      ? running.value
-      : yield* FiberHandle.run(tenancy.opening, acquire(tenancy, host));
-    const exit = yield* Fiber.await(fiber);
-    if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) {
-      return yield* staleCatalogLease();
-    }
-    return yield* exit;
-  });
-
-  const retire = () => {
-    const previous = current;
-    current = null;
-    if (previous !== null) Effect.runFork(Scope.close(previous.scope, Exit.void));
-  };
-
-  return {
-    lease: () => current?.lease ?? null,
-    claim: (scope) => {
-      retire();
-      const tenancy = Effect.runSync(makeTenancy(root, scope));
-      current = tenancy;
-      return tenancy.lease;
-    },
-    release: retire,
-    open: (lease, host) =>
-      Effect.suspend(() => {
-        const tenancy = current;
-        if (tenancy === null || tenancy.lease !== lease) return Effect.fail(staleCatalogLease());
-        return Deferred.isDoneUnsafe(tenancy.opened)
-          ? Deferred.await(tenancy.opened)
-          : joinOpening(tenancy, host);
-      }),
-  };
-};
+export const openCatalog = (host: InventoryHost, scope: InventoryScope) =>
+  openAttempt(host, scope).pipe(Effect.retry(openRetrySchedule));

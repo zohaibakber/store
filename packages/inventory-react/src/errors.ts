@@ -11,13 +11,6 @@ import * as Option from "effect/Option";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Schema from "effect/Schema";
 
-export class StaleCatalogLease extends Schema.TaggedError<StaleCatalogLease>()(
-  "StaleCatalogLease",
-  {
-    message: Schema.String,
-  },
-) {}
-
 const CATALOG_STORAGE_UNAVAILABLE = "Catalog storage is unavailable.";
 
 export class CatalogOpenFailure extends Schema.TaggedError<CatalogOpenFailure>()(
@@ -48,13 +41,20 @@ export class CatalogOpenFailure extends Schema.TaggedError<CatalogOpenFailure>()
   }
 }
 
+export class InventoryProviderMissing extends Schema.TaggedError<InventoryProviderMissing>()(
+  "InventoryProviderMissing",
+  {},
+) {}
+
+export class InventoryNotReady extends Schema.TaggedError<InventoryNotReady>()(
+  "InventoryNotReady",
+  {},
+) {}
+
 export class RestockExportStale extends Schema.TaggedError<RestockExportStale>()(
   "RestockExportStale",
   {},
 ) {}
-
-export const staleCatalogLease = () =>
-  new StaleCatalogLease({ message: "Catalog lease is no longer current." });
 
 export const catalogOpenRefused = (cause: unknown) =>
   new CatalogOpenFailure(

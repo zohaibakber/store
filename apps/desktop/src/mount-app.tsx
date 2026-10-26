@@ -1,7 +1,7 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import { createAppCatalogLifetime } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
+import * as Effect from "effect/Effect";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -28,10 +28,8 @@ export const mountApp = (input: {
 }) => {
   upgradeBareThemePreference();
   const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
-  const catalog = createAppCatalogLifetime(registry);
   const router = getRouter({
     history: input.history,
-    catalog,
     access: input.access,
     inventory: input.inventory,
     registry,
@@ -39,15 +37,15 @@ export const mountApp = (input: {
   startWorkspaceSession(
     registry,
     {
-      catalog,
       access: input.access,
       device: input.device,
       bridge: appHost().auth,
-      invalidate: () => router.invalidate().then(() => undefined),
+      invalidate: Effect.ignore(Effect.tryPromise(() => router.invalidate())),
       flush: flushSync,
     },
     input.snapshot,
   );
+  if (input.inventory._tag === "Replica") registry.mount(input.inventory.catalogs.held);
   registry.mount(workspaceSessionFeed);
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(

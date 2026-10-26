@@ -1,66 +1,43 @@
-import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
-import * as Schedule from "effect/Schedule";
 
-import type { CatalogOpenFailure, StaleCatalogLease } from "./errors";
+import type { CatalogOpenFailure } from "./errors";
 import type { InventoryHost, InventoryScope } from "./host";
 import type { Inventory, InventoryState } from "./types";
-import type { CatalogLease, CatalogLifetime } from "./workspace";
+import { openCatalog } from "./workspace";
 
-export type CatalogOpening = Atom.Atom<
-  AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure>
->;
+export type CatalogOpening = Atom.Atom<AsyncResult.AsyncResult<Inventory, CatalogOpenFailure>>;
+
+export type Catalogs = {
+  readonly catalog: (scope: InventoryScope) => CatalogOpening;
+  readonly held: Atom.Atom<void>;
+};
+
+export const claimedCatalogScope = Atom.make(Option.none<InventoryScope>()).pipe(Atom.keepAlive);
+
+export const makeCatalogs = (host: InventoryHost): Catalogs => {
+  const catalog = Atom.family((scope: InventoryScope): CatalogOpening =>
+    Atom.make(openCatalog(host, scope)).pipe(Atom.setIdleTTL(0)),
+  );
+  const held = Atom.make((get) => {
+    const scope = get(claimedCatalogScope);
+    if (Option.isSome(scope)) get.mount(catalog(scope.value));
+  }).pipe(Atom.keepAlive);
+  return { catalog, held };
+};
 
 const OPENING: InventoryState = { _tag: "Opening" };
 
 const CATALOG_UNAVAILABLE = "Catalog storage is unavailable.";
 
-const openRetrySchedule = Schedule.exponential("200 millis").pipe(
-  Schedule.jittered,
-  Schedule.upTo({ times: 3 }),
-);
-
-export const closedCatalog: CatalogOpening = Atom.make(Effect.never);
-
-const leaseMatches = (lease: CatalogLease | null, scope: InventoryScope): lease is CatalogLease =>
-  lease !== null &&
-  lease.scope.organizationId === scope.organizationId &&
-  lease.scope.userId === scope.userId;
-
-export const openingCatalog = (
-  lifetime: CatalogLifetime,
-  owned: boolean,
-  host: InventoryHost,
-  scope: InventoryScope,
-  lease: CatalogLease | undefined,
-): CatalogOpening =>
-  Atom.make((get) => {
-    const current = lifetime.lease();
-    const claimed = lease ?? (leaseMatches(current, scope) ? current : lifetime.claim(scope));
-    if (owned) {
-      get.addFinalizer(() => {
-        if (lifetime.lease() === claimed) lifetime.release();
-      });
-    }
-    return lifetime.open(claimed, host).pipe(
-      Effect.retry({
-        schedule: openRetrySchedule,
-        while: (failure) => failure._tag === "CatalogOpenFailure",
-      }),
-    );
-  });
-
 export const inventoryState = (
-  result: AsyncResult.AsyncResult<Inventory, StaleCatalogLease | CatalogOpenFailure>,
+  result: AsyncResult.AsyncResult<Inventory, CatalogOpenFailure>,
   retry: () => void,
 ): InventoryState =>
   AsyncResult.matchWithWaiting(result, {
     onWaiting: () => OPENING,
     onSuccess: ({ value }): InventoryState => ({ _tag: "Ready", inventory: value }),
-    onError: (failure): InventoryState =>
-      failure._tag === "StaleCatalogLease"
-        ? OPENING
-        : { _tag: "Error", error: failure.message, retry },
+    onError: (failure): InventoryState => ({ _tag: "Error", error: failure.message, retry }),
     onDefect: (): InventoryState => ({ _tag: "Error", error: CATALOG_UNAVAILABLE, retry }),
   });

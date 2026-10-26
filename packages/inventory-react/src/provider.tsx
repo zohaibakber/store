@@ -1,45 +1,13 @@
-import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import * as React from "react";
 
-import type { InventoryHost, InventoryScope } from "./host";
-import { closedCatalog, inventoryState, openingCatalog, type CatalogOpening } from "./opening";
+import { InventoryNotReady, InventoryProviderMissing } from "./errors";
+import { inventoryState, type CatalogOpening } from "./opening";
 import type { InventoryState } from "./types";
-import { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
 
 const InventoryContext = React.createContext<InventoryState | null>(null);
 
-type InventoryProviderProps = {
-  readonly children: React.ReactNode;
-  readonly host: InventoryHost | null;
-  readonly scope: InventoryScope | null;
-  readonly catalog?: CatalogLifetime;
-  readonly lease?: CatalogLease;
-};
-
 export function InventoryProvider({
-  children,
-  host,
-  scope,
-  catalog,
-  lease,
-}: InventoryProviderProps) {
-  const registry = React.useContext(RegistryContext);
-  const [ownedCatalog] = React.useState(() => createAppCatalogLifetime(registry));
-  const lifetime = catalog ?? ownedCatalog;
-  const owned = catalog === undefined;
-  const organizationId = scope?.organizationId ?? null;
-  const userId = scope?.userId ?? null;
-  const opening = React.useMemo(
-    () =>
-      host === null || organizationId === null || userId === null
-        ? closedCatalog
-        : openingCatalog(lifetime, owned, host, { organizationId, userId }, lease),
-    [host, lease, lifetime, organizationId, owned, userId],
-  );
-  return <InventoryGate opening={opening}>{children}</InventoryGate>;
-}
-
-function InventoryGate({
   children,
   opening,
 }: {
@@ -54,7 +22,7 @@ function InventoryGate({
 
 export const useInventoryState = (): InventoryState => {
   const state = React.useContext(InventoryContext);
-  if (!state) throw new Error("InventoryProvider is missing.");
+  if (!state) throw new InventoryProviderMissing();
   return state;
 };
 
@@ -65,13 +33,13 @@ export const useReadyInventory = () => {
 
 export const useInventoryActions = () => {
   const state = React.useContext(InventoryContext);
-  if (!state || state._tag !== "Ready") throw new Error("Inventory is not ready.");
+  if (!state || state._tag !== "Ready") throw new InventoryNotReady();
   return state.inventory.actions;
 };
 
 export const useCatalogReplica = () => {
   const state = React.useContext(InventoryContext);
-  if (!state || state._tag !== "Ready") throw new Error("The catalog is not ready.");
+  if (!state || state._tag !== "Ready") throw new InventoryNotReady();
   return state.inventory;
 };
 

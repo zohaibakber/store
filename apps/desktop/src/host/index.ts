@@ -12,6 +12,8 @@ import type {
   InvoiceExtraction,
 } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import * as Schema from "effect/Schema";
+import type * as Stream from "effect/Stream";
 
 import type { InventoryHttpBridge, ReplicaWorkspaceBridge } from "./electron";
 import type { InvoiceUploadFile } from "./invoice-upload";
@@ -26,7 +28,7 @@ export type AuthSessionBridge = {
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
-  readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
+  readonly sessionChanges: Stream.Stream<WorkspaceSnapshot>;
 };
 
 type WithoutClient<Command> = Command extends unknown ? Omit<Command, "client"> : never;
@@ -80,6 +82,8 @@ export interface AppHost {
   readonly replica: ReplicaWorkspaceBridge;
 }
 
+class AppHostMissing extends Schema.TaggedError<AppHostMissing>()("AppHostMissing", {}) {}
+
 let installed: AppHost | null = null;
 
 export const installAppHost = (host: AppHost) => {
@@ -87,6 +91,6 @@ export const installAppHost = (host: AppHost) => {
 };
 
 export const appHost = (): AppHost => {
-  if (!installed) throw new Error("The app host is not installed.");
+  if (!installed) throw new AppHostMissing();
   return installed;
 };
