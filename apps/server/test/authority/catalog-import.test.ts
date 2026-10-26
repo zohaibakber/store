@@ -15,6 +15,7 @@ import {
   type SyncCommand,
   type SyncEntity,
   OperationId,
+  Money,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
@@ -139,9 +140,9 @@ const product = (
     composition: "Paracetamol “500”",
     strength: "500mg",
     unitsPerPack,
-    purchasePrice: 50,
-    retailPrice: 100,
-    unitPrice: 10,
+    purchasePrice: Money.make(50),
+    retailPrice: Money.make(100),
+    unitPrice: Money.make(10),
     visible: true,
   },
 });
@@ -191,7 +192,7 @@ const order = (
     note: "Monthly restock",
     sentAt: input.sentAt,
     expectedAt: OCCURRED_AT + 172_800_000,
-    total: 290,
+    total: Money.make(290),
   },
 });
 
@@ -216,7 +217,7 @@ const line = (
     quantity: input.quantity,
     quantityType: input.quantityType,
     baseUnitQuantity: input.baseUnitQuantity,
-    packCost: 50,
+    packCost: Money.make(50),
   },
 });
 
@@ -274,7 +275,7 @@ const sale = (
         batchId: decodeBatchId(take.batchId),
         quantity: take.quantity,
         quantityType: "unit",
-        salePrice: 12,
+        salePrice: Money.make(12),
         packsOpened,
       },
     ],

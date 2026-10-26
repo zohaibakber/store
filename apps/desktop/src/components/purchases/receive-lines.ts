@@ -1,6 +1,9 @@
 import {
+  baseUnitsOf,
   purchaseOrderLineRemaining,
-  receivedBaseUnitsOf,
+  roundedMoney,
+  sumMoney,
+  type Money,
   type Product,
   type PurchaseOrderItem,
 } from "@store/contracts";
@@ -11,7 +14,7 @@ import { byProductName } from "./presentation";
 export type ReceiveProduct = {
   readonly tracksPacks: boolean;
   readonly unitsPerPack: number;
-  readonly purchasePrice: number | null;
+  readonly purchasePrice: Money | null;
 };
 
 export type ReceiveRow = {
@@ -51,15 +54,12 @@ const splitBaseUnits = (baseUnits: number, product: ReceiveProduct) =>
 const isCount = (value: number | null) => value === null || (Number.isInteger(value) && value >= 0);
 
 const rowBaseUnits = (row: Pick<ReceiveRow, "packs" | "units">, product: ReceiveProduct) =>
-  receivedBaseUnitsOf(
-    { packQuantity: row.packs ?? 0, unitQuantity: row.units ?? 0 },
-    product.unitsPerPack,
-  );
+  baseUnitsOf({ packQuantity: row.packs ?? 0, unitQuantity: row.units ?? 0 }, product.unitsPerPack);
 
-const rowCost = (row: ReceiveRow, product: ReceiveProduct): number | null =>
+const rowCost = (row: ReceiveRow, product: ReceiveProduct): Money | null =>
   row.cost === null
     ? null
-    : Math.round((rowBaseUnits(row, product) * row.cost) / product.unitsPerPack);
+    : roundedMoney((rowBaseUnits(row, product) * row.cost) / product.unitsPerPack);
 
 type ReceiveRowProblem = "quantity" | "cost" | "batchNumber";
 
@@ -102,7 +102,7 @@ const prefilledRow = (
   const kept = product.tracksPacks
     ? stated
     : splitBaseUnits(
-        receivedBaseUnitsOf(
+        baseUnitsOf(
           { packQuantity: stated.packs, unitQuantity: stated.units },
           product.unitsPerPack,
         ),
@@ -183,7 +183,7 @@ export const receiveLineInputs = (
 type DeliverySummary = {
   readonly lines: number;
   readonly baseUnits: number;
-  readonly cost: number;
+  readonly cost: Money;
   readonly completesOrder: boolean;
   readonly enteredByItem: ReadonlyMap<string, number>;
 };
@@ -196,7 +196,7 @@ export const summarizeDelivery = (
   const enteredByItem = new Map<string, number>();
   let lines = 0;
   let baseUnits = 0;
-  let cost = 0;
+  const costs: Array<Money | null> = [];
   for (const row of rows) {
     const product = productOfItem(row.itemId);
     if (!product || rowProblems(row).has("quantity")) continue;
@@ -204,13 +204,13 @@ export const summarizeDelivery = (
     if (entered === 0) continue;
     lines += 1;
     baseUnits += entered;
-    cost += rowCost(row, product) ?? 0;
+    costs.push(rowCost(row, product));
     enteredByItem.set(row.itemId, (enteredByItem.get(row.itemId) ?? 0) + entered);
   }
   return {
     lines,
     baseUnits,
-    cost,
+    cost: sumMoney(costs),
     enteredByItem,
     completesOrder:
       items.length > 0 &&

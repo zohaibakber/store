@@ -1,4 +1,5 @@
 import {
+  type Money,
   type ProductId,
   type PurchaseOrder,
   type PurchaseOrderItem,
@@ -84,7 +85,7 @@ export type DraftLine = {
   readonly quantityType: LineQuantity["quantityType"];
   readonly unitsPerPack: number;
   readonly tracksPacks: boolean;
-  readonly packCost: number | null;
+  readonly packCost: Money | null;
 };
 
 export const draftLineCost = (

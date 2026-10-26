@@ -11,6 +11,7 @@ import {
   type SyncEntity,
   type SyncTransactionGroup,
   OperationId,
+  Money,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { decodeInvoiceId, decodeInvoiceItemId } from "@store/contracts/ids";
@@ -125,7 +126,7 @@ const invoiceEnvelopeFor = (input: {
           batchId: LAST_UNIT_BATCH_ID,
           quantity: input.quantity,
           quantityType: "unit" as const,
-          salePrice: 100,
+          salePrice: Money.make(100),
           packsOpened: 0,
         },
       ],

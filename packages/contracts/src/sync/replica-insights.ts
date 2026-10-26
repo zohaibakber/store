@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import { OPEN_PURCHASE_ORDER_STATUSES } from "../catalog/purchasing";
 import { CategoryId, ProductId } from "../ids";
 import { EpochMillis, PositiveInt, UtcOffsetMinutes } from "../schema-primitives";
+import { Money } from "../store/pricing";
 
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;
@@ -34,9 +35,9 @@ export const InsightsProductFact = Schema.Struct({
   categoryName: Schema.NullOr(Schema.String),
   tracksPacks: Schema.Boolean,
   unitsPerPack: PositiveInt,
-  purchasePrice: Schema.NullOr(Schema.Number),
-  retailPrice: Schema.NullOr(Schema.Number),
-  unitPrice: Schema.NullOr(Schema.Number),
+  purchasePrice: Schema.NullOr(Money),
+  retailPrice: Schema.NullOr(Money),
+  unitPrice: Schema.NullOr(Money),
   visible: Schema.Boolean,
   createdAt: EpochMillis,
 });

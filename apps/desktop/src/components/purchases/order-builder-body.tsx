@@ -1,11 +1,6 @@
 import { Cancel01Icon, Search01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  purchaseOrderTotal,
-  type Product,
-  type PurchaseOrderId,
-  type Supplier,
-} from "@store/contracts";
+import { sumMoney, type Product, type PurchaseOrderId, type Supplier } from "@store/contracts";
 import {
   useCommand,
   useLearnedSuppliers,
@@ -93,7 +88,7 @@ const isOrderable = (quantity: number | null): quantity is number =>
 const lineCost = (line: BuilderLine) =>
   isOrderable(line.quantity) ? draftLineCost(line, line.quantity) : null;
 
-const groupTotal = (lines: ReadonlyArray<BuilderLine>) => purchaseOrderTotal(lines.map(lineCost));
+const groupTotal = (lines: ReadonlyArray<BuilderLine>) => sumMoney(lines.map(lineCost));
 
 function ProductSearch({ onPick }: { readonly onPick: (product: Product) => void }) {
   const [query, setQuery] = React.useState("");

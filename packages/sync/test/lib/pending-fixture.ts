@@ -6,6 +6,7 @@ import {
   type SyncCommandEnvelope,
   type SyncTransactionGroup,
   OperationId,
+  Money,
 } from "@store/contracts";
 import {
   decodeBatchId,
@@ -151,9 +152,9 @@ export const renameProductWrite = (name: string): CatalogRowWrite => ({
     composition: null,
     strength: null,
     unitsPerPack: 1,
-    purchasePrice: 50,
-    retailPrice: 100,
-    unitPrice: 100,
+    purchasePrice: Money.make(50),
+    retailPrice: Money.make(100),
+    unitPrice: Money.make(100),
     visible: true,
   },
 });
@@ -222,9 +223,9 @@ export const caseProductWrite: CatalogRowWrite = {
     composition: null,
     strength: null,
     unitsPerPack: 12,
-    purchasePrice: 1_200,
-    retailPrice: 1_500,
-    unitPrice: 130,
+    purchasePrice: Money.make(1_200),
+    retailPrice: Money.make(1_500),
+    unitPrice: Money.make(130),
     visible: true,
   },
 };
@@ -249,7 +250,7 @@ export const orderWrite = (
     note: null,
     sentAt: null,
     expectedAt: null,
-    total: 2_400,
+    total: Money.make(2_400),
   },
 });
 
@@ -271,7 +272,7 @@ export const orderLineWrite = (
     quantity: 2,
     quantityType: "pack",
     baseUnitQuantity: input.baseUnitQuantity ?? 24,
-    packCost: 1_200,
+    packCost: Money.make(1_200),
   },
 });
 

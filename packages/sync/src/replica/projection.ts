@@ -110,7 +110,7 @@ const invalidInvoice = (refusal: CatalogRefusal): Rejection => ({
 
 const invoiceTotalOf = (
   items: ReadonlyArray<{ readonly quantity: number; readonly salePrice: number }>,
-): Result.Result<number, Rejection> =>
+): Result.Result<Money, Rejection> =>
   Result.gen(function* () {
     const priced: Array<{ readonly quantity: number; readonly salePrice: Money }> = [];
     for (const item of items) {
@@ -138,7 +138,7 @@ const issueInvoiceRows = (
   envelope: Extract<SyncCommandEnvelope["command"], { readonly _tag: "issueInvoice" }>,
   actor: ProjectionActor,
   lookup: ReplicaCatalogLookup,
-  total: number,
+  total: Money,
 ): CommandProjection => {
   const command = envelope.payload;
   const rows: Array<ProjectedRow> = [

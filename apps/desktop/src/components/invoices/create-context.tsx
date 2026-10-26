@@ -1,4 +1,4 @@
-import type { IssueInvoiceResult, Product } from "@store/contracts";
+import { isValidDiscount, type IssueInvoiceResult, type Product } from "@store/contracts";
 import type { InvoiceId, ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
@@ -21,9 +21,7 @@ import {
 import {
   draftTotal,
   enteredPrice,
-  isValidDiscount,
   lineError,
-  lineTotal,
   lineUnits,
   resolveSaleLine,
   saleItems,
@@ -272,7 +270,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   };
 
   const errors = lines.map(lineError);
-  const subtotal = lines.reduce((sum, line) => sum + (lineTotal(line) ?? 0), 0);
+  const subtotal = saleTotal(lines, 0);
   const unitCount = lines.reduce((sum, line) => sum + lineUnits(line), 0);
   const validBulkDiscount = isValidDiscount(bulkDiscount);
   const total = saleTotal(lines, bulkDiscount);

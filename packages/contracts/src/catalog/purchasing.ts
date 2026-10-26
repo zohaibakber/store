@@ -1,5 +1,6 @@
 import * as Result from "effect/Result";
 
+import { type Money, roundedMoney } from "../store/pricing";
 import { baseUnitsOf } from "../store/stock";
 import type { SyncProtocolCode } from "../sync/protocol";
 import { CATALOG_REFUSALS, CatalogRefusal } from "./refusal";
@@ -61,25 +62,16 @@ export const purchaseOrderLineBaseUnits = (
 };
 
 export const purchaseOrderLineTotal = (
-  line: PurchaseOrderLineQuantity & { readonly packCost: number | null },
+  line: PurchaseOrderLineQuantity & { readonly packCost: Money | null },
   unitsPerPack: number,
-): number | null => {
+): Money | null => {
   if (line.packCost === null) return null;
-  switch (line.quantityType) {
-    case "pack":
-      return line.quantity * line.packCost;
-    case "unit":
-      return Math.round((line.quantity * line.packCost) / unitsPerPack);
-  }
+  return roundedMoney(
+    line.quantityType === "pack"
+      ? line.quantity * line.packCost
+      : (line.quantity * line.packCost) / unitsPerPack,
+  );
 };
-
-export const purchaseOrderTotal = (lineTotals: Iterable<number | null>): number => {
-  let total = 0;
-  for (const lineTotal of lineTotals) total += lineTotal ?? 0;
-  return total;
-};
-
-export const receivedBaseUnitsOf = baseUnitsOf;
 
 type PurchaseOrderLineReceipt = {
   readonly baseUnitQuantity: number;
