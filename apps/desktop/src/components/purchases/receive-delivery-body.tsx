@@ -6,7 +6,7 @@ import {
   type PurchaseOrderItem,
 } from "@store/contracts";
 import {
-  useInventoryActions,
+  useCommand,
   usePurchasingGate,
   useSuspenseCatalogProductsById,
   type ReceiveDeliveryLineInput,
@@ -31,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -260,7 +260,7 @@ export function ReceiveDeliveryBody({
   order,
   prefill,
 }: ReceiveDeliveryBodyProps) {
-  const { receiveDelivery } = useInventoryActions();
+  const [receiveDelivery] = useCommand((commands) => commands.receiveDelivery);
   const gate = usePurchasingGate();
   const productIds = React.useMemo(
     () => [...new Set(order.items.map((item) => item.productId))].sort(),
@@ -304,24 +304,24 @@ export function ReceiveDeliveryBody({
   const receive = async () => {
     if (!canReceive) return;
     setPending(true);
-    try {
-      const received = await receiveDelivery({
-        orderId: order.id,
-        lines: receiveLineInputs(rows, productOfItem),
-        note: note ?? null,
-        close: closing,
-      });
-      toastManager.add({
-        title: `${formatCount(received.batches.length, "batch", "batches")} received on order ${number}`,
-        description: closing ? "The order is now closed." : undefined,
-        type: "success",
-      });
-      onReceived?.();
-      onDone();
-    } catch (error) {
+    const exit = await receiveDelivery({
+      orderId: order.id,
+      lines: receiveLineInputs(rows, productOfItem),
+      note: note ?? null,
+      close: closing,
+    });
+    if (exit._tag === "Failure") {
       setPending(false);
-      toastStoreError(error, "Could not record the delivery.");
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({
+      title: `${formatCount(exit.value.batches.length, "batch", "batches")} received on order ${number}`,
+      description: closing ? "The order is now closed." : undefined,
+      type: "success",
+    });
+    onReceived?.();
+    onDone();
   };
 
   useSubmitShortcut(() => void receive());

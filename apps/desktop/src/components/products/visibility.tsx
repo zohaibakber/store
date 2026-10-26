@@ -1,5 +1,6 @@
 import type { Product } from "@store/contracts";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 
 import {
   Select,
@@ -10,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 
 const visibilityOptions = [
   { value: "visible", label: "Visible to customers" },
@@ -18,31 +19,31 @@ const visibilityOptions = [
 ] as const;
 
 export function ProductVisibilitySelect({ product }: { product: Product }) {
-  const { updateProduct } = useInventoryActions();
+  const [updateProduct] = useCommand((commands) => commands.updateProduct);
 
   const setVisible = async (next: boolean) => {
     if (next === product.visible) return;
-    try {
-      await updateProduct({
-        id: product.id,
-        name: product.name,
-        categoryId: product.categoryId,
-        aisle: product.aisle,
-        composition: product.composition,
-        strength: product.strength,
-        unitsPerPack: product.unitsPerPack,
-        purchasePrice: product.purchasePrice,
-        retailPrice: product.retailPrice,
-        unitPrice: product.unitPrice,
-        visible: next,
-      });
-      toastManager.add({
-        title: next ? "Product is visible to customers" : "Product hidden from customers",
-        type: "success",
-      });
-    } catch (error) {
-      toastStoreError(error, "Could not update visibility.");
+    const exit = await updateProduct({
+      id: product.id,
+      name: product.name,
+      categoryId: product.categoryId,
+      aisle: product.aisle,
+      composition: product.composition,
+      strength: product.strength,
+      unitsPerPack: product.unitsPerPack,
+      purchasePrice: product.purchasePrice,
+      retailPrice: product.retailPrice,
+      unitPrice: product.unitPrice,
+      visible: next,
+    });
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({
+      title: next ? "Product is visible to customers" : "Product hidden from customers",
+      type: "success",
+    });
   };
 
   return (

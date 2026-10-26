@@ -2,10 +2,11 @@ import { PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Batch, Product, StockMovement } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand, type CommandExit } from "@store/inventory-react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { format, isValid, parse } from "date-fns";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { useMemo, useState, type ReactNode } from "react";
 
@@ -43,7 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 import { formatDate, parseExpiryDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
@@ -230,7 +231,6 @@ function QuantityField({
 
 function StockSheet({
   description,
-  failure,
   formId,
   initial,
   intent,
@@ -243,12 +243,11 @@ function StockSheet({
   trigger,
 }: {
   description: string;
-  failure: string;
   formId: string;
   initial: StockValues;
   intent: "add" | "edit";
   onOpenChange: (open: boolean) => void;
-  onSave: (stock: StockEntry) => Promise<void>;
+  onSave: (stock: StockEntry) => Promise<CommandExit<unknown>>;
   open: boolean;
   submitLabel: string;
   title: string;
@@ -259,13 +258,13 @@ function StockSheet({
     defaultValues: initial,
     validators: { onSubmit: STOCK_VALIDATORS[tracksPacks ? "pack" : "unit"][intent] },
     onSubmit: async ({ value }) => {
-      try {
-        await onSave(stockEntryOf(value));
-        onOpenChange(false);
-        if (intent === "add") form.reset();
-      } catch (error) {
-        toastStoreError(error, failure);
+      const exit = await onSave(stockEntryOf(value));
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        return;
       }
+      onOpenChange(false);
+      if (intent === "add") form.reset();
     },
   });
 
@@ -356,7 +355,7 @@ export function AddStockSheet({
   open: boolean;
   product: Product;
 }) {
-  const { createBatch } = useInventoryActions();
+  const [createBatch] = useCommand((commands) => commands.createBatch);
   const tracksPacks = product.category.tracksPacks;
   return (
     <StockSheet
@@ -365,15 +364,17 @@ export function AddStockSheet({
           ? "Record sealed packs and loose units separately for this batch."
           : "How many arrived, and when they expire."
       }
-      failure="Could not add the batch."
       formId="add-batch-form"
       initial={NO_STOCK}
       intent="add"
       key={tracksPacks ? "pack" : "unit"}
       onOpenChange={onOpenChange}
       onSave={async (stock) => {
-        await createBatch({ productId: product.id, ...stock });
-        toastManager.add({ title: tracksPacks ? "Batch added" : "Stock added", type: "success" });
+        const exit = await createBatch({ productId: product.id, ...stock });
+        if (Exit.isSuccess(exit)) {
+          toastManager.add({ title: tracksPacks ? "Batch added" : "Stock added", type: "success" });
+        }
+        return exit;
       }}
       open={open}
       submitLabel="Add stock"
@@ -384,7 +385,7 @@ export function AddStockSheet({
 }
 
 function EditStockSheet({ batch, tracksPacks }: { batch: Batch; tracksPacks: boolean }) {
-  const { updateBatch } = useInventoryActions();
+  const [updateBatch] = useCommand((commands) => commands.updateBatch);
   const [open, setOpen] = useState(false);
   const title = tracksPacks ? "Edit batch" : "Edit stock";
   return (
@@ -394,13 +395,12 @@ function EditStockSheet({ batch, tracksPacks }: { batch: Batch; tracksPacks: boo
           ? "Correct the batch number, expiry date or counts. A changed count is recorded as a stock adjustment."
           : "Correct the expiry date or the quantity. A changed count is recorded as a stock adjustment."
       }
-      failure="Could not update the batch."
       formId={`edit-batch-form-${batch.id}`}
       initial={stockValuesOf(batch)}
       intent="edit"
       onOpenChange={setOpen}
       onSave={async (stock) => {
-        await updateBatch(
+        const exit = await updateBatch(
           tracksPacks
             ? { id: batch.id, ...stock }
             : {
@@ -410,10 +410,13 @@ function EditStockSheet({ batch, tracksPacks }: { batch: Batch; tracksPacks: boo
                 packQuantity: batch.packQuantity,
               },
         );
-        toastManager.add({
-          title: tracksPacks ? "Batch updated" : "Stock updated",
-          type: "success",
-        });
+        if (Exit.isSuccess(exit)) {
+          toastManager.add({
+            title: tracksPacks ? "Batch updated" : "Stock updated",
+            type: "success",
+          });
+        }
+        return exit;
       }}
       open={open}
       submitLabel="Save changes"

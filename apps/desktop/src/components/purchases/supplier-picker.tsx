@@ -1,7 +1,8 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Supplier } from "@store/contracts";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import * as React from "react";
 
 import {
@@ -14,7 +15,7 @@ import {
   ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
-import { useStoreCommand } from "@/hooks/use-store-command";
+import { toastFailure } from "@/lib/errors";
 
 type SupplierOption = {
   readonly id: string;
@@ -39,9 +40,8 @@ export function SupplierPicker({
   readonly suppliers: ReadonlyArray<Supplier>;
   readonly value: Supplier["id"] | null;
 }) {
-  const { saveSupplier } = useInventoryActions();
+  const [saveSupplier, pending] = useCommand((commands) => commands.saveSupplier);
   const [query, setQuery] = React.useState("");
-  const [pending, run] = useStoreCommand();
 
   const term = query.trim();
   const lowered = term.toLocaleLowerCase();
@@ -63,11 +63,13 @@ export function SupplierPicker({
       if (supplier) onChange(supplier.id);
       return;
     }
-    await run(async () => {
-      const supplier = await saveSupplier({ name: option.name });
-      onChange(supplier.id);
-      toastManager.add({ title: `${supplier.name} added`, type: "success" });
-    }, "Could not add the supplier.");
+    const exit = await saveSupplier({ name: option.name });
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
+    }
+    onChange(exit.value.id);
+    toastManager.add({ title: `${exit.value.name} added`, type: "success" });
   };
 
   return (

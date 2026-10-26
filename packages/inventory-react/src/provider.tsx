@@ -1,6 +1,9 @@
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
+import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import type * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
+import type { WorkspaceCommands } from "./commands";
 import { InventoryNotReady, InventoryProviderMissing } from "./errors";
 import { inventoryState, type CatalogOpening } from "./opening";
 import type { InventoryState } from "./types";
@@ -31,10 +34,13 @@ export const useReadyInventory = () => {
   return state?._tag === "Ready" ? state : null;
 };
 
-export const useInventoryActions = () => {
-  const state = React.useContext(InventoryContext);
-  if (!state || state._tag !== "Ready") throw new InventoryNotReady();
-  return state.inventory.actions;
+export const useCommand = <Input, A, E>(
+  pick: (commands: WorkspaceCommands) => Atom.AtomResultFn<Input, A, E>,
+) => {
+  const command = pick(useCatalogReplica().commands);
+  const run = useAtomSet(command, { mode: "promiseExit" });
+  const pending = AsyncResult.isWaiting(useAtomValue(command));
+  return [run, pending] as const;
 };
 
 export const useCatalogReplica = () => {

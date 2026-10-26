@@ -125,8 +125,6 @@ export default defineConfig({
           "apps/desktop/electron/host.ts",
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/inventory/preload.ts",
-          "packages/inventory-react/src/staff.ts",
-          "packages/inventory-react/src/workspace.ts",
         ],
         rules: {
           "anti-slop/no-effect-run-outside-edge": "off",
@@ -200,7 +198,6 @@ export default defineConfig({
           "apps/server/src/runtime/production-domain.ts",
           "packages/client-db/src/analytics/store.ts",
           "packages/client-db/src/replica/pinned-http.ts",
-          "packages/inventory-react/src/errors.ts",
         ],
         rules: {
           "anti-slop/no-plain-error-in-effect": "off",

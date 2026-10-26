@@ -1,5 +1,5 @@
 export type { InventorySyncActivity, InventorySyncStatus, RejectedCommand } from "@store/client-db";
-export type { ReceiveDeliveryLineInput } from "./catalog-commands";
+export type { ReceiveDeliveryLineInput } from "./commands";
 export { claimedCatalogScope, makeCatalogs, type Catalogs, type CatalogOpening } from "./opening";
 export { browserStorage, preferencesRuntime } from "./preferences";
 export {
@@ -12,20 +12,16 @@ export {
 export {
   catalogOpenRefused,
   CatalogOpenFailure,
-  commandFailureSurface,
+  causeSurface,
+  type CommandExit,
+  type InventoryFailure,
   licenceRefusalCopy,
   restockExportFailureCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";
 export { useEnterLicence, useLicenceState } from "./licence";
-export {
-  useInvoiceStaff,
-  useStaffActions,
-  useStaffPermission,
-  useStaffState,
-  type StaffActions,
-} from "./staff";
+export { useInvoiceStaff, useStaffPermission, useStaffState } from "./staff";
 export {
   deliverPorts,
   desktopServices,
@@ -36,7 +32,7 @@ export {
 export {
   InventoryProvider,
   useCatalogIsReady,
-  useInventoryActions,
+  useCommand,
   useInventoryState,
   useInventorySyncActivity,
   useInventorySyncTransfer,
@@ -101,7 +97,7 @@ export {
   useStockPolicy,
 } from "./insights";
 export { inventorySyncIssueLabel } from "./sync-status";
-export type { Inventory, InventoryActions } from "./types";
+export type { Inventory } from "./types";
 export {
   preloadAll,
   preloadCatalogCategories,

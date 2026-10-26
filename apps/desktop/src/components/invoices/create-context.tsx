@@ -2,9 +2,10 @@ import type { IssueInvoiceResult, Product } from "@store/contracts";
 import type { InvoiceId, ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
-  useInventoryActions,
+  useCommand,
   useIssuedInvoices,
   useSuspenseCatalogProductsById,
+  type CommandExit,
 } from "@store/inventory-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -43,7 +44,7 @@ import {
   useSaleDraftStoreIn,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
-import { storeErrorMessage } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import {
   activateSaleDraft,
   activateSaleDraftAt,
@@ -158,44 +159,42 @@ function useDraftProducts(drafts: SaleDrafts) {
 }
 
 const recordSale = async (sale: {
-  readonly issue: () => Promise<IssueInvoiceResult>;
+  readonly issue: () => Promise<CommandExit<IssueInvoiceResult>>;
   readonly close: () => boolean;
   readonly focusSearch: () => void;
   readonly view: (invoiceId: InvoiceId) => Promise<void>;
   readonly print: (invoiceId: InvoiceId) => void;
 }) => {
-  try {
-    const invoice = await sale.issue();
-    sale.print(invoice.invoiceId);
-    const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
-    if (sale.close()) {
-      const toastId = toastManager.add({
-        actionProps: {
-          children: "View",
-          onClick: () => {
-            toastManager.close(toastId);
-            void sale.view(invoice.invoiceId);
-          },
+  const exit = await sale.issue();
+  if (exit._tag === "Failure") {
+    toastFailure(exit.cause);
+    return;
+  }
+  const invoice = exit.value;
+  sale.print(invoice.invoiceId);
+  const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
+  if (sale.close()) {
+    const toastId = toastManager.add({
+      actionProps: {
+        children: "View",
+        onClick: () => {
+          toastManager.close(toastId);
+          void sale.view(invoice.invoiceId);
         },
-        title,
-        type: "success",
-      });
-      sale.focusSearch();
-    } else {
-      toastManager.add({ title, type: "success" });
-      await sale.view(invoice.invoiceId);
-    }
-  } catch (error) {
-    toastManager.add({
-      title: storeErrorMessage(error, "Could not create the invoice."),
-      type: "error",
+      },
+      title,
+      type: "success",
     });
+    sale.focusSearch();
+  } else {
+    toastManager.add({ title, type: "success" });
+    await sale.view(invoice.invoiceId);
   }
 };
 
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { issueInvoice } = useInventoryActions();
+  const [issueInvoice] = useCommand((commands) => commands.issueInvoice);
   const rememberRecentProduct = useRememberRecentProduct();
   const printReceipt = usePrintReceipt();
   const receiptFormat = useReceiptFormat();
@@ -290,7 +289,11 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     if (items === null) return;
     await store.whileCompleting(draft.id, () =>
       recordSale({
-        issue: () => issueInvoice({ customerName: customerName.trim() || null, items }, draft.id),
+        issue: () =>
+          issueInvoice({
+            input: { customerName: customerName.trim() || null, items },
+            invoiceId: draft.id,
+          }),
         close: () => store.complete(draft.id),
         focusSearch: store.focusSearch,
         view: (invoiceId) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId } }),

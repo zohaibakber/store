@@ -1,7 +1,8 @@
 import { FileAttachmentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { MAX_LICENCE_TEXT_LENGTH, type Licence } from "@store/contracts";
-import { commandFailureSurface, licenceRefusalCopy, useEnterLicence } from "@store/inventory-react";
+import { causeSurface, licenceRefusalCopy, useEnterLicence } from "@store/inventory-react";
+import * as Exit from "effect/Exit";
 import { useRef, useState, type ChangeEvent, type KeyboardEvent, type SubmitEvent } from "react";
 
 import { OPEN_LICENCE_FILE } from "@/components/licence/copy";
@@ -50,13 +51,13 @@ export function useLicenceEntry(onAccepted?: (licence: Licence) => void): Licenc
     }
     setBusy(true);
     setError(null);
-    try {
-      const licence = await enterLicence(licenceText);
+    const exit = await enterLicence(licenceText);
+    if (Exit.isFailure(exit)) {
+      setError(causeSurface(exit.cause).message);
+    } else {
       setText("");
-      announce(licence);
-      onAccepted?.(licence);
-    } catch (cause) {
-      setError(commandFailureSurface(cause)?.message ?? "Something went wrong. Try again.");
+      announce(exit.value);
+      onAccepted?.(exit.value);
     }
     setBusy(false);
   };
