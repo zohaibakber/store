@@ -45,7 +45,7 @@ export const makeAnalyticsWorkerHandlers = <R>(
             ),
             Layer.provide(layerNodeSqliteReadonlyReplica(config.replicaDatabasePath)),
           ),
-        ).pipe(Effect.catchDefect(Effect.fail));
+        );
         return { store, scheduler, insights };
       }).pipe(
         Effect.tapError((cause) => Effect.logError("AnalyticsWorker.open_failed", cause)),
