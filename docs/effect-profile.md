@@ -56,6 +56,8 @@ The files nearest the target. Read one for the idea it is listed for; where it d
 | Lazy sub-layer kept off first paint                                           | `apps/desktop/electron/auth.ts` with `cached-on-success.ts`                                                   |
 | Context.Service with inline interface and static layers                       | `packages/sync/src/scheduler.ts`; `packages/sync/src/engine.ts` for the service shape only                    |
 | Bounded fan-out with gap detection                                            | `makeReplicaCommitHub` in `packages/sync/src/replica/commit-hub.ts`                                           |
+| Atom family keyed by scope, mounted while claimed                             | `packages/inventory-react/src/opening.ts`                                                                     |
+| Test double as `Layer.mock`, engine built in the test's scope                 | `packages/sync/test/lib/engine-fixture.ts`                                                                    |
 | Per-session sub-graph built with `Layer.build`                                | `apps/desktop/electron/worker-process.ts`                                                                     |
 | State machine, restart and retry                                              | `apps/desktop/electron/replica-supervisor.ts`                                                                 |
 | Per-connection RPC server on a `MessagePort`, one `FiberMap` fiber per sender | `apps/desktop/electron/shell-server.ts`                                                                       |
