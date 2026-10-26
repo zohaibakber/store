@@ -22,7 +22,7 @@ import {
   SqliteReplica,
   type SqliteReplicaHandle,
 } from "../replica/sql-client/handle";
-import { SyncTransportService, SyncTransportUnavailable, type SyncTransport } from "../transport";
+import { SyncTransport, SyncTransportUnavailable } from "../transport";
 import { decideCommand, groupOf } from "./command";
 import { RETRY_MILLIS, readFailure, snapshotUnavailable, type ReadFailureCause } from "./failures";
 import {
@@ -102,7 +102,7 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
   } satisfies SyncSubmitCommandResult;
 });
 
-const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
+const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport["Service"] => {
   const reading = <A, E extends ReadFailureCause>(run: (tx: ReplicaDb) => Effect.Effect<A, E>) =>
     runReplicaTransaction(handle, run).pipe(Effect.mapError(readFailure));
 
@@ -177,7 +177,7 @@ const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport => {
 export const LocalAuthority = {
   submitWithin,
   layer: Layer.effect(
-    SyncTransportService,
+    SyncTransport,
     SqliteReplica.use((handle) => Effect.succeed(makeLocalAuthority(handle))),
   ),
 };

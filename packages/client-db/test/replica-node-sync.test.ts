@@ -7,7 +7,7 @@ import {
   syncProtocolError,
   OperationId,
 } from "@store/contracts";
-import { ReplicaStore, SyncScheduler, SyncTransportService, type SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncScheduler, SyncTransport } from "@store/sync";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -19,27 +19,25 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
 import { syncHealthOf, type ReplicaSyncHealth } from "../src/replica/status";
 
-const failingTransport = (onSnapshotRequest: () => void): SyncTransport => ({
-  registerReplica: (request) =>
-    Effect.succeed({
-      replicaId: request.replicaId,
-      epoch: SyncEpoch.make("1"),
-      incarnation: AuthorityIncarnation.make("authority-1"),
-      nextClientSequence: ReplicaClientSequence.make("1"),
-      retentionFloor: OrgCommitSequence.make("0"),
-      horizon: OrgCommitSequence.make("0"),
-      schemaVersion: 1,
-    }),
-  submitCommand: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  pull: () => Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed.")),
-  acquireSnapshot: () =>
-    Effect.suspend(() => {
-      onSnapshotRequest();
-      return Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed."));
-    }),
-  readSnapshotPart: () => Effect.die("unused"),
-});
+const failingTransport = (onSnapshotRequest: () => void) =>
+  Layer.mock(SyncTransport, {
+    registerReplica: (request) =>
+      Effect.succeed({
+        replicaId: request.replicaId,
+        epoch: SyncEpoch.make("1"),
+        incarnation: AuthorityIncarnation.make("authority-1"),
+        nextClientSequence: ReplicaClientSequence.make("1"),
+        retentionFloor: OrgCommitSequence.make("0"),
+        horizon: OrgCommitSequence.make("0"),
+        schemaVersion: 1,
+      }),
+    pull: () => Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed.")),
+    acquireSnapshot: () =>
+      Effect.suspend(() => {
+        onSnapshotRequest();
+        return Effect.fail(syncProtocolError("EPOCH_MISMATCH", "The authority epoch changed."));
+      }),
+  });
 
 describe("layerNodeReplicaSync", () => {
   it("reports a recovery-required suspension and still answers an explicit wake", async () => {
@@ -52,12 +50,9 @@ describe("layerNodeReplicaSync", () => {
             path: ":memory:",
             identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
             databaseIdentity: "node-sync-recovery",
-            transport: Layer.succeed(
-              SyncTransportService,
-              failingTransport(() => {
-                snapshotRequests += 1;
-              }),
-            ),
+            transport: failingTransport(() => {
+              snapshotRequests += 1;
+            }),
             live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
           }).pipe(Layer.provide(NodeCrypto.layer)),
         ),

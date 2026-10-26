@@ -38,7 +38,7 @@ import {
   stockMovements,
 } from "@store/db/authority.schema";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore, SyncEngine, SyncTransportService, type SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncEngine, SyncStateRef, SyncTransport } from "@store/sync";
 import {
   layerSqliteReplicaStore,
   LocalAuthority,
@@ -393,6 +393,7 @@ const localWorkspace = (importId: string) =>
   }).pipe(
     Effect.provide(
       SyncEngine.layer().pipe(
+        Layer.provide(Layer.fresh(SyncStateRef.layer)),
         Layer.provide(SequentialCrypto),
         Layer.provideMerge(LocalAuthority.layer),
         Layer.provideMerge(
@@ -433,7 +434,7 @@ const authorityFor = Effect.fnUntraced(function* (
       settled(snapshots.readSnapshotPart(actor, snapshotId, partNumber)).pipe(
         Effect.flatMap((part) => Effect.orDie(decodePart(part.json))),
       ),
-  } satisfies SyncTransport;
+  } satisfies SyncTransport["Service"];
 });
 
 const organizationReplica = (
@@ -443,8 +444,9 @@ const organizationReplica = (
 ) =>
   Layer.build(
     SyncEngine.layer().pipe(
+      Layer.provide(Layer.fresh(SyncStateRef.layer)),
       Layer.provide(SequentialCrypto),
-      Layer.provideMerge(Layer.effect(SyncTransportService, authorityFor(authorities, actor))),
+      Layer.provideMerge(Layer.effect(SyncTransport, authorityFor(authorities, actor))),
       Layer.provideMerge(layerSqliteReplicaStore(`import-${replicaId}`)),
       Layer.provideMerge(
         seededReplica({

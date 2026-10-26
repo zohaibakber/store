@@ -7,7 +7,7 @@ import {
   type ReplicaStore,
   type SyncEngine,
   type SyncScheduler,
-  type SyncTransportService,
+  type SyncTransport,
   type OwnedLiveHost,
   type SyncSchedulerPolicy,
 } from "@store/sync";
@@ -80,7 +80,7 @@ type SqliteReplicaSessionInput<ReplicaError> = {
 
 type SqliteReplicaSyncInput<ReplicaError, TransportError> =
   SqliteReplicaSessionInput<ReplicaError> & {
-    readonly transport: Layer.Layer<SyncTransportService, TransportError>;
+    readonly transport: Layer.Layer<SyncTransport, TransportError>;
     readonly live: OwnedLiveHost;
     readonly policy?: SyncSchedulerPolicy;
     readonly deviceLabel?: DeviceLabel | undefined;

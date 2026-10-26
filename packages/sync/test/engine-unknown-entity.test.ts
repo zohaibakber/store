@@ -32,7 +32,7 @@ import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
-import { makeSyncTransport, type SyncTransport } from "../src/transport";
+import { makeSyncTransport, SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
 import { engineOf } from "./lib/engine-fixture";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
@@ -124,7 +124,7 @@ const decodeAcquireRequest = Schema.decodeUnknownEffect(
 const SNAPSHOT_PART_PATH = /^\/api\/sync\/snapshots\/(?<snapshotId>[^/]+)\/parts\/(?<part>\d+)$/u;
 
 const newerAuthorityResponse = Effect.fn(function* (
-  authority: SyncTransport,
+  authority: SyncTransport["Service"],
   pathname: string,
   bodyText: string,
 ) {
@@ -143,7 +143,7 @@ const newerAuthorityResponse = Effect.fn(function* (
   return yield* Effect.die(`The newer authority has no route for ${pathname}.`);
 });
 
-const newerAuthorityClient = (authority: SyncTransport) =>
+const newerAuthorityClient = (authority: SyncTransport["Service"]) =>
   HttpClient.make((request, url) =>
     newerAuthorityResponse(
       authority,
@@ -155,7 +155,7 @@ const newerAuthorityClient = (authority: SyncTransport) =>
     ),
   );
 
-const newerAuthorityTransport = (authority: SyncTransport) =>
+const newerAuthorityTransport = (authority: SyncTransport["Service"]) =>
   makeSyncTransport("https://api.tabaaq.test").pipe(
     Effect.provide(Layer.succeed(HttpClient.HttpClient, newerAuthorityClient(authority))),
   );
@@ -169,7 +169,7 @@ const survivesUnknownEntities = Effect.fn(function* (
   const transport = yield* newerAuthorityTransport(
     historyAuthorityTransport(authority, incarnation),
   );
-  const engine = yield* engineOf(store, transport);
+  const engine = yield* engineOf(store, Layer.succeed(SyncTransport, transport));
   const applied = store.readSyncCursor.pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   const { generationId } = yield* store.readStamp;
 

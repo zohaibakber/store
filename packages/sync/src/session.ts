@@ -12,7 +12,7 @@ import { makeLiveSocket, type LiveSocketHost } from "./live-socket";
 import { ReplicaStore, type ReplicaStoreError } from "./replica/store";
 import { defaultHttpPollPolicy, SyncScheduler, type SyncSchedulerPolicy } from "./scheduler";
 import { SyncStateRef } from "./sync-state";
-import type { SyncTransportService } from "./transport";
+import type { SyncTransport } from "./transport";
 import { ownWebNetwork } from "./web-ownership";
 
 export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
@@ -91,11 +91,11 @@ export const layerOwnedHttpSync = (
 ): Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransportService | Crypto.Crypto
+  ReplicaStore | SyncTransport | Crypto.Crypto
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
     Layer.provide(SyncScheduler.layer(options.policy ?? defaultHttpPollPolicy)),
-    Layer.provideMerge(SyncEngine.layerShared(engineOptions(options.policy, options.deviceLabel))),
+    Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy, options.deviceLabel))),
     Layer.provide(Layer.fresh(SyncStateRef.layer)),
   );
 
@@ -122,9 +122,9 @@ const ownLocalSync: Effect.Effect<
 export const layerOwnedLocalSync: Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransportService | Crypto.Crypto
+  ReplicaStore | SyncTransport | Crypto.Crypto
 > = Layer.effect(SyncScheduler, ownLocalSync).pipe(
   Layer.provide(SyncScheduler.layer(LOCAL_SYNC_POLICY, { recovers: false })),
-  Layer.provideMerge(SyncEngine.layerShared(engineOptions(LOCAL_SYNC_POLICY))),
+  Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),
   Layer.provide(Layer.fresh(SyncStateRef.layer)),
 );
