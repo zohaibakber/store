@@ -59,6 +59,3 @@ export const asServerRequestError =
         Effect.fail(new ServerResponseInvalid({ operation })),
       ),
     );
-
-export const isUnreachable = (error: RequestError) =>
-  error.status === 0 && error.code === "NETWORK_ERROR";

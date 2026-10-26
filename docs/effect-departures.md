@@ -19,8 +19,6 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 - **`Desktop` is app-wide while the replica it serves is per catalog.** `Desktop` (licence and `WorkspaceState`, `packages/inventory-react/src/services.ts:151`) is a module-level service, and `latestDesktop` (`:102`) keeps a `latest` fallback to the previous workspace's desktop port. Reads, Store and Insights are built per catalog. Target: per-catalog `WorkspaceState` (needs a second desktop port from main), licence served independently.
 - **Command atoms are non-concurrent per command.** A second call of the same command atom interrupts the first client fiber: `Atom.fn` without `concurrent: true` keeps only the latest argument (`makeResultFn` in `node_modules/effect/dist/reactivity/Atom.js`), and `concurrent: true` would join every running fiber and return the first result, which misattributes outcomes. No caller invokes one command twice at once today.
 - **`runtime.fn` re-runs its last argument when its runtime rebuilds.** Read from `makeResultFn` in `node_modules/effect/dist/reactivity/Atom.js`, not verified by a test. A port-fed runtime (`Reads`, `Store`, `Insights` after a port change) must not host write commands.
-- **`publish-offer.tsx` resumes a publish from `useEffect`.** `apps/desktop/src/components/app/publish-offer.tsx:22` calls `move()` when `state.resuming`. Target: a mounted atom that resumes.
-- **`use-sale-drafts.ts` keeps a registry-passing surface.** `saleDraftStore(registry, owner)` (`apps/desktop/src/hooks/use-sale-drafts.ts:53`) is built from `useContext(RegistryContext)` (`:171`) and writes with `registry.set` and `registry.update`. Target: atom functions the components call.
 
 ## Services and layers
 
