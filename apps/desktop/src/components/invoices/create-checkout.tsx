@@ -83,7 +83,7 @@ function InvoiceCheckout() {
           className="w-full"
           disabled={!canSubmit || isSubmitting}
           loading={isSubmitting}
-          onClick={() => void completeSale()}
+          onClick={() => completeSale()}
           size="lg"
           type="button"
         >

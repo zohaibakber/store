@@ -101,6 +101,9 @@ const invalidResponse = () =>
 
 export const isInvalidResponse = (error: RequestError) => error.code === INVALID_RESPONSE;
 
+export const isUnreachable = (error: RequestError) =>
+  error.status === 0 && error.code === NETWORK_ERROR;
+
 const superseded = () =>
   new RequestError({
     message: "The session changed while the request was in flight.",
