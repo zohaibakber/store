@@ -1,17 +1,28 @@
-import type { ProductAnalysis, SummaryReader } from "@store/client-db/node-analytics";
+import {
+  SUMMARY_ATTENTION_LIMIT,
+  SUMMARY_EXPIRING_LIMIT,
+  type AbcClass,
+  type AnalyticsRun,
+  type ExpiringBatch,
+  type InsightAlert,
+  type InsightsInventoryTotals,
+  type InsightsSummary,
+  type ProductInsight,
+  type StockPolicy,
+  type StockStatusCounts,
+} from "@store/contracts/sync/replica-analytics";
 import type {
   InsightsBatchFact,
   InsightsOnOrderFact,
   InsightsProductFact,
-  InsightsSummary,
-  AnalyticsRun,
-  StockPolicy,
-} from "@store/contracts";
-import { SUMMARY_ATTENTION_LIMIT, SUMMARY_EXPIRING_LIMIT } from "@store/contracts";
+} from "@store/contracts/sync/replica-insights";
+import * as Arr from "effect/Array";
+
 import {
   addSaleToLedger,
   analyzeProduct,
   assembleSalesPeriod,
+  classifyRevenueRanking,
   compareAlerts,
   emptyLedger,
   inventoryContribution,
@@ -22,7 +33,54 @@ import {
   salesRhythm,
   summarizePeriodProducts,
   type SalesLedger,
-} from "@store/services/insights";
+} from "./analysis";
+
+export const RANKING_DAYS = 90;
+
+export type ProductContribution = {
+  readonly valueAtCost: number;
+  readonly valueAtRetail: number;
+  readonly deadStockValue: number;
+  readonly expiryRiskValue: number;
+  readonly expiredValue: number;
+  readonly reorderCost: number;
+  readonly missingCostCount: number;
+};
+
+export type ProductAnalysis = {
+  readonly insight: ProductInsight;
+  readonly alerts: ReadonlyArray<InsightAlert>;
+  readonly expiring: ReadonlyArray<ExpiringBatch>;
+  readonly periodRevenue: readonly [number, number, number];
+  readonly periodUnits: readonly [number, number, number];
+  readonly contribution: ProductContribution;
+};
+
+type PeriodProductRow = {
+  readonly productId: string;
+  readonly name: string;
+  readonly revenue: number;
+  readonly units: number;
+  readonly unitCost: number | null;
+  readonly trend: ProductInsight["demand"]["trend"];
+};
+
+export type SummaryReader = {
+  readonly runId: number;
+  readonly productCount: () => number;
+  readonly statusCounts: () => StockStatusCounts;
+  readonly inventory: () => InsightsInventoryTotals;
+  readonly alertCandidates: (limit: number) => ReadonlyArray<InsightAlert>;
+  readonly attention: (limit: number) => {
+    readonly rows: ReadonlyArray<ProductInsight>;
+    readonly count: number;
+  };
+  readonly expiring: (limit: number) => {
+    readonly rows: ReadonlyArray<ExpiringBatch>;
+    readonly count: number;
+  };
+  readonly periodProducts: (slot: 0 | 1 | 2) => Iterable<PeriodProductRow>;
+};
 
 type SaleFact = {
   readonly productId: string;
@@ -31,23 +89,29 @@ type SaleFact = {
   readonly revenue: number;
 };
 
+export type StoredRanking = {
+  readonly productId: string;
+  readonly abc: string;
+  readonly revenue90d: number;
+};
+
+export const groupBatchesByProduct = (batches: ReadonlyArray<InsightsBatchFact>) =>
+  Arr.groupBy(batches, (batch) => batch.productId);
+
+export const abcLookup = (map: ReadonlyMap<string, AbcClass>) => (id: string) => map.get(id) ?? "C";
+
 export const analyzeProducts = (input: {
   readonly products: ReadonlyArray<InsightsProductFact>;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
   readonly sales: ReadonlyArray<SaleFact>;
   readonly onOrderOf: (productId: string) => number;
-  readonly abcOf: (productId: string) => "A" | "B" | "C";
+  readonly abcOf: (productId: string) => AbcClass;
   readonly policy: StockPolicy;
   readonly now: number;
   readonly today: number;
   readonly utcOffsetMinutes: number;
 }): ReadonlyArray<ProductAnalysis> => {
-  const batchesByProduct = new Map<string, Array<InsightsBatchFact>>();
-  for (const batch of input.batches) {
-    const group = batchesByProduct.get(batch.productId);
-    if (group) group.push(batch);
-    else batchesByProduct.set(batch.productId, [batch]);
-  }
+  const batchesByProduct = groupBatchesByProduct(input.batches);
   const ledgers = new Map<string, SalesLedger>();
   for (const sale of input.sales) {
     if (input.today - sale.day < 0) continue;
@@ -62,7 +126,7 @@ export const analyzeProducts = (input: {
     const ledger = ledgers.get(product.id);
     const analyzed = analyzeProduct({
       product,
-      batches: batchesByProduct.get(product.id) ?? [],
+      batches: batchesByProduct[product.id] ?? [],
       onOrderUnits: input.onOrderOf(product.id),
       ledger,
       abc: input.abcOf(product.id),
@@ -110,6 +174,42 @@ export const onOrderChanges = (
     before.delete(fact.productId);
   }
   return [...changed, ...before.keys()];
+};
+
+export type Reclassification = {
+  readonly abc: ReadonlyMap<string, AbcClass>;
+  readonly flipped: ReadonlyArray<string>;
+};
+
+export const reclassifyAffected = (input: {
+  readonly stored: ReadonlyArray<StoredRanking>;
+  readonly affected: ReadonlySet<string>;
+  readonly visibleAffected: ReadonlySet<string>;
+  readonly sales: ReadonlyArray<SaleFact>;
+  readonly today: number;
+}): Reclassification => {
+  const { stored, affected, visibleAffected, today } = input;
+  const revenueOf = new Map<string, number>();
+  for (const sale of input.sales) {
+    if (today - sale.day < 0 || today - sale.day >= RANKING_DAYS) continue;
+    revenueOf.set(sale.productId, (revenueOf.get(sale.productId) ?? 0) + sale.revenue);
+  }
+  const ranking = [
+    ...stored
+      .filter((entry) => !affected.has(entry.productId) && entry.revenue90d > 0)
+      .map((entry) => ({ id: entry.productId, revenue: entry.revenue90d })),
+    ...[...revenueOf]
+      .filter(([id, revenue]) => visibleAffected.has(id) && revenue > 0)
+      .map(([id, revenue]) => ({ id, revenue })),
+  ].sort((left, right) => right.revenue - left.revenue || (left.id < right.id ? -1 : 1));
+  const abc = new Map<string, AbcClass>();
+  classifyRevenueRanking(ranking, (id, klass) => abc.set(id, klass));
+  const flipped = stored
+    .filter(
+      (entry) => !affected.has(entry.productId) && (abc.get(entry.productId) ?? "C") !== entry.abc,
+    )
+    .map((entry) => entry.productId);
+  return { abc, flipped };
 };
 
 export const summarizeRun = (input: {

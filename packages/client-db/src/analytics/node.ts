@@ -1,5 +1,5 @@
 export { analyticsDatabasePath, openAnalyticsDatabase } from "./database";
-export { AnalyticsFailure, analyticsFailure } from "./errors";
+export { AnalyticsFailure, analyticsFailure, attemptStore } from "./errors";
 export {
   openInventorySource,
   type InventorySnapshot,
@@ -10,8 +10,6 @@ export {
 export {
   makeAnalyticsStore,
   type AnalyticsStore,
-  type ProductAnalysis,
   type SalesRow,
   type StagedProduct,
-  type SummaryReader,
 } from "./store";

@@ -8,27 +8,38 @@ import type {
   SalesRow,
   StagedProduct,
 } from "@store/client-db/node-analytics";
-import { AnalyticsFailure, analyticsFailure } from "@store/client-db/node-analytics";
+import { AnalyticsFailure, attemptStore } from "@store/client-db/node-analytics";
 import {
   ANALYTICS_ALGORITHM_VERSION,
   ANALYTICS_HISTORY_DAYS,
   insightsDayOf,
   stockPolicyVersion,
   type AnalyticsRun,
+  type AbcClass,
   type InsightsBatchFact,
   type InsightsContext,
   type InsightsOnOrderFact,
   type InsightsProductFact,
   type ReplicaInsightsWindow,
 } from "@store/contracts";
-import { classifyRevenueRanking, insightsWindowFor, onOrderLookup } from "@store/services/insights";
+import {
+  abcLookup,
+  analyzeProducts,
+  classifyRevenueRanking,
+  groupBatchesByProduct,
+  insightsWindowFor,
+  onOrderChanges,
+  onOrderLookup,
+  RANKING_DAYS,
+  reclassifyAffected,
+  summarizeRun,
+} from "@store/services/insights";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { analyzeProducts, onOrderChanges, summarizeRun } from "./analytics-analysis";
 import { RELEVANT_ENTITIES, type ChangeFeed } from "./analytics-changes";
 
 const PRODUCT_PAGE_SIZE = 500;
@@ -37,7 +48,6 @@ const INCREMENTAL_PRODUCT_LIMIT = 2_000;
 const RECONCILE_PRODUCT_LIMIT = 2_000;
 const SETTLE_ROUNDS = 40;
 const FULL_RUN_ATTEMPTS = 3;
-const RANKING_DAYS = 90;
 
 type PipelineDeps = {
   readonly source: InventorySource;
@@ -78,31 +88,21 @@ const datesOf = (now: number, context: InsightsContext): RunDates => {
   };
 };
 
-const abcLookup = (map: ReadonlyMap<string, "A" | "B" | "C">) => (id: string) => map.get(id) ?? "C";
-
 const stagedOf = (
   products: ReadonlyArray<InsightsProductFact>,
   batches: ReadonlyArray<InsightsBatchFact>,
 ): ReadonlyArray<StagedProduct> => {
-  const byProduct = new Map<string, Array<InsightsBatchFact>>();
-  for (const batch of batches) {
-    const group = byProduct.get(batch.productId);
-    if (group) group.push(batch);
-    else byProduct.set(batch.productId, [batch]);
-  }
-  return products.map((product) => ({ product, batches: byProduct.get(product.id) ?? [] }));
+  const byProduct = groupBatchesByProduct(batches);
+  return products.map((product) => ({ product, batches: byProduct[product.id] ?? [] }));
 };
 
 const readAt = <A>(
   deps: PipelineDeps,
   generation: string,
-  work: (snapshot: InventorySnapshot) => A | undefined,
+  work: (snapshot: InventorySnapshot) => Effect.Effect<A, AnalyticsFailure>,
 ) =>
-  deps.source.snapshot((snapshot) =>
-    Effect.suspend(() => {
-      const value = snapshot.stamp.generation === generation ? work(snapshot) : undefined;
-      return value === undefined ? Effect.fail(new SourceMoved()) : Effect.succeed(value);
-    }),
+  deps.source.snapshot((snapshot): Effect.Effect<A, AnalyticsFailure | SourceMoved> =>
+    snapshot.stamp.generation === generation ? work(snapshot) : Effect.fail(new SourceMoved()),
   );
 
 const copySource = (
@@ -118,40 +118,46 @@ const copySource = (
     let nextDay = dates.days.firstDay;
     while (nextDay <= dates.days.lastDay) {
       const first = nextDay;
-      const read = yield* readAt(deps, base.generation, (snapshot) => {
-        const deadline = clock.currentTimeMillisUnsafe() + SALES_READ_BUDGET_MILLIS;
-        const sales: Array<SalesRow> = [];
-        let day = first;
-        do {
-          sales.push(...snapshot.sales({ ...dates.days, firstDay: day, lastDay: day }));
-          day += 1;
-        } while (day <= dates.days.lastDay && clock.currentTimeMillisUnsafe() < deadline);
-        return { stamp: snapshot.stamp, sales, nextDay: day };
-      });
-      deps.store.workSales.insert(runId, read.sales);
+      const read = yield* readAt(deps, base.generation, (snapshot) =>
+        attemptStore(() => {
+          const deadline = clock.currentTimeMillisUnsafe() + SALES_READ_BUDGET_MILLIS;
+          const sales: Array<SalesRow> = [];
+          let day = first;
+          do {
+            sales.push(...snapshot.sales({ ...dates.days, firstDay: day, lastDay: day }));
+            day += 1;
+          } while (day <= dates.days.lastDay && clock.currentTimeMillisUnsafe() < deadline);
+          return { stamp: snapshot.stamp, sales, nextDay: day };
+        }),
+      );
+      yield* attemptStore(() => deps.store.workSales.insert(runId, read.sales));
       through = read.stamp;
       nextDay = read.nextDay;
       yield* Effect.yieldNow;
     }
     yield* Stream.paginate("", (after) =>
       Effect.gen(function* () {
-        const read = yield* readAt(deps, base.generation, (snapshot) => {
-          const products = snapshot.productPage(after, PRODUCT_PAGE_SIZE);
-          const first = products[0];
-          const last = products.at(-1);
-          return {
-            stamp: snapshot.stamp,
-            products,
-            batches:
-              first === undefined || last === undefined
-                ? []
-                : snapshot.batchesBetween(first.id, last.id),
-          };
-        });
+        const read = yield* readAt(deps, base.generation, (snapshot) =>
+          attemptStore(() => {
+            const products = snapshot.productPage(after, PRODUCT_PAGE_SIZE);
+            const first = products[0];
+            const last = products.at(-1);
+            return {
+              stamp: snapshot.stamp,
+              products,
+              batches:
+                first === undefined || last === undefined
+                  ? []
+                  : snapshot.batchesBetween(first.id, last.id),
+            };
+          }),
+        );
         through = read.stamp;
         const last = read.products.at(-1);
         if (last === undefined) return [[], Option.none()] as const;
-        deps.store.staged.write(runId, stagedOf(read.products, read.batches));
+        yield* attemptStore(() =>
+          deps.store.staged.write(runId, stagedOf(read.products, read.batches)),
+        );
         yield* reportCopied(read.products.length);
         yield* Effect.yieldNow;
         return [
@@ -176,7 +182,10 @@ const settle = <A>(
   base: InventoryStamp,
   start: InventoryStamp,
   initialKeys: Iterable<string>,
-  work: (snapshot: InventorySnapshot, keys: ReadonlyArray<string>) => A | undefined,
+  work: (
+    snapshot: InventorySnapshot,
+    keys: ReadonlyArray<string>,
+  ) => Effect.Effect<A | undefined, AnalyticsFailure>,
 ) =>
   Effect.gen(function* () {
     const covered = new Set(initialKeys);
@@ -187,15 +196,20 @@ const settle = <A>(
       for (const key of changed.keys) covered.add(key);
       const keys = [...covered];
       const expected = target;
-      const attempt = yield* deps.source.snapshot((snapshot) =>
-        Effect.sync((): Attempt<A> => {
-          if (snapshot.stamp.generation !== base.generation) return { kind: "moved" };
-          if (snapshot.stamp.version !== expected.version) {
-            return { kind: "behind", stamp: snapshot.stamp };
+      const attempt = yield* deps.source.snapshot(
+        (snapshot): Effect.Effect<Attempt<A>, AnalyticsFailure> => {
+          if (snapshot.stamp.generation !== base.generation) {
+            return Effect.succeed({ kind: "moved" });
           }
-          const value = work(snapshot, keys);
-          return value === undefined ? { kind: "declined" } : { kind: "settled", value };
-        }),
+          if (snapshot.stamp.version !== expected.version) {
+            return Effect.succeed({ kind: "behind", stamp: snapshot.stamp });
+          }
+          return work(snapshot, keys).pipe(
+            Effect.map((value) =>
+              value === undefined ? { kind: "declined" } : { kind: "settled", value },
+            ),
+          );
+        },
       );
       switch (attempt.kind) {
         case "moved":
@@ -212,28 +226,29 @@ const settle = <A>(
     return yield* new SourceMoved();
   });
 
-const readChanged = (snapshot: InventorySnapshot, keys: ReadonlyArray<string>, dates: RunDates) => {
-  const resolution = snapshot.resolveTouched(keys, RECONCILE_PRODUCT_LIMIT);
-  if (
-    resolution.unresolved ||
-    resolution.overflow ||
-    resolution.productIds.size > RECONCILE_PRODUCT_LIMIT
-  ) {
-    return undefined;
-  }
-  const productIds = [...resolution.productIds];
-  const products = productIds.length === 0 ? [] : snapshot.productsByIds(productIds);
-  return {
-    productIds,
-    entries: stagedOf(
-      products,
-      productIds.length === 0 ? [] : snapshot.batchesForProducts(productIds),
-    ),
-    sales: productIds.length === 0 ? [] : snapshot.sales(dates.days, productIds),
-    onOrder: snapshot.onOrder(),
-    facts: snapshot.windowFacts(dates.window),
-  };
-};
+const readChanged = (snapshot: InventorySnapshot, keys: ReadonlyArray<string>, dates: RunDates) =>
+  attemptStore(() => {
+    const resolution = snapshot.resolveTouched(keys, RECONCILE_PRODUCT_LIMIT);
+    if (
+      resolution.unresolved ||
+      resolution.overflow ||
+      resolution.productIds.size > RECONCILE_PRODUCT_LIMIT
+    ) {
+      return undefined;
+    }
+    const productIds = [...resolution.productIds];
+    const products = productIds.length === 0 ? [] : snapshot.productsByIds(productIds);
+    return {
+      productIds,
+      entries: stagedOf(
+        products,
+        productIds.length === 0 ? [] : snapshot.batchesForProducts(productIds),
+      ),
+      sales: productIds.length === 0 ? [] : snapshot.sales(dates.days, productIds),
+      onOrder: snapshot.onOrder(),
+      facts: snapshot.windowFacts(dates.window),
+    };
+  });
 
 const analyzeStaged = (
   deps: PipelineDeps,
@@ -246,31 +261,34 @@ const analyzeStaged = (
   Effect.gen(function* () {
     const { store } = deps;
     const onOrderOf = onOrderLookup(onOrder);
-    const abc = new Map<string, "A" | "B" | "C">();
-    classifyRevenueRanking(
+    const abc = new Map<string, AbcClass>();
+    const ranking = yield* attemptStore(() =>
       store.workSales.revenueRanking(runId, dates.today - RANKING_DAYS + 1, dates.today),
-      (id, klass) => abc.set(id, klass),
     );
+    classifyRevenueRanking(ranking, (id, klass) => abc.set(id, klass));
     yield* Stream.paginate("", (after) =>
       Effect.gen(function* () {
-        const staged = store.staged.page(runId, after, PRODUCT_PAGE_SIZE);
+        const staged = yield* attemptStore(() =>
+          store.staged.page(runId, after, PRODUCT_PAGE_SIZE),
+        );
         const first = staged[0];
         const last = staged.at(-1);
         if (first === undefined || last === undefined) return [[], Option.none()] as const;
-        store.writeProducts(
-          runId,
-          analyzeProducts({
-            products: staged.map((entry) => entry.product),
-            batches: staged.flatMap((entry) => entry.batches),
-            sales: store.workSales.range(runId, first.product.id, last.product.id),
-            onOrderOf,
-            abcOf: abcLookup(abc),
-            policy: context.policy,
-            now: dates.now,
-            today: dates.today,
-            utcOffsetMinutes: dates.utcOffsetMinutes,
-          }),
+        const sales = yield* attemptStore(() =>
+          store.workSales.range(runId, first.product.id, last.product.id),
         );
+        const analyses = analyzeProducts({
+          products: staged.map((entry) => entry.product),
+          batches: staged.flatMap((entry) => entry.batches),
+          sales,
+          onOrderOf,
+          abcOf: abcLookup(abc),
+          policy: context.policy,
+          now: dates.now,
+          today: dates.today,
+          utcOffsetMinutes: dates.utcOffsetMinutes,
+        });
+        yield* attemptStore(() => store.writeProducts(runId, analyses));
         yield* reportAnalyzed(staged.length);
         yield* Effect.yieldNow;
         return [
@@ -285,7 +303,7 @@ const attemptFull = (deps: PipelineDeps, context: InsightsContext, dates: RunDat
   Effect.gen(function* () {
     const { store } = deps;
     const start = yield* deps.source.snapshot((snapshot) =>
-      Effect.sync(() => ({ stamp: snapshot.stamp, count: snapshot.productCount() })),
+      attemptStore(() => ({ stamp: snapshot.stamp, count: snapshot.productCount() })),
     );
     const total = start.count * 2;
     let done = 0;
@@ -294,37 +312,42 @@ const attemptFull = (deps: PipelineDeps, context: InsightsContext, dates: RunDat
       return deps.progress(done, total);
     };
     yield* deps.progress(0, total);
-    const runId = store.allocateRun();
+    const runId = yield* attemptStore(() => store.allocateRun());
     const copiedThrough = yield* copySource(deps, runId, start.stamp, dates, advance);
     const settled = yield* settle(deps, start.stamp, copiedThrough, [], (snapshot, keys) =>
       readChanged(snapshot, keys, dates),
     );
     if (settled === undefined) return yield* new SourceMoved();
     const changed = settled.value;
-    if (changed.productIds.length > 0) store.staged.replace(runId, changed);
+    if (changed.productIds.length > 0) {
+      yield* attemptStore(() => store.staged.replace(runId, changed));
+    }
     yield* analyzeStaged(deps, runId, context, dates, changed.onOrder, advance);
     const { days, hours } = changed.facts;
-    return store.publish({
-      runId,
-      kind: "full",
-      generatedAt: dates.now,
-      completedAt: yield* Clock.currentTimeMillis,
-      sourceGeneration: settled.stamp.generation,
-      sourceVersion: settled.stamp.version,
-      policyVersion: stockPolicyVersion(context.policy),
-      algorithmVersion: ANALYTICS_ALGORITHM_VERSION,
-      today: dates.today,
-      utcOffsetMinutes: dates.utcOffsetMinutes,
-      summarize: (reader, published) =>
-        summarizeRun({
-          reader,
-          run: published,
-          policy: context.policy,
-          now: dates.now,
-          days,
-          hours,
-        }),
-    });
+    const completedAt = yield* Clock.currentTimeMillis;
+    return yield* attemptStore(() =>
+      store.publish({
+        runId,
+        kind: "full",
+        generatedAt: dates.now,
+        completedAt,
+        sourceGeneration: settled.stamp.generation,
+        sourceVersion: settled.stamp.version,
+        policyVersion: stockPolicyVersion(context.policy),
+        algorithmVersion: ANALYTICS_ALGORITHM_VERSION,
+        today: dates.today,
+        utcOffsetMinutes: dates.utcOffsetMinutes,
+        summarize: (reader, published) =>
+          summarizeRun({
+            reader,
+            run: published,
+            policy: context.policy,
+            now: dates.now,
+            days,
+            hours,
+          }),
+      }),
+    );
   });
 
 const runFull = (deps: PipelineDeps, context: InsightsContext, dates: RunDates) =>
@@ -343,57 +366,55 @@ const readIncremental = (
   stored: ReturnType<AnalyticsStore["rankingOf"]>,
   storedOnOrder: ReadonlyArray<InsightsOnOrderFact>,
   dates: RunDates,
-) => {
-  const resolution = snapshot.resolveTouched(keys, INCREMENTAL_PRODUCT_LIMIT);
-  if (resolution.unresolved || resolution.overflow) return undefined;
-  const onOrder = snapshot.onOrder();
-  const affected = new Set([...resolution.productIds, ...onOrderChanges(storedOnOrder, onOrder)]);
-  if (affected.size > INCREMENTAL_PRODUCT_LIMIT) return undefined;
-  const affectedIds = [...affected];
-  const products = snapshot.productsByIds(affectedIds);
-  const affectedSales = affectedIds.length === 0 ? [] : snapshot.sales(dates.days, affectedIds);
-  const revenueOf = new Map<string, number>();
-  for (const sale of affectedSales) {
-    if (dates.today - sale.day < 0 || dates.today - sale.day >= RANKING_DAYS) continue;
-    revenueOf.set(sale.productId, (revenueOf.get(sale.productId) ?? 0) + sale.revenue);
-  }
-  const visibleAffected = new Set(products.map((product) => product.id));
-  const ranking = [
-    ...stored
-      .filter((entry) => !affected.has(entry.productId) && entry.revenue90d > 0)
-      .map((entry) => ({ id: entry.productId, revenue: entry.revenue90d })),
-    ...[...revenueOf]
-      .filter(([id, revenue]) => visibleAffected.has(id) && revenue > 0)
-      .map(([id, revenue]) => ({ id, revenue })),
-  ].sort((left, right) => right.revenue - left.revenue || (left.id < right.id ? -1 : 1));
-  const abc = new Map<string, "A" | "B" | "C">();
-  classifyRevenueRanking(ranking, (id, klass) => abc.set(id, klass));
-  const flipped = stored
-    .filter(
-      (entry) => !affected.has(entry.productId) && (abc.get(entry.productId) ?? "C") !== entry.abc,
-    )
-    .map((entry) => entry.productId);
-  if (affected.size + flipped.length > INCREMENTAL_PRODUCT_LIMIT) return undefined;
-  const flippedProducts = flipped.length === 0 ? [] : snapshot.productsByIds(flipped);
-  const flippedSales: ReadonlyArray<SalesRow> =
-    flippedProducts.length === 0
-      ? []
-      : snapshot.sales(
-          dates.days,
-          flippedProducts.map((product) => product.id),
-        );
-  const targets = [...products, ...flippedProducts];
-  return {
-    replaced: [...affectedIds, ...flipped],
-    targets,
-    batches:
-      targets.length === 0 ? [] : snapshot.batchesForProducts(targets.map((product) => product.id)),
-    sales: [...affectedSales, ...flippedSales],
-    onOrder,
-    abc,
-    facts: snapshot.windowFacts(dates.window),
-  };
-};
+) =>
+  Effect.gen(function* () {
+    const resolution = yield* attemptStore(() =>
+      snapshot.resolveTouched(keys, INCREMENTAL_PRODUCT_LIMIT),
+    );
+    if (resolution.unresolved || resolution.overflow) return undefined;
+    const onOrder = yield* attemptStore(() => snapshot.onOrder());
+    const affected = new Set([...resolution.productIds, ...onOrderChanges(storedOnOrder, onOrder)]);
+    if (affected.size > INCREMENTAL_PRODUCT_LIMIT) return undefined;
+    const affectedIds = [...affected];
+    const products = yield* attemptStore(() => snapshot.productsByIds(affectedIds));
+    const affectedSales =
+      affectedIds.length === 0
+        ? []
+        : yield* attemptStore(() => snapshot.sales(dates.days, affectedIds));
+    const { abc, flipped } = reclassifyAffected({
+      stored,
+      affected,
+      visibleAffected: new Set(products.map((product) => product.id)),
+      sales: affectedSales,
+      today: dates.today,
+    });
+    if (affected.size + flipped.length > INCREMENTAL_PRODUCT_LIMIT) return undefined;
+    const flippedProducts =
+      flipped.length === 0 ? [] : yield* attemptStore(() => snapshot.productsByIds(flipped));
+    const flippedSales: ReadonlyArray<SalesRow> =
+      flippedProducts.length === 0
+        ? []
+        : yield* attemptStore(() =>
+            snapshot.sales(
+              dates.days,
+              flippedProducts.map((product) => product.id),
+            ),
+          );
+    const targets = [...products, ...flippedProducts];
+    const targetIds = targets.map((product) => product.id);
+    return {
+      replaced: [...affectedIds, ...flipped],
+      targets,
+      batches:
+        targets.length === 0
+          ? []
+          : yield* attemptStore(() => snapshot.batchesForProducts(targetIds)),
+      sales: [...affectedSales, ...flippedSales],
+      onOrder,
+      abc,
+      facts: yield* attemptStore(() => snapshot.windowFacts(dates.window)),
+    };
+  });
 
 const runIncremental = (
   deps: PipelineDeps,
@@ -406,8 +427,8 @@ const runIncremental = (
   Effect.gen(function* () {
     const { store } = deps;
     const base = { generation: published.sourceGeneration, version: published.sourceVersion };
-    const stored = store.rankingOf(published.runId);
-    const storedOnOrder = store.onOrderOf(published.runId);
+    const stored = yield* attemptStore(() => store.rankingOf(published.runId));
+    const storedOnOrder = yield* attemptStore(() => store.onOrderOf(published.runId));
     yield* deps.progress(0, pendingKeys.length);
     const settled = yield* settle(deps, base, start, pendingKeys, (snapshot, keys) =>
       readIncremental(snapshot, keys, stored, storedOnOrder, dates),
@@ -426,21 +447,24 @@ const runIncremental = (
       utcOffsetMinutes: dates.utcOffsetMinutes,
     });
     const { days, hours } = read.facts;
-    const run = store.publish({
-      runId: published.runId,
-      kind: "incremental",
-      generatedAt: dates.now,
-      completedAt: yield* Clock.currentTimeMillis,
-      sourceGeneration: settled.stamp.generation,
-      sourceVersion: settled.stamp.version,
-      policyVersion: stockPolicyVersion(context.policy),
-      algorithmVersion: ANALYTICS_ALGORITHM_VERSION,
-      today: dates.today,
-      utcOffsetMinutes: dates.utcOffsetMinutes,
-      replace: { productIds: read.replaced, analyses },
-      summarize: (reader, next) =>
-        summarizeRun({ reader, run: next, policy: context.policy, now: dates.now, days, hours }),
-    });
+    const completedAt = yield* Clock.currentTimeMillis;
+    const run = yield* attemptStore(() =>
+      store.publish({
+        runId: published.runId,
+        kind: "incremental",
+        generatedAt: dates.now,
+        completedAt,
+        sourceGeneration: settled.stamp.generation,
+        sourceVersion: settled.stamp.version,
+        policyVersion: stockPolicyVersion(context.policy),
+        algorithmVersion: ANALYTICS_ALGORITHM_VERSION,
+        today: dates.today,
+        utcOffsetMinutes: dates.utcOffsetMinutes,
+        replace: { productIds: read.replaced, analyses },
+        summarize: (reader, next) =>
+          summarizeRun({ reader, run: next, policy: context.policy, now: dates.now, days, hours }),
+      }),
+    );
     yield* deps.progress(pendingKeys.length, pendingKeys.length);
     return run;
   });
@@ -460,7 +484,7 @@ export const refreshAnalytics = (
 ): Effect.Effect<RefreshOutcome, AnalyticsFailure> =>
   Effect.gen(function* () {
     const dates = datesOf(yield* Clock.currentTimeMillis, request.context);
-    const published = deps.store.publishedRun();
+    const published = yield* attemptStore(() => deps.store.publishedRun());
     const stamp = yield* deps.source.snapshot((snapshot) => Effect.succeed(snapshot.stamp));
     const contextChanged =
       published === undefined ||
@@ -490,7 +514,4 @@ export const refreshAnalytics = (
     return run === undefined
       ? yield* full()
       : ({ kind: "incremental", run } satisfies RefreshOutcome);
-  }).pipe(
-    Effect.catchDefect((defect) => Effect.fail(analyticsFailure(defect))),
-    Effect.mapError(analyticsFailure),
-  );
+  });

@@ -14,7 +14,6 @@ import {
   type InsightsProductFact,
   type RestockCursor,
   type RestockFilters,
-  type StockStatusCounts,
   type InsightsInventoryTotals,
 } from "@store/contracts";
 import {
@@ -26,6 +25,7 @@ import {
   workProduct,
   workSales,
 } from "@store/db/analytics.schema";
+import type { ProductAnalysis, SummaryReader } from "@store/services/insights";
 import {
   and,
   count,
@@ -108,51 +108,6 @@ const decodeStaged = Schema.decodeUnknownSync(stagedJson);
 export type StagedProduct = {
   readonly product: InsightsProductFact;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
-};
-
-type ProductContribution = {
-  readonly valueAtCost: number;
-  readonly valueAtRetail: number;
-  readonly deadStockValue: number;
-  readonly expiryRiskValue: number;
-  readonly expiredValue: number;
-  readonly reorderCost: number;
-  readonly missingCostCount: number;
-};
-
-export type ProductAnalysis = {
-  readonly insight: ProductInsight;
-  readonly alerts: ReadonlyArray<InsightAlert>;
-  readonly expiring: ReadonlyArray<ExpiringBatch>;
-  readonly periodRevenue: readonly [number, number, number];
-  readonly periodUnits: readonly [number, number, number];
-  readonly contribution: ProductContribution;
-};
-
-type PeriodProductRow = {
-  readonly productId: string;
-  readonly name: string;
-  readonly revenue: number;
-  readonly units: number;
-  readonly unitCost: number | null;
-  readonly trend: ProductInsight["demand"]["trend"];
-};
-
-export type SummaryReader = {
-  readonly runId: number;
-  readonly productCount: () => number;
-  readonly statusCounts: () => StockStatusCounts;
-  readonly inventory: () => InsightsInventoryTotals;
-  readonly alertCandidates: (limit: number) => ReadonlyArray<InsightAlert>;
-  readonly attention: (limit: number) => {
-    readonly rows: ReadonlyArray<ProductInsight>;
-    readonly count: number;
-  };
-  readonly expiring: (limit: number) => {
-    readonly rows: ReadonlyArray<ExpiringBatch>;
-    readonly count: number;
-  };
-  readonly periodProducts: (slot: 0 | 1 | 2) => Iterable<PeriodProductRow>;
 };
 
 type PublishInput = {
