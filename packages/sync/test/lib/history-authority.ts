@@ -110,7 +110,7 @@ const snapshotManifest = (authority: HistoryAuthority, horizon: OrgCommitSequenc
 export const historyAuthorityTransport = (
   authority: HistoryAuthority,
   incarnation: string,
-): SyncTransport => ({
+): SyncTransport["Service"] => ({
   registerReplica: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
   getReceipt: () => Effect.succeed(undefined),

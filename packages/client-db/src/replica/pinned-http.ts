@@ -1,4 +1,4 @@
-import { SyncTransportService } from "@store/sync";
+import { SyncTransport } from "@store/sync";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -77,7 +77,7 @@ const admitBody = (request: HttpClientRequest.HttpClientRequest) => {
 
 export type PinnedHttp = {
   readonly client: HttpClient.HttpClient;
-  readonly syncTransport: Layer.Layer<SyncTransportService>;
+  readonly syncTransport: Layer.Layer<SyncTransport>;
   readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
   readonly refreshing: Stream.Stream<boolean>;
   readonly liveAccessToken: (options: { readonly force: boolean }) => Effect.Effect<string | null>;
@@ -183,7 +183,7 @@ export const makePinnedHttp = Effect.fn("PinnedHttp.make")(function* (apiBaseUrl
 
   return {
     client,
-    syncTransport: SyncTransportService.layer(apiOrigin).pipe(
+    syncTransport: SyncTransport.layer(apiOrigin).pipe(
       Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
     ),
     setToken: (token) =>

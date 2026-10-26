@@ -1,5 +1,5 @@
 import type { DeviceLabel } from "@store/contracts";
-import type { OwnedLiveHost, SyncTransportService } from "@store/sync";
+import type { OwnedLiveHost, SyncTransport } from "@store/sync";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import type * as Layer from "effect/Layer";
 
@@ -16,7 +16,7 @@ type NodeReplicaInput = {
 };
 
 type NodeReplicaSyncInput = NodeReplicaInput & {
-  readonly transport: Layer.Layer<SyncTransportService>;
+  readonly transport: Layer.Layer<SyncTransport>;
   readonly live: OwnedLiveHost;
   readonly deviceLabel?: DeviceLabel | undefined;
 };

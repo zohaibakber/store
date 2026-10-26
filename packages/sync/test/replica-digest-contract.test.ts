@@ -16,6 +16,7 @@ import {
 } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
@@ -23,7 +24,7 @@ import { TestClock } from "effect/testing";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
-import type { SyncTransport } from "../src/transport";
+import { SyncTransport } from "../src/transport";
 import { applyGroup } from "./lib/authority";
 import {
   authorityDigest,
@@ -85,7 +86,10 @@ const makeAuthority = Effect.fn("digest.authority")(function* () {
   } satisfies Authority;
 });
 
-const authorityTransport = (incarnation: string, authority: Authority): SyncTransport => ({
+const authorityTransport = (
+  incarnation: string,
+  authority: Authority,
+): SyncTransport["Service"] => ({
   registerReplica: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
   getReceipt: () => Effect.succeed(undefined),
@@ -315,7 +319,7 @@ const withEngine = <A, E>(
   Effect.gen(function* () {
     const engine = yield* engineOf(
       harness.store,
-      authorityTransport(harness.incarnation, authority),
+      Layer.succeed(SyncTransport, authorityTransport(harness.incarnation, authority)),
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },
     );
     return yield* use(engine);

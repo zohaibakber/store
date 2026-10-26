@@ -28,7 +28,7 @@ const byPartNumber = Order.mapInput(Order.Number, (part: SnapshotPartRef) => par
 type AuthorityGap = Extract<SnapshotActivation, { readonly _tag: "needsAuthority" }>;
 
 const catchUpCandidate = (
-  transport: SyncTransport,
+  transport: SyncTransport["Service"],
   store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
@@ -62,7 +62,7 @@ const catchUpCandidate = (
   ).pipe(Stream.runDrain);
 
 const activateCandidate = (
-  transport: SyncTransport,
+  transport: SyncTransport["Service"],
   store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
@@ -100,7 +100,7 @@ const abandonOnInvalidCandidate = (
 };
 
 const importCandidate = (
-  transport: SyncTransport,
+  transport: SyncTransport["Service"],
   store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
@@ -136,7 +136,7 @@ const importCandidate = (
   );
 
 export const recoverRequiredSnapshot = (
-  transport: SyncTransport,
+  transport: SyncTransport["Service"],
   store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   onTransfer: (transfer: SyncTransfer) => Effect.Effect<void> = () => Effect.void,

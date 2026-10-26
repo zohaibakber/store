@@ -17,6 +17,7 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
@@ -86,7 +87,7 @@ const recordingTransport = (
 
 const openEngine = (
   handle: Parameters<typeof makeSqliteReplicaStore>[0],
-  transport: SyncTransport,
+  transport: Layer.Layer<SyncTransport>,
   options: { readonly pullMaxBytes?: number; readonly verifiedDigestAt?: number } = {},
 ) =>
   Effect.gen(function* () {

@@ -326,28 +326,6 @@ export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition 
   }
 };
 
-export type SyncTransport = {
-  readonly registerReplica: (
-    request: RegisterReplicaRequest,
-  ) => Effect.Effect<RegisterReplicaResult, SyncTransportError | SyncProtocolError>;
-  readonly submitCommand: (
-    request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
-  readonly getReceipt: (
-    operationId: OperationId,
-  ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
-  readonly pull: (
-    request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, SyncTransportError | SyncProtocolError>;
-  readonly acquireSnapshot: (
-    request: AcquireSnapshotRequest,
-  ) => Effect.Effect<AcquireSnapshotResult, SyncTransportError | SyncProtocolError>;
-  readonly readSnapshotPart: (
-    snapshotId: SnapshotId,
-    partNumber: number,
-  ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
-};
-
 export const SYNC_REQUEST_TIMEOUT_MILLIS = {
   registerReplica: 15_000,
   submitCommand: 15_000,
@@ -355,10 +333,10 @@ export const SYNC_REQUEST_TIMEOUT_MILLIS = {
   pull: 30_000,
   acquireSnapshot: 30_000,
   readSnapshotPart: 30_000,
-} as const satisfies Record<keyof SyncTransport, number>;
+} as const satisfies Record<keyof SyncTransport["Service"], number>;
 
 const withDeadline =
-  (operation: keyof SyncTransport) =>
+  (operation: keyof SyncTransport["Service"]) =>
   <A, R>(
     effect: Effect.Effect<A, SyncTransportError | SyncProtocolError, R>,
   ): Effect.Effect<A, SyncTransportError | SyncProtocolError, R> =>
@@ -372,7 +350,7 @@ const withDeadline =
         ),
     });
 
-const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
+const withRequestDeadlines = (transport: SyncTransport["Service"]): SyncTransport["Service"] => ({
   registerReplica: (request) => withDeadline("registerReplica")(transport.registerReplica(request)),
   submitCommand: (request) => withDeadline("submitCommand")(transport.submitCommand(request)),
   getReceipt: (operationId) => withDeadline("getReceipt")(transport.getReceipt(operationId)),
@@ -403,9 +381,30 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
   });
 });
 
-export class SyncTransportService extends Context.Service<SyncTransportService, SyncTransport>()(
-  "@store/sync/SyncTransport",
-) {
+export class SyncTransport extends Context.Service<
+  SyncTransport,
+  {
+    readonly registerReplica: (
+      request: RegisterReplicaRequest,
+    ) => Effect.Effect<RegisterReplicaResult, SyncTransportError | SyncProtocolError>;
+    readonly submitCommand: (
+      request: SyncSubmitCommandRequest,
+    ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
+    readonly getReceipt: (
+      operationId: OperationId,
+    ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
+    readonly pull: (
+      request: SyncPullRequest,
+    ) => Effect.Effect<SyncPullResult, SyncTransportError | SyncProtocolError>;
+    readonly acquireSnapshot: (
+      request: AcquireSnapshotRequest,
+    ) => Effect.Effect<AcquireSnapshotResult, SyncTransportError | SyncProtocolError>;
+    readonly readSnapshotPart: (
+      snapshotId: SnapshotId,
+      partNumber: number,
+    ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
+  }
+>()("@store/sync/SyncTransport") {
   static readonly layer = (baseUrl: string) =>
-    Layer.effect(SyncTransportService, makeSyncTransport(baseUrl));
+    Layer.effect(SyncTransport, makeSyncTransport(baseUrl));
 }

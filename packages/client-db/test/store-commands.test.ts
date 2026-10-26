@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { decodeInvoiceId, decodeProductId } from "@store/contracts/ids";
 import { InventoryReads, InventoryStore } from "@store/contracts/replica";
-import { ReplicaStore, SyncTransportService, type SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncTransport } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,14 +18,14 @@ import { layerInventoryStore, StaffGate } from "../src/store/handlers";
 
 const DAY = 86_400_000;
 
-const unreachable: SyncTransport = {
+const unreachable = Layer.succeed(SyncTransport, {
   registerReplica: () => Effect.never,
   submitCommand: () => Effect.never,
   getReceipt: () => Effect.never,
   pull: () => Effect.never,
   acquireSnapshot: () => Effect.never,
   readSnapshotPart: () => Effect.never,
-};
+});
 
 const openStore = async (replicaId: string) => {
   const scope = Effect.runSync(Scope.make());
@@ -36,7 +36,7 @@ const openStore = async (replicaId: string) => {
           path: ":memory:",
           identity: { organizationId: "org-1", userId: "user-1", replicaId },
           databaseIdentity: `store-commands-${replicaId}`,
-          transport: Layer.succeed(SyncTransportService, unreachable),
+          transport: unreachable,
           live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
         }).pipe(Layer.provide(NodeCrypto.layer)),
       ),

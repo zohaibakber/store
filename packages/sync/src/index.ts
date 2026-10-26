@@ -6,6 +6,6 @@ export { SyncScheduler } from "./scheduler";
 export type { SyncSchedulerPolicy } from "./scheduler";
 export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
 export type { OwnedLiveHost } from "./session";
+export { SyncStateRef } from "./sync-state";
 export type { SyncPhase, SyncState } from "./sync-state";
-export { SyncTransportService } from "./transport";
-export type { SyncTransport } from "./transport";
+export { SyncTransport } from "./transport";

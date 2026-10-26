@@ -1,4 +1,4 @@
-import { SyncTransportService, type OwnedLiveHost, type SyncSchedulerPolicy } from "@store/sync";
+import { SyncTransport, type OwnedLiveHost, type SyncSchedulerPolicy } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
@@ -22,7 +22,7 @@ type SqlClientReplicaInput<E> = {
 };
 
 const layerFetchTransport = (apiBaseUrl: string, fetch: typeof globalThis.fetch) =>
-  SyncTransportService.layer(apiBaseUrl).pipe(
+  SyncTransport.layer(apiBaseUrl).pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
   );

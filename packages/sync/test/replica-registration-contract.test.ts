@@ -20,6 +20,7 @@ import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 
@@ -28,7 +29,7 @@ import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
-import { SyncTransportOffline, type SyncTransport } from "../src/transport";
+import { SyncTransport, SyncTransportOffline } from "../src/transport";
 import { engineOf } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
@@ -108,7 +109,7 @@ const makeAuthority = (
   let offline = options.offlineRegistrations ?? 0;
   let lastSequence = BigInt(identity.nextClientSequence) - 1n;
   const accepted: Array<string> = [];
-  const transport: SyncTransport = {
+  const transport: SyncTransport["Service"] = {
     registerReplica: (request) =>
       Effect.suspend(() => {
         counts.registers += 1;
@@ -216,8 +217,8 @@ const categoryEnvelope = (
   };
 };
 
-const engineFor = (store: ReplicaStore["Service"], transport: SyncTransport) =>
-  engineOf(store, transport);
+const engineFor = (store: ReplicaStore["Service"], transport: SyncTransport["Service"]) =>
+  engineOf(store, Layer.succeed(SyncTransport, transport));
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>
@@ -245,7 +246,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(authority.accepted).toEqual(["7", "8", "9"]);
         yield* engine.ensureRegistered;
         expect(authority.counts.registers).toBe(1);
-      }),
+      }).pipe(Effect.scoped),
     ),
   );
 
@@ -270,7 +271,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(failure).toMatchObject({ code: "COMMAND_IDENTITY_MISMATCH" });
         expect((yield* store.readSyncCursor).registered).toBe(false);
         expect(yield* store.readCommandStatus(OperationId.make("op-1"))).toBe("pending");
-      }),
+      }).pipe(Effect.scoped),
     ),
   );
 

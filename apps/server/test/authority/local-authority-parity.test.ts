@@ -38,7 +38,7 @@ import {
   lastUnitBuyerBCommand,
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore, SyncEngine, SyncTransportService } from "@store/sync";
+import { ReplicaStore, SyncEngine, SyncStateRef, SyncTransport } from "@store/sync";
 import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
@@ -96,8 +96,8 @@ const seededReplica = (organizationId: string) =>
 
 const recordingLocalAuthority = (submissions: Array<LocalSubmission>) =>
   Layer.effect(
-    SyncTransportService,
-    SyncTransportService.use((authority) =>
+    SyncTransport,
+    SyncTransport.use((authority) =>
       Effect.succeed({
         ...authority,
         submitCommand: (request: SyncSubmitCommandRequest) =>
@@ -133,6 +133,7 @@ const twinLayer = (
 ) =>
   Layer.mergeAll(
     SyncEngine.layer().pipe(
+      Layer.provide(Layer.fresh(SyncStateRef.layer)),
       Layer.provide(SequentialCrypto),
       Layer.provideMerge(recordingLocalAuthority(submissions)),
       Layer.provideMerge(recordingStore(organizationId, submissions, path)),
@@ -153,7 +154,7 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
   Effect.gen(function* () {
     const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
-    const localAuthority = yield* SyncTransportService;
+    const localAuthority = yield* SyncTransport;
     const authorities = yield* TestAuthorities;
     yield* authorities.open(organizationId);
     const authority = typedCommands(yield* OrganizationAuthority);

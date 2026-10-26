@@ -63,7 +63,7 @@ import {
 import {
   SYNC_REQUEST_TIMEOUT_MILLIS,
   SyncTransportGarbled,
-  SyncTransportService,
+  SyncTransport,
   type RecoverableCode,
   type SyncTransportError,
 } from "./transport";
@@ -127,7 +127,7 @@ const withMaxBytes = <R extends object>(request: R, maxBytes: number | undefined
 const makeSyncEngine = (options: SyncEngineOptions) =>
   Effect.gen(function* () {
     const store = yield* ReplicaStore;
-    const transport = yield* SyncTransportService;
+    const transport = yield* SyncTransport;
     const crypto = yield* Crypto.Crypto;
     const makeClaimId = Effect.orDie(crypto.randomUUIDv4());
     const mutex = yield* Semaphore.make(1);
@@ -544,9 +544,6 @@ export class SyncEngine extends Context.Service<
     ) => Effect.Effect<LiveFrameOutcome, ReplicaStoreError>;
   }
 >()("@store/sync/SyncEngine") {
-  static readonly layerShared = (options: SyncEngineOptions = {}) =>
-    Layer.effect(SyncEngine, makeSyncEngine(options));
-
   static readonly layer = (options: SyncEngineOptions = {}) =>
-    SyncEngine.layerShared(options).pipe(Layer.provide(Layer.fresh(SyncStateRef.layer)));
+    Layer.effect(SyncEngine, makeSyncEngine(options));
 }

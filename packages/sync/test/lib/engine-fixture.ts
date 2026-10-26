@@ -12,37 +12,28 @@ import {
   type SyncSchedulerPolicy,
 } from "../../src/scheduler";
 import { SyncStateRef } from "../../src/sync-state";
-import { SyncTransportService, type SyncTransport } from "../../src/transport";
+import { SyncTransport } from "../../src/transport";
 import { TestCrypto } from "./crypto";
 
-export const stubTransport = (overrides: Partial<SyncTransport> = {}): SyncTransport => ({
-  registerReplica: () => Effect.die("unused"),
-  submitCommand: () => Effect.die("unused"),
-  getReceipt: () => Effect.die("unused"),
-  pull: () => Effect.die("unused"),
-  acquireSnapshot: () => Effect.die("unused"),
-  readSnapshotPart: () => Effect.die("unused"),
-  ...overrides,
-});
+export const stubTransport = (overrides: Partial<SyncTransport["Service"]> = {}) =>
+  Layer.mock(SyncTransport, overrides);
 
-const dependencies = (store: ReplicaStore["Service"], transport: SyncTransport) =>
-  Layer.mergeAll(
-    Layer.succeed(ReplicaStore, store),
-    Layer.succeed(SyncTransportService, transport),
-    TestCrypto,
-  );
+const dependencies = (store: ReplicaStore["Service"], transport: Layer.Layer<SyncTransport>) =>
+  Layer.mergeAll(Layer.succeed(ReplicaStore, store), transport, TestCrypto);
+
+const withFreshState = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+  layer.pipe(Layer.provide(Layer.fresh(SyncStateRef.layer)));
 
 export const engineOf = (
   store: ReplicaStore["Service"],
-  transport: SyncTransport,
+  transport: Layer.Layer<SyncTransport>,
   options?: Parameters<typeof SyncEngine.layer>[0],
 ) =>
-  Layer.build(SyncEngine.layer(options).pipe(Layer.provide(dependencies(store, transport)))).pipe(
-    Effect.map((context) => Context.get(context, SyncEngine)),
-    Effect.scoped,
-  );
+  Layer.build(
+    withFreshState(SyncEngine.layer(options)).pipe(Layer.provide(dependencies(store, transport))),
+  ).pipe(Effect.map((context) => Context.get(context, SyncEngine)));
 
-export const sqliteEngine = (handle: SqliteReplicaHandle, transport: SyncTransport) =>
+export const sqliteEngine = (handle: SqliteReplicaHandle, transport: Layer.Layer<SyncTransport>) =>
   Effect.gen(function* () {
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
     return yield* engineOf(store, transport);
@@ -50,7 +41,7 @@ export const sqliteEngine = (handle: SqliteReplicaHandle, transport: SyncTranspo
 
 export const sqliteScheduler = (
   handle: SqliteReplicaHandle,
-  transport: SyncTransport,
+  transport: Layer.Layer<SyncTransport>,
   policy: SyncSchedulerPolicy,
   options?: SyncSchedulerOptions,
 ) =>
@@ -58,7 +49,7 @@ export const sqliteScheduler = (
     const store = yield* makeSqliteReplicaStore(handle, "sqlite");
     const context = yield* Layer.build(
       SyncScheduler.layer(policy, options).pipe(
-        Layer.provideMerge(SyncEngine.layerShared()),
+        Layer.provideMerge(SyncEngine.layer()),
         Layer.provide(dependencies(store, transport)),
         Layer.provide(SyncStateRef.layer),
       ),
