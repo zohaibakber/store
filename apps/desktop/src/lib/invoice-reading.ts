@@ -4,8 +4,8 @@ import * as Schema from "effect/Schema";
 
 import { useOnline } from "@/hooks/use-online";
 import { appHost } from "@/host";
+import type { InvoiceUploadFile } from "@/host";
 import type { Workspace } from "@/host-access";
-import type { InvoiceUploadFile } from "@/host/invoice-upload";
 import { useAuth } from "@/lib/auth";
 
 const decodeExtraction = Schema.decodeUnknownSync(InvoiceExtraction);
