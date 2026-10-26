@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { makeShellPort, type ShellPortContents } from "../../electron/shell-port";
 import { SHELL_PORT_CHANNEL } from "../../src/host/shell-port-channels";

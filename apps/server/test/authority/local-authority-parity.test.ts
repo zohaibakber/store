@@ -38,7 +38,7 @@ import {
   lastUnitBuyerBCommand,
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore, SyncEngine, SyncStateRef, SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncEngine, SyncTransport } from "@store/sync";
 import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
@@ -47,6 +47,7 @@ import * as Layer from "effect/Layer";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
+import { freshSyncEngine } from "../lib/sync-engine";
 import { scenario, SequentialCrypto, TestAuthorities } from "./harness";
 
 const USER_ID = "user-1";
@@ -132,8 +133,7 @@ const twinLayer = (
   path: DecisionPath = "queued",
 ) =>
   Layer.mergeAll(
-    SyncEngine.layer().pipe(
-      Layer.provide(Layer.fresh(SyncStateRef.layer)),
+    freshSyncEngine().pipe(
       Layer.provide(SequentialCrypto),
       Layer.provideMerge(recordingLocalAuthority(submissions)),
       Layer.provideMerge(recordingStore(organizationId, submissions, path)),

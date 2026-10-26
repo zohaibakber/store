@@ -295,6 +295,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.6
         version: 4.0.6(effect@4.0.6)(redis@6.3.0(@opentelemetry/api@1.10.0))
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@electron/asar':
         specifier: ^4.3.1
         version: 4.3.1
@@ -526,6 +529,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.6
         version: 4.0.6(effect@4.0.6)(redis@6.3.0(@opentelemetry/api@1.10.0))
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -545,6 +551,9 @@ importers:
         specifier: 4.0.6
         version: 4.0.6
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -695,6 +704,9 @@ importers:
         specifier: 4.0.6
         version: 4.0.6
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

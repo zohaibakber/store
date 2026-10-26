@@ -38,7 +38,7 @@ import {
   stockMovements,
 } from "@store/db/authority.schema";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore, SyncEngine, SyncStateRef, SyncTransport } from "@store/sync";
+import { ReplicaStore, SyncEngine, SyncTransport } from "@store/sync";
 import {
   layerSqliteReplicaStore,
   LocalAuthority,
@@ -64,6 +64,7 @@ import type { InventoryError } from "../../src/inventory/errors";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
 import { claimsFor, TEST_ACCESS_TOKEN, testRuntimeContext, webHandlerFor } from "../lib/app";
+import { freshSyncEngine } from "../lib/sync-engine";
 import { scenario, SequentialCrypto, TestAuthorities } from "./harness";
 
 const DEVICE = "device-local";
@@ -392,8 +393,7 @@ const localWorkspace = (importId: string) =>
     return { digest, parts, catalog: yield* catalogOf(handle) };
   }).pipe(
     Effect.provide(
-      SyncEngine.layer().pipe(
-        Layer.provide(Layer.fresh(SyncStateRef.layer)),
+      freshSyncEngine().pipe(
         Layer.provide(SequentialCrypto),
         Layer.provideMerge(LocalAuthority.layer),
         Layer.provideMerge(
@@ -443,8 +443,7 @@ const organizationReplica = (
   replicaId: string,
 ) =>
   Layer.build(
-    SyncEngine.layer().pipe(
-      Layer.provide(Layer.fresh(SyncStateRef.layer)),
+    freshSyncEngine().pipe(
       Layer.provide(SequentialCrypto),
       Layer.provideMerge(Layer.effect(SyncTransport, authorityFor(authorities, actor))),
       Layer.provideMerge(layerSqliteReplicaStore(`import-${replicaId}`)),
