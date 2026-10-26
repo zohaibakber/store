@@ -26,7 +26,7 @@ function CompleteSaleShortcut() {
     actions: { completeSale },
   } = useInvoiceCreate();
 
-  const complete = useEffectEvent(() => void completeSale());
+  const complete = useEffectEvent(() => completeSale());
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

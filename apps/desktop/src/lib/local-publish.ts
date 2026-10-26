@@ -1,4 +1,4 @@
-import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useAtom, useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
 import { useSuspenseCatalogHoldsNothing } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -6,6 +6,7 @@ import * as Queue from "effect/Queue";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as Stream from "effect/Stream";
+import { useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { clearSaleDrafts } from "@/hooks/use-sale-drafts";
@@ -80,7 +81,7 @@ const moveToOrganization = Atom.fn<PublishTarget>()(
     );
     if (outcome._tag === "published") {
       get.refresh(offerAtom(organization.id));
-      clearSaleDrafts(get.registry, workspaceStorageKey({ _tag: "Local" }));
+      get.set(clearSaleDrafts, workspaceStorageKey({ _tag: "Local" }));
       toastManager.add({
         title: `Moved to ${organization.name}`,
         description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,
@@ -123,6 +124,17 @@ const phaseAtom = Atom.family((organizationId: string) =>
   }),
 );
 
+const resumeInterrupted = (organization: PublishTarget) => {
+  const phase = phaseAtom(organization.id);
+  return Atom.make((get) => {
+    if (get(phase)._tag !== "Idle") return;
+    const offer = AsyncResult.value(get(offerAtom(organization.id)));
+    if (Option.isSome(offer) && offer.value._tag === "available" && offer.value.resuming) {
+      get.set(moveAtom, organization);
+    }
+  });
+};
+
 export const usePublishInProgress = (): boolean => AsyncResult.isWaiting(useAtomValue(moveAtom));
 
 export const usePublishTarget = (): PublishTarget | null => {
@@ -131,6 +143,11 @@ export const usePublishTarget = (): PublishTarget | null => {
   if (workspace.organization.role !== "owner") return null;
   if (!workspaces.some((open) => open._tag === "Local")) return null;
   return workspace.organization;
+};
+
+export const useResumeInterruptedPublish = (organization: PublishTarget) => {
+  const resume = useMemo(() => resumeInterrupted(organization), [organization]);
+  useAtomMount(resume);
 };
 
 export const useLocalPublish = (organization: PublishTarget) => {

@@ -2,7 +2,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent } from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
-import { useSaleDraftStore } from "@/hooks/use-sale-drafts";
+import { useSaleDraftActionsHere } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
 import { hasOpenModal } from "@/lib/shortcuts";
@@ -11,7 +11,7 @@ const NEW_SALE_PATH = "/invoices/new";
 
 export const useStartSale = () => {
   const router = useRouter();
-  const store = useSaleDraftStore();
+  const store = useSaleDraftActionsHere();
   return () => {
     if (router.state.location.pathname === NEW_SALE_PATH) store.open();
     else void router.navigate({ to: NEW_SALE_PATH });

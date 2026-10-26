@@ -3,6 +3,7 @@ export {
   SessionHttp,
   asRequestError,
   isInvalidResponse,
+  isUnreachable,
   layerSessionHttp,
 } from "./session-http";
 export {

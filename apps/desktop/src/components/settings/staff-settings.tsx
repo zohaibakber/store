@@ -582,7 +582,7 @@ function AccessCard({
     if (Exit.isFailure(exit)) {
       toastFailure(exit.cause);
     } else {
-      const dropped = releaseSaleDrafts();
+      const dropped = await releaseSaleDrafts();
       toastManager.add({
         title: "Staff PINs are off",
         description:

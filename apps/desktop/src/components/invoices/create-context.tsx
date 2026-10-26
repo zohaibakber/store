@@ -41,7 +41,7 @@ import {
   useDropIssuedSaleDrafts,
   useSaleDraftOwner,
   useSaleDraftsIn,
-  useSaleDraftStoreIn,
+  useSaleDraftActions,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
 import { toastFailure } from "@/lib/errors";
@@ -87,7 +87,7 @@ interface InvoiceCreateActions {
   removeLine: (key: number) => void;
   setCustomerName: (value: string) => void;
   setBulkDiscount: (value: number | null) => void;
-  completeSale: () => Promise<void>;
+  completeSale: () => void;
   focusSearch: () => void;
   openDraft: () => void;
   activateDraft: (id: InvoiceId) => void;
@@ -200,7 +200,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const receiptFormat = useReceiptFormat();
   const owner = useSaleDraftOwner();
   const drafts = useSaleDraftsIn(owner);
-  const store = useSaleDraftStoreIn(owner);
+  const store = useSaleDraftActions(owner);
   const { lookup, seed } = useDraftProducts(drafts);
   const draft = activeSaleDraft(drafts);
   const isSubmitting = useCompletingSale(draft.id);
@@ -280,18 +280,18 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const canSubmit =
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
-  const completeSale = async () => {
+  const completeSale = () => {
     const items = isValidDiscount(bulkDiscount) ? saleItems(lines, bulkDiscount) : null;
     if (items === null) return;
-    await store.whileCompleting(draft.id, () =>
+    store.complete(draft.id, (finish) =>
       recordSale({
         issue: () =>
           issueInvoice({
             input: { customerName: customerName.trim() || null, items },
             invoiceId: draft.id,
           }),
-        close: () => store.complete(draft.id),
-        focusSearch: store.focusSearch,
+        close: finish.close,
+        focusSearch: finish.focusSearch,
         view: (invoiceId) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId } }),
         print: (invoiceId) => {
           if (receiptFormat.printAfterSale) {

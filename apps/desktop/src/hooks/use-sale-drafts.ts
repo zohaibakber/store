@@ -1,4 +1,4 @@
-import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react";
+import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { StaffState } from "@store/contracts";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
@@ -9,12 +9,13 @@ import {
   type Inventory,
   type InventoryFailure,
 } from "@store/inventory-react";
+import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { useContext, useMemo } from "react";
+import { useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { failureMessage } from "@/lib/errors";
@@ -37,11 +38,10 @@ import {
   type SaleDraftOwner,
   type SaleDrafts,
 } from "@/lib/sale-drafts";
+import { singleFlight } from "@/lib/single-flight";
 import { useWorkspaceStorageKey } from "@/lib/workspace";
 
 const searchFocusAtom = Atom.make(0).pipe(Atom.keepAlive);
-
-const completingAtom = Atom.make<ReadonlySet<InvoiceId>>(new Set<InvoiceId>()).pipe(Atom.keepAlive);
 
 const recordedSubject = (draft: SaleDraft) => {
   const customer = draft.customerName.trim();
@@ -50,80 +50,89 @@ const recordedSubject = (draft: SaleDraft) => {
 
 export const saleDraftLimitMessage = `${MAX_SALE_DRAFTS} sales are open. Complete or discard one first.`;
 
-export const saleDraftStore = (registry: AtomRegistry.AtomRegistry, owner: SaleDraftOwner) => {
+const requestSearchFocus = (registry: AtomRegistry.AtomRegistry) =>
+  registry.update(searchFocusAtom, (count) => count + 1);
+
+const closeDraft = (registry: AtomRegistry.AtomRegistry, owner: SaleDraftOwner, id: InvoiceId) => {
   const atom = saleDraftsAtom(owner);
-  const focusSearch = () => registry.update(searchFocusAtom, (count) => count + 1);
-  const update = (change: (state: SaleDrafts) => SaleDrafts) => registry.set(atom, change);
-
-  const modify = <A>(change: (state: SaleDrafts) => readonly [result: A, next: SaleDrafts]): A => {
-    let outcome: Option.Option<A> = Option.none();
-    update((state) => {
-      const [result, next] = change(state);
-      outcome = Option.some(result);
-      return next;
-    });
-    return Option.getOrThrow(outcome);
-  };
-
-  const close = (id: InvoiceId) =>
-    modify((state) => {
-      const open = state.drafts.find((draft) => draft.id === id);
-      const next = closeSaleDraft(state, id, newSaleId());
-      return [{ closed: open, held: hasHeldSale(next) }, next];
-    });
-
-  return {
-    update,
-    focusSearch,
-    open: () => {
-      const opened = modify((state) => [
-        canOpenSaleDraft(state),
-        openSaleDraft(state, newSaleId()),
-      ]);
-      if (!opened) toastManager.add({ title: saleDraftLimitMessage, type: "info" });
-      focusSearch();
-    },
-    discard: (id: InvoiceId) => {
-      if (registry.get(completingAtom).has(id)) return;
-      close(id);
-      focusSearch();
-    },
-    complete: (id: InvoiceId) => close(id).held,
-    whileCompleting: async (id: InvoiceId, sale: () => Promise<void>) => {
-      const begun = registry.modify(completingAtom, (ids) =>
-        ids.has(id) ? [false, ids] : [true, new Set(ids).add(id)],
-      );
-      if (!begun) return;
-      try {
-        await sale();
-      } finally {
-        registry.update(completingAtom, (ids) => new Set([...ids].filter((open) => open !== id)));
-      }
-    },
-  };
+  const next = closeSaleDraft(registry.get(atom), id, newSaleId());
+  registry.set(atom, () => next);
+  return hasHeldSale(next);
 };
 
-type SaleDraftStore = ReturnType<typeof saleDraftStore>;
+const completingSale = Atom.family((id: InvoiceId) =>
+  singleFlight(
+    Atom.fn<{
+      readonly owner: SaleDraftOwner;
+      readonly sale: (finish: SaleFinish) => Promise<void>;
+    }>()(
+      Effect.fn("SaleDrafts.complete")(function* ({ owner, sale }, get) {
+        yield* Effect.promise(() =>
+          sale({
+            close: () => closeDraft(get.registry, owner, id),
+            focusSearch: () => requestSearchFocus(get.registry),
+          }),
+        );
+      }),
+    ),
+  ),
+);
 
-export const clearSaleDrafts = (registry: AtomRegistry.AtomRegistry, workspace: string) => {
+export type SaleFinish = {
+  readonly close: () => boolean;
+  readonly focusSearch: () => void;
+};
+
+const isCompleting = (get: Atom.AtomContext, id: InvoiceId) =>
+  AsyncResult.isWaiting(get(completingSale(id)));
+
+const openDraft = Atom.fnSync<SaleDraftOwner>()((owner, get) => {
+  const atom = saleDraftsAtom(owner);
+  if (!canOpenSaleDraft(get.registry.get(atom))) {
+    toastManager.add({ title: saleDraftLimitMessage, type: "info" });
+  }
+  get.set(atom, (state) => openSaleDraft(state, newSaleId()));
+  requestSearchFocus(get.registry);
+}).pipe(Atom.keepAlive);
+
+const completeSale = Atom.fnSync<{
+  readonly owner: SaleDraftOwner;
+  readonly id: InvoiceId;
+  readonly sale: (finish: SaleFinish) => Promise<void>;
+}>()(({ owner, id, sale }, get) => get.set(completingSale(id), { owner, sale })).pipe(
+  Atom.keepAlive,
+);
+
+const discardDraft = Atom.fnSync<{
+  readonly owner: SaleDraftOwner;
+  readonly id: InvoiceId;
+}>()(({ owner, id }, get) => {
+  if (AsyncResult.isWaiting(get.registry.get(completingSale(id)))) return;
+  closeDraft(get.registry, owner, id);
+  requestSearchFocus(get.registry);
+}).pipe(Atom.keepAlive);
+
+export const clearSaleDrafts = Atom.fnSync<string>()((workspace, get) => {
   for (const atom of storedSaleDraftAtoms(workspace)) {
-    registry.set(atom, () => initialSaleDrafts(newSaleId()));
+    get.set(atom, () => initialSaleDrafts(newSaleId()));
   }
-};
+}).pipe(Atom.keepAlive);
 
-export const releaseSaleDrafts = (registry: AtomRegistry.AtomRegistry, workspace: string) => {
-  const [unowned, ...members] = storedSaleDraftAtoms(workspace);
-  if (unowned === undefined) return 0;
-  let dropped = 0;
-  for (const member of members) {
-    for (const draft of heldSaleDrafts(registry.get(member))) {
-      registry.set(unowned, (state) => receiveSaleDraft(state, draft));
-      if (!registry.get(unowned).drafts.some((open) => open.id === draft.id)) dropped += 1;
+const releaseSaleDraftsAtom = Atom.fn<string>()((workspace, get) =>
+  Effect.sync(() => {
+    const [unowned, ...members] = storedSaleDraftAtoms(workspace);
+    if (unowned === undefined) return 0;
+    let dropped = 0;
+    for (const member of members) {
+      for (const draft of heldSaleDrafts(get.registry.get(member))) {
+        get.set(unowned, (state) => receiveSaleDraft(state, draft));
+        if (!get.registry.get(unowned).drafts.some((open) => open.id === draft.id)) dropped += 1;
+      }
+      get.set(member, () => initialSaleDrafts(newSaleId()));
     }
-    registry.set(member, () => initialSaleDrafts(newSaleId()));
-  }
-  return dropped;
-};
+    return dropped;
+  }),
+).pipe(Atom.keepAlive);
 
 const droppedIssuedDrafts = (
   draftsAtom: ReturnType<typeof saleDraftsAtom>,
@@ -133,10 +142,9 @@ const droppedIssuedDrafts = (
     const { drafts } = get(draftsAtom);
     const issued = AsyncResult.value(get(atoms.issuedInvoices(drafts.map((open) => open.id))));
     if (Option.isNone(issued)) return;
-    const completing = get(completingAtom);
     for (const invoice of issued.value) {
       const closed = drafts.find((open) => open.id === invoice.id);
-      if (closed === undefined || completing.has(invoice.id)) continue;
+      if (closed === undefined || isCompleting(get, invoice.id)) continue;
       get.set(draftsAtom, (state) => closeSaleDraft(state, invoice.id, newSaleId()));
       toastManager.add({
         title: `${recordedSubject(closed)} was already recorded as invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`,
@@ -167,26 +175,40 @@ export const useSaleDraftOwner = (): SaleDraftOwner => {
 export const useSaleDraftsIn = (owner: SaleDraftOwner): SaleDrafts =>
   useAtomValue(saleDraftsAtom(owner));
 
-export const useSaleDraftStoreIn = (owner: SaleDraftOwner): SaleDraftStore =>
-  saleDraftStore(useContext(RegistryContext), owner);
+export const useSaleDraftActions = (owner: SaleDraftOwner) => {
+  const setDrafts = useAtomSet(saleDraftsAtom(owner));
+  const open = useAtomSet(openDraft);
+  const discard = useAtomSet(discardDraft);
+  const complete = useAtomSet(completeSale);
+  const setSearchFocus = useAtomSet(searchFocusAtom);
+  return {
+    update: (change: (state: SaleDrafts) => SaleDrafts) => setDrafts(() => change),
+    focusSearch: () => setSearchFocus((count) => count + 1),
+    open: () => open(owner),
+    discard: (id: InvoiceId) => discard({ owner, id }),
+    complete: (id: InvoiceId, sale: (finish: SaleFinish) => Promise<void>) =>
+      complete({ owner, id, sale }),
+  };
+};
 
-export const useSaleDraftStore = (): SaleDraftStore => useSaleDraftStoreIn(useSaleDraftOwner());
+export const useSaleDraftActionsHere = () => useSaleDraftActions(useSaleDraftOwner());
 
 export const useClearSaleDrafts = () => {
-  const registry = useContext(RegistryContext);
+  const clear = useAtomSet(clearSaleDrafts);
   const workspace = useWorkspaceStorageKey();
-  return () => clearSaleDrafts(registry, workspace);
+  return () => clear(workspace);
 };
 
 export const useReleaseSaleDrafts = () => {
-  const registry = useContext(RegistryContext);
+  const release = useAtomSet(releaseSaleDraftsAtom, { mode: "promise" });
   const workspace = useWorkspaceStorageKey();
-  return () => releaseSaleDrafts(registry, workspace);
+  return () => release(workspace);
 };
 
 export const useSaleSearchFocusRequest = (): number => useAtomValue(searchFocusAtom);
 
-export const useCompletingSale = (id: InvoiceId): boolean => useAtomValue(completingAtom).has(id);
+export const useCompletingSale = (id: InvoiceId): boolean =>
+  AsyncResult.isWaiting(useAtomValue(completingSale(id)));
 
 export const useParkedSaleCount = (onNewSale: boolean): number =>
   parkedSaleCount(useSaleDraftsIn(useSaleDraftOwner()), onNewSale);
@@ -196,50 +218,54 @@ export type ParkedElsewhere = {
   readonly drafts: ReadonlyArray<SaleDraft>;
 };
 
-const takeOverSaleDraft = async (
-  registry: AtomRegistry.AtomRegistry,
-  move: {
-    readonly id: InvoiceId;
-    readonly from: SaleDraftMember;
-    readonly to: SaleDraftOwner;
-    readonly handOver: () => Promise<Exit.Exit<void, InventoryFailure>>;
-  },
-): Promise<boolean> => {
-  const source = saleDraftsAtom(move.from);
-  const target = saleDraftsAtom(move.to);
-  const parked = () => heldSaleDrafts(registry.get(source)).find((draft) => draft.id === move.id);
-  const holds = () => registry.get(target).drafts.some((draft) => draft.id === move.id);
-
-  if (parked() === undefined) {
-    toastManager.add({ title: "That sale is no longer parked.", type: "info" });
-    return false;
-  }
-  if (!canOpenSaleDraft(registry.get(target))) {
-    toastManager.add({ title: saleDraftLimitMessage, type: "info" });
-    return false;
-  }
-  const exit = await move.handOver();
-  if (Exit.isFailure(exit)) {
-    toastManager.add({ title: failureMessage(exit.cause), type: "error" });
-    return false;
-  }
-  const draft = parked();
-  if (draft === undefined) return holds();
-  registry.set(target, (state) => receiveSaleDraft(state, draft));
-  if (!holds()) {
-    toastManager.add({ title: saleDraftLimitMessage, type: "info" });
-    return false;
-  }
-  registry.set(source, (state) => closeSaleDraft(state, move.id, newSaleId()));
-  toastManager.add({
-    title: `${saleDraftLabel(draft)} taken over from ${move.from.member.name}`,
-    type: "success",
-  });
-  return true;
+type SaleDraftMove = {
+  readonly id: InvoiceId;
+  readonly from: SaleDraftMember;
+  readonly to: SaleDraftOwner;
+  readonly handOver: () => Promise<Exit.Exit<void, InventoryFailure>>;
 };
 
+const takeOverSaleDraft = Atom.fn<SaleDraftMove>()(
+  Effect.fn("SaleDrafts.takeOver")(function* (move, get) {
+    const source = saleDraftsAtom(move.from);
+    const target = saleDraftsAtom(move.to);
+    const parked = () =>
+      heldSaleDrafts(get.registry.get(source)).find((draft) => draft.id === move.id);
+    const holds = () => get.registry.get(target).drafts.some((draft) => draft.id === move.id);
+
+    if (parked() === undefined) {
+      toastManager.add({ title: "That sale is no longer parked.", type: "info" });
+      return false;
+    }
+    if (!canOpenSaleDraft(get.registry.get(target))) {
+      toastManager.add({ title: saleDraftLimitMessage, type: "info" });
+      return false;
+    }
+    const exit = yield* Effect.promise(move.handOver);
+    if (Exit.isFailure(exit)) {
+      toastManager.add({ title: failureMessage(exit.cause), type: "error" });
+      return false;
+    }
+    const draft = parked();
+    if (draft === undefined) return holds();
+    get.set(target, (state) => receiveSaleDraft(state, draft));
+    if (!holds()) {
+      toastManager.add({ title: saleDraftLimitMessage, type: "info" });
+      return false;
+    }
+    get.set(source, (state) => closeSaleDraft(state, move.id, newSaleId()));
+    toastManager.add({
+      title: `${saleDraftLabel(draft)} taken over from ${move.from.member.name}`,
+      type: "success",
+    });
+    requestSearchFocus(get.registry);
+    return true;
+  }),
+  { concurrent: true },
+).pipe(Atom.keepAlive);
+
 export const useParkedElsewhere = () => {
-  const registry = useContext(RegistryContext);
+  const takeOverDraft = useAtomSet(takeOverSaleDraft, { mode: "promise" });
   const staff = useStaffState();
   const [handOverDraft] = useCommand((commands) => commands.staff.handOverDraft);
   const workspace = useWorkspaceStorageKey();
@@ -255,15 +281,12 @@ export const useParkedElsewhere = () => {
 
   return {
     parked: useAtomValue(parkedAtom),
-    takeOver: async (from: SaleDraftMember, id: InvoiceId) => {
-      const moved = await takeOverSaleDraft(registry, {
+    takeOver: (from: SaleDraftMember, id: InvoiceId) =>
+      takeOverDraft({
         id,
         from,
         to: owner,
         handOver: () => handOverDraft({ draftId: id, from: from.member.id }),
-      });
-      if (moved) registry.update(searchFocusAtom, (count) => count + 1);
-      return moved;
-    },
+      }),
   };
 };
