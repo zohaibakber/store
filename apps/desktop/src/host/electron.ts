@@ -118,7 +118,7 @@ export const electronAppHost = (source: Window): AppHost => {
     const fiber = runtime.runFork(
       ShellClient.use((client) =>
         stream(client).pipe(Stream.runForEach((value) => Effect.sync(() => onValue(value)))),
-      ).pipe(Effect.ignoreCause),
+      ).pipe(Effect.ignoreCause({ log: true })),
     );
     return () => fiber.interruptUnsafe();
   };

@@ -134,6 +134,22 @@ const releaseSaleDraftsAtom = Atom.fn<string>()((workspace, get) =>
   }),
 ).pipe(Atom.keepAlive);
 
+const dropRecorded = Effect.fn("SaleDrafts.dropRecorded")(function* (
+  get: Atom.AtomContext,
+  draftsAtom: ReturnType<typeof saleDraftsAtom>,
+  recorded: ReadonlyArray<{ readonly draft: SaleDraft; readonly invoiceNumber: number }>,
+) {
+  for (const { draft, invoiceNumber } of recorded) {
+    yield* Effect.sync(() => {
+      get.set(draftsAtom, (state) => closeSaleDraft(state, draft.id, newSaleId()));
+      toastManager.add({
+        title: `${recordedSubject(draft)} was already recorded as invoice #${formatInvoiceNumber(invoiceNumber)}`,
+        type: "info",
+      });
+    });
+  }
+});
+
 const droppedIssuedDrafts = (
   draftsAtom: ReturnType<typeof saleDraftsAtom>,
   atoms: Inventory["atoms"],
@@ -141,16 +157,14 @@ const droppedIssuedDrafts = (
   Atom.make((get) => {
     const { drafts } = get(draftsAtom);
     const issued = AsyncResult.value(get(atoms.issuedInvoices(drafts.map((open) => open.id))));
-    if (Option.isNone(issued)) return;
-    for (const invoice of issued.value) {
-      const closed = drafts.find((open) => open.id === invoice.id);
-      if (closed === undefined || isCompleting(get, invoice.id)) continue;
-      get.set(draftsAtom, (state) => closeSaleDraft(state, invoice.id, newSaleId()));
-      toastManager.add({
-        title: `${recordedSubject(closed)} was already recorded as invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`,
-        type: "info",
-      });
-    }
+    if (Option.isNone(issued)) return Effect.void;
+    const recorded = issued.value.flatMap((invoice) => {
+      const draft = drafts.find((open) => open.id === invoice.id);
+      return draft === undefined || isCompleting(get, invoice.id)
+        ? []
+        : [{ draft, invoiceNumber: invoice.invoiceNumber }];
+    });
+    return dropRecorded(get, draftsAtom, recorded);
   });
 
 const NO_DROPS = Atom.make(undefined);

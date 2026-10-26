@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { useMemo } from "react";
 
@@ -63,9 +64,13 @@ const progressAtom = Atom.make(
   ),
 );
 
-const failedMove = (cause: unknown): PublishOutcome => ({
+class PublishBridgeFailed extends Schema.TaggedError<PublishBridgeFailed>()("PublishBridgeFailed", {
+  cause: Schema.Defect(),
+}) {}
+
+const failedMove = (failure: PublishBridgeFailed): PublishOutcome => ({
   _tag: "failed",
-  message: bridgeMessage(cause),
+  message: bridgeMessage(failure.cause),
 });
 
 const moveToOrganization = Atom.fn<PublishTarget>()(
@@ -75,7 +80,7 @@ const moveToOrganization = Atom.fn<PublishTarget>()(
         yield* Atom.mount(progressAtom);
         return yield* Effect.tryPromise({
           try: () => appHost().publish.publish(organization.id),
-          catch: (cause) => cause,
+          catch: (cause) => new PublishBridgeFailed({ cause }),
         }).pipe(Effect.match({ onSuccess: (published) => published, onFailure: failedMove }));
       }),
     );
@@ -99,9 +104,9 @@ const discardElsewhere = Atom.fn<PublishTarget>()(
   Effect.fn("LocalPublish.discard")(function* (organization, get) {
     yield* Effect.tryPromise({
       try: () => appHost().publish.discard(organization.id),
-      catch: (cause) => cause,
+      catch: (cause) => new PublishBridgeFailed({ cause }),
     }).pipe(
-      Effect.tapError((cause) => Effect.sync(() => toastBridgeFailure(cause))),
+      Effect.tapError((failure) => Effect.sync(() => toastBridgeFailure(failure.cause))),
       Effect.ignore,
       Effect.ensuring(Effect.sync(() => get.refresh(offerAtom(organization.id)))),
     );
