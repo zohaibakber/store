@@ -1,4 +1,4 @@
-import type { ProductInsight } from "@store/contracts";
+import { moneyToRupees, type ProductInsight } from "@store/contracts";
 
 import { STATUS_META } from "./presentation";
 
@@ -10,7 +10,7 @@ const cell = (value: string | number) => {
   return `"${safe.replace(/"/gu, '""')}"`;
 };
 
-const money = (amount: number | null) => (amount === null ? "" : (amount / 100).toFixed(2));
+const money = (amount: number | null) => (amount === null ? "" : moneyToRupees(amount).toFixed(2));
 
 const HEADER = [
   "Product",

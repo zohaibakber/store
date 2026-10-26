@@ -8,6 +8,7 @@ import {
   OperationId,
   type ReplicaId,
 } from "../../ids";
+import { Money } from "../../store/pricing";
 import type { IssueInvoiceCommand } from "../../store/schema";
 import { canonicalPayloadHash } from "../operation-hash";
 import { ReplicaClientSequence, type SyncCommandEnvelope, SyncEpoch } from "../protocol";
@@ -51,7 +52,7 @@ const issueInvoice = (input: {
       batchId: LAST_UNIT_BATCH_ID,
       quantity: 1,
       quantityType: "unit",
-      salePrice: 100,
+      salePrice: Money.make(100),
       packsOpened: 0,
     },
   ],

@@ -21,6 +21,19 @@ export const moneyFromRupees = (rupees: number): Result.Result<Money, CatalogRef
 
 export const moneyToRupees = (amount: number): number => amount / 100;
 
+export const noMoney = Money.make(0);
+
+export const roundedMoney = (amount: number): Money | null => {
+  const rounded = Math.round(amount);
+  return isMoney(rounded) ? rounded : null;
+};
+
+export const sumMoney = (amounts: Iterable<Money | null>): Money => {
+  let total = 0;
+  for (const amount of amounts) total += amount ?? 0;
+  return Money.make(total);
+};
+
 export const isValidDiscount = (percent: number | null): percent is number =>
   percent != null && percent >= 0 && percent <= 100;
 

@@ -7,6 +7,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   RESTOCK_VIEWS,
+  roundedMoney,
   type InsightsSummary,
   type ProductInsight,
   type RestockCursor,
@@ -124,7 +125,8 @@ const draftLineOf = (insight: ProductInsight): DraftLine => ({
   quantityType: insight.tracksPacks ? "pack" : "unit",
   unitsPerPack: insight.unitsPerPack,
   tracksPacks: insight.tracksPacks,
-  packCost: insight.unitCost === null ? null : Math.round(insight.unitCost * insight.unitsPerPack),
+  packCost:
+    insight.unitCost === null ? null : roundedMoney(insight.unitCost * insight.unitsPerPack),
 });
 
 function SelectPageCheckbox() {

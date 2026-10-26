@@ -2,6 +2,7 @@ import {
   INSIGHTS_DAY_MILLIS,
   INSIGHTS_HOUR_MILLIS,
   INSIGHTS_ON_ORDER_STATUSES,
+  Money,
   type InsightsProductFact,
 } from "@store/contracts";
 import { CategoryId, ProductId } from "@store/contracts/ids";
@@ -107,9 +108,9 @@ export const ProductFactRow = Schema.Struct({
   categoryName: Schema.NullOr(Schema.String),
   tracksPacks: Schema.Number,
   unitsPerPack: Schema.Number,
-  purchasePrice: Schema.NullOr(Schema.Number),
-  retailPrice: Schema.NullOr(Schema.Number),
-  unitPrice: Schema.NullOr(Schema.Number),
+  purchasePrice: Schema.NullOr(Money),
+  retailPrice: Schema.NullOr(Money),
+  unitPrice: Schema.NullOr(Money),
   visible: Schema.Number,
   createdAt: Schema.Number,
 });

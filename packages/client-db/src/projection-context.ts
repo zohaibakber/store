@@ -1,4 +1,4 @@
-import { PositiveInt } from "@store/contracts";
+import { Money, PositiveInt } from "@store/contracts";
 import { CatalogRefusal, decideField } from "@store/contracts/catalog-refusal";
 import { CatalogName, type CatalogRowWrite } from "@store/contracts/catalog-write";
 import * as Result from "effect/Result";
@@ -55,6 +55,9 @@ export type Projected<Row = void> = {
 
 export const naturalField = (value: number, message: string, field?: string) =>
   decideField(Schema.Natural, value, { message, field });
+
+export const moneyField = (value: number, message: string, field?: string) =>
+  decideField(Money, value, { message, field });
 
 export const positiveField = (value: number, message: string, field?: string) =>
   decideField(PositiveInt, value, { message, field });

@@ -6,7 +6,9 @@ import {
   formatInvoiceNumber,
   purchaseOrderLineBaseUnits,
   purchaseOrderLineTotal,
-  purchaseOrderTotal,
+  noMoney,
+  type Money,
+  sumMoney,
 } from "@store/contracts";
 import { CatalogRefusal, decideField } from "@store/contracts/catalog-refusal";
 import { createdMutationMetadata, updatedMutationMetadata } from "@store/contracts/catalog-rules";
@@ -43,6 +45,7 @@ import { productFieldsOf } from "./catalog-projection";
 import {
   commandIds,
   nameField,
+  moneyField,
   naturalField,
   positiveField,
   requiredRow,
@@ -114,8 +117,8 @@ const timestampOf = (
 const priceOf = (
   value: number | null,
   label: string,
-): Result.Result<number | null, CatalogRefusal> =>
-  value === null ? Result.succeed(null) : naturalField(value, `${label} must be zero or more.`);
+): Result.Result<Money | null, CatalogRefusal> =>
+  value === null ? Result.succeed(null) : moneyField(value, `${label} must be zero or more.`);
 
 const created = (context: PurchasingProjectionContext) =>
   createdMutationMetadata(context.actor, commandIds(context));
@@ -270,7 +273,7 @@ const linesOfOrder = (
 
 type ProjectedLine = {
   readonly row: PurchaseOrderItemRow;
-  readonly total: number | null;
+  readonly total: Money | null;
   readonly write: CatalogRowWrite | undefined;
 };
 
@@ -375,7 +378,7 @@ export const projectSaveOrderDraft = (
       note: null,
       sentAt: null,
       expectedAt: null,
-      total: 0,
+      total: noMoney,
       ...created(context),
     };
     const stored = new Map<string, PurchaseOrderItemRow>(
@@ -412,7 +415,7 @@ export const projectSaveOrderDraft = (
       supplierId: supplier.id,
       note: yield* noteOf(input.note),
       expectedAt: yield* timestampOf(input.expectedAt, "The expected date", "expectedAt"),
-      total: purchaseOrderTotal(lines.map((line) => line.total)),
+      total: sumMoney(lines.map((line) => line.total)),
     };
     const sending = input.send === true && saved.status === "draft";
     const sent = { status: "sent", sentAt: context.occurredAt } as const;

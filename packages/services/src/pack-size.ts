@@ -1,6 +1,3 @@
-import { moneyFromRupees } from "@store/contracts/store-pricing";
-import * as Result from "effect/Result";
-
 const MAX_UNITS_PER_PACK = 10_000;
 
 type PrintedPackSize = string | number;
@@ -43,12 +40,4 @@ export const salvageUnitsPerPack = (name: string, unitsPerPack: number): number 
   const concatenated = Number(match[0].replace(/[^\d]/g, ""));
   if (unitsPerPack === concatenated && parsed !== concatenated) return parsed;
   return unitsPerPack;
-};
-
-export const parseMajorCurrencyToMinor = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const amount = Number(trimmed.replace(/,/g, ""));
-  if (!Number.isFinite(amount) || amount < 0) return null;
-  return Result.getOrNull(moneyFromRupees(amount));
 };

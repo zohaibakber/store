@@ -13,6 +13,7 @@ import {
   type SyncSubmitCommandRequest,
   type SyncSubmitCommandResult,
   OperationId,
+  Money,
 } from "@store/contracts";
 import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
 import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
@@ -324,9 +325,9 @@ const productWrite = (
     composition: null,
     strength: "500mg",
     unitsPerPack: input.unitsPerPack,
-    purchasePrice: 50,
-    retailPrice: input.retailPrice ?? 100,
-    unitPrice: 10,
+    purchasePrice: Money.make(50),
+    retailPrice: Money.make(input.retailPrice ?? 100),
+    unitPrice: Money.make(10),
     visible: true,
   },
 });
@@ -391,7 +392,7 @@ const orderWrite = (
     note: null,
     sentAt: input.sentAt ?? null,
     expectedAt: null,
-    total: input.total ?? 0,
+    total: Money.make(input.total ?? 0),
   },
 });
 
@@ -418,7 +419,7 @@ const lineWrite = (
     quantity: input.quantity,
     quantityType: input.quantityType,
     baseUnitQuantity: input.baseUnitQuantity,
-    packCost: input.packCost ?? null,
+    packCost: input.packCost === undefined ? null : Money.make(input.packCost),
   },
 });
 
@@ -521,7 +522,7 @@ const sale = (
         batchId: batchOf(take),
         quantity: take.quantity,
         quantityType,
-        salePrice,
+        salePrice: Money.make(salePrice),
         packsOpened: take.packsOpened ?? 0,
       })),
     },

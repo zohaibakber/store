@@ -25,10 +25,12 @@ import {
   SupplierId,
 } from "../ids";
 import { PositiveInt } from "../schema-primitives";
+import { Money } from "../store/pricing";
 import { InvoiceItem, StockMovement } from "../store/schema";
 import type { SyncEntity } from "./schema";
 
 const NullableNatural = Schema.NullOr(Schema.Natural);
+const NullableMoney = Schema.NullOr(Money);
 
 const mutableEntityFields = {
   organizationId: Schema.NonEmptyString,
@@ -54,9 +56,9 @@ export const ProductRow = createSelectSchema(products, {
   name: Schema.NonEmptyString,
   categoryId: CategoryId,
   unitsPerPack: PositiveInt,
-  purchasePrice: NullableNatural,
-  retailPrice: NullableNatural,
-  unitPrice: NullableNatural,
+  purchasePrice: NullableMoney,
+  retailPrice: NullableMoney,
+  unitPrice: NullableMoney,
 });
 
 export const BatchRow = createSelectSchema(batches, {
@@ -72,7 +74,7 @@ export const InvoiceRow = createSelectSchema(invoices, {
   ...mutableEntityFields,
   id: InvoiceId,
   invoiceNumber: PositiveInt,
-  total: Schema.Natural,
+  total: Money,
 });
 
 export const InvoiceItemRow = createSelectSchema(invoiceItems, {
@@ -85,7 +87,7 @@ export const InvoiceItemRow = createSelectSchema(invoiceItems, {
   quantity: PositiveInt,
   quantityType: InvoiceItem.fields.quantityType,
   baseUnitQuantity: PositiveInt,
-  salePrice: Schema.Natural,
+  salePrice: Money,
 });
 
 export const StockMovementRow = createSelectSchema(stockMovements, {
@@ -120,7 +122,7 @@ export const PurchaseOrderRow = createSelectSchema(purchaseOrders, {
   status: PurchaseOrderStatus,
   sentAt: NullableNatural,
   expectedAt: NullableNatural,
-  total: Schema.Natural,
+  total: Money,
 });
 
 export const PurchaseOrderItemRow = createSelectSchema(purchaseOrderItems, {
@@ -132,7 +134,7 @@ export const PurchaseOrderItemRow = createSelectSchema(purchaseOrderItems, {
   quantity: PositiveInt,
   quantityType: PurchaseOrderQuantityType,
   baseUnitQuantity: PositiveInt,
-  packCost: NullableNatural,
+  packCost: NullableMoney,
   receivedBaseUnits: Schema.Natural,
 });
 

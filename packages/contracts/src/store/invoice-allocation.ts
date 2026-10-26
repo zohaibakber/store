@@ -4,7 +4,7 @@ import { CatalogRefusal } from "../catalog/refusal";
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
 import { isPositiveInt } from "../schema-primitives";
-import { isMoney } from "./pricing";
+import { isMoney, type Money } from "./pricing";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
 import { availableFor, takeFromStock } from "./stock";
 
@@ -21,6 +21,7 @@ type InvoiceLineTake = {
   readonly batchId: BatchId;
   readonly batchNumber: string | null;
   readonly quantity: number;
+  readonly salePrice: Money;
   readonly packsOpened: number;
   readonly nextPackQuantity: number;
   readonly nextUnitQuantity: number;
@@ -118,6 +119,7 @@ export const allocateInvoiceLine = (
         batchId: batch.id,
         batchNumber: batch.batchNumber,
         quantity: taken,
+        salePrice: line.salePrice,
         packsOpened: take.packsOpened,
         nextPackQuantity: take.nextPackQuantity,
         nextUnitQuantity: take.nextUnitQuantity,
@@ -150,7 +152,7 @@ export const allocationsCoverInput = (
 
 export const withAllocationIds = (
   takes: ReadonlyArray<InvoiceLineTake & { readonly productId: ProductId }>,
-  line: Pick<CreateInvoiceLineInput, "quantityType" | "salePrice">,
+  line: Pick<CreateInvoiceLineInput, "quantityType">,
   rowId: () => string,
 ): InvoiceAllocation[] =>
   takes.map((take) => ({
@@ -161,6 +163,6 @@ export const withAllocationIds = (
     batchId: take.batchId,
     quantity: take.quantity,
     quantityType: line.quantityType,
-    salePrice: line.salePrice,
+    salePrice: take.salePrice,
     packsOpened: take.packsOpened,
   }));

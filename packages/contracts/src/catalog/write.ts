@@ -9,6 +9,7 @@ import {
   SupplierId,
 } from "../ids";
 import { PositiveInt, SyncIdentifier } from "../schema-primitives";
+import { Money } from "../store/pricing";
 import { PURCHASE_ORDER_QUANTITY_TYPES, PURCHASE_ORDER_STATUSES } from "./purchasing";
 
 export const MAX_CATALOG_WRITE_ROWS = 1_000;
@@ -43,9 +44,9 @@ const ProductWriteFields = Schema.Struct({
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
   unitsPerPack: PositiveInt,
-  purchasePrice: Schema.NullOr(Schema.Natural),
-  retailPrice: Schema.NullOr(Schema.Natural),
-  unitPrice: Schema.NullOr(Schema.Natural),
+  purchasePrice: Schema.NullOr(Money),
+  retailPrice: Schema.NullOr(Money),
+  unitPrice: Schema.NullOr(Money),
   visible: Schema.Boolean,
 });
 
@@ -70,7 +71,7 @@ const PurchaseOrderWriteFields = Schema.Struct({
   note: Schema.NullOr(CatalogNote),
   sentAt: Schema.NullOr(PositiveInt),
   expectedAt: Schema.NullOr(PositiveInt),
-  total: Schema.Natural,
+  total: Money,
 });
 
 const PurchaseOrderItemWriteFields = Schema.Struct({
@@ -80,7 +81,7 @@ const PurchaseOrderItemWriteFields = Schema.Struct({
   quantity: PositiveInt,
   quantityType: PurchaseOrderQuantityType,
   baseUnitQuantity: PositiveInt,
-  packCost: Schema.NullOr(Schema.Natural),
+  packCost: Schema.NullOr(Money),
 });
 
 const BatchReceipt = Schema.Struct({

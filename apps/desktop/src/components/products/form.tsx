@@ -1,7 +1,10 @@
 import {
   INT4_MAX,
   MAX_CATALOG_NAME_LENGTH,
+  moneyFromRupees,
+  moneyToRupees,
   type Category,
+  type Money,
   type Product,
   type ProductSuggestions,
 } from "@store/contracts";
@@ -9,6 +12,7 @@ import { useCommand } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { CategoryField } from "@/components/products/category-field";
@@ -77,8 +81,9 @@ const productFormSchema = Schema.toStandardSchemaV1(
 );
 
 const nullableText = (value: string) => value.trim() || null;
-const moneyFromInput = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
-const inputFromMoney = (value: number | null) => (value == null ? "" : String(value / 100));
+const moneyFromInput = (value: string) =>
+  value === "" ? null : Result.getOrNull(moneyFromRupees(Number(value)));
+const inputFromMoney = (value: Money | null) => (value == null ? "" : String(moneyToRupees(value)));
 const numberFieldValue = (value: string) => (value === "" ? null : Number(value));
 
 const computeUnitPrice = (unitsPerPack: string, retailPrice: string) => {

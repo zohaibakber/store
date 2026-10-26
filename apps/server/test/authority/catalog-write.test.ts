@@ -16,6 +16,7 @@ import {
   type SyncCommandEnvelope,
   type SyncPullRequest,
   OperationId,
+  Money,
 } from "@store/contracts";
 import {
   decodeBatchId,
@@ -120,9 +121,9 @@ const productRow = (categoryId: string, name: string, unitsPerPack: number) => (
   composition: null,
   strength: null,
   unitsPerPack,
-  purchasePrice: 100,
-  retailPrice: 200,
-  unitPrice: 25,
+  purchasePrice: Money.make(100),
+  retailPrice: Money.make(200),
+  unitPrice: Money.make(25),
   visible: true,
 });
 
@@ -190,7 +191,7 @@ const orderWrite = (
     note: null,
     sentAt: null,
     expectedAt: null,
-    total: 0,
+    total: Money.make(0),
   },
 });
 
@@ -216,7 +217,7 @@ const lineWrite = (
     quantity: row.quantity ?? 2,
     quantityType: row.quantityType ?? "pack",
     baseUnitQuantity: row.baseUnitQuantity ?? 20,
-    packCost: 100,
+    packCost: Money.make(100),
   },
 });
 
