@@ -1,43 +1,24 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { describe, expect, it } from "@effect/vitest";
 import { StaffRefusal, type StaffId } from "@store/contracts";
 import { InventoryStore } from "@store/contracts/replica";
-import { SyncTransport } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
-import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
-import { describe, expect, it } from "vite-plus/test";
 
 import { layerNodeReplicaSync } from "../src/replica/node-sync";
 import { layerNodeStaffGate } from "../src/staff/node";
 import { layerInventoryStore } from "../src/store/handlers";
-
-const unreachable = Layer.succeed(SyncTransport, {
-  registerReplica: () => Effect.never,
-  submitCommand: () => Effect.never,
-  getReceipt: () => Effect.never,
-  pull: () => Effect.never,
-  acquireSnapshot: () => Effect.never,
-  readSnapshotPart: () => Effect.never,
-});
+import { UnreachableTransport } from "./lib/transports";
 
 const pin = (digits: string) => Redacted.make(digits);
 
 const NOW = Date.UTC(2026, 9, 5);
-
-const run = <A, E>(test: Effect.Effect<A, E, Scope.Scope>) =>
-  Effect.runPromise(
-    TestClock.setTime(NOW).pipe(
-      Effect.andThen(test),
-      Effect.scoped,
-      Effect.provide(TestClock.layer()),
-    ),
-  );
 
 const reasonOf = <A, E>(effect: Effect.Effect<A, E>) =>
   Effect.flip(effect).pipe(
@@ -46,13 +27,14 @@ const reasonOf = <A, E>(effect: Effect.Effect<A, E>) =>
 
 const openShop = (replicaId: string) =>
   Effect.gen(function* () {
+    yield* TestClock.setTime(NOW);
     const session = yield* Layer.build(
       Layer.fresh(
         layerNodeReplicaSync({
           path: ":memory:",
           identity: { organizationId: "org-1", userId: "user-1", replicaId },
           databaseIdentity: `staff-gate-${replicaId}`,
-          transport: unreachable,
+          transport: UnreachableTransport,
           live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
         }).pipe(Layer.provide(NodeCrypto.layer)),
       ),
@@ -102,8 +84,9 @@ const openShop = (replicaId: string) =>
   });
 
 describe("staff gate", () => {
-  it("leaves a solo shop open and unattributed, then enforces the unlocked member's role", () =>
-    run(
+  it.effect(
+    "leaves a solo shop open and unattributed, then enforces the unlocked member's role",
+    () =>
       Effect.gen(function* () {
         const { store, sell, createProduct, state, attributions, unlock } = yield* openShop("a");
         expect(yield* state).toBe("solo");
@@ -142,10 +125,11 @@ describe("staff gate", () => {
           yield* reasonOf(store("AddStaff", { name: "Friend", role: "manager", pin: pin("5555") })),
         ).toBe("forbidden");
       }),
-    ));
+  );
 
-  it("throttles after five wrong PINs, even for the right PIN, and refuses a removed member", () =>
-    run(
+  it.effect(
+    "throttles after five wrong PINs, even for the right PIN, and refuses a removed member",
+    () =>
       Effect.gen(function* () {
         const { store, unlock } = yield* openShop("b");
         yield* store("SetUpOwner", { name: "Owner", pin: pin("1234") });
@@ -191,10 +175,11 @@ describe("staff gate", () => {
           ["ownerSetUp", "Owner"],
         ]);
       }),
-    ));
+  );
 
-  it("recovers the owner with the code once, and turning staff off returns the shop to solo", () =>
-    run(
+  it.effect(
+    "recovers the owner with the code once, and turning staff off returns the shop to solo",
+    () =>
       Effect.gen(function* () {
         const { store, sell, state, attributions, unlock } = yield* openShop("c");
         const issued = yield* store("SetUpOwner", { name: "Owner", pin: pin("1234") });
@@ -226,5 +211,5 @@ describe("staff gate", () => {
           "alreadySetUp",
         );
       }),
-    ));
+  );
 });

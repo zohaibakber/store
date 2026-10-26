@@ -20,7 +20,6 @@ import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 
@@ -30,7 +29,7 @@ import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { SyncTransport, SyncTransportOffline } from "../src/transport";
-import { engineOf } from "./lib/engine-fixture";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
@@ -218,7 +217,7 @@ const categoryEnvelope = (
 };
 
 const engineFor = (store: ReplicaStore["Service"], transport: SyncTransport["Service"]) =>
-  engineOf(store, Layer.succeed(SyncTransport, transport));
+  engineOf(store, stubTransport(transport));
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>

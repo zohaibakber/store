@@ -16,7 +16,6 @@ import {
 } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
@@ -35,7 +34,7 @@ import {
   type AuthorityPartition,
   type ServerPartitionTables,
 } from "./lib/authority-digest";
-import { engineOf } from "./lib/engine-fixture";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   catalogEnvelope,
@@ -319,7 +318,7 @@ const withEngine = <A, E>(
   Effect.gen(function* () {
     const engine = yield* engineOf(
       harness.store,
-      Layer.succeed(SyncTransport, authorityTransport(harness.incarnation, authority)),
+      stubTransport(authorityTransport(harness.incarnation, authority)),
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },
     );
     return yield* use(engine);

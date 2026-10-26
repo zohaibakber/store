@@ -34,7 +34,7 @@ import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { makeSyncTransport, SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
-import { engineOf } from "./lib/engine-fixture";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { FIXTURE_USER_ID } from "./lib/replica-fixture";
@@ -169,7 +169,7 @@ const survivesUnknownEntities = Effect.fn(function* (
   const transport = yield* newerAuthorityTransport(
     historyAuthorityTransport(authority, incarnation),
   );
-  const engine = yield* engineOf(store, Layer.succeed(SyncTransport, transport));
+  const engine = yield* engineOf(store, stubTransport(transport));
   const applied = store.readSyncCursor.pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
   const { generationId } = yield* store.readStamp;
 

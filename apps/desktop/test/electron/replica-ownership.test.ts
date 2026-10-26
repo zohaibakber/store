@@ -1,26 +1,24 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { describe, expect, it } from "@effect/vitest";
 import { decodeOrganizationId, decodeReplicaId, decodeUserId } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { TestClock } from "effect/testing";
 
-import { makeReplicaHost, ReplicaHost } from "../../electron/replica-host";
+import { makeReplicaHost } from "../../electron/replica-host";
 import { ReplicaReaderRpcs, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/replica-supervisor";
 
-const makeWorld = (
+const makeWorld = Effect.fnUntraced(function* (
   plan: {
     readonly closeFinalizer?: (
       index: number,
@@ -28,7 +26,7 @@ const makeWorld = (
     ) => Effect.Effect<void>;
     readonly terminateEffect?: (index: number) => Effect.Effect<void>;
   } = {},
-) => {
+) {
   const workers: Array<number> = [];
   const owners = { live: 0, overlaps: 0 };
 
@@ -93,37 +91,36 @@ const makeWorld = (
       };
     });
 
-  const runtime = ManagedRuntime.make(
-    Layer.effect(
-      ReplicaHost,
-      makeReplicaHost({
-        userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
-        workerPath: "/tmp/replica-worker.js",
-        apiBaseUrl: "https://api.tabaaq.local",
-        accessTokens: {
-          liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
-          accessTokens: Stream.never,
-        },
-        dialogs: {
-          chooseBackupDestination: () => Effect.succeed(Option.none()),
-          chooseBackupSource: Effect.succeed(Option.none()),
-        },
-        publishProgress: () => Effect.void,
-        sessions: {
-          spawnWorker,
-          spawnReader,
-          supervisorPolicy: {
-            retryDelay: Duration.millis(10),
-            stableAfter: Duration.millis(60),
-            bootTimeout: Duration.millis(500),
-            requestWait: Duration.millis(1_000),
-          },
-          closeGrace: Duration.millis(50),
-          ownershipWait: Duration.millis(150),
-        },
-      }),
-    ).pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer))),
+  const userDataPath = yield* FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "store-replica-world-" })),
+    Effect.provide(NodeFileSystem.layer),
   );
+  const host = yield* makeReplicaHost({
+    userDataPath,
+    workerPath: "/tmp/replica-worker.js",
+    apiBaseUrl: "https://api.tabaaq.local",
+    accessTokens: {
+      liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
+      accessTokens: Stream.never,
+    },
+    dialogs: {
+      chooseBackupDestination: () => Effect.succeed(Option.none()),
+      chooseBackupSource: Effect.succeed(Option.none()),
+    },
+    publishProgress: () => Effect.void,
+    sessions: {
+      spawnWorker,
+      spawnReader,
+      supervisorPolicy: {
+        retryDelay: Duration.millis(10),
+        stableAfter: Duration.millis(60),
+        bootTimeout: Duration.millis(500),
+        requestWait: Duration.millis(1_000),
+      },
+      closeGrace: Duration.millis(50),
+      ownershipWait: Duration.millis(150),
+    },
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer)));
 
   const sender = (id: number) => ({
     id,
@@ -132,48 +129,53 @@ const makeWorld = (
     removeListener: () => undefined,
   });
   const open = (id: number) =>
-    runtime.runPromise(
-      ReplicaHost.use((replicas) =>
-        replicas.open(sender(id), {
-          authority: "remote",
-          organizationId: decodeOrganizationId("org-1"),
-          userId: decodeUserId("user-1"),
-          replicaId: decodeReplicaId("device-1"),
-        }),
-      ),
-    );
-  const close = (id: number, workspaceToken: string) =>
-    runtime.runPromise(ReplicaHost.use((replicas) => replicas.close(id, workspaceToken)));
+    host.open(sender(id), {
+      authority: "remote",
+      organizationId: decodeOrganizationId("org-1"),
+      userId: decodeUserId("user-1"),
+      replicaId: decodeReplicaId("device-1"),
+    });
+  const close = (id: number, workspaceToken: string) => host.close(id, workspaceToken);
 
-  return { workers, owners, dispose: () => runtime.dispose(), open, close };
-};
+  return { workers, owners, open, close };
+});
 
 describe("ownership", () => {
-  it("never spawns a second owner while a disposal hangs, then terminates and confirms", async () => {
-    const world = makeWorld({
-      closeFinalizer: (index, terminated) =>
-        index === 0 ? Deferred.await(terminated) : Effect.void,
-    });
-    const { workspaceToken } = await world.open(7);
-    const closing = world.close(7, workspaceToken);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const reopening = world.open(8);
-    await closing;
-    await expect(reopening).resolves.toMatchObject({ engine: "sqlite" });
-    expect(world.workers).toHaveLength(2);
-    expect(world.owners.overlaps).toBe(0);
-    await world.dispose();
-  });
+  it.effect(
+    "never spawns a second owner while a disposal hangs, then terminates and confirms",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld({
+          closeFinalizer: (index, terminated) =>
+            index === 0 ? Deferred.await(terminated) : Effect.void,
+        });
+        const { workspaceToken } = yield* world.open(7);
+        const closing = yield* Effect.forkChild(world.close(7, workspaceToken));
+        yield* TestClock.adjust("20 millis");
+        const reopening = yield* Effect.forkChild(world.open(8));
+        yield* TestClock.adjust("100 millis");
+        yield* Fiber.join(closing);
+        expect(yield* Fiber.join(reopening)).toMatchObject({ engine: "sqlite" });
+        expect(world.workers).toHaveLength(2);
+        expect(world.owners.overlaps).toBe(0);
+      }),
+  );
 
-  it("answers busy instead of overlapping when termination cannot be confirmed", async () => {
-    const world = makeWorld({
-      closeFinalizer: (index) => (index === 0 ? Effect.never : Effect.void),
-      terminateEffect: () => Effect.never,
-    });
-    const { workspaceToken } = await world.open(7);
-    void world.close(7, workspaceToken);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await expect(world.open(8)).rejects.toThrow("still closing");
-    expect(world.workers).toHaveLength(1);
-  });
+  it.effect("answers busy instead of overlapping when termination cannot be confirmed", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld({
+        closeFinalizer: (index) => (index === 0 ? Effect.never : Effect.void),
+        terminateEffect: () => Effect.never,
+      });
+      const { workspaceToken } = yield* world.open(7);
+      yield* Effect.forkChild(world.close(7, workspaceToken));
+      yield* TestClock.adjust("80 millis");
+      const reopening = yield* Effect.forkChild(Effect.flip(world.open(8)));
+      yield* TestClock.adjust("150 millis");
+      expect(yield* Fiber.join(reopening)).toMatchObject({
+        message: expect.stringContaining("still closing"),
+      });
+      expect(world.workers).toHaveLength(1);
+    }),
+  );
 });

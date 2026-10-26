@@ -1,10 +1,12 @@
+import { describe, expect, it } from "@effect/vitest";
 import { AccessToken, RefreshToken, TokenSet, sessionEndingCodes } from "@store/auth";
 import { decodeAuthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { TestClock } from "effect/testing";
 
 import { loadSessionSnapshot } from "../src/session-broker";
 import { SessionHttp, layerSessionHttp } from "../src/session-http";
@@ -22,65 +24,74 @@ const workspace = decodeAuthenticatedWorkspace({
   isOnline: true,
 });
 
+const NOW = Date.UTC(2026, 9, 5);
+
 const tokens = (name: string) =>
   TokenSet.make({
     accessToken: AccessToken.make(name),
-    accessExpiresAt: Date.now() + 600_000,
+    accessExpiresAt: NOW + 600_000,
     refreshToken: RefreshToken.make(`${name}.secret`),
-    refreshExpiresAt: Date.now() + 86_400_000,
+    refreshExpiresAt: NOW + 86_400_000,
   });
 
 type Route = () => Response | Promise<Response>;
 
-const harness = (routes: Readonly<Record<string, Route>>) => {
-  const sent: Array<string> = [];
-  const outcome = { rejected: 0, forgotten: 0 };
-  let local: WorkspaceSnapshot = { ...workspace, isOnline: false };
-  const send: typeof fetch = async (input, init) => {
-    const request = new Request(input, init);
-    const route = `${request.method} ${request.url}`;
-    sent.push(route);
-    const respond = routes[route];
-    if (respond === undefined) throw new TypeError(`Unexpected request: ${route}`);
-    return respond();
-  };
-  const runtime = ManagedRuntime.make(
-    layerSessionHttp({
-      apiBaseUrl: API,
-      authBaseUrl: AUTH,
-      onRefreshed: (refreshed) =>
-        Effect.sync(() => {
-          local = refreshed.workspace;
+const harness = (routes: Readonly<Record<string, Route>>) =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(NOW);
+    const sent: Array<string> = [];
+    const outcome = { rejected: 0, forgotten: 0 };
+    let local: WorkspaceSnapshot = { ...workspace, isOnline: false };
+    let refreshSeen = () => {};
+    const refreshRequested = new Promise<void>((resolve) => {
+      refreshSeen = resolve;
+    });
+    const send: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const route = `${request.method} ${request.url}`;
+      sent.push(route);
+      if (route === REFRESH) refreshSeen();
+      const respond = routes[route];
+      if (respond === undefined) throw new TypeError(`Unexpected request: ${route}`);
+      return respond();
+    };
+    const context = yield* Layer.build(
+      layerSessionHttp({
+        apiBaseUrl: API,
+        authBaseUrl: AUTH,
+        onRefreshed: (refreshed) =>
+          Effect.sync(() => {
+            local = refreshed.workspace;
+          }),
+        onRejected: Effect.sync(() => {
+          outcome.rejected += 1;
         }),
-      onRejected: Effect.sync(() => {
-        outcome.rejected += 1;
-      }),
-    }).pipe(
-      Layer.provide(FetchHttpClient.layer),
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
-    ),
-  );
-  const seeded = runtime.runPromise(
-    SessionHttp.use((session) => session.setTokens(tokens("issued"))),
-  );
-  const held = () => runtime.runPromise(SessionHttp.use((session) => session.tokens));
-  const load = async () => {
-    await seeded;
-    return runtime.runPromise(
-      loadSessionSnapshot({
-        getLocalSnapshot: () => local,
-        publish: (snapshot) => {
-          local = snapshot;
-          return snapshot;
-        },
-        clearAuthenticated: Effect.sync(() => {
-          outcome.forgotten += 1;
-        }),
-      }),
+      }).pipe(
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, send)),
+      ),
     );
-  };
-  return { seeded, held, sent, outcome, runtime, load };
-};
+    const session = Context.get(context, SessionHttp);
+    yield* session.setTokens(tokens("issued"));
+    const load = loadSessionSnapshot({
+      getLocalSnapshot: () => local,
+      publish: (snapshot) => {
+        local = snapshot;
+        return snapshot;
+      },
+      clearAuthenticated: Effect.sync(() => {
+        outcome.forgotten += 1;
+      }),
+    }).pipe(Effect.provideService(SessionHttp, session));
+    return {
+      session,
+      held: session.tokens,
+      sent,
+      outcome,
+      load,
+      refreshRequested: Effect.promise(() => refreshRequested),
+    };
+  });
 
 const denied = () => Response.json({ error: { code: "UNAUTHENTICATED" } }, { status: 401 });
 
@@ -105,64 +116,54 @@ const survivable: ReadonlyArray<readonly [string, Route]> = [
   ["a successful rotation", () => Response.json({ ...tokens("rotated"), workspace })],
 ];
 
-const elapse = async <A>(pending: Promise<A>) => {
-  let settled = false;
-  const tracked = pending.finally(() => {
-    settled = true;
-  });
-  while (!settled) await vi.advanceTimersByTimeAsync(1_000);
-  return tracked;
-};
-
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe("session authority", () => {
-  it("only a decoded session-ending refresh failure clears the session", async () => {
-    for (const code of sessionEndingCodes) {
-      const test = harness({ [SESSION]: denied, [REFRESH]: authFailure(401, code) });
+  it.effect.each([...sessionEndingCodes])(
+    "a decoded session-ending refresh failure (%s) clears the session",
+    (code) =>
+      Effect.gen(function* () {
+        const test = yield* harness({ [SESSION]: denied, [REFRESH]: authFailure(401, code) });
 
-      const snapshot = await test.load();
+        const snapshot = yield* test.load;
 
-      expect(snapshot.status, code).toBe("unauthenticated");
-      expect(await test.held(), code).toBeNull();
-      expect(test.outcome, code).toEqual({ rejected: 1, forgotten: 1 });
-      await test.runtime.dispose();
-    }
+        expect(snapshot.status).toBe("unauthenticated");
+        expect(yield* test.held).toBeNull();
+        expect(test.outcome).toEqual({ rejected: 1, forgotten: 1 });
+      }),
+  );
 
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    for (const [name, respond] of survivable) {
-      const test = harness({ [SESSION]: denied, [REFRESH]: respond });
+  it.effect.each(survivable)("keeps the session through %s", ([, respond]) =>
+    Effect.gen(function* () {
+      const test = yield* harness({ [SESSION]: denied, [REFRESH]: respond });
 
-      const snapshot = await elapse(test.load());
+      const loading = yield* Effect.forkChild(test.load);
+      yield* test.refreshRequested;
+      yield* TestClock.adjust("30 seconds");
+      const snapshot = yield* Fiber.join(loading);
 
-      expect(test.sent, name).toContain(REFRESH);
-      expect(snapshot.status, name).toBe("authenticated");
-      expect((await test.held())?.refreshToken, name).toBeDefined();
-      expect(test.outcome, name).toEqual({ rejected: 0, forgotten: 0 });
-      await elapse(test.runtime.dispose());
-    }
-  });
+      expect(test.sent).toContain(REFRESH);
+      expect(snapshot.status).toBe("authenticated");
+      expect((yield* test.held)?.refreshToken).toBeDefined();
+      expect(test.outcome).toEqual({ rejected: 0, forgotten: 0 });
+    }),
+  );
 
-  it("discards a refresh that completes after the session was cleared", async () => {
-    let release = (_response: Response) => {};
-    const test = harness({
-      [REFRESH]: () =>
-        new Promise<Response>((resolve) => {
-          release = resolve;
-        }),
-    });
+  it.effect("discards a refresh that completes after the session was cleared", () =>
+    Effect.gen(function* () {
+      let release = (_response: Response) => {};
+      const test = yield* harness({
+        [REFRESH]: () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+      });
 
-    await test.seeded;
-    const pending = test.runtime.runPromise(
-      SessionHttp.use((session) => session.ensureFreshAccess(true)),
-    );
-    await vi.waitFor(() => expect(test.sent).toEqual([REFRESH]));
-    await test.runtime.runPromise(SessionHttp.use((session) => session.setTokens(null)));
-    release(Response.json({ ...tokens("rotated"), workspace }));
+      const pending = yield* Effect.forkChild(test.session.ensureFreshAccess(true));
+      yield* test.refreshRequested;
+      yield* test.session.setTokens(null);
+      release(Response.json({ ...tokens("rotated"), workspace }));
 
-    await expect(pending).resolves.toBeNull();
-    expect(await test.held()).toBeNull();
-  });
+      expect(yield* Fiber.join(pending)).toBeNull();
+      expect(yield* test.held).toBeNull();
+    }),
+  );
 });
