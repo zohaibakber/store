@@ -178,7 +178,7 @@ function UploadProvider({
           files.map(async (file) => ({
             name: file.name,
             type: file.type,
-            bytes: await file.arrayBuffer(),
+            bytes: new Uint8Array(await file.arrayBuffer()),
           })),
         ),
       );

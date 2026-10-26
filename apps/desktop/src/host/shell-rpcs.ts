@@ -85,7 +85,9 @@ export const InvoiceUpload = Schema.Struct({
     Schema.Struct({
       name: Schema.String,
       type: Schema.String,
-      bytes: Schema.instanceOf(ArrayBuffer),
+      bytes: Schema.instanceOf(Uint8Array, {
+        toCodecJson: () => undefined,
+      }),
     }),
   ).check(Schema.isMaxLength(MAX_INVOICE_UPLOAD_FILES)),
 });
