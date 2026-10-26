@@ -46,8 +46,7 @@ Places where the repo does not yet meet the target set by the [Effect skill](../
 
 ## Tests
 
-- **`@effect/vitest` only in `packages/sync`, `packages/licence`, `packages/auth`, `apps/auth` and `apps/server`.** `packages/client-db`, `packages/contracts`, `packages/workspace` and `apps/desktop` wrap `Effect.runPromise` in a local `run` helper and use real time. Target: `it.effect`, `layer(...)`, `TestClock`.
-- **No reusable test layers.** Doubles are ad hoc objects in each harness: `Layer.succeed(SyncTransport, {...})` in `packages/client-db/test/store-commands.test.ts:21` and `staff-gate.test.ts:20` and in three sync tests. The sync fixture's `stubTransport` is a `Layer.mock`. Three server sites still repeat `Layer.provide(Layer.fresh(SyncStateRef.layer))` (`apps/server/test/authority/catalog-import.test.ts:396,447`, `local-authority-parity.test.ts:136`). Target: one shared layer per double.
+- **Licence-service tests wait on real time.** `apps/desktop/test/electron/licence-service.test.ts` waits 5 ms for file IO to settle instead of observing the write. Target: wait on the file event, not a delay.
 
 ## Needs the user's decision
 
