@@ -124,14 +124,24 @@ const phaseAtom = Atom.family((organizationId: string) =>
   }),
 );
 
+const resume = Effect.fn("LocalPublish.resume")(function* (
+  get: Atom.AtomContext,
+  organization: PublishTarget,
+  interrupted: boolean,
+) {
+  if (interrupted) yield* Effect.sync(() => get.set(moveAtom, organization));
+});
+
 const resumeInterrupted = (organization: PublishTarget) => {
   const phase = phaseAtom(organization.id);
   return Atom.make((get) => {
-    if (get(phase)._tag !== "Idle") return;
     const offer = AsyncResult.value(get(offerAtom(organization.id)));
-    if (Option.isSome(offer) && offer.value._tag === "available" && offer.value.resuming) {
-      get.set(moveAtom, organization);
-    }
+    const interrupted =
+      get(phase)._tag === "Idle" &&
+      Option.isSome(offer) &&
+      offer.value._tag === "available" &&
+      offer.value.resuming;
+    return resume(get, organization, interrupted);
   });
 };
 
