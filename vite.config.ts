@@ -77,14 +77,11 @@ export default defineConfig({
           "packages/contracts/**/*.ts",
           "packages/workspace/**/*.ts",
           "packages/db/src/shared/**/*.ts",
-          "apps/server/src/inventory/sync-authority.ts",
           "apps/server/src/routes/sync.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
           "packages/inventory-react/**/*.{ts,tsx}",
           "apps/desktop/src/lib/inventory/{provider,sync-status}.{ts,tsx}",
           "apps/desktop/src/start-electron.tsx",
-          "apps/desktop/electron/inventory-http.ts",
-          "apps/desktop/electron/ipc-channels.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",
@@ -131,7 +128,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/desktop/electron/auth-ipc.ts",
           "apps/desktop/electron/replica-worker-handlers.ts",
           "apps/desktop/src/components/shared/detail-load-error.tsx",
           "apps/server/src/ai/language-model.ts",
@@ -157,7 +153,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/desktop/electron/share-ipc.ts",
           "packages/client-db/src/analytics/database.ts",
           "packages/client-db/src/replica/node-backup.ts",
           "packages/client-db/src/replica/node-publish.ts",
@@ -171,8 +166,6 @@ export default defineConfig({
           "apps/desktop/src/components/purchases/receive-lines.ts",
           "apps/server/src/authority/engine.ts",
           "apps/server/src/authority/imports.ts",
-          "packages/contracts/src/store/invoice-allocation.ts",
-          "packages/contracts/src/store/pricing.ts",
           "packages/services/src/pack-size.ts",
         ],
         rules: {
@@ -181,7 +174,6 @@ export default defineConfig({
       },
       {
         files: [
-          "apps/desktop/electron/auth-ipc.ts",
           "apps/desktop/electron/auth.ts",
           "apps/desktop/src/components/insights/restock-page.tsx",
           "apps/desktop/src/components/theme/provider.tsx",
