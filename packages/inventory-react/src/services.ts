@@ -32,8 +32,6 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-export const runtime = Atom.context();
-
 type WorkerPorts = {
   readonly generation: number;
   readonly reads: MessagePort;
@@ -150,7 +148,7 @@ export type InventoryServices = {
 
 export class Desktop extends AtomRpc.Service<Desktop>()("desktop/Rpcs", {
   group: DesktopRpcs,
-  runtime,
+  runtime: Atom.runtime,
   protocol: (get) => overPort(get(latestDesktop)),
 }) {}
 
@@ -169,19 +167,19 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
   const services: InventoryServices = {
     Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
       group: InventoryReads,
-      runtime,
+      runtime: Atom.runtime,
       protocol: workerProtocol("reads"),
       makeEffect: outlivingItsRuntime(RpcClient.make(InventoryReads, { flatten: true })),
     }),
     Store: AtomRpc.Service<Store>()("inventory/Store", {
       group: InventoryStore,
-      runtime,
+      runtime: Atom.runtime,
       protocol: workerProtocol("store"),
       makeEffect: outlivingItsRuntime(RpcClient.make(InventoryStore, { flatten: true })),
     }),
     Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
       group: InventoryInsights,
-      runtime,
+      runtime: Atom.runtime,
       protocol: workerProtocol("insights"),
       makeEffect: outlivingItsRuntime(RpcClient.make(InventoryInsights, { flatten: true })),
     }),

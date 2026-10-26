@@ -1,8 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";
-
-import { runtime } from "./services";
+import * as Atom from "effect/reactivity/Atom";
 
 export const browserStorage = (): Storage | null => {
   try {
@@ -19,4 +18,4 @@ const preferenceStore = Layer.unwrap(
   }),
 );
 
-export const preferencesRuntime = runtime(preferenceStore);
+export const preferencesRuntime = Atom.runtime(preferenceStore);
