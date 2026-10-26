@@ -1,7 +1,9 @@
 import path from "node:path";
 
+import { AuthClientError } from "@store/auth";
 import { decodeOrganizationId } from "@store/contracts";
 import { isWhatsAppUrl } from "@store/services/purchasing";
+import { RequestError } from "@store/workspace";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -26,9 +28,11 @@ import { DesktopAuth } from "./auth";
 import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
+import type { InvoiceUploadRejected } from "./invoice-upload";
 import { PrivateFiles } from "./private-files";
 import { ReplicaHost } from "./replica-host";
 import { ReplicaOpenInput } from "./replica-rpc";
+import { isUnreachable, type ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
 import { saveThemeSource } from "./theme-source";
 import { Updater } from "./updater";
@@ -51,19 +55,24 @@ const signInFailure = <A, E, R>(command: Effect.Effect<A, E, R>) =>
     return Effect.fail(
       new SignInFailed({
         message: Schema.is(Messaged)(failure) ? failure.message : SIGN_IN_FAILED,
+        unreachable: failure instanceof AuthClientError && failure.reason._tag === "Unreachable",
       }),
     );
   });
 
 const serverFailure = Effect.mapError(
-  (failure: { readonly message: string }) => new ServerRequestFailed({ message: failure.message }),
+  (failure: RequestError | ServerResponseInvalid | InvoiceUploadRejected) =>
+    new ServerRequestFailed({
+      message: failure.message,
+      unreachable: failure instanceof RequestError && isUnreachable(failure),
+    }),
 );
 
 const googleAuthorizationUrl = (candidate: string) => {
   const url = URL.parse(candidate);
   return url?.protocol === "https:" && url.hostname === "accounts.google.com"
     ? Effect.succeed(url.href)
-    : Effect.fail(new SignInFailed({ message: GOOGLE_URL_REFUSED }));
+    : Effect.fail(new SignInFailed({ message: GOOGLE_URL_REFUSED, unreachable: false }));
 };
 
 const authorizationCodeOf = (candidate: string, redirectUri: string) => {
@@ -74,7 +83,7 @@ const authorizationCodeOf = (candidate: string, redirectUri: string) => {
     callback.host === expected.host &&
     callback.pathname === expected.pathname
     ? Effect.succeed(callback.searchParams.get("code"))
-    : Effect.fail(new SignInFailed({ message: GOOGLE_CALLBACK_INVALID }));
+    : Effect.fail(new SignInFailed({ message: GOOGLE_CALLBACK_INVALID, unreachable: false }));
 };
 
 const printOptions = (page: PrintPage): WebContentsPrintOptions => {

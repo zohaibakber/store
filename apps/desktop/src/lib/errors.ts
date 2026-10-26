@@ -4,11 +4,41 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 
 import { toastManager } from "@/components/ui/toast";
+import { isBridgeFailure } from "@/host";
 
-export const storeErrorMessage = (
-  cause: unknown,
-  fallback = "Something went wrong. Try again.",
-): string => {
+const DEFAULT_FALLBACK = "Something went wrong. Try again.";
+
+type BridgeSurface =
+  | { readonly _tag: "message"; readonly message: string }
+  | { readonly _tag: "quiet"; readonly message: string };
+
+export const bridgeSurface = (cause: unknown, fallback = DEFAULT_FALLBACK): BridgeSurface => {
+  if (!isBridgeFailure(cause)) return { _tag: "message", message: fallback };
+  switch (cause._tag) {
+    case "BridgeInterrupted":
+      return { _tag: "quiet", message: fallback };
+    case "SignInFailed":
+    case "ServerRequestFailed":
+      return cause.unreachable
+        ? { _tag: "quiet", message: fallback }
+        : { _tag: "message", message: cause.message.trim() || fallback };
+    case "WorkspaceOpenFailed":
+      return { _tag: "message", message: cause.message.trim() || fallback };
+    case "ExternalLinkRefused":
+      return { _tag: "message", message: fallback };
+  }
+};
+
+export const bridgeMessage = (cause: unknown, fallback?: string): string =>
+  bridgeSurface(cause, fallback).message;
+
+export const toastBridgeFailure = (cause: unknown, fallback?: string) => {
+  const surface = bridgeSurface(cause, fallback);
+  if (surface._tag === "quiet") return;
+  toastManager.add({ title: surface.message, type: "error" });
+};
+
+export const storeErrorMessage = (cause: unknown, fallback = DEFAULT_FALLBACK): string => {
   if (!(cause instanceof Error)) return fallback;
   const message = cause.message.trim();
   if (!message || isConnectivityFailure(message) || message.startsWith("net::")) {

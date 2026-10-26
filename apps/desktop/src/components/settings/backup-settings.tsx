@@ -19,7 +19,7 @@ import type { Workspace } from "@/host-access";
 import type { RestoreChoice, WorkspaceBackupBridge } from "@/host/workspace-backup";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
-import { storeErrorMessage } from "@/lib/errors";
+import { bridgeMessage } from "@/lib/errors";
 
 type StagedRestore = Extract<RestoreChoice, { readonly _tag: "staged" }>;
 
@@ -68,7 +68,7 @@ const backupOffer = (workspace: Workspace): BackupOffer => {
 };
 
 const failure = (title: string, cause: unknown) =>
-  toastManager.add({ title, description: storeErrorMessage(cause), type: "error" });
+  toastManager.add({ title, description: bridgeMessage(cause), type: "error" });
 
 function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) {
   const offer = backupOffer(useAuth().workspace);

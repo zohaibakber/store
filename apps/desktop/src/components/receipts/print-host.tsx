@@ -9,7 +9,7 @@ import { toastManager } from "@/components/ui/toast";
 import { useReceiptFormat, useReceiptStoreName } from "@/hooks/use-receipt-format";
 import { appHost } from "@/host";
 import type { PrintPage } from "@/host/share";
-import { storeErrorMessage } from "@/lib/errors";
+import { toastBridgeFailure } from "@/lib/errors";
 import type { ReceiptFormat, ReceiptPaper } from "@/lib/receipt-format";
 
 import { ReceiptSheet } from "./document";
@@ -83,12 +83,7 @@ function PrintJob({ job, onDone }: { readonly job: ReceiptPrintJob; readonly onD
     const receipt = receiptOf(invoice);
     const page = pageOf(job.paper, format, sheet.current);
     void deliver(job, page, `invoice-${receipt.number}`)
-      .catch((cause: unknown) =>
-        toastManager.add({
-          title: storeErrorMessage(cause, "Could not print the receipt."),
-          type: "error",
-        }),
-      )
+      .catch((cause: unknown) => toastBridgeFailure(cause, "Could not print the receipt."))
       .finally(onDone);
   }, [format, invoice, job, onDone]);
 

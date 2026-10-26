@@ -12,7 +12,7 @@ import { useCallback, useMemo } from "react";
 import { useOnline } from "@/hooks/use-online";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
-import { storeErrorMessage } from "@/lib/errors";
+import { bridgeMessage } from "@/lib/errors";
 
 const SEARCH_FAILED = "Could not search the web. Try again.";
 
@@ -20,7 +20,7 @@ const searchAtom = Atom.family((_key: string) =>
   Atom.fn((query: string) =>
     Effect.tryPromise({
       try: () => appHost().searchGlobalProducts(query),
-      catch: (cause) => storeErrorMessage(cause, SEARCH_FAILED),
+      catch: (cause) => bridgeMessage(cause, SEARCH_FAILED),
     }),
   ).pipe(Atom.setIdleTTL("10 minutes")),
 );

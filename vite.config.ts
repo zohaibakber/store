@@ -192,7 +192,6 @@ export default defineConfig({
           "apps/desktop/src/components/uploads/context.tsx",
           "apps/desktop/src/host/electron.ts",
           "apps/desktop/src/lib/invoice-reading.ts",
-          "apps/desktop/src/lib/organization.tsx",
           "apps/server/src/auth/access-tokens.ts",
           "apps/server/src/runtime/isolate.ts",
           "apps/server/src/runtime/production-domain.ts",

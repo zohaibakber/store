@@ -1,7 +1,9 @@
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
 import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
@@ -13,7 +15,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import type { ReplicaFileRefused } from "./file-refusal";
 import { fileRefusalMessage } from "./file-refusal-copy";
-import type { AppHost, AppUpdaterBridge } from "./index";
+import { BridgeInterrupted, type AppHost, type AppUpdaterBridge } from "./index";
 import { SHELL_PORT_CHANNEL } from "./shell-port-channels";
 import {
   ShellRpcs,
@@ -92,8 +94,11 @@ export const electronAppHost = (source: Window): AppHost => {
   const runtime = ManagedRuntime.make(layerShellClient(source, bridge.connect));
   void runtime.runPromise(Effect.void);
 
-  const call = <A, E>(use: (client: Client) => Effect.Effect<A, E>) =>
-    runtime.runPromise(ShellClient.use(use));
+  const call = async <A, E>(use: (client: Client) => Effect.Effect<A, E>): Promise<A> => {
+    const exit = await runtime.runPromiseExit(ShellClient.use(use));
+    if (Exit.isSuccess(exit)) return exit.value;
+    throw Cause.hasInterruptsOnly(exit.cause) ? new BridgeInterrupted() : Cause.squash(exit.cause);
+  };
 
   const fire = (use: (client: Client) => Effect.Effect<unknown, unknown>) => {
     runtime.runFork(ShellClient.use(use).pipe(Effect.ignore({ log: true })));

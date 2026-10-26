@@ -16,6 +16,7 @@ import {
   whatsAppLink,
   type WhatsAppLink,
 } from "@store/services/purchasing";
+import * as Schema from "effect/Schema";
 import * as React from "react";
 import { createPortal } from "react-dom";
 
@@ -34,7 +35,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
-import { toastFailure, toastStoreError } from "@/lib/errors";
+import { toastBridgeFailure, toastFailure } from "@/lib/errors";
 import { formatDate } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";
 
@@ -52,6 +53,13 @@ type SendOrderActionProps = {
 };
 
 type Delivery = "whatsapp" | "copy";
+
+const WHATSAPP_UNAVAILABLE = "WhatsApp is unavailable for this order.";
+
+class WhatsAppUnavailable extends Schema.TaggedError<WhatsAppUnavailable>()(
+  "WhatsAppUnavailable",
+  {},
+) {}
 
 const ORDER_TEXT_FORMAT = { date: formatDate, quantity: formatLineQuantity };
 
@@ -171,7 +179,11 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
     try {
       await action();
     } catch (cause) {
-      toastStoreError(cause, fallback);
+      if (cause instanceof WhatsAppUnavailable) {
+        toastManager.add({ title: WHATSAPP_UNAVAILABLE, type: "error" });
+      } else {
+        toastBridgeFailure(cause, fallback);
+      }
     }
     setHanding(false);
   };
@@ -193,7 +205,7 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
   const hand = async (delivery: Delivery) => {
     switch (delivery) {
       case "whatsapp":
-        if (link._tag !== "Ready") throw new Error("WhatsApp is unavailable for this order.");
+        if (link._tag !== "Ready") throw new WhatsAppUnavailable();
         return appHost().openExternal(link.url);
       case "copy":
         return appHost().copyText(text);

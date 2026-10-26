@@ -5,7 +5,7 @@ import type {
   OrganizationRoster,
 } from "@store/auth";
 import { useSearch } from "@tanstack/react-router";
-import { Effect } from "effect";
+import * as Effect from "effect/Effect";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
@@ -13,7 +13,7 @@ import * as React from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { appHost } from "@/host";
-import { storeErrorMessage, toastStoreError } from "@/lib/errors";
+import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 
 const originOpensInviteLinks = (origin: string | undefined) => Boolean(origin?.startsWith("http"));
 
@@ -66,13 +66,18 @@ const OrganizationContext = React.createContext<{
   readonly actions: OrganizationActions;
 } | null>(null);
 
+class OrganizationProviderMissing extends Schema.TaggedError<OrganizationProviderMissing>()(
+  "OrganizationProviderMissing",
+  {},
+) {}
+
 const rewritesAccessToken = (result: OrganizationCommandResult) =>
   result._tag === "Updated" || result._tag === "Joined";
 
 const organizationRosterAtom = Atom.make(
   Effect.tryPromise({
     try: () => appHost().auth.organizationRoster(),
-    catch: (cause) => storeErrorMessage(cause, "Couldn't load the organization."),
+    catch: (cause) => bridgeMessage(cause, "Couldn't load the organization."),
   }),
 );
 
@@ -92,7 +97,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
         refresh();
         return commandResult;
       } catch (cause) {
-        toastStoreError(cause);
+        toastBridgeFailure(cause);
         return null;
       }
     },
@@ -105,7 +110,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
     onError: (error) => ({ roster: null, error }),
     onDefect: (defect) => ({
       roster: null,
-      error: storeErrorMessage(defect, "Couldn't load the organization."),
+      error: bridgeMessage(defect, "Couldn't load the organization."),
     }),
   });
 
@@ -119,6 +124,6 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
 
 export function useOrganization() {
   const value = React.use(OrganizationContext);
-  if (!value) throw new Error("useOrganization must be used inside OrganizationProvider");
+  if (!value) throw new OrganizationProviderMissing();
   return value;
 }

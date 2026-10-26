@@ -6,7 +6,7 @@ import * as React from "react";
 
 import { appHost } from "@/host";
 import type { OpenWorkspace, Workspace } from "@/host-access";
-import { storeErrorMessage, toastStoreError } from "@/lib/errors";
+import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 import {
   refreshWorkspaceSession,
   WorkspaceSessionUnreachable,
@@ -34,7 +34,7 @@ export async function signOut() {
   try {
     await appHost().auth.signOut();
   } catch (error) {
-    toastStoreError(error);
+    toastBridgeFailure(error);
   }
 }
 
@@ -44,7 +44,7 @@ export async function bootstrapAuth(): Promise<WorkspaceSnapshot> {
   } catch (cause) {
     return unauthenticatedWorkspace({
       isOnline: false,
-      workspaceError: storeErrorMessage(cause),
+      workspaceError: bridgeMessage(cause),
     });
   }
 }
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { readonly children: React.ReactNode 
     try {
       await refreshSession();
     } catch (failure) {
-      toastStoreError(failure instanceof WorkspaceSessionUnreachable ? failure.cause : failure);
+      toastBridgeFailure(failure instanceof WorkspaceSessionUnreachable ? failure.cause : failure);
     }
   }, [refreshSession]);
 
