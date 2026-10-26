@@ -1,6 +1,6 @@
 import { decodeInvoiceId, ProductId, type InvoiceId, type StaffId } from "@store/contracts/ids";
+import { browserStorage, preferencesRuntime } from "@store/inventory-react";
 import * as Option from "effect/Option";
-import * as KeyValueStore from "effect/persistence/KeyValueStore";
 import * as Atom from "effect/reactivity/Atom";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -15,31 +15,16 @@ import {
   type SaleDraftOwner,
 } from "@/lib/sale-drafts";
 
-export const browserStorage = (): Storage | null => {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-};
-
 const THEME_KEY = "store-electron-theme";
 
-const upgradeBareThemePreference = (storage: Storage) => {
+export const upgradeBareThemePreference = () => {
+  const storage = browserStorage();
+  if (storage === null) return;
   const stored = storage.getItem(THEME_KEY);
   if (stored === "dark" || stored === "light" || stored === "system") {
     storage.setItem(THEME_KEY, JSON.stringify(stored));
   }
 };
-
-export const preferenceStore = () => {
-  const storage = browserStorage();
-  if (storage === null) return KeyValueStore.layerMemory;
-  upgradeBareThemePreference(storage);
-  return KeyValueStore.layerStorage(() => storage);
-};
-
-const preferencesRuntime = Atom.runtime(() => preferenceStore());
 
 const ThemePreferenceSchema = Schema.Literals(["dark", "light", "system"]);
 export type ThemePreference = typeof ThemePreferenceSchema.Type;

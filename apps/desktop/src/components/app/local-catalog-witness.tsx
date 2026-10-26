@@ -1,3 +1,4 @@
+import { useAtomSet } from "@effect/atom-react";
 import { useCatalogIsReady } from "@store/inventory-react";
 import { useEffect } from "react";
 
@@ -5,15 +6,15 @@ import { AsyncBoundary } from "@/components/app/error-boundary";
 import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
 import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
-import { witnessBoundLocalCatalog } from "@/session/workspace-session";
+import { witnessLocalCatalog } from "@/session/workspace-session";
 
-const witnessLocalFile = () => {
+const witnessLocalFile = (witness: (state: "empty" | "stocked") => Promise<void>) => {
   let current = true;
   void appHost()
     .publish.localCatalog()
     .then((report) => {
       if (!current || report._tag === "unknown") return;
-      return witnessBoundLocalCatalog(report._tag);
+      return witness(report._tag);
     })
     .catch(() => undefined);
   return () => {
@@ -23,12 +24,14 @@ const witnessLocalFile = () => {
 
 function OpenLocalCatalog() {
   const holdsNothing = useCatalogHoldsNothing();
-  useEffect(() => witnessLocalFile(), [holdsNothing]);
+  const witness = useAtomSet(witnessLocalCatalog, { mode: "promise" });
+  useEffect(() => witnessLocalFile(witness), [holdsNothing, witness]);
   return null;
 }
 
 function ClosedLocalCatalog() {
-  useEffect(() => witnessLocalFile(), []);
+  const witness = useAtomSet(witnessLocalCatalog, { mode: "promise" });
+  useEffect(() => witnessLocalFile(witness), [witness]);
   return null;
 }
 

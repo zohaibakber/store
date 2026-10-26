@@ -1,9 +1,4 @@
-import {
-  RegistryContext,
-  RegistryProvider,
-  useAtomRefresh,
-  useAtomValue,
-} from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import * as React from "react";
 
 import type { InventoryHost, InventoryScope } from "./host";
@@ -28,7 +23,8 @@ export function InventoryProvider({
   catalog,
   lease,
 }: InventoryProviderProps) {
-  const [ownedCatalog] = React.useState(createAppCatalogLifetime);
+  const registry = React.useContext(RegistryContext);
+  const [ownedCatalog] = React.useState(() => createAppCatalogLifetime(registry));
   const lifetime = catalog ?? ownedCatalog;
   const owned = catalog === undefined;
   const organizationId = scope?.organizationId ?? null;
@@ -40,11 +36,7 @@ export function InventoryProvider({
         : openingCatalog(lifetime, owned, host, { organizationId, userId }, lease),
     [host, lease, lifetime, organizationId, owned, userId],
   );
-  return (
-    <RegistryProvider>
-      <InventoryGate opening={opening}>{children}</InventoryGate>
-    </RegistryProvider>
-  );
+  return <InventoryGate opening={opening}>{children}</InventoryGate>;
 }
 
 function InventoryGate({
@@ -56,16 +48,8 @@ function InventoryGate({
 }) {
   const result = useAtomValue(opening);
   const retry = useAtomRefresh(opening);
-  const providerRegistry = React.useContext(RegistryContext);
   const state = React.useMemo(() => inventoryState(result, retry), [result, retry]);
-  const ready = state._tag === "Ready" ? state.inventory : null;
-  return (
-    <InventoryContext.Provider value={state}>
-      <RegistryContext.Provider value={ready?.atoms.registry ?? providerRegistry}>
-        {children}
-      </RegistryContext.Provider>
-    </InventoryContext.Provider>
-  );
+  return <InventoryContext.Provider value={state}>{children}</InventoryContext.Provider>;
 }
 
 export const useInventoryState = (): InventoryState => {
