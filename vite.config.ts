@@ -193,8 +193,6 @@ export default defineConfig({
           "apps/desktop/src/components/theme/provider.tsx",
           "apps/desktop/src/components/uploads/context.tsx",
           "apps/desktop/src/host/electron.ts",
-          "apps/desktop/src/host/invoice-upload.ts",
-          "apps/desktop/src/host/server-api.ts",
           "apps/desktop/src/lib/invoice-reading.ts",
           "apps/desktop/src/lib/organization.tsx",
           "apps/server/src/auth/access-tokens.ts",
@@ -211,7 +209,6 @@ export default defineConfig({
       {
         files: [
           "apps/auth/src/http.ts",
-          "apps/desktop/src/host/invoice-upload.ts",
           "apps/server/src/auth/organization.ts",
           "apps/server/src/routes/sync.ts",
         ],

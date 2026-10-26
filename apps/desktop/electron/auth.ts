@@ -48,11 +48,12 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { app, net, safeStorage } from "electron";
 
-import { searchGlobalProducts } from "../src/host/global-search";
-import type { SignInCredentials } from "../src/host/index";
-import { analyseInvoiceUpload, type InvoiceUploadFile } from "../src/host/invoice-upload";
+import type { InvoiceUploadFile, SignInCredentials } from "../src/host/index";
 import { cachedOnSuccess } from "./cached-on-success";
+import { searchGlobalProducts } from "./global-search";
+import { analyseInvoiceUpload, type InvoiceUploadRejected } from "./invoice-upload";
 import { PrivateFiles } from "./private-files";
+import { ServerApi, type ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
 
 const canPersistEncryptedSession = () =>
@@ -155,23 +156,30 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
 
   const sessionHttp = yield* cachedOnSuccess(
     Layer.buildWithScope(
-      layerSessionHttp({
-        apiBaseUrl: options.apiBaseUrl,
-        authBaseUrl: options.authBaseUrl,
-        onRefreshed: (refreshed, tokens) =>
-          adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
-            Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
-          ),
-        onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
-          Effect.andThen(PubSub.publish(accessTokens, null)),
-          Effect.andThen(forgetPersisted),
+      ServerApi.layer.pipe(
+        Layer.provideMerge(
+          layerSessionHttp({
+            apiBaseUrl: options.apiBaseUrl,
+            authBaseUrl: options.authBaseUrl,
+            onRefreshed: (refreshed, tokens) =>
+              adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
+                Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
+              ),
+            onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
+              Effect.andThen(PubSub.publish(accessTokens, null)),
+              Effect.andThen(forgetPersisted),
+            ),
+          }),
         ),
-      }).pipe(Layer.provide(netHttp)),
+        Layer.provide(netHttp),
+      ),
       scope,
     ).pipe(Effect.uninterruptible),
   );
 
-  const withSession = <A, E>(effect: Effect.Effect<A, E, SessionHttp>): Effect.Effect<A, E> =>
+  const withSession = <A, E>(
+    effect: Effect.Effect<A, E, SessionHttp | ServerApi>,
+  ): Effect.Effect<A, E> =>
     Effect.flatMap(sessionHttp, (context) => Effect.provideContext(effect, context));
 
   const signIn = yield* cachedOnSuccess(
@@ -298,15 +306,20 @@ export class DesktopAuth extends Context.Service<
     ) => Effect.Effect<OrganizationCommandResult, RequestError>;
     readonly analyseInvoices: (
       files: ReadonlyArray<InvoiceUploadFile>,
-    ) => Effect.Effect<InvoiceExtraction, Error | RequestError>;
+    ) => Effect.Effect<
+      InvoiceExtraction,
+      InvoiceUploadRejected | ServerResponseInvalid | RequestError
+    >;
     readonly searchGlobalProducts: (
       query: string,
-    ) => Effect.Effect<GlobalProductSearchResult, Error | RequestError>;
+    ) => Effect.Effect<GlobalProductSearchResult, ServerResponseInvalid | RequestError>;
     readonly accessTokens: Stream.Stream<Redacted.Redacted<string> | null>;
     readonly liveAccessToken: (
       force: boolean,
     ) => Effect.Effect<Redacted.Redacted<string> | null, RequestError>;
-    readonly withSession: <A, E>(effect: Effect.Effect<A, E, SessionHttp>) => Effect.Effect<A, E>;
+    readonly withSession: <A, E>(
+      effect: Effect.Effect<A, E, SessionHttp | ServerApi>,
+    ) => Effect.Effect<A, E>;
   }
 >()("@store/desktop/DesktopAuth") {
   static readonly layer = (options: DesktopAuthOptions) =>

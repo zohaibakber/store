@@ -16,11 +16,12 @@ import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
 
 import type { InventoryHttpBridge, ReplicaWorkspaceBridge } from "./electron";
-import type { InvoiceUploadFile } from "./invoice-upload";
 import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
-import type { ThemeSource } from "./shell-rpcs";
+import type { InvoiceUpload, ThemeSource } from "./shell-rpcs";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
+
+export type InvoiceUploadFile = (typeof InvoiceUpload.Type)["files"][number];
 
 export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
