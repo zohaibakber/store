@@ -1,7 +1,10 @@
 import type { SyncEntity } from "@store/contracts";
 import type { ReplicaCommitNotice, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
+import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
+import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { SYNC_ENTITIES } from "./decisions";
@@ -41,12 +44,58 @@ type ReplicaCommitHub = {
   readonly commits: Stream.Stream<ReplicaCommitNotice>;
 };
 
+type SequencedNotice = { readonly sequence: number; readonly notice: ReplicaCommitNotice };
+
+export const COMMIT_HUB_CAPACITY = 256;
+
+const withoutGaps = (
+  subscription: PubSub.Subscription<SequencedNotice>,
+  baseline: number,
+): Stream.Stream<ReplicaCommitNotice> =>
+  Stream.fromSubscription(subscription).pipe(
+    Stream.mapAccum(
+      () => baseline,
+      (last, { sequence, notice }): readonly [number, ReadonlyArray<ReplicaCommitNotice>] => {
+        if (sequence <= last) return [last, []];
+        const missed = sequence > last + 1;
+        return [
+          sequence,
+          missed
+            ? [
+                generationResetNotice(notice.databaseIdentity, {
+                  generationId: notice.generationId,
+                  localCommitVersion: notice.localCommitVersion,
+                }),
+                notice,
+              ]
+            : [notice],
+        ];
+      },
+    ),
+  );
+
 export const makeReplicaCommitHub = (): Effect.Effect<ReplicaCommitHub> =>
   Effect.gen(function* () {
-    const hub = yield* PubSub.unbounded<ReplicaCommitNotice>();
+    const hub = yield* PubSub.sliding<SequencedNotice>(COMMIT_HUB_CAPACITY);
+    const publishing = yield* Semaphore.make(1);
+    const sequence = yield* Ref.make(0);
     return {
-      publish: (notice) => (notice ? PubSub.publish(hub, notice) : Effect.void),
-      commits: Stream.fromPubSub(hub),
+      publish: (notice) =>
+        notice
+          ? publishing.withPermits(1)(
+              Ref.updateAndGet(sequence, (last) => last + 1).pipe(
+                Effect.flatMap((next) => PubSub.publish(hub, { sequence: next, notice })),
+              ),
+            )
+          : Effect.void,
+      commits: Stream.unwrap(
+        Effect.gen(function* () {
+          const { subscription, baseline } = yield* publishing.withPermits(1)(
+            Effect.all({ subscription: PubSub.subscribe(hub), baseline: Ref.get(sequence) }),
+          );
+          return withoutGaps(subscription, baseline);
+        }),
+      ),
     } satisfies ReplicaCommitHub;
   });
 
@@ -60,8 +109,8 @@ export const EMPTY_TOUCHED: TouchedSet = { touchedEntities: [], touchedKeys: [] 
 const stockKey = (batchId: string): string => `batch:${batchId}`;
 
 export const mergeTouched = (...parts: ReadonlyArray<TouchedSet>): TouchedSet => ({
-  touchedEntities: [...new Set(parts.flatMap((part) => part.touchedEntities))],
-  touchedKeys: [...new Set(parts.flatMap((part) => part.touchedKeys))],
+  touchedEntities: Array.dedupe(parts.flatMap((part) => part.touchedEntities)),
+  touchedKeys: Array.dedupe(parts.flatMap((part) => part.touchedKeys)),
 });
 
 export const withStockTouched = (

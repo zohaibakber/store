@@ -7,6 +7,7 @@ import {
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { InvoiceId } from "@store/contracts";
 import { Link } from "@tanstack/react-router";
 
 import { ShortcutButton } from "@/components/shared/shortcut-button";
@@ -32,7 +33,7 @@ const PRINT_HINT = {
   thermal: "Print the thermal receipt",
 } as const satisfies Record<ReceiptPaper, string>;
 
-export function PrintReceiptAction({ invoiceId }: { readonly invoiceId: string }) {
+export function PrintReceiptAction({ invoiceId }: { readonly invoiceId: InvoiceId }) {
   const print = usePrintReceipt();
   const printing = useReceiptPrinting();
   const { paper } = useReceiptFormat();

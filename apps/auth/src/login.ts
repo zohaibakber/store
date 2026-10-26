@@ -2,6 +2,7 @@ import {
   EmailAddress,
   EmailProvider,
   LoginRoute,
+  normalizedEmail,
   normalizeEmail,
   OtpChallengeId,
   PasswordHasher,
@@ -17,13 +18,17 @@ import * as Layer from "effect/Layer";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { AuthCrypto, OTP_TTL_MS } from "./crypto";
+import { AuthCrypto } from "./crypto";
 import { EphemeralStore } from "./ephemeral";
+import { infrastructureDiagnostics } from "./errors";
 import { AuthRefusal } from "./failures";
 import { AuthLimiter } from "./limits";
+import { OTP_TTL_MS } from "./otp-issuance";
 import { AuthRepository } from "./repository";
 import { Sessions } from "./session-ops";
 import { AuthSettings } from "./settings";
+
+const decodeEmailAddress = Schema.decodeUnknownEffect(EmailAddress);
 
 export class Login extends Context.Service<Login>()("@store/auth-worker/Login", {
   make: Effect.gen(function* () {
@@ -36,23 +41,23 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
     const crypto = yield* AuthCrypto;
     const { developmentOtp } = yield* AuthSettings;
 
-    const rehash = Effect.fn("Auth.Login.rehash")(
+    const rehash = Effect.fn("Login.rehash")(
       function* (userId: UserId, previous: PasswordHash, password: Redacted.Redacted<string>) {
         const next = yield* passwords.hash(password);
         yield* repository.replacePasswordHash({ userId, previous, next });
       },
-      Effect.catchTag(["Auth.PasswordHashError", "Auth.RepositoryError"], (failure) =>
+      Effect.catchTag(["PasswordHashError", "AuthRepositoryError"], (failure) =>
         Effect.logWarning("auth.password_rehash_failed").pipe(
-          Effect.annotateLogs({ tag: failure._tag, message: failure.message }),
+          Effect.annotateLogs(infrastructureDiagnostics(failure)),
         ),
       ),
     );
 
-    const identify = Effect.fn("Auth.Login.identify")(function* (input: IdentifyInput) {
+    const identify = Effect.fn("Login.identify")(function* (input: IdentifyInput) {
       const now = yield* Clock.currentTimeMillis;
-      const normalized = yield* Schema.decodeUnknownEffect(EmailAddress)(
-        normalizeEmail(input.email),
-      ).pipe(Effect.mapError(() => new AuthRefusal({ reason: "InvalidEmail" })));
+      const normalized = yield* decodeEmailAddress(normalizeEmail(input.email)).pipe(
+        Effect.mapError(() => new AuthRefusal({ reason: "InvalidEmail" })),
+      );
       yield* limiter.admit("tenPerMinute", `identify:${normalized}`, "request");
       const user = yield* repository.findUserByEmail(normalized);
       if (!user) return LoginRoute.make({ _tag: "Registration", email: normalized });
@@ -95,29 +100,27 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const route = { _tag: "Otp", email: normalized, challengeId: issue.challengeId } as const;
           return LoginRoute.make(developmentOtp ? { ...route, developmentCode: code } : route);
         }
-        default: {
-          const _exhaustive: never = issue;
-          return _exhaustive;
-        }
       }
     });
 
-    const authenticate = Effect.fn("Auth.Login.authenticate")(function* (command: LoginCommand) {
-      const now = yield* Clock.currentTimeMillis;
+    const authenticate = Effect.fn("Login.authenticate")(function* (command: LoginCommand) {
       switch (command._tag) {
         case "Password": {
-          const emailAddress = EmailAddress.make(normalizeEmail(command.email));
+          const emailAddress = normalizedEmail(command.email);
           yield* limiter.admit("fivePerMinute", `password:${emailAddress}`, "request");
           const user = yield* repository.findUserByEmail(emailAddress);
           if (!user?.passwordHash) {
             return yield* new AuthRefusal({ reason: "InvalidCredentials" });
           }
           const verdict = yield* passwords.verify(command.password, user.passwordHash);
-          if (!verdict.matches) {
-            return yield* new AuthRefusal({ reason: "InvalidCredentials" });
-          }
-          if (verdict.outdated) {
-            yield* rehash(user.id, user.passwordHash, command.password);
+          switch (verdict) {
+            case "mismatch":
+              return yield* new AuthRefusal({ reason: "InvalidCredentials" });
+            case "matchNeedsRehash":
+              yield* rehash(user.id, user.passwordHash, command.password);
+              break;
+            case "match":
+              break;
           }
           return yield* sessions.issueSession(user, command.client);
         }
@@ -129,7 +132,6 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const emailAddress = yield* ephemeral.consumeOtp({
             challengeId: command.challengeId,
             code: command.code,
-            now,
           });
           if (!emailAddress) {
             return yield* new AuthRefusal({ reason: "InvalidOtp" });
@@ -141,7 +143,7 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           return yield* sessions.issueSession(user, command.client, `otp-${command.challengeId}`);
         }
         case "RegisterPassword": {
-          const emailAddress = EmailAddress.make(normalizeEmail(command.email));
+          const emailAddress = normalizedEmail(command.email);
           yield* limiter.admit("fivePerMinute", `register:${emailAddress}`, "request");
           const existing = yield* repository.findUserByEmail(emailAddress);
           if (existing) {
@@ -151,17 +153,13 @@ export class Login extends Context.Service<Login>()("@store/auth-worker/Login", 
           const user = yield* repository
             .createPasswordUser({ email: emailAddress, name: command.name, passwordHash })
             .pipe(
-              Effect.catchTag("Auth.RepositoryError", (failure) =>
+              Effect.catchTag("AuthRepositoryError", (failure) =>
                 Effect.flatMap(repository.findUserByEmail(emailAddress), (raced) =>
                   Effect.fail(raced ? new AuthRefusal({ reason: "AccountExists" }) : failure),
                 ),
               ),
             );
           return yield* sessions.issueSession(user, command.client);
-        }
-        default: {
-          const _exhaustive: never = command;
-          return _exhaustive;
         }
       }
     });

@@ -1,4 +1,5 @@
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
+import type { LicenceState } from "@store/contracts";
 import {
   DesktopRpcs,
   INSIGHTS_KEY,
@@ -32,28 +33,13 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-export const runtime = Atom.context();
-
-export type WorkerPorts = {
+type WorkerPorts = {
   readonly generation: number;
   readonly reads: MessagePort;
   readonly store: MessagePort;
   readonly insights: MessagePort;
+  readonly desktop: MessagePort;
 };
-
-export type DesktopPort = {
-  readonly generation: number;
-  readonly port: MessagePort;
-};
-
-export type ReplicaPorts = {
-  readonly workers: Option.Option<WorkerPorts>;
-  readonly desktop: Option.Option<DesktopPort>;
-};
-
-const NO_PORTS: ReplicaPorts = { workers: Option.none(), desktop: Option.none() };
-
-export const Ports = Atom.make<ReplicaPorts>(NO_PORTS).pipe(Atom.keepAlive);
 
 export type ForwardedPorts = {
   readonly message: ReplicaPortsMessage;
@@ -77,8 +63,9 @@ const whenClosed = (port: MessagePort, clear: () => void) => {
   port.addEventListener("close", clear, { once: true });
 };
 
-export const deliverPorts = (
+const deliverPorts = (
   registry: AtomRegistry.AtomRegistry,
+  workerPorts: Atom.Writable<Option.Option<WorkerPorts>>,
   { message, ports }: ForwardedPorts,
 ): void => {
   const portOf = (role: ReplicaPortRole) => ports[message.roles.indexOf(role)];
@@ -86,38 +73,29 @@ export const deliverPorts = (
   const store = portOf("store");
   const insights = portOf("insights");
   const desktop = portOf("desktop");
-  if (reads === undefined || store === undefined || insights === undefined) return;
+  if (
+    reads === undefined ||
+    store === undefined ||
+    insights === undefined ||
+    desktop === undefined
+  ) {
+    return;
+  }
   const generation = message.generation;
-  const clearWorkers = () =>
-    registry.update(Ports, (current) =>
-      Option.exists(current.workers, (held) => held.generation === generation)
-        ? { ...current, workers: Option.none() }
-        : current,
+  for (const port of [reads, store, insights, desktop]) {
+    whenClosed(port, () =>
+      registry.update(workerPorts, (current) =>
+        Option.exists(current, (held) => held.reads === reads) ? Option.none() : current,
+      ),
     );
-  const clearDesktop = () =>
-    registry.update(Ports, (current) =>
-      Option.exists(current.desktop, (held) => held.generation === generation)
-        ? { ...current, desktop: Option.none() }
-        : current,
-    );
-  for (const port of [reads, store, insights]) whenClosed(port, clearWorkers);
-  if (desktop !== undefined) whenClosed(desktop, clearDesktop);
-  registry.set(Ports, {
-    workers: Option.some({ generation, reads, store, insights }),
-    desktop:
-      desktop === undefined
-        ? registry.get(Ports).desktop
-        : Option.some({ generation, port: desktop }),
-  });
+  }
+  registry.set(workerPorts, Option.some({ generation, reads, store, insights, desktop }));
 };
 
 const latest = <A>(source: Atom.Atom<Option.Option<A>>): Atom.Atom<Option.Option<A>> =>
   Atom.make((get) =>
     Option.orElse(get(source), () => Option.flatten(get.self<Option.Option<A>>())),
   );
-
-const latestWorkers = latest(Atom.map(Ports, (ports) => ports.workers));
-const latestDesktop = latest(Atom.map(Ports, (ports) => ports.desktop));
 
 const overPort = (port: Option.Option<MessagePort>) =>
   Option.match(port, {
@@ -128,28 +106,19 @@ const overPort = (port: Option.Option<MessagePort>) =>
       ),
   });
 
-const workerProtocol = (role: "reads" | "store" | "insights") => (get: Atom.AtomContext) =>
-  overPort(Option.map(get(latestWorkers), (ports) => ports[role]));
-
 type Client<Rpcs extends Rpc.Any> = RpcClient.RpcClient.Flat<Rpcs, RpcClientError>;
-
-export type Link<Rpcs extends Rpc.Any, R, E> = {
-  readonly protocol: (get: Atom.AtomContext) => Layer.Layer<Exclude<R, Scope.Scope>, E>;
-  readonly makeEffect: Effect.Effect<Client<Rpcs>, never, R>;
-};
 
 const CLIENT_LINGER = "10 seconds";
 
-const outlivingItsRuntime = <A, R>(
+const outlivingItsRuntime = Effect.fn("InventoryServices.outlivingItsRuntime")(function* <A, R>(
   make: Effect.Effect<A, never, R>,
-): Effect.Effect<A, never, Exclude<R, Scope.Scope> | Scope.Scope> =>
-  Effect.gen(function* () {
-    const own = yield* Scope.make();
-    yield* Effect.addFinalizer(() =>
-      Scope.close(own, Exit.void).pipe(Effect.delay(CLIENT_LINGER), Effect.forkDetach),
-    );
-    return yield* Scope.provide(make, own);
-  });
+) {
+  const own = yield* Scope.make();
+  yield* Effect.addFinalizer(() =>
+    Scope.close(own, Exit.void).pipe(Effect.delay(CLIENT_LINGER), Effect.forkDetach),
+  );
+  return yield* Scope.provide(make, own);
+});
 
 export interface Reads {
   readonly Reads: unique symbol;
@@ -163,72 +132,74 @@ export interface Insights {
   readonly Insights: unique symbol;
 }
 
+export interface Desktop {
+  readonly Desktop: unique symbol;
+}
+
 type ReadsRpcs = RpcGroup.Rpcs<typeof InventoryReads>;
 type StoreRpcs = RpcGroup.Rpcs<typeof InventoryStore>;
 type InsightsRpcs = RpcGroup.Rpcs<typeof InventoryInsights>;
+type DesktopRpcsOf = RpcGroup.Rpcs<typeof DesktopRpcs>;
 
 export type InventoryServices = {
   readonly Reads: AtomRpc.AtomRpcClient<Reads, "inventory/Reads", ReadsRpcs>;
   readonly Store: AtomRpc.AtomRpcClient<Store, "inventory/Store", StoreRpcs>;
   readonly Insights: AtomRpc.AtomRpcClient<Insights, "inventory/Insights", InsightsRpcs>;
+  readonly Desktop: AtomRpc.AtomRpcClient<Desktop, "desktop/Rpcs", DesktopRpcsOf>;
   readonly generation: Atom.Atom<Option.Option<number>>;
   readonly workspace: Atom.Atom<Option.Option<WorkspaceState>>;
+  readonly licence: Atom.Atom<Option.Option<LicenceState>>;
 };
 
-export const makeInventoryServices = <R1, E1, R2, E2, R3, E3>(links: {
-  readonly reads: Link<ReadsRpcs, R1, E1>;
-  readonly store: Link<StoreRpcs, R2, E2>;
-  readonly insights: Link<InsightsRpcs, R3, E3>;
-  readonly generation: Atom.Atom<Option.Option<number>>;
-  readonly workspace: Atom.Atom<Option.Option<WorkspaceState>>;
-}): InventoryServices => ({
-  Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
-    group: InventoryReads,
-    runtime,
-    ...links.reads,
-  }),
-  Store: AtomRpc.Service<Store>()("inventory/Store", {
-    group: InventoryStore,
-    runtime,
-    ...links.store,
-  }),
-  Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
-    group: InventoryInsights,
-    runtime,
-    ...links.insights,
-  }),
-  generation: links.generation,
-  workspace: links.workspace,
+export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChannel")(function* (
+  registry: AtomRegistry.AtomRegistry,
+) {
+  const workerPorts = Atom.make(Option.none<WorkerPorts>());
+  yield* AtomRegistry.mount(registry, workerPorts);
+  const latestWorkers = latest(workerPorts);
+  const workerProtocol =
+    (role: "reads" | "store" | "insights" | "desktop") => (get: Atom.AtomContext) =>
+      overPort(Option.map(get(latestWorkers), (ports) => ports[role]));
+  const Desktop = AtomRpc.Service<Desktop>()("desktop/Rpcs", {
+    group: DesktopRpcs,
+    runtime: Atom.runtime,
+    protocol: workerProtocol("desktop"),
+  });
+  const desktopWorkspace = Desktop.runtime.atom(
+    Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("WorkspaceState", undefined)))),
+  );
+  const desktopLicence = Desktop.runtime.atom(
+    Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("LicenceState", undefined)))),
+  );
+  const services: InventoryServices = {
+    Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
+      group: InventoryReads,
+      runtime: Atom.runtime,
+      protocol: workerProtocol("reads"),
+      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryReads, { flatten: true })),
+    }),
+    Store: AtomRpc.Service<Store>()("inventory/Store", {
+      group: InventoryStore,
+      runtime: Atom.runtime,
+      protocol: workerProtocol("store"),
+      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryStore, { flatten: true })),
+    }),
+    Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
+      group: InventoryInsights,
+      runtime: Atom.runtime,
+      protocol: workerProtocol("insights"),
+      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryInsights, { flatten: true })),
+    }),
+    Desktop,
+    generation: Atom.map(workerPorts, (ports) => Option.map(ports, (held) => held.generation)),
+    workspace: Atom.map(desktopWorkspace, AsyncResult.value),
+    licence: Atom.map(desktopLicence, AsyncResult.value),
+  };
+  return {
+    services,
+    deliver: (forwarded: ForwardedPorts) => deliverPorts(registry, workerPorts, forwarded),
+  };
 });
-
-export class Desktop extends AtomRpc.Service<Desktop>()("desktop/Rpcs", {
-  group: DesktopRpcs,
-  runtime,
-  protocol: (get) => overPort(Option.map(get(latestDesktop), (desktop) => desktop.port)),
-}) {}
-
-const desktopWorkspace = Desktop.runtime.atom(
-  Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("WorkspaceState", undefined)))),
-);
-
-export const desktopServices = makeInventoryServices({
-  reads: {
-    protocol: workerProtocol("reads"),
-    makeEffect: outlivingItsRuntime(RpcClient.make(InventoryReads, { flatten: true })),
-  },
-  store: {
-    protocol: workerProtocol("store"),
-    makeEffect: outlivingItsRuntime(RpcClient.make(InventoryStore, { flatten: true })),
-  },
-  insights: {
-    protocol: workerProtocol("insights"),
-    makeEffect: outlivingItsRuntime(RpcClient.make(InventoryInsights, { flatten: true })),
-  },
-  generation: Atom.map(Ports, (ports) => Option.map(ports.workers, (held) => held.generation)),
-  workspace: Atom.map(desktopWorkspace, AsyncResult.value),
-});
-
-export const { Reads, Store, Insights } = desktopServices;
 
 export type StoreClient = Client<StoreRpcs>;
 
@@ -258,8 +229,8 @@ export type InventoryLinks = ReturnType<typeof makeInventoryLinks>;
 
 export const makeInventoryLinks = (services: InventoryServices) => {
   const { Store: StoreService, Insights: InsightsService } = services;
-  const commitTick = Atom.make(0).pipe(Atom.keepAlive);
-  const lastStamp = Atom.make(Option.none<Stamp>()).pipe(Atom.keepAlive);
+  const commitTick = Atom.make(0).pipe(Atom.setIdleTTL(0));
+  const lastStamp = Atom.make(Option.none<Stamp>()).pipe(Atom.setIdleTTL(0));
 
   const commits = StoreService.runtime
     .atom((get) =>
@@ -281,17 +252,17 @@ export const makeInventoryLinks = (services: InventoryServices) => {
         );
       }),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const syncHealth = StoreService.runtime
     .atom(Stream.unwrap(StoreService.use((store) => Effect.succeed(store("Health", undefined)))))
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const staffState = StoreService.runtime
     .atom(
       Stream.unwrap(StoreService.use((store) => Effect.succeed(store("StaffState", undefined)))),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const staff = Atom.make((get) => AsyncResult.value(get(staffState)));
 
@@ -317,7 +288,7 @@ export const makeInventoryLinks = (services: InventoryServices) => {
         );
       }),
     )
-    .pipe(Atom.keepAlive);
+    .pipe(Atom.setIdleTTL(0));
 
   const generationMoved = (registry: AtomRegistry.AtomRegistry, started: number) =>
     AtomRegistry.toStream(registry, services.generation).pipe(
@@ -360,10 +331,18 @@ export const makeInventoryLinks = (services: InventoryServices) => {
       Effect.ignore,
     );
 
+  const retained: ReadonlyArray<Atom.Atom<unknown>> = [
+    commitTick,
+    lastStamp,
+    commits,
+    syncHealth,
+    staffState,
+    insightChanges,
+  ];
+
   return {
     wake,
-    commits,
-    insightChanges,
+    retained,
     commitTick,
     sync,
     healthTag,

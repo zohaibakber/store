@@ -1,5 +1,8 @@
-import { CatalogRefusal } from "@store/contracts/catalog-refusal";
+import { Money, PositiveInt } from "@store/contracts";
+import { CatalogRefusal, decideField } from "@store/contracts/catalog-refusal";
+import { CatalogName, type CatalogRowWrite } from "@store/contracts/catalog-write";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
 export type CatalogActor = {
   readonly organizationId: string;
@@ -44,3 +47,30 @@ export const commandIds = (context: ProjectionContext<unknown>) => ({
   now: () => context.occurredAt,
   operationId: () => context.commandId,
 });
+
+export type Projected<Row = void> = {
+  readonly writes: ReadonlyArray<CatalogRowWrite>;
+  readonly row: Row;
+};
+
+export const naturalField = (value: number, message: string, field?: string) =>
+  decideField(Schema.Natural, value, { message, field });
+
+export const moneyField = (value: number, message: string, field?: string) =>
+  decideField(Money, value, { message, field });
+
+export const positiveField = (value: number, message: string, field?: string) =>
+  decideField(PositiveInt, value, { message, field });
+
+export const nameField = (
+  value: string,
+  messages: { readonly empty: string; readonly tooLong?: string },
+) =>
+  Result.gen(function* () {
+    const name = value.trim();
+    if (!name)
+      return yield* Result.fail(
+        new CatalogRefusal({ reason: "invalidInput", message: messages.empty, field: "name" }),
+      );
+    return yield* decideField(CatalogName, name, { message: messages.tooLong, field: "name" });
+  });

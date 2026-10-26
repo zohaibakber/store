@@ -57,7 +57,7 @@ Each row is a product call that follows from the confirmed behavior but was not 
 | Backup after the licence lapses | One last upload when the app goes read-only. Backups stay listable and downloadable for 90 days after expiry, then are deleted. The deletion asks the licence registry first, so a renewal the backup service has not seen still protects them.                                                                             | 7     |
 | Usage reporting                 | Report licence, installation, app version, last activity, and a coarse staff count when the computer happens to be online. Never report business contents or feature use.                                                                                                                                                   | 7     |
 | Mobile app                      | Not part of this product. It only works through sync, so it is removed with sync.                                                                                                                                                                                                                                           | 2     |
-| Online helpers                  | Invoice extraction and product scan stay optional online features. They accept the licence instead of a session.                                                                                                                                                                                                            | 2     |
+| Online helpers                  | Global product search stays an optional online feature. It accepts the licence instead of a session.                                                                                                                                                                                                                        | 2     |
 
 ## What this revision removes
 
@@ -77,7 +77,7 @@ Every later phase gets simpler as a result. A pharmacy rule is written once in t
 
 ## Build on the current implementation
 
-The existing app already has local workspaces, a SQLite local authority, batches, pack and unit stock, purchasing, receipts, multiple sale drafts, file backup and restore, CSV import, and inventory insights. Extend those capabilities instead of creating parallel implementations.
+The existing app already has local workspaces, a SQLite local authority, batches, pack and unit stock, purchasing, receipts, multiple sale drafts, file backup and restore, and inventory insights. Extend those capabilities instead of creating parallel implementations.
 
 These files establish the current boundaries:
 

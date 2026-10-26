@@ -7,14 +7,20 @@ import type {
   OrganizationRoster,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import type {
-  GlobalProductSearchResult,
-  InvoiceExtraction,
-} from "@store/contracts/server-api.schema";
+import type { GlobalProductSearchResult } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
+import * as Schema from "effect/Schema";
+import type * as Stream from "effect/Stream";
 
-import type { InvoiceUploadFile } from "./invoice-upload";
+import type { InventoryHttpBridge, ReplicaWorkspaceBridge } from "./electron";
 import type { PrintOutcome, PrintPage, SavePdfOutcome } from "./share";
+import {
+  ExternalLinkRefused,
+  ServerRequestFailed,
+  SignInFailed,
+  WorkspaceOpenFailed,
+  type ThemeSource,
+} from "./shell-rpcs";
 import type { WorkspaceBackupBridge } from "./workspace-backup";
 import type { WorkspacePublishBridge } from "./workspace-publish";
 
@@ -24,7 +30,7 @@ export type AuthSessionBridge = {
   readonly signOut: () => Promise<void>;
   readonly organizationRoster: () => Promise<OrganizationRoster>;
   readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
-  readonly onSessionChange: (listener: (snapshot: WorkspaceSnapshot) => void) => () => void;
+  readonly sessionChanges: Stream.Stream<WorkspaceSnapshot>;
 };
 
 type WithoutClient<Command> = Command extends unknown ? Omit<Command, "client"> : never;
@@ -45,8 +51,6 @@ export type AppUpdaterBridge = {
   readonly onEvent: (listener: (event: UpdaterEvent) => void) => () => void;
 };
 
-export type ThemeSource = "dark" | "light" | "system";
-
 export type ThemeBridge = { readonly setSource: (source: ThemeSource) => void };
 
 export type WindowControlsBridge = {
@@ -65,7 +69,6 @@ export type DesktopShellBridge = {
 export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
-  readonly analyseInvoices: (files: ReadonlyArray<InvoiceUploadFile>) => Promise<InvoiceExtraction>;
   readonly searchGlobalProducts: (query: string) => Promise<GlobalProductSearchResult>;
   readonly shell: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;
@@ -76,7 +79,27 @@ export interface AppHost {
   readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
   readonly print: (page: PrintPage) => Promise<PrintOutcome>;
   readonly publish: WorkspacePublishBridge;
+  readonly inventoryHttp: InventoryHttpBridge;
+  readonly replica: ReplicaWorkspaceBridge;
 }
+
+export class BridgeInterrupted extends Schema.TaggedError<BridgeInterrupted>()(
+  "BridgeInterrupted",
+  {},
+) {}
+
+export const BridgeFailure = Schema.Union([
+  SignInFailed,
+  ServerRequestFailed,
+  ExternalLinkRefused,
+  WorkspaceOpenFailed,
+  BridgeInterrupted,
+]);
+export type BridgeFailure = typeof BridgeFailure.Type;
+
+export const isBridgeFailure = Schema.is(BridgeFailure);
+
+class AppHostMissing extends Schema.TaggedError<AppHostMissing>()("AppHostMissing", {}) {}
 
 let installed: AppHost | null = null;
 
@@ -85,6 +108,6 @@ export const installAppHost = (host: AppHost) => {
 };
 
 export const appHost = (): AppHost => {
-  if (!installed) throw new Error("The app host is not installed.");
+  if (!installed) throw new AppHostMissing();
   return installed;
 };

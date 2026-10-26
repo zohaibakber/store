@@ -1,8 +1,8 @@
 import { Cancel01Icon, Search01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { purchaseOrderTotal, type Product, type Supplier } from "@store/contracts";
+import { sumMoney, type Product, type PurchaseOrderId, type Supplier } from "@store/contracts";
 import {
-  useInventoryActions,
+  useCommand,
   useLearnedSuppliers,
   useProductsOnOrder,
   usePurchasingGate,
@@ -11,6 +11,7 @@ import {
 } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { useNavigate } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
 import * as React from "react";
 
 import { LoadingSpinner } from "@/components/app/loading-spinner";
@@ -43,7 +44,7 @@ import {
 import { SheetClose, SheetFooter, SheetPanel } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount, pluralize } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";
 
@@ -87,7 +88,7 @@ const isOrderable = (quantity: number | null): quantity is number =>
 const lineCost = (line: BuilderLine) =>
   isOrderable(line.quantity) ? draftLineCost(line, line.quantity) : null;
 
-const groupTotal = (lines: ReadonlyArray<BuilderLine>) => purchaseOrderTotal(lines.map(lineCost));
+const groupTotal = (lines: ReadonlyArray<BuilderLine>) => sumMoney(lines.map(lineCost));
 
 function ProductSearch({ onPick }: { readonly onPick: (product: Product) => void }) {
   const [query, setQuery] = React.useState("");
@@ -283,7 +284,7 @@ export function OrderBuilderBody({
   readonly seed: ReadonlyArray<DraftLine>;
 }) {
   const navigate = useNavigate();
-  const { saveOrderDraft } = useInventoryActions();
+  const [saveOrderDraft] = useCommand((commands) => commands.saveOrderDraft);
   const gate = usePurchasingGate();
   const suppliers = useSuspenseSuppliers();
   const [lines, setLines] = React.useState<ReadonlyArray<BuilderLine>>(seed);
@@ -348,38 +349,32 @@ export function OrderBuilderBody({
   const create = async () => {
     if (!canCreate) return;
     setPending(true);
-    const created: Array<string> = [];
-    try {
-      for (const group of groups) {
-        if (group.supplier === null) continue;
-        const saved = await saveOrderDraft({
-          supplierId: group.supplier.id,
-          lines: group.lines.flatMap((line) =>
-            isOrderable(line.quantity)
-              ? [
-                  {
-                    productId: line.productId,
-                    quantity: line.quantity,
-                    quantityType: line.quantityType,
-                  },
-                ]
-              : [],
-          ),
-        });
-        created.push(saved.order.id);
-        const ordered = group.lines.map((line) => line.productId);
-        drop(new Set(ordered));
-        onOrdered?.(ordered);
+    const created: Array<PurchaseOrderId> = [];
+    for (const group of groups) {
+      if (group.supplier === null) continue;
+      const exit = await saveOrderDraft({
+        supplierId: group.supplier.id,
+        lines: group.lines.flatMap((line) =>
+          isOrderable(line.quantity)
+            ? [
+                {
+                  productId: line.productId,
+                  quantity: line.quantity,
+                  quantityType: line.quantityType,
+                },
+              ]
+            : [],
+        ),
+      });
+      if (Exit.isFailure(exit)) {
+        setPending(false);
+        toastFailure(exit.cause);
+        return;
       }
-    } catch (error) {
-      setPending(false);
-      toastStoreError(
-        error,
-        created.length === 0
-          ? "Could not create the order."
-          : `${formatCount(created.length, "order")} created. The next one could not be saved.`,
-      );
-      return;
+      created.push(exit.value.order.id);
+      const ordered = group.lines.map((line) => line.productId);
+      drop(new Set(ordered));
+      onOrdered?.(ordered);
     }
     setPending(false);
     toastManager.add({

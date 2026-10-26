@@ -1,6 +1,7 @@
-import type {
-  CreateBatchInput,
-  StaffId,
+import {
+  OperationId,
+  type CreateBatchInput,
+  type StaffId,
   StaffPermission,
   SyncCommandEnvelope,
 } from "@store/contracts";
@@ -11,7 +12,6 @@ import {
   ReplicaStorageError,
   type Commit,
   type CreateProductWithBatchInput,
-  type ImportInventoryRequest,
   type InventoryStore,
 } from "@store/contracts/replica";
 import { commandStaff, replicaState } from "@store/db/replica.schema";
@@ -19,6 +19,7 @@ import { mapReplicaStoreFailure, type ReplicaStore, type SyncScheduler } from "@
 import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -30,7 +31,6 @@ import {
   projectCreateProduct,
   projectDeleteCategory,
   projectDeleteProduct,
-  projectImportInventory,
   projectUpdateBatch,
   projectUpdateCategory,
   projectUpdateProduct,
@@ -45,7 +45,7 @@ import {
   type PurchasingRowsRequest,
 } from "../catalog-read";
 import { projectIssuedInvoice } from "../invoice-projection";
-import type { ProjectionContext } from "../projection-context";
+import type { CatalogWriteIds, Projected, ProjectionContext } from "../projection-context";
 import {
   projectCancelOrder,
   projectCloseOrder,
@@ -59,13 +59,11 @@ import {
 import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
-import type { LicenceGate } from "./licence-gate";
 import {
-  importCategory,
-  leadingChunks,
-  removed,
+  RowIdSupplyMismatch,
+  countingRowIds,
+  drawnRowIds,
   withProjectedProduct,
-  type Projected,
 } from "./projected";
 import type { StaffGate } from "./staff-gate";
 
@@ -79,6 +77,10 @@ type CommandFailure = CatalogRefusal | StaffRefusal | ReturnType<typeof mapRepli
 
 type Command = SyncCommandEnvelope["command"];
 
+type BegunContext<Tables> = Omit<ProjectionContext<Tables>, "ids"> & {
+  readonly ids: Omit<CatalogWriteIds, "rowId">;
+};
+
 type CommandHandlers = Pick<
   RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof InventoryStore>>,
   | "CreateCategory"
@@ -91,7 +93,6 @@ type CommandHandlers = Pick<
   | "CreateBatch"
   | "ReceiveBatch"
   | "UpdateBatch"
-  | "ImportInventory"
   | "IssueInvoice"
   | "SaveSupplier"
   | "DeleteSupplier"
@@ -108,15 +109,35 @@ export const makeCommandHandlers = ({
   scheduler,
   replica,
   gate,
-  licence,
+  crypto,
 }: {
   readonly admission: CommandAdmission["Service"];
   readonly store: ReplicaStore["Service"];
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
   readonly gate: StaffGate["Service"];
-  readonly licence: LicenceGate["Service"];
+  readonly crypto: Crypto.Crypto;
 }): CommandHandlers => {
+  const newId = Effect.orDie(crypto.randomUUIDv4());
+
+  const withRowIds = Effect.fn("InventoryStore.withRowIds")(function* <Tables, A, E>(
+    context: BegunContext<Tables>,
+    project: (context: ProjectionContext<Tables>) => Result.Result<A, E>,
+  ) {
+    const counting = countingRowIds();
+    const dry = project({ ...context, ids: { ...context.ids, rowId: counting.rowId } });
+    if (Result.isFailure(dry)) return yield* Effect.fromResult(dry);
+    const drawn = yield* Effect.replicateEffect(newId, counting.used());
+    const supply = drawnRowIds(drawn);
+    const projected = project({ ...context, ids: { ...context.ids, rowId: supply.rowId } });
+    if (!supply.balanced()) {
+      return yield* Effect.die(
+        new RowIdSupplyMismatch({ drawn: drawn.length, taken: supply.used() }),
+      );
+    }
+    return yield* Effect.fromResult(projected);
+  });
+
   const snapshot = snapshotRunnerFromHandle(replica);
   const subset: ReadSubset = (spec) => readSnapshotSubset(snapshot, READER, spec);
 
@@ -140,8 +161,9 @@ export const makeCommandHandlers = ({
 
   const begin = Effect.fn("InventoryStore.begin")(function* <Tables>(
     read: Effect.Effect<Tables, unknown>,
-    commandId: string = crypto.randomUUID(),
+    givenCommandId?: string,
   ) {
+    const commandId = givenCommandId ?? (yield* newId);
     const identity = yield* actor;
     const tables = yield* Effect.mapError(read, mapReplicaStoreFailure);
     const occurredAt = yield* Clock.currentTimeMillis;
@@ -152,14 +174,13 @@ export const makeCommandHandlers = ({
       ids: {
         now: () => occurredAt,
         operationId: () => commandId,
-        rowId: () => crypto.randomUUID(),
       },
       tables,
-    } satisfies ProjectionContext<Tables>;
+    } satisfies BegunContext<Tables>;
   });
 
   const enqueue = Effect.fn("InventoryStore.enqueue")(function* (
-    operationId: string,
+    operationId: OperationId,
     command: Command,
     occurredAt: number,
     staff: Option.Option<StaffId>,
@@ -176,20 +197,20 @@ export const makeCommandHandlers = ({
   }, Effect.mapError(mapReplicaStoreFailure));
 
   const unchanged = (operationId: string): Effect.Effect<Commit, CommandFailure> =>
-    store.readStamp().pipe(
+    store.readStamp.pipe(
       Effect.mapError(mapReplicaStoreFailure),
       Effect.map((stamp) => ({ operationId, status: "integrated", stamp })),
     );
 
   const catalogWrite = (
-    context: ProjectionContext<unknown>,
+    context: Pick<BegunContext<unknown>, "actor" | "commandId" | "occurredAt">,
     writes: ReadonlyArray<CatalogRowWrite>,
     staff: Option.Option<StaffId>,
   ): Effect.Effect<Commit, CommandFailure> =>
     writes.length === 0
-      ? unchanged(context.commandId)
+      ? unchanged(OperationId.make(context.commandId))
       : enqueue(
-          context.commandId,
+          OperationId.make(context.commandId),
           {
             _tag: "catalogWrite",
             payload: {
@@ -203,11 +224,10 @@ export const makeCommandHandlers = ({
           staff,
         );
 
-  const write = Effect.fnUntraced(function* <Tables, Row>(
+  const write = Effect.fn("InventoryStore.write")(function* <Tables, Row>(
     read: Effect.Effect<Tables, unknown>,
-    project: (context: ProjectionContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
+    project: (context: BegunContext<Tables>) => Effect.Effect<Projected<Row>, CommandFailure>,
   ) {
-    yield* licence.permit;
     const staff = yield* gate.authorize(MANAGE_STOCK);
     const context = yield* begin(read);
     const projected = yield* project(context);
@@ -218,14 +238,14 @@ export const makeCommandHandlers = ({
   const catalog = <Row>(
     rows: CatalogRowsRequest,
     project: (context: CatalogProjectionContext) => Result.Result<Projected<Row>, CatalogRefusal>,
-  ) => write(readCatalogRows(subset, rows), (context) => Effect.fromResult(project(context)));
+  ) => write(readCatalogRows(subset, rows), (context) => withRowIds(context, project));
 
   const purchasing = <Row>(
     rows: PurchasingRowsRequest,
     project: (
       context: PurchasingProjectionContext,
     ) => Result.Result<Projected<Row>, CatalogRefusal>,
-  ) => write(readPurchasingRows(subset, rows), (context) => Effect.fromResult(project(context)));
+  ) => write(readPurchasingRows(subset, rows), (context) => withRowIds(context, project));
 
   const saved = <Row, E>(written: Effect.Effect<{ commit: Commit; row: Row }, E>) =>
     Effect.map(written, ({ commit, row }) => ({ ...commit, result: row }));
@@ -255,92 +275,46 @@ export const makeCommandHandlers = ({
         }),
     );
 
-  const importInventory = Effect.fnUntraced(function* (input: ImportInventoryRequest) {
-    yield* licence.permit;
-    const staff = yield* gate.authorize(MANAGE_STOCK);
-    const productIds = input.lines.flatMap((line) => (line.productId ? [line.productId] : []));
-    const context = yield* begin(
-      readCatalogRows(
-        subset,
-        "categoryId" in input
-          ? { categoryIds: [input.categoryId], productIds }
-          : { allCategories: true, productIds },
-      ),
-    );
-    const projected = yield* Effect.fromResult(
-      Result.gen(function* () {
-        const category =
-          "categoryId" in input
-            ? { writes: [], id: input.categoryId, tables: context.tables }
-            : yield* importCategory(context, input.newCategory);
-        const imported = yield* projectImportInventory(
-          { ids: context.ids, tables: category.tables },
-          { categoryId: category.id, lines: input.lines },
-        );
-        return { ...imported, chunks: leadingChunks(category.writes, imported.chunks) };
-      }),
-    );
-    const commits = yield* Effect.forEach(projected.chunks, (chunk, index) =>
-      catalogWrite(
-        { ...context, commandId: index === 0 ? context.commandId : crypto.randomUUID() },
-        chunk,
+  const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fn("InventoryStore.issueInvoice")(
+    function* ({ input, invoiceId }) {
+      const staff = yield* gate.authorize(SELL);
+      const productIds = input.items.map((line) => line.productId);
+      const context = yield* begin(
+        readCatalogRows(subset, { productIds, batchesOfProductIds: productIds }),
+        invoiceId,
+      );
+      const invoiceNumber = yield* Effect.mapError(
+        readNextInvoiceNumber(subset, context.actor.organizationId),
+        mapReplicaStoreFailure,
+      );
+      const projection = yield* withRowIds(context, (supplied) =>
+        projectIssuedInvoice({
+          actor: supplied.actor,
+          commandId: supplied.commandId,
+          occurredAt: supplied.occurredAt,
+          invoiceNumber,
+          sale: input,
+          products: supplied.tables.products,
+          batches: supplied.tables.batches,
+          ids: supplied.ids,
+        }),
+      );
+      const commit = yield* enqueue(
+        OperationId.make(context.commandId),
+        { _tag: "issueInvoice", payload: projection.command },
+        context.occurredAt,
         staff,
-      ),
-    );
-    const last = commits.at(-1) ?? (yield* unchanged(context.commandId));
-    return {
-      operationId: context.commandId,
-      status: last.status,
-      stamp: last.stamp,
-      result: {
-        createdProducts: projected.createdProducts,
-        createdBatches: projected.createdBatches,
-        txid: context.occurredAt,
-      },
-    };
-  }, admission.admit);
-
-  const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fnUntraced(function* ({
-    input,
-    invoiceId,
-  }) {
-    yield* licence.permit;
-    const staff = yield* gate.authorize(SELL);
-    const productIds = input.items.map((line) => line.productId);
-    const context = yield* begin(
-      readCatalogRows(subset, { productIds, batchesOfProductIds: productIds }),
-      invoiceId,
-    );
-    const invoiceNumber = yield* Effect.mapError(
-      readNextInvoiceNumber(subset, context.actor.organizationId),
-      mapReplicaStoreFailure,
-    );
-    const projection = yield* Effect.fromResult(
-      projectIssuedInvoice({
-        actor: context.actor,
-        commandId: context.commandId,
-        occurredAt: context.occurredAt,
-        invoiceNumber,
-        sale: input,
-        products: context.tables.products,
-        batches: context.tables.batches,
-        ids: context.ids,
-      }),
-    );
-    const commit = yield* enqueue(
-      context.commandId,
-      { _tag: "issueInvoice", payload: projection.command },
-      context.occurredAt,
-      staff,
-    );
-    return {
-      ...commit,
-      result: {
-        invoiceId: projection.invoice.id,
-        invoiceNumber: projection.invoice.invoiceNumber,
-      },
-    };
-  }, admission.admit);
+      );
+      return {
+        ...commit,
+        result: {
+          invoiceId: projection.command.invoiceId,
+          invoiceNumber: projection.command.invoiceNumber,
+        },
+      };
+    },
+    admission.admit,
+  );
 
   return {
     CreateCategory: (input) =>
@@ -350,7 +324,7 @@ export const makeCommandHandlers = ({
     DeleteCategory: ({ id }) =>
       deleted(
         catalog({ categoryIds: [id], anyProductInCategory: id }, (context) =>
-          Result.map(projectDeleteCategory(context, id), removed),
+          projectDeleteCategory(context, id),
         ),
       ),
     CreateProduct: (input) =>
@@ -370,21 +344,20 @@ export const makeCommandHandlers = ({
     DeleteProduct: ({ id }) =>
       deleted(
         catalog({ productIds: [id], batchesOfProductIds: [id] }, (context) =>
-          Result.map(projectDeleteProduct(context, id), removed),
+          projectDeleteProduct(context, id),
         ),
       ),
     CreateBatch: createBatch,
     ReceiveBatch: createBatch,
     UpdateBatch: (input) =>
       saved(catalog({ batchIds: [input.id] }, (context) => projectUpdateBatch(context, input))),
-    ImportInventory: importInventory,
     IssueInvoice: issueInvoice,
     SaveSupplier: (input) =>
       saved(purchasing({ allSuppliers: true }, (context) => projectSaveSupplier(context, input))),
     DeleteSupplier: ({ id }) =>
       deleted(
         purchasing({ supplierIds: [id], anyOrderOfSupplier: id }, (context) =>
-          Result.map(projectDeleteSupplier(context, id), removed),
+          projectDeleteSupplier(context, id),
         ),
       ),
     SaveOrderDraft: (input) => {
@@ -401,7 +374,9 @@ export const makeCommandHandlers = ({
             readNextPurchaseOrderNumber(subset, context.actor.organizationId).pipe(
               Effect.mapError(mapReplicaStoreFailure),
               Effect.flatMap((orderNumber) =>
-                Effect.fromResult(projectSaveOrderDraft(context, input, orderNumber)),
+                withRowIds(context, (supplied) =>
+                  projectSaveOrderDraft(supplied, input, orderNumber),
+                ),
               ),
             ),
         ),

@@ -69,18 +69,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Same GitHub Environment as the Worker deploy, so desktop builds read the
-    # public API URL and protocol that deployment trusts.
     environment: Production
-    env:
-      # Environment variables, not secrets: an API hostname and a URL scheme
-      # are not confidential, and keeping them visible means a build that
-      # points somewhere unexpected is obvious in the logs rather than
-      # masked as ***.
-      VITE_API_URL: ${{ vars.VITE_API_URL }}
-      VITE_AUTH_URL: ${{ vars.VITE_AUTH_URL }}
-      VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-      ELECTRON_PROTOCOL: ${{ vars.ELECTRON_PROTOCOL }}
     steps:
       - uses: actions/checkout@v7
 
@@ -88,24 +77,6 @@ jobs:
         with:
           node-version: "24"
           cache: true
-
-      - name: Check required configuration
-        run: |
-          if [ -z "${VITE_API_URL}" ]; then
-            echo "::error::VITE_API_URL is empty." \
-                 "Set it on the Production GitHub Environment" \
-                 "or the packaged desktop app will talk to localhost."
-            exit 1
-          fi
-          if [ -z "${VITE_AUTH_URL}" ]; then
-            echo "::error::VITE_AUTH_URL is empty." \
-                 "Set it on the Production GitHub Environment or packaged sign-in cannot reach auth."
-            exit 1
-          fi
-          echo "VITE_API_URL=${VITE_API_URL}"
-          echo "VITE_AUTH_URL=${VITE_AUTH_URL}"
-          echo "VITE_SENTRY_DSN=${VITE_SENTRY_DSN:+set}"
-          echo "ELECTRON_PROTOCOL=${ELECTRON_PROTOCOL:-<unset, default com.tabaaq.desktop>}"
 
       - name: Set desktop app version
         run: |

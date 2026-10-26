@@ -20,9 +20,9 @@ export interface WebPage {
 
 export class WebSearchError extends Schema.TaggedError<WebSearchError>()("WebSearchError", {
   message: Schema.String,
-  status: Schema.optional(Schema.Int),
-  code: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Defect()),
+  status: Schema.optionalKey(Schema.Int),
+  code: Schema.optionalKey(Schema.String),
+  cause: Schema.optionalKey(Schema.Defect()),
 }) {}
 
 export class GlobalSearchError extends Schema.TaggedError<GlobalSearchError>()(

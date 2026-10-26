@@ -8,8 +8,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   lineTotal,
-  paisaToRupees,
   suggestedPrice,
+  suggestedRupees,
   type MissingSaleLine,
   type SaleLine,
 } from "@/components/invoices/sale-line";
@@ -212,7 +212,7 @@ function InvoiceCreateLine({
   } = useInvoiceCreate();
 
   const total = lineTotal(line);
-  const suggested = paisaToRupees(suggestedPrice(line.product, line.quantityUnit));
+  const suggested = suggestedRupees(line.product, line.quantityUnit);
   const priceChanged = line.salePrice != null && suggested != null && line.salePrice !== suggested;
   const hint = elsewhereHint(line);
 
@@ -302,7 +302,7 @@ function InvoiceCreateLine({
         <div className="-my-1.5 flex items-center justify-end gap-1.5">
           {priceChanged && (
             <span className="text-xs text-muted-foreground tabular-nums line-through">
-              {formatPrice(Math.round((suggested ?? 0) * 100))}
+              {formatPrice(suggestedPrice(line.product, line.quantityUnit))}
             </span>
           )}
           <NumberField

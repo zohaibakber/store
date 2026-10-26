@@ -12,6 +12,7 @@ import {
   type SnapshotPartPayload,
   type SyncPullResult,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
 import {
@@ -195,7 +196,7 @@ const parts: ReadonlyArray<SnapshotPartPayload> = [
 
 const remoteRename = (commitSequence: string, name: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `remote-${commitSequence}`,
+  operationId: OperationId.make(`remote-${commitSequence}`),
   decision: "accepted",
   changes: [
     {

@@ -1,12 +1,11 @@
 import { WebSearch, WebSearchError } from "@store/services";
-import type { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import type { AiGatewayClient } from "../ai/language-model";
+import { AiGateway } from "../ai/gateway";
 
 const PROVIDER = "ceramic";
 const MAX_ERROR_BODY_CHARS = 500;
@@ -54,51 +53,49 @@ const refused = (status: number, body: string) => {
   });
 };
 
-export const cloudflareWebSearch = (
-  client: AiGatewayClient,
-): Layer.Layer<WebSearch, never, RuntimeContext> =>
-  Layer.effect(
-    WebSearch,
-    Effect.gen(function* () {
-      const ai = yield* client.raw;
-      const gatewayId = yield* client.id;
-      return {
-        search: Effect.fn("WebSearch.search")(
-          function* (query: string, limit: number) {
-            if (!Predicate.hasProperty(ai, "websearch")) {
-              return yield* new WebSearchError({
-                message:
-                  "This runtime's AI binding has no websearch method; it needs workerd 1.20260925 or newer.",
-              });
-            }
-            const response = yield* Effect.tryPromise({
-              try: () => ai.websearch({ gatewayId, query, limit, provider: PROVIDER }),
-              catch: failed("Cloudflare web search did not answer."),
+export const cloudflareWebSearch: Layer.Layer<WebSearch, never, AiGateway> = Layer.effect(
+  WebSearch,
+  Effect.gen(function* () {
+    const gateway = yield* AiGateway;
+    return WebSearch.of({
+      search: Effect.fn("WebSearch.search")(
+        function* (query: string, limit: number) {
+          const ai = yield* gateway.raw;
+          if (!Predicate.hasProperty(ai, "websearch")) {
+            return yield* new WebSearchError({
+              message:
+                "This runtime's AI binding has no websearch method; it needs workerd 1.20260925 or newer.",
             });
-            const body = yield* Effect.tryPromise({
-              try: () => response.text(),
-              catch: failed("Cloudflare web search sent an unreadable answer."),
-            });
-            if (!response.ok) return yield* refused(response.status, body);
-            const { items } = yield* decodeWebSearchResponse(body).pipe(
-              Effect.mapError(failed("Cloudflare web search sent an unexpected answer.")),
-            );
-            return items.map((item) => ({
-              url: item.url,
-              title: item.title ?? "",
-              description: item.description ?? "",
-            }));
-          },
-          Effect.timeoutOrElse({
-            duration: SEARCH_TIMEOUT,
-            orElse: () =>
-              Effect.fail(
-                new WebSearchError({
-                  message: `Cloudflare web search did not answer within ${SEARCH_TIMEOUT}.`,
-                }),
-              ),
-          }),
-        ),
-      };
-    }),
-  );
+          }
+          const gatewayId = yield* gateway.id;
+          const response = yield* Effect.tryPromise({
+            try: () => ai.websearch({ gatewayId, query, limit, provider: PROVIDER }),
+            catch: failed("Cloudflare web search did not answer."),
+          });
+          const body = yield* Effect.tryPromise({
+            try: () => response.text(),
+            catch: failed("Cloudflare web search sent an unreadable answer."),
+          });
+          if (!response.ok) return yield* refused(response.status, body);
+          const { items } = yield* decodeWebSearchResponse(body).pipe(
+            Effect.mapError(failed("Cloudflare web search sent an unexpected answer.")),
+          );
+          return items.map((item) => ({
+            url: item.url,
+            title: item.title ?? "",
+            description: item.description ?? "",
+          }));
+        },
+        Effect.timeoutOrElse({
+          duration: SEARCH_TIMEOUT,
+          orElse: () =>
+            Effect.fail(
+              new WebSearchError({
+                message: `Cloudflare web search did not answer within ${SEARCH_TIMEOUT}.`,
+              }),
+            ),
+        }),
+      ),
+    });
+  }),
+);

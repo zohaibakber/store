@@ -9,14 +9,16 @@ import {
   type StockMovement,
   type Supplier,
 } from "@store/contracts";
-import { useInventoryActions, usePurchasingGate } from "@store/inventory-react";
+import { useCommand, usePurchasingGate } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
 import * as React from "react";
 
 import { ToneBadge } from "@/components/insights/status-badge";
 import { formatDelta } from "@/components/products/stock";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
+import { DetailNotFound } from "@/components/shared/detail-not-found";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -48,7 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
-import { useStoreCommand } from "@/hooks/use-store-command";
+import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";
@@ -77,6 +79,16 @@ export function PurchaseOrderError({ error }: { readonly error: unknown }) {
         Back to purchases
       </Button>
     </DetailLoadError>
+  );
+}
+
+export function PurchaseOrderNotFound() {
+  return (
+    <DetailNotFound title="Order not found">
+      <Button render={<Link to="/purchases" />} size="sm" variant="outline">
+        Back to purchases
+      </Button>
+    </DetailNotFound>
   );
 }
 
@@ -262,10 +274,11 @@ export function PurchaseOrderPage({
   readonly receiveOpen: boolean;
   readonly supplier: Supplier | undefined;
 }) {
-  const { cancelOrder, closeOrder } = useInventoryActions();
+  const [cancelOrder, cancelPending] = useCommand((commands) => commands.cancelOrder);
+  const [closeOrder, closePending] = useCommand((commands) => commands.closeOrder);
   const gate = usePurchasingGate();
   const [confirming, setConfirming] = React.useState(false);
-  const [pending, run] = useStoreCommand();
+  const pending = cancelPending || closePending;
 
   const open = isPurchaseOrderOpen(order.status);
   const canMove = (to: PurchaseOrder["status"]) =>
@@ -277,19 +290,17 @@ export function PurchaseOrderPage({
   const closing: Closing = units.received > 0 ? "close" : "cancel";
   const canClose = canMove(closing === "close" ? "closed" : "cancelled");
 
-  const finish = (kind: Closing) =>
-    run(async () => {
-      switch (kind) {
-        case "close":
-          await closeOrder(order.id);
-          toastManager.add({ title: `Order ${number} closed`, type: "success" });
-          break;
-        case "cancel":
-          await cancelOrder(order.id);
-          toastManager.add({ title: `Order ${number} cancelled`, type: "success" });
-          break;
-      }
-    }, "Could not update the order.");
+  const finish = async (kind: Closing) => {
+    const exit = await (kind === "close" ? closeOrder(order.id) : cancelOrder(order.id));
+    if (Exit.isFailure(exit)) {
+      toastFailure(exit.cause);
+      return;
+    }
+    toastManager.add({
+      title: kind === "close" ? `Order ${number} closed` : `Order ${number} cancelled`,
+      type: "success",
+    });
+  };
 
   usePageShortcuts({ r: canReceive ? () => onReceiveOpenChange(true) : undefined });
 

@@ -10,8 +10,7 @@ export {
 export {
   makeAnalyticsStore,
   type AnalyticsStore,
-  type ProductAnalysis,
+  type ClassifiedProduct,
   type SalesRow,
   type StagedProduct,
-  type SummaryReader,
 } from "./store";

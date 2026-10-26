@@ -1,10 +1,11 @@
-import { useAtom } from "@effect/atom-react";
+import { useAtom, useAtomValue } from "@effect/atom-react";
+import { claimedCatalogScope, type Catalogs } from "@store/inventory-react";
 import { getRouteApi, Outlet } from "@tanstack/react-router";
-import { Suspense } from "react";
+import * as Option from "effect/Option";
+import { Suspense, type ReactNode } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { PageLoading } from "@/components/app/loading-spinner";
-import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NavHistory } from "@/components/app/nav-history";
 import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
@@ -20,18 +21,55 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
 import { WorkspaceSyncAction } from "@/lib/inventory/sync-status";
+import { useLocalCatalogWitness } from "@/lib/local-catalog-witness";
 import { sidebarOpenAtom } from "@/lib/preferences";
 
 const route = getRouteApi("/_app");
 
-export function AppShell() {
-  const { inventory, catalog } = route.useRouteContext();
-  const { workspace } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
+const CATALOG_UNAVAILABLE = "Catalog storage is unavailable.";
 
-  const lease = catalog.lease();
-  const host = inventory._tag === "Replica" ? inventory.host : null;
-  const shell = (
+export function AppShell() {
+  const { inventory } = route.useRouteContext();
+  if (inventory._tag === "Unavailable") return <ShellFrame content={<CatalogUnavailable />} />;
+  return <ClaimedCatalogShell catalogs={inventory.catalogs} />;
+}
+
+function CatalogUnavailable() {
+  return <p className="p-6 text-sm text-destructive">{CATALOG_UNAVAILABLE}</p>;
+}
+
+function ClaimedCatalogShell({ catalogs }: { readonly catalogs: Catalogs }) {
+  const scope = useAtomValue(claimedCatalogScope);
+  if (Option.isNone(scope)) return <ShellFrame content={<CatalogUnavailable />} />;
+  return (
+    <InventoryProvider opening={catalogs.catalog(scope.value)}>
+      <StaffGate>
+        <ShellFrame
+          content={
+            <InventoryReady>
+              <div className="sticky top-0 z-10">
+                <LicenceNotice />
+              </div>
+              <PublishOffer />
+              <ReceiptPrintHost />
+              <StaffRouteGuard>
+                <Suspense fallback={<PageLoading />}>
+                  <Outlet />
+                </Suspense>
+              </StaffRouteGuard>
+            </InventoryReady>
+          }
+        />
+      </StaffGate>
+    </InventoryProvider>
+  );
+}
+
+function ShellFrame({ content }: { readonly content: ReactNode }) {
+  const { workspace } = useAuth();
+  useLocalCatalogWitness(workspace);
+  const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
+  return (
     <TooltipProvider>
       <CommandMenuProvider>
         <SidebarProvider
@@ -58,34 +96,11 @@ export function AppShell() {
               className="min-h-0 scrollbar-none overflow-y-auto"
               data-scroll-restoration-id="app-content"
             >
-              <LocalCatalogWitness workspace={workspace} />
-              {host && lease ? (
-                <InventoryReady>
-                  <div className="sticky top-0 z-10">
-                    <LicenceNotice />
-                  </div>
-                  <PublishOffer />
-                  <ReceiptPrintHost />
-                  <StaffRouteGuard>
-                    <Suspense fallback={<PageLoading />}>
-                      <Outlet />
-                    </Suspense>
-                  </StaffRouteGuard>
-                </InventoryReady>
-              ) : (
-                <p className="p-6 text-sm text-destructive">Catalog storage is unavailable.</p>
-              )}
+              {content}
             </SidebarInset>
           </div>
         </SidebarProvider>
       </CommandMenuProvider>
     </TooltipProvider>
-  );
-
-  if (!host || !lease) return shell;
-  return (
-    <InventoryProvider catalog={catalog} host={host} lease={lease}>
-      <StaffGate>{shell}</StaffGate>
-    </InventoryProvider>
   );
 }

@@ -4,7 +4,8 @@ import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import * as Schema from "effect/Schema";
 
 import { publicErrorSchema } from "../http-errors";
-import { PositiveIntFromString, SyncIdentifier } from "../schema-primitives";
+import { OperationId } from "../ids";
+import { PositiveIntFromString } from "../schema-primitives";
 import { DeviceCommand, OrganizationDevices } from "./devices";
 import {
   ImportCatalogRequest,
@@ -71,7 +72,7 @@ export const syncGroup = HttpApiGroup.make("sync")
   .add(
     HttpApiEndpoint.get("getReceipt", "/api/sync/receipts/:operationId", {
       params: Schema.Struct({
-        operationId: SyncIdentifier,
+        operationId: OperationId,
       }),
       success: CommandReceipt,
       error: SyncHttpErrors,

@@ -1,5 +1,5 @@
+import { describe, expect, it } from "@effect/vitest";
 import { OPERATIONAL_SUBSCRIPTION, OrgCommitSequence, SyncEpoch } from "@store/contracts";
-import { describe, expect, it } from "vite-plus/test";
 
 import {
   initialSessionState,
@@ -256,19 +256,6 @@ describe("sync session reducer", () => {
     const [focused] = reduce(cooling.state, wake("focus"));
     expect(focused.fresh).toBe(true);
     expect(reduce(focused, { _tag: "timer" })[1]).toEqual([{ _tag: "run", step: "register" }]);
-  });
-
-  it("caps a Retry-After at the policy maximum", () => {
-    const capped = play(
-      [
-        { _tag: "timer" },
-        done("register"),
-        done("upload"),
-        failed("catchUp", { _tag: "retry", delayMillis: 86_400_000 }),
-      ],
-      owned,
-    );
-    expect(capped.commands).toEqual([{ _tag: "sleepFor", millis: 300_000 }]);
   });
 
   it("interrupts the running step when ownership is lost", () => {

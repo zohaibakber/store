@@ -120,9 +120,14 @@ function InvoicesPage({
 
   return (
     <DataTable
-      onRowClick={(row) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })}
+      onRowClick={(row) =>
+        navigate({ to: "/invoices/$invoiceId", params: { invoiceId: row.original.id } })
+      }
       onRowPreload={(row) =>
-        void router.preloadRoute({ to: "/invoices/$invoiceId", params: { invoiceId: row.id } })
+        void router.preloadRoute({
+          to: "/invoices/$invoiceId",
+          params: { invoiceId: row.original.id },
+        })
       }
       table={table}
     >

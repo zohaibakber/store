@@ -1,4 +1,4 @@
-import type { Product } from "@store/contracts";
+import type { Product, ProductId } from "@store/contracts";
 import { useSuspenseCatalogProduct } from "@store/inventory-react";
 import { Suspense, useEffect, useRef } from "react";
 
@@ -6,7 +6,7 @@ function Resolve({
   productId,
   onResolve,
 }: {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly onResolve: (product: Product | undefined) => void;
 }) {
   const product = useSuspenseCatalogProduct(productId);
@@ -22,7 +22,7 @@ function Resolve({
 }
 
 function ProductResolver(props: {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly onResolve: (product: Product | undefined) => void;
 }) {
   return (

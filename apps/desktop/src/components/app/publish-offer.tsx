@@ -1,6 +1,5 @@
 import { Alert02Icon, CloudUploadIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect } from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { PublishProgressBar } from "@/components/app/publish-progress";
@@ -9,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { catalogContents } from "@/lib/catalog-counts";
 import {
   useLocalPublish,
+  useResumeInterruptedPublish,
   usePublishOfferDismissal,
   usePublishTarget,
   type PublishTarget,
@@ -17,11 +17,7 @@ import {
 function PublishOfferFor({ organization }: { readonly organization: PublishTarget }) {
   const { state, move, cancelElsewhere } = useLocalPublish(organization);
   const { dismissed, dismiss } = usePublishOfferDismissal(organization);
-  const resuming = state._tag === "Offered" && state.resuming;
-
-  useEffect(() => {
-    if (resuming) move();
-  }, [resuming, move]);
+  useResumeInterruptedPublish(organization);
 
   switch (state._tag) {
     case "Nothing":

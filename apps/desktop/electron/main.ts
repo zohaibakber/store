@@ -4,10 +4,12 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_ELECTRON_PROTOCOL, fallbackIfBlank } from "@store/auth/security";
+import { ELECTRON_PROTOCOL } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
-import type { WorkspaceSnapshot } from "@store/contracts/workspace";
-import * as Schema from "effect/Schema";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import {
   app,
   BrowserWindow,
@@ -16,28 +18,19 @@ import {
   ipcMain,
   Menu,
   MessageChannelMain,
+  type MessagePortMain,
   nativeTheme,
   session,
   shell,
+  type WebContents,
 } from "electron";
 
-import { makeSourceLinks } from "../src/host/source-links";
-import { makeAuthBroker } from "./auth";
-import { registerAuthIpc } from "./auth-ipc";
+import { SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
+import { DesktopAuth } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
-import { loadDeviceId } from "./device-id";
-import { registerInventoryHttpIpc } from "./inventory-http";
-import {
-  AUTH_SESSION_CHANGED_CHANNEL,
-  OAUTH_CALLBACK_CHANNEL,
-  THEME_SET_SOURCE_CHANNEL,
-  WINDOW_CLOSE_CHANNEL,
-  WINDOW_MAXIMIZED_CHANNEL,
-  WINDOW_MINIMIZE_CHANNEL,
-  WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
-} from "./ipc-channels";
-import { isTrustedIpcSenderFrame } from "./ipc-sender";
-import { makeLicenceHost } from "./licence/host";
+import { DesktopShell, OpenExternalFailed } from "./desktop-shell";
+import { DialogFailed, type Dialogs } from "./dialogs";
+import { makeDesktopHost } from "./host";
 import { registerNewSaleAccelerator } from "./new-sale-accelerator";
 import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
 import {
@@ -47,13 +40,13 @@ import {
   registerDesktopSchemePrivileges,
 } from "./protocol";
 import { lockDownRenderer } from "./renderer-lockdown";
-import type { ReplicaBackupDialogs } from "./replica-backup";
-import { registerReplicaWorkerIpc } from "./replica-ipc";
+import { ReplicaHost } from "./replica-host";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
-import { registerShareIpc } from "./share-ipc";
+import { ShellEvents } from "./shell-events";
+import { makeShellPort } from "./shell-port";
+import { ShellServer } from "./shell-server";
 import { makeShutdownCoordinator } from "./shutdown";
-import { readThemeSource, saveThemeSource, ThemeSource } from "./theme-source";
-import { setupUpdater } from "./updater";
+import { readThemeSource } from "./theme-source";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,7 +60,7 @@ const envFallbackFiles = [
   path.join(process.env.APP_ROOT, ".env"),
   path.join(process.env.APP_ROOT, "..", "..", ".env"),
 ];
-for (const file of envFallbackFiles) {
+for (const file of app.isPackaged ? [] : envFallbackFiles) {
   try {
     process.loadEnvFile(file);
   } catch {}
@@ -76,34 +69,13 @@ for (const file of envFallbackFiles) {
 initDesktopSentry();
 
 let win: BrowserWindow | null;
-let disposeUpdater: (() => Promise<void>) | undefined;
-let disposeInventoryHttp: (() => void) | undefined;
-let replicaWorker: ReturnType<typeof registerReplicaWorkerIpc> | undefined;
-let licenceHost: ReturnType<typeof makeLicenceHost> | undefined;
+let events: ShellEvents["Service"] | undefined;
 
 const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
 const unpackagedDevMarkPath = () =>
   path.join(process.env.APP_ROOT, "assets", "dev", "logo-dev.png");
 const appIconPath = () =>
   app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
-
-const runtimeApiUrlOverride = process.env["STORE_API_URL"];
-const viteInlinedApiUrl = import.meta.env.VITE_API_URL;
-const API_BASE_URL = fallbackIfBlank(
-  runtimeApiUrlOverride ||
-    (VITE_DEV_SERVER_URL
-      ? "http://localhost:8787"
-      : (process.env["VITE_API_URL"] ?? viteInlinedApiUrl)),
-  "http://localhost:8787",
-);
-const ELECTRON_PROTOCOL = fallbackIfBlank(
-  process.env["ELECTRON_PROTOCOL"],
-  DEFAULT_ELECTRON_PROTOCOL,
-);
-const AUTH_BASE_URL = fallbackIfBlank(
-  process.env["AUTH_BASE_URL"] ?? import.meta.env.VITE_AUTH_URL,
-  "http://localhost:8788",
-);
 
 const EXPERIMENTAL_WAYLAND_COLOR_MANAGER = "WaylandWpColorManagerV1";
 if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
@@ -125,18 +97,11 @@ const windowBackground = () =>
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
 
-const publishSession = (snapshot: WorkspaceSnapshot) => {
-  win?.webContents.send(AUTH_SESSION_CHANGED_CHANNEL, snapshot);
-  return snapshot;
-};
-
-const authBroker = makeAuthBroker(API_BASE_URL, AUTH_BASE_URL, publishSession);
-
 let pendingOAuthCallback: string | null = null;
 
 const deliverOAuthCallback = () => {
-  if (!pendingOAuthCallback || !win || win.webContents.isLoading()) return;
-  win.webContents.send(OAUTH_CALLBACK_CHANNEL, pendingOAuthCallback);
+  if (!pendingOAuthCallback || !events) return;
+  Queue.offerUnsafe(events.oauthCallbacks, pendingOAuthCallback);
   pendingOAuthCallback = null;
 };
 
@@ -148,7 +113,7 @@ const publishOAuthCallback = (url: string) => {
 
 const rendererCsp = makeDesktopContentSecurityPolicy({
   scheme: ELECTRON_PROTOCOL,
-  apiOrigin: new URL(API_BASE_URL).origin,
+  apiOrigin: new URL(__API_URL__).origin,
   development: Boolean(VITE_DEV_SERVER_URL),
 });
 
@@ -164,29 +129,39 @@ const hostDeviceLabel = () => {
 
 const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
 
-const chooseSavePath = async (options: Electron.SaveDialogOptions) => {
-  const chosen = win
-    ? await dialog.showSaveDialog(win, options)
-    : await dialog.showSaveDialog(options);
-  return chosen.canceled || chosen.filePath === "" ? null : chosen.filePath;
-};
+const showDialog = <A>(show: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: show,
+    catch: (cause) => new DialogFailed({ message: "The file dialog could not be opened.", cause }),
+  });
 
-const chooseOpenPath = async (options: Electron.OpenDialogOptions) => {
-  const chosen = win
-    ? await dialog.showOpenDialog(win, options)
-    : await dialog.showOpenDialog(options);
-  return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
-};
+const chooseSavePath = (options: Electron.SaveDialogOptions) =>
+  showDialog(() =>
+    win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options),
+  ).pipe(
+    Effect.map((chosen) =>
+      chosen.canceled || chosen.filePath === "" ? Option.none() : Option.some(chosen.filePath),
+    ),
+  );
 
-const backupDialogs: ReplicaBackupDialogs = {
-  chooseDestination: (suggestedName) =>
+const chooseOpenPath = (options: Electron.OpenDialogOptions) =>
+  showDialog(() =>
+    win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options),
+  ).pipe(
+    Effect.map((chosen) =>
+      chosen.canceled ? Option.none() : Option.fromNullishOr(chosen.filePaths[0]),
+    ),
+  );
+
+const dialogs: Dialogs = {
+  chooseBackupDestination: (suggestedName) =>
     chooseSavePath({
       title: "Back up to file",
       buttonLabel: "Back up",
       defaultPath: path.join(app.getPath("documents"), suggestedName),
       filters: BACKUP_FILE_FILTERS,
     }),
-  chooseSource: () =>
+  chooseBackupSource: Effect.suspend(() =>
     chooseOpenPath({
       title: "Restore from file",
       buttonLabel: "Choose backup",
@@ -194,26 +169,79 @@ const backupDialogs: ReplicaBackupDialogs = {
       filters: BACKUP_FILE_FILTERS,
       properties: ["openFile"],
     }),
+  ),
+  choosePdfDestination: (suggestedName) =>
+    chooseSavePath({
+      title: "Save as PDF",
+      buttonLabel: "Save",
+      defaultPath: path.join(app.getPath("documents"), suggestedName),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    }),
 };
 
-const choosePdfDestination = (suggestedName: string) =>
-  chooseSavePath({
-    title: "Save as PDF",
-    buttonLabel: "Save",
-    defaultPath: path.join(app.getPath("documents"), suggestedName),
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
+const withWindow = (control: (window: BrowserWindow) => void) =>
+  Effect.sync(() => {
+    if (win && !win.isDestroyed()) control(win);
   });
 
+const desktopShell = DesktopShell.of({
+  apiBaseUrl: __API_URL__,
+  userDataPath: app.getPath("userData"),
+  workerPath: path.join(MAIN_DIST, "replica-worker.js"),
+  deviceLabel: hostDeviceLabel(),
+  rendererChannel: () => new MessageChannelMain(),
+  oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
+  dialogs,
+  minimizeWindow: withWindow((window) => window.minimize()),
+  toggleMaximizeWindow: withWindow((window) =>
+    window.isMaximized() ? window.unmaximize() : window.maximize(),
+  ),
+  closeWindow: withWindow((window) => window.close()),
+  setThemeSource: (source) =>
+    Effect.sync(() => {
+      nativeTheme.themeSource = source;
+    }),
+  openExternal: (url) =>
+    Effect.tryPromise({
+      try: () => shell.openExternal(url),
+      catch: (cause) => new OpenExternalFailed({ message: "The link could not be opened.", cause }),
+    }),
+  writeClipboardText: (text) => Effect.sync(() => clipboard.writeText(text)),
+});
+
+const host = makeDesktopHost({
+  apiBaseUrl: __API_URL__,
+  authBaseUrl: __AUTH_URL__,
+  packaged: app.isPackaged,
+  shell: desktopShell,
+});
+
 const publishReplicaForeground = (visible: boolean) => {
-  replicaWorker
-    ?.setForeground(visible)
+  host
+    .run(ReplicaHost.use((replicas) => replicas.setForeground(visible)))
     .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
 };
 
 const publishWindowMaximized = () => {
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send(WINDOW_MAXIMIZED_CHANNEL, win.isMaximized());
+  if (!win || win.isDestroyed() || !events) return;
+  PubSub.publishUnsafe(events.maximized, win.isMaximized());
 };
+
+const shellPort = makeShellPort<WebContents, MessagePortMain>({
+  allowedOrigins: allowedRendererOrigins,
+  mainWindowContentsId: () => win?.webContents.id,
+  channel: () => new MessageChannelMain(),
+  serve: (sender, port) => {
+    void host
+      .run(ShellServer.use((server) => server.serve(sender, port)))
+      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-serve" }));
+  },
+  release: (senderId) => {
+    void host
+      .run(ShellServer.use((server) => server.release(senderId)))
+      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-release" }));
+  },
+});
 
 function createWindow() {
   win = new BrowserWindow({
@@ -239,8 +267,8 @@ function createWindow() {
   app.dock?.setIcon(appIconPath());
 
   win.once("ready-to-show", () => win?.show());
-  win.webContents.on("did-finish-load", deliverOAuthCallback);
-  win.webContents.on("did-finish-load", publishWindowMaximized);
+  shellPort.attach(win.webContents);
+  publishWindowMaximized();
   win.webContents.on("console-message", (event) => {
     if (event.level === "debug" || event.level === "info") return;
     const location = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : "";
@@ -271,28 +299,6 @@ nativeTheme.on("updated", () => {
   win.setBackgroundColor(windowBackground());
 });
 
-const onWindowControl = (channel: string, control: (window: BrowserWindow) => void) => {
-  ipcMain.on(channel, (event) => {
-    if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
-    if (!win || win.isDestroyed()) return;
-    control(win);
-  });
-};
-
-onWindowControl(WINDOW_MINIMIZE_CHANNEL, (window) => window.minimize());
-onWindowControl(WINDOW_TOGGLE_MAXIMIZE_CHANNEL, (window) =>
-  window.isMaximized() ? window.unmaximize() : window.maximize(),
-);
-onWindowControl(WINDOW_CLOSE_CHANNEL, (window) => window.close());
-
-ipcMain.on(THEME_SET_SOURCE_CHANNEL, (event, input) => {
-  if (!isTrustedIpcSenderFrame(event.senderFrame, allowedRendererOrigins())) return;
-  const source = Schema.decodeUnknownOption(ThemeSource)(input);
-  if (source._tag === "None") return;
-  nativeTheme.themeSource = source.value;
-  void saveThemeSource(app.getPath("userData"), source.value).catch(() => undefined);
-});
-
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -307,18 +313,7 @@ app.on("activate", () => {
 });
 
 const shutdown = makeShutdownCoordinator({
-  dispose: async () => {
-    const results = await Promise.allSettled([
-      disposeUpdater?.(),
-      Promise.resolve(disposeInventoryHttp?.()),
-      Promise.resolve(replicaWorker?.dispose()),
-      licenceHost?.dispose(),
-    ]);
-    const failures = results.filter(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failures[0]) throw failures[0].reason;
-  },
+  dispose: () => host.dispose(),
   quit: () => app.quit(),
   reportError: (cause) => reportDesktopError(cause, { op: "desktop-shutdown" }),
 });
@@ -360,52 +355,18 @@ void app.whenReady().then(async () => {
     allowedOrigins: allowedRendererOrigins,
     contentSecurityPolicy: rendererCsp,
   });
-  registerNewSaleAccelerator();
-  const sourceLinks = makeSourceLinks();
-  registerAuthIpc({
-    ipcMain,
-    broker: authBroker,
-    allowedOrigins: allowedRendererOrigins,
-    oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
-    openExternal: (url) => shell.openExternal(url),
-    rememberSourceLinks: sourceLinks.remember,
-  });
-  registerShareIpc({
-    ipcMain,
-    allowedOrigins: allowedRendererOrigins,
-    openExternal: (url) => shell.openExternal(url),
-    isSourceLink: sourceLinks.allows,
-    writeClipboardText: (text) => clipboard.writeText(text),
-    choosePdfDestination,
-  });
-  nativeTheme.themeSource = readThemeSource(app.getPath("userData"));
-  createWindow();
-  const deviceId = await loadDeviceId(app.getPath("userData"));
-  disposeInventoryHttp = registerInventoryHttpIpc({
-    apiBaseUrl: API_BASE_URL,
-    deviceId,
-    ipcMain,
-    allowedOrigins: allowedRendererOrigins,
-  });
-  licenceHost = makeLicenceHost({
-    userDataPath: app.getPath("userData"),
-    packaged: app.isPackaged,
-  });
-  replicaWorker = registerReplicaWorkerIpc({
-    ipcMain,
-    userDataPath: app.getPath("userData"),
-    workerPath: path.join(MAIN_DIST, "replica-worker.js"),
-    apiBaseUrl: API_BASE_URL,
-    deviceLabel: hostDeviceLabel(),
-    accessTokens: {
-      current: (force) => authBroker.liveAccessToken(force),
-      subscribe: authBroker.onAccessToken,
+  events = await host.run(ShellEvents);
+  deliverOAuthCallback();
+  registerNewSaleAccelerator(
+    (contents) => contents.id === win?.webContents.id,
+    () => {
+      if (events) PubSub.publishUnsafe(events.newSale, undefined);
     },
-    allowedOrigins: allowedRendererOrigins,
-    backupDialogs,
-    rendererChannel: () => new MessageChannelMain(),
-    sessions: { licence: licenceHost.service },
+  );
+  ipcMain.on(SHELL_PORT_REQUEST_CHANNEL, (event) => {
+    shellPort.request(event);
   });
-  publishSession(await authBroker.initialize());
-  if (app.isPackaged) disposeUpdater = await setupUpdater(() => win, allowedRendererOrigins);
+  nativeTheme.themeSource = await host.run(readThemeSource(app.getPath("userData")));
+  createWindow();
+  void host.run(DesktopAuth.use((auth) => auth.initialize));
 });

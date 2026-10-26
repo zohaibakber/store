@@ -1,11 +1,12 @@
 import * as Schema from "effect/Schema";
 
-import { EpochMillis, SyncIdentifier } from "../schema-primitives";
+import { ReplicaId } from "../ids";
+import { EpochMillis } from "../schema-primitives";
 
 export const MAX_ORGANIZATION_DEVICES = 200;
 
 export const OrganizationDevice = Schema.Struct({
-  replicaId: SyncIdentifier,
+  replicaId: ReplicaId,
   userId: Schema.String,
   label: Schema.NullOr(Schema.String),
   registeredAt: EpochMillis,
@@ -22,8 +23,8 @@ export const OrganizationDevices = Schema.Struct({
 export type OrganizationDevices = typeof OrganizationDevices.Type;
 
 export const DeviceCommand = Schema.TaggedUnion({
-  IgnoreDevice: { replicaId: SyncIdentifier },
-  HeedDevice: { replicaId: SyncIdentifier },
-  RemoveDevice: { replicaId: SyncIdentifier },
+  IgnoreDevice: { replicaId: ReplicaId },
+  HeedDevice: { replicaId: ReplicaId },
+  RemoveDevice: { replicaId: ReplicaId },
 });
 export type DeviceCommand = typeof DeviceCommand.Type;

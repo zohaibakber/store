@@ -258,6 +258,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261023.1
         version: 5.20261023.1
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@store/server':
         specifier: workspace:*
         version: link:../server
@@ -292,6 +295,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.6
         version: 4.0.6(effect@4.0.6)(redis@6.3.0(@opentelemetry/api@1.10.0))
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@electron/asar':
         specifier: ^4.3.1
         version: 4.3.1
@@ -461,6 +467,9 @@ importers:
       '@effect/sql-sqlite-node':
         specifier: 4.0.6
         version: 4.0.6(effect@4.0.6)
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -483,12 +492,18 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261023.1
         version: 5.20261023.1
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@opentelemetry/api@1.10.0)(@types/node@26.6.5)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1))
 
   packages/client-db:
     dependencies:
@@ -511,6 +526,12 @@ importers:
         specifier: 4.0.6
         version: 4.0.6
     devDependencies:
+      '@effect/platform-node':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(redis@6.3.0(@opentelemetry/api@1.10.0))
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -530,6 +551,9 @@ importers:
         specifier: 4.0.6
         version: 4.0.6
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -680,6 +704,9 @@ importers:
         specifier: 4.0.6
         version: 4.0.6
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.6
+        version: 4.0.6(effect@4.0.6)(vitest@5.0.5)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

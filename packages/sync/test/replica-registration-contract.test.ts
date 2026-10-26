@@ -12,6 +12,7 @@ import {
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
   type SyncProtocolError,
+  OperationId,
 } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
@@ -22,26 +23,26 @@ import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { SyncRecoveryRequired } from "../src/replica/errors";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
-import { SyncTransportOffline, type SyncTransport } from "../src/transport";
+import { SyncTransport, SyncTransportOffline } from "../src/transport";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
 
 type Harness = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly close: Effect.Effect<void>;
 };
 
 const makeSqliteHarness = Effect.fn("registration.sqlite")(function* () {
   const scope = yield* Scope.make();
-  const handle = yield* Scope.provide(openReplicaStore(), scope);
+  const handle = yield* Scope.provide(openReplicaStore().pipe(Effect.orDie), scope);
   yield* runReplicaTransaction(handle, (tx) =>
     tx.insert(replicaState).values({
       id: "singleton",
@@ -66,7 +67,7 @@ const harnesses: ReadonlyArray<{
 
 const withHarness = <A, E>(
   make: () => Effect.Effect<Harness>,
-  use: (store: ReplicaStoreContract) => Effect.Effect<A, E>,
+  use: (store: ReplicaStore["Service"]) => Effect.Effect<A, E>,
 ) =>
   Effect.acquireUseRelease(
     make(),
@@ -107,7 +108,7 @@ const makeAuthority = (
   let offline = options.offlineRegistrations ?? 0;
   let lastSequence = BigInt(identity.nextClientSequence) - 1n;
   const accepted: Array<string> = [];
-  const transport: SyncTransport = {
+  const transport: SyncTransport["Service"] = {
     registerReplica: (request) =>
       Effect.suspend(() => {
         counts.registers += 1;
@@ -209,14 +210,14 @@ const categoryEnvelope = (
     epoch: SyncEpoch.make(epoch),
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(clientSequence),
-    operationId,
+    operationId: OperationId.make(operationId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };
 };
 
-const engineFor = (store: ReplicaStoreContract, transport: SyncTransport) =>
-  makeSyncEngineFromReplicaStore(store, transport);
+const engineFor = (store: ReplicaStore["Service"], transport: SyncTransport["Service"]) =>
+  engineOf(store, stubTransport(transport));
 
 describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>
@@ -230,19 +231,21 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           nextClientSequence: "7",
         });
         const engine = yield* engineFor(store, authority.transport);
-        yield* engine.ensureRegistered();
-        const first = yield* engine.uploadOnce();
-        const second = yield* engine.uploadOnce();
-        expect([first?.operationId, second?.operationId]).toEqual(["op-1", "op-2"]);
+        yield* engine.ensureRegistered;
+        expect(yield* engine.drainUploads).toBe(2);
         expect(authority.accepted).toEqual(["7", "8"]);
-        expect(yield* store.readCommandStatus("op-1")).toBe("accepted_awaiting_integration");
-        expect(yield* store.readCommandStatus("op-2")).toBe("accepted_awaiting_integration");
+        expect(yield* store.readCommandStatus(OperationId.make("op-1"))).toBe(
+          "accepted_awaiting_integration",
+        );
+        expect(yield* store.readCommandStatus(OperationId.make("op-2"))).toBe(
+          "accepted_awaiting_integration",
+        );
         yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(3, "2", "9"), FIXTURE_NOW));
-        yield* engine.uploadOnce();
+        expect(yield* engine.drainUploads).toBe(1);
         expect(authority.accepted).toEqual(["7", "8", "9"]);
-        yield* engine.ensureRegistered();
+        yield* engine.ensureRegistered;
         expect(authority.counts.registers).toBe(1);
-      }),
+      }).pipe(Effect.scoped),
     ),
   );
 
@@ -255,19 +258,19 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           claimedAt: FIXTURE_NOW,
           staleBefore: 0,
         });
-        yield* store.releaseUploadClaim("op-1", "claim-1");
+        yield* store.releaseUploadClaim(OperationId.make("op-1"), "claim-1");
         const authority = makeAuthority({
           epoch: "1",
           incarnation: "authority-d",
           nextClientSequence: "3",
         });
         const engine = yield* engineFor(store, authority.transport);
-        const failure = yield* Effect.flip(engine.ensureRegistered());
+        const failure = yield* Effect.flip(engine.ensureRegistered);
         expect(failure).toBeInstanceOf(SyncRecoveryRequired);
         expect(failure).toMatchObject({ code: "COMMAND_IDENTITY_MISMATCH" });
-        expect((yield* store.readSyncCursor()).registered).toBe(false);
-        expect(yield* store.readCommandStatus("op-1")).toBe("pending");
-      }),
+        expect((yield* store.readSyncCursor).registered).toBe(false);
+        expect(yield* store.readCommandStatus(OperationId.make("op-1"))).toBe("pending");
+      }).pipe(Effect.scoped),
     ),
   );
 
@@ -288,7 +291,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
           FIXTURE_NOW + 3,
         );
         expect(rekeyed).toMatchObject({ _tag: "refused", code: "INCARNATION_MISMATCH" });
-        expect(yield* store.readSyncCursor()).toMatchObject({ epoch: "1", registered: true });
+        expect(yield* store.readSyncCursor).toMatchObject({ epoch: "1", registered: true });
       }),
     ),
   );

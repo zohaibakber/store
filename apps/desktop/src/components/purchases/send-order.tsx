@@ -8,7 +8,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder, PurchaseOrderItem, Supplier } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import {
   purchaseOrderCostTotal,
@@ -16,6 +16,8 @@ import {
   whatsAppLink,
   type WhatsAppLink,
 } from "@store/services/purchasing";
+import * as Schema from "effect/Schema";
+import * as React from "react";
 import { createPortal } from "react-dom";
 
 import { ShortcutButton } from "@/components/shared/shortcut-button";
@@ -31,10 +33,9 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
-import { useStoreCommand } from "@/hooks/use-store-command";
 import { appHost } from "@/host";
 import { useAuth } from "@/lib/auth";
-import { toastStoreError } from "@/lib/errors";
+import { toastBridgeFailure, toastFailure } from "@/lib/errors";
 import { formatDate } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";
 
@@ -52,6 +53,13 @@ type SendOrderActionProps = {
 };
 
 type Delivery = "whatsapp" | "copy";
+
+const WHATSAPP_UNAVAILABLE = "WhatsApp is unavailable for this order.";
+
+class WhatsAppUnavailable extends Schema.TaggedError<WhatsAppUnavailable>()(
+  "WhatsAppUnavailable",
+  {},
+) {}
 
 const ORDER_TEXT_FORMAT = { date: formatDate, quantity: formatLineQuantity };
 
@@ -161,9 +169,24 @@ function OrderPrintView({
 }
 
 export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActionProps) {
-  const { sendOrder } = useInventoryActions();
+  const [sendOrder, sending] = useCommand((commands) => commands.sendOrder);
   const { workspace } = useAuth();
-  const [pending, run] = useStoreCommand();
+  const [handing, setHanding] = React.useState(false);
+  const pending = handing || sending;
+
+  const run = async (action: () => Promise<void>, fallback?: string) => {
+    setHanding(true);
+    try {
+      await action();
+    } catch (cause) {
+      if (cause instanceof WhatsAppUnavailable) {
+        toastManager.add({ title: WHATSAPP_UNAVAILABLE, type: "error" });
+      } else {
+        toastBridgeFailure(cause, fallback);
+      }
+    }
+    setHanding(false);
+  };
 
   const storeName = workspace._tag === "Organization" ? workspace.organization.name : null;
   const lines = [...order.items].sort(byProductName);
@@ -182,7 +205,7 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
   const hand = async (delivery: Delivery) => {
     switch (delivery) {
       case "whatsapp":
-        if (link._tag !== "Ready") throw new Error("WhatsApp is unavailable for this order.");
+        if (link._tag !== "Ready") throw new WhatsAppUnavailable();
         return appHost().openExternal(link.url);
       case "copy":
         return appHost().copyText(text);
@@ -190,12 +213,12 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
   };
 
   const markSent = async (title: string, description?: string) => {
-    try {
-      await sendOrder(order.id);
-      toastManager.add({ title, description, type: "success" });
-    } catch (error) {
-      toastStoreError(error, "Could not mark the order as sent.");
+    const exit = await sendOrder(order.id);
+    if (exit._tag === "Failure") {
+      toastFailure(exit.cause);
+      return;
     }
+    toastManager.add({ title, description, type: "success" });
   };
 
   const deliver = (delivery: Delivery) => {

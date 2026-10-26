@@ -1,6 +1,11 @@
 import {
+  AuthorityIncarnation,
   CommandReceipt,
   incrementDecimalSequence,
+  OperationId,
+  OrgCommitSequence,
+  ReplicaId,
+  SyncEpoch,
   type EnqueueCommandRequest,
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
@@ -9,6 +14,7 @@ import type { CommandStatus, ReplicaReadStamp } from "@store/contracts/sync/repl
 import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import { admitCommand } from "./admission";
 import { decodeStoredEnvelope, encodeEnvelopeJson, encodeReceiptJson } from "./codecs";
@@ -44,7 +50,7 @@ export type ClaimNextUploadInput = {
 };
 
 export type UploadClaim = {
-  readonly operationId: string;
+  readonly operationId: OperationId;
   readonly claimId: string;
   readonly claimedAt: number;
   readonly attempts: number;
@@ -56,14 +62,32 @@ const INTEGRATED_COMMAND_RETENTION = 256;
 
 export const clientSequenceLength = sql`length(${commandOutbox.clientSequence})`;
 
+const ReplicaIdentityFields = Schema.Struct({
+  replicaId: ReplicaId,
+  epoch: SyncEpoch,
+  incarnation: AuthorityIncarnation,
+  appliedCommitSequence: OrgCommitSequence,
+});
+
+export type ReplicaStateRow = Omit<
+  typeof replicaState.$inferSelect,
+  keyof typeof ReplicaIdentityFields.fields
+> &
+  typeof ReplicaIdentityFields.Type;
+
+const decodeIdentityFields = Schema.decodeUnknownEffect(ReplicaIdentityFields);
+
 export const loadReplicaState = Effect.fn("ReplicaCommands.loadReplicaState")(function* (
   tx: ReplicaDb,
 ) {
   const state = yield* tx.select().from(replicaState).get();
   if (!state) {
-    return yield* Effect.fail(ReplicaStorageError.make({ message: "Replica state is missing." }));
+    return yield* new ReplicaStorageError({ message: "Replica state is missing." });
   }
-  return state;
+  const identity = yield* decodeIdentityFields(state).pipe(
+    Effect.mapError((error) => new ReplicaStorageError({ message: error.message })),
+  );
+  return { ...state, ...identity } satisfies ReplicaStateRow;
 });
 
 export const recordCaughtUp = Effect.fn("ReplicaCommands.recordCaughtUp")(function* (
@@ -101,7 +125,7 @@ export const commandStatus = Effect.fn("ReplicaCommands.commandStatus")(function
 
 type AdmittedCommand = {
   readonly envelope: SyncCommandEnvelope;
-  readonly state: typeof replicaState.$inferSelect;
+  readonly state: ReplicaStateRow;
   readonly context: CommandContext;
 };
 
@@ -210,7 +234,7 @@ export const claimNextUpload = Effect.fn("ReplicaCommands.claimNextUpload")(func
   });
   yield* bumpLocalCommitVersion(tx);
   return {
-    operationId: row.operationId,
+    operationId: envelope.operationId,
     claimId: input.claimId,
     claimedAt: input.claimedAt,
     attempts,

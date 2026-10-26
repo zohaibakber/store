@@ -1,4 +1,9 @@
+import * as Result from "effect/Result";
+
+import { type Money, roundedMoney } from "../store/pricing";
+import { baseUnitsOf } from "../store/stock";
 import type { SyncProtocolCode } from "../sync/protocol";
+import { CATALOG_REFUSALS, CatalogRefusal } from "./refusal";
 
 export const PURCHASE_ORDER_STATUSES = ["draft", "sent", "closed", "cancelled"] as const;
 type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
@@ -31,9 +36,6 @@ export const isPurchaseOrderOpen = (status: PurchaseOrderStatus): boolean => {
 export const OPEN_PURCHASE_ORDER_STATUSES: ReadonlyArray<PurchaseOrderStatus> =
   PURCHASE_ORDER_STATUSES.filter(isPurchaseOrderOpen);
 
-export const canCreatePurchaseOrderAs = (status: PurchaseOrderStatus): boolean =>
-  status === "draft";
-
 export const canMovePurchaseOrder = (
   from: PurchaseOrderStatus,
   to: PurchaseOrderStatus,
@@ -53,35 +55,23 @@ export const purchaseOrderLineBaseUnits = (
 ): number => {
   switch (line.quantityType) {
     case "pack":
-      return line.quantity * unitsPerPack;
+      return baseUnitsOf({ packQuantity: line.quantity, unitQuantity: 0 }, unitsPerPack);
     case "unit":
       return line.quantity;
   }
 };
 
 export const purchaseOrderLineTotal = (
-  line: PurchaseOrderLineQuantity & { readonly packCost: number | null },
+  line: PurchaseOrderLineQuantity & { readonly packCost: Money | null },
   unitsPerPack: number,
-): number | null => {
+): Money | null => {
   if (line.packCost === null) return null;
-  switch (line.quantityType) {
-    case "pack":
-      return line.quantity * line.packCost;
-    case "unit":
-      return Math.round((line.quantity * line.packCost) / unitsPerPack);
-  }
+  return roundedMoney(
+    line.quantityType === "pack"
+      ? line.quantity * line.packCost
+      : (line.quantity * line.packCost) / unitsPerPack,
+  );
 };
-
-export const purchaseOrderTotal = (lineTotals: Iterable<number | null>): number => {
-  let total = 0;
-  for (const lineTotal of lineTotals) total += lineTotal ?? 0;
-  return total;
-};
-
-export const receivedBaseUnitsOf = (
-  batch: { readonly packQuantity: number; readonly unitQuantity: number },
-  unitsPerPack: number,
-): number => batch.packQuantity * unitsPerPack + batch.unitQuantity;
 
 type PurchaseOrderLineReceipt = {
   readonly baseUnitQuantity: number;
@@ -126,34 +116,16 @@ export const purchaseOrderProgress = (
 };
 
 export const purchasingRejection = {
-  supplierHasOrders: {
-    code: "SUPPLIER_HAS_ORDERS",
-    message: "This supplier has purchase orders and cannot be deleted.",
-  },
-  orderTransitionInvalid: {
-    code: "PURCHASE_ORDER_TRANSITION_INVALID",
-    message: "This purchase order cannot move to that status.",
-  },
-  orderNotOpen: {
-    code: "PURCHASE_ORDER_NOT_OPEN",
-    message: "This purchase order is closed or cancelled and can no longer change.",
-  },
-  orderNotDraft: {
-    code: "PURCHASE_ORDER_NOT_DRAFT",
-    message: "Only a draft purchase order can be deleted.",
-  },
-  orderHasItems: {
-    code: "PURCHASE_ORDER_HAS_ITEMS",
-    message: "Remove the lines from this purchase order before deleting it.",
-  },
+  supplierHasOrders: CATALOG_REFUSALS.supplierHasOrders,
+  orderTransitionInvalid: CATALOG_REFUSALS.orderTransitionInvalid,
+  orderNotOpen: CATALOG_REFUSALS.orderNotOpen,
+  orderNotDraft: CATALOG_REFUSALS.orderNotDraft,
+  orderHasItems: CATALOG_REFUSALS.orderHasItems,
   itemQuantityInvalid: {
     code: "PURCHASE_ORDER_ITEM_QUANTITY_INVALID",
     message: "The order line quantity does not match the product's units per pack.",
   },
-  itemReceived: {
-    code: "PURCHASE_ORDER_ITEM_RECEIVED",
-    message: "This order line has received stock and cannot be removed or moved.",
-  },
+  itemReceived: CATALOG_REFUSALS.itemReceived,
   receiptProductMismatch: {
     code: "PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH",
     message: "The delivered batch is for a different product than the order line.",
@@ -174,3 +146,93 @@ export const purchasingBlockedByStaleReplica = (
   lowestActiveSchemaVersion: number | undefined,
 ): boolean =>
   lowestActiveSchemaVersion !== undefined && lowestActiveSchemaVersion < PURCHASING_SCHEMA_VERSION;
+
+export const checkCanDeleteSupplier = (
+  orders: Iterable<{ readonly supplierId: string }>,
+  supplierId: string,
+) =>
+  Result.gen(function* () {
+    for (const order of orders) {
+      if (order.supplierId === supplierId) {
+        return yield* Result.fail(
+          new CatalogRefusal({
+            reason: "supplierHasOrders",
+            message: purchasingRejection.supplierHasOrders.message,
+          }),
+        );
+      }
+    }
+  });
+
+export const checkCanCreateOrder = (status: PurchaseOrderStatus) =>
+  Result.gen(function* () {
+    if (status !== "draft") {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "orderTransitionInvalid",
+          message: purchasingRejection.orderTransitionInvalid.message,
+        }),
+      );
+    }
+  });
+
+export const checkOrderOpen = (status: PurchaseOrderStatus) =>
+  Result.gen(function* () {
+    if (!isPurchaseOrderOpen(status)) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "orderNotOpen",
+          message: purchasingRejection.orderNotOpen.message,
+        }),
+      );
+    }
+  });
+
+export const checkCanMoveOrder = (
+  from: PurchaseOrderStatus,
+  to: PurchaseOrderStatus,
+  invalidMessage: string = purchasingRejection.orderTransitionInvalid.message,
+) =>
+  Result.gen(function* () {
+    yield* checkOrderOpen(from);
+    if (!canMovePurchaseOrder(from, to)) {
+      return yield* Result.fail(
+        new CatalogRefusal({ reason: "orderTransitionInvalid", message: invalidMessage }),
+      );
+    }
+  });
+
+export const checkLineUnreceived = (line: { readonly receivedBaseUnits: number }) =>
+  Result.gen(function* () {
+    if (line.receivedBaseUnits > 0) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "itemReceived",
+          message: purchasingRejection.itemReceived.message,
+        }),
+      );
+    }
+  });
+
+export const checkCanDeleteOrder = (
+  order: { readonly status: PurchaseOrderStatus },
+  lineCount: number,
+) =>
+  Result.gen(function* () {
+    if (order.status !== "draft") {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "orderNotDraft",
+          message: purchasingRejection.orderNotDraft.message,
+        }),
+      );
+    }
+    if (lineCount > 0) {
+      return yield* Result.fail(
+        new CatalogRefusal({
+          reason: "orderHasItems",
+          message: purchasingRejection.orderHasItems.message,
+        }),
+      );
+    }
+  });

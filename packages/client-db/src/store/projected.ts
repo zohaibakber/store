@@ -1,14 +1,7 @@
-import type { CreateCategoryInput } from "@store/contracts";
-import { MAX_CATALOG_WRITE_ROWS, type CatalogRowWrite } from "@store/contracts/catalog-write";
-import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 
-import { projectCreateCategory, type CatalogProjectionContext } from "../catalog-projection";
-import type { CategoryRow, ProductRow } from "../rows";
-
-export type Projected<Row> = {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-  readonly row: Row;
-};
+import type { CatalogProjectionContext } from "../catalog-projection";
+import type { ProductRow } from "../rows";
 
 type RowState<Row> = {
   readonly get: (id: string) => Row | undefined;
@@ -33,35 +26,31 @@ export const withProjectedProduct = (
   tables: { ...context.tables, products: withRow(context.tables.products.state, product) },
 });
 
-const withProjectedCategory = (
-  context: CatalogProjectionContext,
-  category: CategoryRow,
-): CatalogProjectionContext => ({
-  ...context,
-  tables: { ...context.tables, categories: withRow(context.tables.categories.state, category) },
-});
+export class RowIdSupplyMismatch extends Schema.TaggedError<RowIdSupplyMismatch>()(
+  "RowIdSupplyMismatch",
+  { drawn: Schema.Number, taken: Schema.Number },
+) {}
 
-export const leadingChunks = (
-  leading: ReadonlyArray<CatalogRowWrite>,
-  chunks: ReadonlyArray<ReadonlyArray<CatalogRowWrite>>,
-): ReadonlyArray<ReadonlyArray<CatalogRowWrite>> => {
-  if (leading.length === 0) return chunks;
-  const [first = [], ...rest] = chunks;
-  return leading.length + first.length <= MAX_CATALOG_WRITE_ROWS
-    ? [[...leading, ...first], ...rest]
-    : [leading, ...chunks];
+const placeholderRowId = (index: number) =>
+  `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+
+export const countingRowIds = () => {
+  let used = 0;
+  return {
+    used: () => used,
+    rowId: () => placeholderRowId(used++),
+  };
 };
 
-export const importCategory = (context: CatalogProjectionContext, input: CreateCategoryInput) =>
-  Result.gen(function* () {
-    const projected = yield* projectCreateCategory(context, input);
-    return {
-      writes: projected.writes,
-      id: projected.row.id,
-      tables: withProjectedCategory(context, projected.row).tables,
-    };
-  });
-
-export const removed = (projection: {
-  readonly writes: ReadonlyArray<CatalogRowWrite>;
-}): Projected<void> => ({ writes: projection.writes, row: undefined });
+export const drawnRowIds = (drawn: ReadonlyArray<string>) => {
+  let used = 0;
+  return {
+    balanced: () => used === drawn.length,
+    used: () => used,
+    rowId: () => {
+      const id = drawn[used] ?? placeholderRowId(used);
+      used += 1;
+      return id;
+    },
+  };
+};

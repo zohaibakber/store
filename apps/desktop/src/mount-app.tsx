@@ -1,7 +1,7 @@
-import { RegistryContext } from "@effect/atom-react";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import { configureInventoryPreferences, type CatalogLifetime } from "@store/inventory-react";
+import { AtomRegistryProvider } from "@store/inventory-react";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
+import * as Effect from "effect/Effect";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import React from "react";
 import { flushSync } from "react-dom";
@@ -12,15 +12,10 @@ import { WindowDragStrip } from "@/components/app/window-controls";
 import { ThemeProvider } from "@/components/theme/provider";
 import { appHost } from "@/host";
 import type { HostAccessPolicy } from "@/host-access";
-import { makeReplayChannel } from "@/host/replay-channel";
 import type { HostInventory } from "@/lib/inventory/host-inventory";
-import { preferenceStore } from "@/lib/preferences";
+import { upgradeBareThemePreference } from "@/lib/preferences";
 import type { DeviceWorkspaceStore } from "@/session/device-workspace";
-import {
-  bindWorkspaceSession,
-  startWorkspaceSession,
-  type WorkspaceSession,
-} from "@/session/workspace-session";
+import { startWorkspaceSession, workspaceSessionFeed } from "@/session/workspace-session";
 
 import { getRouter } from "./router";
 
@@ -28,31 +23,30 @@ export const mountApp = (input: {
   readonly snapshot: WorkspaceSnapshot;
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
-  readonly catalog: CatalogLifetime;
   readonly inventory: HostInventory;
   readonly device: DeviceWorkspaceStore;
 }) => {
-  configureInventoryPreferences(preferenceStore());
-  const session = makeReplayChannel<WorkspaceSession>();
-  const { catalog } = input;
-  const workspace = { session, catalog, access: input.access, device: input.device };
-  startWorkspaceSession(workspace, input.snapshot);
-
+  upgradeBareThemePreference();
   const registry = AtomRegistry.make({ defaultIdleTTL: 30_000 });
   const router = getRouter({
     history: input.history,
-    session,
-    catalog,
     access: input.access,
     inventory: input.inventory,
     registry,
   });
-  bindWorkspaceSession({
-    ...workspace,
-    bridge: appHost().auth,
-    invalidate: () => router.invalidate().then(() => undefined),
-    flush: flushSync,
-  });
+  startWorkspaceSession(
+    registry,
+    {
+      access: input.access,
+      device: input.device,
+      bridge: appHost().auth,
+      invalidate: Effect.ignore(Effect.tryPromise(() => router.invalidate())),
+      flush: flushSync,
+    },
+    input.snapshot,
+  );
+  if (input.inventory._tag === "Replica") registry.mount(input.inventory.catalogs.held);
+  registry.mount(workspaceSessionFeed);
   const app = <RouterProvider router={router} />;
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
@@ -64,9 +58,9 @@ export const mountApp = (input: {
           </main>
         }
       >
-        <RegistryContext.Provider value={registry}>
+        <AtomRegistryProvider registry={registry}>
           <ThemeProvider>{app}</ThemeProvider>
-        </RegistryContext.Provider>
+        </AtomRegistryProvider>
       </AppErrorBoundary>
     </React.StrictMode>,
   );

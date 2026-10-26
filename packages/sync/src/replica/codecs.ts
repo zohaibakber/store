@@ -35,7 +35,7 @@ const decodeOutboxEnvelope = <E>(
   );
 
 export const decodeStoredEnvelope = (row: StoredOutboxRow) =>
-  decodeOutboxEnvelope(row, (message) => ReplicaStorageError.make({ message }));
+  decodeOutboxEnvelope(row, (message) => new ReplicaStorageError({ message }));
 
 export const encodeEnvelopeJson = Schema.encodeSync(EnvelopeJson);
 

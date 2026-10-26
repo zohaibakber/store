@@ -11,16 +11,15 @@ import {
   suppliers,
 } from "@store/db/replica.schema";
 import { and, desc, eq, gt, inArray, or } from "drizzle-orm";
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
 import { withPendingOverlays, type VisibleStock } from "./decisions";
 import type { CatalogReads } from "./footprint";
 import type { CatalogEntity } from "./projection";
+import { decodeRowOrDie } from "./row-decoders";
 import type { ReplicaDb } from "./sql-client/drizzle";
-
-const decodeBatch = Schema.decodeUnknownSync(syncEntityRows.batch.schema);
 
 const IDS_PER_QUERY = 400;
 
@@ -49,16 +48,19 @@ const readRowsById = <Entity extends CatalogEntity>(
   entity: Entity,
   ids: ReadonlyArray<string>,
 ) => {
-  const decode = Schema.decodeUnknownSync(syncEntityRows[entity].schema);
   return selectRowsById(tx, organizationId, entity, ids).pipe(
-    Effect.map((rows): ReadonlyArray<SyncEntityRow<Entity>> => rows.map((row) => decode(row))),
+    Effect.flatMap((rows) =>
+      Effect.forEach(rows, (row): Effect.Effect<SyncEntityRow<Entity>> =>
+        decodeRowOrDie(entity, row),
+      ),
+    ),
   );
 };
 
 export const sqliteCatalogReads = (
   tx: ReplicaDb,
   organizationId: string,
-): CatalogReads<unknown, never> => ({
+): CatalogReads<EffectDrizzleQueryError, never> => ({
   rowsOf: (footprint) =>
     Effect.all({
       category: readRowsById(tx, organizationId, "category", footprint.category),
@@ -93,7 +95,9 @@ export const sqliteCatalogReads = (
       )
       .limit(1)
       .get()
-      .pipe(Effect.map((row) => (row ? decodeBatch(row) : undefined))),
+      .pipe(
+        Effect.flatMap((row) => (row ? decodeRowOrDie("batch", row) : Effect.succeed(undefined))),
+      ),
   supplierNamed: (name) =>
     tx
       .select({ id: suppliers.id })
@@ -163,12 +167,10 @@ const readVisibleStock = Effect.fn("ReplicaLookup.readVisibleStock")(function* (
       .where(and(eq(pendingRowMarks.entity, "batch"), inArray(pendingRowMarks.entityId, chunk)))
       .all(),
   )).flat();
-  const operationIds = [
-    ...new Set([
-      ...overlayRows.map((overlay) => overlay.commandId),
-      ...markRows.map((mark) => mark.operationId),
-    ]),
-  ];
+  const operationIds = Array.dedupe([
+    ...overlayRows.map((overlay) => overlay.commandId),
+    ...markRows.map((mark) => mark.operationId),
+  ]);
   const sequenceRows = (yield* Effect.forEach(chunked(operationIds), (chunk) =>
     tx
       .select({
@@ -205,7 +207,7 @@ export const readUnitsPerPack = Effect.fn("ReplicaLookup.readUnitsPerPack")(func
   organizationId: string,
   productIds: ReadonlyArray<string>,
 ) {
-  const rows = yield* readRowsById(tx, organizationId, "product", [...new Set(productIds)]);
+  const rows = yield* readRowsById(tx, organizationId, "product", Array.dedupe(productIds));
   const unitsPerPack = new Map<string, number>(rows.map((row) => [row.id, row.unitsPerPack]));
   return (productId: string) => unitsPerPack.get(productId) ?? 1;
 });

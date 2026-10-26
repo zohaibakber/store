@@ -16,3 +16,10 @@ export const AuthDatabase = Effect.gen(function* () {
     migrations: { dir: schema.out, table: "drizzle_migrations" },
   }).pipe(RemovalPolicy.retain(stage === "prod"));
 });
+
+export const AuthSigningKeyPair = Alchemy.KeyPair("AuthSigningKeyPair", {
+  algorithm: "ec",
+  namedCurve: "P-256",
+});
+
+export const AuthEphemeralSecret = Alchemy.Random("AuthEphemeralSecret", { bytes: 32 });

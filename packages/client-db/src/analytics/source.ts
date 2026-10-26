@@ -2,6 +2,7 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlit
 
 import {
   insightsDayStart,
+  isSyncEntity,
   MAX_INSIGHTS_ON_ORDER,
   type InsightsBatchFact,
   type InsightsOnOrderFact,
@@ -22,6 +23,7 @@ import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 
 import { visibleBatches } from "../replica/compile";
+import { SQLITE_BUSY_TIMEOUT_MILLIS, preparedStatements } from "../replica/node-statements";
 import {
   BatchFactRow,
   batchFacts,
@@ -41,10 +43,9 @@ import {
   toProductFact,
   type InvoiceWindow,
 } from "../replica/replica-queries";
-import { analyticsFailure, type AnalyticsFailure } from "./errors";
+import { analyticsFailure, guardAll, type AnalyticsFailure, type Guarded } from "./errors";
 import type { SalesRow } from "./store";
 
-const BUSY_TIMEOUT_MILLIS = 5_000;
 const PREPARED_STATEMENTS = 64;
 
 export type InventoryStamp = { readonly generation: string; readonly version: number };
@@ -64,9 +65,7 @@ type TouchedResolution = {
   readonly overflow: boolean;
 };
 
-export type InventorySnapshot = {
-  readonly organizationId: string;
-  readonly stamp: InventoryStamp;
+type SnapshotReads = {
   readonly productCount: () => number;
   readonly productPage: (after: string, limit: number) => ReadonlyArray<InsightsProductFact>;
   readonly productsByIds: (ids: ReadonlyArray<string>) => ReadonlyArray<InsightsProductFact>;
@@ -80,6 +79,11 @@ export type InventorySnapshot = {
   readonly sales: (range: SalesDays, productIds?: ReadonlyArray<string>) => ReadonlyArray<SalesRow>;
   readonly resolveTouched: (keys: ReadonlyArray<string>, maxProducts: number) => TouchedResolution;
 };
+
+export type InventorySnapshot = {
+  readonly organizationId: string;
+  readonly stamp: InventoryStamp;
+} & Guarded<SnapshotReads>;
 
 export type InventorySource = {
   readonly snapshot: <A, E, R>(
@@ -224,27 +228,14 @@ const keyParts = (key: string): { readonly entity: string; readonly id: string }
     : { entity: key.slice(0, separator), id: key.slice(separator + 1) };
 };
 
-const makeSnapshot = (
-  db: DatabaseSync,
-  prepared: Map<string, StatementSync>,
-): InventorySnapshot => {
-  const prepare = (query: string) => {
-    const cached = prepared.get(query);
-    if (cached !== undefined) return cached;
-    if (prepared.size >= PREPARED_STATEMENTS) prepared.clear();
-    const created = db.prepare(query);
-    prepared.set(query, created);
-    return created;
-  };
+const makeSnapshot = (prepare: (sql: string) => StatementSync): InventorySnapshot => {
   const all = (query: Statement, values: Record<string, string | number> = {}) =>
     // SAFETY: placeholders are filled with strings and numbers, which node:sqlite accepts as bindings.
     prepare(query.sql).all(...(fillPlaceholders(query.params, values) as Array<SQLInputValue>));
   const state = decodeState(all(statements.stamp)[0]);
   const organizationId = state.organizationId;
   const ids = (values: ReadonlyArray<string>) => JSON.stringify(values);
-  return {
-    organizationId,
-    stamp: { generation: String(state.generation), version: state.version },
+  const reads: SnapshotReads = {
     productCount: () =>
       Number(all(statements.productCount, { organization: organizationId })[0]?.["n"] ?? 0),
     productPage: (after, limit) =>
@@ -302,18 +293,11 @@ const makeSnapshot = (
       }
       const productIds = new Set<string>();
       let overflow = false;
-      const known = new Set<string>([
-        "product",
-        "batch",
-        "invoice",
-        "invoiceItem",
-        "category",
-        "stockMovement",
-        "purchaseOrder",
-        "purchaseOrderItem",
-      ]);
       for (const [entity, held] of grouped) {
-        if (!known.has(entity)) unresolved = true;
+        if (!isSyncEntity(entity)) {
+          unresolved = true;
+          continue;
+        }
         const scope = { organization: organizationId, ids: ids([...held]) };
         switch (entity) {
           case "product":
@@ -347,12 +331,23 @@ const makeSnapshot = (
             for (const row of rows) productIds.add(row.id);
             break;
           }
+          case "stockMovement":
+          case "supplier":
+          case "purchaseOrder":
+          case "purchaseOrderItem":
+            break;
           default:
+            entity satisfies never;
             break;
         }
       }
       return { productIds, unresolved, overflow };
     },
+  };
+  return {
+    organizationId,
+    stamp: { generation: String(state.generation), version: state.version },
+    ...guardAll(reads),
   };
 };
 
@@ -368,10 +363,10 @@ export const openInventorySource = (
       (opened) => Effect.try(() => opened.close()).pipe(Effect.ignore),
     );
     yield* Effect.try({
-      try: () => db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLIS}`),
+      try: () => db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MILLIS}`),
       catch: analyticsFailure,
     });
-    const prepared = new Map<string, StatementSync>();
+    const { prepare } = preparedStatements(db, PREPARED_STATEMENTS);
     const turn = yield* Semaphore.make(1);
     return {
       snapshot: (work) =>
@@ -381,7 +376,7 @@ export const openInventorySource = (
               try: () => {
                 db.exec("BEGIN");
                 try {
-                  return makeSnapshot(db, prepared);
+                  return makeSnapshot(prepare);
                 } catch (cause) {
                   db.exec("ROLLBACK");
                   throw cause;

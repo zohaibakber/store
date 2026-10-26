@@ -1,19 +1,13 @@
+import { describe, expect, it } from "@effect/vitest";
 import { EmailAddress, PasswordHash, SessionId, type OrganizationId } from "@store/auth";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import { describe, expect, it } from "vite-plus/test";
+import * as TestClock from "effect/testing/TestClock";
 
-import { AuthCrypto } from "../src/crypto";
-import { AuthD1 } from "../src/d1";
+import { SessionFamilyId } from "../src/identifiers";
 import { AuthRepository } from "../src/repository";
 import { pruneExpiredSessions } from "../src/session-maintenance";
-import { authD1 } from "./sqlite-d1";
-
-const repositoryOn = (d1: ReturnType<typeof authD1>) => {
-  const layer = AuthRepository.layer.pipe(Layer.provide([AuthD1.layer(d1), AuthCrypto.layer]));
-  return <A, E>(use: (repository: AuthRepository["Service"]) => Effect.Effect<A, E>) =>
-    Effect.runPromise(AuthRepository.use(use).pipe(Effect.provide(layer)));
-};
+import { scenario } from "./harness";
 
 const PASSWORD_HASH = PasswordHash.make("pbkdf2-sha256$100000$c2FsdA$aGFzaA");
 
@@ -39,7 +33,7 @@ const sessionFor = (
 ) =>
   repository.createSession({
     id: SessionId.make(input.id),
-    familyId: `family-${input.id}`,
+    familyId: SessionFamilyId.make(`family-${input.id}`),
     userId: input.userId,
     activeOrganizationId: input.organizationId,
     refreshTokenHash: `hash-${input.id}`,
@@ -48,80 +42,74 @@ const sessionFor = (
   });
 
 describe("refresh session reads and pruning on D1", () => {
-  it("gives a session no membership in an organization its user does not belong to", async () => {
-    const run = repositoryOn(authD1());
-    const now = Date.now();
-    const outcome = await run((repository) =>
-      Effect.gen(function* () {
-        const { owner, membership } = yield* seedOwner(repository, "owner@example.com");
-        const other = yield* seedOwner(repository, "other@example.com");
-        yield* sessionFor(repository, {
-          id: "session-own",
+  it.effect("gives a session no membership in an organization its user does not belong to", () =>
+    Effect.gen(function* () {
+      const repository = yield* AuthRepository;
+      const now = yield* Clock.currentTimeMillis;
+      const { owner, membership } = yield* seedOwner(repository, "owner@example.com");
+      const other = yield* seedOwner(repository, "other@example.com");
+      yield* sessionFor(repository, {
+        id: "session-own",
+        userId: owner.id,
+        organizationId: membership.organizationId,
+        expiresAt: now + 60_000,
+      });
+      yield* sessionFor(repository, {
+        id: "session-foreign",
+        userId: owner.id,
+        organizationId: other.membership.organizationId,
+        expiresAt: now + 60_000,
+      });
+      const own = yield* repository.findRefreshContext(SessionId.make("session-own"));
+      const foreign = yield* repository.findRefreshContext(SessionId.make("session-foreign"));
+      const missing = yield* repository.findRefreshContext(SessionId.make("session-missing"));
+
+      expect(own).toMatchObject({
+        session: { id: "session-own", userId: owner.id, revokedAt: null },
+        user: owner,
+        activeMembership: membership,
+      });
+      expect(foreign?.user).toEqual(owner);
+      expect(foreign?.activeMembership).toBeNull();
+      expect(missing).toBeNull();
+    }).pipe(scenario()),
+  );
+
+  it.effect("prunes only sessions past the retention cutoff, in bounded batches", () =>
+    Effect.gen(function* () {
+      const repository = yield* AuthRepository;
+      const day = 24 * 60 * 60 * 1_000;
+      yield* TestClock.adjust("60 days");
+      const now = yield* Clock.currentTimeMillis;
+      const { owner, membership } = yield* seedOwner(repository, "owner@example.com");
+      const seed = (id: string, expiresAt: number) =>
+        sessionFor(repository, {
+          id,
           userId: owner.id,
           organizationId: membership.organizationId,
-          expiresAt: now + 60_000,
+          expiresAt,
         });
-        yield* sessionFor(repository, {
-          id: "session-foreign",
-          userId: owner.id,
-          organizationId: other.membership.organizationId,
-          expiresAt: now + 60_000,
-        });
-        return {
-          owner,
-          membership,
-          own: yield* repository.findRefreshContext(SessionId.make("session-own")),
-          foreign: yield* repository.findRefreshContext(SessionId.make("session-foreign")),
-          missing: yield* repository.findRefreshContext(SessionId.make("session-missing")),
-        };
-      }),
-    );
-    expect(outcome.own).toMatchObject({
-      session: { id: "session-own", userId: outcome.owner.id, revokedAt: null },
-      user: outcome.owner,
-      activeMembership: outcome.membership,
-    });
-    expect(outcome.foreign?.user).toEqual(outcome.owner);
-    expect(outcome.foreign?.activeMembership).toBeNull();
-    expect(outcome.missing).toBeNull();
-  });
+      yield* seed("expired-long-ago-1", now - 30 * day);
+      yield* seed("expired-long-ago-2", now - 20 * day);
+      yield* seed("expired-recently", now - day);
+      yield* seed("live", now + day);
+      yield* repository.revokeFamily(SessionFamilyId.make("family-live"), now);
+      const policy = { retainAfterExpiryMillis: 7 * day, batchRows: 1, maxBatches: 1 };
+      const first = yield* pruneExpiredSessions(repository, policy);
+      const second = yield* pruneExpiredSessions(repository, { ...policy, maxBatches: 5 });
+      const remaining = yield* Effect.forEach(
+        ["expired-long-ago-1", "expired-long-ago-2", "expired-recently", "live"],
+        (id) => repository.findSession(SessionId.make(id)),
+      );
 
-  it("prunes only sessions past the retention cutoff, in bounded batches", async () => {
-    const run = repositoryOn(authD1());
-    const now = Date.now();
-    const day = 24 * 60 * 60 * 1_000;
-    const outcome = await run((repository) =>
-      Effect.gen(function* () {
-        const { owner, membership } = yield* seedOwner(repository, "owner@example.com");
-        const seed = (id: string, expiresAt: number) =>
-          sessionFor(repository, {
-            id,
-            userId: owner.id,
-            organizationId: membership.organizationId,
-            expiresAt,
-          });
-        yield* seed("expired-long-ago-1", now - 30 * day);
-        yield* seed("expired-long-ago-2", now - 20 * day);
-        yield* seed("expired-recently", now - day);
-        yield* seed("live", now + day);
-        yield* repository.revokeFamily("family-live", now);
-        const policy = { retainAfterExpiryMillis: 7 * day, batchRows: 1, maxBatches: 1 };
-        const first = yield* pruneExpiredSessions(repository, policy);
-        const second = yield* pruneExpiredSessions(repository, { ...policy, maxBatches: 5 });
-        const remaining = yield* Effect.forEach(
-          ["expired-long-ago-1", "expired-long-ago-2", "expired-recently", "live"],
-          (id) => repository.findSession(SessionId.make(id)),
-        );
-        return { first, second, remaining };
-      }),
-    );
-    expect(outcome.first).toEqual({ deleted: 1, batches: 1, more: true });
-    expect(outcome.second).toEqual({ deleted: 1, batches: 2, more: false });
-    expect(outcome.remaining.map((session) => session?.id ?? null)).toEqual([
-      null,
-      null,
-      "expired-recently",
-      "live",
-    ]);
-  });
+      expect(first).toEqual({ deleted: 1, batches: 1, more: true });
+      expect(second).toEqual({ deleted: 1, batches: 2, more: false });
+      expect(remaining.map((session) => session?.id ?? null)).toEqual([
+        null,
+        null,
+        "expired-recently",
+        "live",
+      ]);
+    }).pipe(scenario()),
+  );
 });

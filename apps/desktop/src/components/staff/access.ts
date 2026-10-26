@@ -8,7 +8,6 @@ import {
   type StaffRole,
   type StaffState,
 } from "@store/contracts";
-import { commandFailureSurface, type FailureSurface } from "@store/inventory-react";
 import { createContext, useContext } from "react";
 
 const NO_STAFF: StaffState = { _tag: "disabled" };
@@ -42,7 +41,6 @@ export const stateLandingPath = (state: StaffState): LandingPath =>
 const ROUTE_PERMISSIONS: ReadonlyArray<readonly [prefix: string, permission: StaffPermission]> = [
   ["/settings", "manageShop"],
   ["/products/new", "manageStock"],
-  ["/products/upload", "manageStock"],
   ["/products", "sell"],
   ["/invoices", "sell"],
   ["/categories", "manageStock"],
@@ -92,6 +90,3 @@ export const nameProblem = (name: string): string | null => {
       ? `Use ${MAX_STAFF_NAME_LENGTH} characters or fewer.`
       : null;
 };
-
-export const staffFailure = (cause: unknown): FailureSurface =>
-  commandFailureSurface(cause) ?? { _tag: "defect", message: "Something went wrong. Try again." };

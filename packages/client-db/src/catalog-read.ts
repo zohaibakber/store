@@ -1,4 +1,5 @@
-import { nextInvoiceNumber } from "@store/contracts";
+import { nextSequenceNumber } from "@store/contracts";
+import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 
 import type { CatalogProjectionTables } from "./catalog-projection";
@@ -48,12 +49,11 @@ const readAll = <Source extends InventoryCollectionSource>(
   );
 
 const inChunks = (column: string, values: Iterable<string> | undefined) => {
-  const unique = [...new Set(values ?? [])];
-  const predicates: Array<SubsetPredicate> = [];
-  for (let start = 0; start < unique.length; start += MAX_IN_VALUES) {
-    predicates.push({ _tag: "in", column, values: unique.slice(start, start + MAX_IN_VALUES) });
-  }
-  return predicates;
+  return Arr.chunksOf(Arr.dedupe(values ?? []), MAX_IN_VALUES).map((chunk): SubsetPredicate => ({
+    _tag: "in",
+    column,
+    values: chunk,
+  }));
 };
 
 const readWhereIn = <Source extends InventoryCollectionSource>(
@@ -136,7 +136,7 @@ export const readNextInvoiceNumber = (
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
   readLatest(read, "invoices", "invoiceNumber", organizationId).pipe(
-    Effect.map((latest) => nextInvoiceNumber(latest.map((invoice) => invoice.invoiceNumber))),
+    Effect.map((latest) => nextSequenceNumber(latest.map((invoice) => invoice.invoiceNumber))),
   );
 
 export type PurchasingRowsRequest = {
@@ -192,5 +192,5 @@ export const readNextPurchaseOrderNumber = (
   organizationId: string,
 ): Effect.Effect<number, unknown> =>
   readLatest(read, "purchaseOrders", "orderNumber", organizationId).pipe(
-    Effect.map((latest) => nextInvoiceNumber(latest.map((order) => order.orderNumber))),
+    Effect.map((latest) => nextSequenceNumber(latest.map((order) => order.orderNumber))),
   );

@@ -1,4 +1,3 @@
-import { isNativeRedirect } from "@store/auth/security";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const callbackPageHeaders = {
@@ -112,14 +111,7 @@ const htmlResponse = (html: string, status = 200) =>
     callbackPageHeaders,
   );
 
-const nativeOAuthHandoffResponse = (appUrl: URL) => htmlResponse(nativeOAuthHandoffHtml(appUrl));
-
 export const oauthCallbackErrorResponse = (status: number, message: string) =>
   htmlResponse(oauthCallbackErrorHtml(message), status);
 
-export const googleOAuthAppResponse = (redirect: URL) =>
-  isNativeRedirect(redirect.href)
-    ? nativeOAuthHandoffResponse(redirect)
-    : HttpServerResponse.redirect(redirect, {
-        headers: { "cache-control": callbackPageHeaders["cache-control"] },
-      });
+export const googleOAuthAppResponse = (appUrl: URL) => htmlResponse(nativeOAuthHandoffHtml(appUrl));

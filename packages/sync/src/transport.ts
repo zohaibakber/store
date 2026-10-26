@@ -2,6 +2,7 @@ import type {
   AcquireSnapshotRequest,
   AcquireSnapshotResult,
   CommandReceipt,
+  OperationId,
   RegisterReplicaRequest,
   RegisterReplicaResult,
   SnapshotId,
@@ -13,7 +14,14 @@ import type {
 } from "@store/contracts";
 import { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import { honourRetryAfter, isAuthStatus } from "@store/contracts/http-errors";
-import { SyncHttpApi } from "@store/contracts/sync/api";
+import {
+  SyncHttpApi,
+  type SyncBadRequest,
+  type SyncConflict,
+  type SyncForbidden,
+  type SyncNotFound,
+  type SyncServiceUnavailable,
+} from "@store/contracts/sync/api";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -82,11 +90,20 @@ export type SyncTransportError =
 
 export type SyncFailure = SyncTransportError | SyncProtocolError;
 
-type SyncCycleFailure =
+export type SyncCycleFailure =
   | SyncFailure
   | ReplicaStorageError
   | ReplicaCoverageRepairRequired
   | SyncRecoveryRequired;
+
+type SyncWireError =
+  | SyncBadRequest
+  | SyncForbidden
+  | SyncNotFound
+  | SyncConflict
+  | SyncServiceUnavailable;
+
+type SyncClientFailure = HttpClientError.HttpClientError | Schema.SchemaError | SyncWireError;
 
 export type RecoverableCode = "EPOCH_MISMATCH" | "INCARNATION_MISMATCH" | "SNAPSHOT_REQUIRED";
 
@@ -105,6 +122,8 @@ export type SyncFailureDisposition =
   | { readonly _tag: "recover"; readonly code: RecoverableCode }
   | { readonly _tag: "suspend"; readonly suspension: Suspension };
 
+export const STORAGE_FULL_RETRY_MILLIS = 10 * 60_000;
+
 const AUTH_REQUIRED_MESSAGE =
   "Sign in again to resume syncing. Pending changes are saved on this device.";
 
@@ -119,7 +138,7 @@ const decodeRetryAfterSeconds = Schema.decodeUnknownOption(
 );
 const decodeRetryAfterDate = Schema.decodeUnknownOption(Schema.DateFromString);
 
-export const retryAfterMillis = (header: string, nowMillis: number): number | undefined => {
+const retryAfterMillis = (header: string, nowMillis: number): number | undefined => {
   const trimmed = header.trim();
   if (trimmed.length === 0) return undefined;
   const seconds = decodeRetryAfterSeconds(trimmed);
@@ -131,32 +150,7 @@ export const retryAfterMillis = (header: string, nowMillis: number): number | un
 
 const decodeProtocolCode = Schema.decodeUnknownOption(SyncProtocolCode);
 
-const statusForErrorTag = (tag: string): number => {
-  if (tag === "BadRequest") return 400;
-  if (tag === "Forbidden") return 403;
-  if (tag === "NotFound") return 404;
-  if (tag === "Conflict") return 409;
-  return 503;
-};
-
-const TypedHttpError = Schema.Struct({
-  _tag: Schema.String,
-  error: Schema.Struct({
-    code: Schema.String,
-    message: Schema.String,
-  }),
-});
-export type SyncHttpErrorBody = typeof TypedHttpError.Type;
-const decodeTypedHttpError = Schema.decodeUnknownOption(TypedHttpError);
-
-export type SyncFailureCause =
-  | SyncCycleFailure
-  | HttpClientError.HttpClientError
-  | Schema.SchemaError
-  | SyncHttpErrorBody
-  | Error;
-
-export const failureFromStatus = (
+const failureFromStatus = (
   status: number,
   message: string,
   retryAfter?: number,
@@ -174,64 +168,48 @@ export const failureFromStatus = (
   return new SyncTransportRefused({ message, status });
 };
 
-const fromTypedHttpError = (tag: string, code: string, message: string): SyncFailure => {
-  const protocolCode = decodeProtocolCode(code);
-  if (Option.isSome(protocolCode)) {
-    return new SyncProtocolError({ code: protocolCode.value, message });
-  }
-  return failureFromStatus(statusForErrorTag(tag), message);
+const fromWireError = (status: number) => (body: SyncWireError) => {
+  const protocolCode = decodeProtocolCode(body.error.code);
+  return Effect.fail<SyncFailure>(
+    Option.isSome(protocolCode)
+      ? new SyncProtocolError({ code: protocolCode.value, message: body.error.message })
+      : failureFromStatus(status, body.error.message),
+  );
 };
 
 const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300;
 
-const fromHttpClientError = (error: HttpClientError.HttpClientError, now: number): SyncFailure => {
+const fromHttpClientError = Effect.fn("SyncTransport.fromHttpClientError")(function* (
+  error: HttpClientError.HttpClientError,
+) {
   const reason = error.reason;
   if (
     reason._tag !== "StatusCodeError" &&
     reason._tag !== "DecodeError" &&
     reason._tag !== "EmptyBodyError"
   ) {
-    return new SyncTransportOffline({ message: error.message });
+    return yield* new SyncTransportOffline({ message: error.message });
   }
   const status = reason.response.status;
   if (reason._tag !== "StatusCodeError" && isSuccessStatus(status)) {
-    return new SyncTransportGarbled({ message: error.message, status });
+    return yield* new SyncTransportGarbled({ message: error.message, status });
   }
   const header = Headers.get(reason.response.headers, "retry-after");
+  const now = yield* Clock.currentTimeMillis;
   const delay = Option.isSome(header) ? retryAfterMillis(header.value, now) : undefined;
-  return failureFromStatus(status, error.message, delay);
-};
+  return yield* failureFromStatus(status, error.message, delay);
+});
 
-export const mapSyncFailure = (error: SyncFailureCause, now: number): SyncFailure => {
-  if (error instanceof SyncProtocolError) return error;
-  if (
-    error instanceof SyncTransportUnavailable ||
-    error instanceof SyncTransportOffline ||
-    error instanceof SyncTransportAuthRequired ||
-    error instanceof SyncTransportRefused ||
-    error instanceof SyncTransportGarbled
-  ) {
-    return error;
-  }
-  if (HttpClientError.isHttpClientError(error)) return fromHttpClientError(error, now);
-  if (error instanceof Schema.SchemaError) {
-    return new SyncTransportGarbled({ message: error.message });
-  }
-  const typed = decodeTypedHttpError(error);
-  if (Option.isSome(typed)) {
-    return fromTypedHttpError(typed.value._tag, typed.value.error.code, typed.value.error.message);
-  }
-  return new SyncTransportOffline({
-    message: error instanceof Error ? error.message : "The sync transport is unavailable.",
+const failed = <A, R>(effect: Effect.Effect<A, SyncClientFailure, R>) =>
+  Effect.catchTags(effect, {
+    HttpClientError: fromHttpClientError,
+    SchemaError: (error) => new SyncTransportGarbled({ message: error.message }),
+    BadRequest: fromWireError(400),
+    Forbidden: fromWireError(403),
+    NotFound: fromWireError(404),
+    Conflict: fromWireError(409),
+    ServiceUnavailable: fromWireError(503),
   });
-};
-
-export const classifySyncFailure = (error: SyncFailureCause, now: number): SyncCycleFailure =>
-  error instanceof ReplicaStorageError ||
-  error instanceof ReplicaCoverageRepairRequired ||
-  error instanceof SyncRecoveryRequired
-    ? error
-    : mapSyncFailure(error, now);
 
 const suspect = (
   reason: SyncFailureSuspect["reason"],
@@ -262,17 +240,51 @@ const protocolSuspension = (
   suspension: { reason, message: error.message, code: error.code, blocks: "all", timer: false },
 });
 
+const PROTOCOL_DISPOSITION = {
+  ORGANIZATION_MISMATCH: "protocol",
+  INVALID_OPERATION: "protocol",
+  OPERATION_ID_REUSED: "protocol",
+  INSUFFICIENT_STOCK: "protocol",
+  INVOICE_IDENTITY_CONFLICT: "protocol",
+  ENTITY_CONFLICT: "protocol",
+  ENTITY_RELATION_INVALID: "protocol",
+  ENTITY_WRITE_FAILED: "protocol",
+  REPLICA_SEQUENCE_GAP: "recoveryRequired",
+  EPOCH_MISMATCH: "EPOCH_MISMATCH",
+  REPLICA_UNKNOWN: "protocol",
+  REPLICA_OWNED_BY_OTHER: "protocol",
+  COMMAND_IDENTITY_MISMATCH: "protocol",
+  INVALID_PAYLOAD_HASH: "protocol",
+  SNAPSHOT_REQUIRED: "SNAPSHOT_REQUIRED",
+  SNAPSHOT_UNAVAILABLE: "protocol",
+  SCHEMA_VERSION_UNSUPPORTED: "updateRequired",
+  INCARNATION_MISMATCH: "INCARNATION_MISMATCH",
+  SUPPLIER_HAS_ORDERS: "protocol",
+  PURCHASE_ORDER_TRANSITION_INVALID: "protocol",
+  PURCHASE_ORDER_NOT_OPEN: "protocol",
+  PURCHASE_ORDER_NOT_DRAFT: "protocol",
+  PURCHASE_ORDER_HAS_ITEMS: "protocol",
+  PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "protocol",
+  PURCHASE_ORDER_ITEM_RECEIVED: "protocol",
+  PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "protocol",
+  REPLICA_SCHEMA_OUTDATED: "protocol",
+} as const satisfies Record<
+  SyncProtocolCode,
+  RecoverableCode | "recoveryRequired" | "updateRequired" | "protocol"
+>;
+
 const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition => {
-  switch (error.code) {
+  const disposition = PROTOCOL_DISPOSITION[error.code];
+  switch (disposition) {
     case "EPOCH_MISMATCH":
     case "INCARNATION_MISMATCH":
     case "SNAPSHOT_REQUIRED":
-      return { _tag: "recover", code: error.code };
-    case "REPLICA_SEQUENCE_GAP":
+      return { _tag: "recover", code: disposition };
+    case "recoveryRequired":
       return recoveryRequired(error.code, error.message);
-    case "SCHEMA_VERSION_UNSUPPORTED":
+    case "updateRequired":
       return protocolSuspension("updateRequired", error);
-    default:
+    case "protocol":
       return protocolSuspension("protocol", error);
   }
 };
@@ -280,10 +292,12 @@ const protocolDisposition = (error: SyncProtocolError): SyncFailureDisposition =
 export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition => {
   switch (error._tag) {
     case "ReplicaStorageError":
-      return {
-        _tag: "suspend",
-        suspension: { reason: "storage", message: error.message, blocks: "all", timer: true },
-      };
+      return error.full === true
+        ? { _tag: "retry", delayMillis: STORAGE_FULL_RETRY_MILLIS }
+        : {
+            _tag: "suspend",
+            suspension: { reason: "storage", message: error.message, blocks: "all", timer: true },
+          };
     case "ReplicaCoverageRepairRequired":
       return { _tag: "recover", code: "SNAPSHOT_REQUIRED" };
     case "SyncRecoveryRequired":
@@ -312,35 +326,6 @@ export const dispositionFor = (error: SyncCycleFailure): SyncFailureDisposition 
   }
 };
 
-const mapTransportFailure = <A, E extends SyncFailureCause, R>(
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, SyncTransportError | SyncProtocolError, R> =>
-  Effect.flatMap(Clock.currentTimeMillis, (now) =>
-    Effect.mapError(effect, (error) => mapSyncFailure(error, now)),
-  );
-
-export type SyncTransport = {
-  readonly registerReplica: (
-    request: RegisterReplicaRequest,
-  ) => Effect.Effect<RegisterReplicaResult, SyncTransportError | SyncProtocolError>;
-  readonly submitCommand: (
-    request: SyncSubmitCommandRequest,
-  ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
-  readonly getReceipt: (
-    operationId: string,
-  ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
-  readonly pull: (
-    request: SyncPullRequest,
-  ) => Effect.Effect<SyncPullResult, SyncTransportError | SyncProtocolError>;
-  readonly acquireSnapshot: (
-    request: AcquireSnapshotRequest,
-  ) => Effect.Effect<AcquireSnapshotResult, SyncTransportError | SyncProtocolError>;
-  readonly readSnapshotPart: (
-    snapshotId: SnapshotId,
-    partNumber: number,
-  ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
-};
-
 export const SYNC_REQUEST_TIMEOUT_MILLIS = {
   registerReplica: 15_000,
   submitCommand: 15_000,
@@ -348,10 +333,10 @@ export const SYNC_REQUEST_TIMEOUT_MILLIS = {
   pull: 30_000,
   acquireSnapshot: 30_000,
   readSnapshotPart: 30_000,
-} as const satisfies Record<keyof SyncTransport, number>;
+} as const satisfies Record<keyof SyncTransport["Service"], number>;
 
 const withDeadline =
-  (operation: keyof SyncTransport) =>
+  (operation: keyof SyncTransport["Service"]) =>
   <A, R>(
     effect: Effect.Effect<A, SyncTransportError | SyncProtocolError, R>,
   ): Effect.Effect<A, SyncTransportError | SyncProtocolError, R> =>
@@ -365,7 +350,7 @@ const withDeadline =
         ),
     });
 
-export const withRequestDeadlines = (transport: SyncTransport): SyncTransport => ({
+const withRequestDeadlines = (transport: SyncTransport["Service"]): SyncTransport["Service"] => ({
   registerReplica: (request) => withDeadline("registerReplica")(transport.registerReplica(request)),
   submitCommand: (request) => withDeadline("submitCommand")(transport.submitCommand(request)),
   getReceipt: (operationId) => withDeadline("getReceipt")(transport.getReceipt(operationId)),
@@ -381,27 +366,45 @@ export const makeSyncTransport = Effect.fn("Sync.makeTransport")(function* (base
     transformClient: honourRetryAfter,
   });
   return withRequestDeadlines({
-    registerReplica: (request) =>
-      mapTransportFailure(client.sync.registerReplica({ payload: request })),
-    submitCommand: (request) =>
-      mapTransportFailure(client.sync.submitCommand({ payload: request })),
+    registerReplica: (request) => failed(client.sync.registerReplica({ payload: request })),
+    submitCommand: (request) => failed(client.sync.submitCommand({ payload: request })),
     getReceipt: (operationId) =>
-      mapTransportFailure(
+      failed(
         client.sync
           .getReceipt({ params: { operationId } })
           .pipe(Effect.catchTag("NotFound", () => Effect.succeed(undefined))),
       ),
-    pull: (request) => mapTransportFailure(client.sync.pull({ payload: request })),
-    acquireSnapshot: (request) =>
-      mapTransportFailure(client.sync.acquireSnapshot({ payload: request })),
+    pull: (request) => failed(client.sync.pull({ payload: request })),
+    acquireSnapshot: (request) => failed(client.sync.acquireSnapshot({ payload: request })),
     readSnapshotPart: (snapshotId, partNumber) =>
-      mapTransportFailure(client.sync.readSnapshotPart({ params: { snapshotId, partNumber } })),
+      failed(client.sync.readSnapshotPart({ params: { snapshotId, partNumber } })),
   });
 });
 
-export class SyncTransportService extends Context.Service<SyncTransportService, SyncTransport>()(
-  "@store/sync/SyncTransport",
-) {
+export class SyncTransport extends Context.Service<
+  SyncTransport,
+  {
+    readonly registerReplica: (
+      request: RegisterReplicaRequest,
+    ) => Effect.Effect<RegisterReplicaResult, SyncTransportError | SyncProtocolError>;
+    readonly submitCommand: (
+      request: SyncSubmitCommandRequest,
+    ) => Effect.Effect<SyncSubmitCommandResult, SyncTransportError | SyncProtocolError>;
+    readonly getReceipt: (
+      operationId: OperationId,
+    ) => Effect.Effect<CommandReceipt | undefined, SyncTransportError | SyncProtocolError>;
+    readonly pull: (
+      request: SyncPullRequest,
+    ) => Effect.Effect<SyncPullResult, SyncTransportError | SyncProtocolError>;
+    readonly acquireSnapshot: (
+      request: AcquireSnapshotRequest,
+    ) => Effect.Effect<AcquireSnapshotResult, SyncTransportError | SyncProtocolError>;
+    readonly readSnapshotPart: (
+      snapshotId: SnapshotId,
+      partNumber: number,
+    ) => Effect.Effect<SnapshotPartPayload, SyncTransportError | SyncProtocolError>;
+  }
+>()("@store/sync/SyncTransport") {
   static readonly layer = (baseUrl: string) =>
-    Layer.effect(SyncTransportService, makeSyncTransport(baseUrl));
+    Layer.effect(SyncTransport, makeSyncTransport(baseUrl));
 }

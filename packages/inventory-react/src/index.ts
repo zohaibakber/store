@@ -1,48 +1,38 @@
-export { rejectedCommandLabel } from "@store/client-db";
-export type {
-  InventorySyncActivity,
-  InventorySyncStatus,
-  ReceiveDeliveryLineInput,
-  RejectedCommand,
-} from "@store/client-db";
-export { minuteClockAtom, stockPolicyAtom, type CommandExecutionState } from "./atoms";
-export { createAppCatalogLifetime, type CatalogLease, type CatalogLifetime } from "./workspace";
-export { configureInventoryPreferences } from "./preferences";
+export type { InventorySyncActivity, InventorySyncStatus, RejectedCommand } from "@store/client-db";
+export type { ReceiveDeliveryLineInput } from "./commands";
+export { claimedCatalogScope, makeCatalogs, type Catalogs, type CatalogOpening } from "./opening";
+export { browserStorage, preferencesRuntime } from "./preferences";
 export {
   replicaAuthorityOf,
   type InventoryHost,
+  type InventoryScope,
   type OpenedReplica,
   type ReplicaOpenIdentity,
 } from "./host";
 export {
-  catalogOpenFailure,
-  commandFailureSurface,
+  catalogOpenRefused,
+  CatalogOpenFailure,
+  causeSurface,
+  type CommandExit,
+  type InventoryFailure,
   licenceRefusalCopy,
+  restockExportFailureCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";
 export { useEnterLicence, useLicenceState } from "./licence";
+export { useInvoiceStaff, useStaffPermission, useStaffState } from "./staff";
 export {
-  useInvoiceStaff,
-  useStaffActions,
-  useStaffPermission,
-  useStaffState,
-  type StaffActions,
-} from "./staff";
-export {
-  deliverPorts,
-  desktopServices,
   forwardedPorts,
-  makeInventoryServices,
+  openReplicaChannel,
   type ForwardedPorts,
   type InventoryServices,
-  type Link,
 } from "./services";
 export {
+  AtomRegistryProvider,
   InventoryProvider,
   useCatalogIsReady,
-  useCommandExecution,
-  useInventoryActions,
+  useCommand,
   useInventoryState,
   useInventorySyncActivity,
   useInventorySyncTransfer,
@@ -50,17 +40,8 @@ export {
   useReadyInventory,
 } from "./provider";
 export {
-  useCatalogCategories,
-  useCatalogProduct,
-  useCatalogProductCandidates,
-  useCatalogProductSearch,
-  useStockMovementHistory,
   useCatalogProductLookup,
-  useInventoryInvoice,
   useInventoryInvoices,
-  useInvoiceHistory,
-  useIssuedInvoices,
-  usePendingRowIds,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
   useSuspenseCatalogProductsById,
@@ -71,6 +52,7 @@ export {
   useProductSearch,
   useSuspenseInvoiceCount,
   useSuspenseInvoicePage,
+  useSuspenseCatalogHoldsNothing,
   useSuspenseProductCount,
   useSuspenseProductFacets,
   useSuspenseProductPage,
@@ -89,13 +71,6 @@ export {
   type PurchaseOrderTab,
 } from "./list-request";
 export type { InvoiceListRequest } from "./invoice-list";
-export {
-  matchCatalogProducts,
-  summarizeProductStock,
-  type CatalogProductSearchResult,
-  type ProductStockSummary,
-  type SearchableProduct,
-} from "./search";
 export type { PurchaseOrderListRequest } from "./purchasing";
 export {
   useLearnedSuppliers,
@@ -108,7 +83,6 @@ export {
   useSuspensePurchaseOrderDeliveries,
   useSuspensePurchaseOrderListCount,
   useSuspensePurchaseOrderPage,
-  useSuspenseSupplierCount,
   useSuspenseSuppliers,
   type PurchasingGate,
 } from "./purchasing-queries";
@@ -122,7 +96,7 @@ export {
   useStockPolicy,
 } from "./insights";
 export { inventorySyncIssueLabel } from "./sync-status";
-export type { Inventory, InventoryActions } from "./types";
+export type { Inventory } from "./types";
 export {
   preloadAll,
   preloadCatalogCategories,

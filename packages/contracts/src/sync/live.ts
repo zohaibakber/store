@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
-import { PositiveIntFromString, SyncIdentifier } from "../schema-primitives";
+import { ReplicaId } from "../ids";
+import { PositiveIntFromString } from "../schema-primitives";
 import {
   OrgCommitSequence,
   SyncEpoch,
@@ -33,7 +34,7 @@ export const SyncLiveWakeHint = Schema.Struct({
 export type SyncLiveWakeHint = typeof SyncLiveWakeHint.Type;
 
 export const LiveSocketQuery = Schema.Struct({
-  replicaId: SyncIdentifier,
+  replicaId: ReplicaId,
   maxBytes: Schema.optionalKey(PositiveIntFromString),
 });
 export type LiveSocketQuery = typeof LiveSocketQuery.Type;

@@ -11,6 +11,7 @@ import {
   SyncPullRequest,
   SyncPullResult,
   SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   LAST_UNIT_EPOCH,
@@ -19,20 +20,21 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
-import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
-import { makeSyncTransport, type SyncTransport } from "../src/transport";
+import { makeSyncTransport, SyncTransport } from "../src/transport";
 import { commitToAuthority } from "./lib/authority-digest";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { historyAuthorityTransport, makeHistoryAuthority } from "./lib/history-authority";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
 import { FIXTURE_USER_ID } from "./lib/replica-fixture";
@@ -59,7 +61,7 @@ const foreignChange = (entityId: string) => ({
 
 const foreignOnlyGroup = (commitSequence: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `foreign-write-${commitSequence}`,
+  operationId: OperationId.make(`foreign-write-${commitSequence}`),
   decision: "accepted",
   changes: [],
 });
@@ -122,7 +124,7 @@ const decodeAcquireRequest = Schema.decodeUnknownEffect(
 const SNAPSHOT_PART_PATH = /^\/api\/sync\/snapshots\/(?<snapshotId>[^/]+)\/parts\/(?<part>\d+)$/u;
 
 const newerAuthorityResponse = Effect.fn(function* (
-  authority: SyncTransport,
+  authority: SyncTransport["Service"],
   pathname: string,
   bodyText: string,
 ) {
@@ -141,30 +143,25 @@ const newerAuthorityResponse = Effect.fn(function* (
   return yield* Effect.die(`The newer authority has no route for ${pathname}.`);
 });
 
-const newerAuthorityTransport = (authority: SyncTransport) =>
-  makeSyncTransport("https://api.tabaaq.test").pipe(
-    Effect.provide(
-      FetchHttpClient.layer.pipe(
-        Layer.provide(
-          Layer.succeed(FetchHttpClient.Fetch, async (input, init) => {
-            const request = new Request(input, init);
-            return Response.json(
-              await Effect.runPromise(
-                newerAuthorityResponse(
-                  authority,
-                  new URL(request.url).pathname,
-                  await request.text(),
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
+const newerAuthorityClient = (authority: SyncTransport["Service"]) =>
+  HttpClient.make((request, url) =>
+    newerAuthorityResponse(
+      authority,
+      url.pathname,
+      request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "",
+    ).pipe(
+      Effect.map((body) => HttpClientResponse.fromWeb(request, Response.json(body))),
+      Effect.orDie,
     ),
   );
 
+const newerAuthorityTransport = (authority: SyncTransport["Service"]) =>
+  makeSyncTransport("https://api.tabaaq.test").pipe(
+    Effect.provide(Layer.succeed(HttpClient.HttpClient, newerAuthorityClient(authority))),
+  );
+
 const survivesUnknownEntities = Effect.fn(function* (
-  store: ReplicaStoreContract,
+  store: ReplicaStore["Service"],
   incarnation: string,
 ) {
   yield* TestClock.setTime(NOW);
@@ -172,18 +169,18 @@ const survivesUnknownEntities = Effect.fn(function* (
   const transport = yield* newerAuthorityTransport(
     historyAuthorityTransport(authority, incarnation),
   );
-  const engine = yield* makeSyncEngineFromReplicaStore(store, transport);
-  const applied = store.readSyncCursor().pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
-  const { generationId } = yield* store.readStamp();
+  const engine = yield* engineOf(store, stubTransport(transport));
+  const applied = store.readSyncCursor.pipe(Effect.map((cursor) => cursor.appliedCommitSequence));
+  const { generationId } = yield* store.readStamp;
 
-  yield* engine.catchUp();
+  yield* engine.catchUp;
   expect(yield* applied).toBe("1");
-  expect((yield* store.readStamp()).generationId).not.toBe(generationId);
+  expect((yield* store.readStamp).generationId).not.toBe(generationId);
 
   const pulled = [seedSpareBatchGroup, foreignOnlyGroup("3")];
   for (const group of pulled) commitToAuthority(authority.partition, group);
   yield* Ref.update(authority.log, (log) => [...log, ...pulled]);
-  yield* engine.catchUp();
+  yield* engine.catchUp;
   expect(yield* applied).toBe("3");
   expect(yield* store.readDigestVerification(OPERATIONAL_SUBSCRIPTION)).toBe(NOW);
 

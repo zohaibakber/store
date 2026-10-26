@@ -9,9 +9,9 @@ import { SqlError } from "effect/sql/SqlError";
 import type { EphemeralStoreError } from "./ephemeral";
 import { AuthRefusal, type AuthFailure } from "./failures";
 import type { GoogleOAuthError } from "./google";
-import type { RepositoryError } from "./repository";
+import type { AuthRepositoryError } from "./repository";
 
-export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("Auth.CryptoError", {
+export class AuthCryptoError extends Schema.TaggedError<AuthCryptoError>()("AuthCryptoError", {
   operation: Schema.String,
   cause: Schema.Defect(),
 }) {}
@@ -66,7 +66,7 @@ export const storageFailureMessage = (cause: unknown): string => {
 };
 
 export type InfrastructureFailure =
-  | RepositoryError
+  | AuthRepositoryError
   | EphemeralStoreError
   | AuthCryptoError
   | EmailDeliveryError
@@ -74,33 +74,33 @@ export type InfrastructureFailure =
   | GoogleOAuthError
   | JwtError;
 
-const infrastructureDiagnostics = (failure: InfrastructureFailure) => {
+export const infrastructureDiagnostics = (failure: InfrastructureFailure) => {
   switch (failure._tag) {
-    case "Auth.RepositoryError":
-    case "Auth.EphemeralStoreError":
-      return { tag: failure._tag, operation: failure.operation, message: failure.message };
-    case "Auth.CryptoError":
+    case "AuthRepositoryError":
+    case "EphemeralStoreError":
+      return {
+        tag: failure._tag,
+        operation: failure.operation,
+        message: storageFailureMessage(failure.cause),
+      };
+    case "AuthCryptoError":
       return { tag: failure._tag, operation: failure.operation, message: String(failure.cause) };
-    case "Auth.EmailDeliveryError":
-    case "Auth.PasswordHashError":
-    case "Auth.GoogleOAuthError":
-    case "Auth.JwtError":
+    case "EmailDeliveryError":
+    case "PasswordHashError":
+    case "GoogleOAuthError":
+    case "JwtError":
       return { tag: failure._tag, message: failure.message };
-    default: {
-      const _exhaustive: never = failure;
-      return _exhaustive;
-    }
   }
 };
 
 const INFRASTRUCTURE_TAGS = [
-  "Auth.RepositoryError",
-  "Auth.EphemeralStoreError",
-  "Auth.CryptoError",
-  "Auth.EmailDeliveryError",
-  "Auth.PasswordHashError",
-  "Auth.GoogleOAuthError",
-  "Auth.JwtError",
+  "AuthRepositoryError",
+  "EphemeralStoreError",
+  "AuthCryptoError",
+  "EmailDeliveryError",
+  "PasswordHashError",
+  "GoogleOAuthError",
+  "JwtError",
 ] as const;
 
 export const unavailableOnInfrastructureFailure = <A, R>(

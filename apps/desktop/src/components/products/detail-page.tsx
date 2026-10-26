@@ -21,6 +21,7 @@ import {
 import { formatStock } from "@/components/products/stock";
 import { ProductVisibilitySelect } from "@/components/products/visibility";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
+import { DetailNotFound } from "@/components/shared/detail-not-found";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -48,6 +49,16 @@ import { usePageShortcuts } from "@/lib/shortcuts";
 
 export function ProductDetailError({ error }: { error: unknown }) {
   return <DetailLoadError error={error} subject="product" />;
+}
+
+export function ProductDetailNotFound() {
+  return (
+    <DetailNotFound title="Product not found">
+      <Button render={<Link to="/products" />} size="sm" variant="outline">
+        Back to products
+      </Button>
+    </DetailNotFound>
+  );
 }
 
 const muted = <span className="text-muted-foreground">{EMPTY}</span>;
@@ -115,7 +126,7 @@ export function ProductDetailPage({
     readonly data: ReadonlyArray<StockMovement>;
     readonly hasNextPage: boolean;
     readonly isFetchingNextPage: boolean;
-    readonly fetchNextPage: () => Promise<void>;
+    readonly fetchNextPage: () => void;
   };
   readonly onAddStockOpenChange: (open: boolean) => void;
   readonly onDelete: () => Promise<void>;
@@ -219,7 +230,7 @@ export function ProductDetailPage({
             hasMore={movements.hasNextPage}
             loadingMore={movements.isFetchingNextPage}
             movements={movements.data}
-            onLoadMore={() => void movements.fetchNextPage()}
+            onLoadMore={() => movements.fetchNextPage()}
             product={product}
           />
         </div>

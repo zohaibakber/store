@@ -10,6 +10,9 @@ import { constantTimeEqual, layer, pbkdf2Sha256 } from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const WORKERD_PBKDF2_ITERATIONS = 100_000;
+const IterationCount = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: WORKERD_PBKDF2_ITERATIONS }),
+);
 const HASH_BYTES = 32;
 const SALT_BYTES = 16;
 
@@ -19,7 +22,7 @@ export const PasswordHash = Schema.String.check(
 export type PasswordHash = typeof PasswordHash.Type;
 
 export class PasswordHashError extends Schema.TaggedError<PasswordHashError>()(
-  "Auth.PasswordHashError",
+  "PasswordHashError",
   {
     message: Schema.String,
     cause: Schema.optionalKey(Schema.Defect()),
@@ -31,10 +34,7 @@ const hashingFailed = (cause: unknown) =>
 
 type Password = Redacted.Redacted<string>;
 
-export interface PasswordVerdict {
-  readonly matches: boolean;
-  readonly outdated: boolean;
-}
+export type PasswordVerdict = "mismatch" | "match" | "matchNeedsRehash";
 
 const derive = (password: Password, salt: Uint8Array, iterations: number) =>
   pbkdf2Sha256({
@@ -63,13 +63,11 @@ const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
   const iterations = Number(iterationText);
   if (
     algorithm !== "pbkdf2-sha256" ||
-    !Number.isSafeInteger(iterations) ||
-    iterations < 1 ||
-    iterations > WORKERD_PBKDF2_ITERATIONS ||
+    !Schema.is(IterationCount)(iterations) ||
     !saltText ||
     !hashText
   ) {
-    return { matches: false, outdated: false } satisfies PasswordVerdict;
+    return "mismatch" as const;
   }
   const salt = yield* decodeSaltOrHash(saltText);
   const expected = yield* decodeSaltOrHash(hashText);
@@ -77,10 +75,10 @@ const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
   const matches = yield* constantTimeEqual(actual, expected).pipe(
     Effect.mapError((failure) => hashingFailed(failure.cause)),
   );
-  return {
-    matches,
-    outdated: matches && iterations < WORKERD_PBKDF2_ITERATIONS,
-  } satisfies PasswordVerdict;
+  if (!matches) return "mismatch" as const;
+  return iterations < WORKERD_PBKDF2_ITERATIONS
+    ? ("matchNeedsRehash" as const)
+    : ("match" as const);
 });
 
 export class PasswordHasher extends Context.Service<

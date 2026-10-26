@@ -4,17 +4,16 @@ import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as Result from "effect/Result";
 
 import { CurrentOrganization } from "../auth/organization";
+import type { Actor } from "../authority/engine";
+import type { SnapshotPartReply } from "../authority/facade";
 import { StoreApi } from "../http/api";
 import { publicError } from "../http/errors";
 import { failWithSyncHttpError } from "../http/sync-errors";
-import { InventoryCommands, MAX_SUBMIT_BODY_BYTES } from "../inventory/commands";
-import { InventoryDevices } from "../inventory/devices";
 import type { InventoryError } from "../inventory/errors";
-import { InventoryImports } from "../inventory/imports";
-import type { EncodedSnapshotPart, InventoryActor } from "../inventory/model";
-import { InventorySnapshots } from "../inventory/snapshots";
+import { MAX_SUBMIT_BODY_BYTES, OrganizationAuthority } from "../inventory/organization-authority";
 import { LiveFanout } from "../live/fanout";
 
 const SNAPSHOT_PART_CACHE_CONTROL = "private, max-age=31536000, immutable";
@@ -31,7 +30,7 @@ const matchesEntityTag = (ifNoneMatch: string | undefined, tag: string): boolean
     .map((candidate) => candidate.trim().replace(/^W\//u, ""))
     .some((candidate) => candidate === "*" || candidate === tag);
 
-const snapshotPartResponse = (part: EncodedSnapshotPart, ifNoneMatch: string | undefined) => {
+const snapshotPartResponse = (part: SnapshotPartReply, ifNoneMatch: string | undefined) => {
   const tag = entityTag(part.sha256);
   const headers = { etag: tag, "cache-control": SNAPSHOT_PART_CACHE_CONTROL };
   return matchesEntityTag(ifNoneMatch, tag)
@@ -60,37 +59,45 @@ const declaresOversizedBody = (request: HttpServerRequest.HttpServerRequest, max
   return Number.isFinite(declared) && declared > maxBytes;
 };
 
-const boundedBodyText = (request: HttpServerRequest.HttpServerRequest, maxBytes: number) =>
-  declaresOversizedBody(request, maxBytes)
-    ? Effect.succeed(undefined)
-    : request.arrayBuffer.pipe(
-        Effect.orDie,
-        Effect.map((buffer) => (buffer.byteLength > maxBytes ? undefined : utf8.decode(buffer))),
-      );
-
-const asActor = <A, R>(
-  span: string,
-  run: (actor: InventoryActor) => Effect.Effect<A, InventoryError, R>,
-) =>
-  CurrentOrganization.pipe(
-    Effect.flatMap(run),
-    Effect.catch(failWithSyncHttpError),
-    Effect.withSpan(`SyncHandlers.${span}`),
+const unreadableBodyResponse = () =>
+  HttpServerResponse.jsonUnsafe(
+    publicError("INVALID_BODY", "The request body could not be read."),
+    { status: 400 },
   );
 
-const ownerRequired = (message: string) =>
+const boundedBodyText = (
+  request: HttpServerRequest.HttpServerRequest,
+  maxBytes: number,
+  tooLarge: () => HttpServerResponse.HttpServerResponse,
+): Effect.Effect<Result.Result<string, HttpServerResponse.HttpServerResponse>> =>
+  declaresOversizedBody(request, maxBytes)
+    ? Effect.succeed(Result.fail(tooLarge()))
+    : request.arrayBuffer.pipe(
+        Effect.map((buffer) =>
+          buffer.byteLength > maxBytes
+            ? Result.fail(tooLarge())
+            : Result.succeed(utf8.decode(buffer)),
+        ),
+        Effect.catchTag("HttpServerError", () =>
+          Effect.succeed(Result.fail(unreadableBodyResponse())),
+        ),
+      );
+
+const asActor = <A, E extends InventoryError, R>(run: (actor: Actor) => Effect.Effect<A, E, R>) =>
+  CurrentOrganization.pipe(Effect.flatMap(run), Effect.catch(failWithSyncHttpError));
+
+const ownerRefusal = (message: string) =>
   SyncForbidden.make(publicError("OWNER_REQUIRED", message));
 
-const publishOwnerRequired = ownerRequired(
+const publishOwnerRequired = ownerRefusal(
   "Only an owner can move a device's data into this organization.",
 );
 
-const devicesOwnerRequired = ownerRequired("Only an owner can manage this organization's devices.");
+const devicesOwnerRequired = ownerRefusal("Only an owner can manage this organization's devices.");
 
 const asOwner = <A, R>(
-  span: string,
   refusal: SyncForbidden,
-  run: (actor: InventoryActor) => Effect.Effect<A, InventoryError, R>,
+  run: (actor: Actor) => Effect.Effect<A, InventoryError, R>,
 ) =>
   CurrentOrganization.pipe(
     Effect.flatMap((identity) =>
@@ -98,102 +105,142 @@ const asOwner = <A, R>(
         ? Effect.catch(run(identity), failWithSyncHttpError)
         : Effect.fail(refusal),
     ),
-    Effect.withSpan(`SyncHandlers.${span}`),
   );
 
 export const SyncHandlers = HttpApiBuilder.group(
   StoreApi,
   "sync",
   Effect.fn("SyncHandlers.make")(function* (handlers) {
-    const commands = yield* InventoryCommands;
-    const snapshots = yield* InventorySnapshots;
-    const imports = yield* InventoryImports;
-    const devices = yield* InventoryDevices;
+    const authority = yield* OrganizationAuthority;
     const fanout = yield* LiveFanout;
 
     return handlers
-      .handle("registerReplica", ({ payload }) =>
-        asActor("registerReplica", (actor) => commands.register(actor, payload)),
+      .handle(
+        "registerReplica",
+        Effect.fn("SyncHandlers.registerReplica")(function* ({ payload }) {
+          return yield* asActor((actor) => authority.register(actor, payload));
+        }),
       )
-      .handleRaw("submitCommand", ({ request }) =>
-        asActor("submitCommand", (actor) =>
-          Effect.gen(function* () {
-            const bodyText = yield* boundedBodyText(request, MAX_SUBMIT_BODY_BYTES);
-            if (bodyText === undefined) return commandTooLargeResponse();
-            const submitted = yield* commands.submitRaw(actor, bodyText);
-            if (submitted.fanout !== null) {
-              yield* fanout.publish(actor.organizationId, submitted.fanout);
-            }
-            return encodedJsonResponse(submitted.json);
-          }).pipe(
-            Effect.catchTag("SyncRequestMalformed", () => Effect.succeed(malformedCommandResponse)),
-          ),
-        ),
-      )
-      .handle("getReceipt", ({ params }) =>
-        asActor("getReceipt", (actor) => commands.receipt(actor, params.operationId)).pipe(
-          Effect.flatMap((receipt) =>
-            receipt
-              ? Effect.succeed(receipt)
-              : Effect.fail(
-                  SyncNotFound.make({
-                    error: { code: "RECEIPT_NOT_FOUND", message: "No receipt for that command." },
-                  }),
-                ),
-          ),
-        ),
-      )
-      .handle("pull", ({ payload }) =>
-        asActor("pull", (actor) => commands.pullEncoded(actor, payload)).pipe(
-          Effect.map((body) => encodedJsonResponse(body.json)),
-        ),
-      )
-      .handle("acquireSnapshot", ({ payload }) =>
-        asActor("acquireSnapshot", (actor) => snapshots.acquireSnapshot(actor, payload)),
-      )
-      .handle("readSnapshotPart", ({ params, request }) =>
-        asActor("readSnapshotPart", (actor) =>
-          snapshots.readSnapshotPartEncoded(actor, params.snapshotId, params.partNumber),
-        ).pipe(Effect.map((part) => snapshotPartResponse(part, request.headers["if-none-match"]))),
-      )
-      .handleRaw("stageImportPart", ({ params, request }) =>
-        asOwner("stageImportPart", publishOwnerRequired, (actor) =>
-          Effect.gen(function* () {
-            const bodyText = yield* boundedBodyText(request, MAX_IMPORT_PART_BYTES);
-            if (bodyText === undefined) return importPartTooLargeResponse();
-            const staged = yield* imports.stagePart(
-              actor,
-              params.importId,
-              params.partNumber,
-              bodyText,
-            );
-            return encodedJsonResponse(staged.json);
-          }),
-        ),
-      )
-      .handle("commitImport", ({ params, payload }) =>
-        asOwner("commitImport", publishOwnerRequired, (actor) =>
-          imports
-            .commit(actor, params.importId, payload)
-            .pipe(
-              Effect.tap((committed) =>
-                committed.fanout === null
-                  ? Effect.void
-                  : fanout.publish(actor.organizationId, committed.fanout),
+      .handleRaw(
+        "submitCommand",
+        Effect.fn("SyncHandlers.submitCommand")(function* ({ request }) {
+          return yield* asActor((actor) =>
+            Effect.gen(function* () {
+              const bodyText = yield* boundedBodyText(
+                request,
+                MAX_SUBMIT_BODY_BYTES,
+                commandTooLargeResponse,
+              );
+              if (Result.isFailure(bodyText)) return bodyText.failure;
+              const submitted = yield* authority.submit(actor, bodyText.success);
+              if (submitted.fanout !== null) {
+                yield* fanout.publish(actor.organizationId, submitted.fanout);
+              }
+              return encodedJsonResponse(submitted.json);
+            }).pipe(
+              Effect.catchTag("SyncRequestMalformed", () =>
+                Effect.succeed(malformedCommandResponse),
               ),
             ),
-        ).pipe(Effect.map((committed) => encodedJsonResponse(committed.json))),
+          );
+        }),
       )
-      .handle("readImportStatus", ({ params }) =>
-        asOwner("readImportStatus", publishOwnerRequired, (actor) =>
-          imports.status(actor, params.importId),
-        ),
+      .handle(
+        "getReceipt",
+        Effect.fn("SyncHandlers.getReceipt")(function* ({ params }) {
+          const receipt = yield* asActor((actor) => authority.receipt(actor, params.operationId));
+          if (!receipt) {
+            return yield* Effect.fail(
+              SyncNotFound.make({
+                error: { code: "RECEIPT_NOT_FOUND", message: "No receipt for that command." },
+              }),
+            );
+          }
+          return receipt;
+        }),
       )
-      .handle("listDevices", () =>
-        asOwner("listDevices", devicesOwnerRequired, (actor) => devices.list(actor)),
+      .handle(
+        "pull",
+        Effect.fn("SyncHandlers.pull")(function* ({ payload }) {
+          const body = yield* asActor((actor) => authority.pull(actor, payload));
+          return encodedJsonResponse(body.json);
+        }),
       )
-      .handle("commandDevice", ({ payload }) =>
-        asOwner("commandDevice", devicesOwnerRequired, (actor) => devices.command(actor, payload)),
+      .handle(
+        "acquireSnapshot",
+        Effect.fn("SyncHandlers.acquireSnapshot")(function* ({ payload }) {
+          return yield* asActor((actor) => authority.acquireSnapshot(actor, payload));
+        }),
+      )
+      .handle(
+        "readSnapshotPart",
+        Effect.fn("SyncHandlers.readSnapshotPart")(function* ({ params, request }) {
+          const part = yield* asActor((actor) =>
+            authority.readSnapshotPart(actor, params.snapshotId, params.partNumber),
+          );
+          return snapshotPartResponse(part, request.headers["if-none-match"]);
+        }),
+      )
+      .handleRaw(
+        "stageImportPart",
+        Effect.fn("SyncHandlers.stageImportPart")(function* ({ params, request }) {
+          return yield* asOwner(publishOwnerRequired, (actor) =>
+            Effect.gen(function* () {
+              const bodyText = yield* boundedBodyText(
+                request,
+                MAX_IMPORT_PART_BYTES,
+                importPartTooLargeResponse,
+              );
+              if (Result.isFailure(bodyText)) return bodyText.failure;
+              const staged = yield* authority.stageImportPart(
+                actor,
+                params.importId,
+                params.partNumber,
+                bodyText.success,
+              );
+              return encodedJsonResponse(staged.json);
+            }),
+          );
+        }),
+      )
+      .handle(
+        "commitImport",
+        Effect.fn("SyncHandlers.commitImport")(function* ({ params, payload }) {
+          const committed = yield* asOwner(publishOwnerRequired, (actor) =>
+            authority
+              .commitImport(actor, params.importId, payload)
+              .pipe(
+                Effect.tap((result) =>
+                  result.fanout === null
+                    ? Effect.void
+                    : fanout.publish(actor.organizationId, result.fanout),
+                ),
+              ),
+          );
+          return encodedJsonResponse(committed.json);
+        }),
+      )
+      .handle(
+        "readImportStatus",
+        Effect.fn("SyncHandlers.readImportStatus")(function* ({ params }) {
+          return yield* asOwner(publishOwnerRequired, (actor) =>
+            authority.importStatus(actor, params.importId),
+          );
+        }),
+      )
+      .handle(
+        "listDevices",
+        Effect.fn("SyncHandlers.listDevices")(function* () {
+          return yield* asOwner(devicesOwnerRequired, (actor) => authority.devices(actor));
+        }),
+      )
+      .handle(
+        "commandDevice",
+        Effect.fn("SyncHandlers.commandDevice")(function* ({ payload }) {
+          return yield* asOwner(devicesOwnerRequired, (actor) =>
+            authority.commandDevice(actor, payload),
+          );
+        }),
       );
   }),
 );

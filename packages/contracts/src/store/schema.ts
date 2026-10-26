@@ -12,6 +12,7 @@ import {
   SupplierId,
 } from "../ids";
 import { PositiveInt, SyncIdentifier } from "../schema-primitives";
+import { Money } from "./pricing";
 
 const InvoiceQuantityType = Schema.Literals(["unit", "pack"]);
 
@@ -92,9 +93,9 @@ export const Product = Schema.Struct({
   composition: Schema.NullOr(Schema.String),
   strength: Schema.NullOr(Schema.String),
   unitsPerPack: Schema.Number,
-  purchasePrice: Schema.NullOr(Schema.Number),
-  retailPrice: Schema.NullOr(Schema.Number),
-  unitPrice: Schema.NullOr(Schema.Number),
+  purchasePrice: Schema.NullOr(Money),
+  retailPrice: Schema.NullOr(Money),
+  unitPrice: Schema.NullOr(Money),
   visible: Schema.Boolean,
   ...mutableEntityFields,
   category: Category,
@@ -109,9 +110,9 @@ const createProductFields = {
   composition: Schema.optional(Schema.NullOr(Schema.String)),
   strength: Schema.optional(Schema.NullOr(Schema.String)),
   unitsPerPack: Schema.optional(Schema.Number),
-  purchasePrice: Schema.optional(Schema.NullOr(Schema.Number)),
-  retailPrice: Schema.optional(Schema.NullOr(Schema.Number)),
-  unitPrice: Schema.optional(Schema.NullOr(Schema.Number)),
+  purchasePrice: Schema.optional(Schema.NullOr(Money)),
+  retailPrice: Schema.optional(Schema.NullOr(Money)),
+  unitPrice: Schema.optional(Schema.NullOr(Money)),
   visible: Schema.optional(Schema.Boolean),
 };
 export const CreateProductInput = Schema.Struct(createProductFields);
@@ -123,26 +124,6 @@ export const UpdateProductInput = Schema.Struct({
 });
 export type UpdateProductInput = typeof UpdateProductInput.Type;
 
-const { productId: _batchLineProductId, ...batchLineFields } = createBatchFields;
-const ImportInventoryLine = Schema.Struct({
-  productId: Schema.NullOr(ProductId),
-  name: createProductFields.name,
-  unitsPerPack: createProductFields.unitsPerPack,
-  purchasePrice: createProductFields.purchasePrice,
-  ...batchLineFields,
-});
-
-export const ImportInventoryInput = Schema.Struct({
-  categoryId: CategoryId,
-  lines: Schema.Array(ImportInventoryLine),
-});
-export type ImportInventoryInput = typeof ImportInventoryInput.Type;
-
-const ImportInventoryResult = Schema.Struct({
-  createdProducts: Schema.Natural,
-  createdBatches: Schema.Natural,
-});
-
 export const InvoiceItem = Schema.Struct({
   id: InvoiceItemId,
   invoiceId: InvoiceId,
@@ -153,7 +134,7 @@ export const InvoiceItem = Schema.Struct({
   quantity: Schema.Number,
   quantityType: InvoiceQuantityType,
   baseUnitQuantity: Schema.Number,
-  salePrice: Schema.Number,
+  salePrice: Money,
   ...mutableEntityFields,
 });
 export type InvoiceItem = typeof InvoiceItem.Type;
@@ -162,7 +143,7 @@ export const Invoice = Schema.Struct({
   id: InvoiceId,
   invoiceNumber: Schema.Number,
   customerName: Schema.NullOr(Schema.String),
-  total: Schema.Number,
+  total: Money,
   ...mutableEntityFields,
   items: Schema.Array(InvoiceItem),
 });
@@ -183,12 +164,6 @@ export const CreateInvoiceInput = Schema.Struct({
 });
 export type CreateInvoiceInput = typeof CreateInvoiceInput.Type;
 
-export const ImportInventoryCommandResult = Schema.Struct({
-  ...ImportInventoryResult.fields,
-  txid: PositiveInt,
-});
-export type ImportInventoryCommandResult = typeof ImportInventoryCommandResult.Type;
-
 export const InvoiceAllocation = Schema.Struct({
   invoiceItemId: InvoiceItemId,
   saleMovementId: Schema.NonEmptyString,
@@ -197,7 +172,7 @@ export const InvoiceAllocation = Schema.Struct({
   batchId: BatchId,
   quantity: PositiveInt,
   quantityType: InvoiceQuantityType,
-  salePrice: Schema.Natural,
+  salePrice: Money,
   packsOpened: Schema.Natural,
 });
 export type InvoiceAllocation = typeof InvoiceAllocation.Type;
@@ -254,7 +229,7 @@ export const PurchaseOrderItem = Schema.Struct({
   quantity: Schema.Number,
   quantityType: PurchaseOrderQuantityType,
   baseUnitQuantity: Schema.Number,
-  packCost: Schema.NullOr(Schema.Number),
+  packCost: Schema.NullOr(Money),
   receivedBaseUnits: Schema.Number,
   ...mutableEntityFields,
 });
@@ -268,7 +243,7 @@ export const PurchaseOrder = Schema.Struct({
   note: Schema.NullOr(Schema.String),
   sentAt: Schema.NullOr(Schema.Number),
   expectedAt: Schema.NullOr(Schema.Number),
-  total: Schema.Number,
+  total: Money,
   ...mutableEntityFields,
   items: Schema.Array(PurchaseOrderItem),
 });

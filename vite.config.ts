@@ -77,17 +77,137 @@ export default defineConfig({
           "packages/contracts/**/*.ts",
           "packages/workspace/**/*.ts",
           "packages/db/src/shared/**/*.ts",
-          "apps/server/src/inventory/sync-authority.ts",
           "apps/server/src/routes/sync.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
           "packages/inventory-react/**/*.{ts,tsx}",
           "apps/desktop/src/lib/inventory/{provider,sync-status}.{ts,tsx}",
           "apps/desktop/src/start-electron.tsx",
-          "apps/desktop/electron/inventory-http.ts",
-          "apps/desktop/electron/ipc-channels.ts",
         ],
         rules: {
           "anti-slop/no-comments": "error",
+        },
+      },
+      {
+        files: ["**/test/**/*.{ts,tsx}", "**/*.test.{ts,tsx}"],
+        rules: {
+          "anti-slop/no-effect-run-outside-edge": "off",
+          "anti-slop/no-global-crypto": "off",
+          "anti-slop/no-date-now-in-effect": "off",
+          "anti-slop/no-plain-error-in-effect": "off",
+          "anti-slop/no-node-fs-in-effect": "off",
+          "anti-slop/no-yield-effect-fail": "off",
+        },
+      },
+      {
+        files: [
+          "packages/client-db/src/replica/pinned-http.ts",
+          "packages/sync/src/replica/projection.ts",
+        ],
+        rules: {
+          "anti-slop/no-absorbing-default-on-tag": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/src/components/products/batches.tsx",
+          "packages/inventory-react/src/atoms.ts",
+        ],
+        rules: {
+          "anti-slop/no-date-now-in-effect": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/electron/host.ts",
+          "apps/desktop/src/host/electron.ts",
+          "apps/desktop/src/lib/inventory/preload.ts",
+        ],
+        rules: {
+          "anti-slop/no-effect-run-outside-edge": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/electron/replica-worker-handlers.ts",
+          "apps/desktop/src/components/shared/detail-load-error.tsx",
+          "apps/server/src/ai/language-model.ts",
+          "apps/server/src/global-search/web-search.ts",
+          "packages/client-db/src/replica/node-backup.ts",
+          "packages/client-db/src/replica/node-readonly.ts",
+          "packages/sync/src/replica/errors.ts",
+          "packages/workspace/src/session-http.ts",
+        ],
+        rules: {
+          "anti-slop/no-error-message-from-cause": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/src/lib/preferences.ts",
+          "packages/auth/src/web-crypto.ts",
+          "packages/contracts/src/sync/operation-hash.ts",
+        ],
+        rules: {
+          "anti-slop/no-global-crypto": "off",
+        },
+      },
+      {
+        files: [
+          "packages/client-db/src/analytics/database.ts",
+          "packages/client-db/src/replica/node-backup.ts",
+          "packages/client-db/src/replica/node-publish.ts",
+        ],
+        rules: {
+          "anti-slop/no-node-fs-in-effect": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/src/components/purchases/receive-lines.ts",
+          "apps/server/src/authority/engine.ts",
+          "apps/server/src/authority/imports.ts",
+          "packages/services/src/pack-size.ts",
+        ],
+        rules: {
+          "anti-slop/no-number-is-safe-integer": "off",
+        },
+      },
+      {
+        files: [
+          "apps/desktop/electron/auth.ts",
+          "apps/desktop/src/components/insights/restock-page.tsx",
+          "apps/desktop/src/components/theme/provider.tsx",
+          "apps/desktop/src/host/electron.ts",
+          "apps/server/src/auth/access-tokens.ts",
+          "apps/server/src/runtime/isolate.ts",
+          "apps/server/src/runtime/production-domain.ts",
+          "packages/client-db/src/analytics/store.ts",
+          "packages/client-db/src/replica/pinned-http.ts",
+        ],
+        rules: {
+          "anti-slop/no-plain-error-in-effect": "off",
+        },
+      },
+      {
+        files: [
+          "apps/auth/src/http.ts",
+          "apps/server/src/auth/organization.ts",
+          "apps/server/src/routes/sync.ts",
+        ],
+        rules: {
+          "anti-slop/no-yield-effect-fail": "off",
+        },
+      },
+      {
+        files: ["packages/inventory-react/src/**/*.{ts,tsx}"],
+        rules: {
+          "anti-slop/no-registry-context": "off",
+        },
+      },
+      {
+        files: ["packages/workspace/src/session-http.ts"],
+        rules: {
+          "anti-slop/tagged-error-tag-matches-class": "off",
         },
       },
       {
@@ -115,6 +235,20 @@ export default defineConfig({
       typeCheck: true,
     },
     rules: {
+      "anti-slop/no-absorbing-default-on-tag": "error",
+      "anti-slop/no-date-now-in-effect": "error",
+      "anti-slop/no-effect-run-outside-edge": "error",
+      "anti-slop/no-error-message-from-cause": "error",
+      "anti-slop/no-global-crypto": "error",
+      "anti-slop/no-host-policy-call-in-component": "error",
+      "anti-slop/no-node-fs-in-effect": "error",
+      "anti-slop/no-number-is-safe-integer": "error",
+      "anti-slop/no-plain-error-in-effect": "error",
+      "anti-slop/no-registry-context": "error",
+      "anti-slop/no-yield-effect-fail": "error",
+      "anti-slop/prefer-tagged-struct": "error",
+      "anti-slop/service-id-shape": "error",
+      "anti-slop/tagged-error-tag-matches-class": "error",
       "anti-slop/no-chained-type-assertions": "error",
       "anti-slop/no-conditional-empty-object-spread": "error",
       "anti-slop/no-known-value-widening": "error",

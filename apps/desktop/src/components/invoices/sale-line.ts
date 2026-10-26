@@ -1,4 +1,15 @@
-import type { CreateInvoiceLineInput, Product } from "@store/contracts";
+import {
+  discountedPrice,
+  isValidDiscount,
+  lineTotal as priceTotal,
+  moneyFromRupees,
+  moneyToRupees,
+  sumMoney,
+  type CreateInvoiceLineInput,
+  type Money,
+  type Product,
+} from "@store/contracts";
+import * as Result from "effect/Result";
 
 import { formatNumber } from "@/lib/format";
 import {
@@ -32,14 +43,17 @@ export type ProductLookup = (productId: string) => Product | "loading" | undefin
 export const suggestedPrice = (product: Product, quantityUnit: SaleLine["quantityUnit"]) =>
   quantityUnit === "pack" ? product.retailPrice : product.unitPrice;
 
-export const paisaToRupees = (paisa: number | null) => (paisa == null ? null : paisa / 100);
+export const suggestedRupees = (product: Product, quantityUnit: SaleLine["quantityUnit"]) => {
+  const price = suggestedPrice(product, quantityUnit);
+  return price === null ? null : moneyToRupees(price);
+};
 
 export const enteredPrice = (
   product: Product,
   quantityUnit: SaleLine["quantityUnit"],
   salePrice: number | null,
 ): SaleDraftLine["price"] =>
-  salePrice === paisaToRupees(suggestedPrice(product, quantityUnit)) ? CATALOG_PRICE : salePrice;
+  salePrice === suggestedRupees(product, quantityUnit) ? CATALOG_PRICE : salePrice;
 
 const elsewhereOf = (product: Product, elsewhere: QuantityElsewhere | undefined) =>
   elsewhere
@@ -70,9 +84,7 @@ export const resolveSaleLine = (
     quantity: line.quantity,
     quantityUnit: line.quantityUnit,
     salePrice:
-      line.price === CATALOG_PRICE
-        ? paisaToRupees(suggestedPrice(product, line.quantityUnit))
-        : line.price,
+      line.price === CATALOG_PRICE ? suggestedRupees(product, line.quantityUnit) : line.price,
     elsewhere,
   };
   resolvedLines.set(line, resolved);
@@ -94,6 +106,9 @@ const availableStock = (line: SaleLine) => {
       );
 };
 
+const lineSalePrice = (line: SaleLine): Money | null =>
+  line.salePrice === null ? null : Result.getOrNull(moneyFromRupees(line.salePrice));
+
 export const lineError = (line: SaleLineView) => {
   if (line.kind !== "ready") {
     return line.kind === "loading" ? "Loading" : "Product no longer available";
@@ -106,32 +121,18 @@ export const lineError = (line: SaleLineView) => {
   if (quantity > available) {
     return available === 0 ? "Out of stock" : `Only ${formatNumber(available)} in stock`;
   }
-  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0)
-    return "Enter a price";
-  return null;
+  return lineSalePrice(line) === null ? "Enter a price" : null;
 };
 
-const lineSalePrice = (line: SaleLine) => {
-  if (line.salePrice == null || !Number.isFinite(line.salePrice) || line.salePrice < 0) return null;
-  return Math.round(line.salePrice * 100);
-};
-
-const discountedSalePrice = (line: SaleLine, bulkDiscount: number) => {
+const discountedSalePrice = (line: SaleLine, bulkDiscount: number): Money | null => {
   const price = lineSalePrice(line);
-  return price == null ? null : Math.round(price * (1 - bulkDiscount / 100));
+  return price === null ? null : Result.getOrNull(discountedPrice(price, bulkDiscount));
 };
 
-export const lineTotal = (line: SaleLineView, bulkDiscount = 0) => {
-  if (line.kind !== "ready") return null;
+export const lineTotal = (line: SaleLineView, bulkDiscount = 0): Money | null => {
+  if (line.kind !== "ready" || line.quantity === null) return null;
   const price = discountedSalePrice(line, bulkDiscount);
-  if (
-    line.quantity == null ||
-    !Number.isInteger(line.quantity) ||
-    line.quantity < 1 ||
-    price == null
-  )
-    return null;
-  return line.quantity * price;
+  return price === null ? null : Result.getOrNull(priceTotal(line.quantity, price));
 };
 
 export const lineUnits = (line: SaleLineView) =>
@@ -139,12 +140,9 @@ export const lineUnits = (line: SaleLineView) =>
     ? (line.quantity ?? 0) * (line.quantityUnit === "pack" ? line.product.unitsPerPack : 1)
     : 0;
 
-export const isValidDiscount = (bulkDiscount: number | null): bulkDiscount is number =>
-  bulkDiscount != null && bulkDiscount >= 0 && bulkDiscount <= 100;
-
 export const saleTotal = (lines: ReadonlyArray<SaleLineView>, bulkDiscount: number | null) => {
   const discount = isValidDiscount(bulkDiscount) ? bulkDiscount : 0;
-  return lines.reduce((sum, line) => sum + (lineTotal(line, discount) ?? 0), 0);
+  return sumMoney(lines.map((line) => lineTotal(line, discount)));
 };
 
 export const saleItems = (

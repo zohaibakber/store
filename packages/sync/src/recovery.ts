@@ -13,19 +13,13 @@ import * as Order from "effect/Order";
 import * as Stream from "effect/Stream";
 
 import { isStorageFullFailure } from "./replica/errors";
-import type {
-  ReplicaSnapshotImportStore,
-  ReplicaStoreError,
-  SnapshotActivation,
-} from "./replica/store";
+import type { ReplicaStore, ReplicaStoreError, SnapshotActivation } from "./replica/store";
 import type { SyncTransfer } from "./sync-state";
-import { SyncTransportUnavailable, type SyncTransport, type SyncTransportError } from "./transport";
+import type { SyncTransport, SyncTransportError } from "./transport";
 
 export type SnapshotRecoveryError = SyncTransportError | SyncProtocolError | ReplicaStoreError;
 
 const SNAPSHOT_PART_FETCH_CONCURRENCY = 12;
-
-const SNAPSHOT_STORAGE_RETRY_MILLIS = 10 * 60_000;
 
 type SnapshotPartRef = SnapshotManifest["parts"][number];
 
@@ -34,8 +28,8 @@ const byPartNumber = Order.mapInput(Order.Number, (part: SnapshotPartRef) => par
 type AuthorityGap = Extract<SnapshotActivation, { readonly _tag: "needsAuthority" }>;
 
 const catchUpCandidate = (
-  transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  transport: SyncTransport["Service"],
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
   gap: AuthorityGap,
@@ -68,8 +62,8 @@ const catchUpCandidate = (
   ).pipe(Stream.runDrain);
 
 const activateCandidate = (
-  transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  transport: SyncTransport["Service"],
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
 ) =>
@@ -90,23 +84,12 @@ const abandonedCandidate = (message: string) =>
   syncProtocolError("SNAPSHOT_REQUIRED", `${message} A fresh snapshot will be requested.`);
 
 const abandonOnInvalidCandidate = (
-  store: ReplicaSnapshotImportStore,
+  store: ReplicaStore["Service"],
   manifest: SnapshotManifest,
   error: SnapshotRecoveryError,
 ): Effect.Effect<never, SnapshotRecoveryError> => {
   const abandon = store.abandonSnapshot(manifest.snapshotId).pipe(Effect.ignore);
-  if (isStorageFullFailure(error)) {
-    return abandon.pipe(
-      Effect.andThen(
-        Effect.fail(
-          SyncTransportUnavailable.make({
-            message: "Local storage is full; snapshot preparation was cancelled.",
-            retryAfterMillis: SNAPSHOT_STORAGE_RETRY_MILLIS,
-          }),
-        ),
-      ),
-    );
-  }
+  if (isStorageFullFailure(error)) return abandon.pipe(Effect.andThen(Effect.fail(error)));
   if (
     error instanceof SyncProtocolError &&
     (error.code === "SNAPSHOT_UNAVAILABLE" || error.code === "SNAPSHOT_REQUIRED")
@@ -117,8 +100,8 @@ const abandonOnInvalidCandidate = (
 };
 
 const importCandidate = (
-  transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  transport: SyncTransport["Service"],
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   manifest: SnapshotManifest,
   onTransfer: (transfer: SyncTransfer) => Effect.Effect<void>,
@@ -153,8 +136,8 @@ const importCandidate = (
   );
 
 export const recoverRequiredSnapshot = (
-  transport: SyncTransport,
-  store: ReplicaSnapshotImportStore,
+  transport: SyncTransport["Service"],
+  store: ReplicaStore["Service"],
   request: AcquireSnapshotRequest,
   onTransfer: (transfer: SyncTransfer) => Effect.Effect<void> = () => Effect.void,
 ): Effect.Effect<void, SnapshotRecoveryError> =>

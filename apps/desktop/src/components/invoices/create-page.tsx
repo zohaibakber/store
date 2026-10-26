@@ -1,3 +1,4 @@
+import type { ProductId } from "@store/contracts";
 import { useEffect, useEffectEvent } from "react";
 
 import { InvoiceCheckout } from "@/components/invoices/create-checkout";
@@ -25,7 +26,7 @@ function CompleteSaleShortcut() {
     actions: { completeSale },
   } = useInvoiceCreate();
 
-  const complete = useEffectEvent(() => void completeSale());
+  const complete = useEffectEvent(() => completeSale());
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -82,7 +83,7 @@ function AddProductFromSearch({
   productId,
   onDone,
 }: {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly onDone: () => void;
 }) {
   const {
@@ -105,7 +106,7 @@ function InvoiceCreatePage({
   addProductId,
   onProductAdded,
 }: {
-  readonly addProductId?: string;
+  readonly addProductId?: ProductId;
   readonly onProductAdded: () => void;
 }) {
   return (

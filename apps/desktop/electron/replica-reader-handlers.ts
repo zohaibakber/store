@@ -35,7 +35,7 @@ export const makeReplicaReaderHandlers = <R>(
           layerInventoryReads.pipe(
             Layer.provide(layerNodeSqliteReadonlyReplica(config.databasePath)),
           ),
-        ).pipe(Effect.catchDefect(Effect.fail)),
+        ),
       }).pipe(
         Effect.tapError((cause) => Effect.logError("ReplicaReader.open_failed", cause)),
         Effect.option,

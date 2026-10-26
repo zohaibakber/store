@@ -1,6 +1,6 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Invoice, InvoiceItem } from "@store/contracts";
+import type { Invoice, InvoiceId, InvoiceItem } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import { useInvoiceStaff } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
@@ -9,6 +9,7 @@ import { format } from "date-fns";
 
 import { PrintReceiptAction } from "@/components/receipts/print-action";
 import { DetailLoadError } from "@/components/shared/detail-load-error";
+import { DetailNotFound } from "@/components/shared/detail-not-found";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   PageAction,
@@ -48,7 +49,17 @@ function InvoiceDetailError({ error }: { error: unknown }) {
   );
 }
 
-function InvoiceStaffLine({ invoiceId }: { readonly invoiceId: string }) {
+function InvoiceDetailNotFound() {
+  return (
+    <DetailNotFound title="Invoice not found">
+      <Button render={<Link to="/invoices" />} size="sm" variant="outline">
+        Back to invoices
+      </Button>
+    </DetailNotFound>
+  );
+}
+
+function InvoiceStaffLine({ invoiceId }: { readonly invoiceId: InvoiceId }) {
   const { soldBy, startedBy } = useInvoiceStaff(invoiceId);
   if (soldBy === null) return null;
   return (
@@ -172,4 +183,4 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
   );
 }
 
-export { InvoiceDetailError, InvoiceDetailPage };
+export { InvoiceDetailError, InvoiceDetailNotFound, InvoiceDetailPage };

@@ -1,13 +1,13 @@
+import { describe, expect, it } from "@effect/vitest";
 import { OrgCommitSequence, SyncSubmitCommandRequest } from "@store/contracts";
 import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { authorityState } from "@store/db/authority.schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vite-plus/test";
 
-import { makeInventoryCommands } from "../../src/inventory/commands";
-import { makeTestAuthorities } from "./harness";
+import { OrganizationAuthority } from "../../src/inventory/organization-authority";
+import { scenario, TestAuthorities } from "./harness";
 
 const ORGANIZATION_ID = "org-1";
 
@@ -278,71 +278,69 @@ const candidatesFor = (base: Schema.Json) =>
   );
 
 const authorityProblems = (values: ReadonlyArray<Schema.Json>) =>
-  Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const authorities = makeTestAuthorities();
-        const { db } = yield* authorities.open(ORGANIZATION_ID);
-        yield* db
-          .insert(authorityState)
-          .values({
-            id: 1,
-            organizationId: ORGANIZATION_ID,
-            incarnation: "incarnation-test",
-            epoch: "1",
-            commitSequence: 0,
-            retentionFloor: 0,
-            createdAt: 0,
-          })
-          .pipe(Effect.orDie);
-        const commands = makeInventoryCommands(authorities);
-        return yield* Effect.forEach(values, (value) =>
-          commands.submitRaw(ACTOR, encodeJson(value)).pipe(
-            Effect.as(null),
-            Effect.catchTag("SyncRequestMalformed", (malformed) =>
-              Effect.succeed<string | null>(malformed.message),
-            ),
-            Effect.catchTag("SyncProtocolError", () => Effect.succeed(null)),
-          ),
-        );
-      }),
-    ),
-  );
+  Effect.gen(function* () {
+    const authorities = yield* TestAuthorities;
+    const { db } = yield* authorities.open(ORGANIZATION_ID);
+    yield* db
+      .insert(authorityState)
+      .values({
+        id: 1,
+        organizationId: ORGANIZATION_ID,
+        incarnation: "incarnation-test",
+        epoch: "1",
+        commitSequence: 0,
+        retentionFloor: 0,
+        createdAt: 0,
+      })
+      .pipe(Effect.orDie);
+    const commands = yield* OrganizationAuthority;
+    return yield* Effect.forEach(values, (value) =>
+      commands.submit(ACTOR, encodeJson(value)).pipe(
+        Effect.as(null),
+        Effect.catchTag("SyncRequestMalformed", (malformed) =>
+          Effect.succeed<string | null>(malformed.message),
+        ),
+        Effect.catchTag("SyncProtocolError", () => Effect.succeed(null)),
+      ),
+    );
+  }).pipe(scenario);
 
 describe("command envelope validation in the durable object authority", () => {
-  it.each(BASES)(
-    "accepts the valid %s envelope exactly like the contract schema",
-    async (_, base) => {
-      expect(schemaAccepts(base)).toBe(true);
-      expect(await authorityProblems([base])).toEqual([null]);
-    },
-  );
+  for (const [name, base] of BASES) {
+    it.effect(`accepts the valid ${name} envelope exactly like the contract schema`, () =>
+      Effect.gen(function* () {
+        expect(schemaAccepts(base)).toBe(true);
+        expect(yield* authorityProblems([base])).toEqual([null]);
+      }),
+    );
 
-  it.each(BASES)(
-    "rejects exactly the %s mutations that the contract schema rejects",
-    async (_, base) => {
-      const candidates = candidatesFor(base);
-      const problems = await authorityProblems(candidates.map((candidate) => candidate.value));
-      const mismatches = candidates.flatMap((candidate, index) => {
-        const schemaOk = schemaAccepts(candidate.value);
-        const authorityOk = problems[index] === null;
-        return schemaOk === authorityOk
-          ? []
-          : [
-              {
-                path: candidate.path,
-                replacement: candidate.replacement,
-                schemaOk,
-                authorityProblem: problems[index],
-              },
-            ];
-      });
-      expect(candidates.length).toBeGreaterThan(100);
-      expect(
-        candidates.filter((candidate) => !schemaAccepts(candidate.value)).length,
-      ).toBeGreaterThan(50);
-      expect(mismatches).toEqual([]);
-    },
-    120_000,
-  );
+    it.effect(
+      `rejects exactly the ${name} mutations that the contract schema rejects`,
+      () =>
+        Effect.gen(function* () {
+          const candidates = candidatesFor(base);
+          const problems = yield* authorityProblems(candidates.map((candidate) => candidate.value));
+          const mismatches = candidates.flatMap((candidate, index) => {
+            const schemaOk = schemaAccepts(candidate.value);
+            const authorityOk = problems[index] === null;
+            return schemaOk === authorityOk
+              ? []
+              : [
+                  {
+                    path: candidate.path,
+                    replacement: candidate.replacement,
+                    schemaOk,
+                    authorityProblem: problems[index],
+                  },
+                ];
+          });
+          expect(candidates.length).toBeGreaterThan(100);
+          expect(
+            candidates.filter((candidate) => !schemaAccepts(candidate.value)).length,
+          ).toBeGreaterThan(50);
+          expect(mismatches).toEqual([]);
+        }),
+      120_000,
+    );
+  }
 });

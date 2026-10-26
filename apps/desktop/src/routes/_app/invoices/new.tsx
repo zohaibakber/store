@@ -1,3 +1,4 @@
+import { ProductId } from "@store/contracts";
 import {
   preloadAll,
   preloadCatalogProductsById,
@@ -13,18 +14,16 @@ import { saleDraftsAtom } from "@/lib/preferences";
 import { SALE_SEARCH_LIMIT, saleDraftOwner, saleProductIds } from "@/lib/sale-drafts";
 import { lenientSearchParam } from "@/lib/search-param";
 import { workspaceStorageKey } from "@/lib/workspace";
-import { publishedWorkspaceSnapshot } from "@/session/workspace-session";
+import { workspaceSessionAtom } from "@/session/workspace-session";
 
 const newInvoiceSearch = Schema.toStandardSchemaV1(
-  Schema.Struct({ add: lenientSearchParam(Schema.NonEmptyString) }),
+  Schema.Struct({ add: lenientSearchParam(ProductId) }),
 );
 
 export const Route = createFileRoute("/_app/invoices/new")({
   validateSearch: newInvoiceSearch,
   loader: ({ context }) => {
-    const workspace = context.access.workspace(
-      publishedWorkspaceSnapshot(context.session.current()),
-    );
+    const { workspace } = context.registry.get(workspaceSessionAtom);
     return preloadInventory(context, (inventory) => {
       const staff = inventory.atoms.registry.get(inventory.atoms.staff);
       const owner = saleDraftOwner(workspaceStorageKey(workspace), Option.getOrUndefined(staff));

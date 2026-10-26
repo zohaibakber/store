@@ -2,10 +2,9 @@ export {
   RequestError,
   SessionHttp,
   asRequestError,
-  decodeResponse,
   isInvalidResponse,
+  isUnreachable,
   layerSessionHttp,
-  sessionFetch,
 } from "./session-http";
 export {
   adoptAuthenticatedSnapshot,

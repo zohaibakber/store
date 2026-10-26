@@ -1,4 +1,4 @@
-import type { SyncProtocolError } from "@store/contracts";
+import type { SyncProtocolCode, SyncProtocolError } from "@store/contracts";
 import {
   SyncBadRequest,
   SyncConflict,
@@ -10,25 +10,45 @@ import * as Effect from "effect/Effect";
 import type { InventoryDatabaseError, InventoryError } from "../inventory/errors";
 import { publicError } from "./errors";
 
+export const SYNC_STATUS = {
+  ORGANIZATION_MISMATCH: 403,
+  REPLICA_OWNED_BY_OTHER: 403,
+  OPERATION_ID_REUSED: 409,
+  INSUFFICIENT_STOCK: 409,
+  INVOICE_IDENTITY_CONFLICT: 409,
+  ENTITY_CONFLICT: 409,
+  ENTITY_RELATION_INVALID: 409,
+  REPLICA_SEQUENCE_GAP: 409,
+  EPOCH_MISMATCH: 409,
+  REPLICA_UNKNOWN: 409,
+  SNAPSHOT_REQUIRED: 409,
+  SNAPSHOT_UNAVAILABLE: 409,
+  INCARNATION_MISMATCH: 409,
+  INVALID_OPERATION: 400,
+  ENTITY_WRITE_FAILED: 400,
+  COMMAND_IDENTITY_MISMATCH: 400,
+  INVALID_PAYLOAD_HASH: 400,
+  SCHEMA_VERSION_UNSUPPORTED: 400,
+  SUPPLIER_HAS_ORDERS: 400,
+  PURCHASE_ORDER_TRANSITION_INVALID: 400,
+  PURCHASE_ORDER_NOT_OPEN: 400,
+  PURCHASE_ORDER_NOT_DRAFT: 400,
+  PURCHASE_ORDER_HAS_ITEMS: 400,
+  PURCHASE_ORDER_ITEM_QUANTITY_INVALID: 400,
+  PURCHASE_ORDER_ITEM_RECEIVED: 400,
+  PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: 400,
+  REPLICA_SCHEMA_OUTDATED: 400,
+} as const satisfies Record<SyncProtocolCode, 400 | 403 | 409>;
+
 const syncProtocolHttpError = (error: SyncProtocolError) => {
-  switch (error.code) {
-    case "ORGANIZATION_MISMATCH":
-    case "REPLICA_OWNED_BY_OTHER":
-      return SyncForbidden.make(publicError(error.code, error.message));
-    case "OPERATION_ID_REUSED":
-    case "INSUFFICIENT_STOCK":
-    case "INVOICE_IDENTITY_CONFLICT":
-    case "ENTITY_CONFLICT":
-    case "ENTITY_RELATION_INVALID":
-    case "REPLICA_SEQUENCE_GAP":
-    case "EPOCH_MISMATCH":
-    case "REPLICA_UNKNOWN":
-    case "SNAPSHOT_REQUIRED":
-    case "SNAPSHOT_UNAVAILABLE":
-    case "INCARNATION_MISMATCH":
-      return SyncConflict.make(publicError(error.code, error.message));
-    default:
-      return SyncBadRequest.make(publicError(error.code, error.message));
+  const body = publicError(error.code, error.message);
+  switch (SYNC_STATUS[error.code]) {
+    case 403:
+      return SyncForbidden.make(body);
+    case 409:
+      return SyncConflict.make(body);
+    case 400:
+      return SyncBadRequest.make(body);
   }
 };
 

@@ -24,7 +24,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { makeBackoff } from "./backoff";
 
-export type LiveNetworkSignal = {
+type LiveNetworkSignal = {
   readonly isOnline: () => boolean;
   readonly subscribe: (listener: (online: boolean) => void) => () => void;
 };
@@ -93,27 +93,10 @@ const liveSocketUrl = (
   return url.href;
 };
 
-const browserNetworkSignal = (): LiveNetworkSignal | undefined => {
-  if (!("addEventListener" in globalThis) || !("navigator" in globalThis)) return undefined;
-  const navigator = globalThis.navigator;
-  if (!("onLine" in navigator)) return undefined;
-  return {
-    isOnline: () => navigator.onLine,
-    subscribe: (listener) => {
-      const online = () => listener(true);
-      const offline = () => listener(false);
-      globalThis.addEventListener("online", online);
-      globalThis.addEventListener("offline", offline);
-      return () => {
-        globalThis.removeEventListener("online", online);
-        globalThis.removeEventListener("offline", offline);
-      };
-    },
-  };
-};
+const frameDecoder = new TextDecoder();
 
 const textOf = (data: string | Uint8Array): string =>
-  data instanceof Uint8Array ? new TextDecoder().decode(data) : data;
+  data instanceof Uint8Array ? frameDecoder.decode(data) : data;
 
 type SessionEnd = "renew" | "closed" | "reauthenticate" | "refused";
 
@@ -140,12 +123,12 @@ export const makeLiveSocket = (
   Effect.gen(function* () {
     const nudges = yield* Queue.sliding<void>(1);
     const reconnect = yield* makeBackoff({
-      baseMillis: LIVE_SOCKET_POLICY.reconnectBaseMillis,
-      maxMillis: LIVE_SOCKET_POLICY.reconnectMaxMillis,
+      base: Duration.millis(LIVE_SOCKET_POLICY.reconnectBaseMillis),
+      max: Duration.millis(LIVE_SOCKET_POLICY.reconnectMaxMillis),
     });
     const forceRefresh = yield* Ref.make(false);
     const refusalRefreshSpent = yield* Ref.make(false);
-    const network = host.network ?? browserNetworkSignal();
+    const network = host.network;
     const online = yield* SubscriptionRef.make(network?.isOnline() ?? true);
     const webSocketLayer =
       host.webSocket === undefined
@@ -202,9 +185,9 @@ export const makeLiveSocket = (
           yield* writer.write(LIVE_SOCKET_PING);
           yield* Effect.sleep(Duration.millis(LIVE_SOCKET_POLICY.pongTimeoutMillis));
           if ((yield* Ref.get(heardAt)) < sentAt) {
-            return yield* Effect.fail(
-              LiveSocketStale.make({ message: "The live socket stopped answering pings." }),
-            );
+            return yield* new LiveSocketStale({
+              message: "The live socket stopped answering pings.",
+            });
           }
         });
 
@@ -220,9 +203,7 @@ export const makeLiveSocket = (
         const probes: Effect.Effect<SessionEnd, Socket.SocketError | LiveSocketStale> =
           Effect.forever(Queue.take(nudges).pipe(Effect.andThen(probe)));
         const offline = waitUntil(false).pipe(
-          Effect.andThen(
-            Effect.fail(LiveSocketOffline.make({ message: "The network is offline." })),
-          ),
+          Effect.andThen(new LiveSocketOffline({ message: "The network is offline." })),
         );
         const expiresAt = accessTokenExpiresAt(token);
         const now = yield* Clock.currentTimeMillis;
@@ -247,6 +228,9 @@ export const makeLiveSocket = (
       const force = yield* Ref.getAndSet(forceRefresh, false);
       const requestToken = (refresh: boolean) =>
         Effect.tryPromise(() => host.accessToken({ force: refresh })).pipe(
+          Effect.tapError((error) =>
+            Effect.logWarning("sync.live_token_failed").pipe(Effect.annotateLogs({ error })),
+          ),
           Effect.orElseSucceed(() => null),
         );
       const offered = yield* requestToken(force);

@@ -1,3 +1,5 @@
+import type { ProductId } from "@store/contracts/ids";
+import { baseUnitsOf } from "@store/contracts/store-stock";
 import {
   SALES_RANGE_DAYS,
   type AbcClass,
@@ -25,6 +27,7 @@ import {
   type InsightsProductFact,
   type ReplicaInsightsFacts,
 } from "@store/contracts/sync/replica-insights";
+import * as Arr from "effect/Array";
 
 import { formatPrice } from "../format";
 import { forecastDemand, type DemandTrend } from "./demand";
@@ -210,7 +213,7 @@ const fefoStockPosition = (
   let nearestExpiry: number | null = null;
   const expiring: Array<Omit<ExpiringBatch, "name" | "valueAtCost">> = [];
   for (const batch of ordered) {
-    const units = Math.max(0, batch.packQuantity * product.unitsPerPack + batch.unitQuantity);
+    const units = Math.max(0, baseUnitsOf(batch, product.unitsPerPack));
     if (units === 0) continue;
     onHandUnits += units;
     if (batch.expiresAt !== null && batch.expiresAt <= now) {
@@ -424,7 +427,7 @@ export const salesPeriodSeries = (input: {
 const TOP_PRODUCT_LIMIT = 8;
 
 type PeriodProductEntry = {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly name: string;
   readonly revenue: number;
   readonly units: number;
@@ -733,12 +736,7 @@ export const analyzeInsights = (
   const visible = facts.products.filter((product) => product.visible);
   const ledgers = buildLedgers(facts, today);
   const abc = classifyAbc(visible, ledgers);
-  const batchesByProduct = new Map<string, Array<InsightsBatchFact>>();
-  for (const batch of facts.batches) {
-    const group = batchesByProduct.get(batch.productId);
-    if (group) group.push(batch);
-    else batchesByProduct.set(batch.productId, [batch]);
-  }
+  const batchesByProduct = Arr.groupBy(facts.batches, (batch) => batch.productId);
   const onOrderOf = onOrderLookup(facts.onOrder);
 
   const products: Array<ProductInsight> = [];
@@ -746,7 +744,7 @@ export const analyzeInsights = (
   for (const product of visible) {
     const analyzed = analyzeProduct({
       product,
-      batches: batchesByProduct.get(product.id) ?? [],
+      batches: batchesByProduct[product.id] ?? [],
       onOrderUnits: onOrderOf(product.id),
       ledger: ledgers.get(product.id),
       abc: abc.get(product.id) ?? "C",

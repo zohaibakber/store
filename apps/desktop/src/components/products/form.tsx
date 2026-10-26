@@ -1,13 +1,18 @@
 import {
   INT4_MAX,
   MAX_CATALOG_NAME_LENGTH,
+  moneyFromRupees,
+  moneyToRupees,
   type Category,
+  type Money,
   type Product,
   type ProductSuggestions,
 } from "@store/contracts";
-import { useInventoryActions } from "@store/inventory-react";
+import { useCommand } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
+import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { CategoryField } from "@/components/products/category-field";
@@ -26,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
-import { toastStoreError } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
 import { lenientSearchParam } from "@/lib/search-param";
 
@@ -76,8 +81,9 @@ const productFormSchema = Schema.toStandardSchemaV1(
 );
 
 const nullableText = (value: string) => value.trim() || null;
-const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
-const priceFromPaisa = (value: number | null) => (value == null ? "" : String(value / 100));
+const moneyFromInput = (value: string) =>
+  value === "" ? null : Result.getOrNull(moneyFromRupees(Number(value)));
+const inputFromMoney = (value: Money | null) => (value == null ? "" : String(moneyToRupees(value)));
 const numberFieldValue = (value: string) => (value === "" ? null : Number(value));
 
 const computeUnitPrice = (unitsPerPack: string, retailPrice: string) => {
@@ -148,9 +154,9 @@ const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {
     composition: nullableText(value.composition),
     strength: strength ? `${strength}${value.strengthUnit}` : null,
     unitsPerPack: tracksPacks ? Number(value.unitsPerPack || 1) : 1,
-    purchasePrice: priceInPaisa(value.purchasePrice),
-    retailPrice: tracksPacks ? priceInPaisa(value.retailPrice) : null,
-    unitPrice: priceInPaisa(value.unitPrice),
+    purchasePrice: moneyFromInput(value.purchasePrice),
+    retailPrice: tracksPacks ? moneyFromInput(value.retailPrice) : null,
+    unitPrice: moneyFromInput(value.unitPrice),
   };
 };
 
@@ -169,9 +175,9 @@ const productToFormValues = (product: Product): ProductFormValues => {
     strength,
     strengthUnit,
     unitsPerPack: String(product.unitsPerPack),
-    purchasePrice: priceFromPaisa(product.purchasePrice),
-    retailPrice: priceFromPaisa(product.retailPrice),
-    unitPrice: priceFromPaisa(product.unitPrice),
+    purchasePrice: inputFromMoney(product.purchasePrice),
+    retailPrice: inputFromMoney(product.retailPrice),
+    unitPrice: inputFromMoney(product.unitPrice),
   };
 };
 
@@ -207,7 +213,7 @@ const prefilledFormValues = (
 
 function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: ProductPrefill = {}) {
   const navigate = useNavigate();
-  const { createProduct } = useInventoryActions();
+  const [createProduct] = useCommand((commands) => commands.createProduct);
 
   return useForm({
     ...productFormOpts,
@@ -216,15 +222,15 @@ function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: Prod
       prefill,
     ),
     onSubmit: async ({ value }) => {
-      try {
-        const product = await createProduct(
-          formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
-        );
-        toastManager.add({ title: "Product created", type: "success" });
-        await navigate({ to: "/products/$productId", params: { productId: product.id } });
-      } catch (error) {
-        toastStoreError(error, "Could not create the product.");
+      const exit = await createProduct(
+        formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+      );
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        return;
       }
+      toastManager.add({ title: "Product created", type: "success" });
+      await navigate({ to: "/products/$productId", params: { productId: exit.value.id } });
     },
   });
 }
@@ -234,21 +240,21 @@ function useProductUpdateForm(
   categories: ReadonlyArray<Category>,
   onUpdated: () => void,
 ) {
-  const { updateProduct } = useInventoryActions();
+  const [updateProduct] = useCommand((commands) => commands.updateProduct);
   return useForm({
     ...productFormOpts,
     defaultValues: productToFormValues(product),
     onSubmit: async ({ value }) => {
-      try {
-        await updateProduct({
-          id: product.id,
-          ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
-        });
-        toastManager.add({ title: "Product updated", type: "success" });
-        onUpdated();
-      } catch (error) {
-        toastStoreError(error, "Could not update the product.");
+      const exit = await updateProduct({
+        id: product.id,
+        ...formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
+      });
+      if (Exit.isFailure(exit)) {
+        toastFailure(exit.cause);
+        return;
       }
+      toastManager.add({ title: "Product updated", type: "success" });
+      onUpdated();
     },
   });
 }

@@ -1,5 +1,5 @@
 import type { IconSvgElement } from "@hugeicons/react";
-import type { Invoice, Product, StaffPermission } from "@store/contracts";
+import type { Invoice, Product, ProductId, StaffPermission } from "@store/contracts";
 import {
   MAX_GLOBAL_SEARCH_QUERY_LENGTH,
   MIN_GLOBAL_SEARCH_QUERY_LENGTH,
@@ -36,7 +36,7 @@ export const PLACEHOLDERS = {
 } satisfies Record<Scope, string>;
 
 export type ProductTarget = {
-  readonly id: string;
+  readonly id: ProductId;
   readonly name: string;
   readonly strength: string | null;
   readonly category: { readonly name: string };

@@ -1,5 +1,4 @@
 import {
-  OrgCommitSequence,
   type PartitionDigestReport,
   type SyncCoverage,
   type SyncPullResult,
@@ -174,7 +173,7 @@ const fencedReader =
           (current): Effect.Effect<Result.Result<A, DigestFenceMoved>, EffectDrizzleQueryError> =>
             sameFence(current, fence)
               ? read(tx).pipe(Effect.map(Result.succeed))
-              : Effect.succeed(Result.fail(DigestFenceMoved.make({ current }))),
+              : Effect.succeed(Result.fail(new DigestFenceMoved({ current }))),
         ),
       ),
     ).pipe(Effect.flatMap(Effect.fromResult));
@@ -199,10 +198,14 @@ const scanUnderFence = Effect.fn("ReplicaCoverage.scanUnderFence")(function* (
         error._tag === "DigestFenceMoved" && sameAuthorityState(error.current, fence),
     }),
     Effect.catchTag("DigestFenceMoved", (moved) =>
-      Effect.logInfo("replica partition digest deferred: the replica changed during the scan", {
-        scannedThrough: fence.appliedCommitSequence,
-        currentThrough: moved.current.appliedCommitSequence,
-      }).pipe(Effect.as(undefined)),
+      Effect.logInfo("replica.digest_deferred").pipe(
+        Effect.annotateLogs({
+          reason: "the replica changed during the scan",
+          scannedThrough: fence.appliedCommitSequence,
+          currentThrough: moved.current.appliedCommitSequence,
+        }),
+        Effect.as(undefined),
+      ),
     ),
   );
 });
@@ -214,8 +217,8 @@ const settleScannedDigest = Effect.fn("ReplicaCoverage.settleScannedDigest")(fun
 ) {
   const current = yield* readDigestFence(tx);
   if (!sameFence(current, scanned.fence)) {
-    yield* Effect.logInfo(
-      "replica partition digest deferred: the replica changed before recording",
+    yield* Effect.logInfo("replica.digest_deferred").pipe(
+      Effect.annotateLogs({ reason: "the replica changed before recording" }),
     );
     return UNVERIFIED;
   }
@@ -229,7 +232,7 @@ const settleScannedDigest = Effect.fn("ReplicaCoverage.settleScannedDigest")(fun
   yield* saveCoverage(tx, {
     _tag: "downloaded",
     subscription: pulled.subscription,
-    throughCommitSequence: OrgCommitSequence.make(current.appliedCommitSequence),
+    throughCommitSequence: current.appliedCommitSequence,
     digest: next.digest,
   });
   return { repairRequired: false, digestVerified: next.verified } satisfies PulledCoverage;

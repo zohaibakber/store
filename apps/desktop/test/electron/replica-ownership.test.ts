@@ -1,35 +1,24 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import { describe, expect, it } from "@effect/vitest";
+import { decodeOrganizationId, decodeReplicaId, decodeUserId } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { TestClock } from "effect/testing";
 
-import { REPLICA_CLOSE_CHANNEL, REPLICA_OPEN_CHANNEL } from "../../electron/ipc-channels";
-import {
-  registerReplicaWorkerIpc,
-  type ReplicaInvokeEvent,
-  type ReplicaIpcListener,
-} from "../../electron/replica-ipc";
+import { makeReplicaHost } from "../../electron/replica-host";
 import { ReplicaReaderRpcs, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/replica-supervisor";
 
-const allowed = ["https://app.tabaaq.local"];
-
-const decodeOpened = Schema.decodeUnknownSync(
-  Schema.Struct({
-    workspaceToken: Schema.String,
-    engine: Schema.Literals(["sqlite", "unavailable"]),
-  }),
-);
-
-const makeWorld = (
+const makeWorld = Effect.fnUntraced(function* (
   plan: {
     readonly closeFinalizer?: (
       index: number,
@@ -37,7 +26,7 @@ const makeWorld = (
     ) => Effect.Effect<void>;
     readonly terminateEffect?: (index: number) => Effect.Effect<void>;
   } = {},
-) => {
+) {
   const workers: Array<number> = [];
   const owners = { live: 0, overlaps: 0 };
 
@@ -102,25 +91,23 @@ const makeWorld = (
       };
     });
 
-  const listeners = new Map<string, ReplicaIpcListener>();
-  const registration = registerReplicaWorkerIpc({
-    ipcMain: {
-      handle: (channel, listener) => {
-        listeners.set(channel, listener);
-      },
-      removeHandler: (channel) => {
-        listeners.delete(channel);
-      },
-    },
-    userDataPath: mkdtempSync(path.join(tmpdir(), "store-replica-world-")),
+  const userDataPath = yield* FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "store-replica-world-" })),
+    Effect.provide(NodeFileSystem.layer),
+  );
+  const host = yield* makeReplicaHost({
+    userDataPath,
     workerPath: "/tmp/replica-worker.js",
     apiBaseUrl: "https://api.tabaaq.local",
     accessTokens: {
-      current: async () => Redacted.make("access-1"),
-      subscribe: () => () => undefined,
+      liveAccessToken: () => Effect.succeed(Redacted.make("access-1")),
+      accessTokens: Stream.never,
     },
-    allowedOrigins: () => allowed,
-    backupDialogs: { chooseDestination: async () => null, chooseSource: async () => null },
+    dialogs: {
+      chooseBackupDestination: () => Effect.succeed(Option.none()),
+      chooseBackupSource: Effect.succeed(Option.none()),
+    },
+    publishProgress: () => Effect.void,
     sessions: {
       spawnWorker,
       spawnReader,
@@ -133,65 +120,62 @@ const makeWorld = (
       closeGrace: Duration.millis(50),
       ownershipWait: Duration.millis(150),
     },
-  });
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer)));
 
-  const senderEvent = (id: number): ReplicaInvokeEvent => ({
-    senderFrame: { url: allowed[0]! },
-    sender: {
-      id,
-      isDestroyed: () => false,
-      send: () => undefined,
-      on: () => undefined,
-      removeListener: () => undefined,
-    },
+  const sender = (id: number) => ({
+    id,
+    isDestroyed: () => false,
+    on: () => undefined,
+    removeListener: () => undefined,
   });
-  const invoke = <Input>(channel: string, event: ReplicaInvokeEvent, input: Input) => {
-    const listener = listeners.get(channel);
-    if (!listener) throw new Error(`No handler for ${channel}`);
-    // SAFETY: the tests send raw renderer payloads to the IPC decoder.
-    return listener(event, input as never);
-  };
-  const open = async (event: ReplicaInvokeEvent) =>
-    decodeOpened(
-      await invoke(REPLICA_OPEN_CHANNEL, event, {
-        authority: "remote",
-        organizationId: "org-1",
-        userId: "user-1",
-        replicaId: "device-1",
-      }),
-    );
+  const open = (id: number) =>
+    host.open(sender(id), {
+      authority: "remote",
+      organizationId: decodeOrganizationId("org-1"),
+      userId: decodeUserId("user-1"),
+      replicaId: decodeReplicaId("device-1"),
+    });
+  const close = (id: number, workspaceToken: string) => host.close(id, workspaceToken);
 
-  return { workers, owners, registration, senderEvent, invoke, open };
-};
+  return { workers, owners, open, close };
+});
 
 describe("ownership", () => {
-  it("never spawns a second owner while a disposal hangs, then terminates and confirms", async () => {
-    const world = makeWorld({
-      closeFinalizer: (index, terminated) =>
-        index === 0 ? Deferred.await(terminated) : Effect.void,
-    });
-    const first = world.senderEvent(7);
-    const { workspaceToken } = await world.open(first);
-    const closing = world.invoke(REPLICA_CLOSE_CHANNEL, first, workspaceToken);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const reopening = world.open(world.senderEvent(8));
-    await closing;
-    await expect(reopening).resolves.toMatchObject({ engine: "sqlite" });
-    expect(world.workers).toHaveLength(2);
-    expect(world.owners.overlaps).toBe(0);
-    await world.registration.dispose();
-  });
+  it.effect(
+    "never spawns a second owner while a disposal hangs, then terminates and confirms",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld({
+          closeFinalizer: (index, terminated) =>
+            index === 0 ? Deferred.await(terminated) : Effect.void,
+        });
+        const { workspaceToken } = yield* world.open(7);
+        const closing = yield* Effect.forkChild(world.close(7, workspaceToken));
+        yield* TestClock.adjust("20 millis");
+        const reopening = yield* Effect.forkChild(world.open(8));
+        yield* TestClock.adjust("100 millis");
+        yield* Fiber.join(closing);
+        expect(yield* Fiber.join(reopening)).toMatchObject({ engine: "sqlite" });
+        expect(world.workers).toHaveLength(2);
+        expect(world.owners.overlaps).toBe(0);
+      }),
+  );
 
-  it("answers busy instead of overlapping when termination cannot be confirmed", async () => {
-    const world = makeWorld({
-      closeFinalizer: (index) => (index === 0 ? Effect.never : Effect.void),
-      terminateEffect: () => Effect.never,
-    });
-    const first = world.senderEvent(7);
-    const { workspaceToken } = await world.open(first);
-    void world.invoke(REPLICA_CLOSE_CHANNEL, first, workspaceToken);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await expect(world.open(world.senderEvent(8))).rejects.toThrow("still closing");
-    expect(world.workers).toHaveLength(1);
-  });
+  it.effect("answers busy instead of overlapping when termination cannot be confirmed", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld({
+        closeFinalizer: (index) => (index === 0 ? Effect.never : Effect.void),
+        terminateEffect: () => Effect.never,
+      });
+      const { workspaceToken } = yield* world.open(7);
+      yield* Effect.forkChild(world.close(7, workspaceToken));
+      yield* TestClock.adjust("80 millis");
+      const reopening = yield* Effect.forkChild(Effect.flip(world.open(8)));
+      yield* TestClock.adjust("150 millis");
+      expect(yield* Fiber.join(reopening)).toMatchObject({
+        message: expect.stringContaining("still closing"),
+      });
+      expect(world.workers).toHaveLength(1);
+    }),
+  );
 });

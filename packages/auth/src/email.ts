@@ -21,63 +21,64 @@ export interface SendInvitationInput {
 }
 
 export class EmailDeliveryError extends Schema.TaggedError<EmailDeliveryError>()(
-  "Auth.EmailDeliveryError",
+  "EmailDeliveryError",
   {
     message: Schema.String,
   },
 ) {}
 
-export interface EmailProviderApi {
-  readonly deliversOtp: boolean;
-  readonly sendOtp: (input: SendOtpInput) => Effect.Effect<void, EmailDeliveryError>;
-  readonly sendInvitation: (input: SendInvitationInput) => Effect.Effect<void, EmailDeliveryError>;
+export class EmailProvider extends Context.Service<
+  EmailProvider,
+  {
+    readonly deliversOtp: boolean;
+    readonly sendOtp: (input: SendOtpInput) => Effect.Effect<void, EmailDeliveryError>;
+    readonly sendInvitation: (
+      input: SendInvitationInput,
+    ) => Effect.Effect<void, EmailDeliveryError>;
+  }
+>()("@store/auth/EmailProvider") {
+  static readonly layerDevelopment = Layer.succeed(
+    this,
+    this.of({
+      deliversOtp: true,
+      sendOtp: Effect.fn("EmailProvider.development.sendOtp")(function* (input) {
+        yield* Effect.logInfo("auth.otp_requested").pipe(
+          Effect.annotateLogs({
+            code: input.code,
+            expiresAt: input.expiresAt,
+            delivery: "development-log-only",
+          }),
+        );
+      }),
+      sendInvitation: Effect.fn("EmailProvider.development.sendInvitation")(function* (input) {
+        yield* Effect.logInfo("auth.invitation_created").pipe(
+          Effect.annotateLogs({
+            organization: input.organizationName,
+            role: input.role,
+            expiresAt: input.expiresAt,
+            delivery: "development-log-only",
+          }),
+        );
+      }),
+    }),
+  );
+
+  static readonly layerDisabled = Layer.succeed(
+    this,
+    this.of({
+      deliversOtp: false,
+      sendOtp: () =>
+        Effect.fail(new EmailDeliveryError({ message: "One-time code delivery is disabled." })),
+      sendInvitation: Effect.fn("EmailProvider.disabled.sendInvitation")(function* (input) {
+        yield* Effect.logInfo("auth.invitation_delivery_disabled").pipe(
+          Effect.annotateLogs({
+            organization: input.organizationName,
+            role: input.role,
+            expiresAt: input.expiresAt,
+            delivery: "disabled",
+          }),
+        );
+      }),
+    }),
+  );
 }
-
-export class EmailProvider extends Context.Service<EmailProvider, EmailProviderApi>()(
-  "@store/auth/EmailProvider",
-) {}
-
-export const developmentEmailLayer = Layer.succeed(
-  EmailProvider,
-  EmailProvider.of({
-    deliversOtp: true,
-    sendOtp: Effect.fn("EmailProvider.development.sendOtp")(function* (input) {
-      yield* Effect.logInfo("auth.otp_requested").pipe(
-        Effect.annotateLogs({
-          code: input.code,
-          expiresAt: input.expiresAt,
-          delivery: "development-log-only",
-        }),
-      );
-    }),
-    sendInvitation: Effect.fn("EmailProvider.development.sendInvitation")(function* (input) {
-      yield* Effect.logInfo("auth.invitation_created").pipe(
-        Effect.annotateLogs({
-          organization: input.organizationName,
-          role: input.role,
-          expiresAt: input.expiresAt,
-          delivery: "development-log-only",
-        }),
-      );
-    }),
-  }),
-);
-
-export const disabledEmailLayer = Layer.succeed(
-  EmailProvider,
-  EmailProvider.of({
-    deliversOtp: false,
-    sendOtp: () =>
-      Effect.fail(new EmailDeliveryError({ message: "One-time code delivery is disabled." })),
-    sendInvitation: Effect.fn("EmailProvider.disabled.sendInvitation")(function* (input) {
-      yield* Effect.logInfo("auth.invitation_delivery_disabled").pipe(
-        Effect.annotateLogs({
-          organization: input.organizationName,
-          role: input.role,
-          expiresAt: input.expiresAt,
-          delivery: "disabled",
-        }),
-      );
-    }),
-  }),
-);

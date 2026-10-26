@@ -24,7 +24,7 @@ const FIXTURE_OCCURRED_AT = 1_700_000_000_000;
 
 export const seedReplicaTenUnits = (path?: string) =>
   Effect.gen(function* () {
-    const store = yield* openReplicaStore(path);
+    const store = yield* openReplicaStore(path).pipe(Effect.orDie);
     yield* runReplicaTransaction(store, (tx) =>
       Effect.gen(function* () {
         yield* tx.insert(replicaState).values({

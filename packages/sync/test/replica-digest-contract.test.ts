@@ -4,9 +4,9 @@ import {
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
   SyncEpoch,
-  type SyncPullRequest,
   type SyncPullResult,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 import {
   LAST_UNIT_BATCH_ID,
@@ -20,11 +20,10 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
-import type { SyncTransport } from "../src/transport";
+import type { ReplicaStore } from "../src/replica/store";
+import { SyncTransport } from "../src/transport";
 import { applyGroup } from "./lib/authority";
 import {
   authorityDigest,
@@ -35,6 +34,7 @@ import {
   type AuthorityPartition,
   type ServerPartitionTables,
 } from "./lib/authority-digest";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   catalogEnvelope,
@@ -48,14 +48,8 @@ import { seedReplicaTenUnits } from "./lib/replica-fixture";
 
 const NOW = Date.UTC(2026, 8, 22, 9, 0, 0);
 
-const pullRequest: SyncPullRequest = {
-  epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
-  subscription: "operational",
-  afterCommitSequence: OrgCommitSequence.make("0"),
-};
-
 type StoreHarness = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly incarnation: string;
   readonly close: () => Effect.Effect<void, unknown>;
 };
@@ -91,7 +85,10 @@ const makeAuthority = Effect.fn("digest.authority")(function* () {
   } satisfies Authority;
 });
 
-const authorityTransport = (incarnation: string, authority: Authority): SyncTransport => ({
+const authorityTransport = (
+  incarnation: string,
+  authority: Authority,
+): SyncTransport["Service"] => ({
   registerReplica: () => Effect.die("unused"),
   submitCommand: () => Effect.die("unused"),
   getReceipt: () => Effect.succeed(undefined),
@@ -133,7 +130,7 @@ const managed = (operationId: string, rowVersion: number) => ({
 const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   {
     commitSequence: OrgCommitSequence.make("3"),
-    operationId: "remote-rename",
+    operationId: OperationId.make("remote-rename"),
     decision: "accepted",
     changes: [
       {
@@ -160,7 +157,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("4"),
-    operationId: "remote-restock",
+    operationId: OperationId.make("remote-restock"),
     decision: "accepted",
     changes: [
       {
@@ -203,7 +200,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("5"),
-    operationId: "remote-delete",
+    operationId: OperationId.make("remote-delete"),
     decision: "accepted",
     changes: [
       {
@@ -217,7 +214,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("6"),
-    operationId: "remote-category",
+    operationId: OperationId.make("remote-category"),
     decision: "accepted",
     changes: [
       {
@@ -236,7 +233,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
   },
   {
     commitSequence: OrgCommitSequence.make("7"),
-    operationId: "remote-delivery",
+    operationId: OperationId.make("remote-delivery"),
     decision: "accepted",
     changes: [
       {
@@ -316,14 +313,12 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
 const withEngine = <A, E>(
   harness: StoreHarness,
   authority: Authority,
-  use: (
-    engine: Effect.Success<ReturnType<typeof makeSyncEngineFromReplicaStore>>,
-  ) => Effect.Effect<A, E>,
+  use: (engine: Effect.Success<ReturnType<typeof engineOf>>) => Effect.Effect<A, E>,
 ) =>
   Effect.gen(function* () {
-    const engine = yield* makeSyncEngineFromReplicaStore(
+    const engine = yield* engineOf(
       harness.store,
-      authorityTransport(harness.incarnation, authority),
+      stubTransport(authorityTransport(harness.incarnation, authority)),
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },
     );
     return yield* use(engine);
@@ -339,16 +334,16 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.downloadOnce(pullRequest);
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW);
 
           yield* TestClock.adjust("1 hour");
-          yield* engine.downloadOnce(pullRequest);
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true, false]);
 
           yield* TestClock.adjust("6 hours");
-          yield* engine.downloadOnce(pullRequest);
+          yield* engine.catchUp;
           expect(yield* Ref.get(authority.requested)).toEqual([true, false, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW + 25_200_000);
         }),
@@ -364,12 +359,12 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.downloadOnce(pullRequest);
+          yield* engine.catchUp;
           const [tampered] = remoteChanges;
           if (tampered === undefined) return yield* Effect.die("missing fixture");
           yield* applyGroup(harness.store, tampered);
           yield* TestClock.adjust("7 hours");
-          const failure = yield* Effect.exit(engine.downloadOnce(pullRequest));
+          const failure = yield* Effect.exit(engine.catchUp);
           expect(Exit.isFailure(failure)).toBe(true);
           expect(yield* Ref.get(authority.requested)).toEqual([true, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBeUndefined();
@@ -386,7 +381,7 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
       const authority = yield* makeAuthority();
       yield* withEngine(harness, authority, (engine) =>
         Effect.gen(function* () {
-          yield* engine.downloadOnce(pullRequest);
+          yield* engine.catchUp;
           yield* harness.store.enqueueCommand(
             enqueueRequestOf(
               catalogEnvelope({
@@ -398,7 +393,7 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
             ),
           );
           yield* TestClock.adjust("7 hours");
-          const exit = yield* Effect.exit(engine.downloadOnce(pullRequest));
+          const exit = yield* Effect.exit(engine.catchUp);
           expect(Exit.isSuccess(exit)).toBe(true);
           expect(yield* Ref.get(authority.requested)).toEqual([true, true]);
           expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW);
@@ -518,7 +513,7 @@ describe.each(harnesses)(
               transactions: [
                 {
                   commitSequence: OrgCommitSequence.make("1"),
-                  operationId: "server-dataset",
+                  operationId: OperationId.make("server-dataset"),
                   decision: "accepted",
                   changes: serverChangeLog(serverTables),
                 },

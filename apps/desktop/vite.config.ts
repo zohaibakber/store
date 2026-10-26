@@ -5,21 +5,19 @@ import type { ElectronOptions } from "vite-plugin-electron";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
+import {
+  DESKTOP_SENTRY_DSN,
+  LOCAL_API_URL,
+  LOCAL_AUTH_URL,
+  PRODUCTION_API_URL,
+  PRODUCTION_AUTH_URL,
+} from "../../infra/deployment";
 import packageJson from "./package.json";
 import { rendererAppConfig, rendererRoot } from "./vite.app";
 
 const desktopRoot = import.meta.dirname;
 const electronSource = path.join(desktopRoot, "electron");
 const electronOutput = path.join(desktopRoot, "dist-electron");
-
-const electronDefines = {
-  __APP_VERSION__: JSON.stringify(packageJson.version),
-  "import.meta.env.VITE_API_URL": JSON.stringify(process.env["VITE_API_URL"] ?? ""),
-  "import.meta.env.VITE_AUTH_URL": JSON.stringify(process.env["VITE_AUTH_URL"] ?? ""),
-  "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(process.env["VITE_SENTRY_DSN"] ?? ""),
-};
-
-const app = rendererAppConfig({ version: packageJson.version });
 
 type ElectronStart = NonNullable<ElectronOptions["onstart"]>;
 
@@ -30,84 +28,95 @@ const startElectron: ElectronStart = ({ startup }) => {
 const reloadRenderer: ElectronStart = (start) =>
   process.electronApp ? start.reload() : startElectron(start);
 
-export default defineConfig(({ command }) => ({
-  root: rendererRoot,
-  envDir: desktopRoot,
-  define: app.define,
-  resolve: app.resolve,
-  worker: app.worker,
-  build: { outDir: path.join(desktopRoot, "dist"), emptyOutDir: true },
-  server: {
-    host: "127.0.0.1",
-    port: 5174,
-    strictPort: true,
-  },
-  staged: {
-    "*": "vp check --fix",
-  },
-  fmt: {
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
-  },
-  lint: {
-    env: { browser: true, node: true, es2020: true },
-    ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
-    plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
-    jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
-    rules: {
-      "react/exhaustive-deps": "warn",
-      "react/only-export-components": [
-        "warn",
-        { allowConstantExport: true, allowExportNames: ["Route"] },
-      ],
-      "react/rules-of-hooks": "error",
-      "vite-plus/prefer-vite-plus-imports": "error",
+export default defineConfig(({ command }) => {
+  const released = command === "build";
+  const sentryDsn = released ? DESKTOP_SENTRY_DSN : "";
+  const app = rendererAppConfig({ version: packageJson.version, sentryDsn });
+  const electronDefines = {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+    __API_URL__: JSON.stringify(released ? PRODUCTION_API_URL : LOCAL_API_URL),
+    __AUTH_URL__: JSON.stringify(released ? PRODUCTION_AUTH_URL : LOCAL_AUTH_URL),
+    __SENTRY_DSN__: JSON.stringify(sentryDsn),
+  };
+  return {
+    root: rendererRoot,
+    envDir: desktopRoot,
+    define: app.define,
+    resolve: app.resolve,
+    worker: app.worker,
+    build: { outDir: path.join(desktopRoot, "dist"), emptyOutDir: true },
+    server: {
+      host: "127.0.0.1",
+      port: 5174,
+      strictPort: true,
     },
-    options: { maxWarnings: 0 },
-  },
-  plugins: lazyPlugins(async () => [
-    ...app.plugins(),
-    ...(await electron({
-      main: {
-        entry: path.join(electronSource, "main.ts"),
-        onstart: startElectron,
-        vite: {
-          root: desktopRoot,
-          define: electronDefines,
-          build: {
-            outDir: electronOutput,
-            emptyOutDir: command === "build",
-            sourcemap: true,
-            rolldownOptions: {
-              input: {
-                main: path.join(electronSource, "main.ts"),
-                "replica-worker": path.join(electronSource, "replica-worker.ts"),
-                "replica-reader": path.join(electronSource, "replica-reader.ts"),
-                "analytics-worker": path.join(electronSource, "analytics-worker.ts"),
+    staged: {
+      "*": "vp check --fix",
+    },
+    fmt: {
+      ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+    },
+    lint: {
+      env: { browser: true, node: true, es2020: true },
+      ignorePatterns: ["dist/**", "dist-electron/**", "src/routeTree.gen.ts"],
+      plugins: ["eslint", "typescript", "unicorn", "oxc", "react"],
+      jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
+      rules: {
+        "react/exhaustive-deps": "warn",
+        "react/only-export-components": [
+          "warn",
+          { allowConstantExport: true, allowExportNames: ["Route"] },
+        ],
+        "react/rules-of-hooks": "error",
+        "vite-plus/prefer-vite-plus-imports": "error",
+      },
+      options: { maxWarnings: 0 },
+    },
+    plugins: lazyPlugins(async () => [
+      ...app.plugins(),
+      ...(await electron({
+        main: {
+          entry: path.join(electronSource, "main.ts"),
+          onstart: startElectron,
+          vite: {
+            root: desktopRoot,
+            define: electronDefines,
+            build: {
+              outDir: electronOutput,
+              emptyOutDir: command === "build",
+              sourcemap: true,
+              rolldownOptions: {
+                input: {
+                  main: path.join(electronSource, "main.ts"),
+                  "replica-worker": path.join(electronSource, "replica-worker.ts"),
+                  "replica-reader": path.join(electronSource, "replica-reader.ts"),
+                  "analytics-worker": path.join(electronSource, "analytics-worker.ts"),
+                },
+                external: ["electron", "electron-updater"],
+                // Run the Schema JIT enable import before any chunk that builds parsers.
+                output: { entryFileNames: "[name].js", strictExecutionOrder: true },
               },
-              external: ["electron", "electron-updater"],
-              // Run the Schema JIT enable import before any chunk that builds parsers.
-              output: { entryFileNames: "[name].js", strictExecutionOrder: true },
             },
           },
         },
-      },
-      preload: {
-        input: path.join(electronSource, "preload.ts"),
-        onstart: reloadRenderer,
-        vite: {
-          root: desktopRoot,
-          define: electronDefines,
-          build: {
-            outDir: electronOutput,
-            emptyOutDir: false,
-            sourcemap: true,
-            rolldownOptions: {
-              external: ["electron"],
-              output: { entryFileNames: "preload.cjs" },
+        preload: {
+          input: path.join(electronSource, "preload.ts"),
+          onstart: reloadRenderer,
+          vite: {
+            root: desktopRoot,
+            define: electronDefines,
+            build: {
+              outDir: electronOutput,
+              emptyOutDir: false,
+              sourcemap: true,
+              rolldownOptions: {
+                external: ["electron"],
+                output: { entryFileNames: "preload.cjs" },
+              },
             },
           },
         },
-      },
-    })),
-  ]),
-}));
+      })),
+    ]),
+  };
+});

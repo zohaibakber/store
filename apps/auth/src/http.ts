@@ -1,5 +1,6 @@
 import {
   AuthBadRequest,
+  type AuthErrorCode,
   AuthHttpApi,
   Authorization,
   AuthUnauthenticated,
@@ -8,22 +9,14 @@ import {
   MalformedRequest,
   presentedCredential,
   publicJwks,
-  refreshCookieName,
-  refreshCookieOptions,
-  refreshCookieSecurity,
-  type AuthClientKind,
   type JwtKeyRing,
-  type RefreshToken,
-  type TokenSet,
 } from "@store/auth";
-import { isTrustedOrigin } from "@store/auth/security";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
 import * as HttpEffect from "effect/http/HttpEffect";
-import * as HttpMiddleware from "effect/http/HttpMiddleware";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServerError from "effect/http/HttpServerError";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -33,29 +26,28 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import * as Struct from "effect/Struct";
 
-import { causeDiagnostics } from "./errors";
-import { authFailureWire, authHttpError, type AuthFailure } from "./failures";
-import { AUTH_RATE_LIMIT_PERIOD_SECONDS } from "./limits";
+import {
+  causeDiagnostics,
+  unavailableOnInfrastructureFailure,
+  type InfrastructureFailure,
+} from "./errors";
+import { authFailureWire, authHttpError, AuthRefusal, type AuthFailure } from "./failures";
+import { GoogleIdentity } from "./google-identity";
+import { OAuthState } from "./identifiers";
+import { addressBucket, AUTH_RATE_LIMIT_PERIOD_SECONDS, AuthLimiter } from "./limits";
+import { Login } from "./login";
 import { googleOAuthAppResponse, oauthCallbackErrorResponse } from "./oauth-callback-page";
-import { AuthService } from "./service";
-import type { PresentedRefresh } from "./session-ops";
+import { Organizations } from "./organization-ops";
+import { Sessions } from "./session-ops";
 
 interface AuthHttpConfiguration {
   readonly keys: JwtKeyRing;
-  readonly secureCookies: boolean;
-  readonly trustedOrigins: ReadonlyArray<string>;
 }
 
 class AuthHttpConfig extends Context.Service<AuthHttpConfig, AuthHttpConfiguration>()(
   "@store/auth-worker/AuthHttpConfig",
 ) {}
-
-const UNIDENTIFIED_NATIVE_CLIENT: AuthClientKind = {
-  _tag: "Native",
-  deviceName: "Native client",
-};
 
 const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, response) =>
   Effect.succeed(
@@ -63,45 +55,23 @@ const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, respo
   ),
 );
 
-const fromAuth = <A, R>(effect: Effect.Effect<A, AuthFailure, R>) =>
-  effect.pipe(
+const publicBody = (code: AuthErrorCode, message: string) => ({ error: { code, message } });
+
+const fromAuth = <A, R>(effect: Effect.Effect<A, AuthFailure | InfrastructureFailure, R>) =>
+  unavailableOnInfrastructureFailure(effect).pipe(
     Effect.tapError((failure) =>
       authFailureWire(failure).kind === "TooManyRequests" ? retryAfterRateLimit : Effect.void,
     ),
     Effect.mapError(authHttpError),
   );
 
-const admitCallerAddress = (auth: AuthService["Service"]) =>
+const admitCallerAddress = (limiter: AuthLimiter["Service"]) =>
   Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
     const address = request.headers["cf-connecting-ip"];
-    return address === undefined ? Effect.void : auth.admitAddress(address);
+    return address === undefined
+      ? Effect.void
+      : limiter.admit("sixtyPerMinute", `address:${addressBucket(address)}`, "request");
   });
-
-const browserTokenPayload = <T extends TokenSet>(tokens: T, client: AuthClientKind) =>
-  client._tag === "Browser" ? Struct.omit(tokens, ["refreshToken"]) : tokens;
-
-const issueBrowserTokens = <T extends TokenSet, R>(
-  effect: Effect.Effect<T, AuthFailure, R>,
-  client: AuthClientKind,
-  secureCookies: boolean,
-) =>
-  fromAuth(effect).pipe(
-    Effect.flatMap((tokens) =>
-      Effect.gen(function* () {
-        if (client._tag === "Browser" && tokens.refreshToken) {
-          yield* HttpApiBuilder.securitySetCookie(
-            refreshCookieSecurity(secureCookies),
-            tokens.refreshToken,
-            {
-              ...refreshCookieOptions(secureCookies),
-              expires: new Date(tokens.refreshExpiresAt),
-            },
-          );
-        }
-        return browserTokenPayload(tokens, client);
-      }),
-    ),
-  );
 
 const AuthorizationLive = Layer.succeed(
   Authorization,
@@ -109,23 +79,17 @@ const AuthorizationLive = Layer.succeed(
     bearer: Effect.fn("AuthAuthorization.bearer")(function* (httpEffect, { credential }) {
       const token = presentedCredential(credential);
       if (Option.isNone(token)) {
-        return yield* Effect.fail(
-          AuthUnauthenticated.make({
-            error: { code: "UNAUTHENTICATED", message: "Sign in to continue." },
-          }),
-        );
+        const { code, message } = authFailureWire(new AuthRefusal({ reason: "Unauthenticated" }));
+        return yield* Effect.fail(AuthUnauthenticated.make(publicBody(code, message)));
       }
       return yield* Effect.provideService(httpEffect, CurrentAccessToken, token.value);
     }),
   }),
 );
 
-const malformedRequest = AuthBadRequest.make({
-  error: {
-    code: "INVALID_REQUEST",
-    message: "The request is not valid. Check what you entered and try again.",
-  },
-});
+const malformedRequest = AuthBadRequest.make(
+  publicBody("INVALID_REQUEST", "The request is not valid. Check what you entered and try again."),
+);
 
 const MalformedRequestLive = HttpApiMiddleware.layerSchemaErrorTransform(
   MalformedRequest,
@@ -166,62 +130,46 @@ const SessionHandlers = HttpApiBuilder.group(
   AuthHttpApi,
   "session",
   Effect.fn("AuthSessionHandlers.make")(function* (handlers) {
-    const auth = yield* AuthService;
-    const configuration = yield* AuthHttpConfig;
-    const cookies = configuration.secureCookies;
-    const refreshCookie = refreshCookieSecurity(cookies);
-    const presentedRefreshCredential = Effect.fnUntraced(function* (
-      bodyToken: RefreshToken | undefined,
-    ) {
-      const cookie = presentedCredential(yield* HttpApiBuilder.securityDecode(refreshCookie));
-      if (bodyToken) {
-        return {
-          client: UNIDENTIFIED_NATIVE_CLIENT,
-          refreshToken: Redacted.make(bodyToken),
-        } satisfies PresentedRefresh;
-      }
-      return Option.match(cookie, {
-        onNone: () => undefined,
-        onSome: (refreshToken): PresentedRefresh => ({ client: { _tag: "Browser" }, refreshToken }),
-      });
-    });
-
-    const admitCaller = fromAuth(admitCallerAddress(auth));
+    const limiter = yield* AuthLimiter;
+    const login = yield* Login;
+    const google = yield* GoogleIdentity;
+    const sessions = yield* Sessions;
+    const admitCaller = fromAuth(admitCallerAddress(limiter));
 
     return handlers
       .handle(
         "identify",
         Effect.fn("AuthSessionHandlers.identify")(function* ({ payload }) {
           yield* admitCaller;
-          return yield* fromAuth(auth.identify(payload));
+          return yield* fromAuth(login.identify(payload));
         }),
       )
       .handle(
         "signInPassword",
         Effect.fn("AuthSessionHandlers.signInPassword")(function* ({ payload }) {
           yield* admitCaller;
-          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+          return yield* fromAuth(login.authenticate(payload));
         }),
       )
       .handle(
         "signInOtp",
         Effect.fn("AuthSessionHandlers.signInOtp")(function* ({ payload }) {
           yield* admitCaller;
-          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+          return yield* fromAuth(login.authenticate(payload));
         }),
       )
       .handle(
         "signUpPassword",
         Effect.fn("AuthSessionHandlers.signUpPassword")(function* ({ payload }) {
           yield* admitCaller;
-          return yield* issueBrowserTokens(auth.authenticate(payload), payload.client, cookies);
+          return yield* fromAuth(login.authenticate(payload));
         }),
       )
       .handle(
         "googleStart",
         Effect.fn("AuthSessionHandlers.googleStart")(function* ({ payload }) {
           yield* admitCaller;
-          const url = yield* fromAuth(auth.beginGoogle(payload));
+          const url = yield* fromAuth(google.beginGoogle(payload));
           return { url: url.href };
         }),
       )
@@ -229,30 +177,20 @@ const SessionHandlers = HttpApiBuilder.group(
         "googleExchange",
         Effect.fn("AuthSessionHandlers.googleExchange")(function* ({ payload }) {
           yield* admitCaller;
-          return yield* issueBrowserTokens(auth.exchangeGoogle(payload), payload.client, cookies);
+          return yield* fromAuth(google.exchangeGoogle(payload));
         }),
       )
       .handle(
         "refresh",
         Effect.fn("AuthSessionHandlers.refresh")(function* ({ payload }) {
-          const presented = yield* presentedRefreshCredential(payload.refreshToken);
-          return yield* issueBrowserTokens(
-            auth.refresh(presented),
-            presented?.client ?? UNIDENTIFIED_NATIVE_CLIENT,
-            cookies,
-          );
+          return yield* fromAuth(sessions.refresh(Redacted.make(payload.refreshToken)));
         }),
       )
       .handle(
         "logout",
         Effect.fn("AuthSessionHandlers.logout")(function* ({ payload }) {
-          const presented = yield* presentedRefreshCredential(payload.refreshToken);
-          yield* fromAuth(auth.signOut(presented?.refreshToken));
-          return HttpServerResponse.expireCookieUnsafe(
-            HttpServerResponse.jsonUnsafe({ ok: true as const }),
-            refreshCookieName(cookies),
-            refreshCookieOptions(cookies),
-          );
+          yield* fromAuth(sessions.signOut(Redacted.make(payload.refreshToken)));
+          return { ok: true as const };
         }),
       );
   }),
@@ -262,21 +200,21 @@ const OrganizationHandlers = HttpApiBuilder.group(
   AuthHttpApi,
   "organization",
   Effect.fn("AuthOrganizationHandlers.make")(function* (handlers) {
-    const auth = yield* AuthService;
+    const organizations = yield* Organizations;
 
     return handlers
       .handle(
         "roster",
         Effect.fn("AuthOrganizationHandlers.roster")(function* () {
           const token = yield* CurrentAccessToken;
-          return yield* fromAuth(auth.roster(token));
+          return yield* fromAuth(organizations.roster(token));
         }),
       )
       .handle(
         "command",
         Effect.fn("AuthOrganizationHandlers.command")(function* ({ payload }) {
           const token = yield* CurrentAccessToken;
-          return yield* fromAuth(auth.organize({ accessToken: token, command: payload }));
+          return yield* fromAuth(organizations.organize({ accessToken: token, command: payload }));
         }),
       );
   }),
@@ -302,7 +240,8 @@ const callbackFailureResponse = (failure: AuthFailure) => {
 
 const GoogleCallbackRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
-    const auth = yield* AuthService;
+    const limiter = yield* AuthLimiter;
+    const google = yield* GoogleIdentity;
 
     yield* router.add(
       "GET",
@@ -319,8 +258,11 @@ const GoogleCallbackRoutes = HttpRouter.use((router) =>
         if (!code || !state) {
           return oauthCallbackErrorResponse(400, "Google did not return an authorization code.");
         }
-        return yield* admitCallerAddress(auth).pipe(
-          Effect.andThen(auth.completeGoogle({ code, state })),
+        return yield* unavailableOnInfrastructureFailure(
+          admitCallerAddress(limiter).pipe(
+            Effect.andThen(google.completeGoogle({ code, state: OAuthState.make(state) })),
+          ),
+        ).pipe(
           Effect.match({
             onFailure: callbackFailureResponse,
             onSuccess: (callback) => {
@@ -333,43 +275,6 @@ const GoogleCallbackRoutes = HttpRouter.use((router) =>
       }),
     );
   }),
-);
-
-const CorsAndOrigin = HttpRouter.middleware(
-  Effect.gen(function* () {
-    const configuration = yield* AuthHttpConfig;
-    const cors = HttpMiddleware.cors({
-      allowedOrigins: (origin) => isTrustedOrigin(origin, configuration.trustedOrigins),
-      allowedHeaders: ["Authorization", "Content-Type", "traceparent", "b3"],
-      allowedMethods: ["GET", "POST", "OPTIONS"],
-      credentials: true,
-      maxAge: 7200,
-    });
-    return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown, unknown>) =>
-      Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
-        const origin = request.headers.origin;
-        const hasRefreshCookie = refreshCookieName(configuration.secureCookies) in request.cookies;
-        if (
-          request.method !== "GET" &&
-          (origin !== undefined || hasRefreshCookie) &&
-          !isTrustedOrigin(origin, configuration.trustedOrigins)
-        ) {
-          return Effect.succeed(
-            HttpServerResponse.jsonUnsafe(
-              {
-                error: {
-                  code: "UNTRUSTED_ORIGIN",
-                  message: "The request origin is not trusted.",
-                },
-              },
-              { status: 403 },
-            ),
-          );
-        }
-        return cors(httpEffect);
-      });
-  }),
-  { global: true },
 );
 
 const NoStoreOnPost = HttpRouter.middleware(
@@ -392,12 +297,7 @@ export const authRoutes = (configuration: AuthHttpConfiguration) => {
     ),
     Layer.provide(ConfigLive),
   );
-  return Layer.mergeAll(
-    ApiRoutes,
-    GoogleCallbackRoutes,
-    CorsAndOrigin.pipe(Layer.provide(ConfigLive)),
-    NoStoreOnPost,
-  );
+  return Layer.mergeAll(ApiRoutes, GoogleCallbackRoutes, NoStoreOnPost);
 };
 
 export const recoverUnexpected = <E, R>(
@@ -408,10 +308,9 @@ export const recoverUnexpected = <E, R>(
       (error) => HttpServerError.isHttpServerError(error) && error.reason._tag === "RouteNotFound",
       () =>
         Effect.succeed(
-          HttpServerResponse.jsonUnsafe(
-            { error: { code: "NOT_FOUND", message: "No such authentication route." } },
-            { status: 404 },
-          ),
+          HttpServerResponse.jsonUnsafe(publicBody("NOT_FOUND", "No such authentication route."), {
+            status: 404,
+          }),
         ),
     ),
     Effect.catchCause((cause) => {
@@ -420,12 +319,7 @@ export const recoverUnexpected = <E, R>(
         Effect.annotateLogs(causeDiagnostics(cause)),
         Effect.as(
           HttpServerResponse.jsonUnsafe(
-            {
-              error: {
-                code: "INTERNAL_SERVER_ERROR",
-                message: "The authentication request could not be handled.",
-              },
-            },
+            publicBody("INTERNAL_SERVER_ERROR", "The authentication request could not be handled."),
             { status: 500 },
           ),
         ),

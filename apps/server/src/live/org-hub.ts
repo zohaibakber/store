@@ -15,7 +15,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import { OrgHub, type OrgHubContract } from "../../api";
-import type { CommitFanout } from "../inventory/model";
+import type { CommitFanout } from "../authority/frames";
 import {
   admissionFromHeaders,
   advanceCursor,
@@ -126,8 +126,8 @@ export const makeOrgHub = Effect.fnUntraced(function* (
       const greeting = yield* advance({ epoch: admission.epoch, horizon: admission.horizon });
       server.ws.send(helloFrame(greeting));
       return platform.upgrade(client);
-    }),
-    publish: Effect.fnUntraced(function* (input: CommitFanout) {
+    }).pipe(Effect.withSpan("OrgHub.fetch")),
+    publish: Effect.fn("OrgHub.publish")(function* (input: CommitFanout) {
       const now = yield* Clock.currentTimeMillis;
       yield* advance({ epoch: input.epoch, horizon: input.horizon });
       return publishToSockets(yield* socketsTagged(), input, now);

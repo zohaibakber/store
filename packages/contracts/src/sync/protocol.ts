@@ -3,7 +3,7 @@ import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
 import { CatalogWriteCommand } from "../catalog/write";
-import { InvoiceId, OrganizationId } from "../ids";
+import { InvoiceId, OperationId, OrganizationId, ReplicaId } from "../ids";
 import { PositiveInt, Sha256Hex, SyncIdentifier } from "../schema-primitives";
 import { IssueInvoiceCommand } from "../store/schema";
 import { knownEntityRecords, SyncEntityChange } from "./schema";
@@ -132,16 +132,16 @@ export type SyncCommand = typeof SyncCommand.Type;
 export const SyncCommandEnvelope = Schema.Struct({
   organizationId: OrganizationId,
   epoch: SyncEpoch,
-  replicaId: SyncIdentifier,
+  replicaId: ReplicaId,
   clientSequence: ReplicaClientSequence,
-  operationId: SyncIdentifier,
+  operationId: OperationId,
   payloadHash: PayloadHash,
   command: SyncCommand,
 });
 export type SyncCommandEnvelope = typeof SyncCommandEnvelope.Type;
 
 export const EnqueueCommandRequest = Schema.Struct({
-  operationId: SyncIdentifier,
+  operationId: OperationId,
   command: SyncCommand,
   occurredAt: Schema.Natural,
 });
@@ -164,8 +164,8 @@ const CommandResult = Schema.TaggedUnion({
 });
 
 export const CommandReceipt = Schema.Struct({
-  operationId: SyncIdentifier,
-  replicaId: SyncIdentifier,
+  operationId: OperationId,
+  replicaId: ReplicaId,
   clientSequence: ReplicaClientSequence,
   payloadHash: PayloadHash,
   decision: CommandDecision,
@@ -197,14 +197,14 @@ export const deviceLabelOf = (name: string): DeviceLabel | undefined =>
   );
 
 export const RegisterReplicaRequest = Schema.Struct({
-  replicaId: SyncIdentifier,
+  replicaId: ReplicaId,
   deviceLabel: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
   schemaVersion: SyncSchemaVersion,
 });
 export type RegisterReplicaRequest = typeof RegisterReplicaRequest.Type;
 
 export const RegisterReplicaResult = Schema.Struct({
-  replicaId: SyncIdentifier,
+  replicaId: ReplicaId,
   epoch: SyncEpoch,
   incarnation: AuthorityIncarnation,
   nextClientSequence: ReplicaClientSequence,
@@ -229,7 +229,7 @@ export type SyncLogChange = typeof SyncLogChange.Type;
 
 export const SyncTransactionGroup = Schema.Struct({
   commitSequence: OrgCommitSequence,
-  operationId: SyncIdentifier,
+  operationId: OperationId,
   decision: CommandDecision,
   changes: knownEntityRecords(SyncLogChange),
 });

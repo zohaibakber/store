@@ -6,6 +6,7 @@ import {
   SyncEpoch,
   type SyncPullResult,
   type SyncTransactionGroup,
+  OperationId,
 } from "@store/contracts";
 
 import {
@@ -23,7 +24,7 @@ const cursor: AuthorityCursor = {
 
 const group = (commitSequence: string): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(commitSequence),
-  operationId: `operation-${commitSequence}`,
+  operationId: OperationId.make(`operation-${commitSequence}`),
   decision: "accepted",
   changes: [],
 });

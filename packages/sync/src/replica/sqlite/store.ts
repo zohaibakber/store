@@ -83,7 +83,6 @@ import {
   ReplicaStore,
   type IntegrateAuthorityInput,
   type Integrated,
-  type ReplicaStoreContract,
   type ReplicaStoreError,
   type SnapshotActivation,
 } from "../store";
@@ -142,7 +141,7 @@ type EnqueuedCommand = {
 };
 
 type SqliteReplicaStoreInternals = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly cleanup: Effect.Effect<void>;
   readonly requestCleanup: Effect.Effect<void>;
   readonly cleanupRequests: Queue.Dequeue<void>;
@@ -182,7 +181,11 @@ const makeSqliteReplicaStoreInternals = (
       const outcome = yield* maintainReplicaPlanner(handle.sql);
       if (outcome === "optimized") yield* Ref.set(lastOptimized, now);
     }).pipe(
-      Effect.tapError((error) => Effect.logWarning("Replica planner maintenance failed", error)),
+      Effect.tapError((error) =>
+        Effect.logWarning("replica.planner_maintenance_failed").pipe(
+          Effect.annotateLogs({ error }),
+        ),
+      ),
       Effect.ignore,
       Effect.withSpan("SqliteReplicaStore.maintainPlanner"),
     );
@@ -282,7 +285,7 @@ const makeSqliteReplicaStoreInternals = (
         const { page, ...receipt } = decided.value;
         if (page === undefined) return undefined;
         if (receipt.result._tag === "rejected") {
-          return yield* Effect.fail(syncProtocolError(receipt.result.code, receipt.result.message));
+          return yield* syncProtocolError(receipt.result.code, receipt.result.message);
         }
         return { receipt, page };
       });
@@ -534,7 +537,9 @@ const makeSqliteReplicaStoreInternals = (
       yield* holdCheckpoints("cleanup").pipe(Effect.andThen(clearRetiredWhenIdle), Effect.scoped);
       yield* withTx("SqliteReplicaStore.refreshPlannerStats", refreshPlannerStats);
     }).pipe(
-      Effect.tapError((error) => Effect.logWarning("Replica generation cleanup failed", error)),
+      Effect.tapError((error) =>
+        Effect.logWarning("replica.generation_cleanup_failed").pipe(Effect.annotateLogs({ error })),
+      ),
       Effect.ignore,
     );
 
@@ -594,10 +599,9 @@ const makeSqliteReplicaStoreInternals = (
       );
 
     const store = {
-      readSyncCursor: () =>
-        withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
-          loadReplicaState(tx).pipe(Effect.map(syncCursorOf)),
-        ),
+      readSyncCursor: withTx("SqliteReplicaStore.readSyncCursor", (tx) =>
+        loadReplicaState(tx).pipe(Effect.map(syncCursorOf)),
+      ),
       adoptRegistration: (authority: RegisterReplicaResult, registeredAt: number) =>
         withTx("SqliteReplicaStore.adoptRegistration", (tx) =>
           Effect.gen(function* () {
@@ -673,12 +677,11 @@ const makeSqliteReplicaStoreInternals = (
         ),
       readCommandStatus: (operationId) =>
         withTx("SqliteReplicaStore.readCommandStatus", (tx) => commandStatus(tx, operationId)),
-      readPendingMarks: () =>
-        withTx("SqliteReplicaStore.readPendingMarks", (tx) => listPendingMarks(tx)),
-      readStamp: () => withTx("SqliteReplicaStore.readStamp", readStamp),
+      readPendingMarks: withTx("SqliteReplicaStore.readPendingMarks", (tx) => listPendingMarks(tx)),
+      readStamp: withTx("SqliteReplicaStore.readStamp", readStamp),
       recordCaughtUp: recordCaughtUpAt,
       commits,
-    } satisfies ReplicaStoreContract;
+    } satisfies ReplicaStore["Service"];
 
     return {
       store,
@@ -693,7 +696,7 @@ export const makeSqliteReplicaStore = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions = {},
-): Effect.Effect<ReplicaStoreContract> =>
+): Effect.Effect<ReplicaStore["Service"]> =>
   makeSqliteReplicaStoreInternals(handle, databaseIdentity, options).pipe(
     Effect.map((internals) => internals.store),
   );

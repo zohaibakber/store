@@ -64,7 +64,7 @@ into typed errors.
 | `GET /api/sync/imports/:id`            | `importStatus`        |
 | `GET /api/sync/live`                   | WebSocket to `OrgHub` |
 
-Other routes: `/api/health`, `/api/auth/session`, and `/api/uploads` (Workers AI, rate limited).
+Other routes: `/api/health`, `/api/auth/session` and `/api/global-search`.
 
 ## Organization authority (`apps/server/src/authority`)
 
@@ -100,7 +100,8 @@ pulls.
 - D1 holds users, credentials, OAuth accounts, organizations, memberships,
   refresh sessions, and single-use ephemeral records.
 - Password, OTP, and Google OAuth (PKCE) sign-in. Access tokens are ES256 JWTs
-  valid for one hour; the public JWK is served for local verification.
+  valid for one hour, signed with a key pair Alchemy generates per stage; the
+  API Worker gets the public key as a binding and `/.well-known/jwks.json` serves it.
 - Refresh tokens rotate through D1 and the refresh response carries the
   session workspace. See `packages/auth/ARCHITECTURE.md`.
 

@@ -1,56 +1,57 @@
-import { decodeJwtKeyRingText, makeAccessTokenVerifier } from "@store/auth";
-import {
-  DEFAULT_ELECTRON_PROTOCOL,
-  fallbackIfBlank,
-  LOCAL_WEB_ORIGINS,
-  parseTrustedOrigins,
-  publicHostnameFrom,
-  resolveAuthSecurity,
-} from "@store/auth/security";
-import { searchGlobalProducts } from "@store/services";
+import { AuthSigningKeyPair } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { LOCAL_API_PORT, PRODUCTION_API_HOSTNAME, PRODUCTION_ZONE } from "../../infra/deployment";
 import { Api, OrgAuthority, OrgHub } from "./api";
+import { AiGateway } from "./src/ai/gateway";
 import { workersAiLanguageModel } from "./src/ai/language-model";
-import { invoiceAiClient } from "./src/ai/workers-ai";
+import { AccessTokens } from "./src/auth/access-tokens";
 import { OrgAuthorityLive } from "./src/authority/durable-object";
-import { makeGlobalSearchCache } from "./src/global-search/cache";
 import { PageImagesLive } from "./src/global-search/page-images";
+import { GlobalSearch } from "./src/global-search/service";
 import { cloudflareWebSearch } from "./src/global-search/web-search";
 import { makeWorkerFetch } from "./src/http/app";
-import { RATE_LIMITS } from "./src/http/runtime";
-import { makeInventoryCommands } from "./src/inventory/commands";
-import { makeInventoryDevices } from "./src/inventory/devices";
-import { makeInventoryImports } from "./src/inventory/imports";
-import { makeInventoryLive } from "./src/inventory/live-horizon";
-import { makeInventorySnapshots } from "./src/inventory/snapshots";
-import { makeLiveFanout } from "./src/live/fanout";
+import { OrgAuthorities, OrganizationAuthority } from "./src/inventory/organization-authority";
+import { LiveFanout } from "./src/live/fanout";
 import { OrgHubLive } from "./src/live/org-hub";
-import { buildOncePerIsolate, workerRuntimeServices } from "./src/runtime/isolate";
-import {
-  PRODUCTION_API_DOMAIN_MISSING_MESSAGE,
-  PRODUCTION_DOMAIN_MISSING_MESSAGE,
-  productionDomainConfig,
-  productionSiteOrigin,
-  requireProductionApiHostname,
-  requireProductionHostname,
-  resolveProductionApiHostname,
-  resolveProductionHostname,
-} from "./src/runtime/production-domain";
+import { OrgHubs } from "./src/live/org-hubs";
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
-const GLOBAL_SEARCH_GATEWAY_CACHE_SECONDS = 7 * 24 * 60 * 60;
+
+const OrgHubsLive = Layer.effect(
+  OrgHubs,
+  Effect.gen(function* () {
+    return OrgHubs.of(yield* OrgHub);
+  }),
+);
+
+const OrgAuthoritiesLive = Layer.effect(
+  OrgAuthorities,
+  Effect.gen(function* () {
+    return OrgAuthorities.of(yield* OrgAuthority);
+  }),
+);
+
+const SearchBackendsLive = Layer.mergeAll(
+  cloudflareWebSearch,
+  workersAiLanguageModel,
+  PageImagesLive,
+).pipe(Layer.provide(AiGateway.layer));
+
+const ApiServicesLive = Layer.mergeAll(
+  OrganizationAuthority.layer.pipe(Layer.provide(OrgAuthoritiesLive)),
+  LiveFanout.layer,
+  GlobalSearch.layer.pipe(Layer.provide(SearchBackendsLive)),
+  AccessTokens.layer,
+).pipe(Layer.provideMerge(OrgHubsLive));
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
     const { stage } = yield* Alchemy.Stack;
-    const published = stage === "prod";
-    const domains =
-      !globalThis.__ALCHEMY_RUNTIME__ && published ? yield* productionDomainConfig : undefined;
+    const signingKey = yield* AuthSigningKeyPair;
     const worker = {
       main: import.meta.url,
       compatibility: {
@@ -59,145 +60,23 @@ export const ApiLive = Api.make(
       },
       placement: { mode: "smart" as const },
       observability: { enabled: true },
-      dev: { port: 8787 },
+      dev: { port: LOCAL_API_PORT },
+      env: { AUTH_JWT_PUBLIC_KEY: signingKey.publicKey },
     };
-    if (domains === undefined) return worker;
-    const siteHostname = requireProductionHostname(domains);
+    if (globalThis.__ALCHEMY_RUNTIME__ || stage !== "prod") return worker;
     return {
       ...worker,
       name: "tabaaq-api-prod-dirryhrx4li46wwh",
-      domain: requireProductionApiHostname(domains),
-      routes: [{ pattern: `${siteHostname}/api/*`, zoneName: siteHostname }],
+      domain: PRODUCTION_API_HOSTNAME,
+      routes: [{ pattern: `${PRODUCTION_ZONE}/api/*`, zoneName: PRODUCTION_ZONE }],
       workersDev: false,
     };
   }),
   Effect.gen(function* () {
-    const { stage } = yield* Alchemy.Stack;
-    const authorities = yield* OrgAuthority;
-    const live = makeInventoryLive(authorities);
-    const hubs = yield* OrgHub;
-    const execution = yield* Cloudflare.WorkerExecutionContext;
-    const liveFanout = makeLiveFanout(hubs, (effect) => execution.waitUntil(effect));
-    const ai = yield* Cloudflare.Workers.AI();
-    const invoiceExtractionRateLimit = yield* Cloudflare.RateLimit(
-      "INVOICE_EXTRACTION_RATE_LIMIT",
-      {
-        namespaceId: 1002,
-        simple: RATE_LIMITS.invoiceExtraction,
-      },
-    );
-    const globalSearchRateLimit = yield* Cloudflare.RateLimit("GLOBAL_SEARCH_RATE_LIMIT", {
-      namespaceId: 1003,
-      simple: RATE_LIMITS.globalSearch,
-    });
-    const globalSearchGateway = yield* Cloudflare.AI.Gateway("GlobalSearchGateway", {
-      id: stage === "prod" ? "tabaaq-globalsearchgateway-prod-ckap43plh4qg4zku" : undefined,
-      cacheTtl: GLOBAL_SEARCH_GATEWAY_CACHE_SECONDS,
-      rateLimitingInterval: 60,
-      rateLimitingLimit: 120,
-      rateLimitingTechnique: "sliding",
-      spendLimits: {
-        enabled: true,
-        rules: [{ limitType: "cost", limit: 100, window: "1 day" }],
-      },
-    });
-    const aiGateway = yield* Cloudflare.AI.QueryGateway(globalSearchGateway);
-    const globalSearchServices = yield* Effect.cached(
-      Effect.uninterruptible(
-        buildOncePerIsolate(
-          Layer.build(
-            Layer.mergeAll(
-              cloudflareWebSearch(aiGateway),
-              workersAiLanguageModel(aiGateway),
-              PageImagesLive,
-            ),
-          ),
-          yield* workerRuntimeServices,
-        ),
-      ),
-    );
-    const authPublicJwkText = yield* Config.String("AUTH_JWT_PUBLIC_JWK");
-    const authBaseUrl = yield* Config.String("AUTH_BASE_URL").pipe(Config.withDefault(""));
-    const productionAuthDomain = yield* Config.String("PRODUCTION_AUTH_DOMAIN").pipe(
-      Config.withDefault(""),
-    );
-    const productionDomainEnv = yield* productionDomainConfig;
-    const trustedOrigins = parseTrustedOrigins(productionDomainEnv.AUTH_TRUSTED_ORIGINS);
-    const electronProtocol = yield* Config.String("ELECTRON_PROTOCOL").pipe(
-      Config.withDefault(""),
-      Config.map((value) => fallbackIfBlank(value, DEFAULT_ELECTRON_PROTOCOL)),
-    );
-    const localDevelopment = yield* Alchemy.ALCHEMY_DEV;
-    const published = stage === "prod";
-    const productionHostname = resolveProductionHostname(productionDomainEnv);
-    const productionApiHostname = resolveProductionApiHostname(productionDomainEnv);
-    if (!globalThis.__ALCHEMY_RUNTIME__ && !localDevelopment && published) {
-      if (!productionHostname) {
-        return yield* Effect.die(new Error(PRODUCTION_DOMAIN_MISSING_MESSAGE));
-      }
-      if (!productionApiHostname) {
-        return yield* Effect.die(new Error(PRODUCTION_API_DOMAIN_MISSING_MESSAGE));
-      }
-    }
-    const siteOrigin = productionSiteOrigin(productionDomainEnv);
-    const authHostname =
-      publicHostnameFrom(productionAuthDomain) ??
-      (productionHostname ? `auth.${productionHostname}` : undefined);
-    const authOrigin =
-      authBaseUrl.trim() ||
-      (localDevelopment || !authHostname ? "http://localhost:8788" : `https://${authHostname}`);
-    const security = resolveAuthSecurity({
-      baseURL: authOrigin,
-      electronProtocol,
-      trustedOrigins: [
-        ...trustedOrigins,
-        ...(siteOrigin ? [siteOrigin] : []),
-        ...(localDevelopment ? LOCAL_WEB_ORIGINS : []),
-      ],
-    });
-    yield* Effect.forEach(
-      security.rejectedSettings,
-      (setting) =>
-        Effect.logError("auth.setting_rejected").pipe(
-          Effect.annotateLogs({
-            message: `${setting.setting} value "${setting.value}" ${setting.reason} and was ignored.`,
-            setting: setting.setting,
-            value: setting.value,
-            reason: setting.reason,
-          }),
-        ),
-      { discard: true },
-    );
-    const keys = yield* decodeJwtKeyRingText(authPublicJwkText).pipe(Effect.orDie);
-    const verifyAccessToken = yield* makeAccessTokenVerifier({
-      issuer: security.baseURL,
-      audience: "tabaaq-api",
-      keys,
-    });
-    const fetch = yield* makeWorkerFetch({
-      runtime: {
-        trustedOrigins: security.trustedOrigins,
-        verifyAccessToken,
-        invoiceAi: ai.raw.pipe(Effect.map(invoiceAiClient)),
-        limitInvoiceExtraction: (key) => invoiceExtractionRateLimit.limit({ key }),
-        globalSearchCache: makeGlobalSearchCache((effect) => execution.waitUntil(effect)),
-        searchGlobalProducts: (query) =>
-          Effect.flatMap(globalSearchServices, (services) =>
-            Effect.provide(searchGlobalProducts(query), services),
-          ),
-        limitGlobalSearch: (key) => globalSearchRateLimit.limit({ key }),
-      },
-      commands: makeInventoryCommands(authorities),
-      snapshots: makeInventorySnapshots(authorities),
-      imports: makeInventoryImports(authorities),
-      devices: makeInventoryDevices(authorities),
-      readLiveHorizon: live.readLiveHorizon,
-      hubs,
-      liveFanout,
-    });
-
+    const fetch = yield* makeWorkerFetch;
     return { fetch };
   }).pipe(
+    Effect.provide(ApiServicesLive),
     Effect.provide(OrgHubLive),
     Effect.provide(OrgAuthorityLive),
     Effect.provide(Cloudflare.Workers.AIBinding),

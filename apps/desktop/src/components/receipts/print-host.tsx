@@ -1,4 +1,5 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { InvoiceId } from "@store/contracts";
 import { useSuspenseInventoryInvoice } from "@store/inventory-react";
 import * as Atom from "effect/reactivity/Atom";
 import { Suspense, useEffect, useRef } from "react";
@@ -8,14 +9,14 @@ import { toastManager } from "@/components/ui/toast";
 import { useReceiptFormat, useReceiptStoreName } from "@/hooks/use-receipt-format";
 import { appHost } from "@/host";
 import type { PrintPage } from "@/host/share";
-import { storeErrorMessage } from "@/lib/errors";
+import { toastBridgeFailure } from "@/lib/errors";
 import type { ReceiptFormat, ReceiptPaper } from "@/lib/receipt-format";
 
 import { ReceiptSheet } from "./document";
 import { receiptOf } from "./receipt";
 
 export type ReceiptPrintJob = {
-  readonly invoiceId: string;
+  readonly invoiceId: InvoiceId;
   readonly paper: ReceiptPaper;
   readonly output: "printer" | "pdf";
 };
@@ -82,12 +83,7 @@ function PrintJob({ job, onDone }: { readonly job: ReceiptPrintJob; readonly onD
     const receipt = receiptOf(invoice);
     const page = pageOf(job.paper, format, sheet.current);
     void deliver(job, page, `invoice-${receipt.number}`)
-      .catch((cause: unknown) =>
-        toastManager.add({
-          title: storeErrorMessage(cause, "Could not print the receipt."),
-          type: "error",
-        }),
-      )
+      .catch((cause: unknown) => toastBridgeFailure(cause, "Could not print the receipt."))
       .finally(onDone);
   }, [format, invoice, job, onDone]);
 

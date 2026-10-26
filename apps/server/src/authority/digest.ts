@@ -25,7 +25,7 @@ const leavesOf = Effect.fnUntraced(function* (db: ReplicaDb, entity: PartitionEn
   return rows.map((row) => partitionLeafOf(entity, row.id, String(row.version))).sort(compareUtf8);
 });
 
-export type DigestReport = {
+type DigestReport = {
   readonly version: typeof PARTITION_DIGEST_VERSION;
   readonly digest: string;
   readonly count: number;

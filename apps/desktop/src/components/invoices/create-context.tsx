@@ -1,10 +1,10 @@
-import type { IssueInvoiceResult, Product } from "@store/contracts";
-import type { InvoiceId } from "@store/contracts/ids";
+import { isValidDiscount, type IssueInvoiceResult, type Product } from "@store/contracts";
+import type { InvoiceId, ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
-  useInventoryActions,
-  useIssuedInvoices,
+  useCommand,
   useSuspenseCatalogProductsById,
+  type CommandExit,
 } from "@store/inventory-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -21,9 +21,7 @@ import {
 import {
   draftTotal,
   enteredPrice,
-  isValidDiscount,
   lineError,
-  lineTotal,
   lineUnits,
   resolveSaleLine,
   saleItems,
@@ -38,12 +36,13 @@ import { useReceiptFormat } from "@/hooks/use-receipt-format";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import {
   useCompletingSale,
+  useDropIssuedSaleDrafts,
   useSaleDraftOwner,
   useSaleDraftsIn,
-  useSaleDraftStoreIn,
+  useSaleDraftActions,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
-import { storeErrorMessage } from "@/lib/errors";
+import { toastFailure } from "@/lib/errors";
 import {
   activateSaleDraft,
   activateSaleDraftAt,
@@ -86,7 +85,7 @@ interface InvoiceCreateActions {
   removeLine: (key: number) => void;
   setCustomerName: (value: string) => void;
   setBulkDiscount: (value: number | null) => void;
-  completeSale: () => Promise<void>;
+  completeSale: () => void;
   focusSearch: () => void;
   openDraft: () => void;
   activateDraft: (id: InvoiceId) => void;
@@ -129,13 +128,18 @@ const NO_SEEDS: ProductSeeds = { since: "", products: new Map() };
 
 const ID_SEPARATOR = "\n";
 
+const idsKey = (ids: ReadonlyArray<ProductId>) => ids.join(ID_SEPARATOR);
+
 function useDraftProducts(drafts: SaleDrafts) {
-  const requested = saleProductIds(drafts).join(ID_SEPARATOR);
+  const ids = saleProductIds(drafts);
+  const [requested, setRequested] = useState(ids);
+  if (idsKey(requested) !== idsKey(ids)) setRequested(ids);
   const settled = useDeferredValue(requested);
-  const products = useSuspenseCatalogProductsById(settled ? settled.split(ID_SEPARATOR) : []);
+  const settledKey = idsKey(settled);
+  const products = useSuspenseCatalogProductsById(settled);
   const [seeds, setSeeds] = useState(NO_SEEDS);
   const live = new Map<string, Product>(products.map((product) => [product.id, product]));
-  const seeded = seeds.since === settled ? seeds.products : NO_SEEDS.products;
+  const seeded = seeds.since === settledKey ? seeds.products : NO_SEEDS.products;
 
   const lookup: ProductLookup = (productId) =>
     live.get(productId) ??
@@ -144,8 +148,8 @@ function useDraftProducts(drafts: SaleDrafts) {
   const seed = (product: Product) => {
     if (live.has(product.id)) return;
     setSeeds((known) => ({
-      since: settled,
-      products: new Map(known.since === settled ? known.products : []).set(product.id, product),
+      since: settledKey,
+      products: new Map(known.since === settledKey ? known.products : []).set(product.id, product),
     }));
   };
 
@@ -153,54 +157,52 @@ function useDraftProducts(drafts: SaleDrafts) {
 }
 
 const recordSale = async (sale: {
-  readonly issue: () => Promise<IssueInvoiceResult>;
+  readonly issue: () => Promise<CommandExit<IssueInvoiceResult>>;
   readonly close: () => boolean;
   readonly focusSearch: () => void;
   readonly view: (invoiceId: InvoiceId) => Promise<void>;
   readonly print: (invoiceId: InvoiceId) => void;
 }) => {
-  try {
-    const invoice = await sale.issue();
-    sale.print(invoice.invoiceId);
-    const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
-    if (sale.close()) {
-      const toastId = toastManager.add({
-        actionProps: {
-          children: "View",
-          onClick: () => {
-            toastManager.close(toastId);
-            void sale.view(invoice.invoiceId);
-          },
+  const exit = await sale.issue();
+  if (exit._tag === "Failure") {
+    toastFailure(exit.cause);
+    return;
+  }
+  const invoice = exit.value;
+  sale.print(invoice.invoiceId);
+  const title = `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)} created`;
+  if (sale.close()) {
+    const toastId = toastManager.add({
+      actionProps: {
+        children: "View",
+        onClick: () => {
+          toastManager.close(toastId);
+          void sale.view(invoice.invoiceId);
         },
-        title,
-        type: "success",
-      });
-      sale.focusSearch();
-    } else {
-      toastManager.add({ title, type: "success" });
-      await sale.view(invoice.invoiceId);
-    }
-  } catch (error) {
-    toastManager.add({
-      title: storeErrorMessage(error, "Could not create the invoice."),
-      type: "error",
+      },
+      title,
+      type: "success",
     });
+    sale.focusSearch();
+  } else {
+    toastManager.add({ title, type: "success" });
+    await sale.view(invoice.invoiceId);
   }
 };
 
 function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { issueInvoice } = useInventoryActions();
+  const [issueInvoice] = useCommand((commands) => commands.issueInvoice);
   const rememberRecentProduct = useRememberRecentProduct();
   const printReceipt = usePrintReceipt();
   const receiptFormat = useReceiptFormat();
   const owner = useSaleDraftOwner();
   const drafts = useSaleDraftsIn(owner);
-  const store = useSaleDraftStoreIn(owner);
+  const store = useSaleDraftActions(owner);
   const { lookup, seed } = useDraftProducts(drafts);
   const draft = activeSaleDraft(drafts);
   const isSubmitting = useCompletingSale(draft.id);
-  const issued = useIssuedInvoices(drafts.drafts.map((open) => open.id));
+  useDropIssuedSaleDrafts(owner);
   const focusRequest = useSaleSearchFocusRequest();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -214,10 +216,6 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     searchRef.current?.focus();
     searchRef.current?.select();
   }, [focusRequest]);
-
-  useEffect(() => {
-    store.dropIssued(issued);
-  }, [issued, store]);
 
   const addProduct = (product: Product, quantity = 1) => {
     rememberRecentProduct(product);
@@ -272,7 +270,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   };
 
   const errors = lines.map(lineError);
-  const subtotal = lines.reduce((sum, line) => sum + (lineTotal(line) ?? 0), 0);
+  const subtotal = saleTotal(lines, 0);
   const unitCount = lines.reduce((sum, line) => sum + lineUnits(line), 0);
   const validBulkDiscount = isValidDiscount(bulkDiscount);
   const total = saleTotal(lines, bulkDiscount);
@@ -280,14 +278,18 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const canSubmit =
     lines.length > 0 && errors.every((error) => error === null) && validBulkDiscount;
 
-  const completeSale = async () => {
+  const completeSale = () => {
     const items = isValidDiscount(bulkDiscount) ? saleItems(lines, bulkDiscount) : null;
     if (items === null) return;
-    await store.whileCompleting(draft.id, () =>
+    store.complete(draft.id, (finish) =>
       recordSale({
-        issue: () => issueInvoice({ customerName: customerName.trim() || null, items }, draft.id),
-        close: () => store.complete(draft.id),
-        focusSearch: store.focusSearch,
+        issue: () =>
+          issueInvoice({
+            input: { customerName: customerName.trim() || null, items },
+            invoiceId: draft.id,
+          }),
+        close: finish.close,
+        focusSearch: finish.focusSearch,
         view: (invoiceId) => navigate({ to: "/invoices/$invoiceId", params: { invoiceId } }),
         print: (invoiceId) => {
           if (receiptFormat.printAfterSale) {

@@ -4,6 +4,7 @@ import {
   AnalyticsRun,
   DemandForecast,
   InsightAlert,
+  Money,
   InsightsSummary,
   ExpiringBatch,
   ProductInsight,
@@ -14,9 +15,9 @@ import {
   type InsightsProductFact,
   type RestockCursor,
   type RestockFilters,
-  type StockStatusCounts,
   type InsightsInventoryTotals,
 } from "@store/contracts";
+import { CategoryId, ProductId, decodeProductId } from "@store/contracts/ids";
 import {
   expiringBatch,
   insightAlert,
@@ -26,6 +27,7 @@ import {
   workProduct,
   workSales,
 } from "@store/db/analytics.schema";
+import type { ProductAnalysis, SummaryReader } from "@store/services/insights";
 import {
   and,
   count,
@@ -58,6 +60,7 @@ import type {
 import * as Schema from "effect/Schema";
 
 import type { AnalyticsDatabase } from "./database";
+import { guardAll } from "./errors";
 
 const SEVERITY_RANK = { critical: 0, warning: 1, positive: 2, info: 3 } as const;
 const ALERT_TIE_CAP = 2_000;
@@ -79,21 +82,21 @@ const decodeRun = Schema.decodeUnknownSync(AnalyticsRun);
 const stagedJson = Schema.fromJsonString(
   Schema.Struct({
     product: Schema.Struct({
-      id: Schema.String,
+      id: ProductId,
       name: Schema.String,
-      categoryId: Schema.String,
+      categoryId: CategoryId,
       categoryName: Schema.NullOr(Schema.String),
       tracksPacks: Schema.Boolean,
       unitsPerPack: Schema.Number,
-      purchasePrice: Schema.NullOr(Schema.Number),
-      retailPrice: Schema.NullOr(Schema.Number),
-      unitPrice: Schema.NullOr(Schema.Number),
+      purchasePrice: Schema.NullOr(Money),
+      retailPrice: Schema.NullOr(Money),
+      unitPrice: Schema.NullOr(Money),
       visible: Schema.Boolean,
       createdAt: Schema.Number,
     }),
     batches: Schema.Array(
       Schema.Struct({
-        productId: Schema.String,
+        productId: ProductId,
         batchNumber: Schema.NullOr(Schema.String),
         packQuantity: Schema.Number,
         unitQuantity: Schema.Number,
@@ -108,51 +111,6 @@ const decodeStaged = Schema.decodeUnknownSync(stagedJson);
 export type StagedProduct = {
   readonly product: InsightsProductFact;
   readonly batches: ReadonlyArray<InsightsBatchFact>;
-};
-
-type ProductContribution = {
-  readonly valueAtCost: number;
-  readonly valueAtRetail: number;
-  readonly deadStockValue: number;
-  readonly expiryRiskValue: number;
-  readonly expiredValue: number;
-  readonly reorderCost: number;
-  readonly missingCostCount: number;
-};
-
-export type ProductAnalysis = {
-  readonly insight: ProductInsight;
-  readonly alerts: ReadonlyArray<InsightAlert>;
-  readonly expiring: ReadonlyArray<ExpiringBatch>;
-  readonly periodRevenue: readonly [number, number, number];
-  readonly periodUnits: readonly [number, number, number];
-  readonly contribution: ProductContribution;
-};
-
-type PeriodProductRow = {
-  readonly productId: string;
-  readonly name: string;
-  readonly revenue: number;
-  readonly units: number;
-  readonly unitCost: number | null;
-  readonly trend: ProductInsight["demand"]["trend"];
-};
-
-export type SummaryReader = {
-  readonly runId: number;
-  readonly productCount: () => number;
-  readonly statusCounts: () => StockStatusCounts;
-  readonly inventory: () => InsightsInventoryTotals;
-  readonly alertCandidates: (limit: number) => ReadonlyArray<InsightAlert>;
-  readonly attention: (limit: number) => {
-    readonly rows: ReadonlyArray<ProductInsight>;
-    readonly count: number;
-  };
-  readonly expiring: (limit: number) => {
-    readonly rows: ReadonlyArray<ExpiringBatch>;
-    readonly count: number;
-  };
-  readonly periodProducts: (slot: 0 | 1 | 2) => Iterable<PeriodProductRow>;
 };
 
 type PublishInput = {
@@ -201,7 +159,7 @@ export type SalesRow = {
 
 type RevenueEntry = { readonly id: string; readonly revenue: number };
 
-type ClassifiedProduct = {
+export type ClassifiedProduct = {
   readonly productId: string;
   readonly abc: string;
   readonly revenue90d: number;
@@ -221,7 +179,7 @@ const NO_INVENTORY: InsightsInventoryTotals = {
 };
 
 const PeriodProductRow = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   name: Schema.String,
   unitCost: Schema.NullOr(Schema.Number),
   trend: DemandForecast.fields.trend,
@@ -588,236 +546,239 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
     { table: workProduct, key: [workProduct.runId, workProduct.productId], results: false },
   ] as const;
 
-  return {
-    published: (): PublishedRun | undefined => {
-      const run = publishedRun();
-      if (run === undefined) return undefined;
-      const row = orm
-        .select({ summaryJson: published.summaryJson })
-        .from(published)
-        .where(eq(published.id, 1))
-        .get();
-      return row === undefined ? undefined : { run, summary: decodeSummary(row.summaryJson) };
-    },
-    publishedRun,
-    allocateRun: (): number =>
-      db.transaction(
-        () => orm.insert(runSequence).values({}).returning({ id: runSequence.id }).get().id,
-      ),
-    writeProducts: (runId: number, analyses: ReadonlyArray<ProductAnalysis>) =>
-      db.transaction(() => {
-        for (const analysis of analyses) insertAnalysis(runId, analysis);
-      }),
-    publish: (input: PublishInput): AnalyticsRun =>
-      db.transaction(() => {
-        const previous = publishedRun();
-        if (input.replace !== undefined) {
-          deleteProducts(input.runId, input.replace.productIds);
-          for (const analysis of input.replace.analyses) insertAnalysis(input.runId, analysis);
-        }
-        const reader = summaryReader(input.runId);
-        const run = decodeRun({
-          runId: input.runId,
-          revision: (previous?.revision ?? 0) + 1,
-          kind: input.kind,
-          completedAt: input.completedAt,
-          generatedAt: input.generatedAt,
-          sourceGeneration: input.sourceGeneration,
-          sourceVersion: input.sourceVersion,
-          policyVersion: input.policyVersion,
-          algorithmVersion: input.algorithmVersion,
-          today: input.today,
-          utcOffsetMinutes: input.utcOffsetMinutes,
-          productCount: reader.productCount(),
-        });
-        const summary = input.summarize(reader, run);
-        upsertPublished({ id: 1, ...run, summaryJson: encodeSummary(summary) });
-        return run;
-      }),
-    discardSuperseded: (input: {
-      readonly keepResults: ReadonlyArray<number>;
-      readonly keepWork: ReadonlyArray<number>;
-      readonly limit: number;
-    }): number =>
-      db.transaction(() => {
-        let removed = 0;
-        for (const { table, key, results } of supersededTables) {
-          const columns = sql.join([...key], sql`, `);
-          const { changes } = orm
-            .delete(table)
-            .where(
-              sql`(${columns}) IN (SELECT ${columns} FROM ${table} WHERE ${notInJson(
-                table.runId,
-                results ? input.keepResults : input.keepWork,
-              )} LIMIT ${input.limit})`,
-            )
-            .run();
-          removed += Number(changes);
-        }
-        return removed;
-      }),
-    checkpoint: () => db.checkpoint(),
-    products: (ids: ReadonlyArray<string>) => {
-      const run = publishedRun();
-      if (run === undefined) return { run: undefined, insights: NO_INSIGHTS };
-      const found = new Map(
-        orm
-          .select({ productId: productInsight.productId, insightJson: productInsight.insightJson })
-          .from(productInsight)
-          .where(and(eq(productInsight.runId, run.runId), inJson(productInsight.productId, ids)))
-          .all()
-          .map((row) => [row.productId, decodeProduct(row.insightJson)] as const),
-      );
-      return {
-        run,
-        insights: ids.flatMap((id) => {
-          const insight = found.get(id);
-          return insight === undefined ? [] : [insight];
-        }),
-      };
-    },
-    restockPage: (query: RestockPageQuery): RestockPageResult | undefined => {
-      const run = publishedRun();
-      if (run === undefined) return undefined;
-      if (
-        query.cursor !== null &&
-        (query.cursor.runId !== run.runId || query.cursor.revision !== run.revision)
-      ) {
-        return { run, rows: [], nextCursor: null, total: null, cursorExpired: true };
-      }
-      const filter = filterClause(run.runId, query.filters);
-      const cursor = query.cursor;
-      const fetched = orm
-        .select({ insightJson: productInsight.insightJson })
-        .from(productInsight)
-        .where(cursor === null ? filter : and(filter, afterCursor(cursor)))
-        .orderBy(desc(productInsight.priority), productInsight.nameKey, productInsight.productId)
-        .limit(query.limit + 1)
-        .all();
-      const page = fetched.slice(0, query.limit);
-      const rows = page.map((row) => decodeProduct(row.insightJson));
-      const last = rows.at(-1);
-      const nextCursor: RestockCursor | null =
-        fetched.length > query.limit && last !== undefined
-          ? {
-              runId: run.runId,
-              revision: run.revision,
-              priority: last.priority,
-              nameKey: last.name.toLowerCase(),
-              productId: last.productId,
-            }
-          : null;
-      const total = cursor === null ? countWhere(productInsight, filter) : null;
-      return { run, rows, nextCursor, total, cursorExpired: false };
-    },
-    workSales: {
-      insert: (runId: number, rows: ReadonlyArray<SalesRow>) =>
-        db.transaction(() => insertSales(runId, rows)),
-      revenueRanking: (
-        runId: number,
-        firstDay: number,
-        lastDay: number,
-      ): ReadonlyArray<RevenueEntry> => {
-        const revenue = sql<number>`sum(${workSales.revenue})`.mapWith(Number);
-        return orm
-          .select({ id: workSales.productId, revenue })
-          .from(workSales)
-          .where(
-            and(
-              eq(workSales.runId, runId),
-              gte(workSales.day, firstDay),
-              lte(workSales.day, lastDay),
-            ),
-          )
-          .groupBy(workSales.productId)
-          .having(gt(revenue, 0))
-          .orderBy(desc(revenue), workSales.productId)
-          .all();
-      },
-      range: (runId: number, firstId: string, lastId: string): ReadonlyArray<SalesRow> =>
-        orm
-          .select({
-            productId: workSales.productId,
-            day: workSales.day,
-            units: workSales.units,
-            revenue: workSales.revenue,
-          })
-          .from(workSales)
-          .where(
-            and(
-              eq(workSales.runId, runId),
-              gte(workSales.productId, firstId),
-              lte(workSales.productId, lastId),
-            ),
-          )
-          .orderBy(workSales.productId, workSales.day)
-          .all(),
-    },
-    staged: {
-      write: (runId: number, entries: ReadonlyArray<StagedProduct>) =>
-        db.transaction(() => insertStaged(runId, entries)),
-      replace: (
-        runId: number,
-        input: {
-          readonly productIds: ReadonlyArray<string>;
-          readonly entries: ReadonlyArray<StagedProduct>;
-          readonly sales: ReadonlyArray<SalesRow>;
-        },
-      ) =>
-        db.transaction(() => {
-          for (const table of [workProduct, workSales]) {
-            orm
-              .delete(table)
-              .where(and(eq(table.runId, runId), inJson(table.productId, input.productIds)))
-              .run();
-          }
-          insertStaged(runId, input.entries);
-          insertSales(runId, input.sales);
-        }),
-      count: (runId: number): number => countWhere(workProduct, eq(workProduct.runId, runId)),
-      page: (runId: number, after: string, limit: number): ReadonlyArray<StagedProduct> =>
-        orm
-          .select({ stagedJson: workProduct.stagedJson })
-          .from(workProduct)
-          .where(and(eq(workProduct.runId, runId), gt(workProduct.productId, after)))
-          .orderBy(workProduct.productId)
-          .limit(limit)
-          .all()
-          .map((row) => decodeStaged(row.stagedJson)),
-    },
-    clearWork: (runId: number) =>
-      db.transaction(() => {
-        orm.delete(workSales).where(eq(workSales.runId, runId)).run();
-        orm.delete(workProduct).where(eq(workProduct.runId, runId)).run();
-      }),
-    rankingOf: (runId: number): ReadonlyArray<ClassifiedProduct> =>
-      orm
-        .select({
-          productId: productInsight.productId,
-          abc: productInsight.abc,
-          revenue90d: productInsight.revenue90d,
-        })
-        .from(productInsight)
+  const workSalesStore = guardAll({
+    insert: (runId: number, rows: ReadonlyArray<SalesRow>) =>
+      db.transaction(() => insertSales(runId, rows)),
+    revenueRanking: (
+      runId: number,
+      firstDay: number,
+      lastDay: number,
+    ): ReadonlyArray<RevenueEntry> => {
+      const revenue = sql<number>`sum(${workSales.revenue})`.mapWith(Number);
+      return orm
+        .select({ id: workSales.productId, revenue })
+        .from(workSales)
         .where(
           and(
-            eq(productInsight.runId, runId),
-            or(gt(productInsight.revenue90d, 0), ne(productInsight.abc, "C")),
+            eq(workSales.runId, runId),
+            gte(workSales.day, firstDay),
+            lte(workSales.day, lastDay),
           ),
         )
-        .all(),
-    onOrderOf: (runId: number): ReadonlyArray<InsightsOnOrderFact> =>
+        .groupBy(workSales.productId)
+        .having(gt(revenue, 0))
+        .orderBy(desc(revenue), workSales.productId)
+        .all();
+    },
+    range: (runId: number, firstId: string, lastId: string): ReadonlyArray<SalesRow> =>
       orm
-        .select({ productId: productInsight.productId, units: productInsight.onOrderUnits })
-        .from(productInsight)
-        .where(and(eq(productInsight.runId, runId), sql`${productInsight.onOrderUnits} > 0`))
+        .select({
+          productId: workSales.productId,
+          day: workSales.day,
+          units: workSales.units,
+          revenue: workSales.revenue,
+        })
+        .from(workSales)
+        .where(
+          and(
+            eq(workSales.runId, runId),
+            gte(workSales.productId, firstId),
+            lte(workSales.productId, lastId),
+          ),
+        )
+        .orderBy(workSales.productId, workSales.day)
         .all(),
-    storedProductIds: (runId: number, ids: ReadonlyArray<string>): ReadonlyArray<string> =>
+  });
+
+  const stagedStore = guardAll({
+    write: (runId: number, entries: ReadonlyArray<StagedProduct>) =>
+      db.transaction(() => insertStaged(runId, entries)),
+    replace: (
+      runId: number,
+      input: {
+        readonly productIds: ReadonlyArray<string>;
+        readonly entries: ReadonlyArray<StagedProduct>;
+        readonly sales: ReadonlyArray<SalesRow>;
+      },
+    ) =>
+      db.transaction(() => {
+        for (const table of [workProduct, workSales]) {
+          orm
+            .delete(table)
+            .where(and(eq(table.runId, runId), inJson(table.productId, input.productIds)))
+            .run();
+        }
+        insertStaged(runId, input.entries);
+        insertSales(runId, input.sales);
+      }),
+    count: (runId: number): number => countWhere(workProduct, eq(workProduct.runId, runId)),
+    page: (runId: number, after: string, limit: number): ReadonlyArray<StagedProduct> =>
       orm
-        .select({ productId: productInsight.productId })
-        .from(productInsight)
-        .where(and(eq(productInsight.runId, runId), inJson(productInsight.productId, ids)))
+        .select({ stagedJson: workProduct.stagedJson })
+        .from(workProduct)
+        .where(and(eq(workProduct.runId, runId), gt(workProduct.productId, after)))
+        .orderBy(workProduct.productId)
+        .limit(limit)
         .all()
-        .map((row) => row.productId),
+        .map((row) => decodeStaged(row.stagedJson)),
+  });
+
+  return {
+    ...guardAll({
+      published: (): PublishedRun | undefined => {
+        const run = publishedRun();
+        if (run === undefined) return undefined;
+        const row = orm
+          .select({ summaryJson: published.summaryJson })
+          .from(published)
+          .where(eq(published.id, 1))
+          .get();
+        return row === undefined ? undefined : { run, summary: decodeSummary(row.summaryJson) };
+      },
+      publishedRun,
+      allocateRun: (): number =>
+        db.transaction(
+          () => orm.insert(runSequence).values({}).returning({ id: runSequence.id }).get().id,
+        ),
+      writeProducts: (runId: number, analyses: ReadonlyArray<ProductAnalysis>) =>
+        db.transaction(() => {
+          for (const analysis of analyses) insertAnalysis(runId, analysis);
+        }),
+      publish: (input: PublishInput): AnalyticsRun =>
+        db.transaction(() => {
+          const previous = publishedRun();
+          if (input.replace !== undefined) {
+            deleteProducts(input.runId, input.replace.productIds);
+            for (const analysis of input.replace.analyses) insertAnalysis(input.runId, analysis);
+          }
+          const reader = summaryReader(input.runId);
+          const run = decodeRun({
+            runId: input.runId,
+            revision: (previous?.revision ?? 0) + 1,
+            kind: input.kind,
+            completedAt: input.completedAt,
+            generatedAt: input.generatedAt,
+            sourceGeneration: input.sourceGeneration,
+            sourceVersion: input.sourceVersion,
+            policyVersion: input.policyVersion,
+            algorithmVersion: input.algorithmVersion,
+            today: input.today,
+            utcOffsetMinutes: input.utcOffsetMinutes,
+            productCount: reader.productCount(),
+          });
+          const summary = input.summarize(reader, run);
+          upsertPublished({ id: 1, ...run, summaryJson: encodeSummary(summary) });
+          return run;
+        }),
+      discardSuperseded: (input: {
+        readonly keepResults: ReadonlyArray<number>;
+        readonly keepWork: ReadonlyArray<number>;
+        readonly limit: number;
+      }): number =>
+        db.transaction(() => {
+          let removed = 0;
+          for (const { table, key, results } of supersededTables) {
+            const columns = sql.join([...key], sql`, `);
+            const { changes } = orm
+              .delete(table)
+              .where(
+                sql`(${columns}) IN (SELECT ${columns} FROM ${table} WHERE ${notInJson(
+                  table.runId,
+                  results ? input.keepResults : input.keepWork,
+                )} LIMIT ${input.limit})`,
+              )
+              .run();
+            removed += Number(changes);
+          }
+          return removed;
+        }),
+      checkpoint: () => db.checkpoint(),
+      products: (ids: ReadonlyArray<string>) => {
+        const run = publishedRun();
+        if (run === undefined) return { run: undefined, insights: NO_INSIGHTS };
+        const found = new Map(
+          orm
+            .select({
+              productId: productInsight.productId,
+              insightJson: productInsight.insightJson,
+            })
+            .from(productInsight)
+            .where(and(eq(productInsight.runId, run.runId), inJson(productInsight.productId, ids)))
+            .all()
+            .map((row) => [row.productId, decodeProduct(row.insightJson)] as const),
+        );
+        return {
+          run,
+          insights: ids.flatMap((id) => {
+            const insight = found.get(id);
+            return insight === undefined ? [] : [insight];
+          }),
+        };
+      },
+      restockPage: (query: RestockPageQuery): RestockPageResult | undefined => {
+        const run = publishedRun();
+        if (run === undefined) return undefined;
+        if (
+          query.cursor !== null &&
+          (query.cursor.runId !== run.runId || query.cursor.revision !== run.revision)
+        ) {
+          return { run, rows: [], nextCursor: null, total: null, cursorExpired: true };
+        }
+        const filter = filterClause(run.runId, query.filters);
+        const cursor = query.cursor;
+        const fetched = orm
+          .select({ insightJson: productInsight.insightJson })
+          .from(productInsight)
+          .where(cursor === null ? filter : and(filter, afterCursor(cursor)))
+          .orderBy(desc(productInsight.priority), productInsight.nameKey, productInsight.productId)
+          .limit(query.limit + 1)
+          .all();
+        const page = fetched.slice(0, query.limit);
+        const rows = page.map((row) => decodeProduct(row.insightJson));
+        const last = rows.at(-1);
+        const nextCursor: RestockCursor | null =
+          fetched.length > query.limit && last !== undefined
+            ? {
+                runId: run.runId,
+                revision: run.revision,
+                priority: last.priority,
+                nameKey: last.name.toLowerCase(),
+                productId: last.productId,
+              }
+            : null;
+        const total = cursor === null ? countWhere(productInsight, filter) : null;
+        return { run, rows, nextCursor, total, cursorExpired: false };
+      },
+      clearWork: (runId: number) =>
+        db.transaction(() => {
+          orm.delete(workSales).where(eq(workSales.runId, runId)).run();
+          orm.delete(workProduct).where(eq(workProduct.runId, runId)).run();
+        }),
+      rankingOf: (runId: number): ReadonlyArray<ClassifiedProduct> =>
+        orm
+          .select({
+            productId: productInsight.productId,
+            abc: productInsight.abc,
+            revenue90d: productInsight.revenue90d,
+          })
+          .from(productInsight)
+          .where(
+            and(
+              eq(productInsight.runId, runId),
+              or(gt(productInsight.revenue90d, 0), ne(productInsight.abc, "C")),
+            ),
+          )
+          .all(),
+      onOrderOf: (runId: number): ReadonlyArray<InsightsOnOrderFact> =>
+        orm
+          .select({ productId: productInsight.productId, units: productInsight.onOrderUnits })
+          .from(productInsight)
+          .where(and(eq(productInsight.runId, runId), sql`${productInsight.onOrderUnits} > 0`))
+          .all()
+          .map((row) => ({ productId: decodeProductId(row.productId), units: row.units })),
+    }),
+    workSales: workSalesStore,
+    staged: stagedStore,
   };
 };
 

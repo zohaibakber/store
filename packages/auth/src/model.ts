@@ -74,15 +74,9 @@ export const InvitationToken = NonEmptyString.check(Schema.isMaxLength(256)).pip
 );
 export type InvitationToken = typeof InvitationToken.Type;
 
-export const AuthClientKind = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Browser"),
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Native"),
-    deviceName: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  }),
-]);
+export const AuthClientKind = Schema.TaggedStruct("Native", {
+  deviceName: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+});
 export type AuthClientKind = typeof AuthClientKind.Type;
 
 export const nativeClient = (deviceName: string): AuthClientKind => ({
@@ -96,39 +90,33 @@ export const IdentifyInput = Schema.Struct({
 export interface IdentifyInput extends Schema.Schema.Type<typeof IdentifyInput> {}
 
 export const LoginRoute = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Password"),
+  Schema.TaggedStruct("Password", {
     email: EmailAddress,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("Otp"),
+  Schema.TaggedStruct("Otp", {
     email: EmailAddress,
     challengeId: OtpChallengeId,
     developmentCode: Schema.optionalKey(OtpCode),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("Registration"),
+  Schema.TaggedStruct("Registration", {
     email: EmailAddress,
   }),
 ]);
 export type LoginRoute = typeof LoginRoute.Type;
 
-export const PasswordLoginCommand = Schema.Struct({
-  _tag: Schema.Literal("Password"),
+export const PasswordLoginCommand = Schema.TaggedStruct("Password", {
   email: EmailAddress,
   password: SubmittedPassword,
   client: AuthClientKind,
 });
 
-export const OtpLoginCommand = Schema.Struct({
-  _tag: Schema.Literal("Otp"),
+export const OtpLoginCommand = Schema.TaggedStruct("Otp", {
   challengeId: OtpChallengeId,
   code: OtpCode,
   client: AuthClientKind,
 });
 
-export const RegisterPasswordCommand = Schema.Struct({
-  _tag: Schema.Literal("RegisterPassword"),
+export const RegisterPasswordCommand = Schema.TaggedStruct("RegisterPassword", {
   email: EmailAddress,
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
   password: NewPassword,
@@ -146,7 +134,7 @@ export type LoginCredentials = typeof LoginCommand.Encoded;
 export const TokenSet = Schema.Struct({
   accessToken: AccessToken,
   accessExpiresAt: Schema.Number,
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
   refreshExpiresAt: Schema.Number,
 });
 export interface TokenSet extends Schema.Schema.Type<typeof TokenSet> {}
@@ -187,12 +175,12 @@ export const ExchangeGoogleInput = Schema.Struct({
 export interface ExchangeGoogleInput extends Schema.Schema.Type<typeof ExchangeGoogleInput> {}
 
 export const RefreshInput = Schema.Struct({
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
 });
 export interface RefreshInput extends Schema.Schema.Type<typeof RefreshInput> {}
 
 export const SignOutInput = Schema.Struct({
-  refreshToken: Schema.optionalKey(RefreshToken),
+  refreshToken: RefreshToken,
 });
 export interface SignOutInput extends Schema.Schema.Type<typeof SignOutInput> {}
 
@@ -275,59 +263,51 @@ export const OrganizationRoster = Schema.Struct({
 });
 export interface OrganizationRoster extends Schema.Schema.Type<typeof OrganizationRoster> {}
 
-export const OrganizationCommand = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("UpdateOrganization"),
+export const OrganizationCommand = Schema.TaggedUnion({
+  UpdateOrganization: {
     organizationId: OrganizationId,
     name: OrganizationName,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("InviteMember"),
+  },
+  InviteMember: {
     organizationId: OrganizationId,
     email: EmailAddress,
     role: InvitableRole,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("RevokeInvitation"),
+  },
+  RevokeInvitation: {
     organizationId: OrganizationId,
     invitationId: InvitationId,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("AcceptInvitation"),
+  },
+  AcceptInvitation: {
     token: InvitationToken,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("ChangeMemberRole"),
+  },
+  ChangeMemberRole: {
     organizationId: OrganizationId,
     userId: UserId,
     role: OrganizationRole,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("RemoveMember"),
+  },
+  RemoveMember: {
     organizationId: OrganizationId,
     userId: UserId,
-  }),
-]);
+  },
+});
 export type OrganizationCommand = typeof OrganizationCommand.Type;
 
-export const OrganizationCommandResult = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Joined"),
+export const OrganizationCommandResult = Schema.TaggedUnion({
+  Joined: {
     organization: AuthOrganizationMembership,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Updated"),
+  },
+  Updated: {
     organization: AuthOrganizationMembership,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Invited"),
+  },
+  Invited: {
     invitation: OrganizationInvitation,
     token: InvitationToken,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Applied"),
-  }),
-]);
+  },
+  Applied: {},
+});
 export type OrganizationCommandResult = typeof OrganizationCommandResult.Type;
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+export const normalizedEmail = (email: EmailAddress): EmailAddress =>
+  EmailAddress.make(normalizeEmail(email));

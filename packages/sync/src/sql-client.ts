@@ -8,7 +8,7 @@ export { sqlitePartitionDigest } from "./replica/digest";
 export { runReplicaTransaction, SqliteReplica } from "./replica/sql-client/handle";
 export type { SqliteReplicaHandle } from "./replica/sql-client/handle";
 export type { ReplicaDb } from "./replica/sql-client/drizzle";
-export { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "./replica/sqlite/activity";
+export { readOutboxActivitySqlite } from "./replica/sqlite/activity";
 export { sqliteCatalogParts, type CatalogPart } from "./replica/sqlite/catalog-parts";
 export { layerSqliteReplicaStore } from "./replica/sqlite/store";
 export type { SqliteReplicaStoreOptions } from "./replica/sqlite/store";

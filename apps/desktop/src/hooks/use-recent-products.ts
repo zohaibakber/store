@@ -1,4 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { ProductId } from "@store/contracts";
 import { useCallback } from "react";
 
 import { recentProductsAtom, type RecentProduct } from "@/lib/preferences";
@@ -9,7 +10,7 @@ export type { RecentProduct };
 const LIMIT = 8;
 
 type RecentProductSource = {
-  readonly id: string;
+  readonly id: ProductId;
   readonly name: string;
   readonly strength: string | null;
   readonly category: { readonly name: string };

@@ -1,15 +1,24 @@
-import { authHttpErrorStatus, EmailAddress, type AuthHttpError } from "@store/auth";
+import {
+  authHttpErrorStatus,
+  EmailAddress,
+  type AuthErrorCode,
+  type AuthHttpError,
+} from "@store/auth";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 interface AuthFailureWire {
   readonly kind: AuthHttpError["_tag"];
   readonly status: number;
-  readonly code: string;
+  readonly code: AuthErrorCode;
   readonly message: string;
 }
 
-const wire = (kind: AuthHttpError["_tag"], code: string, message: string): AuthFailureWire => ({
+const wire = (
+  kind: AuthHttpError["_tag"],
+  code: AuthErrorCode,
+  message: string,
+): AuthFailureWire => ({
   kind,
   status: authHttpErrorStatus(kind),
   code,
@@ -17,7 +26,6 @@ const wire = (kind: AuthHttpError["_tag"], code: string, message: string): AuthF
 });
 
 const REFUSALS = {
-  RefreshRequired: wire("Unauthenticated", "REFRESH_REQUIRED", "The session has expired."),
   InvalidRefreshToken: wire("Unauthenticated", "INVALID_REFRESH_TOKEN", "The session has expired."),
   RefreshReuseDetected: wire(
     "Unauthenticated",
@@ -151,12 +159,12 @@ const REFUSALS = {
   ),
 } as const satisfies Record<string, AuthFailureWire>;
 
-export class AuthRefusal extends Schema.TaggedError<AuthRefusal>()("Auth.Refusal", {
+export class AuthRefusal extends Schema.TaggedError<AuthRefusal>()("AuthRefusal", {
   reason: Schema.Literals(Struct.keys(REFUSALS)),
 }) {}
 
 export class InvitationEmailMismatch extends Schema.TaggedError<InvitationEmailMismatch>()(
-  "Auth.InvitationEmailMismatch",
+  "InvitationEmailMismatch",
   { invited: EmailAddress },
 ) {}
 
@@ -166,18 +174,14 @@ export type RateLimitAttempt = "request" | "code" | "invitation";
 
 export const authFailureWire = (failure: AuthFailure): AuthFailureWire => {
   switch (failure._tag) {
-    case "Auth.Refusal":
+    case "AuthRefusal":
       return REFUSALS[failure.reason];
-    case "Auth.InvitationEmailMismatch":
+    case "InvitationEmailMismatch":
       return wire(
         "Forbidden",
         "INVITATION_EMAIL_MISMATCH",
         `This invitation was sent to ${failure.invited}.`,
       );
-    default: {
-      const _exhaustive: never = failure;
-      return _exhaustive;
-    }
   }
 };
 

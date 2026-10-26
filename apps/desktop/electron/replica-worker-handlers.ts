@@ -1,4 +1,3 @@
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   NOTICE_BUFFER_CAPACITY,
   offerCoalescing,
@@ -17,7 +16,7 @@ import {
   settleReplicaFile,
   stageReplicaBackup,
 } from "@store/client-db/node-backup";
-import { layerNodeLicenceGate, ShopLicence } from "@store/client-db/node-licence";
+import { layerShopLicence, ShopLicence } from "@store/client-db/node-licence";
 import {
   commitPublish,
   ImportRefused,
@@ -35,18 +34,15 @@ import {
   type SqliteReplicaServices,
 } from "@store/client-db/node-sqlite";
 import { layerNodeStaffGate } from "@store/client-db/node-staff";
-import {
-  CommandAdmission,
-  layerInventoryStore,
-  LicenceGate,
-  StaffGate,
-} from "@store/client-db/store";
+import { CommandAdmission, layerInventoryStore, StaffGate } from "@store/client-db/store";
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
@@ -54,13 +50,12 @@ import * as Ref from "effect/Ref";
 import * as RpcServer from "effect/rpc/RpcServer";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { ReplicaFileRefused } from "../src/host/file-refusal";
 import { makeRendererServers, noRendererServers } from "./renderer-servers";
 import {
   catalogCountsOf,
   commitStampOf,
-  RESTORE_LOCAL_ONLY,
   ReplicaWorkerFailure,
   ReplicaWorkerRpcs,
   type ReplicaWorkerBoot,
@@ -73,24 +68,26 @@ const workerFailure = (cause: unknown) =>
 
 type WorkerBoot = typeof ReplicaWorkerBoot.Type;
 
-const ORGANIZATION_BACKUP_MESSAGE =
-  "This backup is a copy of an organization's data. Only a backup of this device's own workspace can be restored here.";
-
-const UNOPENABLE_BACKUP_MESSAGE = "This backup could not be opened by this version of Tabaaq.";
-
 const PUBLISH_NEEDS_ORGANIZATION = "Sign in to an organization to move this device's data.";
 
-const fileFailure = (failure: { readonly message: string }) =>
-  new ReplicaWorkerFailure({ message: failure.message });
+const ORGANIZATION_REQUIRED = "ORGANIZATION_REQUIRED";
 
-const OWNER_ONLY_MESSAGE = "Only the owner can do this. Unlock as the owner and try again.";
+const fileFailure = (
+  failure: ReplicaFileRefused | { readonly message: string; readonly code?: string },
+) => {
+  if (failure instanceof ReplicaFileRefused) return failure;
+  if (failure.code === ORGANIZATION_REQUIRED) {
+    return new ReplicaFileRefused({ reason: "publish-needs-sign-in" });
+  }
+  return new ReplicaWorkerFailure({ message: failure.message });
+};
 
-const StaffGateLive = layerNodeStaffGate().pipe(Layer.provide(NodeCrypto.layer));
+const StaffGateLive = layerNodeStaffGate();
 
-type Session = Context.Context<SqliteReplicaServices | StaffGate | LicenceGate | ShopLicence>;
+type Session = Context.Context<SqliteReplicaServices | StaffGate | ShopLicence>;
 
 type AuthorityLink = {
-  readonly session: Layer.Layer<SqliteReplicaServices, unknown>;
+  readonly session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>;
   readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
   readonly setForeground: (
     scheduler: SyncScheduler["Service"],
@@ -114,13 +111,14 @@ const linkRemoteAuthority = Effect.fnUntraced(function* (
   config: Extract<WorkerBoot, { readonly authority: "remote" }>,
 ) {
   const http = yield* makePinnedHttp(config.apiBaseUrl);
+  const runPromise = yield* FiberSet.makeRuntimePromise<never>();
   return {
     session: layerNodeReplicaSync({
       ...sessionInput(config),
       transport: http.syncTransport,
       live: {
         apiBaseUrl: config.apiBaseUrl,
-        accessToken: (options) => Effect.runPromise(http.liveAccessToken(options)),
+        accessToken: (options) => runPromise(http.liveAccessToken(options)),
       },
       deviceLabel: config.deviceLabel,
     }),
@@ -149,7 +147,7 @@ const onDeviceHealth = (health: ReplicaSyncHealth): ReplicaSyncHealth => {
 };
 
 const needsOrganization = Effect.fail(
-  new ImportRefused({ code: "ORGANIZATION_REQUIRED", message: PUBLISH_NEEDS_ORGANIZATION }),
+  new ImportRefused({ code: ORGANIZATION_REQUIRED, message: PUBLISH_NEEDS_ORGANIZATION }),
 );
 
 const localImports: ImportClient = {
@@ -168,7 +166,7 @@ const linkLocalAuthority = (
   imports: localImports,
 });
 
-const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink> => {
+const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, Scope.Scope> => {
   switch (config.authority) {
     case "local":
       return Effect.succeed(linkLocalAuthority(config));
@@ -178,27 +176,26 @@ const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink> => {
 };
 
 const openSession = (
-  session: Layer.Layer<SqliteReplicaServices, unknown>,
+  session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>,
+  crypto: Crypto.Crypto,
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
   Layer.buildWithScope(
-    Layer.fresh(
-      Layer.provideMerge(
-        Layer.mergeAll(StaffGateLive, layerNodeLicenceGate, LicenceGate.layerOpen),
-        session,
-      ),
+    Layer.fresh(Layer.provideMerge(Layer.mergeAll(StaffGateLive, layerShopLicence), session)).pipe(
+      Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
     ),
     scope,
-  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor()));
+  ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor));
 
 export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unknown, R>) =>
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
+      const crypto = yield* Crypto.Crypto;
       const link = yield* linkAuthority(config);
 
       const sessionScope = yield* Scope.fork(yield* Effect.scope);
-      const opened = yield* openSession(link.session, sessionScope).pipe(
+      const opened = yield* openSession(link.session, crypto, sessionScope).pipe(
         Effect.map(Option.some),
         Effect.catchCause((cause) =>
           Cause.hasInterrupts(cause)
@@ -217,9 +214,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             onNone: () =>
               Stream.concat(Stream.succeed<ReplicaSyncHealth>({ _tag: "running" }), Stream.never),
             onSome: (session) =>
-              SubscriptionRef.changes(Context.get(session, SyncScheduler).state).pipe(
-                Stream.map(syncHealthOf),
-              ),
+              Context.get(session, SyncScheduler).state.pipe(Stream.map(syncHealthOf)),
           }),
         )
         .pipe(Stream.changesWith(sameSyncHealth));
@@ -236,6 +231,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
               Layer.provide(Layer.succeedContext(session)),
+              Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
               Layer.provide(protocol),
             ),
           ),
@@ -260,14 +256,14 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               Context.get(session, StaffGate)
                 .authorize("manageShop")
                 .pipe(
-                  Effect.mapError(() => new ReplicaWorkerFailure({ message: OWNER_ONLY_MESSAGE })),
+                  Effect.mapError(() => new ReplicaFileRefused({ reason: "owner-only" })),
                   Effect.asVoid,
                 ),
           }),
         ),
       );
 
-      const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp());
+      const stamp = withSession((session) => Context.get(session, ReplicaStore).readStamp);
 
       const wake = (reason: "focus" | "reconnect") =>
         withSession((session) => Context.get(session, SyncScheduler).wake(reason)).pipe(
@@ -282,7 +278,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
         Effect.gen(function* () {
           const backup = yield* stageReplicaBackup({ sourcePath, stagedPath });
           if (backup.organizationId !== local.organizationId || backup.userId !== local.userId) {
-            return yield* new ReplicaWorkerFailure({ message: ORGANIZATION_BACKUP_MESSAGE });
+            return yield* new ReplicaFileRefused({ reason: "organization-backup" });
           }
           yield* Effect.scopedWith((trial) =>
             openSession(
@@ -291,13 +287,14 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 path: stagedPath,
                 databaseIdentity: stagedPath,
               }),
+              crypto,
               trial,
             ),
           ).pipe(
             Effect.catchCause((cause) =>
               Cause.hasInterrupts(cause)
                 ? Effect.interrupt
-                : Effect.fail(new ReplicaWorkerFailure({ message: UNOPENABLE_BACKUP_MESSAGE })),
+                : Effect.fail(new ReplicaFileRefused({ reason: "unopenable-backup" })),
             ),
           );
           const current = yield* readReplicaFileSummary(local.databasePath);
@@ -317,7 +314,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
               Effect.gen(function* () {
                 yield* renderers.shutdown;
                 yield* Context.get(session, SyncScheduler).shutdown;
-                const final = yield* Context.get(session, ReplicaStore).readStamp();
+                const final = yield* Context.get(session, ReplicaStore).readStamp;
                 yield* Ref.set(live, Option.none());
                 yield* Scope.close(sessionScope, Exit.void);
                 return final;
@@ -354,8 +351,9 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             backUpReplicaFile({ databasePath: config.databasePath, destinationPath }).pipe(
               Effect.mapError(
                 (failure) =>
-                  new ReplicaWorkerFailure({
-                    message: `The backup could not be written. ${failure.message}`,
+                  new ReplicaFileRefused({
+                    reason: "backup-write-failed",
+                    detail: failure.message,
                   }),
               ),
             ),
@@ -365,7 +363,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             case "local":
               return Effect.andThen(ownerOnly, stageRestore(config, sourcePath, stagedPath));
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+              return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
           }
         },
         ReleaseForRestore: ({ stagedPath }) => {
@@ -373,7 +371,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
             case "local":
               return Effect.andThen(ownerOnly, releaseForRestore(config, stagedPath));
             case "remote":
-              return Effect.fail(new ReplicaWorkerFailure({ message: RESTORE_LOCAL_ONLY }));
+              return Effect.fail(new ReplicaFileRefused({ reason: "restore-local-only" }));
           }
         },
         PublishSummary: ({ sourcePath }) =>

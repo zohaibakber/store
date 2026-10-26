@@ -4,14 +4,18 @@ import {
   decodeInvoiceItemId,
   decodeOrganizationId,
   decodeProductId,
+  decodeReplicaId,
+  OperationId,
+  type ReplicaId,
 } from "../../ids";
+import { Money } from "../../store/pricing";
 import type { IssueInvoiceCommand } from "../../store/schema";
 import { canonicalPayloadHash } from "../operation-hash";
 import { ReplicaClientSequence, type SyncCommandEnvelope, SyncEpoch } from "../protocol";
 
 export const LAST_UNIT_ORGANIZATION_ID = decodeOrganizationId("org-1");
-export const LAST_UNIT_REPLICA_A = "replica-a";
-export const LAST_UNIT_REPLICA_B = "replica-b";
+export const LAST_UNIT_REPLICA_A = decodeReplicaId("replica-a");
+export const LAST_UNIT_REPLICA_B = decodeReplicaId("replica-b");
 export const LAST_UNIT_EPOCH = SyncEpoch.make("1");
 export const LAST_UNIT_PRODUCT_ID = decodeProductId("product-1");
 export const LAST_UNIT_BATCH_ID = decodeBatchId("batch-1");
@@ -48,7 +52,7 @@ const issueInvoice = (input: {
       batchId: LAST_UNIT_BATCH_ID,
       quantity: 1,
       quantityType: "unit",
-      salePrice: 100,
+      salePrice: Money.make(100),
       packsOpened: 0,
     },
   ],
@@ -69,7 +73,7 @@ export const lastUnitBuyerBCommand = issueInvoice({
 });
 
 const lastUnitEnvelope = (input: {
-  readonly replicaId: string;
+  readonly replicaId: ReplicaId;
   readonly clientSequence: string;
   readonly command: IssueInvoiceCommand;
 }): SyncCommandEnvelope => {
@@ -79,7 +83,7 @@ const lastUnitEnvelope = (input: {
     epoch: LAST_UNIT_EPOCH,
     replicaId: input.replicaId,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
-    operationId: input.command.commandId,
+    operationId: OperationId.make(input.command.commandId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };

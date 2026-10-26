@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
-import { EpochMillis, PositiveInt, SyncIdentifier, UtcOffsetMinutes } from "../schema-primitives";
+import { ProductId } from "../ids";
+import { EpochMillis, PositiveInt, UtcOffsetMinutes } from "../schema-primitives";
 
 export const MAX_PRODUCT_INSIGHT_IDS = 200;
 export const MAX_RESTOCK_PAGE_ROWS = 100;
@@ -74,7 +75,7 @@ export const OrderSuggestion = Schema.Struct({
 export type OrderSuggestion = typeof OrderSuggestion.Type;
 
 export const ProductInsight = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   name: Schema.String,
   categoryName: Schema.NullOr(Schema.String),
   unitsPerPack: Schema.Number,
@@ -109,7 +110,7 @@ export const ProductInsight = Schema.Struct({
 export type ProductInsight = typeof ProductInsight.Type;
 
 export const ExpiringBatch = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   name: Schema.String,
   batchNumber: Schema.NullOr(Schema.String),
   expiresAt: Schema.Number,
@@ -141,7 +142,7 @@ export const InsightAlert = Schema.Struct({
   id: Schema.String,
   kind: InsightKind,
   severity: InsightSeverity,
-  productId: Schema.NullOr(Schema.String),
+  productId: Schema.NullOr(ProductId),
   title: Schema.String,
   detail: Schema.String,
   impact: Schema.Number,
@@ -162,7 +163,7 @@ export const SalesDay = Schema.Struct({
 export type SalesDay = typeof SalesDay.Type;
 
 export const TopProduct = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   name: Schema.String,
   revenue: Schema.Number,
   units: Schema.Number,
@@ -275,7 +276,7 @@ export const InsightsSummaryRead = Schema.Struct({
 });
 export type InsightsSummaryRead = typeof InsightsSummaryRead.Type;
 
-export const ProductInsightIds = Schema.Array(SyncIdentifier).check(
+export const ProductInsightIds = Schema.Array(ProductId).check(
   Schema.isMaxLength(MAX_PRODUCT_INSIGHT_IDS),
 );
 
@@ -320,7 +321,7 @@ export const RestockCursor = Schema.Struct({
   revision: PositiveInt,
   priority: Schema.Number,
   nameKey: Schema.String,
-  productId: Schema.String,
+  productId: ProductId,
 });
 export type RestockCursor = typeof RestockCursor.Type;
 

@@ -5,7 +5,7 @@ import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import type { OrgAuthorityApi } from "./src/authority/facade";
-import type { CommitFanout } from "./src/inventory/model";
+import type { CommitFanout } from "./src/authority/frames";
 
 export interface OrgHubContract {
   readonly fetch: Effect.Effect<

@@ -88,12 +88,15 @@ export const constraintViolationOf = (cause: unknown): ConstraintViolation | und
 export const isStorageFullFailure = (cause: unknown): boolean =>
   cause instanceof ReplicaStorageError && cause.full === true;
 
-export const mapReplicaStoreFailure = (cause: unknown): ReplicaStoreError => {
-  if (cause instanceof SyncProtocolError || cause instanceof ReplicaStorageError) return cause;
+export const storageErrorOf = (cause: unknown): ReplicaStorageError => {
+  if (cause instanceof ReplicaStorageError) return cause;
   if (isStorageFull(cause)) {
-    return ReplicaStorageError.make({ message: "Replica storage is full.", full: true });
+    return new ReplicaStorageError({ message: "Replica storage is full.", full: true });
   }
-  return ReplicaStorageError.make({
+  return new ReplicaStorageError({
     message: cause instanceof Error ? cause.message : "Replica storage failed.",
   });
 };
+
+export const mapReplicaStoreFailure = (cause: unknown): ReplicaStoreError =>
+  cause instanceof SyncProtocolError ? cause : storageErrorOf(cause);

@@ -12,7 +12,7 @@ import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { refuse, type AuthorityActor, type AuthorityEngine, type AuthorityState } from "./engine";
+import { refuse, type Actor, type AuthorityEngine, type AuthorityState } from "./engine";
 import { byteLengthOf } from "./frames";
 
 export type SnapshotPolicy = {
@@ -179,7 +179,7 @@ export const makeAuthoritySnapshots = (
     build,
 
     acquire: Effect.fn("AuthoritySnapshots.acquire")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       request: {
         readonly epoch: string;
         readonly subscription: string;
@@ -249,7 +249,7 @@ export const makeAuthoritySnapshots = (
     }),
 
     readPart: Effect.fn("AuthoritySnapshots.readPart")(function* (
-      actor: AuthorityActor,
+      actor: Actor,
       snapshotId: string,
       partNumber: number,
     ) {

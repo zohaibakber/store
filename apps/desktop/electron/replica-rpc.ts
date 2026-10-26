@@ -4,8 +4,6 @@ import {
   ImportId,
   ImportPartNumber,
   LicenceState,
-  LOCAL_ORGANIZATION_ID,
-  LOCAL_USER_ID,
   PartitionDigest,
   PositiveInt,
   ShopId,
@@ -14,7 +12,17 @@ import { Stamp, SyncHealth } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 import * as Transferable from "effect/workers/Transferable";
+
+import { ReplicaFileRefused } from "../src/host/file-refusal";
+import {
+  LocalReplicaIdentity,
+  RemoteReplicaIdentity,
+  ReplicaOpenInput,
+} from "../src/host/shell-rpcs";
+
+export { ReplicaOpenInput };
 
 const PERMANENT_STREAMS = 2;
 const CONTROL_SLOTS = 8;
@@ -26,26 +34,6 @@ const READER_CONTROL_SLOTS = 2;
 const READER_FINITE_READS = 2;
 export const READER_RPC_CONCURRENCY = READER_CONTROL_SLOTS + READER_FINITE_READS;
 
-const NonEmptyString = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200));
-
-export const ReplicaWorkspaceToken = NonEmptyString;
-
-const LocalReplicaIdentity = Schema.Struct({
-  authority: Schema.Literal("local"),
-  organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
-  userId: Schema.Literal(LOCAL_USER_ID),
-  replicaId: NonEmptyString,
-});
-
-const RemoteReplicaIdentity = Schema.Struct({
-  authority: Schema.Literal("remote"),
-  organizationId: NonEmptyString,
-  userId: NonEmptyString,
-  replicaId: NonEmptyString,
-});
-
-export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
-
 export type ReplicaAuthority = (typeof ReplicaOpenInput.Type)["authority"];
 
 const FilePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4_096));
@@ -56,13 +44,8 @@ const ReplicaCatalogCounts = Schema.Struct({
   purchaseOrders: Schema.Natural,
 });
 
-export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) => ({
-  products: summary.products,
-  sales: summary.sales,
-  purchaseOrders: summary.purchaseOrders,
-});
-
-export const RESTORE_LOCAL_ONLY = "Only the workspace on this device can be restored from a file.";
+export const catalogCountsOf = (summary: typeof ReplicaCatalogCounts.Type) =>
+  Struct.pick(summary, ["products", "sales", "purchaseOrders"]);
 
 export const ReplicaPublishSummary = Schema.Struct({
   importId: ImportId,
@@ -109,10 +92,8 @@ export const ReplicaReaderBoot = Schema.Struct({ databasePath: Schema.String });
 
 export const ReplicaCommitStamp = Stamp;
 
-export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) => ({
-  generationId: stamp.generationId,
-  localCommitVersion: stamp.localCommitVersion,
-});
+export const commitStampOf = (stamp: typeof ReplicaCommitStamp.Type) =>
+  Struct.pick(stamp, ["generationId", "localCommitVersion"]);
 
 export const ReplicaCommitNotice = Schema.Struct({
   ...ReplicaCommitStamp.fields,
@@ -130,6 +111,8 @@ export class ReplicaWorkerFailure extends Schema.TaggedError<ReplicaWorkerFailur
   "ReplicaWorkerFailure",
   { message: Schema.String },
 ) {}
+
+const FileFailure = Schema.Union([ReplicaWorkerFailure, ReplicaFileRefused]);
 
 const EngineRpc = Rpc.make("Engine", { success: Schema.Literals(["sqlite", "unavailable"]) });
 
@@ -158,37 +141,37 @@ export const ReplicaWorkerRpcs = RpcGroup.make(
   Rpc.make("BackUp", {
     payload: { destinationPath: FilePath },
     success: Schema.Struct({ bytes: Schema.Natural }),
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("StageRestore", {
     payload: { sourcePath: FilePath, stagedPath: FilePath },
     success: Schema.Struct({ current: ReplicaCatalogCounts, backup: ReplicaCatalogCounts }),
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("ReleaseForRestore", {
     payload: { stagedPath: FilePath },
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishSummary", {
     payload: { sourcePath: FilePath },
     success: ReplicaPublishSummary,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishStage", {
     payload: { sourcePath: FilePath, importId: ImportId },
     success: ReplicaPublishProgress,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
     stream: true,
   }),
   Rpc.make("PublishCommit", {
     payload: { sourcePath: FilePath, importId: ImportId, seal: ReplicaPublishSeal },
     success: ReplicaPublishCommit,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("PublishStatus", {
     payload: { importId: ImportId },
     success: ReplicaPublishStatus,
-    error: ReplicaWorkerFailure,
+    error: FileFailure,
   }),
   Rpc.make("Commits", { success: ReplicaCommitNotice, stream: true }),
   Rpc.make("SyncHealth", { success: ReplicaSyncHealth, stream: true }),

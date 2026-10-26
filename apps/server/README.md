@@ -10,7 +10,6 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 - `GET /api/sync/live` (WebSocket upgrade; the bearer token travels in
   `Sec-WebSocket-Protocol` and the socket is held by the organization's
   `OrgHub` Durable Object, which fans out each commit and stores nothing)
-- `POST /api/uploads`
 
 The auth Worker issues short-lived ES256 JWTs. The API verifies them locally
 from `Authorization: Bearer` and trusts the organization membership in the
@@ -42,8 +41,8 @@ pnpm run plan:prod
 pnpm run deploy:prod
 ```
 
-Secrets come from gitignored `.env.dev` and `.env.prod` files. Use different
-JWT keys and peppers for each stage.
+Google OAuth credentials come from gitignored `.env.dev` and `.env.prod` files.
+Alchemy generates the JWT key pair and the ephemeral-record secret per stage.
 
 ## Local development
 

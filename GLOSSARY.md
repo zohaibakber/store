@@ -30,6 +30,10 @@ The packs and loose units a batch currently holds. A sale cannot take more than 
 
 A request to sell one or more lines. When it is accepted, it becomes an invoice and the stock it took is remembered as movements.
 
+## Money
+
+An amount in Pakistani rupees, held as a whole number of the currency's minor unit (1 rupee is 100). Rs 12.50 is 1250. Prices, line totals and invoice totals are money; a percentage or a quantity is not.
+
 ## Invoice
 
 The record of an accepted sale: who it was for, its lines, and its total.

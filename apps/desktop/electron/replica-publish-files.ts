@@ -1,4 +1,4 @@
-import { ImportId } from "@store/contracts";
+import { ImportId, OrganizationId } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -16,7 +16,7 @@ const ARCHIVE_NAME = /\.published-(\d{1,16})$/u;
 const ARCHIVE_RETENTION_MILLIS = 30 * 24 * 60 * 60_000;
 
 export const PublishMarker = Schema.Struct({
-  organizationId: Schema.String,
+  organizationId: OrganizationId,
   importId: ImportId,
   startedAt: Schema.Number,
 });

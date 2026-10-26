@@ -1,4 +1,4 @@
-import type { ProductInsight, StockPolicy } from "@store/contracts";
+import type { ProductId, ProductInsight, StockPolicy } from "@store/contracts";
 import {
   useProductInsight,
   useStockPolicy,
@@ -31,7 +31,7 @@ import {
 } from "./presentation";
 import { StatusBadge } from "./status-badge";
 
-function OnOrder({ productId }: { readonly productId: string }) {
+function OnOrder({ productId }: { readonly productId: ProductId }) {
   const onOrder = useSuspenseProductOnOrder(productId);
   const suppliers = useSuspenseSuppliers();
   if (onOrder.lines.length === 0) return null;
@@ -111,17 +111,17 @@ const pendingValue = () => (
   </dd>
 );
 
-function PlanStatus({ productId }: { readonly productId: string }) {
+function PlanStatus({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
   return insight === null ? null : <StatusBadge status={insight.status} />;
 }
 
-function PlanDemand({ productId }: { readonly productId: string }) {
+function PlanDemand({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
   return insight === null ? null : describeDemand(insight.demand);
 }
 
-function PlanBody({ productId }: { readonly productId: string }) {
+function PlanBody({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
   const [policy] = useStockPolicy();
   const values = insight === null ? null : planValues(insight, policy);
@@ -157,7 +157,7 @@ function PlanBody({ productId }: { readonly productId: string }) {
   );
 }
 
-export function ProductStockPlan({ productId }: { readonly productId: string }) {
+export function ProductStockPlan({ productId }: { readonly productId: ProductId }) {
   return (
     <AppErrorBoundary fallback={null}>
       <FrameCard

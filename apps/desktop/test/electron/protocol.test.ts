@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { makeDesktopContentSecurityPolicy } from "../../electron/content-security-policy";
 import { isOAuthCallbackUrl } from "../../electron/oauth-callback";

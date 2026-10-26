@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 
 import { collectGraph, matchingSpecifiers, packageRoot } from "./lib/import-graph";
 
@@ -29,5 +29,12 @@ describe("native-free entrypoints", () => {
     const graph = graphOf(entry);
     expect(graph.files.size).toBeGreaterThan(5);
     expect(matchingSpecifiers(graph.bare, NATIVE)).toStrictEqual([]);
+  });
+
+  it("still detects the native driver when it is reachable", () => {
+    const graph = graphOf("src/sqlite.ts");
+    expect(matchingSpecifiers(graph.bare, NATIVE)).toContain(
+      "@effect/sql-sqlite-node/SqliteClient",
+    );
   });
 });

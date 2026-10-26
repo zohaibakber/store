@@ -19,7 +19,8 @@ and settle when the authority's decision arrives through the pull.
 Channel names live in `electron/ipc-channels.ts`. The bridge types they carry
 come from `src/host`.
 
-Sentry reports errors only, and only when `VITE_SENTRY_DSN` is set. Each
+Sentry reports errors only, and only from release builds, which bake in the
+DSN from `infra/deployment.ts`. Each
 process uses the SDK made for it. The main process runs `@sentry/electron/main`.
 The renderer runs `@sentry/electron/renderer` and hands its events to the main
 process through `@sentry/electron/preload`, so the renderer CSP allows no Sentry

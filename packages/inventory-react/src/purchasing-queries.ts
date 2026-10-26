@@ -2,7 +2,9 @@ import { useAtomSuspense, useAtomValue } from "@effect/atom-react";
 import {
   purchasingBlockedByStaleReplica,
   staleReplicaRejection,
+  type ProductId,
   type PurchaseOrder,
+  type PurchaseOrderId,
   type StockMovement,
   type Supplier,
   type SupplierId,
@@ -42,21 +44,20 @@ export const useSuspenseOpenPurchaseOrders = (
 ): ReadonlyArray<PurchaseOrder> =>
   useAtomSuspense(useCatalogReplica().atoms.openPurchaseOrders(limit)).value;
 
-export const useSuspensePurchaseOrder = (orderId: string): PurchaseOrder | undefined =>
+export const useSuspensePurchaseOrder = (orderId: PurchaseOrderId): PurchaseOrder | undefined =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderDetail(orderId)).value.order;
 
-export const useSuspensePurchaseOrderDeliveries = (orderId: string): ReadonlyArray<StockMovement> =>
+export const useSuspensePurchaseOrderDeliveries = (
+  orderId: PurchaseOrderId,
+): ReadonlyArray<StockMovement> =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderDetail(orderId)).value.deliveries;
 
 export const useSuspensePurchaseOrderCount = (tab: PurchaseOrderTab): number =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderCount(tab)).value;
 
-export const useSuspenseSupplierCount = (): number =>
-  useAtomSuspense(useCatalogReplica().atoms.supplierCount).value;
+const NO_PRODUCTS_ON_ORDER: ReadonlyMap<ProductId, ProductOnOrder> = new Map();
 
-const NO_PRODUCTS_ON_ORDER: ReadonlyMap<string, ProductOnOrder> = new Map();
-
-const NO_LEARNED_SUPPLIERS: ReadonlyMap<string, SupplierId> = new Map();
+const NO_LEARNED_SUPPLIERS: ReadonlyMap<ProductId, SupplierId> = new Map();
 
 const useLatest = <A, E>(result: AsyncResult.AsyncResult<A, E>, empty: A) => {
   const latest = useLatestSuccess(result);
@@ -67,17 +68,17 @@ const useLatest = <A, E>(result: AsyncResult.AsyncResult<A, E>, empty: A) => {
   };
 };
 
-export const useProductsOnOrder = (productIds: ReadonlyArray<string>) =>
+export const useProductsOnOrder = (productIds: ReadonlyArray<ProductId>) =>
   useLatest(
     useAtomValue(useCatalogReplica().atoms.productsOnOrder(productIds)),
     NO_PRODUCTS_ON_ORDER,
   );
 
-export const useSuspenseProductOnOrder = (productId: string): ProductOnOrder =>
+export const useSuspenseProductOnOrder = (productId: ProductId): ProductOnOrder =>
   useAtomSuspense(useCatalogReplica().atoms.productsOnOrder([productId])).value.get(productId) ??
   NOTHING_ON_ORDER;
 
-export const useLearnedSuppliers = (productIds: ReadonlyArray<string>) =>
+export const useLearnedSuppliers = (productIds: ReadonlyArray<ProductId>) =>
   useLatest(
     useAtomValue(useCatalogReplica().atoms.learnedSuppliers(productIds)),
     NO_LEARNED_SUPPLIERS,

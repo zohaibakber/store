@@ -27,6 +27,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:"
   }
 }

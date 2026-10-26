@@ -5,7 +5,7 @@ import {
   Image01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Invoice, Product, StockStatus } from "@store/contracts";
+import type { Invoice, Product, ProductId, StockStatus } from "@store/contracts";
 import type { GlobalProduct } from "@store/contracts/server-api.schema";
 import { productStock } from "@store/contracts/store-helpers";
 import { useProductInsight, useSuspenseCatalogProduct } from "@store/inventory-react";
@@ -227,7 +227,7 @@ function LiveStockLabel({
   productId,
   stock,
 }: {
-  readonly productId: string;
+  readonly productId: ProductId;
   readonly stock: number;
 }) {
   const insight = useProductInsight(productId);

@@ -17,12 +17,12 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
-import { makeSyncEngineFromReplicaStore } from "../src/engine";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { SyncTransport } from "../src/transport";
-import { stubTransport } from "./lib/engine-fixture";
+import { engineOf, stubTransport } from "./lib/engine-fixture";
 import { enqueueRequestOf } from "./lib/enqueue";
 import { invoicePayloadOf, withSeededReplica } from "./lib/replica-fixture";
 
@@ -87,7 +87,7 @@ const recordingTransport = (
 
 const openEngine = (
   handle: Parameters<typeof makeSqliteReplicaStore>[0],
-  transport: SyncTransport,
+  transport: Layer.Layer<SyncTransport>,
   options: { readonly pullMaxBytes?: number; readonly verifiedDigestAt?: number } = {},
 ) =>
   Effect.gen(function* () {
@@ -96,7 +96,7 @@ const openEngine = (
     if (options.verifiedDigestAt !== undefined) {
       yield* store.recordDigestVerification(OPERATIONAL_SUBSCRIPTION, options.verifiedDigestAt);
     }
-    const engine = yield* makeSyncEngineFromReplicaStore(
+    const engine = yield* engineOf(
       store,
       transport,
       options.pullMaxBytes === undefined ? {} : { pullMaxBytes: options.pullMaxBytes },
@@ -119,11 +119,11 @@ describe("sync engine applies the page that rides on a submit", () => {
           verifiedDigestAt: 0,
         });
 
-        const refused = yield* Effect.flip(engine.drainUploads());
+        const refused = yield* Effect.flip(engine.drainUploads);
         expect(refused).toMatchObject({ _tag: "SyncProtocolError", code: "INCARNATION_MISMATCH" });
         expect(yield* outbox).toEqual(["accepted_awaiting_integration"]);
-        expect((yield* store.readSyncCursor()).appliedCommitSequence).toBe("0");
-        yield* engine.catchUp();
+        expect((yield* store.readSyncCursor).appliedCommitSequence).toBe("0");
+        yield* engine.catchUp;
 
         expect(recorded.pulls.map((request) => request.afterCommitSequence)).toEqual(["0"]);
       }),
@@ -138,8 +138,8 @@ describe("sync engine applies the page that rides on a submit", () => {
         );
         const { engine } = yield* openEngine(handle, recorded.transport);
 
-        yield* engine.drainUploads();
-        yield* engine.catchUp();
+        yield* engine.drainUploads;
+        yield* engine.catchUp;
 
         expect(recorded.pulls).toEqual([
           {

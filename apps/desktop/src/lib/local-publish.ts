@@ -1,23 +1,26 @@
-import { RegistryContext, useAtom, useAtomValue } from "@effect/atom-react";
+import { useAtom, useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useSuspenseCatalogHoldsNothing } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
-import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { useContext } from "react";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import { useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { clearSaleDrafts } from "@/hooks/use-sale-drafts";
 import { appHost } from "@/host";
 import type { CatalogCounts } from "@/host/workspace-backup";
-import type { PublishOffer, PublishProgress } from "@/host/workspace-publish";
+import type { PublishOffer, PublishOutcome, PublishProgress } from "@/host/workspace-publish";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
-import { storeErrorMessage, toastStoreError } from "@/lib/errors";
-import { useCatalogHoldsNothing } from "@/lib/inventory/catalog-empty";
+import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 import { publishOfferDismissedAtom } from "@/lib/preferences";
+import { singleFlight } from "@/lib/single-flight";
 import { workspaceStorageKey } from "@/lib/workspace";
-import { witnessBoundLocalCatalog } from "@/session/workspace-session";
+import { witnessLocalCatalog } from "@/session/workspace-session";
 
 export type PublishTarget = { readonly id: string; readonly name: string };
 
@@ -34,9 +37,13 @@ export type LocalPublish =
   | { readonly _tag: "Moving"; readonly progress: PublishProgress | null }
   | { readonly _tag: "Failed"; readonly message: string };
 
+type PublishRun = { readonly organizationId: string; readonly outcome: PublishOutcome };
+
 const NO_OFFER: PublishOffer = { _tag: "none" };
 
 const IDLE: PublishPhase = { _tag: "Idle" };
+
+const ANOTHER_ORGANIZATION = "another organization";
 
 const offerAtom = Atom.family((organizationId: string) =>
   Atom.make(
@@ -46,59 +53,104 @@ const offerAtom = Atom.family((organizationId: string) =>
   ),
 );
 
-const phaseAtom = Atom.family((_organizationId: string) =>
-  Atom.make<PublishPhase>(IDLE).pipe(Atom.keepAlive),
+const progressAtom = Atom.make(
+  Stream.callback<PublishProgress>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() =>
+        appHost().publish.onProgress((progress) => Queue.offerUnsafe(queue, progress)),
+      ),
+      (stop) => Effect.sync(stop),
+    ),
+  ),
 );
 
-const movingAtom = Atom.make(false).pipe(Atom.keepAlive);
+class PublishBridgeFailed extends Schema.TaggedError<PublishBridgeFailed>()("PublishBridgeFailed", {
+  cause: Schema.Defect(),
+}) {}
 
-const ANOTHER_ORGANIZATION = "another organization";
+const failedMove = (failure: PublishBridgeFailed): PublishOutcome => ({
+  _tag: "failed",
+  message: bridgeMessage(failure.cause),
+});
 
-const moveLocalWorkspace = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
-  const bridge = appHost().publish;
-  const phase = phaseAtom(organization.id);
-  if (registry.get(movingAtom)) return;
-  registry.set(movingAtom, true);
-  registry.set(phase, { _tag: "Moving", progress: null });
-  const stop = bridge.onProgress((progress) => registry.set(phase, { _tag: "Moving", progress }));
-  void bridge
-    .publish(organization.id)
-    .then(
-      (outcome) => {
-        switch (outcome._tag) {
-          case "published":
-            registry.set(phase, IDLE);
-            registry.refresh(offerAtom(organization.id));
-            clearSaleDrafts(registry, workspaceStorageKey({ _tag: "Local" }));
-            toastManager.add({
-              title: `Moved to ${organization.name}`,
-              description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,
-              type: "success",
-            });
-            void witnessBoundLocalCatalog("empty").catch(() => undefined);
-            return;
-          case "failed":
-            registry.set(phase, { _tag: "Failed", message: outcome.message });
-            return;
-        }
-      },
-      (cause) => registry.set(phase, { _tag: "Failed", message: storeErrorMessage(cause) }),
-    )
-    .finally(() => {
-      stop();
-      registry.set(movingAtom, false);
+const moveToOrganization = Atom.fn<PublishTarget>()(
+  Effect.fn("LocalPublish.move")(function* (organization, get) {
+    const outcome = yield* Effect.scoped(
+      Effect.gen(function* () {
+        yield* Atom.mount(progressAtom);
+        return yield* Effect.tryPromise({
+          try: () => appHost().publish.publish(organization.id),
+          catch: (cause) => new PublishBridgeFailed({ cause }),
+        }).pipe(Effect.match({ onSuccess: (published) => published, onFailure: failedMove }));
+      }),
+    );
+    if (outcome._tag === "published") {
+      get.refresh(offerAtom(organization.id));
+      get.set(clearSaleDrafts, workspaceStorageKey({ _tag: "Local" }));
+      toastManager.add({
+        title: `Moved to ${organization.name}`,
+        description: `${catalogContents(outcome.counts)} from this device now sync with ${organization.name}.`,
+        type: "success",
+      });
+      get.set(witnessLocalCatalog, "empty");
+    }
+    return { organizationId: organization.id, outcome } satisfies PublishRun;
+  }),
+);
+
+const moveAtom = singleFlight(moveToOrganization);
+
+const discardElsewhere = Atom.fn<PublishTarget>()(
+  Effect.fn("LocalPublish.discard")(function* (organization, get) {
+    yield* Effect.tryPromise({
+      try: () => appHost().publish.discard(organization.id),
+      catch: (cause) => new PublishBridgeFailed({ cause }),
+    }).pipe(
+      Effect.tapError((failure) => Effect.sync(() => toastBridgeFailure(failure.cause))),
+      Effect.ignore,
+      Effect.ensuring(Effect.sync(() => get.refresh(offerAtom(organization.id)))),
+    );
+  }),
+).pipe(Atom.keepAlive);
+
+const phaseAtom = Atom.family((organizationId: string) =>
+  Atom.make((get): PublishPhase => {
+    const run = get(moveAtom);
+    if (AsyncResult.isWaiting(run)) {
+      return { _tag: "Moving", progress: Option.getOrNull(AsyncResult.value(get(progressAtom))) };
+    }
+    return Option.match(AsyncResult.value(run), {
+      onNone: () => IDLE,
+      onSome: (last): PublishPhase =>
+        last.organizationId === organizationId && last.outcome._tag === "failed"
+          ? { _tag: "Failed", message: last.outcome.message }
+          : IDLE,
     });
+  }),
+);
+
+const resume = Effect.fn("LocalPublish.resume")(function* (
+  get: Atom.AtomContext,
+  organization: PublishTarget,
+  interrupted: boolean,
+) {
+  if (interrupted) yield* Effect.sync(() => get.set(moveAtom, organization));
+});
+
+const resumeInterrupted = (organization: PublishTarget) => {
+  const phase = phaseAtom(organization.id);
+  return Atom.make((get) => {
+    const offer = AsyncResult.value(get(offerAtom(organization.id)));
+    const interrupted =
+      get(phase)._tag === "Idle" &&
+      Option.isSome(offer) &&
+      offer.value._tag === "available" &&
+      offer.value.resuming;
+    return resume(get, organization, interrupted);
+  });
 };
 
-const cancelMoveElsewhere = (registry: AtomRegistry.AtomRegistry, organization: PublishTarget) => {
-  if (registry.get(movingAtom)) return;
-  void appHost()
-    .publish.discard(organization.id)
-    .catch(toastStoreError)
-    .finally(() => registry.refresh(offerAtom(organization.id)));
-};
-
-export const usePublishInProgress = (): boolean => useAtomValue(movingAtom);
+export const usePublishInProgress = (): boolean => AsyncResult.isWaiting(useAtomValue(moveAtom));
 
 export const usePublishTarget = (): PublishTarget | null => {
   const { workspace, workspaces } = useAuth();
@@ -108,17 +160,26 @@ export const usePublishTarget = (): PublishTarget | null => {
   return workspace.organization;
 };
 
+export const useResumeInterruptedPublish = (organization: PublishTarget) => {
+  const resume = useMemo(() => resumeInterrupted(organization), [organization]);
+  useAtomMount(resume);
+};
+
 export const useLocalPublish = (organization: PublishTarget) => {
-  const registry = useContext(RegistryContext);
   const offer = Option.getOrElse(
     AsyncResult.value(useAtomValue(offerAtom(organization.id))),
     () => NO_OFFER,
   );
   const phase = useAtomValue(phaseAtom(organization.id));
-  const organizationIsEmpty = useCatalogHoldsNothing();
+  const organizationIsEmpty = useSuspenseCatalogHoldsNothing();
   const organizations = useAuth().snapshot?.organizations ?? [];
-  const move = () => moveLocalWorkspace(registry, organization);
-  const cancelElsewhere = () => cancelMoveElsewhere(registry, organization);
+  const publishing = usePublishInProgress();
+  const startMove = useAtomSet(moveAtom);
+  const startDiscard = useAtomSet(discardElsewhere);
+  const move = () => startMove(organization);
+  const cancelElsewhere = () => {
+    if (!publishing) startDiscard(organization);
+  };
   const state = ((): LocalPublish => {
     switch (phase._tag) {
       case "Moving":

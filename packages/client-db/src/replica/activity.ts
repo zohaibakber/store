@@ -2,10 +2,11 @@ import {
   CommandReceipt,
   CommandStatus,
   SyncCommandEnvelope,
+  SyncProtocolCode,
   type SyncCommand,
-  type SyncProtocolCode,
 } from "@store/contracts";
 import type { CatalogRowWrite } from "@store/contracts/catalog-write";
+import type { ProductId } from "@store/contracts/ids";
 import {
   InventorySyncActivity,
   MAX_REJECTED_COMMAND_TARGETS,
@@ -79,7 +80,7 @@ const writeTargets = (write: CatalogRowWrite): ReadonlyArray<RejectedCommandTarg
 
 type CommandTargets = {
   readonly targets: ReadonlyArray<RejectedCommandTarget>;
-  readonly productId: string | null;
+  readonly productId: ProductId | null;
 };
 
 const commandTargets = (command: SyncCommand): CommandTargets => {
@@ -110,7 +111,7 @@ const commandTargets = (command: SyncCommand): CommandTargets => {
 
 export type RejectedCommandSubject = "sale" | "delivery" | "purchaseOrder" | "supplier" | "stock";
 
-export const rejectedCommandSubject = (
+const rejectedCommandSubject = (
   rejected: Pick<RejectedCommand, "command" | "targets">,
 ): RejectedCommandSubject => {
   switch (rejected.command) {
@@ -134,27 +135,42 @@ const SUBJECT_NOUNS = {
   stock: "Stock change",
 } as const satisfies Record<RejectedCommandSubject, string>;
 
-const REJECTION_REASONS: ReadonlyMap<string, string> = new Map(
-  Object.entries({
-    INSUFFICIENT_STOCK: "Not enough stock",
-    ENTITY_CONFLICT: "Changed on another device",
-    ENTITY_RELATION_INVALID: "Linked item is missing",
-    ENTITY_WRITE_FAILED: "Couldn't be saved on the server",
-    INVOICE_IDENTITY_CONFLICT: "Invoice number already used",
-    INVALID_OPERATION: "Not allowed",
-    SUPPLIER_HAS_ORDERS: "Supplier still has purchase orders",
-    PURCHASE_ORDER_TRANSITION_INVALID: "Order status changed on another device",
-    PURCHASE_ORDER_NOT_OPEN: "Order is already closed or cancelled",
-    PURCHASE_ORDER_NOT_DRAFT: "Only a draft order can be deleted",
-    PURCHASE_ORDER_HAS_ITEMS: "Remove the order's lines first",
-    PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "Pack size changed; enter the quantity again",
-    PURCHASE_ORDER_ITEM_RECEIVED: "Line already has received stock",
-    PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "Delivery is for a different product",
-    REPLICA_SCHEMA_OUTDATED: "Update Tabaaq on your other devices first",
-  } satisfies Partial<Record<SyncProtocolCode, string>>),
-);
+const REJECTION_FALLBACK = "Rejected";
 
-export const rejectionReason = (code: string): string => REJECTION_REASONS.get(code) ?? "Rejected";
+const REJECTION_REASONS = {
+  ORGANIZATION_MISMATCH: REJECTION_FALLBACK,
+  INVALID_OPERATION: "Not allowed",
+  OPERATION_ID_REUSED: REJECTION_FALLBACK,
+  INSUFFICIENT_STOCK: "Not enough stock",
+  INVOICE_IDENTITY_CONFLICT: "Invoice number already used",
+  ENTITY_CONFLICT: "Changed on another device",
+  ENTITY_RELATION_INVALID: "Linked item is missing",
+  ENTITY_WRITE_FAILED: "Couldn't be saved on the server",
+  REPLICA_SEQUENCE_GAP: REJECTION_FALLBACK,
+  EPOCH_MISMATCH: REJECTION_FALLBACK,
+  REPLICA_UNKNOWN: REJECTION_FALLBACK,
+  REPLICA_OWNED_BY_OTHER: REJECTION_FALLBACK,
+  COMMAND_IDENTITY_MISMATCH: REJECTION_FALLBACK,
+  INVALID_PAYLOAD_HASH: REJECTION_FALLBACK,
+  SNAPSHOT_REQUIRED: REJECTION_FALLBACK,
+  SNAPSHOT_UNAVAILABLE: REJECTION_FALLBACK,
+  SCHEMA_VERSION_UNSUPPORTED: REJECTION_FALLBACK,
+  INCARNATION_MISMATCH: REJECTION_FALLBACK,
+  SUPPLIER_HAS_ORDERS: "Supplier still has purchase orders",
+  PURCHASE_ORDER_TRANSITION_INVALID: "Order status changed on another device",
+  PURCHASE_ORDER_NOT_OPEN: "Order is already closed or cancelled",
+  PURCHASE_ORDER_NOT_DRAFT: "Only a draft order can be deleted",
+  PURCHASE_ORDER_HAS_ITEMS: "Remove the order's lines first",
+  PURCHASE_ORDER_ITEM_QUANTITY_INVALID: "Pack size changed; enter the quantity again",
+  PURCHASE_ORDER_ITEM_RECEIVED: "Line already has received stock",
+  PURCHASE_ORDER_RECEIPT_PRODUCT_MISMATCH: "Delivery is for a different product",
+  REPLICA_SCHEMA_OUTDATED: "Update Tabaaq on your other devices first",
+} as const satisfies Record<SyncProtocolCode, string>;
+
+const isSyncProtocolCode = Schema.is(SyncProtocolCode);
+
+const rejectionReason = (code: string): string =>
+  isSyncProtocolCode(code) ? REJECTION_REASONS[code] : REJECTION_FALLBACK;
 
 export type RejectedCommandLabel = {
   readonly subject: RejectedCommandSubject;

@@ -1,13 +1,6 @@
 import * as Result from "effect/Result";
 
-import { CatalogRefusal } from "../catalog/refusal";
-
-export const catalogWriteError = {
-  categoryHasProducts: "Move products to another category before deleting this category.",
-  productHasStock: "Clear remaining stock before deleting this product.",
-  unitsPerPackWithStock: "Change units per pack only after the product has no remaining stock.",
-  batchHasStock: "Clear remaining stock before deleting this batch.",
-} as const;
+import { CATALOG_REFUSALS, CatalogRefusal } from "../catalog/refusal";
 
 type CatalogStockBatch = {
   readonly productId: string;
@@ -41,7 +34,7 @@ export const checkCanDeleteCategory = (
       return yield* Result.fail(
         new CatalogRefusal({
           reason: "categoryHasProducts",
-          message: catalogWriteError.categoryHasProducts,
+          message: CATALOG_REFUSALS.categoryHasProducts.message,
         }),
       );
     }
@@ -53,7 +46,7 @@ export const checkCanDeleteProduct = (batches: Iterable<CatalogStockBatch>, prod
       return yield* Result.fail(
         new CatalogRefusal({
           reason: "productHasStock",
-          message: catalogWriteError.productHasStock,
+          message: CATALOG_REFUSALS.productHasStock.message,
         }),
       );
     }
@@ -68,7 +61,7 @@ export const checkCanChangeUnitsPerPack = (
       return yield* Result.fail(
         new CatalogRefusal({
           reason: "unitsPerPackWithStock",
-          message: catalogWriteError.unitsPerPackWithStock,
+          message: CATALOG_REFUSALS.unitsPerPackWithStock.message,
           field: "unitsPerPack",
         }),
       );
@@ -82,7 +75,10 @@ export const checkCanDeleteBatch = (batch: {
   Result.gen(function* () {
     if (batchHasRemainingStock(batch)) {
       return yield* Result.fail(
-        new CatalogRefusal({ reason: "batchHasStock", message: catalogWriteError.batchHasStock }),
+        new CatalogRefusal({
+          reason: "batchHasStock",
+          message: CATALOG_REFUSALS.batchHasStock.message,
+        }),
       );
     }
   });

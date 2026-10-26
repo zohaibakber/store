@@ -17,8 +17,6 @@ import {
   CreateCategoryInput,
   CreateInvoiceInput,
   CreateProductInput,
-  ImportInventoryCommandResult,
-  ImportInventoryInput,
   IssueInvoiceResult,
   UpdateBatchInput,
   UpdateCategoryInput,
@@ -33,7 +31,6 @@ import {
   SupplierRow,
 } from "../sync/entity-rows";
 import { CommandStatus } from "../sync/replica-model";
-import { SyncEntity } from "../sync/schema";
 import { CommandFailure, ReadFailure } from "./errors";
 import { CommitNotice, Stamp } from "./notices";
 import { StaffRpcs } from "./staff";
@@ -47,18 +44,6 @@ export const CreateProductWithBatchInput = Schema.Struct({
   batch: BatchDraft,
 });
 export type CreateProductWithBatchInput = typeof CreateProductWithBatchInput.Type;
-
-export const ImportIntoNewCategoryInput = Schema.Struct({
-  newCategory: CreateCategoryInput,
-  lines: ImportInventoryInput.fields.lines,
-});
-export type ImportIntoNewCategoryInput = typeof ImportIntoNewCategoryInput.Type;
-
-export const ImportInventoryRequest = Schema.Union([
-  ImportInventoryInput,
-  ImportIntoNewCategoryInput,
-]);
-export type ImportInventoryRequest = typeof ImportInventoryRequest.Type;
 
 export const SaveSupplierInput = Schema.Struct({
   id: Schema.optional(SupplierId),
@@ -186,11 +171,6 @@ export class InventoryStore extends RpcGroup.make(
     success: Committed(BatchRow),
     error: CommandFailure,
   }),
-  Rpc.make("ImportInventory", {
-    payload: ImportInventoryRequest,
-    success: Committed(ImportInventoryCommandResult),
-    error: CommandFailure,
-  }),
   Rpc.make("IssueInvoice", {
     payload: { input: CreateInvoiceInput, invoiceId: Schema.optionalKey(InvoiceId) },
     success: Committed(IssueInvoiceResult),
@@ -240,10 +220,5 @@ export class InventoryStore extends RpcGroup.make(
   Rpc.make("Health", { success: SyncHealth, stream: true }),
   Rpc.make("Stamp", { success: Stamp, error: ReadFailure }),
   Rpc.make("SyncActivity", { success: ReplicaSyncActivity, error: ReadFailure }),
-  Rpc.make("PendingRows", {
-    payload: { entity: SyncEntity },
-    success: Schema.Array(Schema.String),
-    error: ReadFailure,
-  }),
   Rpc.make("WakeSyncUpload", { success: UploadWake, error: ReadFailure }),
 ).merge(StaffRpcs) {}

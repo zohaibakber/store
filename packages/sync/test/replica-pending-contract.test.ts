@@ -10,6 +10,8 @@ import {
   type SyncCommandEnvelope,
   type SyncEntity,
   type SyncTransactionGroup,
+  OperationId,
+  Money,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import { decodeInvoiceId, decodeInvoiceItemId } from "@store/contracts/ids";
@@ -31,7 +33,7 @@ import * as Scope from "effect/Scope";
 
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
-import type { ReplicaStoreContract } from "../src/replica/store";
+import type { ReplicaStore } from "../src/replica/store";
 import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
@@ -65,7 +67,7 @@ const decodeEntityRow = Schema.decodeUnknownSync(Schema.Record(Schema.String, En
 type EntityRow = ReturnType<typeof decodeEntityRow>;
 
 type Harness = {
-  readonly store: ReplicaStoreContract;
+  readonly store: ReplicaStore["Service"];
   readonly rows: (entity: SyncEntity) => Effect.Effect<ReadonlyArray<EntityRow>, unknown>;
   readonly overlayCount: () => Effect.Effect<number, unknown>;
   readonly close: () => Effect.Effect<void, unknown>;
@@ -124,7 +126,7 @@ const invoiceEnvelopeFor = (input: {
           batchId: LAST_UNIT_BATCH_ID,
           quantity: input.quantity,
           quantityType: "unit" as const,
-          salePrice: 100,
+          salePrice: Money.make(100),
           packsOpened: 0,
         },
       ],
@@ -135,7 +137,7 @@ const invoiceEnvelopeFor = (input: {
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
-    operationId: input.operationId,
+    operationId: OperationId.make(input.operationId),
     payloadHash: canonicalPayloadHash(command),
     command,
   };
@@ -148,7 +150,7 @@ const authoritativeInvoiceGroup = (input: {
   readonly invoiceId?: string;
 }): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(input.commitSequence),
-  operationId: input.operationId,
+  operationId: OperationId.make(input.operationId),
   decision: "accepted",
   changes: [
     {
@@ -177,7 +179,7 @@ const authoritativeInvoiceGroup = (input: {
 
 const remoteProductGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("7"),
-  operationId: "remote-op",
+  operationId: OperationId.make("remote-op"),
   decision: "accepted",
   changes: [
     {
@@ -213,7 +215,7 @@ const remoteProductGroup: SyncTransactionGroup = {
 
 const remoteColdChainGroup: SyncTransactionGroup = {
   commitSequence: OrgCommitSequence.make("8"),
-  operationId: "remote-category-op",
+  operationId: OperationId.make("remote-category-op"),
   decision: "accepted",
   changes: [
     {
@@ -273,7 +275,7 @@ const deleteGroup = (input: {
   readonly operationId: string;
 }): SyncTransactionGroup => ({
   commitSequence: OrgCommitSequence.make(input.commitSequence),
-  operationId: input.operationId,
+  operationId: OperationId.make(input.operationId),
   decision: "accepted",
   changes: [
     {
@@ -309,7 +311,7 @@ for (const adapter of adapters) {
             }),
           );
           const invoiceRows = yield* harness.rows("invoice");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           expect(invoiceRows).toHaveLength(1);
           expect(invoiceRows[0]?.["invoiceNumber"]).toBe(7);
           expect(marks).toHaveLength(0);
@@ -342,7 +344,7 @@ for (const adapter of adapters) {
 
           const restoredCategories = yield* harness.rows("category");
           const restoredProducts = yield* harness.rows("product");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           expect(findRow(restoredCategories, NEW_CATEGORY_ID)).toBeUndefined();
           expect(findRow(restoredProducts, LAST_UNIT_PRODUCT_ID)?.["name"]).toBe("Ten pack");
           expect(marks).toHaveLength(0);
@@ -425,7 +427,7 @@ for (const adapter of adapters) {
           yield* harness.store.settleUploadClaim("claim-delete", rejectedReceipt(envelope, "6"));
 
           const restored = yield* harness.rows("batch");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           expect(findRow(restored, SPARE_BATCH_ID)?.["batchNumber"]).toBe("B-2");
           expect(marks).toHaveLength(0);
         }),
@@ -460,7 +462,7 @@ for (const adapter of adapters) {
           yield* harness.store.importSnapshotPart(snapshotManifest, snapshotPart);
           yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
           const invoiceRows = yield* harness.rows("invoice");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           expect(invoiceRows).toHaveLength(1);
           expect(
             marks.filter((mark) => mark.operationId === lastUnitBuyerAEnvelope.operationId),
@@ -492,7 +494,7 @@ for (const adapter of adapters) {
           expect(findRow(afterRemote, "remote-inv")?.["invoiceNumber"]).toBe(5);
           expect(findRow(afterRemote, "shadow-five")?.["invoiceNumber"]).toBe(6);
           expect(applied.notice?.touchedKeys).toContain("invoice:shadow-five");
-          const marksBefore = yield* harness.store.readPendingMarks();
+          const marksBefore = yield* harness.store.readPendingMarks;
           expect(
             marksBefore.filter(
               (mark) => mark.entity === "invoice" && mark.entityId === "shadow-five",
@@ -509,7 +511,7 @@ for (const adapter of adapters) {
             }),
           );
           const afterIntegration = yield* harness.rows("invoice");
-          const marksAfter = yield* harness.store.readPendingMarks();
+          const marksAfter = yield* harness.store.readPendingMarks;
           expect(findRow(afterIntegration, "shadow-five")?.["invoiceNumber"]).toBe(11);
           expect(marksAfter).toHaveLength(0);
         }),
@@ -534,7 +536,7 @@ for (const adapter of adapters) {
           }
           const status = yield* harness.store.readCommandStatus(lastUnitBuyerAEnvelope.operationId);
           const invoiceRows = yield* harness.rows("invoice");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           const next = yield* harness.store.claimNextUpload({
             claimId: "claim-last",
             claimedAt: 99,
@@ -590,7 +592,7 @@ for (const adapter of adapters) {
 
           yield* rejectNext(harness, secondRename, "11");
           expect(yield* productName(harness)).toBe("Ten pack");
-          expect(yield* harness.store.readPendingMarks()).toHaveLength(0);
+          expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
       ),
     );
@@ -602,7 +604,7 @@ for (const adapter of adapters) {
           yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
           yield* applyGroup(harness.store, remoteProductGroup);
           expect(yield* productName(harness)).toBe("Remote name");
-          const marks = yield* harness.store.readPendingMarks();
+          const marks = yield* harness.store.readPendingMarks;
           expect(marks.filter((mark) => mark.entity === "product")).toHaveLength(0);
 
           yield* rejectNext(harness, firstRename, "10");
@@ -610,7 +612,7 @@ for (const adapter of adapters) {
 
           yield* rejectNext(harness, secondRename, "11");
           expect(yield* productName(harness)).toBe("Remote name");
-          expect(yield* harness.store.readPendingMarks()).toHaveLength(0);
+          expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
       ),
     );
@@ -633,7 +635,7 @@ for (const adapter of adapters) {
           yield* rejectNext(harness, firstRename, "10");
           yield* rejectNext(harness, secondRename, "11");
           expect(yield* productName(harness)).toBeUndefined();
-          expect(yield* harness.store.readPendingMarks()).toHaveLength(0);
+          expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
       ),
     );
@@ -671,7 +673,7 @@ for (const adapter of adapters) {
           const afterReject = yield* harness.rows("category");
           expect(findRow(afterReject, NEW_CATEGORY_ID)).toBeUndefined();
           expect(findRow(afterReject, "remote-cold")?.["name"]).toBe("Cold chain");
-          expect(yield* harness.store.readPendingMarks()).toHaveLength(0);
+          expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
       ),
     );
@@ -819,7 +821,7 @@ for (const adapter of adapters) {
             yield* harness.store.activateSnapshot(snapshotManifest.snapshotId);
             yield* expectDisplacedShadows(harness);
             expect(findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID)).toBeDefined();
-            const marks = yield* harness.store.readPendingMarks();
+            const marks = yield* harness.store.readPendingMarks;
             expect(
               marks.filter((mark) => mark.operationId === placeOrder.operationId),
             ).toHaveLength(placeOrderWrites.length);

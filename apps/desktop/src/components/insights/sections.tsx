@@ -8,8 +8,9 @@ import {
   PackageIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type {
-  InsightsSummary,
+import {
+  type ProductId,
+  type InsightsSummary,
   RestockView,
   SalesPeriod,
   StockStatus,
@@ -114,7 +115,13 @@ function NameCell({ children }: { readonly children: React.ReactNode }) {
   );
 }
 
-function ProductLink({ productId, name }: { readonly productId: string; readonly name: string }) {
+function ProductLink({
+  productId,
+  name,
+}: {
+  readonly productId: ProductId;
+  readonly name: string;
+}) {
   return (
     <Link
       className="min-w-0 truncate leading-tight font-medium outline-none before:absolute before:inset-0 focus-visible:underline"

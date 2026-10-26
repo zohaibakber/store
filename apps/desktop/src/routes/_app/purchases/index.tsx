@@ -1,3 +1,4 @@
+import type { SupplierId } from "@store/contracts";
 import {
   PURCHASE_ORDER_TABS,
   preloadAll,
@@ -39,7 +40,7 @@ const viewFor = (search: PurchasesSearch): PurchaseOrderListView => ({
 
 const requestFor = (
   view: PurchaseOrderListView,
-  supplierIds: ReadonlyArray<string> | undefined,
+  supplierIds: ReadonlyArray<SupplierId> | undefined,
 ): PurchaseOrderListRequest => ({
   filters: supplierIds === undefined ? { tab: view.tab } : { tab: view.tab, supplierIds },
   ...purchaseOrderList.requestPage(view),

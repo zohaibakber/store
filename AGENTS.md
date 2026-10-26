@@ -81,16 +81,19 @@ say so in the PR.
 
 - Replicas hard-delete. A `delete` change removes the row; client schemas carry
   no `deletedAt`.
-- The shared entrypoint of `packages/sync` (`@store/sync`) must stay native-free.
-  `packages/sync/test/browser-boundary.test.ts` enforces it, because the renderer
-  imports that entry; SQLite belongs in `@store/sync/sqlite`. No
-  browser replica exists.
+- The shared entrypoints of `packages/sync` (`@store/sync` and
+  `@store/sync/sql-client`) must stay native-free.
+  `packages/sync/test/sql-client-boundary.test.ts` enforces it, because the
+  renderer reaches `@store/sync` only through `@store/client-db`; SQLite belongs
+  in `@store/sync/sqlite`. No browser replica exists.
 - Command state never crosses process boundaries as SQL or query IR. The
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
   `InventoryInsights`, and `DesktopRpcs` (main-owned workspace state), all
-  Effect RPC over MessagePorts. Preload IPC carries open, close, backup,
-  restore, and publish only. Adding a read means adding a named member, not a
+  Effect RPC over MessagePorts. Preload exposes only the shell-port handshake; every other shell command,
+  including open, close, backup, restore and publish, is a typed `ShellRpcs`
+  call over a MessagePort that main serves only to the trusted main frame, once
+  per document. Adding a read means adding a named member, not a
   parameter.
 - The pull digest is requested on the cadence policy only, when the replica
   believes it is caught up and the verification interval has elapsed.
@@ -135,9 +138,11 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   stores state remotely and binds real dev-stage D1 and the `OrgAuthority` and `OrgHub` Durable
   Objects.
   There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
-  `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with the auth JWT key pair,
-  refresh and ephemeral peppers, and Google OAuth credentials. Use different
-  secrets per stage. Do not commit env files or env templates.
+  `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with
+  `GOOGLE_OAUTH_CLIENT_SECRET`. Hostnames and the Google client ID live in
+  `infra/deployment.ts`. Alchemy generates the JWT key pair and the
+  ephemeral-record secret per stage. Local dev returns OTP codes in the
+  response. Do not commit env files or env templates.
 - **Auth gating.** The desktop renderer is gated behind
   sign-in/sign-up, which call the backend API. End-to-end auth UI (sign up,
   create organization, sync) needs the backend running with the credentials

@@ -178,7 +178,7 @@ export const beginSnapshotImport = Effect.fn("ReplicaImport.beginSnapshotImport"
   const state = yield* loadReplicaState(tx);
   const generation = yield* loadGenerationState(tx);
   if (generation.standby !== "empty") {
-    return yield* Effect.fail(unavailable("The standby generation is not empty."));
+    return yield* unavailable("The standby generation is not empty.");
   }
   const stage = manifest.parts.length === 0 ? "caught_up" : "importing";
   yield* tx.insert(snapshotImports).values({
@@ -639,12 +639,13 @@ export const stepSnapshotActivation = Effect.fn("ReplicaImport.stepSnapshotActiv
 ) {
   const importRow = yield* loadImport(tx, snapshotId);
   if (!importRow || importRow.stage === "failed" || importRow.stage === "importing") {
-    return yield* Effect.fail(unavailable("The snapshot is not ready to activate."));
+    return yield* unavailable("The snapshot is not ready to activate.");
   }
   const subscription = decodeSubscription(importRow.subscription);
   if (Option.isNone(subscription)) {
-    return yield* Effect.fail(
-      syncProtocolError("SCHEMA_VERSION_UNSUPPORTED", "The snapshot subscription is invalid."),
+    return yield* syncProtocolError(
+      "SCHEMA_VERSION_UNSUPPORTED",
+      "The snapshot subscription is invalid.",
     );
   }
   if (importRow.stage === "activated") {
@@ -660,7 +661,7 @@ export const stepSnapshotActivation = Effect.fn("ReplicaImport.stepSnapshotActiv
       return yield* catchUpStep(tx, importRow, state);
     case "rebuilding":
       return yield* rebuildStep(tx, importRow, state);
-    default:
+    case "replaying":
       return yield* replayStep(tx, importRow, state, subscription.value);
   }
 });
@@ -669,7 +670,7 @@ export const applyCandidateAuthority = Effect.fn("ReplicaImport.applyCandidateAu
   function* (tx: ReplicaDb, snapshotId: string, page: SyncPullResult) {
     const importRow = yield* loadImport(tx, snapshotId);
     if (!importRow || importRow.stage !== "caught_up") {
-      return yield* Effect.fail(unavailable("The snapshot candidate is not catching up."));
+      return yield* unavailable("The snapshot candidate is not catching up.");
     }
     const state = yield* loadReplicaState(tx);
     const admission = admitAuthority(
