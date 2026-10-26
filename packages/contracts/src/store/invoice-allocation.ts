@@ -4,7 +4,7 @@ import { CatalogRefusal } from "../catalog/refusal";
 import { decodeInvoiceItemId } from "../ids";
 import type { BatchId, ProductId } from "../ids";
 import { isPositiveInt } from "../schema-primitives";
-import { isPaisa } from "./pricing";
+import { isMoney } from "./pricing";
 import type { CreateInvoiceInput, CreateInvoiceLineInput, InvoiceAllocation } from "./schema";
 import { availableFor, takeFromStock } from "./stock";
 
@@ -57,7 +57,7 @@ export const allocateInvoiceLine = (
         }),
       );
     }
-    if (!isPaisa(line.salePrice)) {
+    if (!isMoney(line.salePrice)) {
       return yield* Result.fail(
         new CatalogRefusal({ reason: "invalidInput", message: "Sale prices cannot be negative." }),
       );

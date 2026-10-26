@@ -8,7 +8,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import {
   lineTotal,
-  paisaToRupees,
+  moneyToRupees,
   suggestedPrice,
   type MissingSaleLine,
   type SaleLine,
@@ -212,7 +212,7 @@ function InvoiceCreateLine({
   } = useInvoiceCreate();
 
   const total = lineTotal(line);
-  const suggested = paisaToRupees(suggestedPrice(line.product, line.quantityUnit));
+  const suggested = moneyToRupees(suggestedPrice(line.product, line.quantityUnit));
   const priceChanged = line.salePrice != null && suggested != null && line.salePrice !== suggested;
   const hint = elsewhereHint(line);
 

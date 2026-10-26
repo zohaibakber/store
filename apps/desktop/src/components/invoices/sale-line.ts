@@ -32,14 +32,14 @@ export type ProductLookup = (productId: string) => Product | "loading" | undefin
 export const suggestedPrice = (product: Product, quantityUnit: SaleLine["quantityUnit"]) =>
   quantityUnit === "pack" ? product.retailPrice : product.unitPrice;
 
-export const paisaToRupees = (paisa: number | null) => (paisa == null ? null : paisa / 100);
+export const moneyToRupees = (amount: number | null) => (amount == null ? null : amount / 100);
 
 export const enteredPrice = (
   product: Product,
   quantityUnit: SaleLine["quantityUnit"],
   salePrice: number | null,
 ): SaleDraftLine["price"] =>
-  salePrice === paisaToRupees(suggestedPrice(product, quantityUnit)) ? CATALOG_PRICE : salePrice;
+  salePrice === moneyToRupees(suggestedPrice(product, quantityUnit)) ? CATALOG_PRICE : salePrice;
 
 const elsewhereOf = (product: Product, elsewhere: QuantityElsewhere | undefined) =>
   elsewhere
@@ -71,7 +71,7 @@ export const resolveSaleLine = (
     quantityUnit: line.quantityUnit,
     salePrice:
       line.price === CATALOG_PRICE
-        ? paisaToRupees(suggestedPrice(product, line.quantityUnit))
+        ? moneyToRupees(suggestedPrice(product, line.quantityUnit))
         : line.price,
     elsewhere,
   };

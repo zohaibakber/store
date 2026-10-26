@@ -11,7 +11,7 @@ import {
   checkLineUnreceived,
   checkOrderOpen,
   invoiceTotal,
-  isPaisa,
+  isMoney,
   openPackMovementId,
   purchaseOrderLineBaseUnits,
   purchasingRejection,
@@ -20,7 +20,7 @@ import {
   type CatalogRowWrite,
   type SyncCommandEnvelope,
   type SyncEntity,
-  type Paisa,
+  type Money,
   type SyncProtocolCode,
 } from "@store/contracts";
 import { CATALOG_REFUSALS, type CatalogRefusal } from "@store/contracts/catalog-refusal";
@@ -112,9 +112,9 @@ const invoiceTotalOf = (
   items: ReadonlyArray<{ readonly quantity: number; readonly salePrice: number }>,
 ): Result.Result<number, Rejection> =>
   Result.gen(function* () {
-    const priced: Array<{ readonly quantity: number; readonly salePrice: Paisa }> = [];
+    const priced: Array<{ readonly quantity: number; readonly salePrice: Money }> = [];
     for (const item of items) {
-      if (!isPaisa(item.salePrice)) {
+      if (!isMoney(item.salePrice)) {
         return yield* Result.fail<Rejection>({
           code: "INVALID_OPERATION",
           message: "Sale prices cannot be negative.",

@@ -1,4 +1,4 @@
-import { rupeesToPaisa } from "@store/contracts/store-pricing";
+import { moneyFromRupees } from "@store/contracts/store-pricing";
 import * as Result from "effect/Result";
 
 const MAX_UNITS_PER_PACK = 10_000;
@@ -50,5 +50,5 @@ export const parseMajorCurrencyToMinor = (value: string): number | null => {
   if (!trimmed) return null;
   const amount = Number(trimmed.replace(/,/g, ""));
   if (!Number.isFinite(amount) || amount < 0) return null;
-  return Result.getOrNull(rupeesToPaisa(amount));
+  return Result.getOrNull(moneyFromRupees(amount));
 };

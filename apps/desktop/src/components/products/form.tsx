@@ -77,8 +77,8 @@ const productFormSchema = Schema.toStandardSchemaV1(
 );
 
 const nullableText = (value: string) => value.trim() || null;
-const priceInPaisa = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
-const priceFromPaisa = (value: number | null) => (value == null ? "" : String(value / 100));
+const moneyFromInput = (value: string) => (value === "" ? null : Math.round(Number(value) * 100));
+const inputFromMoney = (value: number | null) => (value == null ? "" : String(value / 100));
 const numberFieldValue = (value: string) => (value === "" ? null : Number(value));
 
 const computeUnitPrice = (unitsPerPack: string, retailPrice: string) => {
@@ -149,9 +149,9 @@ const formValuesToInput = (value: ProductFormValues, tracksPacks: boolean) => {
     composition: nullableText(value.composition),
     strength: strength ? `${strength}${value.strengthUnit}` : null,
     unitsPerPack: tracksPacks ? Number(value.unitsPerPack || 1) : 1,
-    purchasePrice: priceInPaisa(value.purchasePrice),
-    retailPrice: tracksPacks ? priceInPaisa(value.retailPrice) : null,
-    unitPrice: priceInPaisa(value.unitPrice),
+    purchasePrice: moneyFromInput(value.purchasePrice),
+    retailPrice: tracksPacks ? moneyFromInput(value.retailPrice) : null,
+    unitPrice: moneyFromInput(value.unitPrice),
   };
 };
 
@@ -170,9 +170,9 @@ const productToFormValues = (product: Product): ProductFormValues => {
     strength,
     strengthUnit,
     unitsPerPack: String(product.unitsPerPack),
-    purchasePrice: priceFromPaisa(product.purchasePrice),
-    retailPrice: priceFromPaisa(product.retailPrice),
-    unitPrice: priceFromPaisa(product.unitPrice),
+    purchasePrice: inputFromMoney(product.purchasePrice),
+    retailPrice: inputFromMoney(product.retailPrice),
+    unitPrice: inputFromMoney(product.unitPrice),
   };
 };
 

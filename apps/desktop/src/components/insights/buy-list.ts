@@ -10,7 +10,7 @@ const cell = (value: string | number) => {
   return `"${safe.replace(/"/gu, '""')}"`;
 };
 
-const money = (paisa: number | null) => (paisa === null ? "" : (paisa / 100).toFixed(2));
+const money = (amount: number | null) => (amount === null ? "" : (amount / 100).toFixed(2));
 
 const HEADER = [
   "Product",
