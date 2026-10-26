@@ -9,7 +9,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  decodeProductId,
+  type ProductId,
   type InsightsSummary,
   RestockView,
   SalesPeriod,
@@ -115,11 +115,17 @@ function NameCell({ children }: { readonly children: React.ReactNode }) {
   );
 }
 
-function ProductLink({ productId, name }: { readonly productId: string; readonly name: string }) {
+function ProductLink({
+  productId,
+  name,
+}: {
+  readonly productId: ProductId;
+  readonly name: string;
+}) {
   return (
     <Link
       className="min-w-0 truncate leading-tight font-medium outline-none before:absolute before:inset-0 focus-visible:underline"
-      params={{ productId: decodeProductId(productId) }}
+      params={{ productId }}
       title={name}
       to="/products/$productId"
     >
@@ -208,7 +214,7 @@ export function AttentionFeed({
                       aria-label={`Add stock to ${insight.name}`}
                       render={
                         <Link
-                          params={{ productId: decodeProductId(insight.productId) }}
+                          params={{ productId: insight.productId }}
                           search={{ addStock: true }}
                           to="/products/$productId"
                         />

@@ -43,7 +43,7 @@ import {
   toProductFact,
   type InvoiceWindow,
 } from "../replica/replica-queries";
-import { analyticsFailure, type AnalyticsFailure } from "./errors";
+import { analyticsFailure, guardAll, type AnalyticsFailure, type Guarded } from "./errors";
 import type { SalesRow } from "./store";
 
 const PREPARED_STATEMENTS = 64;
@@ -65,9 +65,7 @@ type TouchedResolution = {
   readonly overflow: boolean;
 };
 
-export type InventorySnapshot = {
-  readonly organizationId: string;
-  readonly stamp: InventoryStamp;
+type SnapshotReads = {
   readonly productCount: () => number;
   readonly productPage: (after: string, limit: number) => ReadonlyArray<InsightsProductFact>;
   readonly productsByIds: (ids: ReadonlyArray<string>) => ReadonlyArray<InsightsProductFact>;
@@ -81,6 +79,11 @@ export type InventorySnapshot = {
   readonly sales: (range: SalesDays, productIds?: ReadonlyArray<string>) => ReadonlyArray<SalesRow>;
   readonly resolveTouched: (keys: ReadonlyArray<string>, maxProducts: number) => TouchedResolution;
 };
+
+export type InventorySnapshot = {
+  readonly organizationId: string;
+  readonly stamp: InventoryStamp;
+} & Guarded<SnapshotReads>;
 
 export type InventorySource = {
   readonly snapshot: <A, E, R>(
@@ -232,9 +235,7 @@ const makeSnapshot = (prepare: (sql: string) => StatementSync): InventorySnapsho
   const state = decodeState(all(statements.stamp)[0]);
   const organizationId = state.organizationId;
   const ids = (values: ReadonlyArray<string>) => JSON.stringify(values);
-  return {
-    organizationId,
-    stamp: { generation: String(state.generation), version: state.version },
+  const reads: SnapshotReads = {
     productCount: () =>
       Number(all(statements.productCount, { organization: organizationId })[0]?.["n"] ?? 0),
     productPage: (after, limit) =>
@@ -342,6 +343,11 @@ const makeSnapshot = (prepare: (sql: string) => StatementSync): InventorySnapsho
       }
       return { productIds, unresolved, overflow };
     },
+  };
+  return {
+    organizationId,
+    stamp: { generation: String(state.generation), version: state.version },
+    ...guardAll(reads),
   };
 };
 

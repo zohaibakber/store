@@ -6,7 +6,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  decodeProductId,
   RESTOCK_VIEWS,
   type InsightsSummary,
   type ProductInsight,
@@ -119,7 +118,7 @@ const useOrderSelection = () => {
 };
 
 const draftLineOf = (insight: ProductInsight): DraftLine => ({
-  productId: decodeProductId(insight.productId),
+  productId: insight.productId,
   name: insight.name,
   quantity: insight.order?.quantity ?? 1,
   quantityType: insight.tracksPacks ? "pack" : "unit",
@@ -174,7 +173,7 @@ const columns = columnHelper.columns([
             <Link
               className="font-medium outline-none hover:underline focus-visible:underline"
               onClick={(event) => event.stopPropagation()}
-              params={{ productId: decodeProductId(row.original.productId) }}
+              params={{ productId: row.original.productId }}
               title={row.original.name}
               to="/products/$productId"
             >
@@ -404,13 +403,13 @@ function RestockBody({
         onRowClick={(row) =>
           navigate({
             to: "/products/$productId",
-            params: { productId: decodeProductId(row.original.productId) },
+            params: { productId: row.original.productId },
           })
         }
         onRowPreload={(row) =>
           void router.preloadRoute({
             to: "/products/$productId",
-            params: { productId: decodeProductId(row.original.productId) },
+            params: { productId: row.original.productId },
           })
         }
         className="gap-3"

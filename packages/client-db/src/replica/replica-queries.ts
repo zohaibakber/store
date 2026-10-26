@@ -4,6 +4,7 @@ import {
   INSIGHTS_ON_ORDER_STATUSES,
   type InsightsProductFact,
 } from "@store/contracts";
+import { CategoryId, ProductId } from "@store/contracts/ids";
 import {
   categories,
   invoiceItems,
@@ -100,9 +101,9 @@ export const productFacts = ({
     .orderBy(products.id);
 
 export const ProductFactRow = Schema.Struct({
-  id: Schema.String,
+  id: ProductId,
   name: Schema.String,
-  categoryId: Schema.String,
+  categoryId: CategoryId,
   categoryName: Schema.NullOr(Schema.String),
   tracksPacks: Schema.Number,
   unitsPerPack: Schema.Number,
@@ -140,7 +141,7 @@ export const batchFacts = ({ organization, where }: FactScope = {}) =>
     .orderBy(visibleBatches.productId, visibleBatches.expiresAt);
 
 export const BatchFactRow = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   batchNumber: Schema.NullOr(Schema.String),
   packQuantity: Schema.Number,
   unitQuantity: Schema.Number,
@@ -172,7 +173,7 @@ export const onOrderFacts = ({ organization, where }: FactScope = {}) =>
     .orderBy(purchaseOrderItems.productId);
 
 export const OnOrderFactRow = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   units: Schema.Number,
 });
 
@@ -269,7 +270,7 @@ export const productDaySales = (
 };
 
 export const SaleFactRow = Schema.Struct({
-  productId: Schema.String,
+  productId: ProductId,
   day: Schema.Number,
   units: Schema.Number,
   revenue: Schema.Number,

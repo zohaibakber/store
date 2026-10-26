@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 
+import { ProductId } from "../ids";
 import { CommandStatus } from "../sync/replica-model";
 import { SyncEntity } from "../sync/schema";
 import { MAX_REJECTED_ACTIVITY_ROWS, MAX_REJECTED_COMMAND_TARGETS } from "./limits";
@@ -37,7 +38,7 @@ export const RejectedCommand = Schema.Struct({
   targets: Schema.Array(RejectedCommandTarget).check(
     Schema.isMaxLength(MAX_REJECTED_COMMAND_TARGETS),
   ),
-  productId: Schema.NullOr(Schema.String),
+  productId: Schema.NullOr(ProductId),
 });
 export type RejectedCommand = typeof RejectedCommand.Type;
 

@@ -18,6 +18,7 @@ import {
   type RestockPageRequest,
   type StockPolicy,
 } from "@store/contracts";
+import type { ProductId } from "@store/contracts/ids";
 import type { InsightsChange, ReadFailure, Stamp } from "@store/contracts/replica";
 import {
   analyzeInsights,
@@ -37,6 +38,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
+import type { AnalyticsFailure } from "../analytics/errors";
 import type { AnalyticsStore } from "../analytics/store";
 import { readFailure } from "../store/failures";
 import { readInsightsFacts, readReplicaStamp } from "./facts";
@@ -138,7 +140,7 @@ const summaryOf = ({ report, run }: ComputedReport): InsightsSummary => {
 
 const productsOf = (
   { report, run }: ComputedReport,
-  ids: ReadonlyArray<string>,
+  ids: ReadonlyArray<ProductId>,
 ): ProductInsightsRead => {
   const wanted = new Set(ids);
   const found = new Map(
@@ -214,7 +216,7 @@ export class InsightsReports extends Context.Service<
     readonly summary: (context: InsightsContext) => Effect.Effect<InsightsSummaryRead, ReadFailure>;
     readonly products: (
       context: InsightsContext,
-      ids: ReadonlyArray<string>,
+      ids: ReadonlyArray<ProductId>,
     ) => Effect.Effect<ProductInsightsRead, ReadFailure>;
     readonly restockPage: (
       context: InsightsContext,
@@ -224,23 +226,24 @@ export class InsightsReports extends Context.Service<
   }
 >()("@store/client-db/InsightsReports") {
   static readonly layerAnalytics = ({ store, observe, changes }: AnalyticsRuns) => {
-    const stored = <A>(read: () => A) => Effect.try({ try: read, catch: readFailure });
+    const stored = <A>(read: Effect.Effect<A, AnalyticsFailure>) =>
+      Effect.mapError(read, (failure) => readFailure(failure.cause ?? failure));
     return Layer.succeed(
       InsightsReports,
       InsightsReports.of({
         summary: Effect.fn("InsightsReports.summary")(function* (context) {
           const status = yield* observe(context);
-          const published = yield* stored(() => store.published());
+          const published = yield* stored(store.published());
           return { summary: published?.summary ?? null, status };
         }),
         products: Effect.fn("InsightsReports.products")(function* (context, ids) {
           const status = yield* observe(context);
-          const found = yield* stored(() => store.products(ids));
+          const found = yield* stored(store.products(ids));
           return { run: found.run ?? null, insights: found.insights, status };
         }),
         restockPage: Effect.fn("InsightsReports.restockPage")(function* (context, request) {
           const status = yield* observe(context);
-          const page = yield* stored(() => store.restockPage(request));
+          const page = yield* stored(store.restockPage(request));
           return page === undefined
             ? { run: null, rows: [], nextCursor: null, total: 0, cursorExpired: false, status }
             : { ...page, status };
