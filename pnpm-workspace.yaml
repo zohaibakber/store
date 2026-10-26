@@ -7,14 +7,16 @@ catalog:
   "@effect/platform-browser": 4.0.6
   "@effect/platform-bun": 4.0.6
   "@effect/platform-node": 4.0.6
+  "@alchemy.run/cloudflare": 2.0.0-beta.84
+  "@alchemy.run/drizzle": 2.0.0-beta.84
+  "@alchemy.run/github": 2.0.0-beta.84
   "@effect/sql-d1": 4.0.6
-  "@effect/sql-pg": 4.0.6
   "@effect/sql-sqlite-do": 4.0.6
   "@effect/sql-sqlite-node": 4.0.6
   "@effect/vitest": 4.0.6
-  alchemy: 2.0.0-beta.83
-  drizzle-kit: 1.0.0-rc.5-ab785fc
-  drizzle-orm: 1.0.0-rc.5-ab785fc
+  alchemy: 2.0.0-beta.84
+  drizzle-kit: 1.0.0-rc.5
+  drizzle-orm: 1.0.0-rc.5
   effect: 4.0.6
   typescript: 7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
@@ -22,22 +24,19 @@ catalog:
   vitest: 5.0.5
 
 overrides:
-  "@cloudflare/workers-types": 5.20261023.1
+  "@cloudflare/workers-types": 5.20261026.1
   "@effect/atom-react": 4.0.6
   "@effect/platform-browser": 4.0.6
   "@effect/platform-bun": 4.0.6
   "@effect/platform-node": 4.0.6
   "@effect/platform-node-shared": 4.0.6
   "@effect/sql-d1": 4.0.6
-  "@effect/sql-libsql": 4.0.6
-  "@effect/sql-pg": 4.0.6
   "@effect/sql-sqlite-do": 4.0.6
   "@effect/sql-sqlite-node": 4.0.6
-  "@effect/sql-sqlite-wasm": 4.0.6
   "@effect/vitest": 4.0.6
   effect: 4.0.6
-  drizzle-orm: 1.0.0-rc.5-ab785fc
-  uuid: 11.1.1
+  drizzle-kit: "catalog:"
+  drizzle-orm: "catalog:"
   valibot: 1.5.0
   vite@*: "catalog:"
   vitest@*: "catalog:"
@@ -51,77 +50,17 @@ allowBuilds:
   workerd: true
 
 minimumReleaseAgeExclude:
-  - "@effect/platform-bun@4.0.6"
-  - "@effect/platform-node-shared@4.0.6"
-  - "@effect/platform-node@4.0.6"
-  - "@effect/sql-d1@4.0.6"
-  - "@effect/sql-pg@4.0.6"
-  - "@effect/sql-sqlite-node@4.0.6"
-  - "@effect/sql-sqlite-do@4.0.6"
-  - "@effect/vitest@4.0.6"
-  - effect@4.0.6
-  - alchemy@2.0.0-beta.83
-  - "@cloudflare/workers-types@5.20261023.1"
-  - "@effect/atom-react@4.0.6"
-  - "@effect/platform-browser@4.0.6"
-  - "@oxlint/binding-android-arm-eabi@1.86.0"
-  - "@oxlint/binding-android-arm64@1.86.0"
-  - "@oxlint/binding-darwin-arm64@1.86.0"
-  - "@oxlint/binding-darwin-x64@1.86.0"
-  - "@oxlint/binding-freebsd-x64@1.86.0"
-  - "@oxlint/binding-linux-arm-gnueabihf@1.86.0"
-  - "@oxlint/binding-linux-arm-musleabihf@1.86.0"
-  - "@oxlint/binding-linux-arm64-gnu@1.86.0"
-  - "@oxlint/binding-linux-arm64-musl@1.86.0"
-  - "@oxlint/binding-linux-ppc64-gnu@1.86.0"
-  - "@oxlint/binding-linux-riscv64-gnu@1.86.0"
-  - "@oxlint/binding-linux-riscv64-musl@1.86.0"
-  - "@oxlint/binding-linux-s390x-gnu@1.86.0"
-  - "@oxlint/binding-linux-x64-gnu@1.86.0"
-  - "@oxlint/binding-linux-x64-musl@1.86.0"
-  - "@oxlint/binding-openharmony-arm64@1.86.0"
-  - "@oxlint/binding-win32-arm64-msvc@1.86.0"
-  - "@oxlint/binding-win32-ia32-msvc@1.86.0"
-  - "@oxlint/binding-win32-x64-msvc@1.86.0"
-  - "@oxlint/plugins@1.86.0"
-  - "@voidzero-dev/vite-plus-core@1.0.0"
-  - "@voidzero-dev/vite-plus-darwin-arm64@1.0.0"
-  - "@voidzero-dev/vite-plus-darwin-x64@1.0.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.0.0"
-  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.0.0"
-  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.0.0"
-  - "@voidzero-dev/vite-plus-linux-x64-musl@1.0.0"
-  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.0.0"
-  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.0.0"
-  - oxlint@1.86.0
-  - vite-plus@1.0.0
-  - "@alchemy.run/cloudflare-runtime@2.0.0-beta.80"
-  - "@alchemy.run/floci@2.0.0-beta.80"
-  - "@alchemy.run/node-utils@2.0.0-beta.80"
-  - "@distilled.cloud/acme@1.0.0-rc.13"
-  - "@distilled.cloud/aws@1.0.0-rc.13"
-  - "@distilled.cloud/axiom@1.0.0-rc.13"
-  - "@distilled.cloud/cloudflare@1.0.0-rc.13"
-  - "@distilled.cloud/core@1.0.0-rc.13"
-  - "@distilled.cloud/doppler@1.0.0-rc.13"
-  - "@distilled.cloud/fly-io@1.0.0-rc.13"
-  - "@distilled.cloud/gcp@1.0.0-rc.13"
-  - "@distilled.cloud/hetzner@1.0.0-rc.13"
-  - "@distilled.cloud/infisical@1.0.0-rc.13"
-  - "@distilled.cloud/neon@1.0.0-rc.13"
-  - "@distilled.cloud/planetscale@1.0.0-rc.13"
-  - "@distilled.cloud/prisma@1.0.0-rc.13"
-  - "@distilled.cloud/railway@1.0.0-rc.13"
-  - "@distilled.cloud/stripe@1.0.0-rc.13"
-  - "@distilled.cloud/zerossl@1.0.0-rc.13"
+  - "@cloudflare/workers-types@5.20261026.1"
 
-patchedDependencies:
-  alchemy: patches/alchemy.patch
-  drizzle-orm@1.0.0-rc.5-ab785fc: patches/drizzle-orm@1.0.0-rc.5-ab785fc.patch
 peerDependencyRules:
   allowAny:
     - vite
     - vitest
   allowedVersions:
+    "@alchemy.run/drizzle>drizzle-kit": 1.0.0-rc.5
+    "@alchemy.run/drizzle>drizzle-orm": 1.0.0-rc.5
     vite: "*"
     vitest: "*"
+
+patchedDependencies:
+  "@alchemy.run/cloudflare@2.0.0-beta.84": patches/@alchemy.run__cloudflare@2.0.0-beta.84.patch

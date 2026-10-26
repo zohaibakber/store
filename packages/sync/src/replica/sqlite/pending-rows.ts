@@ -191,10 +191,10 @@ export const hasPendingProjection = Effect.fn("ReplicaPending.hasPendingProjecti
   tx: ReplicaDb,
 ) {
   const held = yield* tx
-    .select({ held: sql`1` })
+    .select({ held: sql`1`.as("held") })
     .from(pendingRowMarks)
-    .unionAll(tx.select({ held: sql`1` }).from(pendingRowJournal))
-    .unionAll(tx.select({ held: sql`1` }).from(stockOverlays))
+    .unionAll(tx.select({ held: sql`1`.as("held") }).from(pendingRowJournal))
+    .unionAll(tx.select({ held: sql`1`.as("held") }).from(stockOverlays))
     .limit(1)
     .get();
   return held !== undefined;

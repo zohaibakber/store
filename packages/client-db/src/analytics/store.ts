@@ -44,7 +44,6 @@ import {
   ne,
   or,
   Param,
-  Placeholder,
   sql,
   type Assume,
   type InferSelectModel,
@@ -206,15 +205,15 @@ const notInJson = (column: SQLiteColumn, values: ReadonlyArray<string | number>)
 
 const total = (column: SQLiteColumn) => sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
 
-const placeholderKeys = (query: Query) =>
+const placeholderKeys = (query: Query, placeholders: ReadonlyMap<unknown, string>) =>
   query.params.map((param) => {
     if (
       is(param, Param) &&
-      is(param.value, Placeholder) &&
       param.codec === undefined &&
       isNoop(param.encoder.mapToDriverValue) === true
     ) {
-      return param.value.name;
+      const key = placeholders.get(param.value);
+      if (key !== undefined) return key;
     }
     throw new Error("Analytics upserts bind only placeholders of unencoded columns.");
   });
@@ -225,13 +224,12 @@ const upsert = <T extends SQLiteTable>(
   target: ReadonlyArray<SQLiteColumn>,
 ) => {
   const columns = Object.entries(getTableColumns(table));
+  const placeholders = columns.map(([key]) => [key, sql.placeholder(key)] as const);
   const query = db.orm
     .insert(table)
     .values(
       // SAFETY: every column of the table is bound to the placeholder named after its key.
-      Object.fromEntries(
-        columns.map(([key]) => [key, sql.placeholder(key)]),
-      ) as SQLiteInsertValue<T>,
+      Object.fromEntries(placeholders) as SQLiteInsertValue<T>,
     )
     .onConflictDoUpdate({
       target: [...target],
@@ -244,7 +242,10 @@ const upsert = <T extends SQLiteTable>(
     })
     .toSQL();
   const statement = db.statement(query.sql);
-  const keys = placeholderKeys(query);
+  const keys = placeholderKeys(
+    query,
+    new Map(placeholders.map(([key, placeholder]) => [placeholder, key])),
+  );
   return (row: InferSelectModel<T>) => {
     const values: Record<string, SQLInputValue> = row;
     statement.run(...keys.map((key) => values[key] ?? null));

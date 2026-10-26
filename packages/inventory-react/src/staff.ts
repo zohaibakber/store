@@ -62,8 +62,6 @@ export const makeStaffCommands = (links: InventoryLinks) => {
   };
 };
 
-export type StaffCommands = ReturnType<typeof makeStaffCommands>;
-
 export const useStaffState = (): StaffState | undefined =>
   Option.getOrUndefined(useAtomValue(useCatalogReplica().atoms.staff));
 

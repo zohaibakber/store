@@ -16,7 +16,7 @@
     "./replica/migrations": "./src/replica/migrations.gen.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && node scripts/drizzle-kit.cjs check --config drizzle.auth.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.replica.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.analytics.config.ts && node scripts/drizzle-kit.cjs check --config drizzle.authority.config.ts && node scripts/check-schema-drift.mjs",
+    "check": "tsc --noEmit && node scripts/build-migration-bundle.mjs --check && drizzle-kit check --config drizzle.auth.config.ts && drizzle-kit check --config drizzle.replica.config.ts && drizzle-kit check --config drizzle.analytics.config.ts && drizzle-kit check --config drizzle.authority.config.ts && node scripts/check-schema-drift.mjs",
     "db:bundle": "node scripts/build-migration-bundle.mjs"
   },
   "dependencies": {
@@ -24,6 +24,8 @@
     "nanoid": "^6.0.2"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "catalog:",
+    "@alchemy.run/drizzle": "catalog:",
     "@types/node": "^26.6.5",
     "alchemy": "catalog:",
     "drizzle-kit": "catalog:",

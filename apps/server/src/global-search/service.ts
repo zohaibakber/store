@@ -1,7 +1,7 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import type { GlobalProductSearchResult } from "@store/contracts";
 import { PageImages, searchGlobalProducts, WebSearch } from "@store/services";
 import type { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import { LanguageModel } from "effect/ai/LanguageModel";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";

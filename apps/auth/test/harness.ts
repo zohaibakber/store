@@ -1,3 +1,4 @@
+import { RateLimitError } from "@alchemy.run/cloudflare";
 import {
   AccessTokenService,
   EmailAddress,
@@ -11,7 +12,6 @@ import {
   type UserId,
 } from "@store/auth";
 import { RuntimeContext } from "alchemy";
-import { RateLimitError } from "alchemy/Cloudflare";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

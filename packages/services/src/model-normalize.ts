@@ -1,7 +1,8 @@
 import * as Predicate from "effect/Predicate";
 
-import type { ModelScalar } from "./model-json";
 import { parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
+
+type ModelScalar = string | number | boolean | null;
 
 export const nullableText = (
   value: ModelScalar | undefined,

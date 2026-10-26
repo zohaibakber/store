@@ -1,10 +1,10 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import { describe, expect, it } from "@effect/vitest";
 import {
   decodeSyncLiveServerFrame,
   LIVE_SOCKET_CLOSE,
   LIVE_SOCKET_PROTOCOL,
 } from "@store/contracts";
-import * as Cloudflare from "alchemy/Cloudflare";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";

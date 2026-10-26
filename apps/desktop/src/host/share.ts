@@ -25,10 +25,3 @@ export const PrintOutcome = Schema.Union([
   Schema.TaggedStruct("failed", { message: Schema.String }),
 ]);
 export type PrintOutcome = typeof PrintOutcome.Type;
-
-export type ShareBridge = {
-  readonly openExternal: (url: string) => Promise<void>;
-  readonly copyText: (text: string) => Promise<void>;
-  readonly savePdf: (fileStem: string) => Promise<SavePdfOutcome>;
-  readonly print: (page: PrintPage) => Promise<PrintOutcome>;
-};

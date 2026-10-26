@@ -31,5 +31,4 @@ export type ComparisonScalar = typeof ComparisonScalar.Type;
 export const ComparisonList = Schema.Array(ComparisonScalar);
 export type ComparisonList = typeof ComparisonList.Type;
 
-export const decodeSqliteResultRow = Schema.decodeUnknownSync(SqliteResultRow);
 export const decodeReplicaStampRow = Schema.decodeUnknownSync(ReplicaStampRow);

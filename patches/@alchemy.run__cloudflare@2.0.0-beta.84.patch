@@ -1,0 +1,25 @@
+diff --git a/lib/Workers/WorkerBridge.js b/lib/Workers/WorkerBridge.js
+index b50d4560c28db7e78a2ae9de5888caa95ae0cc76..3259cdda089a69726acd02674ac0ca5d93fa6eda 100644
+--- a/lib/Workers/WorkerBridge.js
++++ b/lib/Workers/WorkerBridge.js
+@@ -27,6 +27,7 @@ import { ExportedHandlerMethods, WorkerEnvironment, WorkerExecutionContext, defe
+  */
+ export const makeWorkerBridge = (Base, { stack, entrypoint }) => {
+     const { build } = getWorkerExport({ entrypoint, stack, exportName: "default" });
++    build(() => undefined).catch(() => undefined);
+     const processEvent = (makeEffect, ctx, env, onExit) => {
+         const scope = Scope.makeUnsafe();
+         return build((promise) => ctx.waitUntil(promise))
+diff --git a/src/Workers/WorkerBridge.ts b/src/Workers/WorkerBridge.ts
+index 35e68d2e9a8c56fa84e7d2eeb3bd0c18030d9c66..fdafe0e5c7ca5d7b81a377bb6e7db634109a86f2 100644
+--- a/src/Workers/WorkerBridge.ts
++++ b/src/Workers/WorkerBridge.ts
+@@ -63,6 +63,8 @@ export const makeWorkerBridge = (
+ ) => {
+   const { build } = getWorkerExport({ entrypoint, stack, exportName: "default" });
+ 
++  build(() => undefined).catch(() => undefined);
++
+   const processEvent = <T>(
+     makeEffect: (
+       build: WorkerBuild,

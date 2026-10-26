@@ -1,3 +1,4 @@
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   LIVE_SOCKET_CLOSE,
   LIVE_SOCKET_PING,
@@ -5,7 +6,6 @@ import {
   LIVE_SOCKET_PROTOCOL,
 } from "@store/contracts";
 import type { RuntimeContext } from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as HttpBody from "effect/http/HttpBody";
