@@ -207,6 +207,12 @@ export default defineConfig({
         },
       },
       {
+        files: ["apps/desktop/src/mount-app.tsx", "packages/inventory-react/src/**/*.{ts,tsx}"],
+        rules: {
+          "anti-slop/no-registry-context": "off",
+        },
+      },
+      {
         files: ["packages/workspace/src/session-http.ts"],
         rules: {
           "anti-slop/tagged-error-tag-matches-class": "off",
@@ -242,9 +248,11 @@ export default defineConfig({
       "anti-slop/no-effect-run-outside-edge": "error",
       "anti-slop/no-error-message-from-cause": "error",
       "anti-slop/no-global-crypto": "error",
+      "anti-slop/no-host-policy-call-in-component": "error",
       "anti-slop/no-node-fs-in-effect": "error",
       "anti-slop/no-number-is-safe-integer": "error",
       "anti-slop/no-plain-error-in-effect": "error",
+      "anti-slop/no-registry-context": "error",
       "anti-slop/no-yield-effect-fail": "error",
       "anti-slop/prefer-tagged-struct": "error",
       "anti-slop/service-id-shape": "error",

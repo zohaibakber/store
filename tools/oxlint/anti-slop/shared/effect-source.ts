@@ -30,13 +30,24 @@ export function isEffectSpecifier(specifier: string): boolean {
   return specifier === "effect" || specifier.startsWith("effect/") || specifier.startsWith("@effect/");
 }
 
-/** Reports whether a program imports from effect or an @effect package. */
+/** Reports whether a program has a value import from effect or an @effect package; type-only imports do not count. */
 export function importsEffect(program: ESTree.Program): boolean {
   return program.body.some(
     (statement) =>
       statement.type === "ImportDeclaration" &&
       typeof statement.source.value === "string" &&
-      isEffectSpecifier(statement.source.value),
+      isEffectSpecifier(statement.source.value) &&
+      !isTypeOnlyImport(statement),
+  );
+}
+
+function isTypeOnlyImport(declaration: ESTree.ImportDeclaration): boolean {
+  if (declaration.importKind === "type") return true;
+  return (
+    declaration.specifiers.length > 0 &&
+    declaration.specifiers.every(
+      (specifier) => specifier.type === "ImportSpecifier" && specifier.importKind === "type",
+    )
   );
 }
 

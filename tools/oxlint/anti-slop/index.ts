@@ -21,9 +21,11 @@ import { noDateNowInEffectRule } from "./rules/no-date-now-in-effect.ts";
 import { noEffectRunOutsideEdgeRule } from "./rules/no-effect-run-outside-edge.ts";
 import { noErrorMessageFromCauseRule } from "./rules/no-error-message-from-cause.ts";
 import { noGlobalCryptoRule } from "./rules/no-global-crypto.ts";
+import { noHostPolicyCallInComponentRule } from "./rules/no-host-policy-call-in-component.ts";
 import { noNodeFsInEffectRule } from "./rules/no-node-fs-in-effect.ts";
 import { noNumberIsSafeIntegerRule } from "./rules/no-number-is-safe-integer.ts";
 import { noPlainErrorInEffectRule } from "./rules/no-plain-error-in-effect.ts";
+import { noRegistryContextRule } from "./rules/no-registry-context.ts";
 import { noYieldEffectFailRule } from "./rules/no-yield-effect-fail.ts";
 import { preferTaggedStructRule } from "./rules/prefer-tagged-struct.ts";
 import { serviceIdShapeRule } from "./rules/service-id-shape.ts";
@@ -54,9 +56,11 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-effect-run-outside-edge": noEffectRunOutsideEdgeRule,
 		"no-error-message-from-cause": noErrorMessageFromCauseRule,
 		"no-global-crypto": noGlobalCryptoRule,
+		"no-host-policy-call-in-component": noHostPolicyCallInComponentRule,
 		"no-node-fs-in-effect": noNodeFsInEffectRule,
 		"no-number-is-safe-integer": noNumberIsSafeIntegerRule,
 		"no-plain-error-in-effect": noPlainErrorInEffectRule,
+		"no-registry-context": noRegistryContextRule,
 		"no-yield-effect-fail": noYieldEffectFailRule,
 		"prefer-tagged-struct": preferTaggedStructRule,
 		"service-id-shape": serviceIdShapeRule,
