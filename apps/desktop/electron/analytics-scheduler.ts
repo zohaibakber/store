@@ -4,6 +4,7 @@ import type { AnalyticsStore, InventorySource } from "@store/client-db/node-anal
 import {
   insightsDayOf,
   stockPolicyVersion,
+  type AnalyticsRun,
   type AnalyticsStatus,
   type InsightsContext,
 } from "@store/contracts";
@@ -43,6 +44,7 @@ type Phase = Data.TaggedEnum<{
 const Phase = Data.taggedEnum<Phase>();
 
 type SchedulerState = {
+  readonly published: AnalyticsRun | undefined;
   readonly desired: InsightsContext | undefined;
   readonly pending: NoticeAccumulator | undefined;
   readonly verify: boolean;
@@ -73,10 +75,11 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
   readonly source: InventorySource;
   readonly store: AnalyticsStore;
 }) {
-  const latestRun = deps.store.publishedRun().pipe(Effect.orDie);
+  const firstRun = yield* deps.store.publishedRun();
   const wake = yield* Queue.dropping<void>(1);
   const journal = yield* makeChangeJournal();
   const state = yield* SynchronizedRef.make<SchedulerState>({
+    published: firstRun,
     desired: undefined,
     pending: undefined,
     verify: true,
@@ -84,24 +87,22 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
     phase: Phase.Idle(),
   });
   const event = yield* SubscriptionRef.make<InsightsChange>({
-    revision: (yield* latestRun)?.revision ?? 0,
+    revision: firstRun?.revision ?? 0,
     state: "idle",
     progress: null,
   });
 
-  const publishEvent = Effect.fn("AnalyticsScheduler.publishEvent")(function* (phase: Phase) {
-    const run = yield* latestRun;
-    yield* SubscriptionRef.set(event, {
-      revision: run?.revision ?? 0,
-      state: stateOf(phase, run !== undefined),
+  const publishEvent = ({ published, phase }: SchedulerState) =>
+    SubscriptionRef.set(event, {
+      revision: published?.revision ?? 0,
+      state: stateOf(phase, published !== undefined),
       progress: progressOf(phase),
     });
-  });
 
   const modifyAndPublish = <B>(f: (current: SchedulerState) => readonly [B, SchedulerState]) =>
     SynchronizedRef.modifyEffect(state, (current) => {
       const result = f(current);
-      return publishEvent(result[1].phase).pipe(Effect.as(result));
+      return publishEvent(result[1]).pipe(Effect.as(result));
     });
 
   const transition = (f: (current: SchedulerState) => SchedulerState) =>
@@ -113,16 +114,14 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
       if (phase._tag !== "Running") return Effect.succeed(current);
       const step = total === 0 ? PROGRESS_STEPS : Math.floor((done * PROGRESS_STEPS) / total);
       const next = { ...current, phase: Phase.Running({ progress: { done, total }, step }) };
-      return step === phase.step
-        ? Effect.succeed(next)
-        : publishEvent(next.phase).pipe(Effect.as(next));
+      return step === phase.step ? Effect.succeed(next) : publishEvent(next).pipe(Effect.as(next));
     });
 
   const cleanup = Effect.fn("AnalyticsScheduler.cleanup")(function* () {
-    const run = yield* latestRun;
+    const { published } = yield* SynchronizedRef.get(state);
     yield* deps.store
       .discardSuperseded({
-        keepResults: run === undefined ? [] : [run.runId],
+        keepResults: published === undefined ? [] : [published.runId],
         keepWork: [],
         limit: CLEANUP_BATCH,
       })
@@ -174,6 +173,7 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
       ...current,
       failure: null,
       phase: Phase.Running({ progress: null, step: -1 }),
+      published: value.kind === "none" ? current.published : value.run,
       pending:
         value.kind !== "none" &&
         current.pending !== undefined &&
@@ -212,8 +212,7 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
   ).pipe(Effect.andThen(Queue.offer(wake, undefined)));
 
   yield* Effect.fn("AnalyticsScheduler.checkRollover")(function* () {
-    const context = (yield* SynchronizedRef.get(state)).desired;
-    const run = yield* latestRun;
+    const { desired: context, published: run } = yield* SynchronizedRef.get(state);
     const now = yield* Clock.currentTimeMillis;
     if (
       context !== undefined &&
@@ -227,8 +226,8 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
   const statusFor = Effect.fn("AnalyticsScheduler.statusFor")(function* (
     context: InsightsContext | undefined,
   ) {
-    const run = yield* latestRun;
     const current = yield* SynchronizedRef.get(state);
+    const run = current.published;
     const now = yield* Clock.currentTimeMillis;
     return {
       state: stateOf(current.phase, run !== undefined),
@@ -264,7 +263,7 @@ export const makeAnalyticsScheduler = Effect.fn("AnalyticsScheduler.make")(funct
         ...current,
         desired: context,
       }));
-      const run = yield* latestRun;
+      const run = before.published;
       const now = yield* Clock.currentTimeMillis;
       const stale =
         before.desired === undefined ||

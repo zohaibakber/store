@@ -11,7 +11,6 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -63,7 +62,7 @@ export class LicenceService extends Context.Service<
   static readonly layer = (options: {
     readonly directory: string;
     readonly trust: LicenceTrust;
-  }): Layer.Layer<LicenceService, never, FileSystem.FileSystem | Path.Path> =>
+  }): Layer.Layer<LicenceService, never, PrivateFiles | Path.Path> =>
     Layer.effect(
       LicenceService,
       Effect.gen(function* () {
@@ -180,5 +179,5 @@ export class LicenceService extends Context.Service<
           enter,
         });
       }),
-    ).pipe(Layer.provide(PrivateFiles.layer));
+    );
 }

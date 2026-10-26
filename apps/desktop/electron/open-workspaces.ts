@@ -6,6 +6,7 @@ import type { DeviceLabel } from "@store/contracts";
 import { ReplicaStorageError, ReplicaUnavailable, WorkspaceToken } from "@store/contracts/replica";
 import type { RequestError } from "@store/workspace";
 import * as Arr from "effect/Array";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -17,6 +18,7 @@ import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Latch from "effect/Latch";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import type * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
@@ -204,7 +206,9 @@ const forwardStream = <A, E>(
 ) =>
   stream.pipe(
     Stream.runForEach(forward),
-    Effect.catchCause((cause) => Effect.logWarning("OpenWorkspaces.forward_failed", cause)),
+    Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
+      Effect.logWarning("OpenWorkspaces.forward_failed", cause),
+    ),
     Effect.forkScoped,
   );
 
@@ -383,7 +387,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         yield* forwardStream(client.Commits(), analytics.notify);
         if (authority === "remote") {
           yield* pushAccessTokens(options.accessTokens, client).pipe(
-            Effect.catchCause((cause) =>
+            Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
               Effect.logWarning("OpenWorkspaces.access_tokens_failed", cause),
             ),
             Effect.forkScoped,

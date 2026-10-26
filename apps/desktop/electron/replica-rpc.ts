@@ -4,14 +4,9 @@ import {
   ImportId,
   ImportPartNumber,
   LicenceState,
-  LOCAL_ORGANIZATION_ID,
-  LOCAL_USER_ID,
-  OrganizationId,
   PartitionDigest,
   PositiveInt,
-  ReplicaId,
   ShopId,
-  UserId,
 } from "@store/contracts";
 import { Stamp, SyncHealth } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
@@ -21,6 +16,13 @@ import * as Struct from "effect/Struct";
 import * as Transferable from "effect/workers/Transferable";
 
 import { ReplicaFileRefused } from "../src/host/file-refusal";
+import {
+  LocalReplicaIdentity,
+  RemoteReplicaIdentity,
+  ReplicaOpenInput,
+} from "../src/host/shell-rpcs";
+
+export { ReplicaOpenInput };
 
 const PERMANENT_STREAMS = 2;
 const CONTROL_SLOTS = 8;
@@ -31,24 +33,6 @@ export const WORKER_RPC_CONCURRENCY =
 const READER_CONTROL_SLOTS = 2;
 const READER_FINITE_READS = 2;
 export const READER_RPC_CONCURRENCY = READER_CONTROL_SLOTS + READER_FINITE_READS;
-
-const MAX_IDENTIFIER_LENGTH = Schema.isMaxLength(200);
-
-const LocalReplicaIdentity = Schema.Struct({
-  authority: Schema.Literal("local"),
-  organizationId: Schema.Literal(LOCAL_ORGANIZATION_ID),
-  userId: Schema.Literal(LOCAL_USER_ID),
-  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
-});
-
-const RemoteReplicaIdentity = Schema.Struct({
-  authority: Schema.Literal("remote"),
-  organizationId: OrganizationId.check(MAX_IDENTIFIER_LENGTH),
-  userId: UserId.check(MAX_IDENTIFIER_LENGTH),
-  replicaId: ReplicaId.check(MAX_IDENTIFIER_LENGTH),
-});
-
-export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
 
 export type ReplicaAuthority = (typeof ReplicaOpenInput.Type)["authority"];
 

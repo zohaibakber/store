@@ -1,6 +1,3 @@
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
-import * as NodePath from "@effect/platform-node/NodePath";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -41,7 +38,7 @@ export class PrivateFiles extends Context.Service<
     readonly remove: (file: string) => Effect.Effect<void, PlatformError.PlatformError>;
   }
 >()("@store/desktop/PrivateFiles") {
-  static readonly layerWithPlatform = Layer.effect(
+  static readonly layer = Layer.effect(
     PrivateFiles,
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -83,9 +80,5 @@ export class PrivateFiles extends Context.Service<
 
       return PrivateFiles.of({ readBytes, readText, replace, replaceText, remove });
     }),
-  );
-
-  static readonly layer = PrivateFiles.layerWithPlatform.pipe(
-    Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
   );
 }
