@@ -1,58 +1,5 @@
 import * as Schema from "effect/Schema";
 
-import { PositiveInt } from "../schema-primitives";
-
-export const MAX_INVOICE_UPLOAD_FILES = 10;
-export const MAX_INVOICE_UPLOAD_BYTES = 20 * 1024 * 1024;
-
-export const invoiceUploadRejection = (
-  files: ReadonlyArray<{ readonly byteLength: number }>,
-): string | null => {
-  if (files.length === 0) return "Attach at least one invoice file.";
-  if (files.length > MAX_INVOICE_UPLOAD_FILES) {
-    return `Attach at most ${MAX_INVOICE_UPLOAD_FILES} invoice files.`;
-  }
-  const total = files.reduce((sum, file) => sum + file.byteLength, 0);
-  if (total > MAX_INVOICE_UPLOAD_BYTES) return "The attachments are too large.";
-  return null;
-};
-
-const nonNegativeInteger = (description: string) => Schema.Natural.annotate({ description });
-
-const positiveInteger = (description: string) => PositiveInt.annotate({ description });
-
-export const InvoiceExtractionLine = Schema.Struct({
-  name: Schema.String.annotate({ description: "Product name printed on the invoice line." }),
-  batchNumber: Schema.NullOr(Schema.String).annotate({
-    description: "Batch or lot number, or null when absent.",
-  }),
-  expiresAt: Schema.NullOr(Schema.String).annotate({
-    description: "Expiry date as DD-MM-YYYY, or null.",
-  }),
-  packQuantity: nonNegativeInteger("Whole packs received."),
-  unitQuantity: nonNegativeInteger("Loose units received beyond whole packs."),
-  unitsPerPack: positiveInteger("Units contained in one sealed pack."),
-  packPrice: Schema.NullOr(nonNegativeInteger("Price of one pack in the smallest currency unit.")),
-});
-export interface InvoiceExtractionLine extends Schema.Schema.Type<typeof InvoiceExtractionLine> {}
-
-export const InvoiceExtraction = Schema.Struct({
-  supplier: Schema.NullOr(Schema.String).annotate({
-    description: "Supplier or vendor name, or null.",
-  }),
-  invoiceNumber: Schema.NullOr(Schema.String).annotate({
-    description: "Invoice reference number, or null.",
-  }),
-  lines: Schema.Array(InvoiceExtractionLine).annotate({
-    description: "Received inventory lines.",
-  }),
-});
-export interface InvoiceExtraction extends Schema.Schema.Type<typeof InvoiceExtraction> {}
-
-export const invoiceExtractionJsonSchema = Schema.toJsonSchemaDocument(InvoiceExtraction, {
-  generateDescriptions: true,
-}).schema;
-
 export const MIN_GLOBAL_SEARCH_QUERY_LENGTH = 2;
 export const MAX_GLOBAL_SEARCH_QUERY_LENGTH = 80;
 export const MAX_GLOBAL_SEARCH_PRODUCTS = 8;

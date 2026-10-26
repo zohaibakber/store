@@ -188,7 +188,6 @@ export const electronAppHost = (source: Window): AppHost => {
         };
       },
     },
-    analyseInvoices: (files) => call((client) => client.AnalyseInvoices({ files })),
     searchGlobalProducts: (query) => call((client) => client.SearchGlobalProducts({ query })),
     shell: {
       onNewSale: (callback) =>

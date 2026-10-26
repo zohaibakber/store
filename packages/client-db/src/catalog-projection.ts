@@ -6,7 +6,6 @@ import {
   createdMutationMetadata,
   updatedMutationMetadata,
 } from "@store/contracts/catalog-rules";
-import { MAX_CATALOG_WRITE_ROWS, type CatalogRowWrite } from "@store/contracts/catalog-write";
 import {
   decodeBatchId,
   decodeCategoryId,
@@ -18,7 +17,6 @@ import type {
   CreateBatchInput,
   CreateCategoryInput,
   CreateProductInput,
-  ImportInventoryInput,
   UpdateBatchInput,
   UpdateCategoryInput,
   UpdateProductInput,
@@ -32,17 +30,10 @@ import {
   positiveField,
   requiredRow,
   type CatalogReadableCollection,
-  type CatalogWriteIds,
   type Projected,
   type ProjectionContext,
 } from "./projection-context";
 import type { BatchRow, CategoryRow, ProductRow } from "./rows";
-
-const CATALOG_IMPORT_ROWS_PER_LINE = 2;
-
-const CATALOG_IMPORT_LINES_PER_COMMAND = Math.floor(
-  MAX_CATALOG_WRITE_ROWS / CATALOG_IMPORT_ROWS_PER_LINE,
-);
 
 export type CatalogProjectionTables = {
   readonly batches: CatalogReadableCollection<BatchRow>;
@@ -51,12 +42,6 @@ export type CatalogProjectionTables = {
 };
 
 export type CatalogProjectionContext = ProjectionContext<CatalogProjectionTables>;
-
-type CatalogImportProjection = {
-  readonly chunks: ReadonlyArray<ReadonlyArray<CatalogRowWrite>>;
-  readonly createdProducts: number;
-  readonly createdBatches: number;
-};
 
 const nonNegativeQuantity = (quantity: number, label: string, field?: string) =>
   naturalField(quantity, `${label} must be a non-negative whole number.`, field);
@@ -397,93 +382,5 @@ export const projectUpdateBatch = (
         },
       ],
       row,
-    };
-  });
-
-type CatalogImportContext = {
-  readonly ids: CatalogWriteIds;
-  readonly tables: CatalogProjectionTables;
-};
-
-export const projectImportInventory = (
-  context: CatalogImportContext,
-  input: ImportInventoryInput,
-): Result.Result<CatalogImportProjection, CatalogRefusal> =>
-  Result.gen(function* () {
-    if (input.lines.length === 0)
-      return yield* Result.fail(
-        new CatalogRefusal({
-          reason: "emptyCommand",
-          message: "Add at least one line to the import.",
-        }),
-      );
-    const category = yield* activeCategory(context.tables, input.categoryId);
-    const chunks: Array<Array<CatalogRowWrite>> = [];
-    let createdProducts = 0;
-    let current: Array<CatalogRowWrite> = [];
-
-    for (const line of input.lines) {
-      if (current.length >= CATALOG_IMPORT_LINES_PER_COMMAND * CATALOG_IMPORT_ROWS_PER_LINE) {
-        chunks.push(current);
-        current = [];
-      }
-      const name = line.name.trim();
-      if (!name)
-        return yield* Result.fail(
-          new CatalogRefusal({
-            reason: "invalidInput",
-            message: "Every imported line needs a product name.",
-          }),
-        );
-      const packQuantity = line.packQuantity ?? 0;
-      const unitQuantity = line.unitQuantity ?? 0;
-      yield* nonNegativeQuantity(packQuantity, "Pack quantity");
-      yield* nonNegativeQuantity(unitQuantity, "Unit quantity");
-      const existing = line.productId
-        ? yield* requiredRow(context.tables.products.state.get(line.productId), "This product")
-        : undefined;
-      const productId = existing ? existing.id : decodeProductId(context.ids.rowId());
-      if (!existing) createdProducts += 1;
-      current.push({
-        entity: "product",
-        action: "upsert",
-        id: productId,
-        expectedRowVersion: existing ? existing.rowVersion : null,
-        row: {
-          ...(existing ? productFieldsOf(existing) : null),
-          name,
-          categoryId: existing?.categoryId ?? category.id,
-          aisle: existing?.aisle ?? null,
-          composition: existing?.composition ?? null,
-          strength: existing?.strength ?? null,
-          unitsPerPack: line.unitsPerPack ?? existing?.unitsPerPack ?? 1,
-          purchasePrice: line.purchasePrice ?? existing?.purchasePrice ?? null,
-          retailPrice: existing?.retailPrice ?? null,
-          unitPrice: existing?.unitPrice ?? null,
-          visible: existing?.visible ?? true,
-        },
-      });
-      current.push({
-        entity: "batch",
-        action: "upsert",
-        id: decodeBatchId(context.ids.rowId()),
-        expectedRowVersion: null,
-        movementId: context.ids.rowId(),
-        note: null,
-        row: {
-          productId,
-          batchNumber: line.batchNumber?.trim() || null,
-          expiresAt: line.expiresAt ?? null,
-          packQuantity,
-          unitQuantity,
-        },
-      });
-    }
-    if (current.length > 0) chunks.push(current);
-
-    return {
-      chunks,
-      createdProducts,
-      createdBatches: input.lines.length,
     };
   });

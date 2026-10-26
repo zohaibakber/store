@@ -1,5 +1,5 @@
 import { WorkspaceSnapshot } from "@store/contracts";
-import { BadRequest, globalSearchGroup, uploadsGroup } from "@store/contracts/server-api";
+import { BadRequest, globalSearchGroup } from "@store/contracts/server-api";
 import { syncGroup } from "@store/contracts/sync/api";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
@@ -38,7 +38,6 @@ const auth = HttpApiGroup.make("auth").add(
 export const StoreApi = HttpApi.make("StoreApi").add(
   system,
   auth,
-  uploadsGroup.middleware(OrganizationAuth),
   globalSearchGroup.middleware(OrganizationAuth).middleware(GlobalSearchPayloadErrors),
   syncGroup.middleware(OrganizationAuth),
 );

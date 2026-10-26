@@ -14,19 +14,17 @@ import { AccessTokens } from "../auth/access-tokens";
 import { OrganizationAuthLive } from "../auth/organization";
 import { GlobalSearch } from "../global-search/service";
 import { OrganizationAuthority } from "../inventory/organization-authority";
-import { InvoiceExtraction } from "../invoice-extraction/service";
 import { LiveFanout } from "../live/fanout";
 import { OrgHubs } from "../live/org-hubs";
 import { LiveRoutes } from "../live/route";
 import { GlobalSearchHandlers } from "../routes/global-search";
 import { SyncHandlers } from "../routes/sync";
-import { UploadHandlers } from "../routes/uploads";
 import { buildOncePerIsolate, workerRuntimeServices } from "../runtime/isolate";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
 import { AuthHandlers, SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(UploadHandlers, GlobalSearchHandlers, SyncHandlers).pipe(
+const ProtectedHandlers = Layer.mergeAll(GlobalSearchHandlers, SyncHandlers).pipe(
   Layer.provide(OrganizationAuthLive),
 );
 
@@ -81,7 +79,6 @@ const recoverUnexpected = <E, R>(
 export type ApiServices =
   | AccessTokens
   | GlobalSearch
-  | InvoiceExtraction
   | LiveFanout
   | OrgHubs
   | OrganizationAuthority;

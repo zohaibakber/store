@@ -15,7 +15,6 @@ import {
   SaveOrderDraftInput as SaveOrderDraftSchema,
   SaveSupplierInput as SaveSupplierSchema,
   type CommandFailure,
-  type ImportInventoryRequest,
   type ReceiveDeliveryLineInput as ReceiveDeliveryLineSchema,
 } from "@store/contracts/replica";
 import * as Effect from "effect/Effect";
@@ -93,9 +92,6 @@ export const makeWorkspaceCommands = (
     ),
     updateBatch: command<UpdateBatchInput>()((store, input) =>
       store("UpdateBatch", input).pipe(Effect.map(result)),
-    ),
-    importInventory: command<ImportInventoryRequest>()((store, input) =>
-      store("ImportInventory", input).pipe(Effect.map(result)),
     ),
     issueInvoice: command<IssueInvoiceCommand>()((store, payload) =>
       store("IssueInvoice", payload).pipe(Effect.map(result)),

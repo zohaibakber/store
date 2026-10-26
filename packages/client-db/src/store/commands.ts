@@ -12,7 +12,6 @@ import {
   ReplicaStorageError,
   type Commit,
   type CreateProductWithBatchInput,
-  type ImportInventoryRequest,
   type InventoryStore,
 } from "@store/contracts/replica";
 import { commandStaff, replicaState } from "@store/db/replica.schema";
@@ -32,7 +31,6 @@ import {
   projectCreateProduct,
   projectDeleteCategory,
   projectDeleteProduct,
-  projectImportInventory,
   projectUpdateBatch,
   projectUpdateCategory,
   projectUpdateProduct,
@@ -62,8 +60,6 @@ import type { ReadSubset } from "../replica/collection-read";
 import { readSnapshotSubset, snapshotRunnerFromHandle } from "../replica/snapshot-read";
 import type { CommandAdmission } from "./admission";
 import {
-  importCategory,
-  leadingChunks,
   RowIdSupplyMismatch,
   countingRowIds,
   drawnRowIds,
@@ -97,7 +93,6 @@ type CommandHandlers = Pick<
   | "CreateBatch"
   | "ReceiveBatch"
   | "UpdateBatch"
-  | "ImportInventory"
   | "IssueInvoice"
   | "SaveSupplier"
   | "DeleteSupplier"
@@ -280,52 +275,6 @@ export const makeCommandHandlers = ({
         }),
     );
 
-  const importInventory = Effect.fn("InventoryStore.importInventory")(function* (
-    input: ImportInventoryRequest,
-  ) {
-    const staff = yield* gate.authorize(MANAGE_STOCK);
-    const productIds = input.lines.flatMap((line) => (line.productId ? [line.productId] : []));
-    const context = yield* begin(
-      readCatalogRows(
-        subset,
-        "categoryId" in input
-          ? { categoryIds: [input.categoryId], productIds }
-          : { allCategories: true, productIds },
-      ),
-    );
-    const projected = yield* withRowIds(context, (supplied) =>
-      Result.gen(function* () {
-        const category =
-          "categoryId" in input
-            ? { writes: [], id: input.categoryId, tables: supplied.tables }
-            : yield* importCategory(supplied, input.newCategory);
-        const imported = yield* projectImportInventory(
-          { ids: supplied.ids, tables: category.tables },
-          { categoryId: category.id, lines: input.lines },
-        );
-        return { ...imported, chunks: leadingChunks(category.writes, imported.chunks) };
-      }),
-    );
-    const commits = yield* Effect.forEach(
-      projected.chunks,
-      Effect.fnUntraced(function* (chunk, index) {
-        const commandId = index === 0 ? context.commandId : yield* newId;
-        return yield* catalogWrite({ ...context, commandId }, chunk, staff);
-      }),
-    );
-    const last = commits.at(-1) ?? (yield* unchanged(context.commandId));
-    return {
-      operationId: context.commandId,
-      status: last.status,
-      stamp: last.stamp,
-      result: {
-        createdProducts: projected.createdProducts,
-        createdBatches: projected.createdBatches,
-        txid: context.occurredAt,
-      },
-    };
-  }, admission.admit);
-
   const issueInvoice: CommandHandlers["IssueInvoice"] = Effect.fn("InventoryStore.issueInvoice")(
     function* ({ input, invoiceId }) {
       const staff = yield* gate.authorize(SELL);
@@ -402,7 +351,6 @@ export const makeCommandHandlers = ({
     ReceiveBatch: createBatch,
     UpdateBatch: (input) =>
       saved(catalog({ batchIds: [input.id] }, (context) => projectUpdateBatch(context, input))),
-    ImportInventory: importInventory,
     IssueInvoice: issueInvoice,
     SaveSupplier: (input) =>
       saved(purchasing({ allSuppliers: true }, (context) => projectSaveSupplier(context, input))),

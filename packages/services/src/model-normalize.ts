@@ -1,7 +1,7 @@
 import * as Predicate from "effect/Predicate";
 
-import { parseUnitsPerPack, salvageUnitsPerPack } from "./invoice-extraction/pack-size";
 import type { ModelScalar } from "./model-json";
+import { parseUnitsPerPack, salvageUnitsPerPack } from "./pack-size";
 
 export const nullableText = (
   value: ModelScalar | undefined,

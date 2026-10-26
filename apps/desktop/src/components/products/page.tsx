@@ -1,4 +1,4 @@
-import { Add01Icon, Upload01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   useSuspenseCatalogCategories,
@@ -67,10 +67,6 @@ export function ProductsPage({
           <DataTableViewOptions />
           {canManageStock ? (
             <>
-              <Button render={<Link to="/products/upload" />} size="sm" variant="outline">
-                <HugeiconsIcon aria-hidden="true" icon={Upload01Icon} />
-                Import
-              </Button>
               <Button render={<Link to="/products/new" />} size="sm">
                 <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
                 Add product

@@ -17,8 +17,6 @@ import {
   CreateCategoryInput,
   CreateInvoiceInput,
   CreateProductInput,
-  ImportInventoryCommandResult,
-  ImportInventoryInput,
   IssueInvoiceResult,
   UpdateBatchInput,
   UpdateCategoryInput,
@@ -46,18 +44,6 @@ export const CreateProductWithBatchInput = Schema.Struct({
   batch: BatchDraft,
 });
 export type CreateProductWithBatchInput = typeof CreateProductWithBatchInput.Type;
-
-export const ImportIntoNewCategoryInput = Schema.Struct({
-  newCategory: CreateCategoryInput,
-  lines: ImportInventoryInput.fields.lines,
-});
-export type ImportIntoNewCategoryInput = typeof ImportIntoNewCategoryInput.Type;
-
-export const ImportInventoryRequest = Schema.Union([
-  ImportInventoryInput,
-  ImportIntoNewCategoryInput,
-]);
-export type ImportInventoryRequest = typeof ImportInventoryRequest.Type;
 
 export const SaveSupplierInput = Schema.Struct({
   id: Schema.optional(SupplierId),
@@ -183,11 +169,6 @@ export class InventoryStore extends RpcGroup.make(
   Rpc.make("UpdateBatch", {
     payload: UpdateBatchInput,
     success: Committed(BatchRow),
-    error: CommandFailure,
-  }),
-  Rpc.make("ImportInventory", {
-    payload: ImportInventoryRequest,
-    success: Committed(ImportInventoryCommandResult),
     error: CommandFailure,
   }),
   Rpc.make("IssueInvoice", {

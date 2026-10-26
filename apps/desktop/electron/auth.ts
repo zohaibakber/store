@@ -13,10 +13,7 @@ import {
   type OrganizationCommandResult,
   type OrganizationRoster,
 } from "@store/auth";
-import type {
-  GlobalProductSearchResult,
-  InvoiceExtraction,
-} from "@store/contracts/server-api.schema";
+import type { GlobalProductSearchResult } from "@store/contracts/server-api.schema";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
@@ -48,10 +45,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { app, net, safeStorage } from "electron";
 
-import type { InvoiceUploadFile, SignInCredentials } from "../src/host/index";
+import type { SignInCredentials } from "../src/host/index";
 import { cachedOnSuccess } from "./cached-on-success";
 import { searchGlobalProducts } from "./global-search";
-import { analyseInvoiceUpload, type InvoiceUploadRejected } from "./invoice-upload";
 import { PrivateFiles } from "./private-files";
 import { ServerApi, type ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
@@ -272,7 +268,6 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     ),
     organizationRoster: withSession(SessionHttp.use((session) => session.organizationRoster)),
     organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
-    analyseInvoices: (files) => withSession(analyseInvoiceUpload(files)),
     searchGlobalProducts: (query) => withSession(searchGlobalProducts(query)),
     accessTokens: Stream.fromPubSub(accessTokens),
     liveAccessToken: (force) =>
@@ -304,12 +299,6 @@ export class DesktopAuth extends Context.Service<
     readonly organize: (
       command: OrganizationCommand,
     ) => Effect.Effect<OrganizationCommandResult, RequestError>;
-    readonly analyseInvoices: (
-      files: ReadonlyArray<InvoiceUploadFile>,
-    ) => Effect.Effect<
-      InvoiceExtraction,
-      InvoiceUploadRejected | ServerResponseInvalid | RequestError
-    >;
     readonly searchGlobalProducts: (
       query: string,
     ) => Effect.Effect<GlobalProductSearchResult, ServerResponseInvalid | RequestError>;

@@ -41,7 +41,6 @@ export const stateLandingPath = (state: StaffState): LandingPath =>
 const ROUTE_PERMISSIONS: ReadonlyArray<readonly [prefix: string, permission: StaffPermission]> = [
   ["/settings", "manageShop"],
   ["/products/new", "manageStock"],
-  ["/products/upload", "manageStock"],
   ["/products", "sell"],
   ["/invoices", "sell"],
   ["/categories", "manageStock"],
