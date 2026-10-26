@@ -29,6 +29,7 @@ export {
   type InventoryServices,
 } from "./services";
 export {
+  AtomRegistryProvider,
   InventoryProvider,
   useCatalogIsReady,
   useCommand,

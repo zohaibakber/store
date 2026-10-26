@@ -1,12 +1,23 @@
-import { useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as Atom from "effect/reactivity/Atom";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import * as React from "react";
 
 import type { WorkspaceCommands } from "./commands";
 import { InventoryNotReady, InventoryProviderMissing } from "./errors";
 import { inventoryState, type CatalogOpening } from "./opening";
 import type { InventoryState } from "./types";
+
+export function AtomRegistryProvider({
+  children,
+  registry,
+}: {
+  readonly children: React.ReactNode;
+  readonly registry: AtomRegistry.AtomRegistry;
+}) {
+  return <RegistryContext.Provider value={registry}>{children}</RegistryContext.Provider>;
+}
 
 const InventoryContext = React.createContext<InventoryState | null>(null);
 

@@ -207,7 +207,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["apps/desktop/src/mount-app.tsx", "packages/inventory-react/src/**/*.{ts,tsx}"],
+        files: ["packages/inventory-react/src/**/*.{ts,tsx}"],
         rules: {
           "anti-slop/no-registry-context": "off",
         },
