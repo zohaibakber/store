@@ -55,25 +55,16 @@ const reasonOf = <A, E>(effect: Effect.Effect<A, E>) =>
     Effect.map((failure) => (failure instanceof LicenceRefusal ? failure.reason : failure)),
   );
 
-const settle = Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 5)));
-
 const advance = Effect.fnUntraced(function* (
   service: LicenceService["Service"],
   duration: Duration.Input,
   until: LicenceState["_tag"],
 ) {
+  const fs = yield* FileSystem.FileSystem;
   yield* TestClock.adjust(duration);
   for (let step = 0; step < 20 && (yield* tagOf(service)) !== until; step += 1) {
-    yield* settle;
+    yield* fs.exists("/");
     yield* TestClock.adjust("1 minute");
-  }
-});
-
-const rememberedSince = Effect.fnUntraced(function* (directory: string, time: number) {
-  const fs = yield* FileSystem.FileSystem;
-  for (let step = 0; step < 200; step += 1) {
-    if (Number(yield* fs.readFileString(`${directory}/last-seen`)) >= time) return;
-    yield* settle;
   }
 });
 
@@ -127,7 +118,6 @@ layer(Files)("licence service", (it) => {
             yield* TestClock.setTime(NOW);
             yield* advance(service, "5 minutes", "valid");
             expect(yield* tagOf(service)).toBe("expired");
-            yield* rememberedSince(directory, NOW + 60 * DAY);
           }),
         );
         yield* TestClock.setTime(NOW);
