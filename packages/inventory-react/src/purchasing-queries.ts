@@ -55,9 +55,6 @@ export const useSuspensePurchaseOrderDeliveries = (
 export const useSuspensePurchaseOrderCount = (tab: PurchaseOrderTab): number =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderCount(tab)).value;
 
-export const useSuspenseSupplierCount = (): number =>
-  useAtomSuspense(useCatalogReplica().atoms.supplierCount).value;
-
 const NO_PRODUCTS_ON_ORDER: ReadonlyMap<ProductId, ProductOnOrder> = new Map();
 
 const NO_LEARNED_SUPPLIERS: ReadonlyMap<ProductId, SupplierId> = new Map();

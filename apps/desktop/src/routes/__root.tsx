@@ -33,19 +33,14 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootLayout() {
+  useAppUpdater();
   return (
     <AuthProvider>
       <ToastProvider>
-        <AppUpdater />
         <Screen />
       </ToastProvider>
     </AuthProvider>
   );
-}
-
-function AppUpdater() {
-  useAppUpdater();
-  return null;
 }
 
 function Screen() {

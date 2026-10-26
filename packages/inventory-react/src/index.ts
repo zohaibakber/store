@@ -42,7 +42,6 @@ export {
 export {
   useCatalogProductLookup,
   useInventoryInvoices,
-  useIssuedInvoices,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
   useSuspenseCatalogProductsById,
@@ -53,6 +52,7 @@ export {
   useProductSearch,
   useSuspenseInvoiceCount,
   useSuspenseInvoicePage,
+  useSuspenseCatalogHoldsNothing,
   useSuspenseProductCount,
   useSuspenseProductFacets,
   useSuspenseProductPage,
@@ -83,7 +83,6 @@ export {
   useSuspensePurchaseOrderDeliveries,
   useSuspensePurchaseOrderListCount,
   useSuspensePurchaseOrderPage,
-  useSuspenseSupplierCount,
   useSuspenseSuppliers,
   type PurchasingGate,
 } from "./purchasing-queries";
