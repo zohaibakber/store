@@ -3,7 +3,6 @@ import type { InvoiceId, ProductId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
   useCommand,
-  useIssuedInvoices,
   useSuspenseCatalogProductsById,
   type CommandExit,
 } from "@store/inventory-react";
@@ -39,6 +38,7 @@ import { useReceiptFormat } from "@/hooks/use-receipt-format";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
 import {
   useCompletingSale,
+  useDropIssuedSaleDrafts,
   useSaleDraftOwner,
   useSaleDraftsIn,
   useSaleDraftStoreIn,
@@ -204,7 +204,7 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
   const { lookup, seed } = useDraftProducts(drafts);
   const draft = activeSaleDraft(drafts);
   const isSubmitting = useCompletingSale(draft.id);
-  const issued = useIssuedInvoices(drafts.drafts.map((open) => open.id));
+  useDropIssuedSaleDrafts(owner);
   const focusRequest = useSaleSearchFocusRequest();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -218,10 +218,6 @@ function InvoiceCreateProvider({ children }: { children: ReactNode }) {
     searchRef.current?.focus();
     searchRef.current?.select();
   }, [focusRequest]);
-
-  useEffect(() => {
-    store.dropIssued(issued);
-  }, [issued, store]);
 
   const addProduct = (product: Product, quantity = 1) => {
     rememberRecentProduct(product);

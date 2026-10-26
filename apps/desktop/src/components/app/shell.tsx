@@ -6,7 +6,6 @@ import { Suspense, type ReactNode } from "react";
 
 import { CommandMenuProvider } from "@/components/app/command-menu";
 import { PageLoading } from "@/components/app/loading-spinner";
-import { LocalCatalogWitness } from "@/components/app/local-catalog-witness";
 import { NavHistory } from "@/components/app/nav-history";
 import { PublishOffer } from "@/components/app/publish-offer";
 import { AppSidebar } from "@/components/app/sidebar";
@@ -22,6 +21,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
 import { WorkspaceSyncAction } from "@/lib/inventory/sync-status";
+import { useLocalCatalogWitness } from "@/lib/local-catalog-witness";
 import { sidebarOpenAtom } from "@/lib/preferences";
 
 const route = getRouteApi("/_app");
@@ -67,6 +67,7 @@ function ClaimedCatalogShell({ catalogs }: { readonly catalogs: Catalogs }) {
 
 function ShellFrame({ content }: { readonly content: ReactNode }) {
   const { workspace } = useAuth();
+  useLocalCatalogWitness(workspace);
   const [sidebarOpen, setSidebarOpen] = useAtom(sidebarOpenAtom);
   return (
     <TooltipProvider>
@@ -95,7 +96,6 @@ function ShellFrame({ content }: { readonly content: ReactNode }) {
               className="min-h-0 scrollbar-none overflow-y-auto"
               data-scroll-restoration-id="app-content"
             >
-              <LocalCatalogWitness workspace={workspace} />
               {content}
             </SidebarInset>
           </div>

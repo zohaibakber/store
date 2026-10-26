@@ -1,4 +1,4 @@
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react";
 import type { StaffState } from "@store/contracts";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
@@ -6,10 +6,12 @@ import {
   useCommand,
   useReadyInventory,
   useStaffState,
+  type Inventory,
   type InventoryFailure,
 } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useContext, useMemo } from "react";
@@ -47,8 +49,6 @@ const recordedSubject = (draft: SaleDraft) => {
 };
 
 export const saleDraftLimitMessage = `${MAX_SALE_DRAFTS} sales are open. Complete or discard one first.`;
-
-type IssuedSale = { readonly id: InvoiceId; readonly invoiceNumber: number };
 
 export const saleDraftStore = (registry: AtomRegistry.AtomRegistry, owner: SaleDraftOwner) => {
   const atom = saleDraftsAtom(owner);
@@ -89,18 +89,6 @@ export const saleDraftStore = (registry: AtomRegistry.AtomRegistry, owner: SaleD
       focusSearch();
     },
     complete: (id: InvoiceId) => close(id).held,
-    dropIssued: (issued: ReadonlyArray<IssuedSale>) => {
-      const completing = registry.get(completingAtom);
-      for (const invoice of issued) {
-        if (completing.has(invoice.id)) continue;
-        const { closed } = close(invoice.id);
-        if (!closed) continue;
-        toastManager.add({
-          title: `${recordedSubject(closed)} was already recorded as invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`,
-          type: "info",
-        });
-      }
-    },
     whileCompleting: async (id: InvoiceId, sale: () => Promise<void>) => {
       const begun = registry.modify(completingAtom, (ids) =>
         ids.has(id) ? [false, ids] : [true, new Set(ids).add(id)],
@@ -135,6 +123,38 @@ export const releaseSaleDrafts = (registry: AtomRegistry.AtomRegistry, workspace
     registry.set(member, () => initialSaleDrafts(newSaleId()));
   }
   return dropped;
+};
+
+const droppedIssuedDrafts = (
+  draftsAtom: ReturnType<typeof saleDraftsAtom>,
+  atoms: Inventory["atoms"],
+) =>
+  Atom.make((get) => {
+    const { drafts } = get(draftsAtom);
+    const issued = AsyncResult.value(get(atoms.issuedInvoices(drafts.map((open) => open.id))));
+    if (Option.isNone(issued)) return;
+    const completing = get(completingAtom);
+    for (const invoice of issued.value) {
+      const closed = drafts.find((open) => open.id === invoice.id);
+      if (closed === undefined || completing.has(invoice.id)) continue;
+      get.set(draftsAtom, (state) => closeSaleDraft(state, invoice.id, newSaleId()));
+      toastManager.add({
+        title: `${recordedSubject(closed)} was already recorded as invoice #${formatInvoiceNumber(invoice.invoiceNumber)}`,
+        type: "info",
+      });
+    }
+  });
+
+const NO_DROPS = Atom.make(undefined);
+
+export const useDropIssuedSaleDrafts = (owner: SaleDraftOwner) => {
+  const atoms = useReadyInventory()?.inventory.atoms;
+  const draftsAtom = saleDraftsAtom(owner);
+  const dropping = useMemo(
+    () => (atoms === undefined ? NO_DROPS : droppedIssuedDrafts(draftsAtom, atoms)),
+    [atoms, draftsAtom],
+  );
+  useAtomMount(dropping);
 };
 
 const NO_STAFF: Atom.Atom<Option.Option<StaffState>> = Atom.make(Option.none<StaffState>());

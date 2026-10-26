@@ -238,6 +238,8 @@ export type HistoryAtoms<Row> = {
   readonly window: Read<HistoryWindow<Row>>;
 };
 
+const EVERY_PRODUCT: ProductListFilters = {};
+
 export type WorkspaceAtoms = {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly syncStatus: Atom.Atom<InventorySyncStatus>;
@@ -275,7 +277,7 @@ export type WorkspaceAtoms = {
   readonly openPurchaseOrders: (limit: number) => Read<ReadonlyArray<PurchaseOrder>>;
   readonly purchaseOrderDetail: (orderId: PurchaseOrderId) => Read<PurchaseOrderDetail>;
   readonly purchaseOrderListCount: (filters: PurchaseOrderListFilters) => Read<number>;
-  readonly supplierCount: Read<number>;
+  readonly catalogHoldsNothing: Read<boolean>;
   readonly suppliers: Read<ReadonlyArray<Supplier>>;
   readonly categories: Read<ReadonlyArray<Category>>;
   readonly invoicePage: (request: InvoiceListRequest) => Read<ReadonlyArray<Invoice>>;
@@ -520,6 +522,28 @@ export const createWorkspaceAtoms = (
     },
   );
 
+  const productCountAtom = Atom.family((filters: ProductListFilters) =>
+    Atom.mapResult(
+      Reads.query(
+        "ProductSummary",
+        { filters: productFiltersPayload(filters), distinct: [] },
+        PRODUCTS,
+      ),
+      (read) => read.count,
+    ),
+  );
+
+  const supplierCountAtom = Atom.mapResult(
+    Reads.query("SupplierCount", undefined, SUPPLIERS),
+    (read) => read.count,
+  );
+
+  const catalogHoldsNothingAtom = Atom.make((get) =>
+    Effect.all([get.result(productCountAtom(EVERY_PRODUCT)), get.result(supplierCountAtom)]).pipe(
+      Effect.map(([products, suppliers]) => products === 0 && suppliers === 0),
+    ),
+  );
+
   const purchaseOrderCountAtom = Atom.family((filters: PurchaseOrderListFilters) =>
     Atom.mapResult(
       Reads.query(
@@ -574,16 +598,7 @@ export const createWorkspaceAtoms = (
         (read) => read.products,
       ),
     ),
-    productCount: Atom.family((filters: ProductListFilters) =>
-      Atom.mapResult(
-        Reads.query(
-          "ProductSummary",
-          { filters: productFiltersPayload(filters), distinct: [] },
-          PRODUCTS,
-        ),
-        (read) => read.count,
-      ),
-    ),
+    productCount: productCountAtom,
     productFacets: Atom.mapResult(
       Reads.query("ProductSummary", { filters: {}, distinct: PRODUCT_FACET_COLUMNS }, PRODUCTS),
       facetsFrom,
@@ -629,10 +644,7 @@ export const createWorkspaceAtoms = (
     ),
     purchaseOrderDetail: purchaseOrderDetailAtom,
     purchaseOrderListCount: purchaseOrderCountAtom,
-    supplierCount: Atom.mapResult(
-      Reads.query("SupplierCount", undefined, SUPPLIERS),
-      (read) => read.count,
-    ),
+    catalogHoldsNothing: catalogHoldsNothingAtom,
     suppliers: keepingEqualValue(
       Atom.mapResult(Reads.query("Suppliers", undefined, SUPPLIERS), (read) =>
         byLocaleName(read.suppliers),

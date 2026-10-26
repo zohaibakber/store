@@ -15,7 +15,7 @@ import type * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
 import type { HistoryAtoms } from "./atoms";
-import type { InvoiceListFilters, InvoiceListRequest, IssuedInvoice } from "./invoice-list";
+import type { InvoiceListFilters, InvoiceListRequest } from "./invoice-list";
 import type { ProductFacets, ProductListFilters, ProductListRequest } from "./product-list";
 import { useCatalogReplica } from "./provider";
 import { type ProductSearchStock } from "./search";
@@ -56,16 +56,6 @@ const NO_INVOICES: ReadonlyArray<Invoice> = [];
 
 export const useInventoryInvoices = (limit = HISTORY_PAGE_SIZE) =>
   useRead(useCatalogReplica().atoms.recentInvoices(limit), NO_INVOICES);
-
-const NONE_ISSUED: ReadonlyArray<IssuedInvoice> = [];
-
-export const useIssuedInvoices = (
-  invoiceIds: ReadonlyArray<InvoiceId>,
-): ReadonlyArray<IssuedInvoice> =>
-  AsyncResult.getOrElse(
-    useAtomValue(useCatalogReplica().atoms.issuedInvoices(invoiceIds)),
-    () => NONE_ISSUED,
-  );
 
 export const useSuspenseCatalogCategories = (): ReadonlyArray<Category> =>
   useAtomSuspense(useCatalogReplica().atoms.categories).value;
@@ -126,6 +116,9 @@ export const useSuspenseProductPage = (
 
 export const useSuspenseProductCount = (filters: ProductListFilters): number =>
   useAtomSuspense(useCatalogReplica().atoms.productCount(filters)).value;
+
+export const useSuspenseCatalogHoldsNothing = (): boolean =>
+  useAtomSuspense(useCatalogReplica().atoms.catalogHoldsNothing).value;
 
 export const useSuspenseProductFacets = (): ProductFacets =>
   useAtomSuspense(useCatalogReplica().atoms.productFacets).value;

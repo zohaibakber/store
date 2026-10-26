@@ -41,7 +41,7 @@ function UploadPage() {
         <PageHeading className="me-auto">Import products</PageHeading>
         <Button
           disabled={processing || !files.length}
-          onClick={() => void analyse()}
+          onClick={() => analyse()}
           size="sm"
           type="button"
         >

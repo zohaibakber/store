@@ -34,7 +34,7 @@ function UploadProposedChanges() {
             Nothing changes in your store until you apply this review.
           </p>
         </div>
-        <Button disabled={processing} onClick={() => void applyChanges()} size="sm" type="button">
+        <Button disabled={processing} onClick={() => applyChanges()} size="sm" type="button">
           <HugeiconsIcon aria-hidden="true" icon={CheckmarkCircle02Icon} />
           Apply {formatCount(changes.length, "change")}
         </Button>

@@ -1,10 +1,14 @@
+import { useAtomSet } from "@effect/atom-react";
 import type { Category, InvoiceExtractionLine, ProductId } from "@store/contracts";
 import { INT4_MAX, invoiceUploadRejection, MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import type { InvoiceExtraction } from "@store/contracts/server-api.schema";
-import { useCatalogProductLookup, useCommand } from "@store/inventory-react";
+import { useCatalogProductLookup, useCommand, type CommandExit } from "@store/inventory-react";
+import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Atom from "effect/reactivity/Atom";
 import * as Result from "effect/Result";
-import { createContext, use, useRef, useState, type ReactNode } from "react";
+import * as Schema from "effect/Schema";
+import { createContext, use, useState, type ReactNode } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import {
@@ -20,6 +24,7 @@ import { storeErrorMessage, toastFailure } from "@/lib/errors";
 import { formatCount, formatNumber } from "@/lib/format";
 import { parseExpiryDate } from "@/lib/format-date";
 import { useInvoiceReading } from "@/lib/invoice-reading";
+import { singleFlight } from "@/lib/single-flight";
 
 type ExtractedLine = InvoiceExtractionLine;
 type ProposedChange = ExtractedLine & {
@@ -44,8 +49,8 @@ interface UploadState {
 interface UploadActions {
   addFiles: (incoming: FileList | File[]) => void;
   removeFile: (file: File) => void;
-  analyse: () => Promise<void>;
-  applyChanges: () => Promise<void>;
+  analyse: () => void;
+  applyChanges: () => void;
   dropChanges: (received: ReadonlyArray<ProposedChange>) => void;
   chooseCategory: (id: string) => void;
   nameCategory: (name: string) => void;
@@ -61,6 +66,30 @@ interface UploadContextValue {
   actions: UploadActions;
   meta: UploadMeta;
 }
+
+type Analysis =
+  | { readonly _tag: "Failed"; readonly title: string }
+  | {
+      readonly _tag: "Ready";
+      readonly changes: Array<ProposedChange>;
+      readonly invoice: InvoiceReference;
+    };
+
+type ImportedInventory = {
+  readonly createdProducts: number;
+  readonly createdBatches: number;
+};
+
+type Application =
+  | { readonly _tag: "Rejected"; readonly title: string }
+  | { readonly _tag: "Settled"; readonly exit: CommandExit<ImportedInventory> };
+
+class UploadProviderMissing extends Schema.TaggedError<UploadProviderMissing>()(
+  "UploadProviderMissing",
+  {},
+) {}
+
+const uploadWork = singleFlight(Atom.fn<Effect.Effect<void>>()((work) => work));
 
 const UploadContext = createContext<UploadContextValue | null>(null);
 
@@ -118,7 +147,7 @@ function UploadProvider({
   const [importInventory] = useCommand((commands) => commands.importInventory);
   const lookupProducts = useCatalogProductLookup();
   const { analyseInvoices, isOnline } = useInvoiceReading();
-  const busyRef = useRef(false);
+  const run = useAtomSet(uploadWork);
   const [files, setFiles] = useState<File[]>([]);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [changes, setChanges] = useState<ProposedChange[]>([]);
@@ -126,6 +155,34 @@ function UploadProvider({
   const [chosenCategoryId, setChosenCategoryId] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState(DEFAULT_IMPORT_CATEGORY_NAME);
   const category = importCategoryOf(categories, chosenCategoryId, categoryName);
+
+  const analysis = async (selected: ReadonlyArray<File>): Promise<Analysis> => {
+    const payload = await analyseInvoices(
+      await Promise.all(
+        selected.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        })),
+      ),
+    );
+    const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
+    if (stockLines.length === 0) {
+      return { _tag: "Failed", title: "No received stock was found in the attachments." };
+    }
+    const problem = stockLines.map(importLineProblem).find((found) => found !== null);
+    if (problem) return { _tag: "Failed", title: problem };
+    const proposed = proposedChanges(
+      stockLines,
+      await lookupProducts(stockLines.map((line) => line.name)),
+    );
+    if (Result.isFailure(proposed)) return { _tag: "Failed", title: proposed.failure };
+    return {
+      _tag: "Ready",
+      changes: proposed.success,
+      invoice: { supplier: payload.supplier, invoiceNumber: payload.invoiceNumber },
+    };
+  };
 
   const addFiles = (incoming: FileList | File[]) => {
     const valid = Array.from(incoming).filter(isInvoice);
@@ -152,122 +209,111 @@ function UploadProvider({
     setFiles((current) => current.filter((candidate) => candidate !== file));
   };
 
-  const analyse = async () => {
-    if (busyRef.current) return;
-    if (!isOnline) {
-      toastManager.add({
-        title: "You're offline. Connect before analysing invoices.",
-        type: "error",
-      });
-      return;
-    }
-    if (!files.length) {
-      toastManager.add({ title: "Add at least one invoice first.", type: "error" });
-      return;
-    }
-    busyRef.current = true;
-    setPhase("processing");
-    const failed = (title: string) => {
-      toastManager.add({ title, type: "error" });
-      setChanges([]);
-      setPhase("idle");
-    };
-    try {
-      const payload = await analyseInvoices(
-        await Promise.all(
-          files.map(async (file) => ({
-            name: file.name,
-            type: file.type,
-            bytes: new Uint8Array(await file.arrayBuffer()),
-          })),
-        ),
-      );
-      const stockLines = payload.lines.filter((line) => line.packQuantity + line.unitQuantity > 0);
-      if (stockLines.length === 0) {
-        failed("No received stock was found in the attachments.");
-        return;
-      }
-      const problem = stockLines.map(importLineProblem).find((found) => found !== null);
-      if (problem) {
-        failed(problem);
-        return;
-      }
-      const proposed = proposedChanges(
-        stockLines,
-        await lookupProducts(stockLines.map((line) => line.name)),
-      );
-      if (Result.isFailure(proposed)) {
-        failed(proposed.failure);
-        return;
-      }
-      setChanges(proposed.success);
-      setInvoice({ supplier: payload.supplier, invoiceNumber: payload.invoiceNumber });
-      setPhase("ready");
-      toastManager.add({
-        title: "Analysis done. Review the proposed changes.",
-        type: "success",
-      });
-    } catch (error) {
-      failed(storeErrorMessage(error, "Could not analyse invoices."));
-    } finally {
-      busyRef.current = false;
-    }
+  const analyse = () => {
+    run(
+      Effect.gen(function* () {
+        if (!isOnline) {
+          toastManager.add({
+            title: "You're offline. Connect before analysing invoices.",
+            type: "error",
+          });
+          return;
+        }
+        if (!files.length) {
+          toastManager.add({ title: "Add at least one invoice first.", type: "error" });
+          return;
+        }
+        setPhase("processing");
+        const outcome = yield* Effect.tryPromise({
+          try: () => analysis(files),
+          catch: (error) => storeErrorMessage(error, "Could not analyse invoices."),
+        }).pipe(
+          Effect.match({
+            onSuccess: (analysed) => analysed,
+            onFailure: (title): Analysis => ({ _tag: "Failed", title }),
+          }),
+        );
+        yield* Effect.sync(() => {
+          if (outcome._tag === "Failed") {
+            toastManager.add({ title: outcome.title, type: "error" });
+            setChanges([]);
+            setPhase("idle");
+            return;
+          }
+          setChanges(outcome.changes);
+          setInvoice(outcome.invoice);
+          setPhase("ready");
+          toastManager.add({
+            title: "Analysis done. Review the proposed changes.",
+            type: "success",
+          });
+        });
+      }),
+    );
   };
 
-  const applyChanges = async () => {
-    if (busyRef.current) return;
-    if (!isOnline) {
-      toastManager.add({
-        title: "You're offline. Reconnect, then apply the changes.",
-        type: "error",
-      });
-      return;
-    }
-    if (category._tag === "New" && category.name.trim() === "") {
-      toastManager.add({ title: "Name the category for the new products.", type: "error" });
-      return;
-    }
-    busyRef.current = true;
-    setPhase("syncing");
-    try {
-      const lines = changes.map((change) => ({
-        name: change.name,
-        batchNumber: change.batchNumber,
-        expiresAt: parseExpiryDate(change.expiresAt),
-        unitsPerPack: change.unitsPerPack,
-        packQuantity: change.packQuantity,
-        unitQuantity: change.unitQuantity,
-        purchasePrice: change.packPrice,
-        productId: change.productId ?? null,
-      }));
-      const exit = await importInventory(
-        category._tag === "Existing"
-          ? { categoryId: category.id, lines }
-          : { newCategory: { name: category.name }, lines },
-      );
-      if (Exit.isFailure(exit)) {
-        toastFailure(exit.cause);
-        setPhase("ready");
-        return;
-      }
-      const result = exit.value;
-      setChanges([]);
-      setFiles([]);
-      setInvoice(null);
-      toastManager.add({
-        title: `Created ${formatCount(result.createdProducts, "product")} and ${formatCount(result.createdBatches, "batch", "batches")}.`,
-        type: "success",
-      });
-      setPhase("idle");
-    } catch (error) {
-      toastManager.add({
-        title: storeErrorMessage(error, "Could not apply changes."),
-        type: "error",
-      });
-      setPhase("ready");
-    } finally {
-      busyRef.current = false;
-    }
+  const applyChanges = () => {
+    run(
+      Effect.gen(function* () {
+        if (!isOnline) {
+          toastManager.add({
+            title: "You're offline. Reconnect, then apply the changes.",
+            type: "error",
+          });
+          return;
+        }
+        if (category._tag === "New" && category.name.trim() === "") {
+          toastManager.add({ title: "Name the category for the new products.", type: "error" });
+          return;
+        }
+        setPhase("syncing");
+        const lines = changes.map((change) => ({
+          name: change.name,
+          batchNumber: change.batchNumber,
+          expiresAt: parseExpiryDate(change.expiresAt),
+          unitsPerPack: change.unitsPerPack,
+          packQuantity: change.packQuantity,
+          unitQuantity: change.unitQuantity,
+          purchasePrice: change.packPrice,
+          productId: change.productId ?? null,
+        }));
+        const outcome = yield* Effect.tryPromise({
+          try: () =>
+            importInventory(
+              category._tag === "Existing"
+                ? { categoryId: category.id, lines }
+                : { newCategory: { name: category.name }, lines },
+            ),
+          catch: (error) => storeErrorMessage(error, "Could not apply changes."),
+        }).pipe(
+          Effect.match({
+            onSuccess: (exit): Application => ({ _tag: "Settled", exit }),
+            onFailure: (title): Application => ({ _tag: "Rejected", title }),
+          }),
+        );
+        yield* Effect.sync(() => {
+          if (outcome._tag === "Rejected") {
+            toastManager.add({ title: outcome.title, type: "error" });
+            setPhase("ready");
+            return;
+          }
+          if (Exit.isFailure(outcome.exit)) {
+            toastFailure(outcome.exit.cause);
+            setPhase("ready");
+            return;
+          }
+          const result = outcome.exit.value;
+          setChanges([]);
+          setFiles([]);
+          setInvoice(null);
+          toastManager.add({
+            title: `Created ${formatCount(result.createdProducts, "product")} and ${formatCount(result.createdBatches, "batch", "batches")}.`,
+            type: "success",
+          });
+          setPhase("idle");
+        });
+      }),
+    );
   };
 
   const dropChanges = (received: ReadonlyArray<ProposedChange>) => {
@@ -304,7 +350,7 @@ function UploadProvider({
 
 function useUpload() {
   const context = use(UploadContext);
-  if (!context) throw new Error("Upload components must be used within their provider.");
+  if (!context) throw new UploadProviderMissing();
   return context;
 }
 
