@@ -1,9 +1,8 @@
 import {
   catalogOpenRefused,
   CatalogOpenFailure,
-  deliverPorts,
-  desktopServices,
   forwardedPorts,
+  openReplicaChannel,
   replicaAuthorityOf,
   type InventoryHost,
   type ReplicaOpenIdentity,
@@ -23,11 +22,11 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost> => {
   return {
     apiBaseUrl: config.apiBaseUrl,
     deviceId: config.deviceId,
-    services: desktopServices,
     open: Effect.fn("ElectronInventoryHost.open")(function* (
       identity: ReplicaOpenIdentity,
       registry: AtomRegistry.AtomRegistry,
     ) {
+      const channel = yield* openReplicaChannel(registry);
       const arrived = yield* Deferred.make<void>();
       const token = yield* Deferred.make<string>();
       yield* forwardedPorts(window).pipe(
@@ -38,7 +37,7 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost> => {
                 for (const port of forwarded.ports) port.close();
                 return Effect.void;
               }
-              deliverPorts(registry, forwarded);
+              channel.deliver(forwarded);
               return Deferred.succeed(arrived, undefined);
             }),
           ),
@@ -64,6 +63,7 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost> => {
         }),
       );
       return {
+        services: channel.services,
         retryRecovery: Effect.ignore(
           Effect.tryPromise(() => replica.retryRecovery(opened.workspaceToken)),
         ),

@@ -22,6 +22,7 @@ export type ReplicaOpenIdentity = InventoryScope & {
 };
 
 export type OpenedReplica = {
+  readonly services: InventoryServices;
   readonly replicaId?: string;
   readonly retryRecovery: Effect.Effect<void>;
 };
@@ -29,7 +30,6 @@ export type OpenedReplica = {
 export interface InventoryHost {
   readonly apiBaseUrl: string;
   readonly deviceId: string;
-  readonly services: InventoryServices;
   readonly open: (
     identity: ReplicaOpenIdentity,
     registry: AtomRegistry.AtomRegistry,

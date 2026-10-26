@@ -22,13 +22,13 @@ const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
     { organizationId: scope.organizationId, userId: scope.userId, replicaId: host.deviceId },
     registry,
   );
-  const links = makeInventoryLinks(host.services);
-  const atoms = createWorkspaceAtoms(host.services, links, registry);
+  const links = makeInventoryLinks(opened.services);
+  const atoms = createWorkspaceAtoms(opened.services, links, registry);
   const authority = replicaAuthorityOf(scope);
   const commands = makeWorkspaceCommands(links, atoms.storageFull, opened, authority);
   yield* Effect.forEach(
     [
-      host.services.Reads.runtime,
+      opened.services.Reads.runtime,
       atoms.storageFull,
       atoms.syncSnapshot,
       ...links.retained,

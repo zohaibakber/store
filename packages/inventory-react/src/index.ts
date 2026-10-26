@@ -23,9 +23,8 @@ export {
 export { useEnterLicence, useLicenceState } from "./licence";
 export { useInvoiceStaff, useStaffPermission, useStaffState } from "./staff";
 export {
-  deliverPorts,
-  desktopServices,
   forwardedPorts,
+  openReplicaChannel,
   type ForwardedPorts,
   type InventoryServices,
 } from "./services";
