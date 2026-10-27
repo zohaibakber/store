@@ -21,7 +21,6 @@
     "@alchemy.run/drizzle": "catalog:",
     "@alchemy.run/github": "catalog:",
     "@cloudflare/workers-types": "5.20261026.1",
-    "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
     "@types/node": "^26.6.5",
     "alchemy": "catalog:",
