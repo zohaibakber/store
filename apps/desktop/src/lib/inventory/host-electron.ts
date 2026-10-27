@@ -37,8 +37,9 @@ export const createElectronInventoryHost = async (): Promise<InventoryHost> => {
                 for (const port of forwarded.ports) port.close();
                 return Effect.void;
               }
-              channel.deliver(forwarded);
-              return Deferred.succeed(arrived, undefined);
+              return channel
+                .deliver(forwarded)
+                .pipe(Effect.andThen(Deferred.succeed(arrived, undefined)));
             }),
           ),
         ),

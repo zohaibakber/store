@@ -59,15 +59,18 @@ export const forwardedPorts = (source: Window): Stream.Stream<ForwardedPorts> =>
     ),
   );
 
-const whenClosed = (port: MessagePort, clear: () => void) => {
-  port.addEventListener("close", clear, { once: true });
-};
+const whenClosed = (port: MessagePort, clear: () => void) =>
+  Stream.fromEventListener(port, "close").pipe(
+    Stream.take(1),
+    Stream.runForEach(() => Effect.sync(clear)),
+  );
 
 const deliverPorts = (
   registry: AtomRegistry.AtomRegistry,
   workerPorts: Atom.Writable<Option.Option<WorkerPorts>>,
+  channel: Scope.Scope,
   { message, ports }: ForwardedPorts,
-): void => {
+): Effect.Effect<void> => {
   const portOf = (role: ReplicaPortRole) => ports[message.roles.indexOf(role)];
   const reads = portOf("reads");
   const store = portOf("store");
@@ -79,17 +82,24 @@ const deliverPorts = (
     insights === undefined ||
     desktop === undefined
   ) {
-    return;
+    return Effect.void;
   }
   const generation = message.generation;
-  for (const port of [reads, store, insights, desktop]) {
-    whenClosed(port, () =>
-      registry.update(workerPorts, (current) =>
-        Option.exists(current, (held) => held.reads === reads) ? Option.none() : current,
-      ),
+  const clear = () =>
+    registry.update(workerPorts, (current) =>
+      Option.exists(current, (held) => held.reads === reads) ? Option.none() : current,
     );
-  }
-  registry.set(workerPorts, Option.some({ generation, reads, store, insights, desktop }));
+  return Effect.forEach(
+    [reads, store, insights, desktop],
+    (port) => Effect.forkIn(whenClosed(port, clear), channel, { startImmediately: true }),
+    { discard: true },
+  ).pipe(
+    Effect.andThen(
+      Effect.sync(() =>
+        registry.set(workerPorts, Option.some({ generation, reads, store, insights, desktop })),
+      ),
+    ),
+  );
 };
 
 const latest = <A>(source: Atom.Atom<Option.Option<A>>): Atom.Atom<Option.Option<A>> =>
@@ -154,6 +164,7 @@ export type InventoryServices = {
 export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChannel")(function* (
   registry: AtomRegistry.AtomRegistry,
 ) {
+  const channel = yield* Effect.scope;
   const workerPorts = Atom.make(Option.none<WorkerPorts>());
   yield* AtomRegistry.mount(registry, workerPorts);
   const latestWorkers = latest(workerPorts);
@@ -197,7 +208,7 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
   };
   return {
     services,
-    deliver: (forwarded: ForwardedPorts) => deliverPorts(registry, workerPorts, forwarded),
+    deliver: (forwarded: ForwardedPorts) => deliverPorts(registry, workerPorts, channel, forwarded),
   };
 });
 
