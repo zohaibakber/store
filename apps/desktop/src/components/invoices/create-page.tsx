@@ -1,5 +1,4 @@
 import type { ProductId } from "@store/contracts";
-import { useEffect, useEffectEvent } from "react";
 
 import { InvoiceCheckout } from "@/components/invoices/create-checkout";
 import { InvoiceCreateProvider, useInvoiceCreate } from "@/components/invoices/create-context";
@@ -9,7 +8,13 @@ import { ProductResolver } from "@/components/invoices/resolve-product";
 import { PageLayout } from "@/components/shared/page-layout";
 import { toastManager } from "@/components/ui/toast";
 import { saleDraftShortcut, type ShortcutFocus } from "@/lib/sale-draft-shortcut";
-import { hasOpenModal, isEditableTarget, isInListbox, isSubmitChord } from "@/lib/shortcuts";
+import {
+  hasOpenModal,
+  isEditableTarget,
+  isInListbox,
+  isSubmitChord,
+  useWindowKeydown,
+} from "@/lib/shortcuts";
 
 const isBehindPopup = (event: KeyboardEvent) => hasOpenModal() || isInListbox(event.target);
 
@@ -26,18 +31,12 @@ function CompleteSaleShortcut() {
     actions: { completeSale },
   } = useInvoiceCreate();
 
-  const complete = useEffectEvent(() => completeSale());
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSubmitChord(event) || isBehindPopup(event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      complete();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  useWindowKeydown((event) => {
+    if (!isSubmitChord(event) || isBehindPopup(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    completeSale();
+  }, true);
 
   return null;
 }
@@ -55,7 +54,7 @@ function SaleDraftShortcuts() {
     return tabs.find((tab) => tab.id === focused)?.id;
   };
 
-  const run = useEffectEvent((event: KeyboardEvent) => {
+  useWindowKeydown((event) => {
     const shortcut = saleDraftShortcut(event, shortcutFocus(event.target));
     if (shortcut === null || isBehindPopup(event)) return;
     event.preventDefault();
@@ -68,13 +67,7 @@ function SaleDraftShortcuts() {
       case "Discard":
         return discardDraft(focusedDraft(event) ?? draftId);
     }
-  });
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => run(event);
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, true);
 
   return null;
 }

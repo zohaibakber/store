@@ -3,10 +3,7 @@ import {
   LockIcon,
   Login01Icon,
   LogoutIcon,
-  Moon02Icon,
   SettingsIcon,
-  Sun03Icon,
-  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type StaffMember } from "@store/contracts";
@@ -18,13 +15,15 @@ import type * as React from "react";
 
 import { LicenceStatus } from "@/components/licence/status";
 import { staffRoleLabel, useStaffAccess } from "@/components/staff/access";
-import { useTheme } from "@/components/theme/provider";
+import { THEME_OPTIONS, useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
   MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuPopup,
   MenuSeparator,
   MenuShortcut,
@@ -143,34 +142,28 @@ function IdentityRow({
   );
 }
 
-const THEMES = [
-  { value: "system", label: "System", icon: ComputerIcon },
-  { value: "light", label: "Light", icon: Sun03Icon },
-  { value: "dark", label: "Dark", icon: Moon02Icon },
-] as const;
-
 function ThemeGroup() {
   const { preference, setTheme } = useTheme();
   return (
     <MenuGroup>
       <MenuGroupLabel>Theme</MenuGroupLabel>
-      {THEMES.map((theme) => (
-        <MenuItem
-          aria-checked={preference === theme.value}
-          closeOnClick={false}
-          key={theme.value}
-          onClick={() => setTheme(theme.value)}
-          role="menuitemradio"
-        >
-          <HugeiconsIcon aria-hidden="true" icon={theme.icon} />
-          {theme.label}
-          {preference === theme.value ? (
-            <span className="ms-auto inline-flex">
-              <HugeiconsIcon aria-hidden="true" className="size-4" icon={Tick02Icon} />
+      <MenuRadioGroup
+        aria-label="Theme"
+        onValueChange={(value) => {
+          const option = THEME_OPTIONS.find((entry) => entry.value === value);
+          if (option) setTheme(option.value);
+        }}
+        value={preference}
+      >
+        {THEME_OPTIONS.map((theme) => (
+          <MenuRadioItem closeOnClick={false} key={theme.value} value={theme.value}>
+            <span className="flex min-w-0 items-center gap-2">
+              <HugeiconsIcon aria-hidden="true" icon={theme.icon} />
+              {theme.label}
             </span>
-          ) : null}
-        </MenuItem>
-      ))}
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
     </MenuGroup>
   );
 }

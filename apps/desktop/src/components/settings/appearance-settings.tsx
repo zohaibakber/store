@@ -1,15 +1,9 @@
 import { FrameCard } from "@/components/shared/frame-card";
-import { useTheme } from "@/components/theme/provider";
+import { THEME_OPTIONS, useTheme } from "@/components/theme/provider";
 import { Field, FieldItem, FieldLabel } from "@/components/ui/field";
 import { Fieldset, FieldsetLegend } from "@/components/ui/fieldset";
 import { Radio, RadioGroup } from "@/components/ui/radio-group";
 import type { ThemePreference } from "@/lib/preferences";
-
-const options: ReadonlyArray<{ label: string; value: ThemePreference }> = [
-  { label: "System", value: "system" },
-  { label: "Light", value: "light" },
-  { label: "Dark", value: "dark" },
-];
 
 const previews = {
   dark: (
@@ -51,12 +45,12 @@ function ThemePicker() {
       <RadioGroup
         className="flex-row"
         onValueChange={(value) => {
-          const option = options.find((entry) => entry.value === value);
+          const option = THEME_OPTIONS.find((entry) => entry.value === value);
           if (option) setTheme(option.value);
         }}
         value={preference}
       >
-        {options.map((option) => (
+        {THEME_OPTIONS.map((option) => (
           <FieldItem key={option.value}>
             <FieldLabel className="cursor-pointer flex-col">
               <Radio className="peer sr-only absolute" value={option.value} />

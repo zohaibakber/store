@@ -9,7 +9,7 @@ import ReactDOM from "react-dom/client";
 
 import { AppErrorBoundary } from "@/components/app/error-boundary";
 import { WindowDragStrip } from "@/components/app/window-controls";
-import { ThemeProvider } from "@/components/theme/provider";
+import { ThemeSync } from "@/components/theme/provider";
 import { appHost } from "@/host";
 import type { HostAccessPolicy } from "@/host-access";
 import type { HostInventory } from "@/lib/inventory/host-inventory";
@@ -59,7 +59,8 @@ export const mountApp = (input: {
         }
       >
         <AtomRegistryProvider registry={registry}>
-          <ThemeProvider>{app}</ThemeProvider>
+          {app}
+          <ThemeSync />
         </AtomRegistryProvider>
       </AppErrorBoundary>
     </React.StrictMode>,

@@ -1,4 +1,5 @@
 import { useAtom, useAtomValue } from "@effect/atom-react";
+import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
 import * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
@@ -7,35 +8,37 @@ import { themePreferenceAtom, type ThemePreference } from "@/lib/preferences";
 
 type ResolvedTheme = "dark" | "light";
 
-type ThemeContextValue = {
-  preference: ThemePreference;
-  theme: ResolvedTheme;
-  setTheme: (theme: ThemePreference) => void;
-};
+export const THEME_OPTIONS = [
+  { value: "system", label: "System", icon: ComputerIcon },
+  { value: "light", label: "Light", icon: Sun03Icon },
+  { value: "dark", label: "Dark", icon: Moon02Icon },
+] as const satisfies ReadonlyArray<{
+  readonly value: ThemePreference;
+  readonly label: string;
+  readonly icon: unknown;
+}>;
 
-const ThemeContext = React.createContext<ThemeContextValue | null>(null);
-
-export function useTheme(): ThemeContextValue {
-  const context = React.useContext(ThemeContext);
-  if (!context) throw new Error("useTheme must be used inside ThemeProvider.");
-  return context;
-}
-
-const systemTheme = (): ResolvedTheme =>
-  window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-
-const systemThemeAtom = Atom.make((get) => {
+const systemThemeAtom = Atom.make((get): ResolvedTheme => {
   const query = window.matchMedia("(prefers-color-scheme: light)");
   const onChange = () => get.refreshSelf();
   query.addEventListener("change", onChange);
   get.addFinalizer(() => query.removeEventListener("change", onChange));
-  return systemTheme();
+  return query.matches ? "light" : "dark";
 });
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+const resolvedThemeAtom = Atom.make((get): ResolvedTheme => {
+  const preference = get(themePreferenceAtom);
+  return preference === "system" ? get(systemThemeAtom) : preference;
+});
+
+export function useTheme() {
   const [preference, setTheme] = useAtom(themePreferenceAtom);
-  const resolvedSystem = useAtomValue(systemThemeAtom);
-  const theme: ResolvedTheme = preference === "system" ? resolvedSystem : preference;
+  const theme = useAtomValue(resolvedThemeAtom);
+  return { preference, setTheme, theme };
+}
+
+export function ThemeSync() {
+  const { preference, theme } = useTheme();
 
   React.useLayoutEffect(() => {
     const root = document.documentElement;
@@ -48,10 +51,5 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     appHost().theme.setSource(preference);
   }, [preference]);
 
-  const value = React.useMemo(
-    () => ({ preference, setTheme, theme }),
-    [preference, setTheme, theme],
-  );
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return null;
 }

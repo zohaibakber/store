@@ -4,7 +4,7 @@ import type { Product, ProductId } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
 import { useSuspenseProductSearch } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
-import { Suspense, useDeferredValue, useEffect, useRef, useState } from "react";
+import { Suspense, useDeferredValue, useRef, useState } from "react";
 
 import { LoadingSpinner } from "@/components/app/loading-spinner";
 import { useInvoiceCreate } from "@/components/invoices/create-context";
@@ -24,25 +24,20 @@ import { Kbd } from "@/components/ui/kbd";
 import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-products";
 import { formatNumber } from "@/lib/format";
 import { SALE_SEARCH_LIMIT } from "@/lib/sale-drafts";
-import { isEditableTarget, isInListbox } from "@/lib/shortcuts";
+import { isEditableTarget, isInListbox, useWindowKeydown } from "@/lib/shortcuts";
 
 function InvoiceProductPicker() {
   const {
     actions: { addProduct, focusSearch },
   } = useInvoiceCreate();
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.defaultPrevented) return;
-      if (event.target instanceof HTMLElement && isInListbox(event.target)) return;
-      if (isEditableTarget(event.target)) return;
-      event.preventDefault();
-      focusSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [focusSearch]);
+  useWindowKeydown((event) => {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented) return;
+    if (isInListbox(event.target) || isEditableTarget(event.target)) return;
+    event.preventDefault();
+    focusSearch();
+  });
 
   return (
     <div className="flex flex-col gap-1.5">
