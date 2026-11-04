@@ -32,7 +32,6 @@ import {
   type Supplier,
   type SupplierId,
 } from "@store/contracts";
-import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
 import type { InvoiceId, ProductId, PurchaseOrderId } from "@store/contracts/ids";
 import {
   entityKey,
@@ -40,7 +39,6 @@ import {
   INSIGHTS_KEY,
   MAX_HISTORY_ROWS,
   MAX_IN_VALUES,
-  MAX_LIST_PAGE_SIZE,
   PRODUCT_FACET_COLUMNS,
   rowKey,
   type HistoryCursor,
@@ -224,14 +222,6 @@ const chainHistory = <Row>(
       : AsyncResult.success(window);
   });
 
-const boundedPageSize = (limit: number) =>
-  Math.min(MAX_LIST_PAGE_SIZE, Math.max(1, Math.floor(limit)));
-
-const lookupNames = (names: ReadonlyArray<string>) =>
-  [...new Set(names.map((name) => name.trim()))].filter(
-    (name) => name !== "" && name.length <= MAX_CATALOG_NAME_LENGTH,
-  );
-
 const RUNNING_ACTIVITY = { statuses: [], activity: EMPTY_SYNC_ACTIVITY };
 
 export type HistoryAtoms<Row> = {
@@ -259,11 +249,6 @@ export type WorkspaceAtoms = {
   readonly productPage: (request: ProductListRequest) => Read<ReadonlyArray<ReplicaProductRow>>;
   readonly productCount: (filters: ProductListFilters) => Read<number>;
   readonly productFacets: Read<ProductFacets>;
-  readonly productLookup: Atom.AtomResultFn<
-    ReadonlyArray<string>,
-    ReadonlyArray<ReplicaProductRow>,
-    ReadError
-  >;
   readonly productInsight: (productId: ProductId) => Read<ProductInsight | null>;
   readonly productsOnOrder: (
     productIds: ReadonlyArray<ProductId>,
@@ -275,7 +260,6 @@ export type WorkspaceAtoms = {
   readonly purchaseOrderPage: (
     request: PurchaseOrderListRequest,
   ) => Read<ReadonlyArray<PurchaseOrder>>;
-  readonly openPurchaseOrders: (limit: number) => Read<ReadonlyArray<PurchaseOrder>>;
   readonly purchaseOrderDetail: (orderId: PurchaseOrderId) => Read<PurchaseOrderDetail>;
   readonly purchaseOrderListCount: (filters: PurchaseOrderListFilters) => Read<number>;
   readonly catalogHoldsNothing: Read<boolean>;
@@ -605,19 +589,6 @@ export const createWorkspaceAtoms = (
       Reads.query("ProductSummary", { filters: {}, distinct: PRODUCT_FACET_COLUMNS }, PRODUCTS),
       facetsFrom,
     ),
-    productLookup: Reads.runtime.fn<ReadonlyArray<string>>()(
-      (names) =>
-        Reads.use((reads) =>
-          Effect.forEach(Arr.chunksOf(lookupNames(names), MAX_IN_VALUES), (chunk) =>
-            reads("ProductsByNames", { names: chunk }),
-          ),
-        ).pipe(
-          Effect.map((parts): ReadonlyArray<ReplicaProductRow> =>
-            parts.flatMap((part) => part.products),
-          ),
-        ),
-      { concurrent: true },
-    ),
     insights,
     restockPage: restockPageAtom,
     exportBuyList,
@@ -635,12 +606,6 @@ export const createWorkspaceAtoms = (
           },
           ORDER_LINES,
         ),
-        (read) => read.orders,
-      ),
-    ),
-    openPurchaseOrders: Atom.family((limit: number) =>
-      Atom.mapResult(
-        Reads.query("OpenPurchaseOrders", { limit: boundedPageSize(limit) }, ORDER_LINES),
         (read) => read.orders,
       ),
     ),
