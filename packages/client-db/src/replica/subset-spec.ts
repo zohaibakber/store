@@ -4,8 +4,6 @@ import {
   CASE_INSENSITIVE_ORDER_COLUMNS,
   INVENTORY_COLLECTION_SOURCES,
   LIKE_ESCAPE,
-  MAX_BATCH_ROWS,
-  MAX_BATCH_SPECS,
   MAX_DISTINCT_COLUMNS,
   MAX_IN_VALUES,
   MAX_LIKE_PATTERN_LENGTH,
@@ -71,15 +69,6 @@ export const InventorySubsetSpec = Schema.Struct({
   offset: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
 });
 export type InventorySubsetSpec = typeof InventorySubsetSpec.Type;
-
-export const InventorySubsetBatch = Schema.Array(
-  InventorySubsetSpec.check(
-    Schema.makeFilter((spec) => spec.limit <= MAX_BATCH_ROWS, {
-      title: "Batch specification within the row bound",
-    }),
-  ),
-).check(Schema.isMinLength(1), Schema.isMaxLength(MAX_BATCH_SPECS));
-export type InventorySubsetBatch = typeof InventorySubsetBatch.Type;
 
 type ResolvedSubsetOrderClause = Required<SubsetOrderClause>;
 

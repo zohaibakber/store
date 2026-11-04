@@ -117,9 +117,6 @@ export type Commit = typeof Commit.Type;
 export const Committed = <Result extends Schema.Top>(result: Result) =>
   Schema.Struct({ ...Commit.fields, result });
 
-export const UploadWake = Schema.Struct({ drained: Schema.Boolean, drainCount: Schema.Natural });
-export type UploadWake = typeof UploadWake.Type;
-
 export class InventoryStore extends RpcGroup.make(
   Rpc.make("CreateCategory", {
     payload: CreateCategoryInput,
@@ -220,5 +217,5 @@ export class InventoryStore extends RpcGroup.make(
   Rpc.make("Health", { success: SyncHealth, stream: true }),
   Rpc.make("Stamp", { success: Stamp, error: ReadFailure }),
   Rpc.make("SyncActivity", { success: ReplicaSyncActivity, error: ReadFailure }),
-  Rpc.make("WakeSyncUpload", { success: UploadWake, error: ReadFailure }),
+  Rpc.make("WakeSyncUpload", { error: ReadFailure }),
 ).merge(StaffRpcs) {}

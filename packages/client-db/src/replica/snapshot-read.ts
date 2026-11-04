@@ -9,7 +9,6 @@ import { replicaStampQuery } from "./replica-queries";
 import { decodeReplicaStampRow } from "./sqlite-row";
 import type { InventorySubsetSpec, InventorySubsetSummarySpec } from "./subset-spec";
 import type {
-  ReplicaBatchRead,
   ReplicaQueryStamp,
   ReplicaRow,
   ReplicaSubsetRead,
@@ -17,7 +16,6 @@ import type {
   SqliteParameter,
   SqliteResultRow,
 } from "./types";
-import { validateBatchSpecs } from "./validate";
 
 type SnapshotFailure = SqlError | ReplicaSnapshotFailure;
 
@@ -66,27 +64,6 @@ export const readSnapshotSubset = Effect.fn("ReplicaSnapshot.readSubset")(functi
       const stamp = yield* readSnapshotStamp(query, workspaceToken);
       const rows = yield* query(statement.sql, statement.parameters);
       return { stamp, rows } satisfies ReplicaSubsetRead;
-    }),
-  );
-});
-
-export const readSnapshotBatch = Effect.fn("ReplicaSnapshot.readBatch")(function* <
-  Row extends ReplicaRow,
->(
-  snapshot: ReplicaSnapshotRunner<Row>,
-  workspaceToken: string,
-  specs: ReadonlyArray<InventorySubsetSpec>,
-) {
-  yield* validateBatchSpecs(specs);
-  const statements = yield* Effect.forEach(specs, lowerSqliteSubset);
-  return yield* snapshot((query) =>
-    Effect.gen(function* () {
-      const stamp = yield* readSnapshotStamp(query, workspaceToken);
-      const reads: Array<ReadonlyArray<Row>> = [];
-      for (const statement of statements) {
-        reads.push(yield* query(statement.sql, statement.parameters));
-      }
-      return { stamp, reads } satisfies ReplicaBatchRead;
     }),
   );
 });

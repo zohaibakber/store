@@ -750,11 +750,6 @@ export const makeAnalyticsStore = (db: AnalyticsDatabase) => {
         const total = cursor === null ? countWhere(productInsight, filter) : null;
         return { run, rows, nextCursor, total, cursorExpired: false };
       },
-      clearWork: (runId: number) =>
-        db.transaction(() => {
-          orm.delete(workSales).where(eq(workSales.runId, runId)).run();
-          orm.delete(workProduct).where(eq(workProduct.runId, runId)).run();
-        }),
       rankingOf: (runId: number): ReadonlyArray<ClassifiedProduct> =>
         orm
           .select({

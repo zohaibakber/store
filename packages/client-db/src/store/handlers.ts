@@ -4,7 +4,6 @@ import { readOutboxActivitySqlite, SqliteReplica } from "@store/sync/sql-client"
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Stream from "effect/Stream";
@@ -34,7 +33,6 @@ export const layerInventoryStore: Layer.Layer<
     const replica = yield* SqliteReplica;
     const gate = yield* StaffGate;
     const crypto = yield* SecureRandom.SecureRandom;
-    const wakes = yield* Ref.make(0);
 
     const stamp = Effect.mapError(store.readStamp, readFailure);
 
@@ -57,11 +55,7 @@ export const layerInventoryStore: Layer.Layer<
           Effect.map(replicaSyncActivityOf),
           Effect.mapError(readFailure),
         ),
-      WakeSyncUpload: () =>
-        scheduler.wake("localWrite").pipe(
-          Effect.andThen(Ref.updateAndGet(wakes, (count) => count + 1)),
-          Effect.map((drainCount) => ({ drained: true, drainCount })),
-        ),
+      WakeSyncUpload: () => scheduler.wake("localWrite"),
     });
   }),
 );
