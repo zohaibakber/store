@@ -39,8 +39,8 @@ import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Digest from "effect/crypto/Digest";
-import type * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FiberSet from "effect/FiberSet";
@@ -194,7 +194,9 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
-      const platform = yield* Effect.context<Platform>();
+      const platform = (yield* Effect.context<Platform>()).pipe(
+        Context.pick(SecureRandom.SecureRandom, Digest.Digest),
+      );
       const link = yield* linkAuthority(config);
 
       const sessionScope = yield* Scope.fork(yield* Effect.scope);
