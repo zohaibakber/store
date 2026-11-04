@@ -9,7 +9,6 @@ import {
   type SyncScheduler,
   type SyncTransport,
   type OwnedLiveHost,
-  type SyncSchedulerPolicy,
 } from "@store/sync";
 import {
   layerSqliteReplicaStore,
@@ -82,7 +81,6 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
   SqliteReplicaSessionInput<ReplicaError> & {
     readonly transport: Layer.Layer<SyncTransport, TransportError>;
     readonly live: OwnedLiveHost;
-    readonly policy?: SyncSchedulerPolicy;
     readonly deviceLabel?: DeviceLabel | undefined;
   };
 
@@ -108,9 +106,7 @@ const httpAuthority = <ReplicaError, TransportError>(
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
 ) => ({
   sync: layerOwnedHttpSync({
-    databaseIdentity: input.databaseIdentity,
     live: input.live,
-    policy: input.policy,
     deviceLabel: input.deviceLabel,
   }).pipe(Layer.provide(input.transport)),
   store: {},

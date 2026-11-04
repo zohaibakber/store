@@ -1,18 +1,16 @@
 # Inventory insights
 
-`analyzeInsights(facts, policy, now)` turns one replica's aggregated facts into a
-prioritized report: per-product stock plans, ranked alerts, sales periods, and
-inventory value.
+`analyzeProducts` and `summarizeRun` (`refresh.ts`) turn the replica's aggregated facts
+into stored per-product analyses and a published summary: stock plans, ranked alerts, sales
+periods, and inventory value. The Electron analytics worker runs them incrementally.
 
 ## Inputs
 
-The replica does the heavy lifting. `ReplicaHandle.readInsights(window)` returns
-`ReplicaInsightsFacts` (`@store/contracts/sync/replica-insights`): compact product
-and stocked-batch facts plus sales already grouped by product and local day,
-units on order grouped by product, and invoice totals by day and hour. SQLite
-aggregates with `GROUP BY` in the replica worker. Every list has a hard cap and the read reports
-`truncated` instead of growing without bound. The window is 180 local days so
-the 90-day period has a comparable previous period.
+The analytics source reads compact product and stocked-batch facts, sales grouped by
+product and local day, units on order grouped by product, and invoice totals by day and
+hour (`ReplicaInsightsFacts` pieces in `@store/contracts/sync/replica-insights`). SQLite
+aggregates with `GROUP BY`. The window is 180 local days so the 90-day period has a
+comparable previous period.
 
 ## On order
 
