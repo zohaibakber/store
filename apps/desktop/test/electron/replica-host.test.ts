@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+import * as NodePath from "@effect/platform-node/NodePath";
 import { describe, expect, it } from "@effect/vitest";
 import { decodeOrganizationId, decodeReplicaId, decodeUserId } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
@@ -11,6 +12,7 @@ import * as Redacted from "effect/Redacted";
 import * as RpcTest from "effect/rpc/RpcTest";
 import * as Stream from "effect/Stream";
 
+import { PrivateFiles } from "../../electron/private-files";
 import { makeReplicaHost } from "../../electron/replica-host";
 import { ReplicaReaderRpcs, ReplicaWorkerRpcs } from "../../electron/replica-rpc";
 import type { SpawnReplicaReader, SpawnReplicaWorker } from "../../electron/replica-supervisor";
@@ -79,7 +81,13 @@ const setupHost = Effect.gen(function* () {
     },
     publishProgress: () => Effect.void,
     sessions: { spawnWorker, spawnReader },
-  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer)));
+  }).pipe(
+    Effect.provide(
+      PrivateFiles.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
+      ),
+    ),
+  );
   const sender = (id: number) => ({
     id,
     isDestroyed: () => false,

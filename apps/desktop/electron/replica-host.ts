@@ -102,7 +102,7 @@ export const makeReplicaHost = Effect.fn("ReplicaHost.make")(function* (
     stagedRestores,
     dialogs: options.dialogs,
   });
-  const publish = makeReplicaPublishHost(sessions, options.publishProgress);
+  const publish = yield* makeReplicaPublishHost(sessions, options.publishProgress);
   yield* Effect.addFinalizer(() => provide(sessions.disposeAll));
 
   const current = (senderId: number) => sessions.latestFor(senderId);
