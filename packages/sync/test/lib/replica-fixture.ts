@@ -7,6 +7,7 @@ import {
   LAST_UNIT_REPLICA_A,
 } from "@store/contracts/sync/fixtures";
 import { batches, categories, products, replicaState } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 
@@ -97,8 +98,10 @@ export const seedReplicaTenUnits = (path?: string) =>
 export const withSeededReplica = <A, E, R>(
   use: (store: SqliteReplicaHandle) => Effect.Effect<A, E, R>,
   path?: string,
-): Effect.Effect<A, E, Exclude<R, Scope.Scope>> =>
-  Effect.scoped(Effect.flatMap(seedReplicaTenUnits(path), use));
+): Effect.Effect<A, E, Exclude<Exclude<R, Scope.Scope>, Digest.Digest>> =>
+  Effect.scoped(Effect.flatMap(seedReplicaTenUnits(path), use)).pipe(
+    Effect.provide(Digest.layerWebCrypto),
+  );
 
 const invoiceCommandOf = (
   envelope: SyncCommandEnvelope,

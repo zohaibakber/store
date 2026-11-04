@@ -26,6 +26,7 @@ import {
   lastUnitBuyerAEnvelope,
 } from "@store/contracts/sync/fixtures";
 import { stockOverlays } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
@@ -97,7 +98,7 @@ const invoiceEnvelopeFor = (input: {
   readonly clientSequence: string;
   readonly quantity: number;
   readonly invoiceNumber: number;
-}): SyncCommandEnvelope => {
+}) => {
   const command = {
     _tag: "issueInvoice" as const,
     payload: {
@@ -132,15 +133,15 @@ const invoiceEnvelopeFor = (input: {
       ],
     },
   };
-  return {
+  return Effect.map(canonicalPayloadHash(command), (payloadHash): SyncCommandEnvelope => ({
     organizationId: LAST_UNIT_ORGANIZATION_ID,
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
     operationId: OperationId.make(input.operationId),
-    payloadHash: canonicalPayloadHash(command),
+    payloadHash,
     command,
-  };
+  }));
 };
 
 const authoritativeInvoiceGroup = (input: {
@@ -295,8 +296,10 @@ const adapters = [{ name: "sqlite", make: makeSqliteHarness }] as const;
 
 for (const adapter of adapters) {
   describe(`pending projections on ${adapter.name}`, () => {
-    const withHarness = <A>(use: (harness: Harness) => Effect.Effect<A, unknown>) =>
-      Effect.acquireUseRelease(adapter.make(), use, (harness) => Effect.orDie(harness.close()));
+    const withHarness = <A>(use: (harness: Harness) => Effect.Effect<A, unknown, Digest.Digest>) =>
+      Effect.acquireUseRelease(adapter.make(), use, (harness) =>
+        Effect.orDie(harness.close()),
+      ).pipe(Effect.provide(Digest.layerWebCrypto));
 
     it.effect("replaces shadow rows with authoritative rows and clears the mark", () =>
       withHarness((harness) =>
@@ -324,7 +327,7 @@ for (const adapter of adapters) {
     it.effect("restores prior state when the authority rejects the command", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          const envelope = catalogEnvelope({
+          const envelope = yield* catalogEnvelope({
             operationId: "catalog-1",
             clientSequence: "1",
             writes: [insertCategoryWrite, renameProductWrite("Renamed")],
@@ -410,7 +413,7 @@ for (const adapter of adapters) {
     it.effect("restores a deleted row when the authority rejects the delete", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          const envelope = catalogEnvelope({
+          const envelope = yield* catalogEnvelope({
             operationId: "catalog-delete-1",
             clientSequence: "1",
             writes: [deleteSpareBatchWrite],
@@ -437,7 +440,7 @@ for (const adapter of adapters) {
     it.effect("projects a pending adjustment movement without a stock overlay", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          const envelope = catalogEnvelope({
+          const envelope = yield* catalogEnvelope({
             operationId: "catalog-4",
             clientSequence: "1",
             writes: [restockBatchWrite({ movementId: "restock-1", unitQuantity: 25 })],
@@ -474,7 +477,7 @@ for (const adapter of adapters) {
     it.effect("renumbers a shadow invoice when a remote invoice claims its number", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          const envelope = invoiceEnvelopeFor({
+          const envelope = yield* invoiceEnvelopeFor({
             operationId: "shadow-five",
             clientSequence: "1",
             quantity: 1,
@@ -583,14 +586,14 @@ for (const adapter of adapters) {
     it.effect("restores the original row when two stacked renames are both rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
-          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* secondRename, 2));
           expect(yield* productName(harness)).toBe("Second");
 
-          yield* rejectNext(harness, firstRename, "10");
+          yield* rejectNext(harness, yield* firstRename, "10");
           expect(yield* productName(harness)).toBe("Second");
 
-          yield* rejectNext(harness, secondRename, "11");
+          yield* rejectNext(harness, yield* secondRename, "11");
           expect(yield* productName(harness)).toBe("Ten pack");
           expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
@@ -600,17 +603,17 @@ for (const adapter of adapters) {
     it.effect("keeps a remote update when an earlier stacked rename is rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
-          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* secondRename, 2));
           yield* applyGroup(harness.store, remoteProductGroup);
           expect(yield* productName(harness)).toBe("Remote name");
           const marks = yield* harness.store.readPendingMarks;
           expect(marks.filter((mark) => mark.entity === "product")).toHaveLength(0);
 
-          yield* rejectNext(harness, firstRename, "10");
+          yield* rejectNext(harness, yield* firstRename, "10");
           expect(yield* productName(harness)).toBe("Remote name");
 
-          yield* rejectNext(harness, secondRename, "11");
+          yield* rejectNext(harness, yield* secondRename, "11");
           expect(yield* productName(harness)).toBe("Remote name");
           expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
@@ -620,8 +623,8 @@ for (const adapter of adapters) {
     it.effect("keeps a remotely deleted row deleted when shadowing renames are rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(firstRename, 1));
-          yield* harness.store.enqueueCommand(enqueueRequestOf(secondRename, 2));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* firstRename, 1));
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* secondRename, 2));
           yield* applyGroup(
             harness.store,
             deleteGroup({
@@ -632,8 +635,8 @@ for (const adapter of adapters) {
             }),
           );
 
-          yield* rejectNext(harness, firstRename, "10");
-          yield* rejectNext(harness, secondRename, "11");
+          yield* rejectNext(harness, yield* firstRename, "10");
+          yield* rejectNext(harness, yield* secondRename, "11");
           expect(yield* productName(harness)).toBeUndefined();
           expect(yield* harness.store.readPendingMarks).toHaveLength(0);
         }),
@@ -657,7 +660,7 @@ for (const adapter of adapters) {
     it.effect("renames a colliding category shadow before writing the remote category", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          const envelope = catalogEnvelope({
+          const envelope = yield* catalogEnvelope({
             operationId: "local-category",
             clientSequence: "1",
             writes: [insertCategoryWrite],
@@ -707,8 +710,8 @@ for (const adapter of adapters) {
     it.effect("projects a delivery onto its order line and restores it when rejected", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
-          const receive = purchasing("2", [
+          yield* harness.store.enqueueCommand(enqueueRequestOf(yield* placeOrder, 1));
+          const receive = yield* purchasing("2", [
             deliveryWrite(),
             orderWrite({ status: "sent", expectedRowVersion: 1 }),
           ]);
@@ -731,7 +734,7 @@ for (const adapter of adapters) {
           });
           yield* harness.store.settleUploadClaim(
             "claim-place",
-            acceptedCatalogReceipt(placeOrder, "10", placeOrderWrites.length),
+            acceptedCatalogReceipt(yield* placeOrder, "10", placeOrderWrites.length),
           );
           yield* harness.store.claimNextUpload({
             claimId: "claim-receive",
@@ -812,7 +815,7 @@ for (const adapter of adapters) {
       () =>
         withHarness((harness) =>
           Effect.gen(function* () {
-            yield* harness.store.enqueueCommand(enqueueRequestOf(placeOrder, 1));
+            yield* harness.store.enqueueCommand(enqueueRequestOf(yield* placeOrder, 1));
             yield* Effect.scoped(harness.store.beginSnapshotImport(snapshotManifest));
             yield* harness.store.importSnapshotPart(snapshotManifest, {
               ...snapshotPart,
@@ -822,9 +825,9 @@ for (const adapter of adapters) {
             yield* expectDisplacedShadows(harness);
             expect(findRow(yield* harness.rows("purchaseOrderItem"), ORDER_LINE_ID)).toBeDefined();
             const marks = yield* harness.store.readPendingMarks;
-            expect(
-              marks.filter((mark) => mark.operationId === placeOrder.operationId),
-            ).toHaveLength(placeOrderWrites.length);
+            expect(marks.filter((mark) => mark.operationId === "order-place")).toHaveLength(
+              placeOrderWrites.length,
+            );
           }),
         ),
     );

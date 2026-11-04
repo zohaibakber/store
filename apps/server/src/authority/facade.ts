@@ -14,6 +14,7 @@ import {
 import { makeReplicaDb } from "@store/sync/authority";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -143,6 +144,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* SecureRandom.SecureRandom;
   const alarm = yield* MaintenanceAlarm;
+  const digest = yield* Digest.Digest;
   const mintId = Effect.map(crypto.uuidV4(), (uuid) => uuid.replaceAll("-", ""));
   yield* migrateAuthority(sql).pipe(Effect.orDie);
   const db = yield* makeReplicaDb(sql);
@@ -155,8 +157,11 @@ const make = Effect.gen(function* () {
     alarm.scheduleBy(now + MAINTENANCE_INTERVAL_MILLIS),
   );
 
+  const serve = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    replyOf(Effect.provideService(effect, Digest.Digest, digest));
+
   const serveWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    replyOf(Effect.tap(effect, () => soon));
+    serve(Effect.tap(effect, () => soon));
 
   const register = Effect.fn("OrgAuthority.register")(function* (
     actor: Actor,
@@ -174,11 +179,11 @@ const make = Effect.gen(function* () {
   });
 
   const receipt = Effect.fn("OrgAuthority.receipt")(function* (actor: Actor, operationId: string) {
-    return yield* replyOf(engine.receipt(actor, operationId));
+    return yield* serve(engine.receipt(actor, operationId));
   });
 
   const pull = Effect.fn("OrgAuthority.pull")(function* (actor: Actor, request: SyncPullRequest) {
-    return yield* replyOf(
+    return yield* serve(
       engine.pull(actor, {
         epoch: request.epoch,
         subscription: request.subscription,
@@ -214,25 +219,25 @@ const make = Effect.gen(function* () {
     snapshotId: string,
     partNumber: number,
   ) {
-    return yield* replyOf(snapshots.readPart(actor, snapshotId, partNumber));
+    return yield* serve(snapshots.readPart(actor, snapshotId, partNumber));
   });
 
   const devices = Effect.fn("OrgAuthority.devices")(function* (actor: Actor) {
-    return yield* replyOf(engine.devices(actor, yield* Clock.currentTimeMillis));
+    return yield* serve(engine.devices(actor, yield* Clock.currentTimeMillis));
   });
 
   const deviceCommand = Effect.fn("OrgAuthority.deviceCommand")(function* (
     actor: Actor,
     command: DeviceCommand,
   ) {
-    return yield* replyOf(engine.deviceCommand(actor, command, yield* Clock.currentTimeMillis));
+    return yield* serve(engine.deviceCommand(actor, command, yield* Clock.currentTimeMillis));
   });
 
   const liveHorizon = Effect.fn("OrgAuthority.liveHorizon")(function* (
     actor: Actor,
     replicaId: string,
   ) {
-    return yield* replyOf(engine.liveHorizon(actor, replicaId, yield* Clock.currentTimeMillis));
+    return yield* serve(engine.liveHorizon(actor, replicaId, yield* Clock.currentTimeMillis));
   });
 
   const stageImportPart = Effect.fn("OrgAuthority.stageImportPart")(function* (
@@ -266,23 +271,28 @@ const make = Effect.gen(function* () {
     _actor: Actor,
     importId: string,
   ) {
-    return yield* replyOf(imports.status(importId));
+    return yield* serve(imports.status(importId));
   });
 
-  const maintain = Effect.fn("OrgAuthority.maintain")(function* () {
-    const now = yield* Clock.currentTimeMillis;
-    const report = yield* maintenance.run(now, MAINTENANCE_POLICY);
-    const state = yield* engine.loadState;
-    const retained =
-      state !== undefined &&
-      state.commitSequence - state.retentionFloor > MAINTENANCE_POLICY.minimumRetainedTransactions;
-    if (report.more) {
-      yield* alarm.scheduleAt(now + MAINTENANCE_CONTINUE_MILLIS);
-    } else if (retained || (yield* maintenance.pendingWork())) {
-      yield* alarm.scheduleAt(now + MAINTENANCE_INTERVAL_MILLIS);
-    }
-    return report;
-  }, Effect.orDie);
+  const maintain = Effect.fn("OrgAuthority.maintain")(
+    function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const report = yield* maintenance.run(now, MAINTENANCE_POLICY);
+      const state = yield* engine.loadState;
+      const retained =
+        state !== undefined &&
+        state.commitSequence - state.retentionFloor >
+          MAINTENANCE_POLICY.minimumRetainedTransactions;
+      if (report.more) {
+        yield* alarm.scheduleAt(now + MAINTENANCE_CONTINUE_MILLIS);
+      } else if (retained || (yield* maintenance.pendingWork())) {
+        yield* alarm.scheduleAt(now + MAINTENANCE_INTERVAL_MILLIS);
+      }
+      return report;
+    },
+    Effect.provideService(Digest.Digest, digest),
+    Effect.orDie,
+  );
 
   return OrgAuthorityFacade.of({
     register,

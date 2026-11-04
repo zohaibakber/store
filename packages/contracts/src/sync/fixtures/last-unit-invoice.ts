@@ -10,7 +10,6 @@ import {
 } from "../../ids";
 import { Money } from "../../store/pricing";
 import type { IssueInvoiceCommand } from "../../store/schema";
-import { canonicalPayloadHash } from "../operation-hash";
 import { ReplicaClientSequence, type SyncCommandEnvelope, SyncEpoch } from "../protocol";
 
 export const LAST_UNIT_ORGANIZATION_ID = decodeOrganizationId("org-1");
@@ -76,6 +75,7 @@ const lastUnitEnvelope = (input: {
   readonly replicaId: ReplicaId;
   readonly clientSequence: string;
   readonly command: IssueInvoiceCommand;
+  readonly payloadHash: string;
 }): SyncCommandEnvelope => {
   const command = { _tag: "issueInvoice" as const, payload: input.command };
   return {
@@ -84,7 +84,7 @@ const lastUnitEnvelope = (input: {
     replicaId: input.replicaId,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
     operationId: OperationId.make(input.command.commandId),
-    payloadHash: canonicalPayloadHash(command),
+    payloadHash: input.payloadHash,
     command,
   };
 };
@@ -93,10 +93,12 @@ export const lastUnitBuyerAEnvelope = lastUnitEnvelope({
   replicaId: LAST_UNIT_REPLICA_A,
   clientSequence: "1",
   command: lastUnitBuyerACommand,
+  payloadHash: "32deba780e9ff29bb64bf8e00351f7341f16d1c4360dc1773a689a3403980050",
 });
 
 export const lastUnitBuyerBEnvelope = lastUnitEnvelope({
   replicaId: LAST_UNIT_REPLICA_B,
   clientSequence: "1",
   command: lastUnitBuyerBCommand,
+  payloadHash: "bcd012371f1696393baa07aeb152a4cf1d55218161c2e6980e3b9e0ddbc19336",
 });

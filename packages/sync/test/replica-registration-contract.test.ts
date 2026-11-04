@@ -10,14 +10,14 @@ import {
   syncProtocolError,
   type CatalogRowWrite,
   type RegisterReplicaResult,
-  type SyncCommandEnvelope,
+  type EnqueueCommandRequest,
   type SyncProtocolError,
   OperationId,
 } from "@store/contracts";
 import { decodeCategoryId } from "@store/contracts/ids";
-import { canonicalPayloadHash } from "@store/contracts/operation-hash";
 import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
@@ -30,7 +30,6 @@ import type { ReplicaStore } from "../src/replica/store";
 import { openReplicaStore } from "../src/sqlite";
 import { SyncTransport, SyncTransportOffline } from "../src/transport";
 import { engineOf, stubTransport } from "./lib/engine-fixture";
-import { enqueueRequestOf } from "./lib/enqueue";
 import { acceptedCatalogReceipt, FIXTURE_NOW } from "./lib/pending-fixture";
 
 const USER_ID = "user-1";
@@ -62,18 +61,18 @@ const makeSqliteHarness = Effect.fn("registration.sqlite")(function* () {
 
 const harnesses: ReadonlyArray<{
   readonly name: string;
-  readonly make: () => Effect.Effect<Harness>;
+  readonly make: () => Effect.Effect<Harness, never, Digest.Digest>;
 }> = [{ name: "SQLite", make: makeSqliteHarness }];
 
 const withHarness = <A, E>(
-  make: () => Effect.Effect<Harness>,
+  make: () => Effect.Effect<Harness, never, Digest.Digest>,
   use: (store: ReplicaStore["Service"]) => Effect.Effect<A, E>,
 ) =>
   Effect.acquireUseRelease(
     make(),
     (harness) => use(harness.store),
     (harness) => harness.close,
-  );
+  ).pipe(Effect.provide(Digest.layerWebCrypto));
 
 type AuthorityIdentity = {
   readonly epoch: string;
@@ -190,31 +189,19 @@ const categoryWrite = (index: number): CatalogRowWrite => ({
   row: { name: `Category ${index}`, tracksPacks: false },
 });
 
-const categoryEnvelope = (
-  index: number,
-  epoch: string,
-  clientSequence: string,
-): SyncCommandEnvelope => {
-  const operationId = `op-${index}`;
-  const command: SyncCommandEnvelope["command"] = {
+const categoryRequest = (index: number): EnqueueCommandRequest => ({
+  operationId: OperationId.make(`op-${index}`),
+  command: {
     _tag: "catalogWrite",
     payload: {
-      commandId: operationId,
+      commandId: `op-${index}`,
       deviceId: LAST_UNIT_REPLICA_A,
       occurredAt: FIXTURE_NOW + index,
       writes: [categoryWrite(index)],
     },
-  };
-  return {
-    organizationId: LAST_UNIT_ORGANIZATION_ID,
-    epoch: SyncEpoch.make(epoch),
-    replicaId: LAST_UNIT_REPLICA_A,
-    clientSequence: ReplicaClientSequence.make(clientSequence),
-    operationId: OperationId.make(operationId),
-    payloadHash: canonicalPayloadHash(command),
-    command,
-  };
-};
+  },
+  occurredAt: FIXTURE_NOW,
+});
 
 const engineFor = (store: ReplicaStore["Service"], transport: SyncTransport["Service"]) =>
   engineOf(store, stubTransport(transport));
@@ -223,8 +210,8 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("re-stamps never-sent commands and uploads them without a sequence gap", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(2, "1", "2"), FIXTURE_NOW));
+        yield* store.enqueueCommand(categoryRequest(1));
+        yield* store.enqueueCommand(categoryRequest(2));
         const authority = makeAuthority({
           epoch: "2",
           incarnation: "authority-b",
@@ -240,7 +227,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
         expect(yield* store.readCommandStatus(OperationId.make("op-2"))).toBe(
           "accepted_awaiting_integration",
         );
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(3, "2", "9"), FIXTURE_NOW));
+        yield* store.enqueueCommand(categoryRequest(3));
         expect(yield* engine.drainUploads).toBe(1);
         expect(authority.accepted).toEqual(["7", "8", "9"]);
         yield* engine.ensureRegistered;
@@ -252,7 +239,7 @@ describe.each(harnesses)("$name replica registration", ({ make }) => {
   it.effect("refuses to re-stamp a conflicting command that was already sent", () =>
     withHarness(make, (store) =>
       Effect.gen(function* () {
-        yield* store.enqueueCommand(enqueueRequestOf(categoryEnvelope(1, "1", "1"), FIXTURE_NOW));
+        yield* store.enqueueCommand(categoryRequest(1));
         yield* store.claimNextUpload({
           claimId: "claim-1",
           claimedAt: FIXTURE_NOW,

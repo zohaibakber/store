@@ -25,6 +25,7 @@ import {
 } from "@store/contracts/sync/fixtures";
 import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { sql } from "drizzle-orm";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -47,7 +48,7 @@ import { applyGroup } from "./lib/authority";
 import { enqueueRequestOf } from "./lib/enqueue";
 import {
   CASE_PRODUCT_ID,
-  catalogEnvelope,
+  catalogRequest,
   FIXTURE_NOW,
   NEW_CATEGORY_ID,
   ORDER_ID,
@@ -210,10 +211,9 @@ const remoteRename = (commitSequence: string, name: string): SyncTransactionGrou
 });
 
 const categoryCommand = (index: number) =>
-  enqueueRequestOf(
-    catalogEnvelope({
+  catalogRequest(
+    {
       operationId: `local-category-${index}`,
-      clientSequence: String(index + 10),
       writes: [
         {
           entity: "category",
@@ -223,7 +223,7 @@ const categoryCommand = (index: number) =>
           row: { name: `Category ${index}`, tracksPacks: false },
         },
       ],
-    }),
+    },
     index,
   );
 
@@ -231,7 +231,9 @@ const openAt = (path: string) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make();
     const handle = yield* openReplicaStore(path).pipe(Effect.provideService(Scope.Scope, scope));
-    const store = yield* makeSqliteReplicaStore(handle, "generation-test");
+    const store = yield* makeSqliteReplicaStore(handle, "generation-test").pipe(
+      Effect.provide(Digest.layerWebCrypto),
+    );
     return { handle, store, close: Scope.close(scope, Exit.void) };
   });
 
@@ -370,8 +372,8 @@ const scenario = (
     return dump;
   });
 
-const placeOrderCommand = enqueueRequestOf(
-  catalogEnvelope({ operationId: "local-order", clientSequence: "9", writes: placeOrderWrites }),
+const placeOrderCommand = catalogRequest(
+  { operationId: "local-order", writes: placeOrderWrites },
   1,
 );
 
@@ -392,12 +394,8 @@ const events = new Map<number, ScenarioEvent>([
       Effect.all([
         store.enqueueCommand(categoryCommand(2)),
         store.enqueueCommand(
-          enqueueRequestOf(
-            catalogEnvelope({
-              operationId: "local-rename",
-              clientSequence: "30",
-              writes: [renameProductWrite("Local rename")],
-            }),
+          catalogRequest(
+            { operationId: "local-rename", writes: [renameProductWrite("Local rename")] },
             3,
           ),
         ),
@@ -663,7 +661,9 @@ describe("replica snapshot switch races", () => {
   it.effect("keeps stepping instead of activating while the journal is far ahead", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
-        const store = yield* makeSqliteReplicaStore(handle, "race");
+        const store = yield* makeSqliteReplicaStore(handle, "race").pipe(
+          Effect.provide(Digest.layerWebCrypto),
+        );
         yield* importCandidate(handle);
         while ((yield* importStage(handle)) !== "replaying") yield* stepOnce(handle);
         for (let index = 1; index <= 20; index += 1) {
@@ -685,7 +685,9 @@ describe("replica snapshot switch races", () => {
   it.effect("drops the shadow of a command the snapshot already covers", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
-        const store = yield* makeSqliteReplicaStore(handle, "covered");
+        const store = yield* makeSqliteReplicaStore(handle, "covered").pipe(
+          Effect.provide(Digest.layerWebCrypto),
+        );
         yield* store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
         yield* importCandidate(handle);
         while ((yield* importStage(handle)) !== "replaying") yield* stepOnce(handle);
@@ -712,7 +714,9 @@ describe("replica snapshot switch races", () => {
   it.effect("never activates a candidate that is behind the replica", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {
-        const store = yield* makeSqliteReplicaStore(handle, "gap");
+        const store = yield* makeSqliteReplicaStore(handle, "gap").pipe(
+          Effect.provide(Digest.layerWebCrypto),
+        );
         yield* applyGroup(store, remoteRename("5", "Active five"));
         yield* importCandidate(handle);
         const first = yield* stepOnce(handle);

@@ -3,6 +3,7 @@ import { type CatalogRowWrite, type EnqueueCommandRequest, OperationId } from "@
 import { decodeCategoryId } from "@store/contracts/ids";
 import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -34,7 +35,9 @@ const makeSqliteHarness = Effect.fn("enqueue.sqlite")(function* () {
       localCommitVersion: 0,
     }),
   ).pipe(Effect.orDie);
-  const store = yield* makeSqliteReplicaStore(handle, "sqlite-enqueue");
+  const store = yield* makeSqliteReplicaStore(handle, "sqlite-enqueue").pipe(
+    Effect.provide(Digest.layerWebCrypto),
+  );
   return { store, close: Scope.close(scope, Exit.void) } satisfies Harness;
 });
 

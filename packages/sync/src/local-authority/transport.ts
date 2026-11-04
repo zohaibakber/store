@@ -12,6 +12,7 @@ import {
   type SyncSubmitCommandResult,
 } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -46,7 +47,7 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
       "The command does not belong to the active organization.",
     );
   }
-  if (canonicalPayloadHash(request.command) !== request.payloadHash) {
+  if ((yield* canonicalPayloadHash(request.command)) !== request.payloadHash) {
     return yield* syncProtocolError("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
   }
   if (request.epoch !== (yield* epochOf(state))) {
@@ -102,9 +103,17 @@ const submitWithin = Effect.fn("LocalAuthority.submitWithin")(function* (
   } satisfies SyncSubmitCommandResult;
 });
 
-const makeLocalAuthority = (handle: SqliteReplicaHandle): SyncTransport["Service"] => {
-  const reading = <A, E extends ReadFailureCause>(run: (tx: ReplicaDb) => Effect.Effect<A, E>) =>
-    runReplicaTransaction(handle, run).pipe(Effect.mapError(readFailure));
+const makeLocalAuthority = (
+  handle: SqliteReplicaHandle,
+  digest: Digest.Digest["Service"],
+): SyncTransport["Service"] => {
+  const reading = <A, E extends ReadFailureCause>(
+    run: (tx: ReplicaDb) => Effect.Effect<A, E, Digest.Digest>,
+  ) =>
+    runReplicaTransaction(handle, run).pipe(
+      Effect.provideService(Digest.Digest, digest),
+      Effect.mapError(readFailure),
+    );
 
   const registerReplica = Effect.fn("LocalAuthority.registerReplica")(function* (
     request: RegisterReplicaRequest,
@@ -178,6 +187,8 @@ export const LocalAuthority = {
   submitWithin,
   layer: Layer.effect(
     SyncTransport,
-    SqliteReplica.use((handle) => Effect.succeed(makeLocalAuthority(handle))),
+    Effect.gen(function* () {
+      return makeLocalAuthority(yield* SqliteReplica, yield* Digest.Digest);
+    }),
   ),
 };

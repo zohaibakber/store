@@ -1,6 +1,7 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
 import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -46,6 +47,7 @@ export class TestAuthorities extends Context.Service<
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
       const crypto = yield* SecureRandom.SecureRandom;
+      const digest = yield* Digest.Digest;
       const authorities = new Map<string, TestAuthority>();
       const of = (organizationId: string) => {
         const found = authorities.get(organizationId);
@@ -72,6 +74,7 @@ export class TestAuthorities extends Context.Service<
                   scheduleBy: recordAlarm,
                 }),
                 Layer.succeed(SecureRandom.SecureRandom, crypto),
+                Layer.succeed(Digest.Digest, digest),
               ]),
             ),
           );
@@ -95,6 +98,7 @@ export const authorityTest = OrganizationAuthority.layer.pipe(
   Layer.provide(organizationAuthorities),
   Layer.provideMerge(TestAuthorities.layer),
   Layer.provideMerge(Layer.succeedContext(testRuntimeContext)),
+  Layer.provideMerge(Digest.layerWebCrypto),
 );
 
 export const scenario = <A, E, R>(self: Effect.Effect<A, E, R>) =>

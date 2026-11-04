@@ -18,6 +18,7 @@ import {
   type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
+import type * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -88,7 +89,7 @@ type SqliteReplicaAuthority<SyncError> = {
   readonly sync: Layer.Layer<
     SyncEngine | SyncScheduler,
     SyncError,
-    ReplicaStore | SqliteReplica | SecureRandom.SecureRandom
+    ReplicaStore | SqliteReplica | SecureRandom.SecureRandom | Digest.Digest
   >;
   readonly store: SqliteReplicaStoreOptions;
 };

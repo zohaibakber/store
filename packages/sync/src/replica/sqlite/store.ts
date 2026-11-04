@@ -20,6 +20,7 @@ import type {
   ReplicaReadStamp,
 } from "@store/contracts/sync/replica-model";
 import * as Clock from "effect/Clock";
+import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -128,7 +129,7 @@ type CheckpointWindow = {
 type InTransactionAuthority = (
   tx: ReplicaDb,
   request: SyncSubmitCommandRequest,
-) => Effect.Effect<SyncSubmitCommandResult, unknown>;
+) => Effect.Effect<SyncSubmitCommandResult, unknown, Digest.Digest>;
 
 export type SqliteReplicaStoreOptions = {
   readonly authority?: InTransactionAuthority;
@@ -152,8 +153,9 @@ const makeSqliteReplicaStoreInternals = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions,
-): Effect.Effect<SqliteReplicaStoreInternals> =>
+): Effect.Effect<SqliteReplicaStoreInternals, never, Digest.Digest> =>
   Effect.gen(function* () {
+    const digest = yield* Digest.Digest;
     const { publish, commits } = yield* makeReplicaCommitHub();
     const cleanupRequests = yield* Queue.sliding<void>(1);
     const requestCleanup = Queue.offer(cleanupRequests, undefined).pipe(Effect.asVoid);
@@ -165,9 +167,10 @@ const makeSqliteReplicaStoreInternals = (
 
     const withTx = <A, E>(
       span: string,
-      run: (tx: ReplicaDb) => Effect.Effect<A, E>,
+      run: (tx: ReplicaDb) => Effect.Effect<A, E, Digest.Digest>,
     ): Effect.Effect<A, ReplicaStoreError> =>
       runReplicaTransaction(handle, run).pipe(
+        Effect.provideService(Digest.Digest, digest),
         Effect.ensuring(markActivity),
         Effect.mapError(mapReplicaStoreFailure),
         Effect.withSpan(span),
@@ -194,7 +197,7 @@ const makeSqliteReplicaStoreInternals = (
 
     const commit = <A, E>(
       span: string,
-      run: (tx: ReplicaDb) => Effect.Effect<A, E>,
+      run: (tx: ReplicaDb) => Effect.Effect<A, E, Digest.Digest>,
       notice: (value: A, after: ReplicaReadStamp) => ReplicaCommitNotice | undefined,
     ): Effect.Effect<Committed<A>, ReplicaStoreError> =>
       withTx(span, (tx) =>
@@ -379,7 +382,9 @@ const makeSqliteReplicaStoreInternals = (
           return (
             input.payload._tag === "liveFrame"
               ? Effect.succeed(UNVERIFIED)
-              : verifyPulledDigest(withTx, input.payload.page, applied.digestFence)
+              : verifyPulledDigest(withTx, input.payload.page, applied.digestFence).pipe(
+                  Effect.provideService(Digest.Digest, digest),
+                )
           ).pipe(
             Effect.map((coverage): Committed<Integrated> => ({
               value: {
@@ -696,7 +701,7 @@ export const makeSqliteReplicaStore = (
   handle: SqliteReplicaHandle,
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions = {},
-): Effect.Effect<ReplicaStore["Service"]> =>
+): Effect.Effect<ReplicaStore["Service"], never, Digest.Digest> =>
   makeSqliteReplicaStoreInternals(handle, databaseIdentity, options).pipe(
     Effect.map((internals) => internals.store),
   );
@@ -704,7 +709,7 @@ export const makeSqliteReplicaStore = (
 export const layerSqliteReplicaStore = (
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions = {},
-): Layer.Layer<ReplicaStore, never, SqliteReplica> =>
+): Layer.Layer<ReplicaStore, never, SqliteReplica | Digest.Digest> =>
   Layer.effect(
     ReplicaStore,
     Effect.gen(function* () {

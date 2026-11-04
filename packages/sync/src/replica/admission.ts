@@ -40,7 +40,7 @@ export const admitCommand = Effect.fn("ReplicaAdmission.admitCommand")(function*
   request: EnqueueCommandRequest,
   reads: CatalogReads<E, R>,
 ) {
-  const payloadHash = canonicalPayloadHash(request.command);
+  const payloadHash = yield* canonicalPayloadHash(request.command);
   const replay = yield* Effect.fromResult(decideEnqueueReplay(stored, payloadHash));
   if (replay !== undefined) {
     return { _tag: "replayed", status: replay } satisfies CommandAdmission;
