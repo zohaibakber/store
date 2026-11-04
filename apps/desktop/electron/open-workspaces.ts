@@ -8,7 +8,7 @@ import type { RequestError } from "@store/workspace";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -284,7 +284,7 @@ const sessionLicence = (
 export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
   options: OpenWorkspacesOptions,
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const spawnWorker = options.spawnWorker ?? spawnNodeReplicaWorker;
   const spawnReader = options.spawnReader ?? spawnNodeReplicaReader;
   const analyticsWorkerPath = path.join(path.dirname(options.workerPath), "analytics-worker.js");
@@ -472,7 +472,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     sender: ReplicaSender,
     identity: typeof ReplicaOpenInput.Type,
   ) {
-    const workspaceToken = WorkspaceToken.make(yield* Effect.orDie(crypto.randomUUIDv4()));
+    const workspaceToken = WorkspaceToken.make(yield* crypto.uuidV4());
     const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
     const gone = yield* Deferred.make<void>();

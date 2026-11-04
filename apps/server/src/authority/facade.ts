@@ -14,7 +14,7 @@ import {
 import { makeReplicaDb } from "@store/sync/authority";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -141,12 +141,9 @@ const replyOf = <A, E, R>(
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const alarm = yield* MaintenanceAlarm;
-  const mintId = crypto.randomUUIDv4().pipe(
-    Effect.map((uuid) => uuid.replaceAll("-", "")),
-    Effect.orDie,
-  );
+  const mintId = Effect.map(crypto.uuidV4(), (uuid) => uuid.replaceAll("-", ""));
   yield* migrateAuthority(sql).pipe(Effect.orDie);
   const db = yield* makeReplicaDb(sql);
   const engine = makeAuthorityEngine(sql, db);

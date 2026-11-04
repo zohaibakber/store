@@ -1,9 +1,8 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
-import { WebCrypto } from "@store/auth";
 import { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/reactivity/Reactivity";
@@ -16,7 +15,7 @@ import { MaintenanceAlarm, OrgAuthorityFacade } from "./facade";
 export const OrgAuthorityLive = OrgAuthority.make(
   Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     return Effect.gen(function* () {
       const sql = yield* SqliteClient.make({ storage: state.raw.storage }).pipe(
         Effect.provide(Reactivity.layer),
@@ -44,7 +43,7 @@ export const OrgAuthorityLive = OrgAuthority.make(
         OrgAuthorityFacade.layer.pipe(
           Layer.provide([
             Layer.succeed(SqlClient.SqlClient, sql),
-            Layer.succeed(Crypto.Crypto, crypto),
+            Layer.succeed(SecureRandom.SecureRandom, crypto),
             Layer.succeed(MaintenanceAlarm, alarm),
           ]),
         ),
@@ -55,5 +54,5 @@ export const OrgAuthorityLive = OrgAuthority.make(
         alarm: () => Effect.andThen(Ref.set(armedAt, null), Effect.asVoid(authority.maintain())),
       } satisfies OrgAuthorityContract;
     });
-  }).pipe(Effect.provide(WebCrypto.layer)),
+  }).pipe(Effect.provide(SecureRandom.layerWebCrypto)),
 );

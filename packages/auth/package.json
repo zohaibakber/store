@@ -12,9 +12,9 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261026.1",
+    "@cloudflare/workers-types": "^5.20261028.1",
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

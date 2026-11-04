@@ -1,6 +1,6 @@
 import type { DeviceLabel, SyncProtocolError } from "@store/contracts";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -91,7 +91,7 @@ export const layerOwnedHttpSync = (
 ): Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransport | Crypto.Crypto
+  ReplicaStore | SyncTransport | SecureRandom.SecureRandom
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
     Layer.provide(SyncScheduler.layer(options.policy ?? defaultHttpPollPolicy)),
@@ -122,7 +122,7 @@ const ownLocalSync: Effect.Effect<
 export const layerOwnedLocalSync: Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransport | Crypto.Crypto
+  ReplicaStore | SyncTransport | SecureRandom.SecureRandom
 > = Layer.effect(SyncScheduler, ownLocalSync).pipe(
   Layer.provide(SyncScheduler.layer(LOCAL_SYNC_POLICY, { recovers: false })),
   Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),

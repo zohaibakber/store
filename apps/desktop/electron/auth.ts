@@ -30,7 +30,8 @@ import {
   type SessionSnapshotHooks,
 } from "@store/workspace";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -94,10 +95,13 @@ const PkceChallenge = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/
   Schema.brand("PkceChallenge"),
 );
 
-const proofKey = Effect.fnUntraced(function* (crypto: Crypto.Crypto) {
-  const verifier = Base64Url.encode(yield* crypto.randomBytes(32));
-  const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier));
-  const codeChallenge = yield* Schema.decodeUnknownEffect(PkceChallenge)(Base64Url.encode(digest));
+const proofKey = Effect.fnUntraced(function* (
+  random: SecureRandom.SecureRandom["Service"],
+  digest: Digest.Digest["Service"],
+) {
+  const verifier = Base64Url.encode(yield* random.randomBytes(32));
+  const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(verifier));
+  const codeChallenge = yield* Schema.decodeUnknownEffect(PkceChallenge)(Base64Url.encode(hash));
   return { verifier: Redacted.make(verifier), codeChallenge };
 }, Effect.mapError(googleProofFailed));
 
@@ -130,7 +134,8 @@ export interface DesktopAuthOptions {
 
 const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
   const { forgetPersisted, readPersisted, writePersisted } = persistence(yield* PrivateFiles);
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
   const events = yield* ShellEvents;
   const scope = yield* Effect.scope;
   const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
@@ -229,7 +234,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     }),
     beginGoogle: Effect.fn("DesktopAuth.beginGoogle")(function* (redirectUri: string) {
       const client = yield* signIn;
-      const { verifier, codeChallenge } = yield* proofKey(crypto);
+      const { verifier, codeChallenge } = yield* proofKey(random, digest);
       const authorization = yield* client.beginGoogle({
         redirectUri,
         codeChallenge,

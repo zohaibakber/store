@@ -1,8 +1,7 @@
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient";
-import { WebCrypto } from "@store/auth";
 import { makeReplicaDb, type ReplicaDb } from "@store/sync/authority";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Reactivity from "effect/reactivity/Reactivity";
@@ -25,22 +24,15 @@ export type TestAuthority = {
   readonly alarms: Array<number>;
 };
 
-export const SequentialCrypto = Layer.effect(
-  Crypto.Crypto,
-  Effect.gen(function* () {
-    const real = yield* Crypto.Crypto;
-    let minted = 0;
-    return Crypto.make({
-      digest: (algorithm, data) => real.digest(algorithm, data),
-      randomBytes: (size) => {
-        minted += 1;
-        const bytes = new Uint8Array(size);
-        new DataView(bytes.buffer).setUint32(0, minted);
-        return bytes;
-      },
-    });
-  }),
-).pipe(Layer.provide(WebCrypto.layer));
+export const SequentialCrypto = Layer.sync(SecureRandom.SecureRandom, () => {
+  let minted = 0;
+  return SecureRandom.make((size) => {
+    minted += 1;
+    const bytes = new Uint8Array(size);
+    new DataView(bytes.buffer).setUint32(0, minted);
+    return bytes;
+  });
+});
 
 export class TestAuthorities extends Context.Service<
   TestAuthorities,
@@ -53,7 +45,7 @@ export class TestAuthorities extends Context.Service<
     TestAuthorities,
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
       const authorities = new Map<string, TestAuthority>();
       const of = (organizationId: string) => {
         const found = authorities.get(organizationId);
@@ -79,7 +71,7 @@ export class TestAuthorities extends Context.Service<
                   scheduleAt: recordAlarm,
                   scheduleBy: recordAlarm,
                 }),
-                Layer.succeed(Crypto.Crypto, crypto),
+                Layer.succeed(SecureRandom.SecureRandom, crypto),
               ]),
             ),
           );

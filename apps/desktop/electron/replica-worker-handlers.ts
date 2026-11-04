@@ -39,7 +39,7 @@ import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FiberSet from "effect/FiberSet";
@@ -87,7 +87,7 @@ const StaffGateLive = layerNodeStaffGate();
 type Session = Context.Context<SqliteReplicaServices | StaffGate | ShopLicence>;
 
 type AuthorityLink = {
-  readonly session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>;
+  readonly session: Layer.Layer<SqliteReplicaServices, unknown, SecureRandom.SecureRandom>;
   readonly setToken: (token: Redacted.Redacted<string> | null) => Effect.Effect<void>;
   readonly setForeground: (
     scheduler: SyncScheduler["Service"],
@@ -176,13 +176,13 @@ const linkAuthority = (config: WorkerBoot): Effect.Effect<AuthorityLink, never, 
 };
 
 const openSession = (
-  session: Layer.Layer<SqliteReplicaServices, unknown, Crypto.Crypto>,
-  crypto: Crypto.Crypto,
+  session: Layer.Layer<SqliteReplicaServices, unknown, SecureRandom.SecureRandom>,
+  crypto: SecureRandom.SecureRandom["Service"],
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
   Layer.buildWithScope(
     Layer.fresh(Layer.provideMerge(Layer.mergeAll(StaffGateLive, layerShopLicence), session)).pipe(
-      Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
+      Layer.provide(Layer.succeed(SecureRandom.SecureRandom, crypto)),
     ),
     scope,
   ).pipe(Effect.tap((built) => Context.get(built, ReplicaStore).readSyncCursor));
@@ -191,7 +191,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
   ReplicaWorkerRpcs.toLayer(
     Effect.gen(function* () {
       const config = yield* boot;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
       const link = yield* linkAuthority(config);
 
       const sessionScope = yield* Scope.fork(yield* Effect.scope);
@@ -231,7 +231,7 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
                 ),
               ),
               Layer.provide(Layer.succeedContext(session)),
-              Layer.provide(Layer.succeed(Crypto.Crypto, crypto)),
+              Layer.provide(Layer.succeed(SecureRandom.SecureRandom, crypto)),
               Layer.provide(protocol),
             ),
           ),

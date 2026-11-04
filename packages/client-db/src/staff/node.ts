@@ -23,7 +23,7 @@ import { staff, staffEvents, staffSettings } from "@store/db/replica.schema";
 import { runReplicaTransaction, SqliteReplica } from "@store/sync/sql-client";
 import { desc, eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -117,12 +117,12 @@ const demand = <A>(decision: Result.Result<A, StaffRefusal>) =>
 
 export const layerNodeStaffGate = (options?: {
   readonly kdfCost?: number;
-}): Layer.Layer<StaffGate, ReplicaStorageError, SqliteReplica | Crypto.Crypto> =>
+}): Layer.Layer<StaffGate, ReplicaStorageError, SqliteReplica | SecureRandom.SecureRandom> =>
   Layer.effect(
     StaffGate,
     Effect.gen(function* () {
       const replica = yield* SqliteReplica;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
       const turn = yield* Semaphore.make(1);
       const oneAtATime = <A, E, R>(work: Effect.Effect<A, E, R>) => turn.withPermit(work);
       const kdfCost = options?.kdfCost ?? STAFF_KDF_COST;
@@ -133,17 +133,12 @@ export const layerNodeStaffGate = (options?: {
         stored(runReplicaTransaction(replica, () => work));
 
       const seal = (secret: Redacted.Redacted<string>) =>
-        sealSecret(secret, kdfCost).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        sealSecret(secret, kdfCost).pipe(Effect.provideService(SecureRandom.SecureRandom, crypto));
 
-      const newStaffId = crypto.randomUUIDv4().pipe(
-        Effect.orDie,
-        Effect.map((id) => StaffId.make(id)),
-      );
+      const newStaffId = Effect.map(crypto.uuidV4(), (id) => StaffId.make(id));
 
       const issueRecoveryCode = Effect.gen(function* () {
-        const code = recoveryCodeFromBytes(
-          yield* Effect.orDie(crypto.randomBytes(RECOVERY_CODE_LENGTH)),
-        );
+        const code = recoveryCodeFromBytes(yield* crypto.randomBytes(RECOVERY_CODE_LENGTH));
         return { verifier: yield* seal(Redacted.make(code)), shown: formatRecoveryCode(code) };
       });
 

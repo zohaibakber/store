@@ -22,7 +22,7 @@ import {
 } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -128,8 +128,8 @@ const makeSyncEngine = (options: SyncEngineOptions) =>
   Effect.gen(function* () {
     const store = yield* ReplicaStore;
     const transport = yield* SyncTransport;
-    const crypto = yield* Crypto.Crypto;
-    const makeClaimId = Effect.orDie(crypto.randomUUIDv4());
+    const crypto = yield* SecureRandom.SecureRandom;
+    const makeClaimId = crypto.uuidV4();
     const mutex = yield* Semaphore.make(1);
     const firstClaimAt = yield* Ref.make<number | undefined>(undefined);
     const digestIntervalMillis =

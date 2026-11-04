@@ -136,7 +136,7 @@ export class GoogleIdentity extends Context.Service<GoogleIdentity>()(
           return yield* new AuthRefusal({ reason: "InvalidAuthorizationCode" });
         }
         const challenge = yield* crypto.pkceChallenge(input.codeVerifier);
-        if (!(yield* crypto.matches(challenge, grant.codeChallenge))) {
+        if (!crypto.matches(challenge, grant.codeChallenge)) {
           return yield* new AuthRefusal({ reason: "InvalidCodeVerifier" });
         }
         if (input.client._tag !== grant.client._tag) {

@@ -1,7 +1,7 @@
 import { scrypt, timingSafeEqual } from "node:crypto";
 
 import { ReplicaStorageError } from "@store/contracts/replica";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
@@ -41,7 +41,7 @@ export const sealSecret = Effect.fn("StaffVerifier.seal")(function* (
   secret: Redacted.Redacted<string>,
   cost: number,
 ) {
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const salt = yield* crypto.randomBytes(SALT_BYTES);
   const key = yield* derive(secret, salt, cost);
   return yield* encodeVerifier({ cost, salt, key });

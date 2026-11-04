@@ -11,7 +11,7 @@ import {
 import { count, eq, getTableName, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-sqlite";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -231,7 +231,7 @@ export const backUpReplicaFile = Effect.fn("ReplicaBackup.backUp")(function* (in
   readonly databasePath: string;
   readonly destinationPath: string;
 }) {
-  const partial = `${input.destinationPath}.${yield* (yield* Crypto.Crypto).randomUUIDv4()}.partial`;
+  const partial = `${input.destinationPath}.${yield* (yield* SecureRandom.SecureRandom).uuidV4()}.partial`;
   return yield* Effect.gen(function* () {
     yield* withDatabase(input.databasePath, "read", (db) =>
       Effect.try({

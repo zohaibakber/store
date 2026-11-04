@@ -1,6 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as FileSystem from "effect/FileSystem";
@@ -44,7 +44,7 @@ export class ShellServer extends Context.Service<
         | ReplicaHost
         | ShellEvents
         | Updater
-        | Crypto.Crypto
+        | SecureRandom.SecureRandom
         | FileSystem.FileSystem
         | Path.Path
         | PrivateFiles

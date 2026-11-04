@@ -4,7 +4,7 @@ import { AuthClientError } from "@store/auth";
 import { isWhatsAppUrl } from "@store/services/purchasing";
 import { isUnreachable, RequestError } from "@store/workspace";
 import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -114,7 +114,7 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const { sender } = yield* ShellConnection;
     const fileSystem = yield* FileSystem.FileSystem;
     const sourceLinks = makeSourceLinks();
-    const platform = yield* Effect.context<Crypto.Crypto | Path.Path | PrivateFiles>();
+    const platform = yield* Effect.context<SecureRandom.SecureRandom | Path.Path | PrivateFiles>();
     const deviceId = yield* cachedOnSuccess(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
     );

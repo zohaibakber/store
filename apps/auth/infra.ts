@@ -19,6 +19,7 @@ import * as Exit from "effect/Exit";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
+import type * as Jwk from "effect/jose/Jwk";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
@@ -116,10 +117,13 @@ export const AuthLive = Auth.make(
 
     const isolateServices = yield* workerRuntimeServices;
     const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
+    const googleHttpClient = FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+    );
     const dependencies = (keys: {
       readonly origin: string;
       readonly ring: JwtKeyRing;
-      readonly signingJwk: Redacted.Redacted<JsonWebKey>;
+      readonly signer: Jwk.PrivateKey;
       readonly ephemeralSecret: Redacted.Redacted<string>;
     }) =>
       Layer.mergeAll(
@@ -128,15 +132,14 @@ export const AuthLive = Auth.make(
         PasswordHasher.layer,
         AccessTokenService.layer({
           keys: keys.ring,
-          activeKeyId: keys.ring[0]?.kid,
-          privateJwk: keys.signingJwk,
+          signer: keys.signer,
         }).pipe(Layer.provide(WebCrypto.layer)),
         developmentOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
         GoogleOAuth.layer({
           clientId: GOOGLE_OAUTH_CLIENT_ID,
           clientSecret: googleClientSecret,
           callbackUrl: `${keys.origin}/v1/oauth/google/callback`,
-        }).pipe(Layer.provide(FetchHttpClient.layer)),
+        }).pipe(Layer.provide(googleHttpClient)),
         HubRevocation.layer(orgHubs, (effect) => execution.waitUntil(effect)),
         AuthLimiter.layer({
           tenPerMinute: (key) => tenPerMinute.limit({ key }),
@@ -158,12 +161,12 @@ export const AuthLive = Auth.make(
             onSome: Effect.succeed,
           });
           const ring = yield* decodePublicKeyPem(material.publicKey);
-          const signingJwk = yield* decodeSigningKeyPem(material.signingKey);
+          const signer = yield* decodeSigningKeyPem(material.signingKey);
           const built = yield* Layer.build(
             dependencies({
               origin: material.origin,
               ring,
-              signingJwk,
+              signer,
               ephemeralSecret: material.ephemeralSecret,
             }),
           );

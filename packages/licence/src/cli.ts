@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -13,7 +14,7 @@ import * as Command from "effect/cli/Command";
 import * as Flag from "effect/cli/Flag";
 import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -131,8 +132,8 @@ const issueAndRecord = Effect.fn("LicenceCli.issue")(function* (
 ) {
   const store = yield* OperatorStore;
   const fs = yield* FileSystem.FileSystem;
-  const crypto = yield* Crypto.Crypto;
-  const id = LicenceId.make(yield* Effect.orDie(crypto.randomUUIDv4()));
+  const crypto = yield* SecureRandom.SecureRandom;
+  const id = LicenceId.make(yield* crypto.uuidV4());
   const issued = signLicence({ ...grant, id }, key, backup);
   yield* store.record(issued);
   if (Option.isSome(file)) {
@@ -204,11 +205,11 @@ const issue = Command.make(
   },
   Effect.fn(function* (input) {
     const store = yield* OperatorStore;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const key = yield* signingKey(input.key);
     const shopId = yield* Option.match(input.shopId, {
       onSome: (id) => Effect.succeed(id),
-      onNone: () => Effect.map(Effect.orDie(crypto.randomUUIDv4()), (id) => ShopId.make(id)),
+      onNone: () => Effect.map(crypto.uuidV4(), (id) => ShopId.make(id)),
     });
     const issuedAt = (yield* Clock.currentTimeMillis) - input.issuedDaysAgo * DAY_MILLIS;
     const backup = input.backup
@@ -306,7 +307,11 @@ Command.make("licence").pipe(
   Command.withDescription("Issue and inspect Tabaaq licences"),
   Command.withSubcommands([keygen, issue, renew, list, show]),
   Command.run({ version: "1" }),
-  Effect.provide(OperatorStore.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+  Effect.provide(
+    OperatorStore.layer.pipe(
+      Layer.provideMerge(Layer.merge(NodeServices.layer, NodeCrypto.layerSecureRandom)),
+    ),
+  ),
   Effect.tapErrorTag("OperatorFailure", (failure) => Console.error(failure.message)),
   NodeRuntime.runMain,
 );

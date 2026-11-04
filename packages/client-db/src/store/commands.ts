@@ -19,7 +19,7 @@ import { mapReplicaStoreFailure, type ReplicaStore, type SyncScheduler } from "@
 import type { SqliteReplicaHandle } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -116,9 +116,9 @@ export const makeCommandHandlers = ({
   readonly scheduler: SyncScheduler["Service"];
   readonly replica: SqliteReplicaHandle;
   readonly gate: StaffGate["Service"];
-  readonly crypto: Crypto.Crypto;
+  readonly crypto: SecureRandom.SecureRandom["Service"];
 }): CommandHandlers => {
-  const newId = Effect.orDie(crypto.randomUUIDv4());
+  const newId = crypto.uuidV4();
 
   const withRowIds = Effect.fn("InventoryStore.withRowIds")(function* <Tables, A, E>(
     context: BegunContext<Tables>,

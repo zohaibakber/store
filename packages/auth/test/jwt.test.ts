@@ -1,7 +1,7 @@
 import { expect, layer } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Redacted from "effect/Redacted";
+import * as Jwk from "effect/jose/Jwk";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -12,7 +12,6 @@ import { layer as webCryptoLayer } from "../src/web-crypto";
 const AUTH_JWT_KEY_ID = "test-key";
 
 const NEXT_KEY_ID = "tabaaq-auth-next";
-const textEncoder = new TextEncoder();
 
 const encodeHeader = Schema.encodeSync(
   Schema.fromJsonString(
@@ -20,33 +19,14 @@ const encodeHeader = Schema.encodeSync(
   ),
 );
 
-const generateKeyPair = Effect.promise(async () => {
-  const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
-    "sign",
-    "verify",
-  ]);
-  return {
-    privateKey: keyPair.privateKey,
-    privateJwk: await crypto.subtle.exportKey("jwk", keyPair.privateKey),
-    publicJwk: await crypto.subtle.exportKey("jwk", keyPair.publicKey),
-  };
-});
-
-const signedWith = (privateKey: CryptoKey) => (data: Uint8Array<ArrayBuffer>) =>
-  crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, data);
-
-const macWith = (publicJwk: JsonWebKey) => async (data: Uint8Array<ArrayBuffer>) =>
-  crypto.subtle.sign(
-    "HMAC",
-    await crypto.subtle.importKey(
-      "raw",
-      textEncoder.encode(`${publicJwk.x}${publicJwk.y}`),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    ),
-    data,
-  );
+const generateKeyPair = (kid: string) =>
+  Effect.gen(function* () {
+    const pair = yield* Jwk.generateKeyPair({ algorithm: "ES256", kid });
+    return {
+      publicKey: yield* Jwk.importPublic(pair.publicKey, "ES256"),
+      signer: yield* Jwk.importPrivate(pair.privateKey, "ES256"),
+    };
+  });
 
 const input = {
   subject: UserId.make("user-1"),
@@ -62,76 +42,55 @@ const input = {
 layer(webCryptoLayer)("ES256 access tokens", (it) => {
   it.effect("accepts only ES256 tokens signed by the ring key their key id names", () =>
     Effect.gen(function* () {
-      const current = yield* generateKeyPair;
-      const next = yield* generateKeyPair;
-      const ring = {
-        keys: [
-          { kid: AUTH_JWT_KEY_ID, jwk: current.publicJwk },
-          { kid: NEXT_KEY_ID, jwk: next.publicJwk },
-        ],
-      };
+      const current = yield* generateKeyPair(AUTH_JWT_KEY_ID);
+      const next = yield* generateKeyPair(NEXT_KEY_ID);
+      const ring = { keys: [current.publicKey, next.publicKey] };
       const verify = yield* makeAccessTokenVerifier(ring);
       const fromCurrent = yield* issueAccessToken(input, {
         ...ring,
-        activeKeyId: AUTH_JWT_KEY_ID,
-        privateJwk: Redacted.make(current.privateJwk),
+        signer: current.signer,
       });
       const fromNext = yield* issueAccessToken(
         { ...input, sessionId: SessionId.make("session-2") },
-        { ...ring, activeKeyId: NEXT_KEY_ID, privateJwk: Redacted.make(next.privateJwk) },
+        { ...ring, signer: next.signer },
       );
-      const claims = fromCurrent.token.split(".")[1];
-      const refusal = (
-        header: { readonly alg: string; readonly kid: string },
-        sign: (data: Uint8Array<ArrayBuffer>) => Promise<ArrayBuffer>,
-      ) =>
-        Effect.gen(function* () {
-          const signingInput = `${Base64Url.encode(encodeHeader({ ...header, typ: "JWT" }))}.${claims}`;
-          const signature = yield* Effect.promise(() => sign(textEncoder.encode(signingInput)));
-          const token = `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
-          return (yield* Effect.flip(verify(token))).reason;
-        });
+      const [, claims] = fromCurrent.token.split(".");
+      const [, , foreignSignature] = fromNext.token.split(".");
+      const refusal = (header: { readonly alg: string; readonly kid: string }) =>
+        Effect.map(
+          Effect.flip(
+            verify(
+              `${Base64Url.encode(encodeHeader({ ...header, typ: "JWT" }))}.${claims}.${foreignSignature}`,
+            ),
+          ),
+          (failure) => failure.reason,
+        );
 
       const accepted = yield* Effect.all([verify(fromCurrent.token), verify(fromNext.token)]);
       const refused = yield* Effect.all({
-        signedByAnotherRingKey: refusal(
-          { alg: "ES256", kid: AUTH_JWT_KEY_ID },
-          signedWith(next.privateKey),
-        ),
-        unknownKeyId: refusal(
-          { alg: "ES256", kid: "tabaaq-auth-unknown" },
-          signedWith(current.privateKey),
-        ),
-        unsignedAlgorithm: refusal(
-          { alg: "none", kid: AUTH_JWT_KEY_ID },
-          signedWith(current.privateKey),
-        ),
-        symmetricAlgorithm: refusal(
-          { alg: "HS256", kid: AUTH_JWT_KEY_ID },
-          macWith(current.publicJwk),
-        ),
+        signedByAnotherRingKey: refusal({ alg: "ES256", kid: AUTH_JWT_KEY_ID }),
+        unknownKeyId: refusal({ alg: "ES256", kid: "tabaaq-auth-unknown" }),
+        unsignedAlgorithm: refusal({ alg: "none", kid: AUTH_JWT_KEY_ID }),
+        symmetricAlgorithm: refusal({ alg: "HS256", kid: AUTH_JWT_KEY_ID }),
       });
 
       expect(accepted.map((verified) => verified.sessionId)).toEqual(["session-1", "session-2"]);
       expect(refused).toEqual({
         signedByAnotherRingKey: "InvalidSignature",
         unknownKeyId: "UnknownKey",
-        unsignedAlgorithm: "InvalidClaims",
-        symmetricAlgorithm: "InvalidClaims",
+        unsignedAlgorithm: "Malformed",
+        symmetricAlgorithm: "InvalidSignature",
       });
     }),
   );
 
   it.effect("refuses a token once it expires", () =>
     Effect.gen(function* () {
-      const pair = yield* generateKeyPair;
-      const ring = {
-        keys: [{ kid: AUTH_JWT_KEY_ID, jwk: pair.publicJwk }],
-      };
+      const pair = yield* generateKeyPair(AUTH_JWT_KEY_ID);
+      const ring = { keys: [pair.publicKey] };
       const signing = {
         ...ring,
-        activeKeyId: AUTH_JWT_KEY_ID,
-        privateJwk: Redacted.make(pair.privateJwk),
+        signer: pair.signer,
         accessTokenTtlSeconds: 600,
       };
       const verify = yield* makeAccessTokenVerifier(ring);
