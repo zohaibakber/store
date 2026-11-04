@@ -114,7 +114,7 @@ const matchesAction = (action: ActionEntry, tokens: ReadonlyArray<string>) => {
 const matchInvoices = (invoices: ReadonlyArray<Invoice>, query: string, limit: number) => {
   const trimmed = query.trim().toLowerCase();
   if (trimmed === "") return invoices.slice(0, limit);
-  const number = trimmed.replace(/^#/u, "");
+  const number = trimmed.replace(/^#/u, "").replace(/^0+(?=\d)/u, "");
   const numeric = /^\d+$/u.test(number);
   const matches = invoices.filter((invoice) =>
     numeric
