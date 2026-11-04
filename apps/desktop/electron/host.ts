@@ -7,15 +7,16 @@ import { shippedLicenceTrust, type LicenceTrust } from "@store/licence";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as Signature from "effect/crypto/Signature";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as LayerRef from "effect/LayerRef";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import type * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
 import { DesktopAuth, type DesktopAuthOptions } from "./auth";
-import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell } from "./desktop-shell";
 import { LicenceService } from "./licence/service";
 import { PrivateFiles } from "./private-files";
@@ -35,16 +36,14 @@ const LicenceLive = (options: { readonly directory: string; readonly trust: Lice
   Layer.effect(
     LicenceService,
     Effect.gen(function* () {
-      const scope = yield* Effect.scope;
       const platform = yield* Effect.context<
         PrivateFiles | Path.Path | Digest.Digest | Signature.Signature
       >();
-      const built = yield* cachedOnSuccess(
-        Layer.buildWithScope(
-          LicenceService.layer(options).pipe(Layer.provide(Layer.succeedContext(platform))),
-          scope,
-        ).pipe(Effect.map(Context.get(LicenceService)), Effect.uninterruptible),
+      const ref = yield* LayerRef.make(
+        LicenceService.layer(options).pipe(Layer.provide(Layer.succeedContext(platform))),
+        { idleTimeToLive: Duration.infinity },
       );
+      const built = Effect.scoped(Effect.map(ref.contextEffect, Context.get(LicenceService)));
       return LicenceService.of({
         current: Effect.flatMap(built, (licence) => licence.current),
         states: Stream.unwrap(Effect.map(built, (licence) => licence.states)),

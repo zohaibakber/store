@@ -23,7 +23,6 @@ import {
 } from "../src/host/shell-rpcs";
 import { makeSourceLinks } from "../src/host/source-links";
 import { DesktopAuth } from "./auth";
-import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
 import { PrivateFiles } from "./private-files";
@@ -111,7 +110,7 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const fileSystem = yield* FileSystem.FileSystem;
     const sourceLinks = makeSourceLinks();
     const platform = yield* Effect.context<SecureRandom.SecureRandom | Path.Path | PrivateFiles>();
-    const deviceId = yield* cachedOnSuccess(
+    const deviceId = yield* Effect.cached(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
     );
 
