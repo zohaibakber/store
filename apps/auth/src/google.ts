@@ -1,23 +1,18 @@
-import {
-  EmailAddress,
-  normalizedEmail,
-  WebCrypto,
-  type EmailAddress as EmailAddressType,
-} from "@store/auth";
-import * as Clock from "effect/Clock";
+import { EmailAddress, normalizedEmail, type EmailAddress as EmailAddressType } from "@store/auth";
 import * as Context from "effect/Context";
+import * as Mac from "effect/crypto/Mac";
+import * as Signature from "effect/crypto/Signature";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Base64Url from "effect/encoding/Base64Url";
 import { constTrue } from "effect/Function";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as UrlParams from "effect/http/UrlParams";
+import * as Jwks from "effect/jose/Jwks";
+import * as Jwt from "effect/jose/Jwt";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as GoogleLinking from "./google-linking";
@@ -28,9 +23,8 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_KEYS_URL = "https://www.googleapis.com/oauth2/v3/certs";
 const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
-const KEY_SET_DEFAULT_TTL_MS = 60 * 60 * 1_000;
-const KEY_SET_MAX_TTL_MS = 24 * 60 * 60 * 1_000;
-const KEY_SET_REFETCH_COOLDOWN_MS = 60 * 1_000;
+const KEY_SET_TTL = Duration.hours(1);
+const KEY_SET_REFETCH_COOLDOWN = Duration.minutes(1);
 const GOOGLE_REQUEST_TIMEOUT = Duration.seconds(10);
 
 const textEncoder = new TextEncoder();
@@ -41,24 +35,6 @@ const GoogleTokenResponse = Schema.Struct({
 
 const GoogleTokenRefusal = Schema.Struct({
   error: Schema.String,
-});
-
-const GoogleKeySet = Schema.Struct({
-  keys: Schema.Array(
-    Schema.Struct({
-      kid: Schema.optionalKey(Schema.String),
-      kty: Schema.String,
-      alg: Schema.optionalKey(Schema.String),
-      use: Schema.optionalKey(Schema.String),
-      n: Schema.optionalKey(Schema.String),
-      e: Schema.optionalKey(Schema.String),
-    }),
-  ),
-});
-
-const IdTokenHeader = Schema.Struct({
-  alg: Schema.Literal("RS256"),
-  kid: Schema.String,
 });
 
 const IdTokenClaims = Schema.Struct({
@@ -75,22 +51,6 @@ const IdTokenClaims = Schema.Struct({
 });
 
 const isTrue = (value: boolean | "true" | "false") => value === true || value === "true";
-
-interface SigningKey {
-  readonly n: string;
-  readonly e: string;
-}
-
-interface KeySet {
-  readonly keys: ReadonlyMap<string, SigningKey>;
-  readonly fetchedAt: number;
-  readonly expiresAt: number;
-}
-
-interface IdTokenExpectation {
-  readonly audiences: ReadonlySet<string>;
-  readonly nonce: string;
-}
 
 export interface GoogleProfile {
   readonly providerAccountId: GoogleAccountId;
@@ -152,42 +112,39 @@ const decodeOkJson = <A>(
       Effect.fail(oauthError(operation, `Google request failed (${failed.status}).`)),
   })(response);
 
-const decodeSegment = <A>(schema: Schema.Top & Schema.ConstraintDecoder<A>, segment: string) =>
-  Effect.fromResult(Base64Url.decodeString(segment)).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
-    Effect.mapError(malformed),
-  );
-
-const keySetTtlMs = (cacheControl: string | undefined) => {
-  const seconds = Number(/max-age=(\d+)/.exec(cacheControl ?? "")?.[1]);
-  return Number.isFinite(seconds) && seconds > 0
-    ? Math.min(seconds * 1_000, KEY_SET_MAX_TTL_MS)
-    : KEY_SET_DEFAULT_TTL_MS;
+const identityRejection = (error: Jwt.JwtError) => {
+  if (error._tag === "SchemaError") return malformed();
+  const { reason } = error;
+  switch (reason._tag) {
+    case "InvalidToken":
+    case "InvalidArgument":
+    case "AlgorithmNotAllowed":
+      return malformed();
+    case "SignatureVerificationFailed":
+      return rejected("Signature", "The identity token signature is invalid.");
+    case "KeyNotFound":
+    case "AmbiguousKey":
+      return rejected("UnknownKey", "The identity token was not signed by Google.");
+    case "ClaimValidationFailed":
+      switch (reason.claim) {
+        case "iss":
+          return rejected("Issuer", "The identity token is not from Google.");
+        case "aud":
+          return rejected("Audience", "The identity token was issued for another application.");
+        case "exp":
+          return reason.reason === "expired"
+            ? rejected("Expired", "The identity token has expired.")
+            : malformed();
+        default:
+          return malformed();
+      }
+    case "InvalidKey":
+    case "DecryptionFailed":
+    case "KeySetUnavailable":
+      return oauthError("keys.request", error);
+  }
+  return reason satisfies never;
 };
-
-const signingKeys = (keySet: typeof GoogleKeySet.Type): ReadonlyMap<string, SigningKey> =>
-  new Map(
-    keySet.keys.flatMap((key) =>
-      key.kty === "RSA" &&
-      key.kid !== undefined &&
-      key.n !== undefined &&
-      key.e !== undefined &&
-      (key.alg === undefined || key.alg === "RS256") &&
-      (key.use === undefined || key.use === "sig")
-        ? [[key.kid, { n: key.n, e: key.e }] as const]
-        : [],
-    ),
-  );
-
-const verifySignature = (key: SigningKey, signature: Uint8Array, signingInput: string) =>
-  WebCrypto.verifyRs256(key, signature, textEncoder.encode(signingInput)).pipe(
-    Effect.mapError((failure) => oauthError("idToken.verify", failure.cause)),
-  );
-
-const sameNonce = (presented: string, expected: string) =>
-  WebCrypto.constantTimeEqual(textEncoder.encode(presented), textEncoder.encode(expected)).pipe(
-    Effect.mapError((failure) => oauthError("idToken.nonce", failure.cause)),
-  );
 
 export class GoogleOAuth extends Context.Service<
   GoogleOAuth,
@@ -209,9 +166,13 @@ export class GoogleOAuth extends Context.Service<
       GoogleOAuth,
       Effect.gen(function* () {
         const client = yield* HttpClient.HttpClient;
-        const keySetCache = yield* Ref.make(Option.none<KeySet>());
-        const webAudience = new Set([configuration.clientId]);
-
+        const signature = yield* Signature.Signature;
+        const jwks = yield* Jwks.makeRemote({
+          url: GOOGLE_KEYS_URL,
+          timeToLive: KEY_SET_TTL,
+          cooldown: KEY_SET_REFETCH_COOLDOWN,
+          timeout: GOOGLE_REQUEST_TIMEOUT,
+        }).pipe(Effect.mapError((cause) => oauthError("keys.request", cause)));
         const execute = (operation: string, request: HttpClientRequest.HttpClientRequest) =>
           client.execute(request).pipe(
             Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
@@ -223,18 +184,6 @@ export class GoogleOAuth extends Context.Service<
             duration: GOOGLE_REQUEST_TIMEOUT,
             orElse: () => Effect.fail(oauthError(operation, "Google request timed out.")),
           });
-
-        const fetchKeySet = Effect.fnUntraced(function* (now: number) {
-          const response = yield* execute("keys.request", HttpClientRequest.get(GOOGLE_KEYS_URL));
-          const keys = signingKeys(yield* decodeOkJson("keys", GoogleKeySet, response));
-          const keySet: KeySet = {
-            keys,
-            fetchedAt: now,
-            expiresAt: now + keySetTtlMs(response.headers["cache-control"]),
-          };
-          yield* Ref.set(keySetCache, Option.some(keySet));
-          return keySet;
-        }, withinDeadline("keys.request"));
 
         const exchangeForIdToken = Effect.fnUntraced(function* (
           request: HttpClientRequest.HttpClientRequest,
@@ -259,59 +208,27 @@ export class GoogleOAuth extends Context.Service<
           })(response);
         }, withinDeadline("exchangeCode.request"));
 
-        const currentKeySet = (now: number) =>
-          Ref.get(keySetCache).pipe(
-            Effect.map(Option.filter((keySet) => keySet.expiresAt > now)),
-            Effect.flatMap(
-              Option.match({
-                onNone: () => fetchKeySet(now),
-                onSome: Effect.succeed,
-              }),
-            ),
+        const verify = Effect.fnUntraced(function* (idToken: string, expectedNonce: string) {
+          const { claims } = yield* Jwt.verifyWithKeySet(IdTokenClaims, idToken, {
+            algorithms: ["RS256"],
+            issuer: GOOGLE_ISSUERS,
+            audience: configuration.clientId,
+            requiredClaims: ["exp"],
+          }).pipe(
+            Effect.provideService(Jwks.Jwks, jwks),
+            Effect.provideService(Signature.Signature, signature),
+            Effect.mapError(identityRejection),
           );
-
-        const signingKey = Effect.fnUntraced(function* (kid: string, now: number) {
-          const cached = yield* currentKeySet(now);
-          const known = cached.keys.get(kid);
-          if (known) return known;
-          const refreshed =
-            now - cached.fetchedAt < KEY_SET_REFETCH_COOLDOWN_MS ? cached : yield* fetchKeySet(now);
-          const rotated = refreshed.keys.get(kid);
-          if (rotated) return rotated;
-          return yield* rejected("UnknownKey", "The identity token was not signed by Google.");
-        });
-
-        const verify = Effect.fnUntraced(function* (idToken: string, expected: IdTokenExpectation) {
-          const now = yield* Clock.currentTimeMillis;
-          const [encodedHeader, encodedClaims, encodedSignature, ...rest] = idToken.split(".");
-          if (!encodedHeader || !encodedClaims || !encodedSignature || rest.length > 0) {
-            return yield* malformed();
-          }
-          const header = yield* decodeSegment(IdTokenHeader, encodedHeader);
-          const claims = yield* decodeSegment(IdTokenClaims, encodedClaims);
-          const signature = yield* Effect.fromResult(Base64Url.decode(encodedSignature)).pipe(
-            Effect.mapError(malformed),
-          );
-          const key = yield* signingKey(header.kid, now);
-          if (!(yield* verifySignature(key, signature, `${encodedHeader}.${encodedClaims}`))) {
-            return yield* rejected("Signature", "The identity token signature is invalid.");
-          }
-          if (!GOOGLE_ISSUERS.includes(claims.iss)) {
-            return yield* rejected("Issuer", "The identity token is not from Google.");
-          }
-          if (!expected.audiences.has(claims.aud)) {
-            return yield* rejected(
-              "Audience",
-              "The identity token was issued for another application.",
-            );
-          }
-          if (claims.exp * 1_000 <= now) {
-            return yield* rejected("Expired", "The identity token has expired.");
-          }
           if (!isTrue(claims.email_verified)) {
             return yield* rejected("EmailUnverified", "Google did not verify this email address.");
           }
-          if (claims.nonce === undefined || !(yield* sameNonce(claims.nonce, expected.nonce))) {
+          if (
+            claims.nonce === undefined ||
+            !Mac.timingSafeEqual(
+              textEncoder.encode(claims.nonce),
+              textEncoder.encode(expectedNonce),
+            )
+          ) {
             return yield* rejected("Nonce", "The identity token belongs to another sign-in.");
           }
           const email = normalizedEmail(claims.email);
@@ -352,7 +269,7 @@ export class GoogleOAuth extends Context.Service<
               }),
             );
             const idToken = yield* exchangeForIdToken(request);
-            return yield* verify(idToken, { audiences: webAudience, nonce: input.nonce });
+            return yield* verify(idToken, input.nonce);
           }),
         });
       }),

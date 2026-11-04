@@ -241,7 +241,7 @@ const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncC
       replicaId: LAST_UNIT_REPLICA_A,
       clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
       operationId: OperationId.make(command.payload.commandId),
-      payloadHash: canonicalPayloadHash(command),
+      payloadHash: yield* canonicalPayloadHash(command),
       command,
       afterCommitSequence: OrgCommitSequence.make(
         (yield* store.readSyncCursor).appliedCommitSequence,

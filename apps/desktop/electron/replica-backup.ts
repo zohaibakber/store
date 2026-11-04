@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
 import * as HashMap from "effect/HashMap";
@@ -73,7 +73,7 @@ export const makeReplicaBackup = Effect.fn("ReplicaBackup.make")(function* (deps
   readonly dialogs: ReplicaBackupDialogs;
 }) {
   const { sessions, stagedRestores, dialogs } = deps;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
 
   const resumeUnchanged = (session: OpenWorkspace, refusal: ReplicaFileRefused) =>
     sessions.reopen(session).pipe(
@@ -125,7 +125,7 @@ export const makeReplicaBackup = Effect.fn("ReplicaBackup.make")(function* (deps
       yield* stagedRestores.discard(session.workspaceToken);
       const stagedPath = path.join(
         path.dirname(session.databasePath),
-        `restore-${yield* Effect.orDie(crypto.randomUUIDv4())}.sqlite`,
+        `restore-${yield* crypto.uuidV4()}.sqlite`,
       );
       const staged = yield* sessions.whenOpen(session, (current) =>
         current.supervisor.use((worker) =>

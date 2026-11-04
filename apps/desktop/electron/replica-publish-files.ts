@@ -4,6 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { PrivateFiles } from "./private-files";
 import { detachReplicaFile } from "./replica-restore-files";
 import { ReplicaWorkerFailure } from "./replica-rpc";
 
@@ -26,11 +27,7 @@ const PublishMarkerJson = Schema.fromJsonString(PublishMarker);
 const decodeMarker = Schema.decodeUnknownOption(PublishMarkerJson);
 const encodeMarker = Schema.encodeSync(PublishMarkerJson);
 
-const encoder = new TextEncoder();
-
 const markerPath = (databasePath: string) => `${databasePath}${MARKER_SUFFIX}`;
-
-const draftPath = (databasePath: string) => `${markerPath(databasePath)}.draft`;
 
 const failure = (message: string) => new ReplicaWorkerFailure({ message });
 
@@ -44,41 +41,29 @@ export const replicaFileExists = Effect.fn("ReplicaPublish.exists")(function* (
   );
 });
 
-export const readPublishMarker = Effect.fn("ReplicaPublish.readMarker")(function* (
-  databasePath: string,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  return yield* fs.readFileString(markerPath(databasePath)).pipe(
-    Effect.map(decodeMarker),
-    Effect.orElseSucceed(() => Option.none<PublishMarker>()),
-  );
-});
+export type PublishMarkers = {
+  readonly read: Effect.Effect<Option.Option<PublishMarker>>;
+  readonly write: (marker: PublishMarker) => Effect.Effect<void, ReplicaWorkerFailure>;
+  readonly remove: Effect.Effect<void>;
+};
 
-export const writePublishMarker = Effect.fn("ReplicaPublish.writeMarker")(
-  function* (databasePath: string, marker: PublishMarker) {
-    const fs = yield* FileSystem.FileSystem;
-    yield* Effect.scoped(
-      Effect.gen(function* () {
-        const draft = yield* fs.open(draftPath(databasePath), { flag: "w" });
-        yield* draft.writeAll(encoder.encode(encodeMarker(marker)));
-        yield* draft.sync;
-      }),
-    );
-    yield* fs.rename(draftPath(databasePath), markerPath(databasePath));
-  },
-  Effect.mapError(() => failure("This device could not record the move. Nothing was moved.")),
-);
-
-export const removePublishMarker = Effect.fn("ReplicaPublish.removeMarker")(function* (
+export const publishMarkers = (
+  files: PrivateFiles["Service"],
   databasePath: string,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  yield* Effect.forEach(
-    [markerPath(databasePath), draftPath(databasePath)],
-    (file) => fs.remove(file, { force: true }).pipe(Effect.ignore),
-    { discard: true },
-  );
-});
+): PublishMarkers => {
+  const file = markerPath(databasePath);
+  return {
+    read: files.readText(file).pipe(
+      Effect.map(Option.flatMap(decodeMarker)),
+      Effect.orElseSucceed(() => Option.none<PublishMarker>()),
+    ),
+    write: Effect.fn("ReplicaPublish.writeMarker")(
+      (marker: PublishMarker) => files.replaceText(file, encodeMarker(marker)),
+      Effect.mapError(() => failure("This device could not record the move. Nothing was moved.")),
+    ),
+    remove: Effect.ignore(files.remove(file)),
+  };
+};
 
 const archivedReplicaPath = (databasePath: string, now: number): string =>
   `${databasePath}${ARCHIVE_INFIX}${now}`;

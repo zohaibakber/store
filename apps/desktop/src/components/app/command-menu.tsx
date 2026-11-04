@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { useWindowKeydown } from "@/lib/shortcuts";
+
 type CommandDialog = ComponentType<{
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
@@ -47,17 +49,13 @@ export function CommandMenuProvider({ children }: { readonly children: ReactNode
     return () => cancelIdleCallback(handle);
   }, [preload]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "k" && event.key !== "K") return;
-      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+  useWindowKeydown((event) => {
+    if (event.key !== "k" && event.key !== "K") return;
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
 
-      event.preventDefault();
-      open();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+    event.preventDefault();
+    open();
+  });
 
   return (
     <CommandMenuContext.Provider value={context}>

@@ -14,7 +14,6 @@
     "./node-sqlite": "./src/replica/node-sqlite.ts",
     "./node-staff": "./src/staff/node.ts",
     "./reads": "./src/reads/handlers.ts",
-    "./sql-client": "./src/replica/sql-client.ts",
     "./store": "./src/store/handlers.ts",
     "./subset-spec": "./src/replica/subset-spec.ts"
   },

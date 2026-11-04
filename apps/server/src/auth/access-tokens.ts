@@ -30,11 +30,8 @@ export class AccessTokens extends Context.Service<
         }
         return AccessTokens.of({ verify: unbound });
       }
-      const keys = yield* decodePublicKeyPem(publicKey.value).pipe(
-        Effect.provide(WebCrypto.layer),
-        Effect.orDie,
-      );
+      const keys = yield* decodePublicKeyPem(publicKey.value).pipe(Effect.orDie);
       return AccessTokens.of({ verify: yield* makeAccessTokenVerifier({ keys }) });
     }),
-  );
+  ).pipe(Layer.provide(WebCrypto.layer));
 }

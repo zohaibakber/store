@@ -14,17 +14,19 @@
     "deploy:prod": "pnpm exec alchemy deploy --stage prod --env-file .env.prod",
     "destroy:dev": "pnpm exec alchemy destroy --stage dev --env-file .env.dev",
     "setup:ci": "pnpm exec alchemy deploy stacks/github.ts --stage prod --profile admin",
-    "prepare": "vp config"
+    "prepare": "effect-tsgo patch && vp config"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "catalog:",
     "@alchemy.run/drizzle": "catalog:",
     "@alchemy.run/github": "catalog:",
-    "@cloudflare/workers-types": "5.20261026.1",
+    "@cloudflare/workers-types": "5.20261103.1",
     "@effect/platform-node": "catalog:",
-    "@types/node": "^26.6.5",
+    "@effect/tsgo": "0.64.1",
+    "@types/node": "^26.6.6",
     "alchemy": "catalog:",
     "effect": "catalog:",
+    "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },

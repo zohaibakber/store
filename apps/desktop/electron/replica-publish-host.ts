@@ -13,6 +13,7 @@ import type {
   Published,
 } from "../src/host/workspace-publish";
 import type { OpenWorkspace, OpenWorkspaces } from "./open-workspaces";
+import { PrivateFiles } from "./private-files";
 import {
   discardPublish,
   NO_OFFER,
@@ -21,6 +22,7 @@ import {
   readPublishOffer,
   type PublishPorts,
 } from "./replica-publish";
+import { publishMarkers } from "./replica-publish-files";
 import { asFileRefusal } from "./replica-refusal";
 
 type ReplicaPublishHost = {
@@ -45,15 +47,17 @@ const UNKNOWN_LOCAL_CATALOG: LocalCatalogReport = { _tag: "unknown" };
 
 const CATALOG_SOURCES = InventorySubsetSummarySpec.fields.source.literals;
 
-export const makeReplicaPublishHost = (
+export const makeReplicaPublishHost = Effect.fnUntraced(function* (
   sessions: OpenWorkspaces,
   publishProgress: (progress: PublishProgress) => Effect.Effect<void>,
-): ReplicaPublishHost => {
-  const publishTurn = Semaphore.makeUnsafe(1);
+) {
+  const publishTurn = yield* Semaphore.make(1);
+  const markers = publishMarkers(yield* PrivateFiles, sessions.localDatabasePath);
 
   const portsFor = (session: OpenWorkspace, organizationId: OrganizationId): PublishPorts => ({
     organizationId,
     databasePath: sessions.localDatabasePath,
+    markers,
     worker: (use) =>
       sessions
         .whenOpen(session, (current) => current.supervisor.use((worker) => use(worker.client)))
@@ -145,5 +149,5 @@ export const makeReplicaPublishHost = (
           ).pipe(Effect.catch(() => Effect.succeed(UNKNOWN_LOCAL_CATALOG)));
       }
     },
-  };
-};
+  } satisfies ReplicaPublishHost;
+});

@@ -30,11 +30,14 @@ import {
   type SessionSnapshotHooks,
 } from "@store/workspace";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
+import * as LayerRef from "effect/LayerRef";
 import * as MutableRef from "effect/MutableRef";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -46,7 +49,6 @@ import * as Stream from "effect/Stream";
 import { app, net, safeStorage } from "electron";
 
 import type { SignInCredentials } from "../src/host/index";
-import { cachedOnSuccess } from "./cached-on-success";
 import { searchGlobalProducts } from "./global-search";
 import { PrivateFiles } from "./private-files";
 import { ServerApi, type ServerResponseInvalid } from "./server-api";
@@ -94,10 +96,13 @@ const PkceChallenge = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/
   Schema.brand("PkceChallenge"),
 );
 
-const proofKey = Effect.fnUntraced(function* (crypto: Crypto.Crypto) {
-  const verifier = Base64Url.encode(yield* crypto.randomBytes(32));
-  const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(verifier));
-  const codeChallenge = yield* Schema.decodeUnknownEffect(PkceChallenge)(Base64Url.encode(digest));
+const proofKey = Effect.fnUntraced(function* (
+  random: SecureRandom.SecureRandom["Service"],
+  digest: Digest.Digest["Service"],
+) {
+  const verifier = Base64Url.encode(yield* random.randomBytes(32));
+  const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(verifier));
+  const codeChallenge = yield* Schema.decodeUnknownEffect(PkceChallenge)(Base64Url.encode(hash));
   return { verifier: Redacted.make(verifier), codeChallenge };
 }, Effect.mapError(googleProofFailed));
 
@@ -130,9 +135,9 @@ export interface DesktopAuthOptions {
 
 const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions) {
   const { forgetPersisted, readPersisted, writePersisted } = persistence(yield* PrivateFiles);
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
   const events = yield* ShellEvents;
-  const scope = yield* Effect.scope;
   const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
   const googleVerifier = yield* Ref.make(Option.none<Redacted.Redacted<string>>());
   const transitions = yield* Semaphore.make(1);
@@ -150,42 +155,43 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
       Effect.mapError(writePersisted({ snapshot: workspace, tokens }), persistenceError),
   };
 
-  const sessionHttp = yield* cachedOnSuccess(
-    Layer.buildWithScope(
-      ServerApi.layer.pipe(
-        Layer.provideMerge(
-          layerSessionHttp({
-            apiBaseUrl: options.apiBaseUrl,
-            authBaseUrl: options.authBaseUrl,
-            onRefreshed: (refreshed, tokens) =>
-              adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
-                Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
-              ),
-            onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
-              Effect.andThen(PubSub.publish(accessTokens, null)),
-              Effect.andThen(forgetPersisted),
+  const sessionHttp = yield* LayerRef.make(
+    ServerApi.layer.pipe(
+      Layer.provideMerge(
+        layerSessionHttp({
+          apiBaseUrl: options.apiBaseUrl,
+          authBaseUrl: options.authBaseUrl,
+          onRefreshed: (refreshed, tokens) =>
+            adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
+              Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
             ),
-          }),
-        ),
-        Layer.provide(netHttp),
+          onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
+            Effect.andThen(PubSub.publish(accessTokens, null)),
+            Effect.andThen(forgetPersisted),
+          ),
+        }),
       ),
-      scope,
-    ).pipe(Effect.uninterruptible),
+      Layer.provide(netHttp),
+    ),
+    { idleTimeToLive: Duration.infinity },
   );
 
   const withSession = <A, E>(
     effect: Effect.Effect<A, E, SessionHttp | ServerApi>,
   ): Effect.Effect<A, E> =>
-    Effect.flatMap(sessionHttp, (context) => Effect.provideContext(effect, context));
+    Effect.scoped(
+      Effect.flatMap(sessionHttp.contextEffect, (context) =>
+        Effect.provideContext(effect, context),
+      ),
+    );
 
-  const signIn = yield* cachedOnSuccess(
-    Layer.buildWithScope(
-      AuthClient.layer({ baseUrl: options.authBaseUrl }).pipe(Layer.provide(netHttp)),
-      scope,
-    ).pipe(Effect.map(Context.get(AuthClient)), Effect.uninterruptible),
+  const authClient = yield* LayerRef.make(
+    AuthClient.layer({ baseUrl: options.authBaseUrl }).pipe(Layer.provide(netHttp)),
+    { idleTimeToLive: Duration.infinity },
   );
+  const signIn = Effect.scoped(Effect.map(authClient.contextEffect, Context.get(AuthClient)));
 
-  const restored = yield* cachedOnSuccess(
+  const restored = yield* Effect.cached(
     Effect.tap(readPersisted, (persisted) =>
       Effect.sync(() => {
         if (Option.isSome(persisted)) {
@@ -229,7 +235,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
     }),
     beginGoogle: Effect.fn("DesktopAuth.beginGoogle")(function* (redirectUri: string) {
       const client = yield* signIn;
-      const { verifier, codeChallenge } = yield* proofKey(crypto);
+      const { verifier, codeChallenge } = yield* proofKey(random, digest);
       const authorization = yield* client.beginGoogle({
         redirectUri,
         codeChallenge,

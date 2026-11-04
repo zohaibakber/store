@@ -1,6 +1,7 @@
 import { Delete02Icon, InformationCircleIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
+import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
 import { useCommand, useSuspenseProductCount } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 import { Suspense, useId, useMemo, useRef, useState } from "react";
@@ -32,8 +33,6 @@ import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatNumber } from "@/lib/format";
-
-const MAX_NAME = 64;
 
 const PACKS_HINT =
   "Off for items sold one at a time: products skip pack size and pack price, and stock arrives as a quantity with an expiry. Purchase price stays the pack cost.";
@@ -67,7 +66,8 @@ function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
   const switchId = useId();
   const trimmed = name.trim();
   const duplicate = taken.has(normalized(name));
-  const canSave = trimmed.length > 0 && trimmed.length <= MAX_NAME && !duplicate && !pending;
+  const canSave =
+    trimmed.length > 0 && trimmed.length <= MAX_CATALOG_NAME_LENGTH && !duplicate && !pending;
 
   const save = async () => {
     if (!canSave) return;
@@ -87,7 +87,7 @@ function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
           aria-invalid={duplicate || undefined}
           aria-label="New category name"
           disabled={pending}
-          maxLength={MAX_NAME}
+          maxLength={MAX_CATALOG_NAME_LENGTH}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -173,7 +173,7 @@ function CategoryName({
       <Input
         aria-label={`Rename ${category.name}`}
         autoFocus
-        maxLength={MAX_NAME}
+        maxLength={MAX_CATALOG_NAME_LENGTH}
         onBlur={() => void commit()}
         onChange={(event) => setDraft(event.target.value)}
         onFocus={(event) => event.currentTarget.select()}

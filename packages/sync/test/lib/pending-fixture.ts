@@ -3,6 +3,7 @@ import {
   ReplicaClientSequence,
   type CatalogRowWrite,
   type CommandReceipt,
+  type EnqueueCommandRequest,
   type SyncCommandEnvelope,
   type SyncTransactionGroup,
   OperationId,
@@ -24,6 +25,7 @@ import {
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
 } from "@store/contracts/sync/fixtures";
+import * as Effect from "effect/Effect";
 
 export const FIXTURE_NOW = 1_700_000_000_000;
 
@@ -115,29 +117,40 @@ export const seedSpareBatchGroup: SyncTransactionGroup = {
   ],
 };
 
+const catalogCommand = (operationId: string, writes: ReadonlyArray<CatalogRowWrite>) => ({
+  _tag: "catalogWrite" as const,
+  payload: {
+    commandId: operationId,
+    deviceId: LAST_UNIT_REPLICA_A,
+    occurredAt: FIXTURE_NOW + 1,
+    writes,
+  },
+});
+
+export const catalogRequest = (
+  input: { readonly operationId: string; readonly writes: ReadonlyArray<CatalogRowWrite> },
+  occurredAt: number,
+): EnqueueCommandRequest => ({
+  operationId: OperationId.make(input.operationId),
+  command: catalogCommand(input.operationId, input.writes),
+  occurredAt,
+});
+
 export const catalogEnvelope = (input: {
   readonly operationId: string;
   readonly clientSequence: string;
   readonly writes: ReadonlyArray<CatalogRowWrite>;
-}): SyncCommandEnvelope => {
-  const command = {
-    _tag: "catalogWrite" as const,
-    payload: {
-      commandId: input.operationId,
-      deviceId: LAST_UNIT_REPLICA_A,
-      occurredAt: FIXTURE_NOW + 1,
-      writes: input.writes,
-    },
-  };
-  return {
+}) => {
+  const command = catalogCommand(input.operationId, input.writes);
+  return Effect.map(canonicalPayloadHash(command), (payloadHash): SyncCommandEnvelope => ({
     organizationId: LAST_UNIT_ORGANIZATION_ID,
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(input.clientSequence),
     operationId: OperationId.make(input.operationId),
-    payloadHash: canonicalPayloadHash(command),
+    payloadHash,
     command,
-  };
+  }));
 };
 
 export const renameProductWrite = (name: string): CatalogRowWrite => ({

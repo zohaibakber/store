@@ -6,7 +6,7 @@ import { ProductId, PurchaseOrderId, SupplierId } from "../../ids";
 import { PurchaseOrder, StockMovement, Supplier } from "../../store/schema";
 import { PurchaseOrderItemRow, PurchaseOrderRow } from "../../sync/entity-rows";
 import { ReadFailure } from "../errors";
-import { PageSize, PurchaseOrderListFilters, PurchaseOrderListRequest } from "../list-request";
+import { PurchaseOrderListFilters, PurchaseOrderListRequest } from "../list-request";
 import { Stamp } from "../notices";
 import { Count, IdList } from "./shared";
 
@@ -22,11 +22,6 @@ export class PurchasingReads extends RpcGroup.make(
   Rpc.make("PurchaseOrderCount", {
     payload: { filters: PurchaseOrderListFilters },
     success: Count,
-    error: ReadFailure,
-  }),
-  Rpc.make("OpenPurchaseOrders", {
-    payload: { limit: PageSize },
-    success: Schema.Struct({ stamp: Stamp, orders: Schema.Array(PurchaseOrder) }),
     error: ReadFailure,
   }),
   Rpc.make("PurchaseOrderDetail", {

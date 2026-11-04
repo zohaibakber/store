@@ -22,7 +22,7 @@ import {
   type PurchaseOrderListFilters,
   type PurchaseOrderListRequest,
 } from "./purchasing";
-import { HISTORY_PAGE_SIZE, useLatestSuccess } from "./queries";
+import { useLatestSuccess } from "./queries";
 
 export const useSuspenseSuppliers = (): ReadonlyArray<Supplier> =>
   useAtomSuspense(useCatalogReplica().atoms.suppliers).value;
@@ -38,11 +38,6 @@ export const useSuspensePurchaseOrderListCount = (filters: PurchaseOrderListFilt
   React.useDeferredValue(
     useAtomSuspense(useCatalogReplica().atoms.purchaseOrderListCount(filters)).value,
   );
-
-export const useSuspenseOpenPurchaseOrders = (
-  limit = HISTORY_PAGE_SIZE,
-): ReadonlyArray<PurchaseOrder> =>
-  useAtomSuspense(useCatalogReplica().atoms.openPurchaseOrders(limit)).value;
 
 export const useSuspensePurchaseOrder = (orderId: PurchaseOrderId): PurchaseOrder | undefined =>
   useAtomSuspense(useCatalogReplica().atoms.purchaseOrderDetail(orderId)).value.order;

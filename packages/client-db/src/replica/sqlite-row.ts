@@ -19,16 +19,4 @@ const ReplicaStampRow = Schema.Struct({
   version: Schema.Number,
 });
 
-export const ComparisonScalar = Schema.Union([
-  Schema.String,
-  Schema.Number,
-  Schema.Boolean,
-  Schema.Null,
-  Schema.instanceOf(Uint8Array),
-]);
-export type ComparisonScalar = typeof ComparisonScalar.Type;
-
-export const ComparisonList = Schema.Array(ComparisonScalar);
-export type ComparisonList = typeof ComparisonList.Type;
-
 export const decodeReplicaStampRow = Schema.decodeUnknownSync(ReplicaStampRow);

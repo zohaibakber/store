@@ -40,7 +40,6 @@ export {
   useReadyInventory,
 } from "./provider";
 export {
-  useCatalogProductLookup,
   useInventoryInvoices,
   useSuspenseCatalogCategories,
   useSuspenseCatalogProduct,
@@ -76,7 +75,6 @@ export {
   useLearnedSuppliers,
   useProductsOnOrder,
   usePurchasingGate,
-  useSuspenseOpenPurchaseOrders,
   useSuspenseProductOnOrder,
   useSuspensePurchaseOrder,
   useSuspensePurchaseOrderCount,

@@ -30,10 +30,8 @@ import {
   issuedInvoicesOf,
   learnedSuppliersOf,
   makeReplicaReads,
-  nameIs,
   nameStartsWith,
   newestFirst,
-  OPEN_ORDERS,
   olderThan,
   openLinesOf,
   openOrdersOf,
@@ -47,8 +45,6 @@ import {
 const StaffNameRow = Schema.Struct({ name: Schema.String });
 
 const UNCATEGORIZED = "Uncategorized";
-
-const NAME_LOOKUP_LIMIT = 20;
 
 const SEARCH_CANDIDATES_PER_RESULT = 4;
 
@@ -176,14 +172,6 @@ export const layerInventoryReads = InventoryReads.toLayer(
         };
       }, snapshot),
 
-      ProductsByNames: Effect.fn("InventoryReads.ProductsByNames")(function* ({ names }) {
-        const wanted = Arr.dedupe(names.map((name) => name.trim()).filter((name) => name !== ""));
-        const found = yield* Effect.forEach(wanted, (name) =>
-          rows("products", nameIs(name), [asc(products.id)], { limit: NAME_LOOKUP_LIMIT }),
-        );
-        return { products: uniqueById(found.flat()) };
-      }, snapshot),
-
       Categories: Effect.fn("InventoryReads.Categories")(function* () {
         return { categories: yield* rows("categories", undefined, [asc(categories.id)]) };
       }, snapshot),
@@ -255,13 +243,6 @@ export const layerInventoryReads = InventoryReads.toLayer(
 
       PurchaseOrderCount: Effect.fn("InventoryReads.PurchaseOrderCount")(function* ({ filters }) {
         return { count: yield* counted("purchaseOrders", purchaseOrderWhere(filters)) };
-      }, snapshot),
-
-      OpenPurchaseOrders: Effect.fn("InventoryReads.OpenPurchaseOrders")(function* ({ limit }) {
-        const open = yield* rows("purchaseOrders", OPEN_ORDERS, newestFirst(purchaseOrders), {
-          limit,
-        });
-        return { orders: yield* ordersWithItems(open) };
       }, snapshot),
 
       PurchaseOrderDetail: Effect.fn("InventoryReads.PurchaseOrderDetail")(function* ({ id }) {

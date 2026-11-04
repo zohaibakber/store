@@ -3,13 +3,11 @@ import path from "node:path";
 import { AuthClientError } from "@store/auth";
 import { isWhatsAppUrl } from "@store/services/purchasing";
 import { isUnreachable, RequestError } from "@store/workspace";
-import * as Cause from "effect/Cause";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { WebContentsPrintOptions } from "electron";
 
@@ -25,7 +23,6 @@ import {
 } from "../src/host/shell-rpcs";
 import { makeSourceLinks } from "../src/host/source-links";
 import { DesktopAuth } from "./auth";
-import { cachedOnSuccess } from "./cached-on-success";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
 import { PrivateFiles } from "./private-files";
@@ -35,7 +32,6 @@ import { ShellEvents } from "./shell-events";
 import { saveThemeSource } from "./theme-source";
 import { Updater } from "./updater";
 
-const SIGN_IN_FAILED = "Could not sign in.";
 const GOOGLE_CALLBACK_INVALID = "The Google callback is invalid.";
 const GOOGLE_URL_REFUSED = "Only Google authorization URLs can be opened.";
 const PRINT_FAILED = "Printing failed. Check that a printer is connected.";
@@ -43,18 +39,17 @@ const PDF_FAILED = "The PDF could not be saved.";
 
 const MICRONS_PER_MM = 1000;
 
-const Messaged = Schema.Struct({ message: Schema.String });
-
-const signInFailure = <A, E, R>(command: Effect.Effect<A, E, R>) =>
-  Effect.catchCause(command, (cause) => {
-    const failure = Cause.squash(cause);
-    return Effect.fail(
+const signInFailure = <A, E extends { readonly message: string }, R>(
+  command: Effect.Effect<A, E, R>,
+) =>
+  Effect.mapError(
+    command,
+    (failure: E) =>
       new SignInFailed({
-        message: Schema.is(Messaged)(failure) ? failure.message : SIGN_IN_FAILED,
+        message: failure.message,
         unreachable: failure instanceof AuthClientError && failure.reason._tag === "Unreachable",
       }),
-    );
-  });
+  );
 
 const serverFailure = Effect.mapError(
   (failure: RequestError | ServerResponseInvalid) =>
@@ -114,8 +109,8 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const { sender } = yield* ShellConnection;
     const fileSystem = yield* FileSystem.FileSystem;
     const sourceLinks = makeSourceLinks();
-    const platform = yield* Effect.context<Crypto.Crypto | Path.Path | PrivateFiles>();
-    const deviceId = yield* cachedOnSuccess(
+    const platform = yield* Effect.context<SecureRandom.SecureRandom | Path.Path | PrivateFiles>();
+    const deviceId = yield* Effect.cached(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
     );
 

@@ -15,13 +15,15 @@ import { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Base64Url from "effect/encoding/Base64Url";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as Jwk from "effect/jose/Jwk";
+import * as Jwt from "effect/jose/Jwt";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 
 import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
@@ -54,74 +56,66 @@ const testRuntimeContext = Context.make(RuntimeContext, {
   set: (id) => Effect.succeed(id),
 });
 
-const signingKeys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
-  "sign",
-  "verify",
-]);
-const privateJwk = await crypto.subtle.exportKey("jwk", signingKeys.privateKey);
-const publicJwk = await crypto.subtle.exportKey("jwk", signingKeys.publicKey);
+const generateSigner = (algorithm: Jwk.AsymmetricAlgorithm, kid: string) =>
+  Effect.gen(function* () {
+    const pair = yield* Jwk.generateKeyPair({ algorithm, kid });
+    return {
+      kid,
+      publicJwk: pair.publicKey,
+      publicKey: yield* Jwk.importPublic(pair.publicKey, algorithm),
+      privateKey: yield* Jwk.importPrivate(pair.privateKey, algorithm),
+    };
+  }).pipe(Effect.provide(WebCrypto.layer));
+
+const accessSigner = await Effect.runPromise(generateSigner("ES256", "test-key"));
 
 export interface HubRevocationCall {
   readonly organizationId: OrganizationId;
   readonly userId: UserId;
 }
 
-const RS256 = {
-  name: "RSASSA-PKCS1-v1_5",
-  modulusLength: 2048,
-  publicExponent: new Uint8Array([1, 0, 1]),
-  hash: "SHA-256",
-};
-
 export interface IdTokenSigner {
   readonly kid: string;
-  readonly privateKey: CryptoKey;
-  readonly publicJwk: PublishedKey;
+  readonly privateKey: Jwk.PrivateKey;
+  readonly publicJwk: Jwk.PublicJwk;
 }
 
-type PublishedKey = JsonWebKey & { readonly kid: string };
+const IdTokenClaims = Schema.Struct({
+  iss: Schema.String,
+  aud: Schema.String,
+  sub: Schema.String,
+  exp: Schema.Number,
+  email: Schema.String,
+  email_verified: Schema.Boolean,
+  name: Schema.optionalKey(Schema.String),
+  picture: Schema.optionalKey(Schema.String),
+  nonce: Schema.optionalKey(Schema.String),
+  hd: Schema.optionalKey(Schema.String),
+});
 
-interface IdTokenClaims {
-  readonly iss: string;
-  readonly aud: string;
-  readonly sub: string;
-  readonly exp: number;
-  readonly email: string;
-  readonly email_verified: boolean;
-  readonly name?: string;
-  readonly picture?: string;
-  readonly nonce?: string;
-  readonly hd?: string;
-}
+const googleSigner: IdTokenSigner = await Effect.runPromise(
+  generateSigner("RS256", "google-key-1"),
+);
+export const forgingSigner: IdTokenSigner = await Effect.runPromise(
+  generateSigner("RS256", googleSigner.kid),
+);
 
-const idTokenSigner = async (kid: string): Promise<IdTokenSigner> => {
-  const keys = await crypto.subtle.generateKey(RS256, true, ["sign", "verify"]);
-  const publicJwk = await crypto.subtle.exportKey("jwk", keys.publicKey);
-  return { kid, privateKey: keys.privateKey, publicJwk: { ...publicJwk, kid, use: "sig" } };
-};
-
-const googleSigner = await idTokenSigner("google-key-1");
-export const forgingSigner = await idTokenSigner(googleSigner.kid);
-
-export const mintIdToken = (claims: IdTokenClaims, signer: IdTokenSigner = googleSigner) =>
-  Effect.promise(async () => {
-    const signingInput = [{ alg: "RS256", typ: "JWT", kid: signer.kid }, claims]
-      .map((part) => Base64Url.encode(JSON.stringify(part)))
-      .join(".");
-    const signature = await crypto.subtle.sign(
-      RS256.name,
-      signer.privateKey,
-      new TextEncoder().encode(signingInput),
-    );
-    return `${signingInput}.${Base64Url.encode(new Uint8Array(signature))}`;
-  });
+export const mintIdToken = (
+  claims: typeof IdTokenClaims.Type,
+  signer: IdTokenSigner = googleSigner,
+) =>
+  Jwt.sign(IdTokenClaims, claims, signer.privateKey, { typ: "JWT" }).pipe(
+    Effect.map(Redacted.value),
+    Effect.provide(WebCrypto.layer),
+    Effect.orDie,
+  );
 
 export const googleClaims = (profile: {
   readonly sub: string;
   readonly email: string;
   readonly hd?: string;
 }) =>
-  Effect.map(Clock.currentTimeMillis, (now): IdTokenClaims => ({
+  Effect.map(Clock.currentTimeMillis, (now): typeof IdTokenClaims.Type => ({
     iss: "https://accounts.google.com",
     aud: GOOGLE_CLIENT_ID,
     exp: Math.floor(now / 1_000) + 600,
@@ -257,16 +251,15 @@ export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
     EphemeralStore.layer(EPHEMERAL_PEPPER),
     PasswordHasher.layer,
     AccessTokenService.layer({
-      keys: [{ kid: "test-key", jwk: publicJwk }],
-      activeKeyId: "test-key",
-      privateJwk: Redacted.make(privateJwk),
+      keys: [accessSigner.publicKey],
+      signer: accessSigner.privateKey,
     }).pipe(Layer.provide(WebCrypto.layer)),
     deliversOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
     GoogleOAuth.layer({
       clientId: GOOGLE_CLIENT_ID,
       clientSecret: Redacted.make("google-client-secret"),
       callbackUrl: "https://auth.example.com/v1/oauth/google/callback",
-    }),
+    }).pipe(Layer.provide(WebCrypto.layer)),
     Layer.unwrap(TestLimits.useSync(AuthLimiter.layer)),
     Layer.succeed(AuthSettings, {
       developmentOtp: deliversOtp,

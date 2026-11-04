@@ -300,7 +300,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
         "The command does not belong to the active organization.",
       );
     }
-    if (canonicalPayloadHash(request.command) !== request.payloadHash) {
+    if ((yield* canonicalPayloadHash(request.command)) !== request.payloadHash) {
       return yield* refuse("INVALID_PAYLOAD_HASH", "The payload hash does not match.");
     }
     const state = yield* requireState(actor);

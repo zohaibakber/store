@@ -7,7 +7,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, Product, ProductId, StockStatus } from "@store/contracts";
 import type { GlobalProduct } from "@store/contracts/server-api.schema";
-import { productStock } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber, productStock } from "@store/contracts/store-helpers";
 import { useProductInsight, useSuspenseCatalogProduct } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Suspense, useState, type ReactNode } from "react";
@@ -322,7 +322,7 @@ function InvoiceRow({ invoice }: { readonly invoice: Invoice }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-4">
       <span className="flex min-w-0 flex-1 items-baseline gap-2">
-        <span className="shrink-0 tabular-nums">#{invoice.invoiceNumber}</span>
+        <span className="shrink-0 tabular-nums">#{formatInvoiceNumber(invoice.invoiceNumber)}</span>
         <span className="min-w-0 truncate text-muted-foreground">
           {invoice.customerName || EMPTY}
         </span>

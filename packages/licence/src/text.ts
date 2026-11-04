@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
-
 import { Licence, LicenceRefusal, MAX_LICENCE_TEXT_LENGTH } from "@store/contracts";
+import * as Digest from "effect/crypto/Digest";
+import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
-import * as Hex from "effect/encoding/Hex";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -34,7 +33,7 @@ const decodeCanonical = (encoded: string): Option.Option<Uint8Array> =>
   );
 
 export const backupKeyHash = (key: Uint8Array) =>
-  Hex.encode(createHash("sha256").update(key).digest());
+  Effect.flatMap(Effect.service(Digest.Digest), (digest) => digest.digestHex(Digest.sha256, key));
 
 export const encodeLicencePayload = (licence: Licence) =>
   new TextEncoder().encode(encodeLicenceJson(licence));
@@ -61,11 +60,7 @@ const backupKeyOf = (
   }
   if (encoded === undefined) return Result.fail(malformed());
   const key = decodeCanonical(encoded);
-  if (
-    Option.isNone(key) ||
-    key.value.length !== BACKUP_KEY_BYTES ||
-    backupKeyHash(key.value) !== licence.backup.keyHash
-  ) {
+  if (Option.isNone(key) || key.value.length !== BACKUP_KEY_BYTES) {
     return Result.fail(malformed());
   }
   return Result.succeed(key);

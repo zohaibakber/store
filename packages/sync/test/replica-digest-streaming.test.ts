@@ -24,6 +24,7 @@ import {
   stockMovements,
   suppliers,
 } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 
 import { sqlitePartitionDigest } from "../src/replica/digest";
@@ -275,7 +276,7 @@ describe("streamed replica digest", () => {
           const local = yield* runReplicaTransaction(store, (tx) => sqlitePartitionDigest(tx));
           expect(local).toEqual(yield* partitionDigestOf(fixture));
         }),
-      ),
+      ).pipe(Effect.provide(Digest.layerWebCrypto)),
     );
   }
 });

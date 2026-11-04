@@ -1,12 +1,15 @@
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as Digest from "effect/crypto/Digest";
+import * as Kdf from "effect/crypto/Kdf";
+import * as Mac from "effect/crypto/Mac";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { constantTimeEqual, layer, pbkdf2Sha256 } from "./web-crypto";
+import { layer } from "./web-crypto";
 
 const textEncoder = new TextEncoder();
 const WORKERD_PBKDF2_ITERATIONS = 100_000;
@@ -36,13 +39,15 @@ type Password = Redacted.Redacted<string>;
 
 export type PasswordVerdict = "mismatch" | "match" | "matchNeedsRehash";
 
-const derive = (password: Password, salt: Uint8Array, iterations: number) =>
-  pbkdf2Sha256({
-    password: textEncoder.encode(Redacted.value(password)),
-    salt,
-    iterations,
-    bytes: HASH_BYTES,
-  }).pipe(Effect.mapError((failure) => hashingFailed(failure.cause)));
+const derive =
+  (kdf: Kdf.Kdf["Service"]) => (password: Password, salt: Uint8Array, iterations: number) =>
+    kdf
+      .derive(
+        Kdf.pbkdf2({ hash: Digest.sha256, iterations }),
+        textEncoder.encode(Redacted.value(password)),
+        { salt, length: HASH_BYTES },
+      )
+      .pipe(Effect.mapError(hashingFailed));
 
 const decodeSaltOrHash = (value: string) =>
   Effect.fromResult(Base64Url.decode(value)).pipe(
@@ -55,31 +60,26 @@ const decodeSaltOrHash = (value: string) =>
     ),
   );
 
-const verifyPassword = Effect.fn("PasswordHasher.verify")(function* (
-  password: Password,
-  encoded: PasswordHash,
-) {
-  const [algorithm, iterationText, saltText, hashText] = encoded.split("$");
-  const iterations = Number(iterationText);
-  if (
-    algorithm !== "pbkdf2-sha256" ||
-    !Schema.is(IterationCount)(iterations) ||
-    !saltText ||
-    !hashText
-  ) {
-    return "mismatch" as const;
-  }
-  const salt = yield* decodeSaltOrHash(saltText);
-  const expected = yield* decodeSaltOrHash(hashText);
-  const actual = yield* derive(password, salt, iterations);
-  const matches = yield* constantTimeEqual(actual, expected).pipe(
-    Effect.mapError((failure) => hashingFailed(failure.cause)),
-  );
-  if (!matches) return "mismatch" as const;
-  return iterations < WORKERD_PBKDF2_ITERATIONS
-    ? ("matchNeedsRehash" as const)
-    : ("match" as const);
-});
+const makeVerify = (kdf: Kdf.Kdf["Service"]) =>
+  Effect.fn("PasswordHasher.verify")(function* (password: Password, encoded: PasswordHash) {
+    const [algorithm, iterationText, saltText, hashText] = encoded.split("$");
+    const iterations = Number(iterationText);
+    if (
+      algorithm !== "pbkdf2-sha256" ||
+      !Schema.is(IterationCount)(iterations) ||
+      !saltText ||
+      !hashText
+    ) {
+      return "mismatch" as const;
+    }
+    const salt = yield* decodeSaltOrHash(saltText);
+    const expected = yield* decodeSaltOrHash(hashText);
+    const actual = yield* derive(kdf)(password, salt, iterations);
+    if (!Mac.timingSafeEqual(actual, expected)) return "mismatch" as const;
+    return iterations < WORKERD_PBKDF2_ITERATIONS
+      ? ("matchNeedsRehash" as const)
+      : ("match" as const);
+  });
 
 export class PasswordHasher extends Context.Service<
   PasswordHasher,
@@ -94,17 +94,18 @@ export class PasswordHasher extends Context.Service<
   static readonly layer = Layer.effect(
     PasswordHasher,
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
+      const random = yield* SecureRandom.SecureRandom;
+      const kdf = yield* Kdf.Kdf;
 
       const hash = Effect.fn("PasswordHasher.hash")(function* (password: Password) {
-        const salt = yield* crypto.randomBytes(SALT_BYTES).pipe(Effect.mapError(hashingFailed));
-        const derived = yield* derive(password, salt, WORKERD_PBKDF2_ITERATIONS);
+        const salt = yield* random.randomBytes(SALT_BYTES);
+        const derived = yield* derive(kdf)(password, salt, WORKERD_PBKDF2_ITERATIONS);
         return PasswordHash.make(
           `pbkdf2-sha256$${WORKERD_PBKDF2_ITERATIONS}$${Base64Url.encode(salt)}$${Base64Url.encode(derived)}`,
         );
       });
 
-      return PasswordHasher.of({ hash, verify: verifyPassword });
+      return PasswordHasher.of({ hash, verify: makeVerify(kdf) });
     }),
   ).pipe(Layer.provide(layer));
 }

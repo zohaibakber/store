@@ -142,11 +142,7 @@ export default defineConfig({
         },
       },
       {
-        files: [
-          "apps/desktop/src/lib/preferences.ts",
-          "packages/auth/src/web-crypto.ts",
-          "packages/contracts/src/sync/operation-hash.ts",
-        ],
+        files: ["apps/desktop/src/lib/preferences.ts", "packages/auth/src/web-crypto.ts"],
         rules: {
           "anti-slop/no-global-crypto": "off",
         },

@@ -1,5 +1,3 @@
-import { createPrivateKey, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
-
 import {
   LICENCE_FORMAT,
   type Licence,
@@ -7,6 +5,10 @@ import {
   type ShopId,
   type ShopName,
 } from "@store/contracts";
+import * as Kdf from "effect/crypto/Kdf";
+import * as Signature from "effect/crypto/Signature";
+import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
@@ -35,64 +37,68 @@ export type LicenceBackupKey = {
   readonly key: Uint8Array;
 };
 
-const OkpKeyPair = Schema.Struct({ x: Schema.NonEmptyString, d: Schema.NonEmptyString });
-const decodeKeyPair = Schema.decodeUnknownSync(OkpKeyPair);
-
 export const publicKeyOf = (key: LicenceSigningKey): LicencePublicKey => ({
   id: key.id,
   publicKey: key.publicKey,
   developmentOnly: key.developmentOnly,
 });
 
-export const generateSigningKey = (id: string, developmentOnly: boolean): LicenceSigningKey => {
-  const pair = decodeKeyPair(generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" }));
-  return { id, developmentOnly, publicKey: pair.x, privateKey: Redacted.make(pair.d) };
-};
+export const generateSigningKey = Effect.fn("LicenceSigningKey.generate")(function* (
+  id: string,
+  developmentOnly: boolean,
+) {
+  const signature = yield* Signature.Signature;
+  const pair = yield* signature.generateKeyPair(Signature.ed25519);
+  return {
+    id,
+    developmentOnly,
+    publicKey: Base64Url.encode(yield* Signature.toBytes(pair.publicKey)),
+    privateKey: Redacted.make(Base64Url.encode(yield* Signature.toBytes(pair.privateKey))),
+  } satisfies LicenceSigningKey;
+}, Effect.orDie);
 
-export const deriveBackupKey = (
+export const deriveBackupKey = Effect.fn("LicenceBackupKey.derive")(function* (
   secret: Redacted.Redacted<Uint8Array>,
   shopId: ShopId,
   keyVersion: number,
-): Uint8Array =>
-  new Uint8Array(
-    hkdfSync(
-      "sha256",
-      Redacted.value(secret),
-      new TextEncoder().encode(shopId),
-      new TextEncoder().encode(`tabaaq-backup-key:v${keyVersion}`),
-      BACKUP_KEY_BYTES,
-    ),
-  );
+) {
+  const kdf = yield* Kdf.Kdf;
+  const encoder = new TextEncoder();
+  return yield* kdf.derive(Kdf.hkdfSha256, Redacted.value(secret), {
+    salt: encoder.encode(shopId),
+    info: encoder.encode(`tabaaq-backup-key:v${keyVersion}`),
+    length: BACKUP_KEY_BYTES,
+  });
+}, Effect.orDie);
 
-export const signLicence = (
+export const signLicence = Effect.fn("Licence.sign")(function* (
   grant: LicenceGrant,
   key: LicenceSigningKey,
   backup: Option.Option<LicenceBackupKey>,
-) => {
+) {
+  const signature = yield* Signature.Signature;
   const licence: Licence = {
     format: LICENCE_FORMAT,
     ...grant,
     signingKeyId: key.id,
-    backup: Option.match(backup, {
-      onNone: () => null,
-      onSome: (held) => ({ keyVersion: held.keyVersion, keyHash: backupKeyHash(held.key) }),
-    }),
+    backup: Option.isSome(backup)
+      ? {
+          keyVersion: backup.value.keyVersion,
+          keyHash: yield* backupKeyHash(backup.value.key),
+        }
+      : null,
   };
   const payload = encodeLicencePayload(licence);
-  const signature = sign(
-    null,
-    payload,
-    createPrivateKey({
-      key: { kty: "OKP", crv: "Ed25519", x: key.publicKey, d: Redacted.value(key.privateKey) },
-      format: "jwk",
-    }),
+  const privateKey = yield* Signature.privateKey(
+    Signature.ed25519,
+    yield* Effect.fromResult(Base64Url.decode(Redacted.value(key.privateKey))),
   );
   return {
     licence,
     text: formatLicenceText({
       payload,
-      signature: new Uint8Array(signature),
+      signature: yield* signature.sign(privateKey, payload),
       backupKey: Option.map(backup, (held) => held.key),
     }),
   };
-};
+}, Effect.orDie);

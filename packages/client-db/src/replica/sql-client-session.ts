@@ -9,7 +9,6 @@ import {
   type SyncScheduler,
   type SyncTransport,
   type OwnedLiveHost,
-  type SyncSchedulerPolicy,
 } from "@store/sync";
 import {
   layerSqliteReplicaStore,
@@ -19,7 +18,8 @@ import {
   type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
-import * as Crypto from "effect/Crypto";
+import type * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -82,7 +82,6 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
   SqliteReplicaSessionInput<ReplicaError> & {
     readonly transport: Layer.Layer<SyncTransport, TransportError>;
     readonly live: OwnedLiveHost;
-    readonly policy?: SyncSchedulerPolicy;
     readonly deviceLabel?: DeviceLabel | undefined;
   };
 
@@ -90,7 +89,7 @@ type SqliteReplicaAuthority<SyncError> = {
   readonly sync: Layer.Layer<
     SyncEngine | SyncScheduler,
     SyncError,
-    ReplicaStore | SqliteReplica | Crypto.Crypto
+    ReplicaStore | SqliteReplica | SecureRandom.SecureRandom | Digest.Digest
   >;
   readonly store: SqliteReplicaStoreOptions;
 };
@@ -108,9 +107,7 @@ const httpAuthority = <ReplicaError, TransportError>(
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
 ) => ({
   sync: layerOwnedHttpSync({
-    databaseIdentity: input.databaseIdentity,
     live: input.live,
-    policy: input.policy,
     deviceLabel: input.deviceLabel,
   }).pipe(Layer.provide(input.transport)),
   store: {},

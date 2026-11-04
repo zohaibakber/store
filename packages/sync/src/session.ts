@@ -1,11 +1,10 @@
 import type { DeviceLabel, SyncProtocolError } from "@store/contracts";
 import * as Clock from "effect/Clock";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 
 import { SyncEngine } from "./engine";
 import { makeLiveSocket, type LiveSocketHost } from "./live-socket";
@@ -13,12 +12,10 @@ import { ReplicaStore, type ReplicaStoreError } from "./replica/store";
 import { defaultHttpPollPolicy, SyncScheduler, type SyncSchedulerPolicy } from "./scheduler";
 import { SyncStateRef } from "./sync-state";
 import type { SyncTransport } from "./transport";
-import { ownWebNetwork } from "./web-ownership";
 
 export type OwnedLiveHost = Omit<LiveSocketHost, "replicaId">;
 
 type OwnedHttpSyncOptions = {
-  readonly databaseIdentity: string;
   readonly live: OwnedLiveHost;
   readonly policy?: SyncSchedulerPolicy;
   readonly deviceLabel?: DeviceLabel | undefined;
@@ -63,18 +60,12 @@ const ownHttpSync = (
             Effect.andThen(reason === "focus" || reason === "reconnect" ? live.nudge : Effect.void),
           ),
     };
-    yield* ownWebNetwork(options.databaseIdentity, scheduler.setNetworkOwner(true));
+    yield* scheduler.setNetworkOwner(true);
     yield* Effect.addFinalizer(() => scheduler.setNetworkOwner(false));
     yield* scheduler.wake("startup");
-    const liveLoop = engine.awaitRegistered.pipe(
+    yield* engine.awaitRegistered.pipe(
       Effect.andThen(live.run),
       Effect.ensuring(inner.setLiveConnected(false)),
-    );
-    yield* engine.state.pipe(
-      Stream.map((state) => state.owner),
-      Stream.changes,
-      Stream.switchMap((owned) => (owned ? Stream.fromEffect(liveLoop) : Stream.empty)),
-      Stream.runDrain,
       Effect.forkScoped,
     );
     return scheduler;
@@ -91,7 +82,7 @@ export const layerOwnedHttpSync = (
 ): Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransport | Crypto.Crypto
+  ReplicaStore | SyncTransport | SecureRandom.SecureRandom
 > =>
   Layer.effect(SyncScheduler, ownHttpSync(options)).pipe(
     Layer.provide(SyncScheduler.layer(options.policy ?? defaultHttpPollPolicy)),
@@ -122,7 +113,7 @@ const ownLocalSync: Effect.Effect<
 export const layerOwnedLocalSync: Layer.Layer<
   SyncEngine | SyncScheduler,
   SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransport | Crypto.Crypto
+  ReplicaStore | SyncTransport | SecureRandom.SecureRandom
 > = Layer.effect(SyncScheduler, ownLocalSync).pipe(
   Layer.provide(SyncScheduler.layer(LOCAL_SYNC_POLICY, { recovers: false })),
   Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),

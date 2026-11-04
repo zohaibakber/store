@@ -48,11 +48,9 @@ export const decodeReplicaId = Schema.decodeUnknownSync(ReplicaId);
 
 export const OperationId = SyncIdentifier.pipe(Schema.brand("OperationId"));
 export type OperationId = typeof OperationId.Type;
-export const decodeOperationId = Schema.decodeUnknownSync(OperationId);
 
 export const StaffId = Schema.NonEmptyString.pipe(Schema.brand("StaffId"));
 export type StaffId = typeof StaffId.Type;
-export const decodeStaffId = Schema.decodeUnknownSync(StaffId);
 
 export const LicenceId = Schema.NonEmptyString.pipe(Schema.brand("LicenceId"));
 export type LicenceId = typeof LicenceId.Type;

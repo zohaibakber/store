@@ -19,6 +19,7 @@ import {
   LAST_UNIT_REPLICA_A,
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -210,7 +211,9 @@ describe("sync engine against an authority that replicates entities this build d
             localCommitVersion: 0,
           }),
         ).pipe(Effect.orDie);
-        const store = yield* makeSqliteReplicaStore(handle, databaseName);
+        const store = yield* makeSqliteReplicaStore(handle, databaseName).pipe(
+          Effect.provide(Digest.layerWebCrypto),
+        );
         yield* survivesUnknownEntities(store, incarnation);
       }),
     ),

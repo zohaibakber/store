@@ -1,10 +1,9 @@
 import { InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore, SyncScheduler } from "@store/sync";
 import { readOutboxActivitySqlite, SqliteReplica } from "@store/sync/sql-client";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
-import * as Ref from "effect/Ref";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Stream from "effect/Stream";
@@ -20,7 +19,12 @@ import { StaffGate } from "./staff-gate";
 export const layerInventoryStore: Layer.Layer<
   Rpc.ToHandler<RpcGroup.Rpcs<typeof InventoryStore>>,
   never,
-  CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica | StaffGate | Crypto.Crypto
+  | CommandAdmission
+  | ReplicaStore
+  | SyncScheduler
+  | SqliteReplica
+  | StaffGate
+  | SecureRandom.SecureRandom
 > = InventoryStore.toLayer(
   Effect.gen(function* () {
     const admission = yield* CommandAdmission;
@@ -28,8 +32,7 @@ export const layerInventoryStore: Layer.Layer<
     const scheduler = yield* SyncScheduler;
     const replica = yield* SqliteReplica;
     const gate = yield* StaffGate;
-    const crypto = yield* Crypto.Crypto;
-    const wakes = yield* Ref.make(0);
+    const crypto = yield* SecureRandom.SecureRandom;
 
     const stamp = Effect.mapError(store.readStamp, readFailure);
 
@@ -52,11 +55,7 @@ export const layerInventoryStore: Layer.Layer<
           Effect.map(replicaSyncActivityOf),
           Effect.mapError(readFailure),
         ),
-      WakeSyncUpload: () =>
-        scheduler.wake("localWrite").pipe(
-          Effect.andThen(Ref.updateAndGet(wakes, (count) => count + 1)),
-          Effect.map((drainCount) => ({ drained: true, drainCount })),
-        ),
+      WakeSyncUpload: () => scheduler.wake("localWrite"),
     });
   }),
 );

@@ -93,17 +93,17 @@ const catalogEnvelope = (
   organizationId: ReturnType<typeof decodeOrganizationId>,
   clientSequence: string,
   payload: CatalogWriteCommand,
-): SyncCommandEnvelope => {
+) => {
   const command = { _tag: "catalogWrite" as const, payload };
-  return {
+  return Effect.map(canonicalPayloadHash(command), (payloadHash): SyncCommandEnvelope => ({
     organizationId,
     epoch: LAST_UNIT_EPOCH,
     replicaId: LAST_UNIT_REPLICA_A,
     clientSequence: ReplicaClientSequence.make(clientSequence),
     operationId: OperationId.make(payload.commandId),
-    payloadHash: canonicalPayloadHash(command),
+    payloadHash,
     command,
-  };
+  }));
 };
 
 const categoryInsert = (id: string, name: string): CatalogRowWrite => ({
@@ -271,13 +271,13 @@ const openCatalog = (organizationId: string, commitSequence = 0) =>
     const write = (commandId: string, writes: ReadonlyArray<CatalogRowWrite>) =>
       Effect.suspend(() => {
         clientSequence += 1;
-        return commands.commit(
-          actorFor(organizationId),
+        return Effect.flatMap(
           catalogEnvelope(
             decodeOrganizationId(organizationId),
             String(clientSequence),
             catalogCommand(commandId, writes),
           ),
+          (envelope) => commands.commit(actorFor(organizationId), envelope),
         );
       }).pipe(Effect.map((receipt) => receipt.result));
     return { authorities, commands, db, write };

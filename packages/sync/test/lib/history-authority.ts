@@ -16,6 +16,7 @@ import {
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Array from "effect/Array";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
@@ -133,7 +134,7 @@ export const historyAuthorityTransport = (
       };
       if (request.digestVersion === undefined) return page;
       return { ...page, digest: yield* authorityDigest(authority.partition) };
-    }),
+    }).pipe(Effect.provide(Digest.layerWebCrypto)),
   acquireSnapshot: () =>
     Effect.gen(function* () {
       const manifest = yield* snapshotManifest(authority, headOf(yield* Ref.get(authority.log)));

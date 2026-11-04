@@ -50,7 +50,7 @@ export class Sessions extends Context.Service<Sessions>()("@store/auth-worker/Se
     const crypto = yield* AuthCrypto;
 
     const secretMatches = (secret: Redacted.Redacted<string>, storedHash: string) =>
-      Effect.flatMap(crypto.refreshHash(secret), (actualHash) =>
+      Effect.map(crypto.refreshHash(secret), (actualHash) =>
         crypto.matches(actualHash, storedHash),
       );
 

@@ -374,7 +374,7 @@ export class AuthRepository extends Context.Service<
       const fail = (operation: string) =>
         Effect.mapError((cause: unknown) => repositoryError(operation, cause));
 
-      const newId = crypto.randomId.pipe(fail("newId"));
+      const newId = crypto.randomId;
 
       const atomicBatch = (operation: string, queries: ReadonlyArray<CompilableQuery>) =>
         runD1Batch<ReturnedId>(database, queries).pipe(fail(operation));

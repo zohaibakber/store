@@ -11,30 +11,19 @@ import {
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Base64Url from "effect/encoding/Base64Url";
-import * as Layer from "effect/Layer";
+import * as Jwt from "effect/jose/Jwt";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Socket from "effect/socket/Socket";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { makeBackoff } from "./backoff";
-
-type LiveNetworkSignal = {
-  readonly isOnline: () => boolean;
-  readonly subscribe: (listener: (online: boolean) => void) => () => void;
-};
 
 export type LiveSocketHost = {
   readonly apiBaseUrl: string;
   readonly replicaId: string;
   readonly accessToken: (options: { readonly force: boolean }) => Promise<string | null>;
-  readonly webSocket?: Socket.WebSocketConstructor["Service"];
-  readonly network?: LiveNetworkSignal;
 };
 
 type LiveSocketHandlers = {
@@ -61,23 +50,15 @@ class LiveSocketStale extends Schema.TaggedError<LiveSocketStale>()("LiveSocketS
   message: Schema.String,
 }) {}
 
-class LiveSocketOffline extends Schema.TaggedError<LiveSocketOffline>()("LiveSocketOffline", {
-  message: Schema.String,
-}) {}
+const decodeExp = Schema.decodeUnknownOption(Schema.Finite);
 
-const JwtClaims = Schema.Struct({ exp: Schema.optionalKey(Schema.Number) });
-const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(JwtClaims));
-
-const accessTokenExpiresAt = (token: string): number | undefined => {
-  const payload = token.split(".")[1];
-  if (payload === undefined) return undefined;
-  const json = Base64Url.decodeString(payload);
-  if (Result.isFailure(json)) return undefined;
-  const claims = decodeClaims(json.success);
-  return Option.isSome(claims) && claims.value.exp !== undefined
-    ? claims.value.exp * 1_000
-    : undefined;
-};
+const accessTokenExpiresAt = (token: string) =>
+  Jwt.decodeUnverified(token).pipe(
+    Effect.map(({ claims }) =>
+      Option.getOrUndefined(Option.map(decodeExp(claims["exp"]), (seconds) => seconds * 1_000)),
+    ),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 const liveSocketUrl = (
   apiBaseUrl: string,
@@ -105,7 +86,7 @@ const AUTH_CLOSE_CODES: ReadonlySet<number> = new Set([
   LIVE_SOCKET_CLOSE.revoked,
 ]);
 
-type SessionFailure = Socket.SocketError | LiveSocketStale | LiveSocketOffline;
+type SessionFailure = Socket.SocketError | LiveSocketStale;
 
 const endOf = (error: SessionFailure): SessionEnd => {
   if (error._tag !== "SocketError") return "closed";
@@ -128,28 +109,13 @@ export const makeLiveSocket = (
     });
     const forceRefresh = yield* Ref.make(false);
     const refusalRefreshSpent = yield* Ref.make(false);
-    const network = host.network;
-    const online = yield* SubscriptionRef.make(network?.isOnline() ?? true);
-    const webSocketLayer =
-      host.webSocket === undefined
-        ? Socket.layerWebSocketConstructorGlobal
-        : Layer.succeed(Socket.WebSocketConstructor, host.webSocket);
-
-    const waitUntil = (wanted: boolean) =>
-      SubscriptionRef.changes(online).pipe(
-        Stream.filter((value) => value === wanted),
-        Stream.runHead,
-        Effect.asVoid,
-      );
 
     const nearExpiry = (token: string) =>
-      Clock.currentTimeMillis.pipe(
-        Effect.map((now) => {
-          const expiresAt = accessTokenExpiresAt(token);
-          return (
-            expiresAt !== undefined && expiresAt - now <= LIVE_SOCKET_POLICY.renewBeforeExpiryMillis
-          );
-        }),
+      Effect.zipWith(
+        accessTokenExpiresAt(token),
+        Clock.currentTimeMillis,
+        (expiresAt, now) =>
+          expiresAt !== undefined && expiresAt - now <= LIVE_SOCKET_POLICY.renewBeforeExpiryMillis,
       );
 
     const backOff = Effect.raceFirst(reconnect.wait, Queue.take(nudges));
@@ -202,10 +168,7 @@ export const makeLiveSocket = (
           );
         const probes: Effect.Effect<SessionEnd, Socket.SocketError | LiveSocketStale> =
           Effect.forever(Queue.take(nudges).pipe(Effect.andThen(probe)));
-        const offline = waitUntil(false).pipe(
-          Effect.andThen(new LiveSocketOffline({ message: "The network is offline." })),
-        );
-        const expiresAt = accessTokenExpiresAt(token);
+        const expiresAt = yield* accessTokenExpiresAt(token);
         const now = yield* Clock.currentTimeMillis;
         const renewIn =
           expiresAt === undefined
@@ -216,15 +179,14 @@ export const makeLiveSocket = (
             ? Effect.never
             : Effect.sleep(Duration.millis(renewIn)).pipe(Effect.as("renew" as const));
 
-        return yield* Effect.raceAllFirst([reading, keepalive, probes, offline, renewal]);
+        return yield* Effect.raceAllFirst([reading, keepalive, probes, renewal]);
       }).pipe(
         Effect.scoped,
-        Effect.provide(webSocketLayer),
+        Effect.provide(Socket.layerWebSocketConstructorGlobal),
         Effect.ensuring(handlers.setConnected(false)),
       );
 
     const pass = Effect.gen(function* () {
-      if (!(yield* SubscriptionRef.get(online))) yield* waitUntil(true);
       const force = yield* Ref.getAndSet(forceRefresh, false);
       const requestToken = (refresh: boolean) =>
         Effect.tryPromise(() => host.accessToken({ force: refresh })).pipe(
@@ -250,27 +212,7 @@ export const makeLiveSocket = (
       yield* backOff;
     });
 
-    const networkChanges =
-      network === undefined
-        ? Effect.void
-        : Stream.callback<boolean>((queue) =>
-            Effect.acquireRelease(
-              Effect.sync(() => network.subscribe((value) => Queue.offerUnsafe(queue, value))),
-              (unsubscribe) => Effect.sync(unsubscribe),
-            ),
-          ).pipe(
-            Stream.runForEach((value) =>
-              SubscriptionRef.set(online, value).pipe(
-                Effect.andThen(value ? Queue.offer(nudges, undefined) : Effect.void),
-              ),
-            ),
-            Effect.forkScoped,
-          );
-
-    const run = Effect.gen(function* () {
-      yield* networkChanges;
-      return yield* Effect.forever(pass);
-    }).pipe(Effect.scoped);
+    const run = Effect.forever(pass);
 
     return {
       run,

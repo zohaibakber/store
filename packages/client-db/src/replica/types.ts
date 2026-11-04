@@ -51,11 +51,6 @@ export type ReplicaSubsetRead = {
   readonly rows: ReadonlyArray<ReplicaRow>;
 };
 
-export type ReplicaBatchRead = {
-  readonly stamp: ReplicaQueryStamp;
-  readonly reads: ReadonlyArray<ReadonlyArray<ReplicaRow>>;
-};
-
 export type ReplicaSummaryRead = {
   readonly stamp: ReplicaQueryStamp;
   readonly summary: InventorySubsetSummary;

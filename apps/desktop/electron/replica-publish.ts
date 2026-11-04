@@ -17,11 +17,9 @@ import type {
 } from "../src/host/workspace-publish";
 import {
   archiveReplicaFile,
-  readPublishMarker,
-  removePublishMarker,
   replicaFileExists,
-  writePublishMarker,
   type PublishMarker,
+  type PublishMarkers,
 } from "./replica-publish-files";
 import { asFileRefusal } from "./replica-refusal";
 import { removeReplicaFile } from "./replica-restore-files";
@@ -36,6 +34,7 @@ type PublishClient = Pick<
 export type PublishPorts = {
   readonly organizationId: OrganizationId;
   readonly databasePath: string;
+  readonly markers: PublishMarkers;
   readonly worker: <A, E extends ReplicaFileRefused | { readonly message: string }>(
     use: (client: PublishClient) => Effect.Effect<A, E>,
   ) => Effect.Effect<A, ReplicaFileRefused>;
@@ -63,13 +62,13 @@ type PublishDone = typeof Published.Type;
 
 const readStanding = Effect.fn("ReplicaPublish.readStanding")(function* (ports: PublishPorts) {
   if (!(yield* replicaFileExists(ports.databasePath))) {
-    yield* removePublishMarker(ports.databasePath);
+    yield* ports.markers.remove;
     return { _tag: "absent" } satisfies Standing;
   }
   const summary = yield* ports.worker((client) =>
     client.PublishSummary({ sourcePath: ports.databasePath }),
   );
-  const marker = yield* readPublishMarker(ports.databasePath);
+  const marker = yield* ports.markers.read;
   return Option.isSome(marker) && marker.value.organizationId !== ports.organizationId
     ? ({
         _tag: "elsewhere",
@@ -126,7 +125,7 @@ export const readPublishOffer = (
 export const discardPublish = (
   ports: PublishPorts,
 ): Effect.Effect<PublishOffer, never, FileSystem.FileSystem> =>
-  removePublishMarker(ports.databasePath).pipe(Effect.andThen(readPublishOffer(ports)));
+  ports.markers.remove.pipe(Effect.andThen(readPublishOffer(ports)));
 
 const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
   ports: PublishPorts,
@@ -137,7 +136,7 @@ const setAside = Effect.fn("ReplicaPublish.setAside")(function* (
     now: yield* Clock.currentTimeMillis,
   });
   yield* removeReplicaFile(analyticsDatabasePath(ports.databasePath));
-  yield* removePublishMarker(ports.databasePath);
+  yield* ports.markers.remove;
   return { _tag: "published", counts } satisfies PublishDone;
 });
 
@@ -154,10 +153,10 @@ const resume = Effect.fn("ReplicaPublish.resume")(function* (
       if (marker.importId === summary.importId) {
         return Option.some(yield* setAside(ports, catalogCountsOf(summary)));
       }
-      yield* removePublishMarker(ports.databasePath);
+      yield* ports.markers.remove;
       return yield* new ReplicaFileRefused({ reason: "moved-before-changes" });
     case "other":
-      yield* removePublishMarker(ports.databasePath);
+      yield* ports.markers.remove;
       return yield* new ReplicaFileRefused({ reason: "failed", detail: status.message });
     case "unconfirmed":
       return yield* new ReplicaFileRefused({ reason: "failed", detail: status.message });
@@ -206,7 +205,7 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
     const resumed = yield* resume(ports, pending.value, summary);
     if (Option.isSome(resumed)) return resumed.value;
   }
-  yield* writePublishMarker(ports.databasePath, {
+  yield* ports.markers.write({
     organizationId: ports.organizationId,
     importId: summary.importId,
     startedAt: yield* Clock.currentTimeMillis,
@@ -224,7 +223,7 @@ const publishFrom = Effect.fn("ReplicaPublish.publishFrom")(function* (
     case "committed":
       return yield* setAside(ports, catalogCountsOf(summary));
     case "refused":
-      yield* removePublishMarker(ports.databasePath);
+      yield* ports.markers.remove;
       return yield* new ReplicaFileRefused({ reason: "failed", detail: committed.message });
     case "unconfirmed":
       return yield* new ReplicaFileRefused({ reason: "failed", detail: committed.message });

@@ -8,6 +8,7 @@ import {
   OperationId,
 } from "@store/contracts";
 import { LAST_UNIT_EPOCH, LAST_UNIT_PRODUCT_ID } from "@store/contracts/sync/fixtures";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -53,8 +54,12 @@ const sqliteHarness = Effect.fn("activity.sqlite")(function* () {
 const adapters = [["SQLite", sqliteHarness]] as const;
 
 describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
-  const withHarness = <A, E>(use: (harness: ActivityHarness) => Effect.Effect<A, E>) =>
-    Effect.acquireUseRelease(makeHarness(), use, (harness) => Effect.orDie(harness.close()));
+  const withHarness = <A, E>(
+    use: (harness: ActivityHarness) => Effect.Effect<A, E, Digest.Digest>,
+  ) =>
+    Effect.acquireUseRelease(makeHarness(), use, (harness) => Effect.orDie(harness.close())).pipe(
+      Effect.provide(Digest.layerWebCrypto),
+    );
 
   const submitted = catalogEnvelope({
     operationId: "catalog-submitted",
@@ -74,7 +79,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
     transactions: [
       {
         commitSequence: OrgCommitSequence.make(commitSequence),
-        operationId: submitted.operationId,
+        operationId: OperationId.make("catalog-submitted"),
         decision: "accepted",
         changes: [],
       },
@@ -86,12 +91,12 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
 
   const submitWithPage = (harness: ActivityHarness, page: SyncPullResult) =>
     Effect.gen(function* () {
-      yield* harness.store.enqueueCommand(enqueueRequestOf(submitted, 1));
+      yield* harness.store.enqueueCommand(enqueueRequestOf(yield* submitted, 1));
       yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10, staleBefore: 0 });
       return yield* harness.store.integrateAuthority({
         receipt: {
           claimId: "claim-1",
-          receipt: acceptedCatalogReceipt(submitted, page.nextCommitSequence, 1),
+          receipt: acceptedCatalogReceipt(yield* submitted, page.nextCommitSequence, 1),
         },
         payload: { _tag: "submitPage", page },
       });
@@ -152,7 +157,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
   it.effect("reclaims a stale upload claim as uncertain and leaves a fresh one alone", () =>
     withHarness((harness) =>
       Effect.gen(function* () {
-        yield* harness.store.enqueueCommand(enqueueRequestOf(submitted, 1));
+        yield* harness.store.enqueueCommand(enqueueRequestOf(yield* submitted, 1));
         yield* harness.store.claimNextUpload({ claimId: "claim-1", claimedAt: 10, staleBefore: 0 });
 
         const fresh = yield* harness.store.claimNextUpload({
@@ -168,7 +173,7 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
           staleBefore: 10,
         });
         expect(reclaimed.value).toMatchObject({
-          operationId: submitted.operationId,
+          operationId: OperationId.make("catalog-submitted"),
           claimId: "claim-3",
           attempts: 2,
           outcomeUncertain: true,

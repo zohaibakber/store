@@ -128,9 +128,6 @@ export const useSuspenseCatalogSuggestions = (): ProductSuggestions => {
   return { names: facets.name, aisles: facets.aisle, compositions: facets.composition };
 };
 
-export const useCatalogProductLookup = () =>
-  useAtomSet(useCatalogReplica().atoms.productLookup, { mode: "promise" });
-
 export const useLatestSuccess = <A, E>(result: AsyncResult.AsyncResult<A, E>): Option.Option<A> => {
   const current = AsyncResult.value(result);
   const [latest, setLatest] = React.useState<Option.Option<A>>(current);

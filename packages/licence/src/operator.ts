@@ -4,7 +4,7 @@ import { Licence } from "@store/contracts";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as FileSystem from "effect/FileSystem";
@@ -67,7 +67,7 @@ export class OperatorStore extends Context.Service<
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
       const directory = yield* Config.String("TABAAQ_LICENCE_HOME").pipe(
         Config.withDefault(path.join(homedir(), ".config", "tabaaq-licence")),
       );

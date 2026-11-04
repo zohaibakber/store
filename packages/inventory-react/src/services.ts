@@ -17,9 +17,9 @@ import {
 } from "@store/contracts/replica";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as RcMap from "effect/RcMap";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
@@ -120,14 +120,29 @@ type Client<Rpcs extends Rpc.Any> = RpcClient.RpcClient.Flat<Rpcs, RpcClientErro
 
 const CLIENT_LINGER = "10 seconds";
 
-const outlivingItsRuntime = Effect.fn("InventoryServices.outlivingItsRuntime")(function* <A, R>(
-  make: Effect.Effect<A, never, R>,
+class WorkerPort extends Context.Service<WorkerPort, Option.Option<MessagePort>>()(
+  "@store/inventory-react/WorkerPort",
+) {}
+
+const lingeringClients = Effect.fnUntraced(function* <Rpcs extends Rpc.Any>(
+  group: RpcGroup.RpcGroup<Rpcs>,
 ) {
-  const own = yield* Scope.make();
-  yield* Effect.addFinalizer(() =>
-    Scope.close(own, Exit.void).pipe(Effect.delay(CLIENT_LINGER), Effect.forkDetach),
+  const clients = yield* RcMap.make({
+    lookup: (port: MessagePort) =>
+      Layer.build(overPort(Option.some(port))).pipe(
+        Effect.flatMap((protocol) =>
+          RpcClient.make(group, { flatten: true }).pipe(Effect.provideContext(protocol)),
+        ),
+        Effect.orDie,
+      ),
+    idleTimeToLive: CLIENT_LINGER,
+  });
+  return WorkerPort.use(
+    Option.match({
+      onNone: () => Effect.never,
+      onSome: (port) => RcMap.get(clients, port),
+    }),
   );
-  return yield* Scope.provide(make, own);
 });
 
 export interface Reads {
@@ -168,13 +183,14 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
   const workerPorts = Atom.make(Option.none<WorkerPorts>());
   yield* AtomRegistry.mount(registry, workerPorts);
   const latestWorkers = latest(workerPorts);
-  const workerProtocol =
-    (role: "reads" | "store" | "insights" | "desktop") => (get: Atom.AtomContext) =>
-      overPort(Option.map(get(latestWorkers), (ports) => ports[role]));
+  const portOf = (role: ReplicaPortRole, get: Atom.AtomContext) =>
+    Option.map(get(latestWorkers), (ports) => ports[role]);
+  const workerPort = (role: ReplicaPortRole) => (get: Atom.AtomContext) =>
+    Layer.succeed(WorkerPort, portOf(role, get));
   const Desktop = AtomRpc.Service<Desktop>()("desktop/Rpcs", {
     group: DesktopRpcs,
     runtime: Atom.runtime,
-    protocol: workerProtocol("desktop"),
+    protocol: (get) => overPort(portOf("desktop", get)),
   });
   const desktopWorkspace = Desktop.runtime.atom(
     Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("WorkspaceState", undefined)))),
@@ -186,20 +202,20 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
     Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
       group: InventoryReads,
       runtime: Atom.runtime,
-      protocol: workerProtocol("reads"),
-      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryReads, { flatten: true })),
+      protocol: workerPort("reads"),
+      makeEffect: yield* lingeringClients(InventoryReads),
     }),
     Store: AtomRpc.Service<Store>()("inventory/Store", {
       group: InventoryStore,
       runtime: Atom.runtime,
-      protocol: workerProtocol("store"),
-      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryStore, { flatten: true })),
+      protocol: workerPort("store"),
+      makeEffect: yield* lingeringClients(InventoryStore),
     }),
     Insights: AtomRpc.Service<Insights>()("inventory/Insights", {
       group: InventoryInsights,
       runtime: Atom.runtime,
-      protocol: workerProtocol("insights"),
-      makeEffect: outlivingItsRuntime(RpcClient.make(InventoryInsights, { flatten: true })),
+      protocol: workerPort("insights"),
+      makeEffect: yield* lingeringClients(InventoryInsights),
     }),
     Desktop,
     generation: Atom.map(workerPorts, (ports) => Option.map(ports, (held) => held.generation)),

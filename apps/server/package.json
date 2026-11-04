@@ -25,7 +25,7 @@
     "@alchemy.run/cloudflare": "catalog:",
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "alchemy": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

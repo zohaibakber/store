@@ -14,6 +14,7 @@ import {
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
 } from "@store/contracts/sync/fixtures";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Ref from "effect/Ref";
@@ -35,9 +36,8 @@ import {
   type ServerPartitionTables,
 } from "./lib/authority-digest";
 import { engineOf, stubTransport } from "./lib/engine-fixture";
-import { enqueueRequestOf } from "./lib/enqueue";
 import {
-  catalogEnvelope,
+  catalogRequest,
   FIXTURE_NOW,
   renameProductWrite,
   seedCatalogGroup,
@@ -57,7 +57,9 @@ type StoreHarness = {
 const makeSqliteHarness = Effect.fn("digest.sqlite")(function* () {
   const scope = yield* Scope.make();
   const handle = yield* Scope.provide(seedReplicaTenUnits(), scope);
-  const store = yield* makeSqliteReplicaStore(handle, "sqlite-digest");
+  const store = yield* makeSqliteReplicaStore(handle, "sqlite-digest").pipe(
+    Effect.provide(Digest.layerWebCrypto),
+  );
   return {
     store,
     incarnation: "incarnation-test",
@@ -110,7 +112,7 @@ const authorityTransport = (
       };
       if (!wanted) return page;
       return { ...page, digest: yield* authorityDigest(authority.partition) };
-    }),
+    }).pipe(Effect.provide(Digest.layerWebCrypto)),
   acquireSnapshot: () => Effect.die("unused"),
   readSnapshotPart: () => Effect.die("unused"),
 });
@@ -313,7 +315,7 @@ const remoteChanges: ReadonlyArray<SyncTransactionGroup> = [
 const withEngine = <A, E>(
   harness: StoreHarness,
   authority: Authority,
-  use: (engine: Effect.Success<ReturnType<typeof engineOf>>) => Effect.Effect<A, E>,
+  use: (engine: Effect.Success<ReturnType<typeof engineOf>>) => Effect.Effect<A, E, Digest.Digest>,
 ) =>
   Effect.gen(function* () {
     const engine = yield* engineOf(
@@ -322,7 +324,7 @@ const withEngine = <A, E>(
       { digestVerificationIntervalMillis: DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS },
     );
     return yield* use(engine);
-  });
+  }).pipe(Effect.provide(Digest.layerWebCrypto));
 
 const harnesses = [["sqlite", makeSqliteHarness]] as const;
 
@@ -383,12 +385,8 @@ describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
         Effect.gen(function* () {
           yield* engine.catchUp;
           yield* harness.store.enqueueCommand(
-            enqueueRequestOf(
-              catalogEnvelope({
-                operationId: "pending-rename",
-                clientSequence: "1",
-                writes: [renameProductWrite("Local only")],
-              }),
+            catalogRequest(
+              { operationId: "pending-rename", writes: [renameProductWrite("Local only")] },
               NOW,
             ),
           );
@@ -532,7 +530,7 @@ describe.each(harnesses)(
           digestVerified: true,
         });
         yield* harness.close();
-      }),
+      }).pipe(Effect.provide(Digest.layerWebCrypto)),
     );
   },
 );

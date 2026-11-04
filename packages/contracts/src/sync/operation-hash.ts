@@ -1,6 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
+import * as Digest from "effect/crypto/Digest";
 import { pipe } from "effect/Function";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -8,16 +6,8 @@ import * as Schema from "effect/Schema";
 
 const utf8 = new TextEncoder();
 
-const nativeSubtle = (): SubtleCrypto | undefined => globalThis.crypto?.subtle;
-
-export const sha256Hex = (text: string): Effect.Effect<string> => {
-  const bytes = utf8.encode(text);
-  const subtle = nativeSubtle();
-  if (subtle === undefined) return Effect.sync(() => Hex.encode(sha256(bytes)));
-  return Effect.promise(() => subtle.digest("SHA-256", bytes)).pipe(
-    Effect.map((buffer) => Hex.encode(new Uint8Array(buffer))),
-  );
-};
+export const sha256Hex = (text: string) =>
+  Digest.Digest.use((digest) => digest.digestHex(Digest.sha256, utf8.encode(text)));
 
 const compareCodeUnits = Order.String;
 
@@ -49,4 +39,4 @@ const canonicalJson = <Value>(value: Value): string | undefined =>
 const canonicalText = <Payload>(payload: Payload) => canonicalJson(payload) ?? "null";
 
 export const canonicalPayloadHash = <Payload>(payload: Payload) =>
-  Hex.encode(sha256(utf8.encode(canonicalText(payload))));
+  sha256Hex(canonicalText(payload));

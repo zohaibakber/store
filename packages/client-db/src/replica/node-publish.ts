@@ -26,6 +26,7 @@ import {
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import { count, eq, inArray } from "drizzle-orm";
 import * as Cause from "effect/Cause";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Number from "effect/Number";
 import * as Option from "effect/Option";
@@ -187,10 +188,10 @@ const summarize = Effect.fn("ReplicaPublish.summarize")(function* (handle: Sqlit
 
 const replicaAt = (path: string) => (existsSync(path) ? layerNodeSqliteReplica(path) : undefined);
 
-const withReplica = <A, E>(
+const withReplica = <A, E, R>(
   path: string,
-  use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E>,
-): Effect.Effect<A, ReplicaPublishFailure> =>
+  use: (handle: SqliteReplicaHandle) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, ReplicaPublishFailure, Exclude<R, SqliteReplica>> =>
   Effect.suspend(() => {
     const replica = replicaAt(path);
     if (replica === undefined) return Effect.fail(nothingToMove());
@@ -202,7 +203,7 @@ const withReplica = <A, E>(
 
 export const readPublishSummary = (
   path: string,
-): Effect.Effect<ReplicaPublishSummary, ReplicaPublishFailure> =>
+): Effect.Effect<ReplicaPublishSummary, ReplicaPublishFailure, Digest.Digest> =>
   withReplica(path, summarize).pipe(
     Effect.map((summary) => Struct.omit(summary, ["organizationId"])),
   );
@@ -238,7 +239,7 @@ const seal = Effect.fn("ReplicaPublish.seal")(function* (
 const publishParts = (
   path: string,
   importId: string,
-): Stream.Stream<ReplicaPublishChunk, ReplicaPublishFailure> =>
+): Stream.Stream<ReplicaPublishChunk, ReplicaPublishFailure, Digest.Digest> =>
   Stream.suspend(() => {
     const replica = replicaAt(path);
     if (replica === undefined) return Stream.fail(nothingToMove());
@@ -290,7 +291,7 @@ const stage = (
   client: ImportClient,
   importId: string,
   chunk: ReplicaPublishChunk,
-): Effect.Effect<ReplicaPublishProgress, ReplicaPublishFailure> => {
+): Effect.Effect<ReplicaPublishProgress, ReplicaPublishFailure, Digest.Digest> => {
   switch (chunk._tag) {
     case "sealed":
       return Effect.succeed(chunk);
@@ -309,7 +310,7 @@ export const stagePublish = (input: {
   readonly path: string;
   readonly importId: string;
   readonly client: ImportClient;
-}): Stream.Stream<ReplicaPublishProgress, ReplicaPublishFailure> =>
+}): Stream.Stream<ReplicaPublishProgress, ReplicaPublishFailure, Digest.Digest> =>
   publishParts(input.path, input.importId).pipe(
     Stream.mapEffect((chunk) => stage(input.client, input.importId, chunk), {
       concurrency: STAGING_CONCURRENCY,

@@ -1,5 +1,5 @@
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -43,7 +43,7 @@ export class PrivateFiles extends Context.Service<
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const crypto = yield* Crypto.Crypto;
+      const crypto = yield* SecureRandom.SecureRandom;
 
       const readBytes = Effect.fn("PrivateFiles.readBytes")(function* (file: string) {
         return yield* orNone(fs.readFile(file));
@@ -57,7 +57,7 @@ export class PrivateFiles extends Context.Service<
         file: string,
         bytes: Uint8Array,
       ) {
-        const temporary = `${file}.${yield* crypto.randomUUIDv4()}.tmp`;
+        const temporary = `${file}.${yield* crypto.uuidV4()}.tmp`;
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* Effect.scoped(
           Effect.gen(function* () {

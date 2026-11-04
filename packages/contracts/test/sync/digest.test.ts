@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "@effect/vitest";
+import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 
 import { compareUtf8, sortedPartitionLeaves } from "../../src/sync/digest";
@@ -23,13 +24,13 @@ describe("partition digest", () => {
 describe("operation hash", () => {
   it.effect("hashes the canonical JSON of a payload to a fixed SHA-256 vector", () =>
     Effect.gen(function* () {
-      expect(canonicalPayloadHash({ b: 1, a: [2, { z: null, y: "é", u: undefined }] })).toBe(
+      expect(yield* canonicalPayloadHash({ b: 1, a: [2, { z: null, y: "é", u: undefined }] })).toBe(
         "ec16434fd977b8278695259ef46f4abb10fc5095b65acc000e1987bed40a04f9",
       );
-      expect(canonicalPayloadHash(undefined)).toBe(
+      expect(yield* canonicalPayloadHash(undefined)).toBe(
         "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
       );
       expect(yield* sha256Hex("é😀")).toBe(sha256("é😀"));
-    }),
+    }).pipe(Effect.provide(Digest.layerWebCrypto)),
   );
 });

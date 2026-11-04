@@ -140,7 +140,7 @@ export class EphemeralStore extends Context.Service<
       Effect.gen(function* () {
         const database = yield* AuthD1;
         const crypto = yield* AuthCrypto;
-        const keyId = crypto.randomId.pipe(Effect.mapError((cause) => error("keyId", cause)));
+        const keyId = crypto.randomId;
 
         const recordKey = (kind: EphemeralKind, id: string) =>
           crypto
@@ -377,10 +377,7 @@ export class EphemeralStore extends Context.Service<
             const payload = yield* OtpCodec.decode(row.payload).pipe(
               Effect.mapError((cause) => error("consumeOtp.decode", cause)),
             );
-            const matched = yield* crypto
-              .matches(payload.verifier, verifier)
-              .pipe(Effect.mapError((cause) => error("consumeOtp.compare", cause)));
-            return matched ? payload.email : null;
+            return crypto.matches(payload.verifier, verifier) ? payload.email : null;
           }),
           createOAuthState: Effect.fn("EphemeralStore.createOAuthState")(function* (input) {
             const state = OAuthState.make(yield* keyId);
