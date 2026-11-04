@@ -18,8 +18,10 @@ import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
+import * as SemVer from "effect/SemVer";
 import * as Stream from "effect/Stream";
 import { app } from "electron";
 import electronUpdater from "electron-updater";
@@ -77,11 +79,12 @@ const clearStalePendingUpdate = Effect.fn("Updater.clearStalePendingUpdate")(
     if (Option.isNone(info) || !info.value.fileName) return;
     const pendingVersion = versionFromPendingFileName(info.value.fileName);
     if (!pendingVersion) return;
+    const pending = SemVer.parse(pendingVersion);
+    const current = SemVer.parse(currentVersion);
     const pendingIsNewerThanCurrent =
-      pendingVersion.localeCompare(currentVersion, undefined, {
-        numeric: true,
-        sensitivity: "base",
-      }) > 0;
+      Result.isSuccess(pending) && Result.isSuccess(current)
+        ? SemVer.isGreaterThan(pending.success, current.success)
+        : false;
     if (!pendingIsNewerThanCurrent) {
       yield* fs.remove(pendingDirectory, { force: true, recursive: true });
     }

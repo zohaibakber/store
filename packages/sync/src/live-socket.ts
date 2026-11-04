@@ -11,11 +11,10 @@ import {
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Base64Url from "effect/encoding/Base64Url";
+import * as Jwt from "effect/jose/Jwt";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Socket from "effect/socket/Socket";
 
@@ -51,19 +50,15 @@ class LiveSocketStale extends Schema.TaggedError<LiveSocketStale>()("LiveSocketS
   message: Schema.String,
 }) {}
 
-const JwtClaims = Schema.Struct({ exp: Schema.optionalKey(Schema.Number) });
-const decodeClaims = Schema.decodeUnknownOption(Schema.fromJsonString(JwtClaims));
+const decodeExp = Schema.decodeUnknownOption(Schema.Finite);
 
-const accessTokenExpiresAt = (token: string): number | undefined => {
-  const payload = token.split(".")[1];
-  if (payload === undefined) return undefined;
-  const json = Base64Url.decodeString(payload);
-  if (Result.isFailure(json)) return undefined;
-  const claims = decodeClaims(json.success);
-  return Option.isSome(claims) && claims.value.exp !== undefined
-    ? claims.value.exp * 1_000
-    : undefined;
-};
+const accessTokenExpiresAt = (token: string) =>
+  Jwt.decodeUnverified(token).pipe(
+    Effect.map(({ claims }) =>
+      Option.getOrUndefined(Option.map(decodeExp(claims["exp"]), (seconds) => seconds * 1_000)),
+    ),
+    Effect.orElseSucceed(() => undefined),
+  );
 
 const liveSocketUrl = (
   apiBaseUrl: string,
@@ -116,13 +111,11 @@ export const makeLiveSocket = (
     const refusalRefreshSpent = yield* Ref.make(false);
 
     const nearExpiry = (token: string) =>
-      Clock.currentTimeMillis.pipe(
-        Effect.map((now) => {
-          const expiresAt = accessTokenExpiresAt(token);
-          return (
-            expiresAt !== undefined && expiresAt - now <= LIVE_SOCKET_POLICY.renewBeforeExpiryMillis
-          );
-        }),
+      Effect.zipWith(
+        accessTokenExpiresAt(token),
+        Clock.currentTimeMillis,
+        (expiresAt, now) =>
+          expiresAt !== undefined && expiresAt - now <= LIVE_SOCKET_POLICY.renewBeforeExpiryMillis,
       );
 
     const backOff = Effect.raceFirst(reconnect.wait, Queue.take(nudges));
@@ -175,7 +168,7 @@ export const makeLiveSocket = (
           );
         const probes: Effect.Effect<SessionEnd, Socket.SocketError | LiveSocketStale> =
           Effect.forever(Queue.take(nudges).pipe(Effect.andThen(probe)));
-        const expiresAt = accessTokenExpiresAt(token);
+        const expiresAt = yield* accessTokenExpiresAt(token);
         const now = yield* Clock.currentTimeMillis;
         const renewIn =
           expiresAt === undefined
