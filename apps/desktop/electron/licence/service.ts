@@ -9,6 +9,8 @@ import { ReplicaStorageError, ReplicaUnavailable } from "@store/contracts/replic
 import { verifyLicenceText, type LicenceTrust } from "@store/licence";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
+import * as Signature from "effect/crypto/Signature";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -16,7 +18,6 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type { PlatformError } from "effect/PlatformError";
 import * as Ref from "effect/Ref";
-import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -62,12 +63,19 @@ export class LicenceService extends Context.Service<
   static readonly layer = (options: {
     readonly directory: string;
     readonly trust: LicenceTrust;
-  }): Layer.Layer<LicenceService, never, PrivateFiles | Path.Path> =>
+  }): Layer.Layer<
+    LicenceService,
+    never,
+    PrivateFiles | Path.Path | Digest.Digest | Signature.Signature
+  > =>
     Layer.effect(
       LicenceService,
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const files = yield* PrivateFiles;
+        const crypto = yield* Effect.context<Digest.Digest | Signature.Signature>();
+        const verify = (text: string) =>
+          verifyLicenceText(text, options.trust).pipe(Effect.provideContext(crypto));
         const licenceFile = path.join(options.directory, "licence.txt");
         const seenFile = path.join(options.directory, "last-seen");
         const turn = yield* Semaphore.make(1);
@@ -85,9 +93,10 @@ export class LicenceService extends Context.Service<
               ),
             );
 
-        const stored = Option.flatMap(yield* read(licenceFile), (text) =>
-          Result.getSuccess(verifyLicenceText(text, options.trust)),
-        );
+        const stored = yield* Option.match(yield* read(licenceFile), {
+          onNone: () => Effect.succeedNone,
+          onSome: (text) => Effect.option(verify(text)),
+        });
         const held = yield* Ref.make(Option.map(stored, (verified) => verified.licence));
         const seen = yield* Ref.make({
           at: Option.getOrElse(Option.flatMap(yield* read(seenFile), decodeSeen), () => 0),
@@ -144,9 +153,7 @@ export class LicenceService extends Context.Service<
             ReplicaStorageError | ReplicaUnavailable
           >,
         ) {
-          const { licence, text: accepted } = yield* Effect.fromResult(
-            verifyLicenceText(text, options.trust),
-          );
+          const { licence, text: accepted } = yield* verify(text);
           const owner = yield* Effect.timeoutOrElse(databaseShop, {
             duration: DATABASE_ANSWERS_WITHIN,
             orElse: () => Effect.fail(new ReplicaUnavailable({ reason: "busy" })),

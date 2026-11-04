@@ -20,7 +20,9 @@ import { PrivateFiles } from "../../electron/private-files";
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 5);
 
-const key = generateSigningKey("test", false);
+const key = await Effect.runPromise(
+  generateSigningKey("test", false).pipe(Effect.provide(NodeCrypto.layer)),
+);
 const trust: LicenceTrust = { keys: [publicKeyOf(key)], packaged: true };
 
 const SHOP_A = ShopId.make("shop-a");
@@ -37,7 +39,10 @@ const licenceText = (shopId: ShopId, expiresAt: number) =>
     },
     key,
     Option.none(),
-  ).text;
+  ).pipe(
+    Effect.map((signed) => signed.text),
+    Effect.provide(NodeCrypto.layer),
+  );
 
 const Files = PrivateFiles.layer.pipe(
   Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
@@ -91,7 +96,7 @@ layer(Files)("licence service", (it) => {
             Stream.runForEach((state) => Effect.sync(() => seen.push(state._tag))),
             Effect.forkScoped({ startImmediately: true }),
           );
-          yield* service.enter(licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
+          yield* service.enter(yield* licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
           yield* advance(service, "11 days", "expiring");
           expect(yield* service.current).toMatchObject({ _tag: "expiring", daysLeft: 29 });
           yield* advance(service, "30 days", "grace");
@@ -116,7 +121,7 @@ layer(Files)("licence service", (it) => {
         yield* Effect.scoped(
           Effect.gen(function* () {
             const service = yield* launch(directory);
-            yield* service.enter(licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
+            yield* service.enter(yield* licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
             yield* advance(service, "60 days", "expired");
             expect(yield* tagOf(service)).toBe("expired");
             yield* TestClock.setTime(NOW);
@@ -130,7 +135,7 @@ layer(Files)("licence service", (it) => {
         yield* advance(restarted, "2 days", "valid");
         expect(yield* tagOf(restarted)).toBe("expired");
 
-        yield* restarted.enter(licenceText(SHOP_A, NOW + 400 * DAY), ownedBy(SHOP_A));
+        yield* restarted.enter(yield* licenceText(SHOP_A, NOW + 400 * DAY), ownedBy(SHOP_A));
         expect(yield* tagOf(restarted)).toBe("valid");
       }),
     ),
@@ -146,7 +151,7 @@ layer(Files)("licence service", (it) => {
           yield* Effect.scoped(
             Effect.gen(function* () {
               const service = yield* launch(directory);
-              yield* service.enter(licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
+              yield* service.enter(yield* licenceText(SHOP_A, NOW + 40 * DAY), unclaimed);
               yield* advance(service, "20 days", "expiring");
               yield* TestClock.setTime(NOW - 300 * DAY);
               yield* advance(service, "25 days", "grace");
@@ -175,23 +180,32 @@ layer(Files)("licence service", (it) => {
           const first = yield* launch(directory);
           expect(yield* tagOf(first)).toBe("missing");
           expect(yield* reasonOf(first.enter("not a licence", unclaimed))).toBe("malformed");
-          const entered = yield* first.enter(licenceText(SHOP_A, NOW + 365 * DAY), unclaimed);
+          const entered = yield* first.enter(
+            yield* licenceText(SHOP_A, NOW + 365 * DAY),
+            unclaimed,
+          );
           expect(entered.shopName).toBe("Test Pharmacy");
 
           const second = yield* launch(directory);
           expect(yield* second.current).toMatchObject({ _tag: "valid", licence: entered });
           expect(
-            yield* reasonOf(second.enter(licenceText(SHOP_A, NOW + 365 * DAY), ownedBy(SHOP_A))),
+            yield* reasonOf(
+              second.enter(yield* licenceText(SHOP_A, NOW + 365 * DAY), ownedBy(SHOP_A)),
+            ),
           ).toBe("notNewer");
           expect(
-            yield* reasonOf(second.enter(licenceText(SHOP_A, NOW + 100 * DAY), ownedBy(SHOP_A))),
+            yield* reasonOf(
+              second.enter(yield* licenceText(SHOP_A, NOW + 100 * DAY), ownedBy(SHOP_A)),
+            ),
           ).toBe("notNewer");
           expect(
-            yield* reasonOf(second.enter(licenceText(SHOP_B, NOW + 900 * DAY), ownedBy(SHOP_A))),
+            yield* reasonOf(
+              second.enter(yield* licenceText(SHOP_B, NOW + 900 * DAY), ownedBy(SHOP_A)),
+            ),
           ).toBe("otherShop");
           expect(yield* second.current).toMatchObject({ _tag: "valid", licence: entered });
           const renewed = yield* second.enter(
-            licenceText(SHOP_A, NOW + 730 * DAY),
+            yield* licenceText(SHOP_A, NOW + 730 * DAY),
             ownedBy(SHOP_A),
           );
           expect(renewed.expiresAt).toBe(NOW + 730 * DAY);
@@ -205,9 +219,9 @@ layer(Files)("licence service", (it) => {
         const directory = yield* temporaryDirectory;
         const fs = yield* FileSystem.FileSystem;
         const service = yield* launch(directory);
-        yield* service.enter(licenceText(SHOP_A, NOW + 365 * DAY), unclaimed);
+        yield* service.enter(yield* licenceText(SHOP_A, NOW + 365 * DAY), unclaimed);
         const file = `${directory}/licence.txt`;
-        const forged = licenceText(SHOP_A, NOW + 9_000 * DAY).split(".");
+        const forged = (yield* licenceText(SHOP_A, NOW + 9_000 * DAY)).split(".");
         const stored = (yield* fs.readFileString(file)).trim().split(".");
         yield* fs.writeFileString(file, [stored[0], forged[1], stored[2]].join("."));
         expect(yield* tagOf(yield* launch(directory))).toBe("missing");

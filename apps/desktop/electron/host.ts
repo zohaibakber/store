@@ -5,6 +5,8 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { shippedLicenceTrust, type LicenceTrust } from "@store/licence";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
+import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -34,7 +36,9 @@ const LicenceLive = (options: { readonly directory: string; readonly trust: Lice
     LicenceService,
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
-      const platform = yield* Effect.context<PrivateFiles | Path.Path>();
+      const platform = yield* Effect.context<
+        PrivateFiles | Path.Path | Digest.Digest | Signature.Signature
+      >();
       const built = yield* cachedOnSuccess(
         Layer.buildWithScope(
           LicenceService.layer(options).pipe(Layer.provide(Layer.succeedContext(platform))),

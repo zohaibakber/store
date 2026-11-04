@@ -110,9 +110,10 @@ const readLicence = Effect.fn("LicenceCli.readLicence")(function* (textOrFile: s
         )
     : textOrFile;
   const local = (yield* store.keys).map(publicKeyOf);
-  return yield* Effect.fromResult(
-    verifyLicenceText(text, { keys: [...LICENCE_PUBLIC_KEYS, ...local], packaged: false }),
-  ).pipe(
+  return yield* verifyLicenceText(text, {
+    keys: [...LICENCE_PUBLIC_KEYS, ...local],
+    packaged: false,
+  }).pipe(
     Effect.mapError(
       (refusal) => new OperatorFailure({ message: `The licence was refused: ${refusal.reason}.` }),
     ),
@@ -134,7 +135,7 @@ const issueAndRecord = Effect.fn("LicenceCli.issue")(function* (
   const fs = yield* FileSystem.FileSystem;
   const crypto = yield* SecureRandom.SecureRandom;
   const id = LicenceId.make(yield* crypto.uuidV4());
-  const issued = signLicence({ ...grant, id }, key, backup);
+  const issued = yield* signLicence({ ...grant, id }, key, backup);
   yield* store.record(issued);
   if (Option.isSome(file)) {
     yield* fs
@@ -163,7 +164,7 @@ const keygen = Command.make(
   },
   Effect.fn(function* ({ id, development }) {
     const store = yield* OperatorStore;
-    const key = generateSigningKey(id, development);
+    const key = yield* generateSigningKey(id, development);
     const file = yield* store.saveKey(key);
     yield* Console.error(
       `Private key written to ${file}. Paste this entry into packages/licence/src/keys.ts:`,
@@ -215,7 +216,7 @@ const issue = Command.make(
     const backup = input.backup
       ? Option.some({
           keyVersion: FIRST_BACKUP_KEY_VERSION,
-          key: deriveBackupKey(yield* store.backupSecret, shopId, FIRST_BACKUP_KEY_VERSION),
+          key: yield* deriveBackupKey(yield* store.backupSecret, shopId, FIRST_BACKUP_KEY_VERSION),
         })
       : Option.none();
     yield* issueAndRecord(
@@ -308,9 +309,7 @@ Command.make("licence").pipe(
   Command.withSubcommands([keygen, issue, renew, list, show]),
   Command.run({ version: "1" }),
   Effect.provide(
-    OperatorStore.layer.pipe(
-      Layer.provideMerge(Layer.merge(NodeServices.layer, NodeCrypto.layerSecureRandom)),
-    ),
+    OperatorStore.layer.pipe(Layer.provideMerge(Layer.merge(NodeServices.layer, NodeCrypto.layer))),
   ),
   Effect.tapErrorTag("OperatorFailure", (failure) => Console.error(failure.message)),
   NodeRuntime.runMain,
