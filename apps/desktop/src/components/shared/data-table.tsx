@@ -13,6 +13,7 @@ import {
   columnVisibilityFeature,
   metaHelper,
   rowPaginationFeature,
+  rowSelectionFeature,
   rowSortingFeature,
   tableFeatures,
   type Column,
@@ -83,6 +84,7 @@ const listTableFeatures = tableFeatures({
   columnFilteringFeature,
   columnVisibilityFeature,
   rowPaginationFeature,
+  rowSelectionFeature,
   rowSortingFeature,
   columnMeta: metaHelper<DataTableColumnMeta>(),
 });

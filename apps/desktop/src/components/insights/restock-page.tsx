@@ -29,6 +29,7 @@ import {
   useTable,
   type ColumnFiltersState,
   type PaginationState,
+  type RowSelectionState,
   type Updater,
 } from "@tanstack/react-table";
 import * as Cause from "effect/Cause";
@@ -104,20 +105,6 @@ function TwoLine({
   );
 }
 
-type OrderSelection = {
-  readonly selected: ReadonlyMap<string, DraftLine>;
-  readonly pageRows: ReadonlyArray<ProductInsight>;
-  readonly toggle: (insights: ReadonlyArray<ProductInsight>, checked: boolean) => void;
-};
-
-const OrderSelectionContext = React.createContext<OrderSelection | null>(null);
-
-const useOrderSelection = () => {
-  const selection = React.use(OrderSelectionContext);
-  if (!selection) throw new Error("Restock selection is used outside the restock table.");
-  return selection;
-};
-
 const draftLineOf = (insight: ProductInsight): DraftLine => ({
   productId: insight.productId,
   name: insight.name,
@@ -129,40 +116,32 @@ const draftLineOf = (insight: ProductInsight): DraftLine => ({
     insight.unitCost === null ? null : roundedMoney(insight.unitCost * insight.unitsPerPack),
 });
 
-function SelectPageCheckbox() {
-  const { selected, pageRows, toggle } = useOrderSelection();
-  const chosen = pageRows.filter((insight) => selected.has(insight.productId)).length;
-  return (
-    <Checkbox
-      aria-label="Select all products on this page"
-      checked={pageRows.length > 0 && chosen === pageRows.length}
-      disabled={pageRows.length === 0}
-      indeterminate={chosen > 0 && chosen < pageRows.length}
-      onCheckedChange={(checked) => toggle(pageRows, checked)}
-    />
-  );
-}
-
-function SelectRowCheckbox({ insight }: { readonly insight: ProductInsight }) {
-  const { selected, toggle } = useOrderSelection();
-  return (
-    <Checkbox
-      aria-label={`Select ${insight.name}`}
-      checked={selected.has(insight.productId)}
-      onCheckedChange={(checked) => toggle([insight], checked)}
-      onClick={(event) => event.stopPropagation()}
-    />
-  );
-}
-
 const trendArrow = (trend: ProductInsight["demand"]["trend"]) =>
   trend === "rising" ? " ↑" : trend === "falling" ? " ↓" : "";
 
 const columns = columnHelper.columns([
   columnHelper.display({
     id: "select",
-    header: () => <SelectPageCheckbox />,
-    cell: ({ row }) => <SelectRowCheckbox insight={row.original} />,
+    header: ({ table }) => {
+      const all = table.getIsAllPageRowsSelected();
+      return (
+        <Checkbox
+          aria-label="Select all products on this page"
+          checked={all}
+          disabled={table.getRowModel().rows.length === 0}
+          indeterminate={!all && table.getIsSomePageRowsSelected()}
+          onCheckedChange={(checked) => table.toggleAllPageRowsSelected(checked)}
+        />
+      );
+    },
+    cell: ({ row }) => (
+      <Checkbox
+        aria-label={`Select ${row.original.name}`}
+        checked={row.getIsSelected()}
+        onCheckedChange={(checked) => row.toggleSelected(checked)}
+        onClick={(event) => event.stopPropagation()}
+      />
+    ),
     enableHiding: false,
     meta: { label: "Select" },
   }),
@@ -320,7 +299,7 @@ function RestockBody({
   const navigate = useNavigate();
   const router = useRouter();
   const gate = usePurchasingGate();
-  const [selected, setSelected] = React.useState<ReadonlyMap<string, DraftLine>>(new Map());
+  const [drafts, setDrafts] = React.useState<ReadonlyMap<string, DraftLine>>(new Map());
   const [builderOpen, setBuilderOpen] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [pageSize, setPageSize] = React.useState<number>(RESTOCK_PAGE_SIZE);
@@ -343,6 +322,9 @@ function RestockBody({
   const rowCount = pageIndex === 0 ? (page.total ?? 0) : paging.total;
   const pagination: PaginationState = { pageIndex, pageSize };
   const columnFilters: ColumnFiltersState = term === "" ? [] : [{ id: "name", value: term }];
+  const rowSelection: RowSelectionState = Object.fromEntries(
+    [...drafts.keys()].map((productId) => [productId, true as const]),
+  );
 
   if (page.cursorExpired && pageIndex > 0) setStored({ scope, cursors: [null], total: 0 });
 
@@ -356,7 +338,7 @@ function RestockBody({
     manualFiltering: true,
     enableSorting: false,
     rowCount,
-    state: { pagination, columnFilters },
+    state: { pagination, columnFilters, rowSelection },
     onPaginationChange: (updater: Updater<PaginationState>) => {
       const next = functionalUpdate(updater, pagination);
       if (next.pageSize !== pageSize) {
@@ -380,100 +362,97 @@ function RestockBody({
       const value = next.find((filter) => filter.id === "name")?.value;
       setSearch(isString(value) ? value : "");
     },
+    onRowSelectionChange: (updater: Updater<RowSelectionState>) =>
+      setDrafts(
+        new Map(
+          Object.keys(functionalUpdate(updater, rowSelection)).map((productId) => [
+            productId,
+            drafts.get(productId) ?? draftLineOf(table.getRow(productId).original),
+          ]),
+        ),
+      ),
   });
 
-  const toggle = (insights: ReadonlyArray<ProductInsight>, checked: boolean) =>
-    setSelected((current) => {
-      const next = new Map(current);
-      for (const insight of insights) {
-        if (checked) next.set(insight.productId, draftLineOf(insight));
-        else next.delete(insight.productId);
-      }
-      return next;
-    });
-
   const deselect = (productIds: ReadonlyArray<string>) =>
-    setSelected((current) => {
+    setDrafts((current) => {
       const next = new Map(current);
       for (const productId of productIds) next.delete(productId);
       return next;
     });
 
   return (
-    <OrderSelectionContext value={{ selected, pageRows: page.rows, toggle }}>
-      <DataTable
-        onRowClick={(row) =>
-          navigate({
-            to: "/products/$productId",
-            params: { productId: row.original.productId },
-          })
-        }
-        onRowPreload={(row) =>
-          void router.preloadRoute({
-            to: "/products/$productId",
-            params: { productId: row.original.productId },
-          })
-        }
-        className="gap-3"
-        table={table}
-      >
-        <PageToolbar>
-          <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
-          <ExportButton />
-          <PlanningSheet />
-          {selected.size > 0 ? (
-            <Button
-              aria-label="Clear selection"
-              onClick={() => setSelected(new Map())}
-              size="icon-sm"
-              variant="ghost"
-            >
-              <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
-            </Button>
-          ) : null}
+    <DataTable
+      onRowClick={(row) =>
+        navigate({
+          to: "/products/$productId",
+          params: { productId: row.original.productId },
+        })
+      }
+      onRowPreload={(row) =>
+        void router.preloadRoute({
+          to: "/products/$productId",
+          params: { productId: row.original.productId },
+        })
+      }
+      className="gap-3"
+      table={table}
+    >
+      <PageToolbar>
+        <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
+        <ExportButton />
+        <PlanningSheet />
+        {drafts.size > 0 ? (
           <Button
-            disabled={gate.blocked || selected.size === 0}
-            onClick={() => setBuilderOpen(true)}
-            size="sm"
+            aria-label="Clear selection"
+            onClick={() => setDrafts(new Map())}
+            size="icon-sm"
+            variant="ghost"
           >
-            <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />
-            Order selected
-            {selected.size > 0 ? (
-              <Badge variant="secondary">
-                <span className="tabular-nums">{formatNumber(selected.size)}</span>
-              </Badge>
-            ) : null}
+            <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
           </Button>
-        </PageToolbar>
-        <PurchasingGateNotice gate={gate} />
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 overflow-x-auto">
-            <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
-              <TabsList aria-label="Stock view">
-                {RESTOCK_VIEWS.map((value) => (
-                  <TabsTab key={value} value={value}>
-                    {VIEW_LABEL[value]}
-                    <Badge variant="outline">
-                      <span className="tabular-nums">
-                        {formatNumber(summary === null ? 0 : viewCount(summary, value))}
-                      </span>
-                    </Badge>
-                  </TabsTab>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
-          {summary === null ? null : <PolicyInfo summary={summary} />}
+        ) : null}
+        <Button
+          disabled={gate.blocked || drafts.size === 0}
+          onClick={() => setBuilderOpen(true)}
+          size="sm"
+        >
+          <HugeiconsIcon aria-hidden="true" icon={ShoppingBasket01Icon} />
+          Order selected
+          {drafts.size > 0 ? (
+            <Badge variant="secondary">
+              <span className="tabular-nums">{formatNumber(drafts.size)}</span>
+            </Badge>
+          ) : null}
+        </Button>
+      </PageToolbar>
+      <PurchasingGateNotice gate={gate} />
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 overflow-x-auto">
+          <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
+            <TabsList aria-label="Stock view">
+              {RESTOCK_VIEWS.map((value) => (
+                <TabsTab key={value} value={value}>
+                  {VIEW_LABEL[value]}
+                  <Badge variant="outline">
+                    <span className="tabular-nums">
+                      {formatNumber(summary === null ? 0 : viewCount(summary, value))}
+                    </span>
+                  </Badge>
+                </TabsTab>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
-        <ListTableContent loading={loading} />
-        <OrderBuilderSheet
-          onOpenChange={setBuilderOpen}
-          onOrdered={deselect}
-          open={builderOpen}
-          seed={[...selected.values()]}
-        />
-      </DataTable>
-    </OrderSelectionContext>
+        {summary === null ? null : <PolicyInfo summary={summary} />}
+      </div>
+      <ListTableContent loading={loading} />
+      <OrderBuilderSheet
+        onOpenChange={setBuilderOpen}
+        onOrdered={deselect}
+        open={builderOpen}
+        seed={[...drafts.values()]}
+      />
+    </DataTable>
   );
 }
 
