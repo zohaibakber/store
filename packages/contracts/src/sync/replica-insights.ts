@@ -8,10 +8,7 @@ import { Money } from "../store/pricing";
 export const INSIGHTS_DAY_MILLIS = 86_400_000;
 export const INSIGHTS_HOUR_MILLIS = 3_600_000;
 const MAX_INSIGHTS_WINDOW_DAYS = 400;
-export const MAX_INSIGHTS_PRODUCTS = 20_000;
-export const MAX_INSIGHTS_BATCHES = 60_000;
-export const MAX_INSIGHTS_SALES = 250_000;
-export const MAX_INSIGHTS_ON_ORDER = MAX_INSIGHTS_PRODUCTS;
+export const MAX_INSIGHTS_ON_ORDER = 20_000;
 export const INSIGHTS_ON_ORDER_STATUSES = OPEN_PURCHASE_ORDER_STATUSES;
 
 export const ReplicaInsightsWindow = Schema.Struct({
@@ -52,42 +49,11 @@ export const InsightsBatchFact = Schema.Struct({
 });
 export type InsightsBatchFact = typeof InsightsBatchFact.Type;
 
-const InsightsSaleFact = Schema.Struct({
-  productId: ProductId,
-  day: Schema.Int,
-  units: Schema.Int,
-  revenue: Schema.Number,
-});
-
 export const InsightsOnOrderFact = Schema.Struct({
   productId: ProductId,
   units: PositiveInt,
 });
 export type InsightsOnOrderFact = typeof InsightsOnOrderFact.Type;
-
-const InsightsDayFact = Schema.Struct({
-  day: Schema.Int,
-  invoices: Schema.Natural,
-  revenue: Schema.Number,
-});
-
-const InsightsHourFact = Schema.Struct({
-  hour: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 23 })),
-  invoices: Schema.Natural,
-  revenue: Schema.Number,
-});
-
-export const ReplicaInsightsFacts = Schema.Struct({
-  window: ReplicaInsightsWindow,
-  products: Schema.Array(InsightsProductFact),
-  batches: Schema.Array(InsightsBatchFact),
-  sales: Schema.Array(InsightsSaleFact),
-  onOrder: Schema.Array(InsightsOnOrderFact),
-  days: Schema.Array(InsightsDayFact),
-  hours: Schema.Array(InsightsHourFact),
-  truncated: Schema.Boolean,
-});
-export type ReplicaInsightsFacts = typeof ReplicaInsightsFacts.Type;
 
 export const insightsDayOf = (epochMillis: number, utcOffsetMinutes: number) =>
   Math.floor((epochMillis + utcOffsetMinutes * 60_000) / INSIGHTS_DAY_MILLIS);

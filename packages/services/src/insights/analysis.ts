@@ -6,7 +6,6 @@ import {
   type ExpiringBatch,
   type InsightAlert,
   type InsightSeverity,
-  type InsightsInventoryTotals,
   type InsightsSalesSummary,
   type OrderSuggestion,
   type ProductInsight,
@@ -15,7 +14,6 @@ import {
   type SalesRange,
   type StockPolicy,
   type StockStatus,
-  type StockStatusCounts,
   type TopProduct,
 } from "@store/contracts/sync/replica-analytics";
 import {
@@ -25,9 +23,7 @@ import {
   type InsightsBatchFact,
   type InsightsOnOrderFact,
   type InsightsProductFact,
-  type ReplicaInsightsFacts,
 } from "@store/contracts/sync/replica-insights";
-import * as Arr from "effect/Array";
 
 import { formatPrice } from "../format";
 import { forecastDemand, type DemandTrend } from "./demand";
@@ -36,22 +32,6 @@ import { inverseNormal } from "./statistics";
 
 const DEMAND_HISTORY_DAYS = 90;
 const INSIGHTS_HISTORY_DAYS = 2 * DEMAND_HISTORY_DAYS;
-
-export const ATTENTION_STATUSES: ReadonlySet<StockStatus> = new Set(["out", "critical", "low"]);
-
-export type InsightsReport = {
-  readonly generatedAt: number;
-  readonly today: number;
-  readonly utcOffsetMinutes: number;
-  readonly policy: StockPolicy;
-  readonly products: ReadonlyArray<ProductInsight>;
-  readonly counts: StockStatusCounts;
-  readonly alerts: ReadonlyArray<InsightAlert>;
-  readonly expiring: ReadonlyArray<ExpiringBatch>;
-  readonly inventory: InsightsInventoryTotals;
-  readonly sales: InsightsSalesSummary;
-  readonly truncated: boolean;
-};
 
 export type SalesLedger = {
   readonly series: Float64Array;
@@ -125,20 +105,6 @@ export const addSaleToLedger = (
   });
 };
 
-const buildLedgers = (facts: ReplicaInsightsFacts, today: number) => {
-  const ledgers = new Map<string, SalesLedger>();
-  for (const sale of facts.sales) {
-    if (today - sale.day < 0) continue;
-    let ledger = ledgers.get(sale.productId);
-    if (ledger === undefined) {
-      ledger = emptyLedger();
-      ledgers.set(sale.productId, ledger);
-    }
-    addSaleToLedger(ledger, sale, today);
-  }
-  return ledgers;
-};
-
 export const classifyRevenueRanking = (
   ranked: Iterable<{ readonly id: string; readonly revenue: number }>,
   emit: (id: string, abc: AbcClass) => void,
@@ -152,19 +118,6 @@ export const classifyRevenueRanking = (
     emit(entry.id, shareBefore < 0.8 ? "A" : shareBefore < 0.95 ? "B" : "C");
     cumulative += entry.revenue;
   }
-};
-
-const classifyAbc = (
-  products: ReadonlyArray<InsightsProductFact>,
-  ledgers: Map<string, SalesLedger>,
-) => {
-  const ranked = products
-    .map((product) => ({ id: product.id, revenue: ledgers.get(product.id)?.revenue90d ?? 0 }))
-    .filter((entry) => entry.revenue > 0)
-    .sort((left, right) => right.revenue - left.revenue);
-  const classes = new Map<string, AbcClass>();
-  classifyRevenueRanking(ranked, (id, abc) => classes.set(id, abc));
-  return classes;
 };
 
 export const onOrderLookup = (facts: Iterable<InsightsOnOrderFact>) => {
@@ -389,8 +342,16 @@ export const analyzeProduct = (input: {
 const change = (current: number, previous: number) =>
   previous === 0 ? null : current / previous - 1;
 
-type DayFact = ReplicaInsightsFacts["days"][number];
-type HourFact = ReplicaInsightsFacts["hours"][number];
+type DayFact = {
+  readonly day: number;
+  readonly invoices: number;
+  readonly revenue: number;
+};
+type HourFact = {
+  readonly hour: number;
+  readonly invoices: number;
+  readonly revenue: number;
+};
 
 export const salesPeriodSeries = (input: {
   readonly days: ReadonlyArray<DayFact>;
@@ -495,41 +456,6 @@ export const assembleSalesPeriod = (input: {
     series,
     topProducts,
   };
-};
-
-const salesPeriod = (input: {
-  readonly facts: ReplicaInsightsFacts;
-  readonly range: SalesRange;
-  readonly slot: number;
-  readonly today: number;
-  readonly products: ReadonlyArray<InsightsProductFact>;
-  readonly ledgers: Map<string, SalesLedger>;
-  readonly insights: Map<string, ProductInsight>;
-}): SalesPeriod => {
-  const { range, slot } = input;
-  const entries = function* (): Generator<PeriodProductEntry> {
-    for (const product of input.products) {
-      const ledger = input.ledgers.get(product.id);
-      yield {
-        productId: product.id,
-        name: product.name,
-        revenue: ledger?.periodRevenue[slot] ?? 0,
-        units: ledger?.periodUnits[slot] ?? 0,
-        unitCost: unitCostOf(product),
-        trend: input.insights.get(product.id)?.demand.trend ?? "unknown",
-      };
-    }
-  };
-  return assembleSalesPeriod({
-    range,
-    days: salesPeriodSeries({
-      days: input.facts.days,
-      range,
-      today: input.today,
-      utcOffsetMinutes: input.facts.window.utcOffsetMinutes,
-    }),
-    products: summarizePeriodProducts(entries()),
-  });
 };
 
 export const salesRhythm = (input: {
@@ -725,113 +651,6 @@ export const compareAlerts = (left: InsightAlert, right: InsightAlert) =>
   ALERT_SEVERITY_RANK[left.severity] - ALERT_SEVERITY_RANK[right.severity] ||
   right.impact - left.impact ||
   left.title.localeCompare(right.title);
-
-export const analyzeInsights = (
-  facts: ReplicaInsightsFacts,
-  policy: StockPolicy,
-  now: number,
-): InsightsReport => {
-  const offset = facts.window.utcOffsetMinutes;
-  const today = insightsDayOf(now, offset);
-  const visible = facts.products.filter((product) => product.visible);
-  const ledgers = buildLedgers(facts, today);
-  const abc = classifyAbc(visible, ledgers);
-  const batchesByProduct = Arr.groupBy(facts.batches, (batch) => batch.productId);
-  const onOrderOf = onOrderLookup(facts.onOrder);
-
-  const products: Array<ProductInsight> = [];
-  const expiring: Array<ExpiringBatch> = [];
-  for (const product of visible) {
-    const analyzed = analyzeProduct({
-      product,
-      batches: batchesByProduct[product.id] ?? [],
-      onOrderUnits: onOrderOf(product.id),
-      ledger: ledgers.get(product.id),
-      abc: abc.get(product.id) ?? "C",
-      policy,
-      now,
-      today,
-      utcOffsetMinutes: offset,
-    });
-    products.push(analyzed.insight);
-    expiring.push(...analyzed.expiring);
-  }
-  products.sort(
-    (left, right) => right.priority - left.priority || left.name.localeCompare(right.name),
-  );
-  const insightById = new Map(products.map((insight) => [insight.productId, insight]));
-
-  const counts = {
-    out: 0,
-    critical: 0,
-    low: 0,
-    dead: 0,
-    overstock: 0,
-    healthy: 0,
-    inactive: 0,
-  } satisfies Record<StockStatus, number>;
-  const inventory = {
-    valueAtCost: 0,
-    valueAtRetail: 0,
-    deadStockValue: 0,
-    expiryRiskValue: 0,
-    expiredValue: 0,
-    reorderCost: 0,
-    reorderCount: 0,
-    missingCostCount: 0,
-  };
-  const alerts: Array<InsightAlert> = [];
-  for (const insight of products) {
-    counts[insight.status] += 1;
-    const share = inventoryContribution(insight);
-    inventory.valueAtCost += share.valueAtCost;
-    inventory.valueAtRetail += share.valueAtRetail;
-    inventory.deadStockValue += share.deadStockValue;
-    inventory.expiryRiskValue += share.expiryRiskValue;
-    inventory.expiredValue += share.expiredValue;
-    inventory.reorderCount += share.reorderCount;
-    inventory.reorderCost += share.reorderCost;
-    inventory.missingCostCount += share.missingCostCount;
-    alerts.push(...productAlerts(insight, policy));
-  }
-  if (inventory.missingCostCount > 0) alerts.push(missingCostsAlert(inventory.missingCostCount));
-  if (facts.truncated) {
-    alerts.push({
-      id: "truncated",
-      kind: "truncated",
-      severity: "info",
-      productId: null,
-      title: "Insights cover part of a very large catalog",
-      detail: "The device analyzed the largest bounded slice it can hold at once.",
-      impact: 0,
-    });
-  }
-  alerts.sort(compareAlerts);
-
-  const period = (range: SalesRange, slot: number) =>
-    salesPeriod({ facts, range, slot, today, products: visible, ledgers, insights: insightById });
-  const periods = {
-    7: period(7, 0),
-    30: period(30, 1),
-    90: period(90, 2),
-  } satisfies Record<SalesRange, SalesPeriod>;
-
-  const rhythm = salesRhythm({ days: facts.days, hours: facts.hours, today });
-
-  return {
-    generatedAt: now,
-    today,
-    utcOffsetMinutes: offset,
-    policy,
-    products,
-    counts,
-    alerts: alerts.slice(0, MAX_ALERTS),
-    expiring: expiring.sort((left, right) => left.expiresAt - right.expiresAt),
-    inventory,
-    sales: { ...rhythm, periods },
-    truncated: facts.truncated,
-  };
-};
 
 export const insightsWindowFor = (now: number, utcOffsetMinutes: number) => {
   const today = insightsDayOf(now, utcOffsetMinutes);

@@ -1,9 +1,7 @@
 export {
   addSaleToLedger,
-  analyzeInsights,
   analyzeProduct,
   assembleSalesPeriod,
-  ATTENTION_STATUSES,
   classifyRevenueRanking,
   compareAlerts,
   emptyLedger,
@@ -17,7 +15,7 @@ export {
   salesRhythm,
   summarizePeriodProducts,
 } from "./analysis";
-export type { InsightsReport, SalesLedger } from "./analysis";
+export type { SalesLedger } from "./analysis";
 export {
   abcLookup,
   analyzeProducts,

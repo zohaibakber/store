@@ -10,9 +10,7 @@ import {
   RestockPageRead,
   RestockPageRequest,
 } from "../sync/replica-analytics";
-import { ReplicaInsightsFacts, ReplicaInsightsWindow } from "../sync/replica-insights";
 import { ReadFailure } from "./errors";
-import { Stamp } from "./notices";
 
 export const InsightsChange = Schema.Struct({
   revision: Schema.Natural,
@@ -35,11 +33,6 @@ export class InventoryInsights extends RpcGroup.make(
   Rpc.make("RestockPage", {
     payload: { context: InsightsContext, request: RestockPageRequest },
     success: RestockPageRead,
-    error: ReadFailure,
-  }),
-  Rpc.make("InsightsFacts", {
-    payload: { window: ReplicaInsightsWindow },
-    success: Schema.Struct({ stamp: Stamp, facts: ReplicaInsightsFacts }),
     error: ReadFailure,
   }),
   Rpc.make("Changes", { success: InsightsChange, stream: true }),

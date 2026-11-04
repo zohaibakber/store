@@ -1,10 +1,9 @@
-import { InsightsReports, layerInventoryInsights } from "@store/client-db/insights";
+import { layerInventoryInsights } from "@store/client-db/insights";
 import {
   makeAnalyticsStore,
   openAnalyticsDatabase,
   openInventorySource,
 } from "@store/client-db/node-analytics";
-import { layerNodeSqliteReadonlyReplica } from "@store/client-db/node-sqlite";
 import { InventoryInsights } from "@store/contracts/replica";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -35,16 +34,11 @@ export const makeAnalyticsWorkerHandlers = <R>(
         const store = makeAnalyticsStore(database);
         const scheduler = yield* makeAnalyticsScheduler({ source, store });
         const insights = yield* Layer.build(
-          layerInventoryInsights.pipe(
-            Layer.provide(
-              InsightsReports.layerAnalytics({
-                store,
-                observe: scheduler.observe,
-                changes: scheduler.events,
-              }),
-            ),
-            Layer.provide(layerNodeSqliteReadonlyReplica(config.replicaDatabasePath)),
-          ),
+          layerInventoryInsights({
+            store,
+            observe: scheduler.observe,
+            changes: scheduler.events,
+          }),
         );
         return { store, scheduler, insights };
       }).pipe(
