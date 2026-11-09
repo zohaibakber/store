@@ -6,10 +6,8 @@ import {
   PasswordHasher,
   WebCrypto,
   type AuthClientKind,
-  type OrganizationCommand,
-  type OrganizationId,
   type RefreshToken,
-  type UserId,
+  type UpdateOrganizationInput,
 } from "@store/auth";
 import { RuntimeContext } from "alchemy";
 import * as Clock from "effect/Clock";
@@ -29,10 +27,9 @@ import { AuthCrypto } from "../src/crypto";
 import { AuthD1 } from "../src/d1";
 import { EphemeralStore } from "../src/ephemeral";
 import { unavailableOnInfrastructureFailure } from "../src/errors";
-import { authFailureWire, type AuthFailure } from "../src/failures";
+import { authFailureWire, type AuthRefusal } from "../src/failures";
 import { GoogleOAuth } from "../src/google";
 import { GoogleIdentity } from "../src/google-identity";
-import { HubRevocation } from "../src/hub-revocation";
 import { OAuthState } from "../src/identifiers";
 import { AuthLimiter, type AuthLimits, type AuthRateLimit } from "../src/limits";
 import { Login } from "../src/login";
@@ -68,11 +65,6 @@ const generateSigner = (algorithm: Jwk.AsymmetricAlgorithm, kid: string) =>
   }).pipe(Effect.provide(WebCrypto.layer));
 
 const accessSigner = await Effect.runPromise(generateSigner("ES256", "test-key"));
-
-export interface HubRevocationCall {
-  readonly organizationId: OrganizationId;
-  readonly userId: UserId;
-}
 
 export interface IdTokenSigner {
   readonly kid: string;
@@ -138,7 +130,6 @@ export class AuthTest extends Context.Service<
   AuthTest,
   {
     readonly d1: ReturnType<typeof authD1>;
-    readonly revocations: Effect.Effect<ReadonlyArray<HubRevocationCall>>;
     readonly setGoogleIdToken: (token: string) => Effect.Effect<void>;
     readonly setLimiterAvailable: (available: boolean) => Effect.Effect<void>;
   }
@@ -146,7 +137,6 @@ export class AuthTest extends Context.Service<
 
 const doubles = Layer.effectContext(
   Effect.gen(function* () {
-    const revocations = yield* Ref.make<ReadonlyArray<HubRevocationCall>>([]);
     const googleIdToken = yield* Ref.make("");
     const limiterAvailable = yield* Ref.make(true);
     const countingLimit = (limit: number): AuthRateLimit => {
@@ -163,13 +153,8 @@ const doubles = Layer.effectContext(
     };
     const control = AuthTest.of({
       d1: authD1(),
-      revocations: Ref.get(revocations),
       setGoogleIdToken: (token) => Ref.set(googleIdToken, token),
       setLimiterAvailable: (available) => Ref.set(limiterAvailable, available),
-    });
-    const hub = HubRevocation.of({
-      revoke: (organizationId, userId) =>
-        Ref.update(revocations, (calls) => [...calls, { organizationId, userId }]),
     });
     const http = HttpClient.make((request) =>
       Effect.gen(function* () {
@@ -186,7 +171,6 @@ const doubles = Layer.effectContext(
     );
     return Context.empty().pipe(
       Context.add(AuthTest, control),
-      Context.add(HubRevocation, hub),
       Context.add(HttpClient.HttpClient, http),
       Context.add(
         TestLimits,
@@ -229,23 +213,15 @@ export class AuthApi extends Context.Service<AuthApi>()("@store/auth-worker/Auth
         unavailableOnInfrastructureFailure(sessions.refresh(...args)),
       signOut: (...args: Parameters<typeof sessions.signOut>) =>
         unavailableOnInfrastructureFailure(sessions.signOut(...args)),
-      roster: (accessToken: string) =>
-        unavailableOnInfrastructureFailure(organizations.roster(Redacted.make(accessToken))),
-      organize: (input: { readonly accessToken: string; readonly command: OrganizationCommand }) =>
-        unavailableOnInfrastructureFailure(
-          organizations.organize({
-            command: input.command,
-            accessToken: Redacted.make(input.accessToken),
-          }),
-        ),
+      updateOrganization: (accessToken: string, input: UpdateOrganizationInput) =>
+        unavailableOnInfrastructureFailure(organizations.update(Redacted.make(accessToken), input)),
     };
   }),
 }) {
   static readonly layer = Layer.effect(this, this.make);
 }
 
-export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
-  const deliversOtp = options.deliversOtp ?? false;
+export const authLayer = () => {
   const dependencies = Layer.mergeAll(
     AuthRepository.layer,
     EphemeralStore.layer(EPHEMERAL_PEPPER),
@@ -254,16 +230,14 @@ export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
       keys: [accessSigner.publicKey],
       signer: accessSigner.privateKey,
     }).pipe(Layer.provide(WebCrypto.layer)),
-    deliversOtp ? EmailProvider.layerDevelopment : EmailProvider.layerDisabled,
+    EmailProvider.layerDisabled,
     GoogleOAuth.layer({
       clientId: GOOGLE_CLIENT_ID,
       clientSecret: Redacted.make("google-client-secret"),
       callbackUrl: "https://auth.example.com/v1/oauth/google/callback",
     }).pipe(Layer.provide(WebCrypto.layer)),
     Layer.unwrap(TestLimits.useSync(AuthLimiter.layer)),
-    Layer.succeed(AuthSettings, {
-      developmentOtp: deliversOtp,
-    }),
+    Layer.succeed(AuthSettings, { developmentOtp: false }),
   ).pipe(Layer.provide(databaseLayer), Layer.provideMerge(AuthCrypto.layer));
 
   return AuthApi.layer.pipe(
@@ -278,11 +252,11 @@ export const authLayer = (options: { readonly deliversOtp?: boolean } = {}) => {
 };
 
 export const scenario =
-  (options?: { readonly deliversOtp?: boolean }) =>
+  () =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
-    Effect.provide(self, authLayer(options));
+    Effect.provide(self, authLayer());
 
-export const refusal = <A, R>(use: Effect.Effect<A, AuthFailure, R>) =>
+export const refusal = <A, R>(use: Effect.Effect<A, AuthRefusal, R>) =>
   Effect.map(Effect.flip(use), authFailureWire);
 
 export const count = (query: string, ...params: Array<string | number>) =>

@@ -170,8 +170,8 @@ export const electronAppHost = (source: Window): AppHost => {
       getSession: () => published(call((client) => client.AuthSession())),
       renewSession: () => published(call((client) => client.AuthRenew())),
       signOut: () => call((client) => client.AuthSignOut()),
-      organizationRoster: () => call((client) => client.AuthOrganization()),
-      organize: (command) => call((client) => client.AuthOrganize({ command })),
+      organization: () => call((client) => client.AuthOrganization()),
+      updateOrganization: (input) => call((client) => client.AuthUpdateOrganization({ input })),
       sessionChanges: Stream.fromPubSub(sessions),
     },
     signIn: {
@@ -195,7 +195,6 @@ export const electronAppHost = (source: Window): AppHost => {
         };
       },
     },
-    searchGlobalProducts: (query) => call((client) => client.SearchGlobalProducts({ query })),
     shell: {
       onNewSale: (callback) =>
         listen(

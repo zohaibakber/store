@@ -16,7 +16,6 @@
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",
     "@store/db": "workspace:*",
-    "@store/services": "workspace:*",
     "@store/sync": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

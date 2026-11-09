@@ -22,5 +22,5 @@ Package tests mirror the source domains under `test`.
 
 `@store/client-db` owns the replica open the desktop host uses. Electron opens the
 replica in a main-process Node worker over `node:sqlite`; that worker makes its
-own sync HTTP calls with an access token main pushes to it. The renderer opens no replica. See
-`docs/architecture.md` for the whole system. Replicas hard-delete on a `delete` change.
+own sync HTTP calls with an access token main pushes to it. The renderer opens no replica.
+Replicas hard-delete on a `delete` change.

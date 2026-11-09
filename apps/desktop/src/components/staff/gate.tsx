@@ -53,15 +53,13 @@ function useArrival(state: StaffState | undefined) {
 
   useEffect(() => {
     if (arrivingId === null) return;
-    let current = true;
+    const superseded = new AbortController();
     void navigate({ to: destination }).finally(() => {
-      if (!current) return;
+      if (superseded.signal.aborted) return;
       setSettled(arrivingId);
       setViaLock(false);
     });
-    return () => {
-      current = false;
-    };
+    return () => superseded.abort();
   }, [arrivingId, destination, navigate]);
 
   return { arriving: arrivingId !== null, lastActorId: settled };

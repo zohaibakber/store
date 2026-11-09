@@ -9,21 +9,15 @@ import * as Layer from "effect/Layer";
 
 import { AccessTokens } from "../auth/access-tokens";
 import { OrganizationAuthLive } from "../auth/organization";
-import { GlobalSearch } from "../global-search/service";
-import { OrganizationAuthority } from "../inventory/organization-authority";
-import { LiveFanout } from "../live/fanout";
-import { OrgHubs } from "../live/org-hubs";
+import { OrgAuthorities, OrganizationAuthority } from "../inventory/organization-authority";
 import { LiveRoutes } from "../live/route";
-import { GlobalSearchHandlers } from "../routes/global-search";
 import { SyncHandlers } from "../routes/sync";
 import { buildOncePerIsolate, workerRuntimeServices } from "../runtime/isolate";
 import { StoreApi } from "./api";
 import { publicError } from "./errors";
 import { AuthHandlers, SystemHandlers } from "./system";
 
-const ProtectedHandlers = Layer.mergeAll(GlobalSearchHandlers, SyncHandlers).pipe(
-  Layer.provide(OrganizationAuthLive),
-);
+const ProtectedHandlers = SyncHandlers.pipe(Layer.provide(OrganizationAuthLive));
 
 const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
   Layer.provide(Layer.mergeAll(SystemHandlers, AuthHandlers, ProtectedHandlers)),
@@ -53,12 +47,7 @@ const recoverUnexpected = <E, R>(
     }),
   );
 
-export type ApiServices =
-  | AccessTokens
-  | GlobalSearch
-  | LiveFanout
-  | OrgHubs
-  | OrganizationAuthority;
+export type ApiServices = AccessTokens | OrgAuthorities | OrganizationAuthority;
 
 export const makeWorkerFetch = Effect.gen(function* () {
   const services = yield* Effect.context<ApiServices>();

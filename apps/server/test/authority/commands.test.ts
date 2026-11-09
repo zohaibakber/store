@@ -186,8 +186,9 @@ describe("durable object inventory commands", () => {
         const first = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
         const second = envelopeFor(organizationId, lastUnitBuyerBEnvelope);
         const { commands, db } = yield* openCommands(organizationId);
-        const accepted = yield* commands.submitEncoded(actor, first);
-        const rejected = yield* commands.submitEncoded(actor, second);
+        const { published } = (yield* TestAuthorities).of(organizationId);
+        yield* commands.submitEncoded(actor, first);
+        yield* commands.submitEncoded(actor, second);
         const replayed = yield* commands.submitEncoded(actor, first);
         const pulled = yield* commands.pullEncoded(actor, pullFromStart);
         const headers = yield* db
@@ -195,20 +196,21 @@ describe("durable object inventory commands", () => {
           .from(authorityTransactions)
           .orderBy(authorityTransactions.commitSequence)
           .all();
-        const outcome = { accepted, rejected, replayed, pulled, headers };
+        const outcome = { published, replayed, pulled, headers };
         const page = JSON.parse(outcome.pulled.json);
-        expect(outcome.accepted.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
-        expect(outcome.rejected.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
-        expect(outcome.replayed.fanout).toBeNull();
+        const [accepted, rejected] = outcome.published;
+        expect(outcome.published).toHaveLength(2);
+        expect(accepted).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
+        expect(rejected).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
         expect(JSON.parse(outcome.replayed.json)).toMatchObject({
           operationId: first.operationId,
           commitSequence: "1",
         });
-        expect(JSON.parse(outcome.accepted.fanout?.group ?? "null")).toEqual(page.transactions[0]);
-        expect(JSON.parse(outcome.rejected.fanout?.group ?? "null")).toEqual(page.transactions[1]);
+        expect(JSON.parse(accepted?.group ?? "null")).toEqual(page.transactions[0]);
+        expect(JSON.parse(rejected?.group ?? "null")).toEqual(page.transactions[1]);
         expect(page.transactions[1]).toMatchObject({ decision: "rejected", changes: [] });
-        expect(outcome.accepted.fanout?.byteLength).toBe(outcome.headers[0]?.byteLength);
-        expect(outcome.rejected.fanout?.byteLength).toBe(outcome.headers[1]?.byteLength);
+        expect(accepted?.byteLength).toBe(outcome.headers[0]?.byteLength);
+        expect(rejected?.byteLength).toBe(outcome.headers[1]?.byteLength);
       }).pipe(scenario),
   );
 });

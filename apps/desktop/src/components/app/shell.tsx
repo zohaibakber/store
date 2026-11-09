@@ -12,7 +12,6 @@ import { AppSidebar } from "@/components/app/sidebar";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
-import { LicenceNotice } from "@/components/licence/notice";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
 import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
 import { Separator } from "@/components/ui/separator";
@@ -47,9 +46,6 @@ function ClaimedCatalogShell({ catalogs }: { readonly catalogs: Catalogs }) {
         <ShellFrame
           content={
             <InventoryReady>
-              <div className="sticky top-0 z-10">
-                <LicenceNotice />
-              </div>
               <PublishOffer />
               <ReceiptPrintHost />
               <StaffRouteGuard>

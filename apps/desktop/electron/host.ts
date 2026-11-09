@@ -1,24 +1,13 @@
-import path from "node:path";
-
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
-import { shippedLicenceTrust, type LicenceTrust } from "@store/licence";
-import * as Context from "effect/Context";
-import * as Digest from "effect/crypto/Digest";
-import * as Signature from "effect/crypto/Signature";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as LayerRef from "effect/LayerRef";
 import * as ManagedRuntime from "effect/ManagedRuntime";
-import type * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
-import * as Stream from "effect/Stream";
 
 import { DesktopAuth, type DesktopAuthOptions } from "./auth";
 import { DesktopShell } from "./desktop-shell";
-import { LicenceService } from "./licence/service";
 import { PrivateFiles } from "./private-files";
 import { makeReplicaHost, ReplicaHost } from "./replica-host";
 import { ShellEvents } from "./shell-events";
@@ -32,32 +21,10 @@ export interface DesktopHostOptions extends DesktopAuthOptions {
 
 const PlatformLive = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer);
 
-const LicenceLive = (options: { readonly directory: string; readonly trust: LicenceTrust }) =>
-  Layer.effect(
-    LicenceService,
-    Effect.gen(function* () {
-      const platform = yield* Effect.context<
-        PrivateFiles | Path.Path | Digest.Digest | Signature.Signature
-      >();
-      const ref = yield* LayerRef.make(
-        LicenceService.layer(options).pipe(Layer.provide(Layer.succeedContext(platform))),
-        { idleTimeToLive: Duration.infinity },
-      );
-      const built = Effect.scoped(Effect.map(ref.contextEffect, Context.get(LicenceService)));
-      return LicenceService.of({
-        current: Effect.flatMap(built, (licence) => licence.current),
-        states: Stream.unwrap(Effect.map(built, (licence) => licence.states)),
-        enter: (text, databaseShop) =>
-          Effect.flatMap(built, (licence) => licence.enter(text, databaseShop)),
-      });
-    }),
-  );
-
 const ReplicaHostLive = Layer.effect(
   ReplicaHost,
   Effect.gen(function* () {
     const auth = yield* DesktopAuth;
-    const licence = yield* LicenceService;
     const events = yield* ShellEvents;
     const shell = yield* DesktopShell;
     return yield* makeReplicaHost({
@@ -69,7 +36,6 @@ const ReplicaHostLive = Layer.effect(
       dialogs: shell.dialogs,
       publishProgress: (progress) => PubSub.publish(events.publishProgress, progress),
       rendererChannel: shell.rendererChannel,
-      sessions: { licence },
     });
   }),
 );
@@ -80,10 +46,6 @@ const MainLive = (options: DesktopHostOptions) =>
     Layer.provideMerge(
       Layer.mergeAll(
         DesktopAuth.layer(options),
-        LicenceLive({
-          directory: path.join(options.shell.userDataPath, "licence"),
-          trust: shippedLicenceTrust(options.packaged),
-        }),
         Layer.succeed(DesktopShell, options.shell),
         options.packaged ? Updater.layer : Updater.layerUnpackaged,
       ),

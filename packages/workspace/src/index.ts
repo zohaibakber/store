@@ -1,11 +1,4 @@
-export {
-  RequestError,
-  SessionHttp,
-  asRequestError,
-  isInvalidResponse,
-  isUnreachable,
-  layerSessionHttp,
-} from "./session-http";
+export { RequestError, SessionHttp, isUnreachable, layerSessionHttp } from "./session-http";
 export {
   adoptAuthenticatedSnapshot,
   adoptSessionTokens,

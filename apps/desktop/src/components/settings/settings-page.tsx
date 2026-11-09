@@ -1,4 +1,3 @@
-import { LicenceSettings } from "@/components/licence/settings";
 import { AboutSettings } from "@/components/settings/about-settings";
 import { AccountSettings } from "@/components/settings/account-settings";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
@@ -29,8 +28,6 @@ export function SettingsPage({ section }: { readonly section: SettingsSection })
           </div>
         </FrameCard>
       );
-    case "licence":
-      return <LicenceSettings />;
     case "general":
       return (
         <>

@@ -7,7 +7,6 @@ export const settingsSections = [
   "organization",
   "receipts",
   "data",
-  "licence",
   "general",
 ] as const;
 
@@ -30,8 +29,6 @@ export const settingsSectionTitle = (section: SettingsSection): string => {
       return "Receipts";
     case "data":
       return "Data";
-    case "licence":
-      return "Licence";
     case "general":
       return "General";
   }

@@ -19,7 +19,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MessageChannelMain, MessagePortMain } from "electron";
 
-import { layerDesktopServer, noDesktopLicence, type DesktopLicence } from "./desktop-rpcs";
+import { layerDesktopServer } from "./desktop-rpcs";
 import { pumpPorts } from "./port-pump";
 
 const ATTACH_LIMIT = "10 seconds";
@@ -59,7 +59,6 @@ export const makeRendererPorts = (options: {
   readonly workspaceToken: WorkspaceToken;
   readonly channel: () => MessageChannelMain;
   readonly attachInsights: AttachPort;
-  readonly licence?: DesktopLicence | undefined;
 }): Effect.Effect<RendererPorts, never, Scope.Scope> =>
   Effect.gen(function* () {
     const scope = yield* Effect.scope;
@@ -113,13 +112,7 @@ export const makeRendererPorts = (options: {
       yield* Effect.forkIn(insights.attach, workers);
       const desktopChannel = options.channel();
       yield* Layer.launch(
-        Layer.fresh(
-          layerDesktopServer(
-            desktopChannel.port1,
-            SubscriptionRef.changes(state),
-            options.licence ?? noDesktopLicence,
-          ),
-        ),
+        Layer.fresh(layerDesktopServer(desktopChannel.port1, SubscriptionRef.changes(state))),
       ).pipe(
         Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
           Effect.logWarning("RendererPorts.desktop_server_failed", cause),

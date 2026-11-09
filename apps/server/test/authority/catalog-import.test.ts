@@ -502,6 +502,7 @@ describe("publishing a local workspace into an empty organization", () => {
       const unlanded = yield* imports.commitImport(owner, importId, miscounted).pipe(Effect.flip);
       const staged = yield* imports.importStatus(owner, importId);
       const landed = yield* imports.commitImport(owner, importId, request);
+      const landedFanout = authorities.of("org-published").published.at(-1);
       const committed = decodeResult(landed.json);
       const settled = yield* imports.importStatus(owner, importId);
       const later = decodeImportId("import-later");
@@ -613,7 +614,7 @@ describe("publishing a local workspace into an empty organization", () => {
         settled,
         superseded,
         refused,
-        fanout: landed.fanout,
+        fanout: landedFanout,
         committed,
         repeated,
         asked,

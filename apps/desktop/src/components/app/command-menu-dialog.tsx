@@ -3,7 +3,6 @@ import {
   Add01Icon,
   ArrowLeft01Icon,
   PackageIcon,
-  GlobalSearchIcon,
   HomeIcon,
   Invoice01Icon,
   PackageAddIcon,
@@ -20,7 +19,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type Invoice, type StaffState } from "@store/contracts";
-import type { GlobalProduct } from "@store/contracts/server-api.schema";
 import {
   claimedCatalogScope,
   useCatalogIsReady,
@@ -56,23 +54,16 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { FrameFooter, FramePanel } from "@/components/ui/frame";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Spinner } from "@/components/ui/spinner";
-import { Toggle } from "@/components/ui/toggle";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
-import { canSearchGlobally, useGlobalProductSearch } from "@/hooks/use-global-product-search";
+import { Kbd } from "@/components/ui/kbd";
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
-import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
-import { toastBridgeFailure } from "@/lib/errors";
 import { isSubmitChord } from "@/lib/shortcuts";
 import { Route as RootRoute } from "@/routes/__root";
 
 import {
   emptyMessage,
   entryTarget,
-  globalProductPrefill,
   INVOICE_WINDOW,
   pageGroups,
   PLACEHOLDERS,
@@ -83,8 +74,6 @@ import {
   rootGroups,
   SCOPES,
   searchesInvoices,
-  WEB_SEARCH_ACTION_ID,
-  webSearchLabel,
   type ActionEntry,
   type Entry,
   type EntryGroup,
@@ -101,12 +90,6 @@ const allowed = (
   actions: ReadonlyArray<ActionEntry>,
 ): ReadonlyArray<ActionEntry> =>
   actions.filter((action) => action.permission === undefined || permits(staff, action.permission));
-
-const isGlobalToggleChord = (event: KeyboardEvent) =>
-  (event.key === "g" || event.key === "G") &&
-  (event.ctrlKey || event.metaKey) &&
-  !event.altKey &&
-  !event.shiftKey;
 
 export function InventoryCommandDialog({
   onOpenChange,
@@ -435,7 +418,6 @@ function PaletteResults({
   const [highlighted, setHighlighted] = useState<Entry | undefined>(undefined);
   const close = useMemo(() => () => onOpenChange(false), [onOpenChange]);
   const staff = useStaffAccess();
-  const canManageStock = permits(staff, "manageStock");
   const actions = useActions(close);
   const productActions = useProductActions(close);
   const recents = useRecentProducts();
@@ -443,26 +425,6 @@ function PaletteResults({
   const products = useProductSearch(trimmed, PRODUCT_LIMIT);
   const { data: invoices, isReady: invoicesReady } = useInventoryInvoices(INVOICE_WINDOW);
   const awaitingInvoices = searchesInvoices(page, scope, trimmed) && !invoicesReady;
-  const { view: globalView, search: searchWeb } = useGlobalProductSearch(trimmed);
-  const searchesWeb = canManageStock && canSearchGlobally(globalView);
-
-  const webSearch = useMemo(
-    (): ActionEntry | null =>
-      searchesWeb
-        ? {
-            kind: "action",
-            id: WEB_SEARCH_ACTION_ID,
-            label: webSearchLabel(trimmed),
-            keywords: "",
-            icon: GlobalSearchIcon,
-            run: () => {
-              onScopeChange("global");
-              searchWeb();
-            },
-          }
-        : null,
-    [onScopeChange, searchWeb, searchesWeb, trimmed],
-  );
 
   const highlight = (entry: Entry | undefined) => {
     setHighlighted(entry);
@@ -482,17 +444,6 @@ function PaletteResults({
     void navigate({ to: "/invoices/$invoiceId", params: { invoiceId: invoice.id } });
   };
 
-  const addToCatalog = (product: GlobalProduct) => {
-    close();
-    void navigate({ to: "/products/new", search: globalProductPrefill(product) });
-  };
-
-  const openSource = (product: GlobalProduct) => {
-    appHost()
-      .openExternal(product.sourceUrl)
-      .catch((cause: unknown) => toastBridgeFailure(cause, "Could not open the source page."));
-  };
-
   const groups = useMemo(
     (): ReadonlyArray<EntryGroup> =>
       page.kind === "product"
@@ -504,23 +455,8 @@ function PaletteResults({
             recents,
             invoices,
             actions,
-            global: globalView,
-            webSearch,
           }),
-    [
-      actions,
-      globalView,
-      invoices,
-      page,
-      productActions,
-      products,
-      query,
-      recents,
-      scope,
-      staff,
-      trimmed,
-      webSearch,
-    ],
+    [actions, invoices, page, productActions, products, query, recents, scope, staff, trimmed],
   );
 
   const [settledGroups, setSettledGroups] = useState(groups);
@@ -536,30 +472,16 @@ function PaletteResults({
         return productActions.open(recentTarget(entry.recent));
       case "invoice":
         return openInvoice(entry.invoice);
-      case "global":
-        return addToCatalog(entry.product);
       case "action":
         return entry.run();
     }
   };
 
   const highlightedTarget = page.kind === "product" ? page.target : entryTarget(highlighted);
-  const inGlobalScope = page.kind === "root" && scope === "global";
-  const highlightedGlobal =
-    inGlobalScope &&
-    highlighted?.kind === "global" &&
-    shownGroups.some((group) => group.items.some((entry) => entry.id === highlighted.id))
-      ? highlighted.product
-      : undefined;
-
   const cycleScope = (step: number) => {
     const index = SCOPES.findIndex((entry) => entry.value === scope);
     const next = index === -1 ? SCOPES[0] : SCOPES[(index + step + SCOPES.length) % SCOPES.length];
     if (next) onScopeChange(next.value);
-  };
-
-  const toggleGlobal = () => {
-    if (canManageStock) onScopeChange(scope === "global" ? "all" : "global");
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -567,11 +489,6 @@ function PaletteResults({
     if (event.key === "Tab" && !isModified(event)) {
       event.preventDefault();
       if (page.kind === "root") cycleScope(event.shiftKey ? -1 : 1);
-      return;
-    }
-    if (isGlobalToggleChord(event)) {
-      event.preventDefault();
-      if (page.kind === "root") toggleGlobal();
       return;
     }
     if (event.key === "Escape" && !isModified(event) && !event.shiftKey) {
@@ -591,11 +508,6 @@ function PaletteResults({
     if (event.key === "Backspace" && page.kind === "product" && input.value === "") {
       event.preventDefault();
       closePage();
-      return;
-    }
-    if (highlightedGlobal && isSubmitChord(event)) {
-      event.preventDefault();
-      openSource(highlightedGlobal);
       return;
     }
     if (!highlightedTarget) return;
@@ -631,47 +543,12 @@ function PaletteResults({
       open
       value={query}
     >
-      <div className="flex items-center">
-        <div className="min-w-0 flex-1">
-          <CommandInput
-            aria-keyshortcuts="Tab Shift+Tab Control+Enter Control+Period Control+G"
-            onKeyDown={onKeyDown}
-            placeholder={page.kind === "product" ? "Search actions…" : PLACEHOLDERS[scope]}
-            ref={inputRef}
-          />
-        </div>
-        {page.kind === "root" && canManageStock ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  aria-label="Search the web"
-                  className="me-4 shrink-0"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onPressedChange={() => {
-                    toggleGlobal();
-                    inputRef.current?.focus();
-                  }}
-                  pressed={scope === "global"}
-                  size="sm"
-                  tabIndex={-1}
-                />
-              }
-            >
-              <HugeiconsIcon aria-hidden="true" icon={GlobalSearchIcon} />
-            </TooltipTrigger>
-            <TooltipPopup>
-              <span className="flex items-center gap-2">
-                Search the web
-                <KbdGroup>
-                  <Kbd>Ctrl</Kbd>
-                  <Kbd>G</Kbd>
-                </KbdGroup>
-              </span>
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-      </div>
+      <CommandInput
+        aria-keyshortcuts="Tab Shift+Tab Control+Enter Control+Period"
+        onKeyDown={onKeyDown}
+        placeholder={page.kind === "product" ? "Search actions…" : PLACEHOLDERS[scope]}
+        ref={inputRef}
+      />
       <div className="flex min-h-0 flex-col px-1">
         <FramePanel className="flex min-h-0 flex-col overflow-hidden">
           <div className="-m-5 flex min-h-0 flex-col">
@@ -720,25 +597,8 @@ function PaletteResults({
                 ))}
               </div>
             )}
-            {inGlobalScope && globalView._tag === "Searching" ? (
-              <div
-                aria-live="polite"
-                className="flex h-40 shrink-0 flex-col items-center justify-center gap-2.5 px-4 text-sm text-muted-foreground"
-              >
-                <Spinner className="size-4 shrink-0" />
-                <span>Searching the web…</span>
-              </div>
-            ) : null}
-            {inGlobalScope && globalView._tag === "Ready" && globalView.failure !== null ? (
-              <p
-                className="shrink-0 px-4 pt-3 text-center text-sm text-muted-foreground"
-                role="alert"
-              >
-                {globalView.failure}
-              </p>
-            ) : null}
             {shownGroups === groups ? (
-              <CommandEmpty>{emptyMessage(page, scope, trimmed, globalView)}</CommandEmpty>
+              <CommandEmpty>{emptyMessage(page, scope, trimmed)}</CommandEmpty>
             ) : null}
             <CommandList>
               {(group: EntryGroup) => (

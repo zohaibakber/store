@@ -34,8 +34,7 @@ export function OrganizationProfileCard({
     defaultValues: defaults,
     validators: { onSubmit: profileSchema },
     onSubmit: async ({ value }) => {
-      const result = await actions.organize({
-        _tag: "UpdateOrganization",
+      const result = await actions.update({
         organizationId: organization.id,
         name: OrganizationName.make(value.name.trim()),
       });

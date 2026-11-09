@@ -6,14 +6,12 @@ import {
   TokenSet,
   nativeClient,
   type AuthClientError,
+  type AuthOrganizationMembership,
   type IdentifyInput,
   type IssuedSession,
   type LoginRoute,
-  type OrganizationCommand,
-  type OrganizationCommandResult,
-  type OrganizationRoster,
+  type UpdateOrganizationInput,
 } from "@store/auth";
-import type { GlobalProductSearchResult } from "@store/contracts/server-api.schema";
 import {
   unauthenticatedWorkspace,
   withWorkspaceOnline,
@@ -49,9 +47,7 @@ import * as Stream from "effect/Stream";
 import { app, net, safeStorage } from "electron";
 
 import type { SignInCredentials } from "../src/host/index";
-import { searchGlobalProducts } from "./global-search";
 import { PrivateFiles } from "./private-files";
-import { ServerApi, type ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
 
 const canPersistEncryptedSession = () =>
@@ -156,29 +152,22 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
   };
 
   const sessionHttp = yield* LayerRef.make(
-    ServerApi.layer.pipe(
-      Layer.provideMerge(
-        layerSessionHttp({
-          apiBaseUrl: options.apiBaseUrl,
-          authBaseUrl: options.authBaseUrl,
-          onRefreshed: (refreshed, tokens) =>
-            adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
-              Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
-            ),
-          onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
-            Effect.andThen(PubSub.publish(accessTokens, null)),
-            Effect.andThen(forgetPersisted),
-          ),
-        }),
+    layerSessionHttp({
+      apiBaseUrl: options.apiBaseUrl,
+      authBaseUrl: options.authBaseUrl,
+      onRefreshed: (refreshed, tokens) =>
+        adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
+          Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
+        ),
+      onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
+        Effect.andThen(PubSub.publish(accessTokens, null)),
+        Effect.andThen(forgetPersisted),
       ),
-      Layer.provide(netHttp),
-    ),
+    }).pipe(Layer.provide(netHttp)),
     { idleTimeToLive: Duration.infinity },
   );
 
-  const withSession = <A, E>(
-    effect: Effect.Effect<A, E, SessionHttp | ServerApi>,
-  ): Effect.Effect<A, E> =>
+  const withSession = <A, E>(effect: Effect.Effect<A, E, SessionHttp>): Effect.Effect<A, E> =>
     Effect.scoped(
       Effect.flatMap(sessionHttp.contextEffect, (context) =>
         Effect.provideContext(effect, context),
@@ -272,9 +261,9 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
         }),
       ),
     ),
-    organizationRoster: withSession(SessionHttp.use((session) => session.organizationRoster)),
-    organize: (command) => withSession(SessionHttp.use((session) => session.organize(command))),
-    searchGlobalProducts: (query) => withSession(searchGlobalProducts(query)),
+    organization: withSession(SessionHttp.use((session) => session.organization)),
+    updateOrganization: (input) =>
+      withSession(SessionHttp.use((session) => session.updateOrganization(input))),
     accessTokens: Stream.fromPubSub(accessTokens),
     liveAccessToken: (force) =>
       withSession(SessionHttp.use((session) => session.ensureFreshAccess(force))).pipe(
@@ -301,20 +290,15 @@ export class DesktopAuth extends Context.Service<
     ) => Effect.Effect<WorkspaceSnapshot, AuthClientError | GoogleSignInFailure>;
     readonly renewSession: Effect.Effect<WorkspaceSnapshot, RequestError>;
     readonly signOut: Effect.Effect<void>;
-    readonly organizationRoster: Effect.Effect<OrganizationRoster, RequestError>;
-    readonly organize: (
-      command: OrganizationCommand,
-    ) => Effect.Effect<OrganizationCommandResult, RequestError>;
-    readonly searchGlobalProducts: (
-      query: string,
-    ) => Effect.Effect<GlobalProductSearchResult, ServerResponseInvalid | RequestError>;
+    readonly organization: Effect.Effect<AuthOrganizationMembership, RequestError>;
+    readonly updateOrganization: (
+      input: UpdateOrganizationInput,
+    ) => Effect.Effect<AuthOrganizationMembership, RequestError>;
     readonly accessTokens: Stream.Stream<Redacted.Redacted<string> | null>;
     readonly liveAccessToken: (
       force: boolean,
     ) => Effect.Effect<Redacted.Redacted<string> | null, RequestError>;
-    readonly withSession: <A, E>(
-      effect: Effect.Effect<A, E, SessionHttp | ServerApi>,
-    ) => Effect.Effect<A, E>;
+    readonly withSession: <A, E>(effect: Effect.Effect<A, E, SessionHttp>) => Effect.Effect<A, E>;
   }
 >()("@store/desktop/DesktopAuth") {
   static readonly layer = (options: DesktopAuthOptions) =>

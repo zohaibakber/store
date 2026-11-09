@@ -1,5 +1,4 @@
 import * as BrowserWorker from "@effect/platform-browser/BrowserWorker";
-import type { LicenceState } from "@store/contracts";
 import {
   DesktopRpcs,
   INSIGHTS_KEY,
@@ -173,7 +172,6 @@ export type InventoryServices = {
   readonly Desktop: AtomRpc.AtomRpcClient<Desktop, "desktop/Rpcs", DesktopRpcsOf>;
   readonly generation: Atom.Atom<Option.Option<number>>;
   readonly workspace: Atom.Atom<Option.Option<WorkspaceState>>;
-  readonly licence: Atom.Atom<Option.Option<LicenceState>>;
 };
 
 export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChannel")(function* (
@@ -194,9 +192,6 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
   });
   const desktopWorkspace = Desktop.runtime.atom(
     Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("WorkspaceState", undefined)))),
-  );
-  const desktopLicence = Desktop.runtime.atom(
-    Stream.unwrap(Desktop.use((desktop) => Effect.succeed(desktop("LicenceState", undefined)))),
   );
   const services: InventoryServices = {
     Reads: AtomRpc.Service<Reads>()("inventory/Reads", {
@@ -220,7 +215,6 @@ export const openReplicaChannel = Effect.fn("InventoryServices.openReplicaChanne
     Desktop,
     generation: Atom.map(workerPorts, (ports) => Option.map(ports, (held) => held.generation)),
     workspace: Atom.map(desktopWorkspace, AsyncResult.value),
-    licence: Atom.map(desktopLicence, AsyncResult.value),
   };
   return {
     services,

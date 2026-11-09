@@ -66,10 +66,6 @@ What a staff member is allowed to do: cashier, manager or owner. A cashier sells
 
 A staff member's request to work, checked against their PIN. Repeated failures make the next attempt wait.
 
-## Licence
-
-The shop's right to use the software. A licence the shop cannot verify is refused.
-
 ## Command
 
 A request that something in the shop change. It names what is asked and can be refused. Accepting it records what happened.

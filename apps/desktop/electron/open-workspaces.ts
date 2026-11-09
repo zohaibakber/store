@@ -3,7 +3,7 @@ import path from "node:path";
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
-import { ReplicaStorageError, ReplicaUnavailable, WorkspaceToken } from "@store/contracts/replica";
+import { WorkspaceToken } from "@store/contracts/replica";
 import type { RequestError } from "@store/workspace";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
@@ -28,8 +28,6 @@ import * as Stream from "effect/Stream";
 import type { MessageChannelMain } from "electron";
 
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
-import type { DesktopLicence } from "./desktop-rpcs";
-import type { LicenceService } from "./licence/service";
 import {
   makeRendererPorts,
   noRendererPorts,
@@ -112,7 +110,6 @@ export type OpenWorkspacesTuning = {
   readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
   readonly closeGrace?: Duration.Input;
   readonly ownershipWait?: Duration.Input;
-  readonly licence?: LicenceService["Service"];
 };
 
 export type AccessTokenSource = {
@@ -247,40 +244,6 @@ const bootFor = (
 const applyForeground = (worker: LiveReplicaWorker, visible: boolean) =>
   worker.client.SetForeground({ visible }).pipe(Effect.ignore);
 
-const tellLicence = (licence: LicenceService["Service"], client: ReplicaWorkerClient) =>
-  Effect.flatMap(licence.current, (state) => client.SetLicence({ state })).pipe(Effect.ignore);
-
-const sessionLicence = (
-  licence: LicenceService["Service"],
-  writer: () => ReplicaSupervisor,
-): DesktopLicence => ({
-  states: licence.states,
-  enter: (text) =>
-    licence
-      .enter(
-        text,
-        writer()
-          .use((worker) => worker.client.DatabaseShop())
-          .pipe(
-            Effect.map((database) => Option.fromNullishOr(database.shopId)),
-            Effect.catchTags({
-              ReplicaWorkerLost: () =>
-                Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
-              RpcClientError: () => Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
-              ReplicaWorkerFailure: ({ message }) =>
-                Effect.fail(new ReplicaStorageError({ message })),
-            }),
-          ),
-      )
-      .pipe(
-        Effect.tap(() =>
-          writer()
-            .use((worker) => tellLicence(licence, worker.client))
-            .pipe(Effect.ignore),
-        ),
-      ),
-});
-
 export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
   options: OpenWorkspacesOptions,
 ) {
@@ -360,7 +323,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     sender: ReplicaSender,
     workspaceToken: WorkspaceToken,
     analytics: AnalyticsController,
-    licence: DesktopLicence | undefined,
   ) => {
     const { rendererChannel } = options;
     if (rendererChannel === undefined || sender.postMessage === undefined) {
@@ -375,7 +337,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       workspaceToken,
       channel: rendererChannel,
       attachInsights: (port) => analytics.use((client) => client.AttachRenderer({ port })),
-      licence,
     });
   };
 
@@ -394,13 +355,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
           );
         }
         if (!(yield* Ref.get(foreground))) yield* applyForeground(worker, false);
-        const { licence } = options;
-        if (licence !== undefined) {
-          yield* tellLicence(licence, client);
-          yield* forwardStream(licence.states, (state) =>
-            client.SetLicence({ state }).pipe(Effect.ignore),
-          );
-        }
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
           if (Option.isSome(stamp)) {
@@ -436,15 +390,8 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         },
         onLost: Effect.suspend(() => ports.reattach),
       });
-      const ports: RendererPorts = yield* rendererPorts(
-        sender,
-        workspaceToken,
-        analytics,
-        options.licence === undefined
-          ? undefined
-          : sessionLicence(options.licence, () => supervisor),
-      );
-      const supervisor: ReplicaSupervisor = yield* startReplicaSupervisor({
+      const ports: RendererPorts = yield* rendererPorts(sender, workspaceToken, analytics);
+      const supervisor = yield* startReplicaSupervisor({
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,

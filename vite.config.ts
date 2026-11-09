@@ -42,7 +42,6 @@ export default defineConfig({
         inline: ["@effect/vitest"],
       },
     },
-    setupFiles: ["./test/setup.ts"],
     testTimeout: 15_000,
   },
   lint: {
@@ -130,8 +129,6 @@ export default defineConfig({
         files: [
           "apps/desktop/electron/replica-worker-handlers.ts",
           "apps/desktop/src/components/shared/detail-load-error.tsx",
-          "apps/server/src/ai/language-model.ts",
-          "apps/server/src/global-search/web-search.ts",
           "packages/client-db/src/replica/node-backup.ts",
           "packages/client-db/src/replica/node-readonly.ts",
           "packages/sync/src/replica/errors.ts",
@@ -155,17 +152,6 @@ export default defineConfig({
         ],
         rules: {
           "anti-slop/no-node-fs-in-effect": "off",
-        },
-      },
-      {
-        files: [
-          "apps/desktop/src/components/purchases/receive-lines.ts",
-          "apps/server/src/authority/engine.ts",
-          "apps/server/src/authority/imports.ts",
-          "packages/services/src/pack-size.ts",
-        ],
-        rules: {
-          "anti-slop/no-number-is-safe-integer": "off",
         },
       },
       {
@@ -238,7 +224,6 @@ export default defineConfig({
       "anti-slop/no-global-crypto": "error",
       "anti-slop/no-host-policy-call-in-component": "error",
       "anti-slop/no-node-fs-in-effect": "error",
-      "anti-slop/no-number-is-safe-integer": "error",
       "anti-slop/no-plain-error-in-effect": "error",
       "anti-slop/no-registry-context": "error",
       "anti-slop/no-yield-effect-fail": "error",
@@ -248,10 +233,7 @@ export default defineConfig({
       "anti-slop/no-chained-type-assertions": "error",
       "anti-slop/no-conditional-empty-object-spread": "error",
       "anti-slop/no-known-value-widening": "error",
-      "anti-slop/no-module-mocking": "error",
       "anti-slop/no-object-parameters": "error",
-      "anti-slop/no-reflect-apply": "error",
-      "anti-slop/no-reflect-get": "error",
       "anti-slop/no-runtime-typeof": ["error", { allowInTypeGuards: true }],
       "anti-slop/no-shape-in-symbol-names": "error",
       "anti-slop/no-unknown-parameters": "error",

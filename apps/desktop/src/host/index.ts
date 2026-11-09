@@ -1,13 +1,11 @@
 import type {
+  AuthOrganizationMembership,
   IdentifyInput,
   LoginCredentials,
   LoginRoute,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
+  UpdateOrganizationInput,
 } from "@store/auth";
 import type { WorkspaceSnapshot } from "@store/contracts";
-import type { GlobalProductSearchResult } from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
@@ -28,8 +26,10 @@ export type AuthSessionBridge = {
   readonly getSession: () => Promise<WorkspaceSnapshot>;
   readonly renewSession: () => Promise<WorkspaceSnapshot>;
   readonly signOut: () => Promise<void>;
-  readonly organizationRoster: () => Promise<OrganizationRoster>;
-  readonly organize: (command: OrganizationCommand) => Promise<OrganizationCommandResult>;
+  readonly organization: () => Promise<AuthOrganizationMembership>;
+  readonly updateOrganization: (
+    input: UpdateOrganizationInput,
+  ) => Promise<AuthOrganizationMembership>;
   readonly sessionChanges: Stream.Stream<WorkspaceSnapshot>;
 };
 
@@ -69,7 +69,6 @@ export type DesktopShellBridge = {
 export interface AppHost {
   readonly auth: AuthSessionBridge;
   readonly signIn: SignInBridge;
-  readonly searchGlobalProducts: (query: string) => Promise<GlobalProductSearchResult>;
   readonly shell: DesktopShellBridge;
   readonly updater?: AppUpdaterBridge;
   readonly theme: ThemeBridge;

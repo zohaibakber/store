@@ -3,9 +3,7 @@ import {
   CommandReceipt,
   ImportCatalogResult,
   OrganizationDevices,
-  OrgCommitSequence,
   RegisterReplicaResult,
-  SyncEpoch,
   syncProtocolError,
   type AcquireSnapshotRequest,
   type DeviceCommand,
@@ -19,23 +17,20 @@ import {
 import type { RuntimeContext } from "alchemy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import type { HttpServerError } from "effect/http/HttpServerError";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import type * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { Actor } from "../authority/engine";
 import type { AuthorityReply, OrgAuthorityApi, SnapshotPartReply } from "../authority/facade";
-import type { EncodedCommit } from "../authority/frames";
 import { InventoryDatabaseError, SyncRequestMalformed, type InventoryError } from "./errors";
 
 export const MAX_SUBMIT_BODY_BYTES = 2 * 1024 * 1024;
 
 interface EncodedJsonBody {
   readonly json: string;
-}
-
-interface LiveHorizon {
-  readonly epoch: SyncEpoch;
-  readonly horizon: OrgCommitSequence;
 }
 
 const decodeRegisterResult = Schema.decodeUnknownEffect(RegisterReplicaResult);
@@ -80,7 +75,11 @@ const answered = <A, E, R>(reply: Effect.Effect<AuthorityReply<A>, E, R>) =>
 export class OrgAuthorities extends Context.Service<
   OrgAuthorities,
   {
-    readonly getByName: (organizationId: string) => OrgAuthorityApi<RuntimeContext, unknown>;
+    readonly getByName: (organizationId: string) => OrgAuthorityApi<RuntimeContext, unknown> & {
+      readonly fetch: (
+        request: HttpServerRequest.HttpServerRequest,
+      ) => Effect.Effect<HttpServerResponse.HttpServerResponse, HttpServerError>;
+    };
   }
 >()("@store/server/OrgAuthorities") {}
 
@@ -94,7 +93,7 @@ export class OrganizationAuthority extends Context.Service<
     readonly submit: (
       actor: Actor,
       bodyText: string,
-    ) => Effect.Effect<EncodedCommit, InventoryError | SyncRequestMalformed, RuntimeContext>;
+    ) => Effect.Effect<EncodedJsonBody, InventoryError | SyncRequestMalformed, RuntimeContext>;
     readonly receipt: (
       actor: Actor,
       operationId: string,
@@ -122,7 +121,7 @@ export class OrganizationAuthority extends Context.Service<
       actor: Actor,
       importId: ImportId,
       request: ImportCatalogRequest,
-    ) => Effect.Effect<EncodedCommit, InventoryError, RuntimeContext>;
+    ) => Effect.Effect<EncodedJsonBody, InventoryError, RuntimeContext>;
     readonly importStatus: (
       actor: Actor,
       importId: ImportId,
@@ -134,10 +133,6 @@ export class OrganizationAuthority extends Context.Service<
       actor: Actor,
       command: DeviceCommand,
     ) => Effect.Effect<OrganizationDevices, InventoryError, RuntimeContext>;
-    readonly liveHorizon: (
-      actor: Actor,
-      replicaId: string,
-    ) => Effect.Effect<LiveHorizon, InventoryError, RuntimeContext>;
   }
 >()("@store/server/OrganizationAuthority") {
   static readonly layer = Layer.effect(
@@ -158,7 +153,8 @@ export class OrganizationAuthority extends Context.Service<
         actor: Actor,
         bodyText: string,
       ) {
-        return yield* answeredOrMalformed(authorityOf(actor).submit(actor, bodyText));
+        const json = yield* answeredOrMalformed(authorityOf(actor).submit(actor, bodyText));
+        return { json } satisfies EncodedJsonBody;
       });
 
       const receipt = Effect.fn("OrganizationAuthority.receipt")(function* (
@@ -212,7 +208,8 @@ export class OrganizationAuthority extends Context.Service<
         importId: ImportId,
         request: ImportCatalogRequest,
       ) {
-        return yield* answered(authorityOf(actor).commitImport(actor, importId, request));
+        const json = yield* answered(authorityOf(actor).commitImport(actor, importId, request));
+        return { json } satisfies EncodedJsonBody;
       });
 
       const importStatus = Effect.fn("OrganizationAuthority.importStatus")(function* (
@@ -245,17 +242,6 @@ export class OrganizationAuthority extends Context.Service<
         return yield* decodeDevices(listed).pipe(Effect.mapError(garbled));
       });
 
-      const liveHorizon = Effect.fn("OrganizationAuthority.liveHorizon")(function* (
-        actor: Actor,
-        replicaId: string,
-      ) {
-        const horizon = yield* answered(authorityOf(actor).liveHorizon(actor, replicaId));
-        return {
-          epoch: SyncEpoch.make(horizon.epoch),
-          horizon: OrgCommitSequence.make(horizon.horizon),
-        } satisfies LiveHorizon;
-      });
-
       return OrganizationAuthority.of({
         register,
         submit,
@@ -268,7 +254,6 @@ export class OrganizationAuthority extends Context.Service<
         importStatus,
         devices,
         commandDevice,
-        liveHorizon,
       });
     }),
   );

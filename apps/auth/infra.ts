@@ -9,7 +9,6 @@ import {
   type JwtKeyRing,
 } from "@store/auth";
 import { AuthDatabase, AuthEphemeralSecret, AuthSigningKeyPair } from "@store/db/auth/infra";
-import { Api, OrgHub } from "@store/server/api";
 import { buildOncePerIsolate, workerRuntimeServices } from "@store/server/runtime/isolate";
 import * as Alchemy from "alchemy";
 import * as Config from "effect/Config";
@@ -36,7 +35,6 @@ import { EphemeralStore } from "./src/ephemeral";
 import { GoogleOAuth } from "./src/google";
 import { GoogleIdentity } from "./src/google-identity";
 import { authRoutes, recoverUnexpected } from "./src/http";
-import { HubRevocation } from "./src/hub-revocation";
 import { AUTH_RATE_LIMIT_PERIOD_SECONDS, AuthLimiter } from "./src/limits";
 import { Login } from "./src/login";
 import { Organizations } from "./src/organization-ops";
@@ -112,8 +110,6 @@ export const AuthLive = Auth.make(
       namespaceId: 1005,
       simple: { limit: 60, period: AUTH_RATE_LIMIT_PERIOD_SECONDS },
     });
-    const orgHubs = yield* globalThis.__ALCHEMY_RUNTIME__ ? OrgHub.from("Api") : OrgHub.from(Api);
-    const execution = yield* Cloudflare.WorkerExecutionContext;
 
     const isolateServices = yield* workerRuntimeServices;
     const database = yield* databaseBinding.raw.pipe(Effect.provideContext(isolateServices));
@@ -140,7 +136,6 @@ export const AuthLive = Auth.make(
           clientSecret: googleClientSecret,
           callbackUrl: `${keys.origin}/v1/oauth/google/callback`,
         }).pipe(Layer.provide(googleHttpClient)),
-        HubRevocation.layer(orgHubs, (effect) => execution.waitUntil(effect)),
         AuthLimiter.layer({
           tenPerMinute: (key) => tenPerMinute.limit({ key }),
           fivePerMinute: (key) => fivePerMinute.limit({ key }),

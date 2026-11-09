@@ -45,8 +45,8 @@ Conventions, not hard clamps: `@theme` sets the font family, but nothing blocks
 other weights or sizes. Follow the rules anyway.
 
 - **Font.** Inter (`"Inter Variable"`, loaded via `@fontsource-variable/inter`).
-  JetBrains Mono (`"JetBrains Mono Variable"`, loaded via
-  `@fontsource-variable/jetbrains-mono`) is for code only.
+  Geist Mono (`"Geist Mono Variable"`, loaded via
+  `@fontsource-variable/geist-mono`) is for code only.
 - **Weights.** Regular (400) and medium (500) only. Medium is the maximum.
   Avoid `font-semibold` and `font-bold`. Nothing prevents them, so a few uses
   have crept in; don't add more.
@@ -62,11 +62,7 @@ other weights or sizes. Follow the rules anyway.
 
 Before writing, reviewing or refactoring code that imports `effect` or `@effect/*`,
 read `.agents/skills/effect/SKILL.md` and the references it points to for the
-change, then `docs/effect-profile.md`. The skill is the portable target and
-carries nothing about this repo. The profile holds what is local: the service id
-prefix, each host's edge, where contracts live and the exemplar files. Existing
-code that differs from the target is listed in `docs/effect-departures.md` and is
-not a pattern to copy.
+change. Existing code that differs from the skill is not a pattern to copy.
 
 Before calling an Effect change done, ask of every piece you wrote: **is there a
 better way to do this in Effect?** Check the skill's module map and the installed
@@ -135,8 +131,8 @@ migration-bundle check. Run one package's tests with `vp test packages/sync`.
   `nodeLinker: hoisted` — that duplicates React across packages.
 - **Backend.** `apps/server` runs via
   `pnpm exec alchemy dev --stage dev --env-file .env.dev` on port `:8787`. Alchemy
-  stores state remotely and binds real dev-stage D1 and the `OrgAuthority` and `OrgHub` Durable
-  Objects.
+  stores state remotely and binds real dev-stage D1 and the `OrgAuthority` Durable
+  Object.
   There is no local emulation. It fails fast without `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID`, and needs a `.env.dev` with
   `GOOGLE_OAUTH_CLIENT_SECRET`. Hostnames and the Google client ID live in

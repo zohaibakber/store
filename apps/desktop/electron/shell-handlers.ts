@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { AuthClientError } from "@store/auth";
 import { isWhatsAppUrl } from "@store/services/purchasing";
-import { isUnreachable, RequestError } from "@store/workspace";
+import { isUnreachable, type RequestError } from "@store/workspace";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,13 +21,11 @@ import {
   WorkspaceRefused,
   MAX_CALLBACK_URL_LENGTH,
 } from "../src/host/shell-rpcs";
-import { makeSourceLinks } from "../src/host/source-links";
 import { DesktopAuth } from "./auth";
 import { DesktopShell, ShellConnection } from "./desktop-shell";
 import { loadDeviceId } from "./device-id";
 import { PrivateFiles } from "./private-files";
 import { ReplicaHost } from "./replica-host";
-import type { ServerResponseInvalid } from "./server-api";
 import { ShellEvents } from "./shell-events";
 import { saveThemeSource } from "./theme-source";
 import { Updater } from "./updater";
@@ -52,10 +50,10 @@ const signInFailure = <A, E extends { readonly message: string }, R>(
   );
 
 const serverFailure = Effect.mapError(
-  (failure: RequestError | ServerResponseInvalid) =>
+  (failure: RequestError) =>
     new ServerRequestFailed({
       message: failure.message,
-      unreachable: failure instanceof RequestError && isUnreachable(failure),
+      unreachable: isUnreachable(failure),
     }),
 );
 
@@ -108,7 +106,6 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
     const updater = yield* Updater;
     const { sender } = yield* ShellConnection;
     const fileSystem = yield* FileSystem.FileSystem;
-    const sourceLinks = makeSourceLinks();
     const platform = yield* Effect.context<SecureRandom.SecureRandom | Path.Path | PrivateFiles>();
     const deviceId = yield* Effect.cached(
       loadDeviceId(shell.userDataPath).pipe(Effect.provideContext(platform), Effect.orDie),
@@ -136,16 +133,10 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
         ),
       AuthRenew: () => serverFailure(auth.renewSession),
       AuthSignOut: () => auth.signOut,
-      AuthOrganization: () => serverFailure(auth.organizationRoster),
-      AuthOrganize: ({ command }) => serverFailure(auth.organize(command)),
+      AuthOrganization: () => serverFailure(auth.organization),
+      AuthUpdateOrganization: ({ input }) => serverFailure(auth.updateOrganization(input)),
       SessionChanges: () => Stream.fromPubSub(events.session),
       OAuthCallbacks: () => Stream.fromQueue(events.oauthCallbacks),
-      SearchGlobalProducts: ({ query }) =>
-        serverFailure(
-          Effect.tap(auth.searchGlobalProducts(query), (result) =>
-            Effect.sync(() => sourceLinks.remember(result)),
-          ),
-        ),
       InventoryHttpConfig: () =>
         Effect.map(deviceId, (id) => ({ apiBaseUrl: shell.apiBaseUrl, deviceId: id })),
       ReplicaOpen: ({ identity }) =>
@@ -172,7 +163,7 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
       PublishLocalCatalog: () => replicas.localCatalog(sender.id),
       PublishProgress: () => Stream.fromPubSub(events.publishProgress),
       ShareOpenExternal: ({ url }) =>
-        isWhatsAppUrl(url) || sourceLinks.allows(url)
+        isWhatsAppUrl(url)
           ? shell.openExternal(new URL(url).href).pipe(Effect.orDie)
           : Effect.fail(new ExternalLinkRefused()),
       ShareCopyText: ({ text }) => shell.writeClipboardText(text),

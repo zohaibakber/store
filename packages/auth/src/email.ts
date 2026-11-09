@@ -3,20 +3,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { EmailAddress, InvitationToken, OrganizationRole, OtpCode } from "./model";
+import type { EmailAddress, OtpCode } from "./model";
 
 export interface SendOtpInput {
   readonly email: EmailAddress;
   readonly code: OtpCode;
-  readonly expiresAt: number;
-}
-
-export interface SendInvitationInput {
-  readonly email: EmailAddress;
-  readonly organizationName: string;
-  readonly role: OrganizationRole;
-  readonly invitedBy: string;
-  readonly token: InvitationToken;
   readonly expiresAt: number;
 }
 
@@ -32,9 +23,6 @@ export class EmailProvider extends Context.Service<
   {
     readonly deliversOtp: boolean;
     readonly sendOtp: (input: SendOtpInput) => Effect.Effect<void, EmailDeliveryError>;
-    readonly sendInvitation: (
-      input: SendInvitationInput,
-    ) => Effect.Effect<void, EmailDeliveryError>;
   }
 >()("@store/auth/EmailProvider") {
   static readonly layerDevelopment = Layer.succeed(
@@ -50,16 +38,6 @@ export class EmailProvider extends Context.Service<
           }),
         );
       }),
-      sendInvitation: Effect.fn("EmailProvider.development.sendInvitation")(function* (input) {
-        yield* Effect.logInfo("auth.invitation_created").pipe(
-          Effect.annotateLogs({
-            organization: input.organizationName,
-            role: input.role,
-            expiresAt: input.expiresAt,
-            delivery: "development-log-only",
-          }),
-        );
-      }),
     }),
   );
 
@@ -69,16 +47,6 @@ export class EmailProvider extends Context.Service<
       deliversOtp: false,
       sendOtp: () =>
         Effect.fail(new EmailDeliveryError({ message: "One-time code delivery is disabled." })),
-      sendInvitation: Effect.fn("EmailProvider.disabled.sendInvitation")(function* (input) {
-        yield* Effect.logInfo("auth.invitation_delivery_disabled").pipe(
-          Effect.annotateLogs({
-            organization: input.organizationName,
-            role: input.role,
-            expiresAt: input.expiresAt,
-            delivery: "disabled",
-          }),
-        );
-      }),
     }),
   );
 }

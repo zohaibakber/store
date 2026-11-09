@@ -33,7 +33,6 @@ import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { toastFailure } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
-import { lenientSearchParam } from "@/lib/search-param";
 
 const strengthUnits = ["mg", "mcg", "g", "ml", "l"] as const;
 type StrengthUnit = (typeof strengthUnits)[number];
@@ -181,46 +180,16 @@ const productToFormValues = (product: Product): ProductFormValues => {
   };
 };
 
-const ProductPrefill = Schema.Struct({
-  name: lenientSearchParam(
-    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_CATALOG_NAME_LENGTH)),
-  ),
-  composition: lenientSearchParam(
-    Schema.Trimmed.check(Schema.isMinLength(1), Schema.isMaxLength(160)),
-  ),
-  strength: lenientSearchParam(Schema.String.check(Schema.isPattern(STRENGTH_WITH_UNIT))),
-  unitsPerPack: lenientSearchParam(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(INT4_MAX)),
-  ),
-});
-type ProductPrefill = typeof ProductPrefill.Type;
-
-const prefilledFormValues = (
-  base: ProductFormValues,
-  prefill: ProductPrefill,
-): ProductFormValues => {
-  const strength = prefill.strength === undefined ? base : parseStrength(prefill.strength);
-  return {
-    ...base,
-    name: prefill.name ?? base.name,
-    composition: prefill.composition ?? base.composition,
-    strength: strength.strength,
-    strengthUnit: strength.strengthUnit,
-    unitsPerPack:
-      prefill.unitsPerPack === undefined ? base.unitsPerPack : String(prefill.unitsPerPack),
-  };
-};
-
-function useProductCreateForm(categories: ReadonlyArray<Category>, prefill: ProductPrefill = {}) {
+function useProductCreateForm(categories: ReadonlyArray<Category>) {
   const navigate = useNavigate();
   const [createProduct] = useCommand((commands) => commands.createProduct);
 
   return useForm({
     ...productFormOpts,
-    defaultValues: prefilledFormValues(
-      { ...productFormOpts.defaultValues, categoryId: defaultCategoryId(categories) },
-      prefill,
-    ),
+    defaultValues: {
+      ...productFormOpts.defaultValues,
+      categoryId: defaultCategoryId(categories),
+    },
     onSubmit: async ({ value }) => {
       const exit = await createProduct(
         formValuesToInput(value, categoryTracksPacks(categories, value.categoryId)),
@@ -604,4 +573,4 @@ function UnitPriceField({
   );
 }
 
-export { ProductForm, ProductPrefill, useProductCreateForm, useProductUpdateForm };
+export { ProductForm, useProductCreateForm, useProductUpdateForm };

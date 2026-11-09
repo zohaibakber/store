@@ -54,9 +54,6 @@ export type OtpCode = typeof OtpCode.Type;
 export const OrganizationRole = Schema.Literals(["owner", "admin", "member"]);
 export type OrganizationRole = typeof OrganizationRole.Type;
 
-export const InvitableRole = Schema.Literals(["admin", "member"]);
-export type InvitableRole = typeof InvitableRole.Type;
-
 export const OrganizationName = Schema.String.check(
   Schema.isMinLength(2),
   Schema.isMaxLength(60),
@@ -65,14 +62,6 @@ export const OrganizationName = Schema.String.check(
   }),
 ).pipe(Schema.brand("OrganizationName"));
 export type OrganizationName = typeof OrganizationName.Type;
-
-export const InvitationId = Identifier.pipe(Schema.brand("AuthInvitationId"));
-export type InvitationId = typeof InvitationId.Type;
-
-export const InvitationToken = NonEmptyString.check(Schema.isMaxLength(256)).pipe(
-  Schema.brand("InvitationToken"),
-);
-export type InvitationToken = typeof InvitationToken.Type;
 
 export const AuthClientKind = Schema.TaggedStruct("Native", {
   deviceName: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
@@ -235,77 +224,13 @@ export const IssuedSession = TokenSet.pipe(
 );
 export interface IssuedSession extends Schema.Schema.Type<typeof IssuedSession> {}
 
-export const OrganizationMember = Schema.Struct({
-  userId: UserId,
-  name: Schema.String,
-  email: EmailAddress,
-  image: Schema.NullOr(Schema.String),
-  role: OrganizationRole,
-  joinedAt: Schema.Number,
-});
-export interface OrganizationMember extends Schema.Schema.Type<typeof OrganizationMember> {}
-
-export const OrganizationInvitation = Schema.Struct({
-  id: InvitationId,
+export const UpdateOrganizationInput = Schema.Struct({
   organizationId: OrganizationId,
-  organizationName: Schema.String,
-  email: EmailAddress,
-  role: OrganizationRole,
-  expiresAt: Schema.Number,
-  createdAt: Schema.Number,
+  name: OrganizationName,
 });
-export interface OrganizationInvitation extends Schema.Schema.Type<typeof OrganizationInvitation> {}
-
-export const OrganizationRoster = Schema.Struct({
-  organization: AuthOrganizationMembership,
-  members: Schema.Array(OrganizationMember),
-  invitations: Schema.Array(OrganizationInvitation),
-});
-export interface OrganizationRoster extends Schema.Schema.Type<typeof OrganizationRoster> {}
-
-export const OrganizationCommand = Schema.TaggedUnion({
-  UpdateOrganization: {
-    organizationId: OrganizationId,
-    name: OrganizationName,
-  },
-  InviteMember: {
-    organizationId: OrganizationId,
-    email: EmailAddress,
-    role: InvitableRole,
-  },
-  RevokeInvitation: {
-    organizationId: OrganizationId,
-    invitationId: InvitationId,
-  },
-  AcceptInvitation: {
-    token: InvitationToken,
-  },
-  ChangeMemberRole: {
-    organizationId: OrganizationId,
-    userId: UserId,
-    role: OrganizationRole,
-  },
-  RemoveMember: {
-    organizationId: OrganizationId,
-    userId: UserId,
-  },
-});
-export type OrganizationCommand = typeof OrganizationCommand.Type;
-
-export const OrganizationCommandResult = Schema.TaggedUnion({
-  Joined: {
-    organization: AuthOrganizationMembership,
-  },
-  Updated: {
-    organization: AuthOrganizationMembership,
-  },
-  Invited: {
-    invitation: OrganizationInvitation,
-    token: InvitationToken,
-  },
-  Applied: {},
-});
-export type OrganizationCommandResult = typeof OrganizationCommandResult.Type;
+export interface UpdateOrganizationInput extends Schema.Schema.Type<
+  typeof UpdateOrganizationInput
+> {}
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 

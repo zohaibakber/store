@@ -33,8 +33,6 @@ const setupHost = Effect.gen(function* () {
     Commits: () => Stream.never,
     SyncHealth: () => Stream.never,
     SetAccessToken: () => Effect.void,
-    SetLicence: () => Effect.void,
-    DatabaseShop: () => Effect.succeed({ shopId: null }),
   });
   const readerHandlers = ReplicaReaderRpcs.toLayer({
     Engine: () => Effect.succeed("sqlite" as const),

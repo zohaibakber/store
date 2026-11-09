@@ -18,8 +18,6 @@
     "./workspace": "./src/workspace.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
     "./replica": "./src/replica/index.ts",
-    "./server-api": "./src/server/api.ts",
-    "./server-api.schema": "./src/server/schema.ts",
     "./store-helpers": "./src/store/helpers.ts",
     "./store-pricing": "./src/store/pricing.ts",
     "./store-stock": "./src/store/stock.ts",

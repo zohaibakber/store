@@ -1,12 +1,11 @@
 import {
+  AuthOrganizationMembership,
   IdentifyInput,
   LoginRoute,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
   OtpLoginCommand,
   PasswordLoginCommand,
   RegisterPasswordCommand,
+  UpdateOrganizationInput,
 } from "@store/auth";
 import {
   LOCAL_ORGANIZATION_ID,
@@ -16,10 +15,6 @@ import {
   UserId,
 } from "@store/contracts";
 import { WorkspaceToken } from "@store/contracts/replica";
-import {
-  GlobalProductSearchInput,
-  GlobalProductSearchResult,
-} from "@store/contracts/server-api.schema";
 import type { UpdaterEvent } from "@store/contracts/updater";
 import { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Rpc from "effect/rpc/Rpc";
@@ -138,19 +133,17 @@ export const ShellRpcs = RpcGroup.make(
   }),
   Rpc.make("AuthRenew", { success: WorkspaceSnapshot, error: ServerRequestFailed }),
   Rpc.make("AuthSignOut"),
-  Rpc.make("AuthOrganization", { success: OrganizationRoster, error: ServerRequestFailed }),
-  Rpc.make("AuthOrganize", {
-    payload: { command: OrganizationCommand },
-    success: OrganizationCommandResult,
+  Rpc.make("AuthOrganization", {
+    success: AuthOrganizationMembership,
+    error: ServerRequestFailed,
+  }),
+  Rpc.make("AuthUpdateOrganization", {
+    payload: { input: UpdateOrganizationInput },
+    success: AuthOrganizationMembership,
     error: ServerRequestFailed,
   }),
   Rpc.make("SessionChanges", { success: WorkspaceSnapshot, stream: true }),
   Rpc.make("OAuthCallbacks", { success: Schema.String, stream: true }),
-  Rpc.make("SearchGlobalProducts", {
-    payload: GlobalProductSearchInput.fields,
-    success: GlobalProductSearchResult,
-    error: ServerRequestFailed,
-  }),
   Rpc.make("InventoryHttpConfig", { success: InventoryHttpConfig }),
   Rpc.make("ReplicaOpen", {
     payload: { identity: ReplicaIdentity },

@@ -15,12 +15,10 @@ export {
   causeSurface,
   type CommandExit,
   type InventoryFailure,
-  licenceRefusalCopy,
   restockExportFailureCopy,
   staffRefusalCopy,
   type FailureSurface,
 } from "./errors";
-export { useEnterLicence, useLicenceState } from "./licence";
 export { useInvoiceStaff, useStaffPermission, useStaffState } from "./staff";
 export {
   forwardedPorts,

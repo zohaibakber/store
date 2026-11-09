@@ -30,7 +30,6 @@ export default Alchemy.Stack(
             "Workers Scripts Write",
             "D1 Write",
             "Hyperdrive Write",
-            "AI Gateway Write",
           ],
           resources: {
             [`com.cloudflare.api.account.${accountId}`]: "*",
@@ -38,7 +37,7 @@ export default Alchemy.Stack(
         },
         {
           effect: "allow",
-          permissionGroups: ["Zone Read", "Zone WAF Write", "Workers Routes Write"],
+          permissionGroups: ["Zone Read", "Workers Routes Write"],
           resources: {
             [`com.cloudflare.api.account.${accountId}`]: {
               "com.cloudflare.api.account.zone.*": "*",

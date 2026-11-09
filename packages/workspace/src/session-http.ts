@@ -4,12 +4,11 @@ import {
   authHttpErrorStatus,
   sessionEndingCodes,
   type AuthHttpError,
+  type AuthOrganizationMembership,
   type IssuedSession,
-  type OrganizationCommand,
-  type OrganizationCommandResult,
-  type OrganizationRoster,
   type RefreshedSession,
   type RefreshInput,
+  type UpdateOrganizationInput,
 } from "@store/auth";
 import type { OrganizationId, UserId } from "@store/contracts";
 import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts/workspace";
@@ -99,8 +98,6 @@ const invalidResponse = () =>
     code: INVALID_RESPONSE,
   });
 
-export const isInvalidResponse = (error: RequestError) => error.code === INVALID_RESPONSE;
-
 export const isUnreachable = (error: RequestError) =>
   error.status === 0 && error.code === NETWORK_ERROR;
 
@@ -174,7 +171,7 @@ const toRequestError = (failure: SessionFailure): Effect.Effect<RequestError> =>
   );
 };
 
-export const asRequestError = <A, R>(effect: Effect.Effect<A, SessionFailure, R>) =>
+const asRequestError = <A, R>(effect: Effect.Effect<A, SessionFailure, R>) =>
   effect.pipe(Effect.catch((failure) => Effect.flatMap(toRequestError(failure), Effect.fail)));
 
 const decodeResponse =
@@ -211,10 +208,10 @@ interface SessionHttpApi {
   readonly settled: Effect.Effect<void>;
   readonly http: HttpClient.HttpClient.With<HttpClientError.HttpClientError | RequestError>;
   readonly workspace: Effect.Effect<WorkspaceSnapshot, RequestError>;
-  readonly organizationRoster: Effect.Effect<OrganizationRoster, RequestError>;
-  readonly organize: (
-    command: OrganizationCommand,
-  ) => Effect.Effect<OrganizationCommandResult, RequestError>;
+  readonly organization: Effect.Effect<AuthOrganizationMembership, RequestError>;
+  readonly updateOrganization: (
+    input: UpdateOrganizationInput,
+  ) => Effect.Effect<AuthOrganizationMembership, RequestError>;
   readonly logout: (tokens: TokenSet | null) => Effect.Effect<void, RequestError>;
 }
 
@@ -526,9 +523,6 @@ const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttpOptions
     baseUrl: authBaseUrl,
   });
 
-  const organize = (command: OrganizationCommand) =>
-    asRequestError(organizationApi.command({ payload: command }));
-
   return SessionHttp.of({
     apiBaseUrl,
     authBaseUrl,
@@ -540,8 +534,8 @@ const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttpOptions
     settled,
     http,
     workspace,
-    organizationRoster: asRequestError(organizationApi.roster()),
-    organize,
+    organization: asRequestError(organizationApi.read()),
+    updateOrganization: (payload) => asRequestError(organizationApi.update({ payload })),
     logout: (granted) =>
       Effect.suspend(() => {
         const payload = refreshInput(granted);

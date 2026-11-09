@@ -14,5 +14,3 @@ export const GOOGLE_OAUTH_CLIENT_ID =
 
 export const DESKTOP_SENTRY_DSN =
   "https://e24746e77284fb88292d5249e1cde674@o4511967133106176.ingest.us.sentry.io/4511974822576128";
-
-export const EDGE_WAF_ENABLED = false;

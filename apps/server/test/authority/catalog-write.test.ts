@@ -365,7 +365,8 @@ describe("durable object catalog writes", () => {
       Effect.gen(function* () {
         const organizationId = decodeOrganizationId("org-purchasing-gate");
         const actor = actorFor(organizationId);
-        const { commands, db, write } = yield* openCatalog(organizationId);
+        const { authorities, commands, db, write } = yield* openCatalog(organizationId);
+        const { api } = authorities.of(organizationId);
         const now = yield* Clock.currentTimeMillis;
         const peer = eq(replicas.replicaId, LAST_UNIT_REPLICA_B);
         yield* db.insert(replicas).values({
@@ -398,7 +399,7 @@ describe("durable object catalog writes", () => {
           replicaId: LAST_UNIT_REPLICA_A,
           schemaVersion: 2,
         });
-        yield* commands.liveHorizon(actor, LAST_UNIT_REPLICA_B);
+        yield* api.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
         ]);
@@ -429,7 +430,7 @@ describe("durable object catalog writes", () => {
         const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
         const listedRemoved = yield* standingOf;
         yield* TestClock.adjust("5 millis");
-        yield* commands.liveHorizon(actor, LAST_UNIT_REPLICA_B);
+        yield* api.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
         const listedReturned = yield* standingOf;
         yield* db

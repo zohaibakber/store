@@ -13,7 +13,6 @@ import { Link } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
 import type * as React from "react";
 
-import { LicenceStatus } from "@/components/licence/status";
 import { staffRoleLabel, useStaffAccess } from "@/components/staff/access";
 import { THEME_OPTIONS, useTheme } from "@/components/theme/provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -214,12 +213,6 @@ export function NavUser() {
             </MenuGroup>
             {actor ? (
               <>
-                <MenuSeparator />
-                <MenuGroup>
-                  <MenuGroupLabel>
-                    <LicenceStatus />
-                  </MenuGroupLabel>
-                </MenuGroup>
                 <MenuSeparator />
                 <LockGroup />
               </>
