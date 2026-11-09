@@ -18,9 +18,9 @@ catalog:
   drizzle-orm: 1.0.0-rc.5
   effect: 4.1.2
   typescript: 7.0.2
-  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
-  vitest: 5.0.5
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.1
+  vite-plus: 1.5.1
+  vitest: 5.1.0
 
 overrides:
   "@cloudflare/workers-types": 5.20261103.1
@@ -36,8 +36,8 @@ overrides:
   drizzle-kit: "catalog:"
   drizzle-orm: "catalog:"
   valibot: 1.5.0
-  vite@*: "catalog:"
-  vitest@*: "catalog:"
+  vite@*: 'catalog:'
+  vitest@*: 'catalog:'
 
 allowBuilds:
   better-sqlite3: false
@@ -57,6 +57,16 @@ minimumReleaseAgeExclude:
   - "@effect/tsgo-win32-arm64@0.64.1"
   - "@effect/tsgo-win32-x64@0.64.1"
   - "@effect/tsgo@0.64.1"
+  - "@voidzero-dev/vite-plus-core@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.5.1"
+  - vite-plus@1.5.1
 
 peerDependencyRules:
   allowAny:
@@ -65,8 +75,8 @@ peerDependencyRules:
   allowedVersions:
     "@alchemy.run/drizzle>drizzle-kit": 1.0.0-rc.5
     "@alchemy.run/drizzle>drizzle-orm": 1.0.0-rc.5
-    vite: "*"
-    vitest: "*"
+    vite: '*'
+    vitest: '*'
 
 patchedDependencies:
   "@alchemy.run/cloudflare@2.0.0-beta.85": patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch

@@ -6,7 +6,7 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
-import { expect } from "vitest";
+import { expect } from "vite-plus/test";
 
 import { verifyLicenceText, type LicenceTrust } from "../src/index";
 import {
