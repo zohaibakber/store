@@ -39,7 +39,6 @@ export const AuthErrorCode = Schema.Literals([
   "RATE_LIMITED",
   "INSUFFICIENT_ROLE",
   "INVALID_REQUEST",
-  "UNTRUSTED_ORIGIN",
   "NOT_FOUND",
   "INTERNAL_SERVER_ERROR",
 ]);

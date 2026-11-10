@@ -7,7 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder, PurchaseOrderItem, Supplier } from "@store/contracts";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import {
   purchaseOrderCostTotal,

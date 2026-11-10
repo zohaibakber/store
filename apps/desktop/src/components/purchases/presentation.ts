@@ -8,8 +8,8 @@ import {
   type PurchaseOrderProgress,
   type Supplier,
   type SupplierId,
+  formatInvoiceNumber,
 } from "@store/contracts";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 
 import type { Tone } from "@/components/insights/presentation";
 import { formatCount } from "@/lib/format";

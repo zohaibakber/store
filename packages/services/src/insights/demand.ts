@@ -1,4 +1,4 @@
-import type { DemandForecast } from "@store/contracts/sync/replica-analytics";
+import type { DemandForecast } from "@store/contracts";
 
 import { mean, sum } from "./statistics";
 

@@ -1,4 +1,9 @@
-import type { ProductId } from "@store/contracts/ids";
+import type {
+  ProductId,
+  InsightsBatchFact,
+  InsightsOnOrderFact,
+  InsightsProductFact,
+} from "@store/contracts";
 import {
   SUMMARY_ATTENTION_LIMIT,
   SUMMARY_EXPIRING_LIMIT,
@@ -11,12 +16,7 @@ import {
   type ProductInsight,
   type StockPolicy,
   type StockStatusCounts,
-} from "@store/contracts/sync/replica-analytics";
-import type {
-  InsightsBatchFact,
-  InsightsOnOrderFact,
-  InsightsProductFact,
-} from "@store/contracts/sync/replica-insights";
+} from "@store/contracts";
 import * as Arr from "effect/Array";
 
 import {

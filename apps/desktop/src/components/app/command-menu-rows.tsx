@@ -1,7 +1,7 @@
 import { ArrowDown01Icon, ArrowUp01Icon, CornerDownLeftIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, Product, ProductId, StockStatus } from "@store/contracts";
-import { formatInvoiceNumber, productStock } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber, productStock } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Suspense, type ReactNode } from "react";
 

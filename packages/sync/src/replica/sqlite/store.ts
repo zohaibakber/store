@@ -15,7 +15,7 @@ import type {
   Committed,
   ReplicaCommitNotice,
   ReplicaReadStamp,
-} from "@store/contracts/sync/replica-model";
+} from "@store/contracts";
 import { commandOutbox } from "@store/db/replica.schema";
 import { inArray } from "drizzle-orm";
 import * as Clock from "effect/Clock";

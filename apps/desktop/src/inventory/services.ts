@@ -101,7 +101,7 @@ type Client<Rpcs extends Rpc.Any> = RpcClient.RpcClient.Flat<Rpcs, RpcClientErro
 const CLIENT_LINGER = "10 seconds";
 
 class WorkerPort extends Context.Service<WorkerPort, Option.Option<MessagePort>>()(
-  "@store/inventory-react/WorkerPort",
+  "@store/desktop/WorkerPort",
 ) {}
 
 const lingeringClients = Effect.fnUntraced(function* <Rpcs extends Rpc.Any>(

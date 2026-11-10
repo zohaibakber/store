@@ -5,9 +5,8 @@ import {
   StaffPermission,
   SyncCommandEnvelope,
 } from "@store/contracts";
-import type { StaffRefusal } from "@store/contracts";
+import type { StaffRefusal, CatalogRowWrite } from "@store/contracts";
 import { CatalogRefusal } from "@store/contracts/catalog-refusal";
-import type { CatalogRowWrite } from "@store/contracts/catalog-write";
 import {
   ReplicaStorageError,
   type Commit,

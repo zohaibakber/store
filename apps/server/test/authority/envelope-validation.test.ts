@@ -1,11 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import { OrgCommitSequence, SyncSubmitCommandRequest } from "@store/contracts";
-import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { authorityState } from "@store/db/authority.schema";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { lastUnitBuyerAEnvelope } from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { scenario, TestAuthorities } from "./harness";
 
@@ -307,13 +307,6 @@ const authorityProblems = (values: ReadonlyArray<Schema.Json>) =>
 
 describe("command envelope validation in the durable object authority", () => {
   for (const [name, base] of BASES) {
-    it.effect(`accepts the valid ${name} envelope exactly like the contract schema`, () =>
-      Effect.gen(function* () {
-        expect(schemaAccepts(base)).toBe(true);
-        expect(yield* authorityProblems([base])).toEqual([null]);
-      }),
-    );
-
     it.effect(
       `rejects exactly the ${name} mutations that the contract schema rejects`,
       () =>

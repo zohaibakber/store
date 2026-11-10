@@ -1,5 +1,5 @@
 import type { Invoice, InvoiceItem } from "@store/contracts";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 
 import { formatCount } from "@/lib/format";

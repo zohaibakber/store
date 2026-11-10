@@ -1,6 +1,10 @@
-import { isValidDiscount, type IssueInvoiceResult, type Product } from "@store/contracts";
-import type { InvoiceId, ProductId } from "@store/contracts/ids";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import {
+  isValidDiscount,
+  type IssueInvoiceResult,
+  type Product,
+  formatInvoiceNumber,
+} from "@store/contracts";
+import type { InvoiceId, ProductId } from "@store/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   createContext,

@@ -1,6 +1,6 @@
 import { UserMultipleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { InvoiceId } from "@store/contracts/ids";
+import type { InvoiceId } from "@store/contracts";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";

@@ -1,6 +1,6 @@
 import { ArrowRight01Icon, Invoice01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 

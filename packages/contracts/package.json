@@ -7,24 +7,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./catalog-refusal": "./src/catalog/refusal.ts",
-    "./catalog-rules": "./src/catalog/rules.ts",
-    "./catalog-write": "./src/catalog/write.ts",
     "./entity-rows": "./src/sync/entity-rows.ts",
     "./http-errors": "./src/http-errors.ts",
-    "./sync/replica-model": "./src/sync/replica-model.ts",
-    "./sync/replica-analytics": "./src/sync/replica-analytics.ts",
-    "./sync/replica-insights": "./src/sync/replica-insights.ts",
-    "./ids": "./src/ids.ts",
-    "./workspace": "./src/workspace.ts",
     "./operation-hash": "./src/sync/operation-hash.ts",
     "./replica": "./src/replica/index.ts",
-    "./store-helpers": "./src/store/helpers.ts",
-    "./store-pricing": "./src/store/pricing.ts",
-    "./store-stock": "./src/store/stock.ts",
-    "./store.schema": "./src/store/schema.ts",
-    "./sync/api": "./src/sync/api.ts",
-    "./sync/fixtures": "./src/sync/fixtures/last-unit-invoice.ts",
-    "./updater": "./src/updater.ts"
+    "./sync/api": "./src/sync/api.ts"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",

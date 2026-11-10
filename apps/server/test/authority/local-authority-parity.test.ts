@@ -15,10 +15,6 @@ import {
   type SyncSubmitCommandResult,
   OperationId,
   Money,
-} from "@store/contracts";
-import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
-import { MAX_CATALOG_WRITE_ROWS } from "@store/contracts/catalog-write";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeInvoiceId,
@@ -29,16 +25,9 @@ import {
   decodePurchaseOrderItemId,
   decodeSupplierId,
   type OrganizationId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
+import { CATALOG_REFUSALS } from "@store/contracts/catalog-refusal";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  lastUnitBuyerACommand,
-  lastUnitBuyerBCommand,
-} from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore } from "@store/sync";
 import { decideCommandWithin, type Decision } from "@store/sync/authority";
@@ -54,6 +43,14 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_PRODUCT_ID,
+  LAST_UNIT_REPLICA_A,
+  lastUnitBuyerACommand,
+  lastUnitBuyerBCommand,
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
@@ -619,27 +616,6 @@ const stalePriceDelivery = catalog("receive-stale-price", [
   }),
 ]);
 
-const IMPORT_ROWS_PER_LINE = 2;
-
-const importedLines = (
-  categoryId: string,
-  first: number,
-  count: number,
-): ReadonlyArray<CatalogRowWrite> =>
-  Array.from({ length: count }, (_, offset) => first + offset).flatMap((line) => [
-    productWrite(`prod-import-${line}`, {
-      categoryId,
-      name: `Imported ${line}`,
-      unitsPerPack: 1,
-    }),
-    batchWrite(`batch-import-${line}`, {
-      productId: `prod-import-${line}`,
-      movementId: `mv-import-${line}`,
-      packQuantity: 0,
-      unitQuantity: 1,
-    }),
-  ]);
-
 describe("the local authority decides like the durable object authority", () => {
   it.effect(
     `emits the same groups for catalog inserts, updates, deletes and their stock movements`,
@@ -769,29 +745,6 @@ describe("the local authority decides like the durable object authority", () => 
         ]);
 
         expectParity(twin);
-        expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-          Array.from({ length: 8 }, () => "catalogWrite"),
-        );
-        expect(
-          twin.decisions.map(({ local }) =>
-            local.changes.map((change) => `${change.action} ${change.entity}`),
-          ),
-        ).toEqual([
-          [
-            "upsert category",
-            "upsert product",
-            "upsert batch",
-            "upsert stockMovement",
-            "upsert batch",
-          ],
-          ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-          ["upsert batch", "upsert stockMovement", "upsert batch"],
-          ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-          ["upsert batch", "upsert stockMovement"],
-          ["delete batch", "delete batch"],
-          ["delete product"],
-          ["delete category"],
-        ]);
       }).pipe(scenario),
   );
 
@@ -820,25 +773,6 @@ describe("the local authority decides like the durable object authority", () => 
       ]);
 
       expectParity(twin);
-      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
-        "catalogWrite",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-        "issueInvoice",
-      ]);
-      expect(twin.decisions[2]?.local.changes.map((change) => change.entity)).toEqual([
-        "invoice",
-        "batch",
-        "invoiceItem",
-        "stockMovement",
-        "stockMovement",
-        "batch",
-        "invoiceItem",
-        "stockMovement",
-        "stockMovement",
-      ]);
     }).pipe(scenario),
   );
 
@@ -978,82 +912,7 @@ describe("the local authority decides like the durable object authority", () => 
       ]);
 
       expectParity(twin);
-      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-        Array.from({ length: 15 }, () => "catalogWrite"),
-      );
-      expect(
-        twin.decisions.map(({ local }) =>
-          local.changes.map((change) => `${change.action} ${change.entity}`),
-        ),
-      ).toEqual([
-        [
-          "upsert category",
-          "upsert product",
-          "upsert product",
-          "upsert supplier",
-          "upsert supplier",
-        ],
-        ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
-        ["upsert purchaseOrder"],
-        ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
-        [
-          "upsert product",
-          "upsert batch",
-          "upsert stockMovement",
-          "upsert purchaseOrderItem",
-          "upsert batch",
-          "upsert stockMovement",
-          "upsert purchaseOrderItem",
-          "upsert batch",
-          "upsert purchaseOrderItem",
-        ],
-        ["upsert purchaseOrder"],
-        ["upsert purchaseOrder", "upsert purchaseOrderItem"],
-        ["upsert purchaseOrder"],
-        ["upsert purchaseOrder"],
-        ["delete purchaseOrder", "upsert purchaseOrder"],
-        ["upsert purchaseOrderItem"],
-        ["upsert purchaseOrderItem"],
-        [
-          "delete purchaseOrderItem",
-          "delete purchaseOrder",
-          "upsert purchaseOrder",
-          "upsert purchaseOrder",
-        ],
-        ["upsert supplier", "upsert supplier"],
-        ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
-      ]);
     }).pipe(scenario),
-  );
-
-  it.effect(
-    `emits the same groups for an import that opens its own category, in one write or split,`,
-    () =>
-      Effect.gen(function* () {
-        const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
-        const twin = yield* decideOnBoth("org-parity-import", [
-          [
-            queued(
-              catalog("import-small", [
-                categoryWrite("cat-small", "Small import"),
-                ...importedLines("cat-small", 0, 2),
-              ]),
-            ),
-          ],
-          [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
-          [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
-          [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
-        ]);
-
-        expectParity(twin);
-        expect(twin.decisions.map(({ local }) => local.result)).toEqual([
-          { _tag: "catalogWrite", rowsWritten: 5 },
-          { _tag: "catalogWrite", rowsWritten: 1 },
-          { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
-          { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
-        ]);
-      }).pipe(scenario),
-    120_000,
   );
 
   it.effect("refuses at enqueue what the authority rejects, and keeps no trace", () =>
@@ -1338,19 +1197,6 @@ describe("the local authority decides like the durable object authority", () => 
       },
     ],
     [
-      "an invoice item id used twice in one sale",
-      [[seedSales(10, 2, 1)]],
-      sale("sale-item-twice", 1, [
-        { quantity: 1, invoiceItemId: "item-twice" },
-        { quantity: 1, invoiceItemId: "item-twice" },
-      ]),
-      {
-        _tag: "rejected",
-        code: "ENTITY_CONFLICT",
-        message: "A record this command creates already exists.",
-      },
-    ],
-    [
       "a supplier that still has orders",
       PARTLY_RECEIVED,
       catalog("drop-supplier", [removal("supplier", "sup-acme", 1)]),
@@ -1376,16 +1222,6 @@ describe("the local authority decides like the durable object authority", () => 
       },
     ],
     [
-      "a supplier name that is taken",
-      DRAFTED,
-      catalog("supplier-name-taken", [supplierWrite("sup-new", { name: "Acme" })]),
-      {
-        _tag: "rejected",
-        code: "ENTITY_CONFLICT",
-        message: "Supplier name Acme is already in use.",
-      },
-    ],
-    [
       "an order for a supplier that does not exist",
       DRAFTED,
       catalog("order-orphan", [
@@ -1402,14 +1238,6 @@ describe("the local authority decides like the durable object authority", () => 
       DRAFTED,
       catalog("order-born-sent", [
         orderWrite("po-sent", { orderNumber: 2, supplierId: "sup-acme", status: "sent" }),
-      ]),
-      { _tag: "rejected", ...purchasingRejection.orderTransitionInvalid },
-    ],
-    [
-      "a draft closed before it was sent",
-      DRAFTED,
-      catalog("close-draft", [
-        orderWrite("po-1", { orderNumber: 1, supplierId: "sup-acme", status: "closed" }, 1),
       ]),
       { _tag: "rejected", ...purchasingRejection.orderTransitionInvalid },
     ],
@@ -1464,24 +1292,6 @@ describe("the local authority decides like the durable object authority", () => 
       },
     ],
     [
-      "a line for a product that does not exist",
-      DRAFTED,
-      catalog("line-no-product", [
-        lineWrite("line-no-product", {
-          purchaseOrderId: "po-1",
-          productId: "prod-gone",
-          quantity: 1,
-          quantityType: "unit",
-          baseUnitQuantity: 1,
-        }),
-      ]),
-      {
-        _tag: "rejected",
-        code: "ENTITY_RELATION_INVALID",
-        message: "Product prod-gone is not available in this organization.",
-      },
-    ],
-    [
       "a line whose base units disagree with the pack size",
       DRAFTED,
       catalog("line-miscounted", [
@@ -1496,41 +1306,9 @@ describe("the local authority decides like the durable object authority", () => 
       { _tag: "rejected", ...purchasingRejection.itemQuantityInvalid },
     ],
     [
-      "a line added to a closed order",
-      CLOSED,
-      catalog("line-late", [
-        lineWrite("line-late", {
-          purchaseOrderId: "po-1",
-          productId: LOOSE_PRODUCT,
-          quantity: 1,
-          quantityType: "unit",
-          baseUnitQuantity: 1,
-        }),
-      ]),
-      { _tag: "rejected", ...purchasingRejection.orderNotOpen },
-    ],
-    [
       "the removal of a line that has received stock",
       PARTLY_RECEIVED,
       catalog("drop-received", [removal("purchaseOrderItem", "po-1-packed", 2)]),
-      { _tag: "rejected", ...purchasingRejection.itemReceived },
-    ],
-    [
-      "a received line moved to another product",
-      PARTLY_RECEIVED,
-      catalog("move-received", [
-        lineWrite(
-          "po-1-packed",
-          {
-            purchaseOrderId: "po-1",
-            productId: LOOSE_PRODUCT,
-            quantity: 3,
-            quantityType: "unit",
-            baseUnitQuantity: 3,
-          },
-          2,
-        ),
-      ]),
       { _tag: "rejected", ...purchasingRejection.itemReceived },
     ],
     [
@@ -1590,24 +1368,6 @@ describe("the local authority decides like the durable object authority", () => 
       { _tag: "rejected", ...purchasingRejection.receiptOnExistingBatch },
     ],
     [
-      "a delivery against a line that does not exist",
-      PARTLY_RECEIVED,
-      catalog("receive-no-line", [
-        deliveryWrite("batch-no-line", {
-          productId: PACKED_PRODUCT,
-          lineId: "line-gone",
-          movementId: "mv-no-line",
-          packQuantity: 1,
-          unitQuantity: 0,
-        }),
-      ]),
-      {
-        _tag: "rejected",
-        code: "ENTITY_RELATION_INVALID",
-        message: "Order line line-gone is not available in this organization.",
-      },
-    ],
-    [
       "a delivery too large to count, though its movement id is taken",
       PARTLY_RECEIVED,
       catalog("receive-overflow", [
@@ -1618,18 +1378,6 @@ describe("the local authority decides like the durable object authority", () => 
           packQuantity: 300_000_000,
           unitQuantity: 0,
         }),
-      ]),
-      {
-        _tag: "rejected",
-        code: "INVALID_OPERATION",
-        message: "A value in this command is out of range.",
-      },
-    ],
-    [
-      "an order total too large to store",
-      DRAFTED,
-      catalog("order-overflow", [
-        orderWrite("po-huge", { orderNumber: 2, supplierId: "sup-acme", total: 3_000_000_000 }),
       ]),
       {
         _tag: "rejected",

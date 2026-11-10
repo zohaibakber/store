@@ -1,11 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { lastUnitBuyerAEnvelope } from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import { eq } from "drizzle-orm";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
+import { lastUnitBuyerAEnvelope } from "../../contracts/test/fixtures/last-unit-invoice";
 import { runReplicaTransaction, type SqliteReplicaHandle } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { sqliteEngine, stubTransport } from "./lib/engine-fixture";

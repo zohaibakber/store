@@ -1,16 +1,16 @@
 import type { SyncCommandEnvelope } from "@store/contracts";
+import { batches, categories, products, replicaState } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
+import * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
+
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
-} from "@store/contracts/sync/fixtures";
-import { batches, categories, products, replicaState } from "@store/db/replica.schema";
-import * as Digest from "effect/crypto/Digest";
-import * as Effect from "effect/Effect";
-import type * as Scope from "effect/Scope";
-
+} from "../../../contracts/test/fixtures/last-unit-invoice";
 import {
   runReplicaTransaction,
   type SqliteReplicaHandle,

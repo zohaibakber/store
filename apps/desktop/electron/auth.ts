@@ -12,11 +12,7 @@ import {
   type LoginRoute,
   type UpdateOrganizationInput,
 } from "@store/auth";
-import {
-  unauthenticatedWorkspace,
-  withWorkspaceOnline,
-  WorkspaceSnapshot,
-} from "@store/contracts/workspace";
+import { unauthenticatedWorkspace, withWorkspaceOnline, WorkspaceSnapshot } from "@store/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -259,7 +255,6 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
         }),
       ),
     ),
-    organization: withSession(SessionHttp.use((session) => session.organization)),
     updateOrganization: (input) =>
       withSession(SessionHttp.use((session) => session.updateOrganization(input))),
     accessTokens: Stream.fromPubSub(accessTokens),
@@ -288,7 +283,6 @@ export class DesktopAuth extends Context.Service<
     ) => Effect.Effect<WorkspaceSnapshot, AuthClientError | GoogleSignInFailure>;
     readonly renewSession: Effect.Effect<WorkspaceSnapshot, RequestError>;
     readonly signOut: Effect.Effect<void>;
-    readonly organization: Effect.Effect<AuthOrganizationMembership, RequestError>;
     readonly updateOrganization: (
       input: UpdateOrganizationInput,
     ) => Effect.Effect<AuthOrganizationMembership, RequestError>;

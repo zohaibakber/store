@@ -11,7 +11,7 @@ import {
   type UpdateOrganizationInput,
 } from "@store/auth";
 import type { OrganizationId, UserId } from "@store/contracts";
-import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts/workspace";
+import { AuthenticatedWorkspaceSnapshot, WorkspaceSnapshot } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -208,7 +208,6 @@ interface SessionHttpApi {
   readonly settled: Effect.Effect<void>;
   readonly http: HttpClient.HttpClient.With<HttpClientError.HttpClientError | RequestError>;
   readonly workspace: Effect.Effect<WorkspaceSnapshot, RequestError>;
-  readonly organization: Effect.Effect<AuthOrganizationMembership, RequestError>;
   readonly updateOrganization: (
     input: UpdateOrganizationInput,
   ) => Effect.Effect<AuthOrganizationMembership, RequestError>;
@@ -216,7 +215,7 @@ interface SessionHttpApi {
 }
 
 export class SessionHttp extends Context.Service<SessionHttp, SessionHttpApi>()(
-  "@store/workspace/SessionHttp",
+  "@store/desktop/SessionHttp",
 ) {}
 
 type Rotation =
@@ -534,7 +533,6 @@ const makeSessionHttp = Effect.fnUntraced(function* (options: SessionHttpOptions
     settled,
     http,
     workspace,
-    organization: asRequestError(organizationApi.read()),
     updateOrganization: (payload) => asRequestError(organizationApi.update({ payload })),
     logout: (granted) =>
       Effect.suspend(() => {

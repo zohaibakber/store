@@ -7,10 +7,14 @@ import {
   decodeReplicaId,
   OperationId,
   type ReplicaId,
-} from "../../ids";
-import { Money } from "../../store/pricing";
-import type { IssueInvoiceCommand } from "../../store/schema";
-import { ReplicaClientSequence, type SyncCommandEnvelope, SyncEpoch } from "../protocol";
+} from "../../src/ids";
+import { Money } from "../../src/store/pricing";
+import type { IssueInvoiceCommand } from "../../src/store/schema";
+import {
+  ReplicaClientSequence,
+  type SyncCommandEnvelope,
+  SyncEpoch,
+} from "../../src/sync/protocol";
 
 export const LAST_UNIT_ORGANIZATION_ID = decodeOrganizationId("org-1");
 export const LAST_UNIT_REPLICA_A = decodeReplicaId("replica-a");

@@ -6,13 +6,11 @@ import {
   type SyncEntity,
   type SyncLogChange,
   type SyncProtocolCode,
-} from "@store/contracts";
-import { type SyncEntityRow } from "@store/contracts/entity-rows";
-import {
   ReplicaBatchRow,
   ReplicaInvoiceRow,
   ReplicaProductRow,
-} from "@store/contracts/sync/replica-model";
+} from "@store/contracts";
+import { type SyncEntityRow } from "@store/contracts/entity-rows";
 import * as Result from "effect/Result";
 
 import {

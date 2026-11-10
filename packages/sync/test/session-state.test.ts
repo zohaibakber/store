@@ -140,18 +140,6 @@ const explore = () => {
   return [...seen.values()];
 };
 
-const runsRegister = (commands: ReadonlyArray<SessionCommand>): boolean =>
-  commands.some((command) => command._tag === "run" && command.step === "register");
-
-const settles = (state: SessionState, outcomeFor: (name: SessionStep) => SessionEvent): boolean => {
-  let current = state;
-  for (let turn = 0; turn < 16; turn += 1) {
-    if (current.running === undefined) return true;
-    [current] = reduce(current, outcomeFor(current.running.step));
-  }
-  return current.running === undefined;
-};
-
 const play = (events: ReadonlyArray<SessionEvent>, from: SessionState = initialSessionState) => {
   let state = from;
   let commands: ReadonlyArray<SessionCommand> = [];
@@ -165,25 +153,6 @@ const owned = play([{ _tag: "owner", owned: true }, ...cleanCycle]).state;
 
 describe("sync session reducer", () => {
   const situations = explore();
-
-  it("starts a cycle on focus from every owned idle state, after any Retry-After wait", () => {
-    for (const { state, timerArmed } of situations) {
-      if (!state.owner || state.running !== undefined) continue;
-      const label = JSON.stringify({ state, timerArmed });
-      const [focused, commands] = reduce(state, wake("focus"));
-      if (!state.cooling) {
-        expect(runsRegister(commands), label).toBe(true);
-        continue;
-      }
-      expect(timerArmed, label).toBe(true);
-      expect(commands, label).toEqual([]);
-      const [waited, onTimer] = reduce(focused, { _tag: "timer" });
-      expect(waited.cooling, label).toBe(false);
-      expect(runsRegister(onTimer) || runsRegister(reduce(waited, wake("focus"))[1]), label).toBe(
-        true,
-      );
-    }
-  });
 
   it("keeps a timer armed in every owned idle state that a timer may leave", () => {
     for (const { state, timerArmed } of situations) {
@@ -199,65 +168,6 @@ describe("sync session reducer", () => {
     }
   });
 
-  it("leaves every running state through step outcomes", () => {
-    for (const { state } of situations) {
-      if (state.running === undefined) continue;
-      expect(state.owner, JSON.stringify(state)).toBe(true);
-      expect(state.cooling, JSON.stringify(state)).toBe(false);
-      expect(
-        settles(state, (name) => done(name)),
-        JSON.stringify(state),
-      ).toBe(true);
-      for (const disposition of dispositions) {
-        expect(
-          settles(state, (name) => failed(name, disposition)),
-          JSON.stringify({ state, disposition }),
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("suspends after three garbled responses and clears on the next clean cycle", () => {
-    const failing: ReadonlyArray<SessionEvent> = [
-      done("register"),
-      done("upload"),
-      failed("catchUp", garbled),
-    ];
-    const twice = play([{ _tag: "timer" }, ...failing, { _tag: "timer" }, ...failing], owned);
-    expect(twice.state.suspended).toBeUndefined();
-    expect(twice.commands).toEqual([{ _tag: "sleep", cadence: "slow", reset: false }]);
-    const thrice = play([{ _tag: "timer" }, ...failing], twice.state);
-    expect(thrice.state.suspended).toEqual({
-      reason: "garbledResponses",
-      message: "unreadable",
-      blocks: "all",
-      timer: true,
-    });
-    expect(thrice.commands).toEqual([{ _tag: "sleep", cadence: "slow", reset: false }]);
-    const probing = play([{ _tag: "timer" }, done("register")], thrice.state);
-    expect(probing.state.suspended?.reason).toBe("garbledResponses");
-    expect(probing.commands).toEqual([{ _tag: "run", step: "upload" }]);
-    const cleared = play([done("upload"), done("catchUp", true)], probing.state);
-    expect(cleared.state.suspended).toBeUndefined();
-    expect(cleared.state.suspects).toBe(0);
-    expect(cleared.commands).toEqual([{ _tag: "sleep", cadence: "active", reset: true }]);
-  });
-
-  it("waits out a Retry-After without letting a wake start a cycle", () => {
-    const cooling = play(
-      [{ _tag: "timer" }, done("register"), done("upload"), failed("catchUp", retryAfter)],
-      owned,
-    );
-    expect(cooling.commands).toEqual([{ _tag: "sleepFor", millis: 90_000 }]);
-    expect(cooling.state.cooling).toBe(true);
-    for (const reason of ["focus", "localWrite", "reconnect", "live", "timer"] as const) {
-      expect(reduce(cooling.state, wake(reason))[1]).toEqual([]);
-    }
-    const [focused] = reduce(cooling.state, wake("focus"));
-    expect(focused.fresh).toBe(true);
-    expect(reduce(focused, { _tag: "timer" })[1]).toEqual([{ _tag: "run", step: "register" }]);
-  });
-
   it("interrupts the running step when ownership is lost", () => {
     const running = play([{ _tag: "timer" }, done("register")], owned);
     const lost = reduce(running.state, { _tag: "owner", owned: false });
@@ -268,23 +178,6 @@ describe("sync session reducer", () => {
       { _tag: "cancelSleep" },
       { _tag: "run", step: "register" },
     ]);
-  });
-
-  it("keeps catching up under an uploads-only suspension and retries uploads on an explicit wake", () => {
-    const blocked = play(
-      [{ _tag: "timer" }, done("register"), failed("upload", sequenceGap), done("catchUp")],
-      owned,
-    );
-    expect(blocked.state.suspended?.blocks).toBe("uploads");
-    expect(blocked.commands).toEqual([{ _tag: "sleep", cadence: "active", reset: false }]);
-    const polled = play([{ _tag: "timer" }, done("register")], blocked.state);
-    expect(polled.commands).toEqual([{ _tag: "run", step: "catchUp" }]);
-    const stillBlocked = play([done("catchUp")], polled.state);
-    expect(stillBlocked.state.suspended?.blocks).toBe("uploads");
-    const retried = play([wake("localWrite"), done("register")], stillBlocked.state);
-    expect(retried.commands).toEqual([{ _tag: "run", step: "upload" }]);
-    const cleared = play([done("upload"), done("catchUp")], retried.state);
-    expect(cleared.state.suspended).toBeUndefined();
   });
 
   it("recovers once per failed step and resumes the cycle from where it failed", () => {

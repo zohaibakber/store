@@ -31,17 +31,6 @@ export class Organizations extends Context.Service<Organizations>()(
         return membership;
       });
 
-      const read = Effect.fn("Organizations.read")(function* (
-        accessToken: Redacted.Redacted<string>,
-      ) {
-        const claims = yield* sessions.authorize(accessToken);
-        const membership = yield* membershipOf({
-          userId: claims.subject,
-          organizationId: claims.activeOrganizationId,
-        });
-        return membershipView(membership);
-      });
-
       const update = Effect.fn("Organizations.update")(function* (
         accessToken: Redacted.Redacted<string>,
         input: UpdateOrganizationInput,
@@ -65,7 +54,7 @@ export class Organizations extends Context.Service<Organizations>()(
         return membershipView(updated);
       });
 
-      return { read, update };
+      return { update };
     }),
   },
 ) {

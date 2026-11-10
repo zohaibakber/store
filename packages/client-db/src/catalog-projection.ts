@@ -1,18 +1,15 @@
-import { CatalogRefusal } from "@store/contracts/catalog-refusal";
 import {
   checkCanChangeUnitsPerPack,
   checkCanDeleteCategory,
   checkCanDeleteProduct,
   createdMutationMetadata,
   updatedMutationMetadata,
-} from "@store/contracts/catalog-rules";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeProductId,
   type CategoryId,
   type ProductId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
 import type {
   CreateBatchInput,
   CreateCategoryInput,
@@ -20,7 +17,8 @@ import type {
   UpdateBatchInput,
   UpdateCategoryInput,
   UpdateProductInput,
-} from "@store/contracts/store.schema";
+} from "@store/contracts";
+import { CatalogRefusal } from "@store/contracts/catalog-refusal";
 import * as Result from "effect/Result";
 
 import {

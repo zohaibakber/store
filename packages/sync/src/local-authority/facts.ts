@@ -1,6 +1,7 @@
-import { openPackMovementId, type CatalogRowWrite, type SyncEntity } from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
+  openPackMovementId,
+  type CatalogRowWrite,
+  type SyncEntity,
   ReplicaBatchRow,
   ReplicaCategoryRow,
   ReplicaInvoiceItemRow,
@@ -10,7 +11,8 @@ import {
   ReplicaPurchaseOrderRow,
   ReplicaStockMovementRow,
   ReplicaSupplierRow,
-} from "@store/contracts/sync/replica-model";
+} from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   batches,
   categories,

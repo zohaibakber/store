@@ -96,12 +96,6 @@ const authSessionGroup = HttpApiGroup.make("session")
 
 const authOrganizationGroup = HttpApiGroup.make("organization")
   .add(
-    HttpApiEndpoint.get("read", "/v1/organization", {
-      success: AuthOrganizationMembership,
-      error: AuthHttpErrors,
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("update", "/v1/organization", {
       payload: UpdateOrganizationInput,
       success: AuthOrganizationMembership,

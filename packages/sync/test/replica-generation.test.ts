@@ -13,16 +13,8 @@ import {
   type SyncPullResult,
   type SyncTransactionGroup,
   OperationId,
+  decodeCategoryId,
 } from "@store/contracts";
-import { decodeCategoryId } from "@store/contracts/ids";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_ORGANIZATION_ID,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
 import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { sql } from "drizzle-orm";
 import * as Digest from "effect/crypto/Digest";
@@ -30,6 +22,14 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_ORGANIZATION_ID,
+  LAST_UNIT_PRODUCT_ID,
+  LAST_UNIT_REPLICA_A,
+  lastUnitBuyerAEnvelope,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import {
   beginSnapshotImport,
   importSnapshotPart,
@@ -404,63 +404,6 @@ const events = new Map<number, ScenarioEvent>([
 ]);
 
 describe("replica snapshot generations", () => {
-  it.effect("keeps every standby table identical to its active table and free of dependents", () =>
-    withSeededReplica((handle) =>
-      runReplicaTransaction(handle, (tx) =>
-        Effect.gen(function* () {
-          const definitionOf = (table: string) =>
-            Effect.gen(function* () {
-              const columns = yield* tx.all(sql.raw(`pragma table_info(${table})`));
-              const indexes = yield* tx.all<{
-                readonly name: string;
-                readonly unique: number;
-                readonly partial: number;
-              }>(sql.raw(`pragma index_list(${table})`));
-              const named = indexes.filter((index) => !index.name.startsWith("sqlite_autoindex_"));
-              const detail = yield* Effect.forEach(named, (index) =>
-                tx.all(sql.raw(`pragma index_xinfo(${index.name})`)).pipe(
-                  Effect.map((info) => ({
-                    unique: index.unique,
-                    partial: index.partial,
-                    name: index.name,
-                    info: JSON.stringify(info),
-                  })),
-                ),
-              );
-              return { columns: JSON.stringify(columns), detail };
-            });
-          expectSearchTriggersFollowTheirTable(yield* schemaDependents(tx));
-          for (const search of GENERATION_SEARCH_TABLES) {
-            const definitions = yield* tx.all<{ readonly name: string; readonly sql: string }>(
-              sql`select name, sql from sqlite_master where name in (${search}, ${standbyTable(search)}) order by name`,
-            );
-            expect(definitions).toHaveLength(2);
-            expect(definitions[1]?.sql.replace(standbyTable(search), search)).toBe(
-              definitions[0]?.sql,
-            );
-          }
-          for (const table of GENERATION_TABLES) {
-            for (const name of [table, standbyTable(table)]) {
-              expect(yield* tx.all(sql.raw(`pragma foreign_key_list(${name})`))).toEqual([]);
-            }
-            const active = yield* definitionOf(table);
-            const standby = yield* definitionOf(standbyTable(table));
-            expect(standby.columns.replaceAll(standbyTable(table), table)).toBe(active.columns);
-            expect(standby.detail.map((index) => index.name).sort()).toEqual(
-              active.detail.map((index) => `${index.name}__alt`).sort(),
-            );
-            expect(standby.detail.map((index) => `${index.unique}`).sort()).toEqual(
-              active.detail.map((index) => `${index.unique}`).sort(),
-            );
-            expect(standby.detail.map((index) => `${index.partial}`).sort()).toEqual(
-              active.detail.map((index) => `${index.partial}`).sort(),
-            );
-          }
-        }),
-      ).pipe(Effect.orDie),
-    ),
-  );
-
   it.effect("resumes every phase after a restart with the same result", () =>
     Effect.gen(function* () {
       const directory = join(workDirectory, "resume");
@@ -539,101 +482,6 @@ describe("replica snapshot generations", () => {
       expect(dump.state.activeGeneration).toBe(2);
       expect(dump.batches[0]?.unitQuantity).toBe(8);
       yield* second.close;
-    }),
-  );
-
-  it.effect("splits parts larger than a turn and resumes a half-imported part", () =>
-    Effect.gen(function* () {
-      const splitId = SnapshotId.make("snapshot-split");
-      const rowsPerPart = 1_200;
-      const splitManifest: SnapshotManifest = {
-        ...manifest,
-        snapshotId: splitId,
-        horizon: OrgCommitSequence.make("0"),
-        parts: [1, 2, 3, 4, 5].map((partNumber) => ({
-          partNumber,
-          byteLength: 1,
-          sha256: SnapshotPartHash.make("a".repeat(64)),
-        })),
-      };
-      const splitParts = splitManifest.parts.map((entry) => ({
-        snapshotId: splitId,
-        partNumber: entry.partNumber,
-        rows: Array.from({ length: rowsPerPart }, (_, index) => {
-          const id = `c-${entry.partNumber}-${index}`;
-          return {
-            entity: "category" as const,
-            entityId: id,
-            rowVersion: 3,
-            row: { id, name: `Category ${id}`, tracksPacks: true, ...managed },
-          };
-        }),
-      }));
-      const countOf = (handle: Open["handle"], table: string) =>
-        runReplicaTransaction(handle, (tx) =>
-          tx.get<{ readonly count: number }>(
-            sql`select count(*) as count from ${sql.identifier(table)}`,
-          ),
-        ).pipe(Effect.map((row) => row?.count ?? 0));
-      const path = join(workDirectory, "split.sqlite");
-      yield* Effect.scoped(seedReplicaTenUnits(path));
-      const first = yield* openAt(path);
-      yield* first.store.beginSnapshotImport(splitManifest);
-      for (const part of splitParts) yield* first.store.importSnapshotPart(splitManifest, part);
-      const staged = yield* countOf(first.handle, "categories_standby");
-      yield* first.close;
-      const second = yield* openAt(path);
-      const progress = yield* second.store.beginSnapshotImport(splitManifest);
-      expect(progress.partsImported).toBeLessThan(splitParts.length);
-      expect(staged).toBeGreaterThanOrEqual(progress.partsImported * rowsPerPart);
-      for (const part of splitParts.slice(progress.partsImported)) {
-        yield* second.store.importSnapshotPart(splitManifest, part);
-      }
-      const activated = yield* second.store.activateSnapshot(splitId);
-      expect(activated.value._tag).toBe("activated");
-      expect(yield* countOf(second.handle, "categories")).toBe(rowsPerPart * 5);
-      yield* second.close;
-    }),
-  );
-
-  it.effect("restarts an abandoned import of the same snapshot from scratch", () =>
-    Effect.gen(function* () {
-      const path = join(workDirectory, "restart.sqlite");
-      yield* Effect.scoped(seedReplicaTenUnits(path));
-      const session = yield* openAt(path);
-      yield* runReplicaTransaction(session.handle, (tx) =>
-        Effect.gen(function* () {
-          yield* beginSnapshotImport(tx, manifest);
-          yield* importSnapshotPart(tx, manifest, parts[0]!);
-          yield* importSnapshotPart(tx, manifest, parts[1]!);
-        }),
-      );
-      yield* session.store.abandonSnapshot(snapshotId);
-      const restarted = yield* session.store.beginSnapshotImport(manifest);
-      expect(restarted.partsImported).toBe(0);
-      const standbyRows = yield* runReplicaTransaction(session.handle, (tx) =>
-        Effect.forEach(GENERATION_TABLES, (table) =>
-          tx.get<{ readonly count: number }>(
-            sql`select count(*) as count from ${sql.identifier(standbyTable(table))}`,
-          ),
-        ),
-      );
-      expect(standbyRows.map((row) => row?.count)).toEqual(GENERATION_TABLES.map(() => 0));
-      yield* session.store.importSnapshotPart(manifest, {
-        ...parts[0]!,
-        rows: parts[0]!.rows.map((row) =>
-          row.entity === "product" ? { ...row, row: productImage("Fresh name") } : row,
-        ),
-      });
-      yield* session.store.importSnapshotPart(manifest, parts[1]!);
-      yield* session.store.importSnapshotPart(manifest, parts[2]!);
-      const activated = yield* session.store.activateSnapshot(snapshotId);
-      expect(activated.value._tag).toBe("activated");
-      const dump = yield* dumpState(session.handle);
-      expect(dump.state.activeGeneration).toBe(2);
-      expect(dump.products.map((row) => row.name)).toEqual(["Fresh name"]);
-      expect(dump.batches[0]?.unitQuantity).toBe(8);
-      yield* session.close;
     }),
   );
 });

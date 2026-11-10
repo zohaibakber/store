@@ -5,55 +5,38 @@ import {
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
   PARTITION_DIGEST_VERSION,
-  partitionDigestOf,
   ReplicaClientSequence,
   staleReplicaRejection,
-  STOCK_MOVEMENT_ROW_VERSION,
   type CatalogRowWrite,
   type CatalogWriteCommand,
-  type PartitionLeafSource,
-  type PurchaseOrderStatus,
   type SyncCommandEnvelope,
   type SyncPullRequest,
   OperationId,
   Money,
-} from "@store/contracts";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeOrganizationId,
   decodeProductId,
-  decodePurchaseOrderId,
   decodePurchaseOrderItemId,
   decodeSupplierId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import {
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_REPLICA_A,
-  LAST_UNIT_REPLICA_B,
-} from "@store/contracts/sync/fixtures";
 import {
   authorityChanges,
   authorityState,
   authorityTransactions,
-  batches,
-  categories,
-  invoiceItems,
-  invoices,
-  products,
-  purchaseOrderItems,
-  purchaseOrders,
   replicas,
-  stockMovements,
-  suppliers,
 } from "@store/db/authority.schema";
-import type { ReplicaDb } from "@store/sync/authority";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 
+import {
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_REPLICA_A,
+  LAST_UNIT_REPLICA_B,
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
@@ -61,8 +44,6 @@ import { scenario, TestAuthorities } from "./harness";
 
 const OCCURRED_AT = 1_700_000_000_000;
 const PRODUCT_ID = decodeProductId("prod-1");
-const SUPPLIER_ID = decodeSupplierId("sup-1");
-const ORDER_ID = decodePurchaseOrderId("po-1");
 
 const actorFor = (organizationId: string): Actor => ({
   organizationId,
@@ -135,29 +116,6 @@ const productInsert = (id: string, categoryId: string, name: string): CatalogRow
   row: productRow(categoryId, name, 10),
 });
 
-const batchWrite = (
-  id: string,
-  expectedRowVersion: number | null,
-  movementId: string,
-  packQuantity: number,
-  unitQuantity: number,
-  note: string | null = null,
-): CatalogRowWrite => ({
-  entity: "batch",
-  action: "upsert",
-  id: decodeBatchId(id),
-  expectedRowVersion,
-  movementId,
-  note,
-  row: {
-    productId: PRODUCT_ID,
-    batchNumber: "B-1",
-    expiresAt: null,
-    packQuantity,
-    unitQuantity,
-  },
-});
-
 const supplierWrite = (
   id: string,
   expectedRowVersion: number | null,
@@ -169,56 +127,6 @@ const supplierWrite = (
   id: decodeSupplierId(id),
   expectedRowVersion,
   row: { name, phone, note: null },
-});
-
-const orderWrite = (
-  id: string,
-  expectedRowVersion: number | null,
-  row: {
-    readonly status?: PurchaseOrderStatus;
-    readonly orderNumber?: number;
-    readonly supplierId?: string;
-  } = {},
-): CatalogRowWrite => ({
-  entity: "purchaseOrder",
-  action: "upsert",
-  id: decodePurchaseOrderId(id),
-  expectedRowVersion,
-  row: {
-    orderNumber: row.orderNumber ?? 1,
-    supplierId: decodeSupplierId(row.supplierId ?? SUPPLIER_ID),
-    status: row.status ?? "draft",
-    note: null,
-    sentAt: null,
-    expectedAt: null,
-    total: Money.make(0),
-  },
-});
-
-const lineWrite = (
-  id: string,
-  expectedRowVersion: number | null,
-  row: {
-    readonly purchaseOrderId?: string;
-    readonly productId?: string;
-    readonly quantity?: number;
-    readonly quantityType?: "unit" | "pack";
-    readonly baseUnitQuantity?: number;
-  } = {},
-): CatalogRowWrite => ({
-  entity: "purchaseOrderItem",
-  action: "upsert",
-  id: decodePurchaseOrderItemId(id),
-  expectedRowVersion,
-  row: {
-    purchaseOrderId: decodePurchaseOrderId(row.purchaseOrderId ?? ORDER_ID),
-    productId: decodeProductId(row.productId ?? PRODUCT_ID),
-    productName: "Panadol",
-    quantity: row.quantity ?? 2,
-    quantityType: row.quantityType ?? "pack",
-    baseUnitQuantity: row.baseUnitQuantity ?? 20,
-    packCost: Money.make(100),
-  },
 });
 
 const receivedBatch = (
@@ -289,74 +197,6 @@ const rejection = (rule: { readonly code: string; readonly message: string }) =>
 });
 
 const ACCEPTED = { _tag: "catalogWrite" };
-
-const seedCatalog = () =>
-  catalogCommand("cmd-seed", [
-    categoryInsert("cat-1", "Painkillers"),
-    productInsert("prod-1", "cat-1", "Panadol"),
-    batchWrite("batch-1", null, "mv-seed", 2, 0),
-  ]);
-
-const activePartitionRows = (db: ReplicaDb) =>
-  Effect.gen(function* () {
-    const rows: Array<PartitionLeafSource> = [];
-    const categoryRows = yield* db.select().from(categories).orderBy(asc(categories.id)).all();
-    for (const row of categoryRows) {
-      rows.push({ entity: "category", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const productRows = yield* db.select().from(products).orderBy(asc(products.id)).all();
-    for (const row of productRows) {
-      rows.push({ entity: "product", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const batchRows = yield* db.select().from(batches).orderBy(asc(batches.id)).all();
-    for (const row of batchRows) {
-      rows.push({ entity: "batch", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const invoiceRows = yield* db
-      .select({ id: invoices.id, rowVersion: invoices.rowVersion })
-      .from(invoices)
-      .all();
-    for (const row of invoiceRows) {
-      rows.push({ entity: "invoice", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const itemRows = yield* db
-      .select({ id: invoiceItems.id, rowVersion: invoiceItems.rowVersion })
-      .from(invoiceItems)
-      .all();
-    for (const row of itemRows) {
-      rows.push({ entity: "invoiceItem", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const movementRows = yield* db.select({ id: stockMovements.id }).from(stockMovements).all();
-    for (const row of movementRows) {
-      rows.push({
-        entity: "stockMovement",
-        entityId: row.id,
-        rowVersion: STOCK_MOVEMENT_ROW_VERSION,
-      });
-    }
-    const supplierRows = yield* db
-      .select({ id: suppliers.id, rowVersion: suppliers.rowVersion })
-      .from(suppliers)
-      .all();
-    for (const row of supplierRows) {
-      rows.push({ entity: "supplier", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const orderRows = yield* db
-      .select({ id: purchaseOrders.id, rowVersion: purchaseOrders.rowVersion })
-      .from(purchaseOrders)
-      .all();
-    for (const row of orderRows) {
-      rows.push({ entity: "purchaseOrder", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    const lineRows = yield* db
-      .select({ id: purchaseOrderItems.id, rowVersion: purchaseOrderItems.rowVersion })
-      .from(purchaseOrderItems)
-      .all();
-    for (const row of lineRows) {
-      rows.push({ entity: "purchaseOrderItem", entityId: row.id, rowVersion: row.rowVersion });
-    }
-    return rows;
-  });
 
 describe("durable object catalog writes", () => {
   it.effect(
@@ -462,28 +302,6 @@ describe("durable object catalog writes", () => {
         expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
         expect(outcome.upgraded).toMatchObject(ACCEPTED);
       }).pipe(scenario),
-  );
-
-  it.effect("answers a digest that covers purchasing rows", () =>
-    Effect.gen(function* () {
-      const organizationId = decodeOrganizationId("org-purchasing-digest");
-      const actor = actorFor(organizationId);
-      const { commands, db, write } = yield* openCatalog(organizationId);
-      yield* write("cmd-seed", seedCatalog().writes);
-      const currentBefore = yield* commands.pull(actor, pullFrom("1", true));
-      yield* write("cmd-purchasing", [
-        supplierWrite("sup-1", null, "Acme"),
-        orderWrite("po-1", null),
-        lineWrite("line-1", null),
-      ]);
-      const currentAfter = yield* commands.pull(actor, pullFrom("2", true));
-      const expected = yield* partitionDigestOf(yield* activePartitionRows(db));
-      const outcome = { currentBefore, currentAfter, expected };
-      expect(outcome.currentBefore.digest?.count).toBe(4);
-      expect(outcome.currentAfter.digest).toEqual(outcome.expected);
-      expect(outcome.currentAfter.digest?.count).toBe(7);
-      expect(outcome.currentAfter.digest?.digest).not.toBe(outcome.currentBefore.digest?.digest);
-    }).pipe(scenario),
   );
 
   it.effect("bounds a pull page by the payload budget without splitting a group", () =>

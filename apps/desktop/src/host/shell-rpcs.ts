@@ -13,10 +13,10 @@ import {
   OrganizationId,
   ReplicaId,
   UserId,
+  WorkspaceSnapshot,
 } from "@store/contracts";
+import type { UpdaterEvent } from "@store/contracts";
 import { WorkspaceState, WorkspaceToken } from "@store/contracts/replica";
-import type { UpdaterEvent } from "@store/contracts/updater";
-import { WorkspaceSnapshot } from "@store/contracts/workspace";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
@@ -130,10 +130,6 @@ export const ShellRpcs = RpcGroup.make(
   }),
   Rpc.make("AuthRenew", { success: WorkspaceSnapshot, error: ServerRequestFailed }),
   Rpc.make("AuthSignOut"),
-  Rpc.make("AuthOrganization", {
-    success: AuthOrganizationMembership,
-    error: ServerRequestFailed,
-  }),
   Rpc.make("AuthUpdateOrganization", {
     payload: { input: UpdateOrganizationInput },
     success: AuthOrganizationMembership,

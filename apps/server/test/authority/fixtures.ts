@@ -1,11 +1,4 @@
 import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  LAST_UNIT_REPLICA_B,
-} from "@store/contracts/sync/fixtures";
-import {
   authorityState,
   batches,
   categories,
@@ -14,6 +7,14 @@ import {
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
 import * as Effect from "effect/Effect";
+
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_PRODUCT_ID,
+  LAST_UNIT_REPLICA_A,
+  LAST_UNIT_REPLICA_B,
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 
 export const seedLastUnit = (db: ReplicaDb, organizationId: string, unitQuantity = 1) =>
   Effect.gen(function* () {

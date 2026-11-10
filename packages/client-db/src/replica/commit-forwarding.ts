@@ -1,4 +1,4 @@
-import type { ReplicaCommitNotice as StoreCommitNotice } from "@store/contracts/sync/replica-model";
+import type { ReplicaCommitNotice as StoreCommitNotice } from "@store/contracts";
 
 import { commitNotice } from "./collection-notices";
 import type { ReplicaCommitNotice } from "./types";

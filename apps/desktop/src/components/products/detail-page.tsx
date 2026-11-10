@@ -6,7 +6,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
+import { productStock } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";

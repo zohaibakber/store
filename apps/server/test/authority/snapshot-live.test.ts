@@ -5,15 +5,8 @@ import {
   SyncEpoch,
   SyncProtocolError,
   type AcquireSnapshotRequest,
+  decodeOrganizationId,
 } from "@store/contracts";
-import { decodeOrganizationId } from "@store/contracts/ids";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-  LAST_UNIT_REPLICA_B,
-} from "@store/contracts/sync/fixtures";
 import {
   authorityState,
   batches,
@@ -28,6 +21,13 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_PRODUCT_ID,
+  LAST_UNIT_REPLICA_A,
+  LAST_UNIT_REPLICA_B,
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { scenario, TestAuthorities } from "./harness";

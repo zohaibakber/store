@@ -1,4 +1,4 @@
-import { decodeInvoiceId, ProductId, type InvoiceId, type StaffId } from "@store/contracts/ids";
+import { decodeInvoiceId, ProductId, type InvoiceId, type StaffId } from "@store/contracts";
 import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
 

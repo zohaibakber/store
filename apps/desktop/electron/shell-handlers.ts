@@ -133,7 +133,6 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
         ),
       AuthRenew: () => serverFailure(auth.renewSession),
       AuthSignOut: () => auth.signOut,
-      AuthOrganization: () => serverFailure(auth.organization),
       AuthUpdateOrganization: ({ input }) => serverFailure(auth.updateOrganization(input)),
       SessionChanges: () => Stream.fromPubSub(events.session),
       OAuthCallbacks: () => Stream.fromQueue(events.oauthCallbacks),

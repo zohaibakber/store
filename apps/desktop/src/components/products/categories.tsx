@@ -1,7 +1,7 @@
 import { Delete02Icon, InformationCircleIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
-import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
+import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import * as Exit from "effect/Exit";
 import { Suspense, useId, useMemo, useRef, useState } from "react";
 

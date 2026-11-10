@@ -13,11 +13,6 @@ import {
   SyncTransactionGroup,
   OperationId,
 } from "@store/contracts";
-import {
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_ORGANIZATION_ID,
-  LAST_UNIT_REPLICA_A,
-} from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -29,6 +24,11 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { TestClock } from "effect/testing";
 
+import {
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_ORGANIZATION_ID,
+  LAST_UNIT_REPLICA_A,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";

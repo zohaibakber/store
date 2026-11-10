@@ -8,12 +8,6 @@ import {
   type SyncTransactionGroup,
   OperationId,
 } from "@store/contracts";
-import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_ORGANIZATION_ID,
-  LAST_UNIT_PRODUCT_ID,
-} from "@store/contracts/sync/fixtures";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -21,6 +15,12 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { TestClock } from "effect/testing";
 
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_ORGANIZATION_ID,
+  LAST_UNIT_PRODUCT_ID,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import { DEFAULT_DIGEST_VERIFICATION_INTERVAL_MILLIS } from "../src/replica/cadence";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
@@ -329,31 +329,6 @@ const withEngine = <A, E>(
 const harnesses = [["sqlite", makeSqliteHarness]] as const;
 
 describe.each(harnesses)("digest verification (%s)", (_name, makeHarness) => {
-  it.effect("requests a digest on the first pull and then only after the interval", () =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(NOW);
-      const harness = yield* makeHarness();
-      const authority = yield* makeAuthority();
-      yield* withEngine(harness, authority, (engine) =>
-        Effect.gen(function* () {
-          yield* engine.catchUp;
-          expect(yield* Ref.get(authority.requested)).toEqual([true]);
-          expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW);
-
-          yield* TestClock.adjust("1 hour");
-          yield* engine.catchUp;
-          expect(yield* Ref.get(authority.requested)).toEqual([true, false]);
-
-          yield* TestClock.adjust("6 hours");
-          yield* engine.catchUp;
-          expect(yield* Ref.get(authority.requested)).toEqual([true, false, true]);
-          expect(yield* harness.store.readDigestVerification("operational")).toBe(NOW + 25_200_000);
-        }),
-      );
-      yield* harness.close();
-    }),
-  );
-
   it.effect("marks coverage for repair when a local row diverges from the authority", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);

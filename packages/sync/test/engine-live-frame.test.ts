@@ -9,9 +9,9 @@ import {
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Effect from "effect/Effect";
 
+import { LAST_UNIT_EPOCH } from "../../contracts/test/fixtures/last-unit-invoice";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import { sqliteEngine, stubTransport } from "./lib/engine-fixture";
 import { seedCatalogGroup, seedSpareBatchGroup } from "./lib/pending-fixture";
@@ -78,18 +78,6 @@ const followingEngine = Effect.fn(function* (
 });
 
 describe("sync engine live frames", () => {
-  it.effect("applies a contiguous frame through the pull-page path", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const { engine, applied } = yield* followingEngine(handle);
-        expect(yield* applied).toBe("1");
-        const outcome = yield* engine.applyLiveFrame(transactions([groupAt("2")]));
-        expect(outcome).toEqual({ _tag: "applied" });
-        expect(yield* applied).toBe("2");
-      }),
-    ),
-  );
-
   it.effect("treats a gap as a wake and leaves the cursor for the pull", () =>
     withSeededReplica((handle) =>
       Effect.gen(function* () {

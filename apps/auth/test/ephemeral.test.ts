@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { AuthorizationCode, EmailAddress, OtpCode, UserId, type AuthClientKind } from "@store/auth";
+import { AuthorizationCode, EmailAddress, OtpCode, UserId } from "@store/auth";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -122,23 +122,6 @@ describe("ephemeral store on D1", () => {
       );
       expect(results.filter((result) => result !== null)).toEqual([grant]);
       expect(yield* rowCount).toBe(0);
-    }).pipe(scenario()),
-  );
-
-  it.effect("round-trips OAuth state once", () =>
-    Effect.gen(function* () {
-      const store = yield* EphemeralStore;
-      const input = {
-        redirectUri: "https://app.example.com/callback",
-        codeChallenge: "challenge",
-        client: { _tag: "Native", deviceName: "Front counter" } satisfies AuthClientKind,
-        googleCodeVerifier: "google-verifier",
-        googleNonce: "google-nonce",
-        expiresAt: (yield* Clock.currentTimeMillis) + OTP_TTL_MS,
-      };
-      const state = yield* store.createOAuthState(input);
-      expect(yield* store.consumeOAuthState(state)).toEqual(input);
-      expect(yield* store.consumeOAuthState(state)).toBeNull();
     }).pipe(scenario()),
   );
 

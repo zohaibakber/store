@@ -1,6 +1,6 @@
-import type { ProductId } from "@store/contracts/ids";
-import { baseUnitsOf } from "@store/contracts/store-stock";
+import type { ProductId } from "@store/contracts";
 import {
+  baseUnitsOf,
   SALES_RANGE_DAYS,
   type AbcClass,
   type ExpiringBatch,
@@ -15,15 +15,13 @@ import {
   type StockPolicy,
   type StockStatus,
   type TopProduct,
-} from "@store/contracts/sync/replica-analytics";
-import {
   INSIGHTS_DAY_MILLIS,
   insightsDayOf,
   insightsDayStart,
   type InsightsBatchFact,
   type InsightsOnOrderFact,
   type InsightsProductFact,
-} from "@store/contracts/sync/replica-insights";
+} from "@store/contracts";
 
 import { formatPrice } from "../format";
 import { forecastDemand, type DemandTrend } from "./demand";

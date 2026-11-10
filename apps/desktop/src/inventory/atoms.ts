@@ -31,7 +31,7 @@ import {
   type Supplier,
   type SupplierId,
 } from "@store/contracts";
-import type { InvoiceId, ProductId, PurchaseOrderId } from "@store/contracts/ids";
+import type { InvoiceId, ProductId, PurchaseOrderId } from "@store/contracts";
 import {
   entityKey,
   FULL_INVALIDATION_KEY,

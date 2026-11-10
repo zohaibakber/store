@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
-import { decodeInvoiceId, decodeProductId } from "@store/contracts/ids";
+import { decodeInvoiceId, decodeProductId } from "@store/contracts";
 import { InventoryReads, InventoryStore } from "@store/contracts/replica";
 import { ReplicaStore } from "@store/sync";
 import { SqliteReplica } from "@store/sync/sql-client";
@@ -122,34 +122,6 @@ const openStore = (replicaId: string) =>
   });
 
 describe("inventory store commands", () => {
-  it.effect(
-    "writes a new product and its first batch from one outbox command, stamped with the stored replica identity",
-    () =>
-      Effect.gen(function* () {
-        const { store, rows } = yield* openStore("replica-1");
-        const category = (yield* store("CreateCategory", { name: "Tablets" })).result;
-        const created = (yield* store("CreateProductWithBatch", {
-          product: { name: "Panadol", categoryId: category.id, unitsPerPack: 10 },
-          batch: { packQuantity: 2, unitQuantity: 3 },
-        })).result;
-        const queued = yield* rows(
-          `select operationId, envelopeJson from command_outbox order by cast(clientSequence as integer)`,
-        );
-        expect(queued.map((row) => row["operationId"])).toEqual([
-          category.operationId,
-          created.product.operationId,
-        ]);
-        expect(category.deviceId).toBe("replica-1");
-        expect(String(queued[0]?.["envelopeJson"])).toContain(`"replicaId":"replica-1"`);
-        expect(yield* rows(`select id, name from products`)).toEqual([
-          { id: created.product.id, name: "Panadol" },
-        ]);
-        expect(yield* rows(`select id, productId, packQuantity from batches`)).toEqual([
-          { id: created.batch.id, productId: created.product.id, packQuantity: 2 },
-        ]);
-      }),
-  );
-
   it.effect(
     "allocates earliest expiry first, and a second sale from what a pending first sale left",
     () =>

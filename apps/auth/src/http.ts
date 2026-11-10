@@ -202,21 +202,13 @@ const OrganizationHandlers = HttpApiBuilder.group(
   Effect.fn("AuthOrganizationHandlers.make")(function* (handlers) {
     const organizations = yield* Organizations;
 
-    return handlers
-      .handle(
-        "read",
-        Effect.fn("AuthOrganizationHandlers.read")(function* () {
-          const token = yield* CurrentAccessToken;
-          return yield* fromAuth(organizations.read(token));
-        }),
-      )
-      .handle(
-        "update",
-        Effect.fn("AuthOrganizationHandlers.update")(function* ({ payload }) {
-          const token = yield* CurrentAccessToken;
-          return yield* fromAuth(organizations.update(token, payload));
-        }),
-      );
+    return handlers.handle(
+      "update",
+      Effect.fn("AuthOrganizationHandlers.update")(function* ({ payload }) {
+        const token = yield* CurrentAccessToken;
+        return yield* fromAuth(organizations.update(token, payload));
+      }),
+    );
   }),
 );
 

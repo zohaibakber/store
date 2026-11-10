@@ -1,4 +1,4 @@
-import { CategoryId } from "@store/contracts/ids";
+import { CategoryId } from "@store/contracts";
 import type {
   ProductFacet,
   ProductFacetColumn,

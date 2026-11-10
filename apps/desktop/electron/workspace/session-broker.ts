@@ -4,7 +4,7 @@ import {
   withWorkspaceError,
   withWorkspaceOnline,
   type WorkspaceSnapshot as WorkspaceSnapshotType,
-} from "@store/contracts/workspace";
+} from "@store/contracts";
 import * as Effect from "effect/Effect";
 
 import {

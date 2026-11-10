@@ -9,7 +9,7 @@ import {
   type SyncCommandEnvelope,
   type SyncProtocolCode,
 } from "@store/contracts";
-import type { CommandStatus } from "@store/contracts/sync/replica-model";
+import type { CommandStatus } from "@store/contracts";
 import * as Array from "effect/Array";
 
 import { byClientSequence } from "./decisions";

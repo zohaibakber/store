@@ -1,7 +1,7 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import { formatInvoiceNumber } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createColumnHelper } from "@tanstack/react-table";

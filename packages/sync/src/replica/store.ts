@@ -12,13 +12,11 @@ import type {
   SyncEpoch,
   SyncPullResult,
   SyncSubscription,
-} from "@store/contracts";
-import type {
   CommandStatus,
   Committed,
   ReplicaCommitNotice,
   ReplicaReadStamp,
-} from "@store/contracts/sync/replica-model";
+} from "@store/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";

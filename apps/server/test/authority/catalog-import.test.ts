@@ -16,9 +16,6 @@ import {
   type SyncEntity,
   OperationId,
   Money,
-} from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeInvoiceId,
@@ -28,7 +25,8 @@ import {
   decodePurchaseOrderId,
   decodePurchaseOrderItemId,
   decodeSupplierId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   authorityState,
   importParts,

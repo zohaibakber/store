@@ -1,7 +1,6 @@
 import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
-import type { StaffState } from "@store/contracts";
-import type { InvoiceId } from "@store/contracts/ids";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
+import type { StaffState, InvoiceId } from "@store/contracts";
+import { formatInvoiceNumber } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";

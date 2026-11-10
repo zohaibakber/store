@@ -14,7 +14,7 @@ import {
   type SyncCommandEnvelope,
   type SyncProtocolError,
 } from "@store/contracts";
-import type { CommandStatus } from "@store/contracts/sync/replica-model";
+import type { CommandStatus } from "@store/contracts";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";
 

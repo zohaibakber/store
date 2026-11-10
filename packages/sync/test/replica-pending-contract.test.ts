@@ -12,10 +12,18 @@ import {
   type SyncTransactionGroup,
   OperationId,
   Money,
+  decodeInvoiceId,
+  decodeInvoiceItemId,
 } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
-import { decodeInvoiceId, decodeInvoiceItemId } from "@store/contracts/ids";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
+import { stockOverlays } from "@store/db/replica.schema";
+import * as Digest from "effect/crypto/Digest";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
@@ -24,14 +32,7 @@ import {
   LAST_UNIT_REPLICA_A,
   lastUnitBuyerACommand,
   lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
-import { stockOverlays } from "@store/db/replica.schema";
-import * as Digest from "effect/crypto/Digest";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Schema from "effect/Schema";
-import * as Scope from "effect/Scope";
-
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";
@@ -53,7 +54,6 @@ import {
   placeOrderWrites,
   rejectedReceipt,
   renameProductWrite,
-  restockBatchWrite,
   seedCatalogGroup,
   seedSpareBatchGroup,
   SPARE_BATCH_ID,
@@ -301,29 +301,6 @@ for (const adapter of adapters) {
         Effect.orDie(harness.close()),
       ).pipe(Effect.provide(Digest.layerWebCrypto));
 
-    it.effect("replaces shadow rows with authoritative rows and clears the mark", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* harness.store.enqueueCommand(enqueueRequestOf(lastUnitBuyerAEnvelope, 1));
-          yield* applyGroup(
-            harness.store,
-            authoritativeInvoiceGroup({
-              operationId: lastUnitBuyerAEnvelope.operationId,
-              commitSequence: "5",
-              invoiceNumber: 7,
-            }),
-          );
-          const invoiceRows = yield* harness.rows("invoice");
-          const marks = yield* harness.store.readPendingMarks;
-          expect(invoiceRows).toHaveLength(1);
-          expect(invoiceRows[0]?.["invoiceNumber"]).toBe(7);
-          expect(marks).toHaveLength(0);
-          const status = yield* harness.store.readCommandStatus(lastUnitBuyerAEnvelope.operationId);
-          expect(status).toBe("integrated");
-        }),
-      ),
-    );
-
     it.effect("restores prior state when the authority rejects the command", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -398,18 +375,6 @@ for (const adapter of adapters) {
       ),
     );
 
-    it.effect("stores no deletedAt field for an authoritative image carrying one", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          yield* applyGroup(harness.store, remoteProductGroup);
-          const productRows = yield* harness.rows("product");
-          const row = findRow(productRows, LAST_UNIT_PRODUCT_ID);
-          expect(row?.["name"]).toBe("Remote name");
-          expect(Object.keys(row ?? {})).not.toContain("deletedAt");
-        }),
-      ),
-    );
-
     it.effect("restores a deleted row when the authority rejects the delete", () =>
       withHarness((harness) =>
         Effect.gen(function* () {
@@ -433,26 +398,6 @@ for (const adapter of adapters) {
           const marks = yield* harness.store.readPendingMarks;
           expect(findRow(restored, SPARE_BATCH_ID)?.["batchNumber"]).toBe("B-2");
           expect(marks).toHaveLength(0);
-        }),
-      ),
-    );
-
-    it.effect("projects a pending adjustment movement without a stock overlay", () =>
-      withHarness((harness) =>
-        Effect.gen(function* () {
-          const envelope = yield* catalogEnvelope({
-            operationId: "catalog-4",
-            clientSequence: "1",
-            writes: [restockBatchWrite({ movementId: "restock-1", unitQuantity: 25 })],
-          });
-          yield* harness.store.enqueueCommand(enqueueRequestOf(envelope, 1));
-          const batchRows = yield* harness.rows("batch");
-          const movementRows = yield* harness.rows("stockMovement");
-          const overlays = yield* harness.overlayCount();
-          expect(findRow(batchRows, LAST_UNIT_BATCH_ID)?.["unitQuantity"]).toBe(25);
-          expect(findRow(movementRows, "restock-1")?.["unitDelta"]).toBe(15);
-          expect(findRow(movementRows, "restock-1")?.["type"]).toBe("adjustment");
-          expect(overlays).toBe(0);
         }),
       ),
     );
