@@ -3,8 +3,8 @@ import { useEffect, useEffectEvent } from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
 import { useSaleDraftActionsHere } from "@/hooks/use-sale-drafts";
-import { appHost } from "@/host";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
+import { listenShell } from "@/host/shell";
 import { hasOpenModal } from "@/lib/shortcuts";
 
 const NEW_SALE_PATH = "/invoices/new";
@@ -36,7 +36,10 @@ export function useNewSaleShortcut(): void {
     };
 
     window.addEventListener("keydown", onKeyDown, true);
-    const stopShell = appHost().shell.onNewSale(() => go());
+    const stopShell = listenShell(
+      (shell) => shell.NewSale(),
+      () => go(),
+    );
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       stopShell();

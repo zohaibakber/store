@@ -8,7 +8,6 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder, PurchaseOrderItem, Supplier } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import { useCommand } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import {
   purchaseOrderCostTotal,
@@ -33,7 +32,8 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { toastManager } from "@/components/ui/toast";
-import { appHost } from "@/host";
+import { runShell } from "@/host/shell";
+import { useCommand } from "@/inventory/provider";
 import { useAuth } from "@/lib/auth";
 import { toastBridgeFailure, toastFailure } from "@/lib/errors";
 import { formatDate } from "@/lib/format-date";
@@ -206,9 +206,9 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
     switch (delivery) {
       case "whatsapp":
         if (link._tag !== "Ready") throw new WhatsAppUnavailable();
-        return appHost().openExternal(link.url);
+        return runShell((shell) => shell.ShareOpenExternal({ url: link.url }));
       case "copy":
-        return appHost().copyText(text);
+        return runShell((shell) => shell.ShareCopyText({ text }));
     }
   };
 
@@ -238,7 +238,9 @@ export function SendOrderAction({ canMarkSent, order, supplier }: SendOrderActio
   const savePdf = () => {
     if (!canShare) return;
     void run(async () => {
-      const outcome = await appHost().savePdf(`order-${formatInvoiceNumber(order.orderNumber)}`);
+      const outcome = await runShell((shell) =>
+        shell.ShareSavePdf({ fileStem: `order-${formatInvoiceNumber(order.orderNumber)}` }),
+      );
       switch (outcome._tag) {
         case "saved":
           toastManager.add({ title: `Saved ${outcome.fileName}`, type: "success" });

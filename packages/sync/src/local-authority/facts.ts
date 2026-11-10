@@ -1,9 +1,4 @@
-import {
-  compareDecimalSequence,
-  openPackMovementId,
-  type CatalogRowWrite,
-  type SyncEntity,
-} from "@store/contracts";
+import { openPackMovementId, type CatalogRowWrite, type SyncEntity } from "@store/contracts";
 import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   ReplicaBatchRow,
@@ -19,16 +14,14 @@ import {
 import {
   batches,
   categories,
-  commandOutbox,
   invoices,
-  pendingRowJournal,
   products,
   purchaseOrderItems,
   purchaseOrders,
   suppliers,
 } from "@store/db/replica.schema";
-import { and, count, desc, eq, gt, inArray, notExists, or, sql, type SQL } from "drizzle-orm";
-import { QueryBuilder, type SQLiteColumn } from "drizzle-orm/sqlite-core";
+import { and, count, desc, eq, gt, inArray, or, type SQL } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -44,144 +37,37 @@ import {
   type PurchasingEntity,
 } from "./decision";
 
-const IDS_PER_QUERY = 400;
+const IDS_PER_QUERY = 90;
 
-const SETTLED_IDS_PER_QUERY = 90;
-
-const queryBuilder = new QueryBuilder();
-
-const unjournaled = (entity: SyncEntity, id: SQLiteColumn) =>
-  notExists(
-    queryBuilder
-      .select({ held: sql`1` })
-      .from(pendingRowJournal)
-      .where(and(eq(pendingRowJournal.entity, entity), eq(pendingRowJournal.entityId, id))),
-  );
-
-type JournalPrior = {
-  readonly entityId: string;
-  readonly priorRowJson: string | null;
-  readonly clientSequence: string;
-};
-
-const NO_PRIORS: ReadonlyMap<string, JournalPrior> = new Map();
-
-type PriorsOf = (entity: SyncEntity) => ReadonlyMap<string, JournalPrior>;
-
-export type PendingJournal = {
-  readonly priorsOf: PriorsOf;
-  readonly unjournaled: (entity: SyncEntity, id: SQLiteColumn) => SQL | undefined;
-  readonly idsPerQuery: number;
-};
-
-export const SETTLED_CATALOG: PendingJournal = {
-  priorsOf: () => NO_PRIORS,
-  unjournaled: () => undefined,
-  idsPerQuery: SETTLED_IDS_PER_QUERY,
-};
-
-const earliestPriors = Effect.fn("LocalAuthority.earliestPriors")(function* (tx: ReplicaDb) {
-  const rows = yield* tx
-    .select({
-      entity: pendingRowJournal.entity,
-      entityId: pendingRowJournal.entityId,
-      priorRowJson: pendingRowJournal.priorRowJson,
-      clientSequence: commandOutbox.clientSequence,
-    })
-    .from(pendingRowJournal)
-    .innerJoin(commandOutbox, eq(commandOutbox.operationId, pendingRowJournal.operationId))
-    .all();
-  const earliest = new Map<string, Map<string, JournalPrior>>();
-  for (const row of rows) {
-    const ofEntity = earliest.get(row.entity) ?? new Map<string, JournalPrior>();
-    const held = ofEntity.get(row.entityId);
-    if (held === undefined || compareDecimalSequence(row.clientSequence, held.clientSequence) < 0) {
-      ofEntity.set(row.entityId, row);
-    }
-    earliest.set(row.entity, ofEntity);
-  }
-  return (entity: SyncEntity): ReadonlyMap<string, JournalPrior> =>
-    earliest.get(entity) ?? NO_PRIORS;
-});
-
-const chunked = <Value>(journal: PendingJournal, values: ReadonlyArray<Value>) =>
-  Array.chunksOf(values, journal.idsPerQuery);
-
-export const replicaJournal = (tx: ReplicaDb) =>
-  Effect.map(earliestPriors(tx), (priorsOf): PendingJournal => ({
-    priorsOf,
-    unjournaled,
-    idsPerQuery: IDS_PER_QUERY,
-  }));
+const chunked = <Value>(values: ReadonlyArray<Value>) => Array.chunksOf(values, IDS_PER_QUERY);
 
 const byId = <Row extends { readonly id: string }>(rows: Iterable<Row>): ReadonlyMap<string, Row> =>
   new Map(Array.fromIterable(rows).map((row) => [row.id, row]));
 
-const authoritativeView = <Row extends { readonly id: string }, Encoded>(
+const storedView = <Row extends { readonly id: string }, Encoded>(
   tx: ReplicaDb,
   organizationId: string,
-  journal: PendingJournal,
   entity: SyncEntity,
   schema: Schema.Codec<Row, Encoded>,
-) =>
-  Effect.gen(function* () {
-    const table = syncEntityRows[entity].table;
-    const decodeStored = Schema.decodeUnknownEffect(Schema.Array(schema));
-    const decodePrior = Schema.decodeUnknownEffect(Schema.fromJsonString(schema));
-    const priors = journal.priorsOf(entity);
-    const restored = byId(
-      yield* Effect.forEach(
-        [...priors.values()].flatMap((prior) =>
-          prior.priorRowJson === null ? [] : [prior.priorRowJson],
-        ),
-        (json) => decodePrior(json),
-      ),
-    );
-    const rowsOf = (ids: Iterable<string>) =>
-      Effect.gen(function* () {
-        const wanted = [...new Set(ids)];
-        const stored = yield* Effect.forEach(
-          chunked(
-            journal,
-            wanted.filter((id) => !priors.has(id)),
-          ),
-          (chunk) =>
-            tx
-              .select()
-              .from(table)
-              .where(and(eq(table.organizationId, organizationId), inArray(table.id, chunk)))
-              .all()
-              .pipe(Effect.flatMap(decodeStored)),
-        );
-        return byId([
-          ...stored.flat(),
-          ...wanted.flatMap((id) => {
-            const row = restored.get(id);
-            return row === undefined ? [] : [row];
-          }),
-        ]);
-      });
-    const settled = (condition: SQL | undefined) =>
-      tx
-        .select()
-        .from(table)
-        .where(
-          and(
-            eq(table.organizationId, organizationId),
-            condition,
-            journal.unjournaled(entity, table.id),
-          ),
-        );
-    return {
-      restored,
-      journaled: (id: string) => priors.has(id),
-      rowsOf,
-      stored: (condition: SQL | undefined) =>
-        settled(condition).all().pipe(Effect.flatMap(decodeStored)),
-      firstStored: (condition: SQL | undefined, order: SQL | SQLiteColumn, limit: number) =>
-        settled(condition).orderBy(order).limit(limit).all().pipe(Effect.flatMap(decodeStored)),
-    };
-  });
+) => {
+  const table = syncEntityRows[entity].table;
+  const decodeStored = Schema.decodeUnknownEffect(Schema.Array(schema));
+  const settled = (condition: SQL | undefined) =>
+    tx
+      .select()
+      .from(table)
+      .where(and(eq(table.organizationId, organizationId), condition));
+  return {
+    rowsOf: (ids: Iterable<string>) =>
+      Effect.forEach(chunked([...new Set(ids)]), (chunk) =>
+        settled(inArray(table.id, chunk)).all().pipe(Effect.flatMap(decodeStored)),
+      ).pipe(Effect.map((stored) => byId(stored.flat()))),
+    stored: (condition: SQL | undefined) =>
+      settled(condition).all().pipe(Effect.flatMap(decodeStored)),
+    firstStored: (condition: SQL | undefined, order: SQL | SQLiteColumn, limit: number) =>
+      settled(condition).orderBy(order).limit(limit).all().pipe(Effect.flatMap(decodeStored)),
+  };
+};
 
 const CountedKeys = Schema.Array(Schema.Struct({ key: Schema.String, total: Schema.Number }));
 
@@ -339,30 +225,11 @@ const footprintOf = (payload: CatalogPayload) => {
 const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(function* (
   tx: ReplicaDb,
   organizationId: string,
-  journal: PendingJournal,
   footprint: ReturnType<typeof footprintOf>,
 ) {
-  const supplierView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "supplier",
-    ReplicaSupplierRow,
-  );
-  const orderView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "purchaseOrder",
-    ReplicaPurchaseOrderRow,
-  );
-  const lineView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "purchaseOrderItem",
-    ReplicaPurchaseOrderItemRow,
-  );
+  const supplierView = storedView(tx, organizationId, "supplier", ReplicaSupplierRow);
+  const orderView = storedView(tx, organizationId, "purchaseOrder", ReplicaPurchaseOrderRow);
+  const lineView = storedView(tx, organizationId, "purchaseOrderItem", ReplicaPurchaseOrderItemRow);
   const untouchedOrders = footprint.writtenOrderIds.size + 1;
   const untouchedLines = footprint.writtenLineIds.size + 1;
 
@@ -375,7 +242,6 @@ const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(functi
         untouchedLines,
       ),
     )).flat(),
-    ...lineView.restored.values(),
   ]);
   const orders = byId([
     ...(yield* orderView.rowsOf([
@@ -389,23 +255,20 @@ const loadPurchasingRows = Effect.fn("LocalAuthority.loadPurchasingRows")(functi
         untouchedOrders,
       ),
     )).flat(),
-    ...(yield* Effect.forEach(chunked(journal, [...footprint.orderNumbers]), (chunk) =>
+    ...(yield* Effect.forEach(chunked([...footprint.orderNumbers]), (chunk) =>
       orderView.stored(inArray(purchaseOrders.orderNumber, chunk)),
     )).flat(),
     ...(footprint.orderNumbers.size === 0
       ? []
       : yield* orderView.firstStored(undefined, desc(purchaseOrders.orderNumber), untouchedOrders)),
-    ...orderView.restored.values(),
   ]);
-  const namedSuppliers = yield* Effect.forEach(
-    chunked(journal, [...footprint.supplierNames]),
-    (chunk) => supplierView.stored(inArray(suppliers.name, chunk)),
+  const namedSuppliers = yield* Effect.forEach(chunked([...footprint.supplierNames]), (chunk) =>
+    supplierView.stored(inArray(suppliers.name, chunk)),
   );
   return {
     supplier: byId([
       ...(yield* supplierView.rowsOf(footprint.supplierIds)).values(),
       ...namedSuppliers.flat(),
-      ...supplierView.restored.values(),
     ]),
     purchaseOrder: orders,
     purchaseOrderItem: lines,
@@ -416,95 +279,51 @@ export const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(fun
   tx: ReplicaDb,
   organizationId: string,
   payload: CatalogPayload,
-  journal: PendingJournal,
 ) {
   const footprint = footprintOf(payload);
-  const categoryView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "category",
-    ReplicaCategoryRow,
-  );
-  const productView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "product",
-    ReplicaProductRow,
-  );
-  const batchView = yield* authoritativeView(tx, organizationId, journal, "batch", ReplicaBatchRow);
-  const movementView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "stockMovement",
-    ReplicaStockMovementRow,
-  );
+  const categoryView = storedView(tx, organizationId, "category", ReplicaCategoryRow);
+  const productView = storedView(tx, organizationId, "product", ReplicaProductRow);
+  const batchView = storedView(tx, organizationId, "batch", ReplicaBatchRow);
+  const movementView = storedView(tx, organizationId, "stockMovement", ReplicaStockMovementRow);
 
-  const namedStored = yield* Effect.forEach(
-    chunked(journal, [...footprint.categoryNames]),
-    (chunk) =>
-      tx
-        .select({ id: categories.id })
-        .from(categories)
-        .where(
-          and(
-            eq(categories.organizationId, organizationId),
-            inArray(categories.name, chunk),
-            journal.unjournaled("category", categories.id),
-          ),
-        )
-        .all(),
-  );
-  const namedRestored = [...categoryView.restored.values()].filter((category) =>
-    footprint.categoryNames.has(category.name),
+  const namedStored = yield* Effect.forEach(chunked([...footprint.categoryNames]), (chunk) =>
+    tx
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.organizationId, organizationId), inArray(categories.name, chunk)))
+      .all(),
   );
   const categoryRows = yield* categoryView.rowsOf([
     ...footprint.categoryIds,
     ...namedStored.flat().map((category) => category.id),
-    ...namedRestored.map((category) => category.id),
   ]);
   const productRows = yield* productView.rowsOf(footprint.productIds);
   const batchRows = yield* batchView.rowsOf(footprint.batchIds);
   const movementRows = yield* movementView.rowsOf(footprint.movementIds);
 
   const storedProductsByCategory = yield* Effect.forEach(
-    chunked(journal, [...footprint.deletedCategoryIds]),
+    chunked([...footprint.deletedCategoryIds]),
     (chunk) =>
       tx
         .select({ key: products.categoryId, total: count() })
         .from(products)
         .where(
-          and(
-            eq(products.organizationId, organizationId),
-            inArray(products.categoryId, chunk),
-            journal.unjournaled("product", products.id),
-          ),
+          and(eq(products.organizationId, organizationId), inArray(products.categoryId, chunk)),
         )
         .groupBy(products.categoryId)
         .all()
         .pipe(Effect.flatMap(decodeCountedKeys)),
   );
-  const loadedProductsByCategory = tally(
-    [...productRows.values()].filter((product) => !productView.journaled(product.id)),
-    (product) => product.categoryId,
-  );
-  const restoredProductCategories = new Set<string>(
-    [...productView.restored.values()]
-      .filter((product) => !footprint.productIds.has(product.id))
-      .map((product) => product.categoryId),
-  );
-  const categoriesHoldingOtherProducts = new Set([
-    ...[...footprint.deletedCategoryIds].filter((id) => restoredProductCategories.has(id)),
-    ...storedProductsByCategory
+  const loadedProductsByCategory = tally(productRows.values(), (product) => product.categoryId);
+  const categoriesHoldingOtherProducts = new Set(
+    storedProductsByCategory
       .flat()
       .filter((row) => row.total > (loadedProductsByCategory.get(row.key) ?? 0))
       .map((row) => row.key),
-  ]);
+  );
 
   const storedStockByProduct = yield* Effect.forEach(
-    chunked(journal, [...footprint.stockCheckedProductIds]),
+    chunked([...footprint.stockCheckedProductIds]),
     (chunk) =>
       tx
         .select({ key: batches.productId, total: count() })
@@ -514,7 +333,6 @@ export const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(fun
             eq(batches.organizationId, organizationId),
             inArray(batches.productId, chunk),
             or(gt(batches.packQuantity, 0), gt(batches.unitQuantity, 0)),
-            journal.unjournaled("batch", batches.id),
           ),
         )
         .groupBy(batches.productId)
@@ -522,28 +340,22 @@ export const loadCatalogFacts = Effect.fn("LocalAuthority.loadCatalogFacts")(fun
         .pipe(Effect.flatMap(decodeCountedKeys)),
   );
   const loadedStockByProduct = tally(
-    [...batchRows.values()].filter((batch) => !batchView.journaled(batch.id) && hasStock(batch)),
+    [...batchRows.values()].filter(hasStock),
     (batch) => batch.productId,
   );
-  const restoredStockProducts = new Set<string>(
-    [...batchView.restored.values()]
-      .filter((batch) => !footprint.batchIds.has(batch.id) && hasStock(batch))
-      .map((batch) => batch.productId),
-  );
-  const productsHoldingOtherStock = new Set([
-    ...[...footprint.stockCheckedProductIds].filter((id) => restoredStockProducts.has(id)),
-    ...storedStockByProduct
+  const productsHoldingOtherStock = new Set(
+    storedStockByProduct
       .flat()
       .filter((row) => row.total > (loadedStockByProduct.get(row.key) ?? 0))
       .map((row) => row.key),
-  ]);
+  );
 
   return {
     rows: {
       category: categoryRows,
       product: productRows,
       batch: batchRows,
-      ...(yield* loadPurchasingRows(tx, organizationId, journal, footprint)),
+      ...(yield* loadPurchasingRows(tx, organizationId, footprint)),
     },
     recordedMovementIds: new Set(movementRows.keys()),
     categoriesHoldingOtherProducts,
@@ -555,53 +367,21 @@ export const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(fun
   tx: ReplicaDb,
   organizationId: string,
   payload: InvoicePayload,
-  journal: PendingJournal,
 ) {
-  const productView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "product",
-    ReplicaProductRow,
-  );
-  const batchView = yield* authoritativeView(tx, organizationId, journal, "batch", ReplicaBatchRow);
-  const invoiceView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "invoice",
-    ReplicaInvoiceRow,
-  );
-  const itemView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "invoiceItem",
-    ReplicaInvoiceItemRow,
-  );
-  const movementView = yield* authoritativeView(
-    tx,
-    organizationId,
-    journal,
-    "stockMovement",
-    ReplicaStockMovementRow,
-  );
+  const productView = storedView(tx, organizationId, "product", ReplicaProductRow);
+  const batchView = storedView(tx, organizationId, "batch", ReplicaBatchRow);
+  const invoiceView = storedView(tx, organizationId, "invoice", ReplicaInvoiceRow);
+  const itemView = storedView(tx, organizationId, "invoiceItem", ReplicaInvoiceItemRow);
+  const movementView = storedView(tx, organizationId, "stockMovement", ReplicaStockMovementRow);
 
-  const settled = and(
-    eq(invoices.organizationId, organizationId),
-    journal.unjournaled("invoice", invoices.id),
-  );
-  const restoredNumbers = [...invoiceView.restored.values()].map(
-    (invoice) => invoice.invoiceNumber,
-  );
+  const settled = eq(invoices.organizationId, organizationId);
   const storedHolder = yield* tx
     .select({ id: invoices.id })
     .from(invoices)
     .where(and(settled, eq(invoices.invoiceNumber, payload.invoiceNumber)))
     .limit(1)
     .get();
-  const invoiceNumberTaken =
-    storedHolder !== undefined || restoredNumbers.includes(payload.invoiceNumber);
+  const invoiceNumberTaken = storedHolder !== undefined;
   const storedHighest = invoiceNumberTaken
     ? yield* tx
         .select({ invoiceNumber: invoices.invoiceNumber })
@@ -617,7 +397,7 @@ export const loadInvoiceFacts = Effect.fn("LocalAuthority.loadInvoiceFacts")(fun
     batches: yield* batchView.rowsOf(payload.allocations.map((take) => take.batchId)),
     invoice: (yield* invoiceView.rowsOf([payload.invoiceId])).get(payload.invoiceId),
     invoiceNumberTaken,
-    highestInvoiceNumber: Math.max(0, storedHighest?.invoiceNumber ?? 0, ...restoredNumbers),
+    highestInvoiceNumber: Math.max(0, storedHighest?.invoiceNumber ?? 0),
     recordedItemIds: new Set(
       (yield* itemView.rowsOf(payload.allocations.map((take) => take.invoiceItemId))).keys(),
     ),

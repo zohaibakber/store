@@ -9,7 +9,6 @@ import {
   type StockMovement,
   type Supplier,
 } from "@store/contracts";
-import { useCommand, usePurchasingGate } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
@@ -50,6 +49,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import { useCommand } from "@/inventory/provider";
+import { usePurchasingGate } from "@/inventory/purchasing-queries";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate, formatDateTime } from "@/lib/format-date";

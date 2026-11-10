@@ -14,9 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { toastManager } from "@/components/ui/toast";
 import { useClearSaleDrafts } from "@/hooks/use-sale-drafts";
-import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
-import type { RestoreChoice, WorkspaceBackupBridge } from "@/host/workspace-backup";
+import { refusedAsFailure, runShell } from "@/host/shell";
+import type { RestoreChoice } from "@/host/workspace-backup";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
 import { bridgeMessage } from "@/lib/errors";
@@ -70,7 +70,7 @@ const backupOffer = (workspace: Workspace): BackupOffer => {
 const failure = (title: string, cause: unknown) =>
   toastManager.add({ title, description: bridgeMessage(cause), type: "error" });
 
-function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) {
+export function BackupSettings() {
   const offer = backupOffer(useAuth().workspace);
   const clearSaleDrafts = useClearSaleDrafts();
   const [activity, setActivity] = useState<Activity>("idle");
@@ -91,7 +91,7 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
 
   const backUp = () =>
     during("backingUp", "Backup not saved", async () => {
-      const outcome = await bridge.backUp();
+      const outcome = await runShell((shell) => shell.BackUp().pipe(refusedAsFailure));
       switch (outcome._tag) {
         case "saved":
           toastManager.add({
@@ -114,7 +114,7 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
 
   const chooseRestore = () =>
     during("choosing", "This file cannot be restored", async () => {
-      const choice = await bridge.chooseRestore();
+      const choice = await runShell((shell) => shell.ChooseRestore().pipe(refusedAsFailure));
       switch (choice._tag) {
         case "staged":
           setStaged(choice);
@@ -134,13 +134,13 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
 
   const dismissRestore = () => {
     setConfirming(false);
-    void bridge.discardRestore().catch(() => undefined);
+    void runShell((shell) => shell.DiscardRestore()).catch(() => undefined);
   };
 
   const applyRestore = (fileName: string) => {
     setConfirming(false);
     return during("restoring", "Not restored", async () => {
-      const outcome = await bridge.applyRestore();
+      const outcome = await runShell((shell) => shell.ApplyRestore().pipe(refusedAsFailure));
       switch (outcome._tag) {
         case "restored":
           clearSaleDrafts();
@@ -225,8 +225,4 @@ function BackupControls({ bridge }: { readonly bridge: WorkspaceBackupBridge }) 
       </AlertDialog>
     </>
   );
-}
-
-export function BackupSettings() {
-  return <BackupControls bridge={appHost().backup} />;
 }

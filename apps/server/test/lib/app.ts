@@ -26,8 +26,6 @@ const unusedAuthority: ReturnType<OrgAuthorities["Service"]["getByName"]> = {
   pull: unused,
   acquireSnapshot: unused,
   readSnapshotPart: unused,
-  devices: unused,
-  deviceCommand: unused,
   liveHorizon: unused,
   stageImportPart: unused,
   commitImport: unused,

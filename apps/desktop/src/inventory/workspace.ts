@@ -8,20 +8,17 @@ import * as Scope from "effect/Scope";
 import { createWorkspaceAtoms } from "./atoms";
 import { commandAtoms, makeWorkspaceCommands } from "./commands";
 import { CatalogOpenFailure } from "./errors";
-import { replicaAuthorityOf, type InventoryHost, type InventoryScope } from "./host";
+import { replicaAuthorityOf, type InventoryScope } from "./host";
+import { openReplica } from "./host-electron";
 import { makeInventoryLinks } from "./services";
 
 const FIRST_READ_WAIT = "20 seconds";
 
 const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
   registry: AtomRegistry.AtomRegistry,
-  host: InventoryHost,
   scope: InventoryScope,
 ) {
-  const opened = yield* host.open(
-    { organizationId: scope.organizationId, userId: scope.userId, replicaId: host.deviceId },
-    registry,
-  );
+  const opened = yield* openReplica(scope, registry);
   const links = makeInventoryLinks(opened.services);
   const atoms = createWorkspaceAtoms(opened.services, links, registry);
   const authority = replicaAuthorityOf(scope);
@@ -44,12 +41,7 @@ const openWorkspace = Effect.fn("InventoryWorkspace.open")(function* (
       orElse: () => Effect.fail(new CatalogOpenFailure({ reason: "firstReadTimeout" })),
     }),
   );
-  return {
-    atoms,
-    commands,
-    authority,
-    deviceId: opened.replicaId ?? host.deviceId,
-  };
+  return { atoms, commands, authority };
 });
 
 const openRetrySchedule = Schedule.exponential("200 millis").pipe(
@@ -57,17 +49,14 @@ const openRetrySchedule = Schedule.exponential("200 millis").pipe(
   Schedule.upTo({ times: 3 }),
 );
 
-const openAttempt = Effect.fn("InventoryWorkspace.openAttempt")(function* (
-  host: InventoryHost,
-  scope: InventoryScope,
-) {
+const openAttempt = Effect.fn("InventoryWorkspace.openAttempt")(function* (scope: InventoryScope) {
   const registry = yield* AtomRegistry.AtomRegistry;
   const attempt = yield* Scope.fork(yield* Effect.scope);
-  return yield* openWorkspace(registry, host, scope).pipe(
+  return yield* openWorkspace(registry, scope).pipe(
     Scope.provide(attempt),
     Effect.onError(() => Scope.close(attempt, Exit.void)),
   );
 });
 
-export const openCatalog = (host: InventoryHost, scope: InventoryScope) =>
-  openAttempt(host, scope).pipe(Effect.retry(openRetrySchedule));
+export const openCatalog = (scope: InventoryScope) =>
+  openAttempt(scope).pipe(Effect.retry(openRetrySchedule));

@@ -2,11 +2,6 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import {
-  useSuspenseInvoiceCount,
-  useSuspenseInvoicePage,
-  type InvoiceListRequest,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createColumnHelper } from "@tanstack/react-table";
@@ -22,6 +17,8 @@ import { ListTableContent, useListTable } from "@/components/shared/list-view";
 import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import type { InvoiceListRequest } from "@/inventory/invoice-list";
+import { useSuspenseInvoiceCount, useSuspenseInvoicePage } from "@/inventory/queries";
 import { formatNumber } from "@/lib/format";
 import { formatDateTime, formatInvoiceTime } from "@/lib/format-date";
 import { cn } from "@/lib/utils";

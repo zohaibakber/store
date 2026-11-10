@@ -8,8 +8,8 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
-import { loadSessionSnapshot } from "../src/session-broker";
-import { SessionHttp, layerSessionHttp } from "../src/session-http";
+import { loadSessionSnapshot } from "../../electron/workspace/session-broker";
+import { SessionHttp, layerSessionHttp } from "../../electron/workspace/session-http";
 
 const API = "https://api.example.test";
 const AUTH = "https://auth.example.test";

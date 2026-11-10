@@ -1,13 +1,5 @@
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  useSuspenseCatalogCategories,
-  useSuspenseProductCount,
-  useSuspenseProductFacets,
-  useStaffPermission,
-  useSuspenseProductPage,
-  type ProductListRequest,
-} from "@store/inventory-react";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import * as React from "react";
 
@@ -18,6 +10,14 @@ import { DataTable, DataTableFilter, DataTableViewOptions } from "@/components/s
 import { ListTableContent } from "@/components/shared/list-view";
 import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
+import type { ProductListRequest } from "@/inventory/product-list";
+import {
+  useSuspenseCatalogCategories,
+  useSuspenseProductCount,
+  useSuspenseProductFacets,
+  useSuspenseProductPage,
+} from "@/inventory/queries";
+import { useStaffPermission } from "@/inventory/staff";
 
 export function ProductsPage({
   loading,

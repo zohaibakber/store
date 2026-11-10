@@ -3,8 +3,7 @@ import path from "node:path";
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
-import { WorkspaceToken } from "@store/contracts/replica";
-import type { RequestError } from "@store/workspace";
+import { WorkspaceToken, type WorkerPhase, type WorkspaceState } from "@store/contracts/replica";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -25,6 +24,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MessageChannelMain } from "electron";
 
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
@@ -55,6 +55,7 @@ import {
   type SpawnReplicaWorker,
 } from "./replica-supervisor";
 import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
+import type { RequestError } from "./workspace/session-http";
 
 type ReplicaSenderListener = {
   (event: "did-navigate", listener: () => void): void;
@@ -94,6 +95,7 @@ export type OpenWorkspace = {
   readonly identity: typeof ReplicaOpenInput.Type;
   readonly release: () => void;
   readonly gate: Latch.Latch;
+  readonly state: SubscriptionRef.SubscriptionRef<WorkspaceState>;
   readonly workspaceToken: WorkspaceToken;
   readonly databasePath: string;
   readonly supervisor: ReplicaSupervisor;
@@ -205,6 +207,18 @@ const forwardStream = <A, E>(
     Stream.runForEach(forward),
     Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
       Effect.logWarning("OpenWorkspaces.forward_failed", cause),
+    ),
+    Effect.forkScoped,
+  );
+
+const trackPhases = (
+  state: SubscriptionRef.SubscriptionRef<WorkspaceState>,
+  worker: keyof WorkspaceState,
+  phases: Stream.Stream<WorkerPhase>,
+) =>
+  phases.pipe(
+    Stream.runForEach((phase) =>
+      SubscriptionRef.update(state, (current) => ({ ...current, [worker]: phase })),
     ),
     Effect.forkScoped,
   );
@@ -374,6 +388,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     identity: typeof ReplicaOpenInput.Type,
     workspaceToken: WorkspaceToken,
     databasePath: string,
+    state: SubscriptionRef.SubscriptionRef<WorkspaceState>,
     scope: Scope.Closeable,
     release: () => void,
   ) =>
@@ -407,8 +422,8 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         attach: (worker) =>
           ports.workerUp("reader", (port) => worker.client.AttachRenderer({ port })),
       });
-      yield* ports.track("writer", supervisor.phases);
-      yield* ports.track("reader", reader.phases);
+      yield* trackPhases(state, "writer", supervisor.phases);
+      yield* trackPhases(state, "reader", reader.phases);
       return { supervisor, reader, analytics };
     }).pipe(
       Scope.provide(scope),
@@ -422,6 +437,10 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     const workspaceToken = WorkspaceToken.make(yield* crypto.uuidV4());
     const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
+    const state = yield* SubscriptionRef.make<WorkspaceState>({
+      writer: "starting",
+      reader: "starting",
+    });
     const gone = yield* Deferred.make<void>();
     const release = () => {
       Deferred.doneUnsafe(gone, Exit.void);
@@ -438,6 +457,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       identity,
       workspaceToken,
       databasePath,
+      state,
       scope,
       release,
     );
@@ -454,6 +474,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         identity,
         release,
         gate,
+        state,
         workspaceToken,
         databasePath,
         supervisor: started.supervisor,
@@ -472,6 +493,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       session.identity,
       session.workspaceToken,
       session.databasePath,
+      session.state,
       scope,
       session.release,
     );

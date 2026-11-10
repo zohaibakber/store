@@ -1,13 +1,4 @@
 import { decodeProductId } from "@store/contracts";
-import {
-  preloadAll,
-  preloadCatalogProduct,
-  preloadProductStockPlan,
-  preloadStockMovementHistory,
-  useCommand,
-  useSuspenseCatalogProduct,
-  useSuspenseStockMovementHistory,
-} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
@@ -18,8 +9,16 @@ import {
   ProductDetailPage,
 } from "@/components/products/detail-page";
 import { toastManager } from "@/components/ui/toast";
+import {
+  preloadAll,
+  preloadCatalogProduct,
+  preloadProductStockPlan,
+  preloadStockMovementHistory,
+} from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import { useCommand } from "@/inventory/provider";
+import { useSuspenseCatalogProduct, useSuspenseStockMovementHistory } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
-import { preloadInventory } from "@/lib/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const productSearch = Schema.toStandardSchemaV1(

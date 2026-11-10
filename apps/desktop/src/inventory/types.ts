@@ -6,7 +6,6 @@ export type Inventory = {
   readonly commands: WorkspaceCommands;
   readonly atoms: WorkspaceAtoms;
   readonly authority: ReplicaAuthority;
-  readonly deviceId: string;
 };
 
 export type InventoryState =

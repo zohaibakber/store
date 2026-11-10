@@ -6,7 +6,7 @@ import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
 import * as React from "react";
 
-import { appHost } from "@/host";
+import { runShell, shell } from "@/host/shell";
 import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 
 interface OrganizationState {
@@ -30,10 +30,10 @@ class OrganizationProviderMissing extends Schema.TaggedError<OrganizationProvide
 ) {}
 
 const organizationAtom = Atom.make(
-  Effect.tryPromise({
-    try: () => appHost().auth.organization(),
-    catch: (cause) => bridgeMessage(cause, "Couldn't load the organization."),
-  }),
+  shell.pipe(
+    Effect.flatMap((client) => client.AuthOrganization()),
+    Effect.mapError((cause) => bridgeMessage(cause, "Couldn't load the organization.")),
+  ),
 );
 
 export function OrganizationProvider({ children }: { children: React.ReactNode }) {
@@ -47,8 +47,9 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const update = React.useCallback(
     async (input: UpdateOrganizationInput) => {
       try {
-        const updated = await appHost().auth.updateOrganization(input);
-        await appHost().auth.renewSession();
+        const updated = await runShell((client) =>
+          client.AuthUpdateOrganization({ input }).pipe(Effect.tap(client.AuthRenew())),
+        );
         refresh();
         return updated;
       } catch (cause) {

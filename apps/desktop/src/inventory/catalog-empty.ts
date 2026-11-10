@@ -1,6 +1,8 @@
-import { useSuspenseProductCount, type Inventory } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+
+import { useSuspenseProductCount } from "./queries";
+import type { Inventory } from "./types";
 
 const EVERY_PRODUCT = {};
 

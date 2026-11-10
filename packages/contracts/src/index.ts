@@ -10,7 +10,6 @@ export * from "./store/invoice-allocation";
 export * from "./store/pricing";
 export * from "./store/schema";
 export * from "./store/stock";
-export * from "./sync/devices";
 export * from "./sync/digest";
 export * from "./sync/import";
 export * from "./sync/live";

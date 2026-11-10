@@ -1,4 +1,3 @@
-export { LocalAuthority, LOCAL_AUTHORITY_EPOCH } from "./local-authority";
 export {
   judgeMigrationLedger,
   LEGACY_LEDGER_TABLE as REPLICA_LEGACY_LEDGER_TABLE,
@@ -11,4 +10,3 @@ export type { ReplicaDb } from "./replica/sql-client/drizzle";
 export { readOutboxActivitySqlite } from "./replica/sqlite/activity";
 export { sqliteCatalogParts, type CatalogPart } from "./replica/sqlite/catalog-parts";
 export { layerSqliteReplicaStore } from "./replica/sqlite/store";
-export type { SqliteReplicaStoreOptions } from "./replica/sqlite/store";

@@ -21,7 +21,6 @@ import { noGlobalCryptoRule } from "./rules/no-global-crypto.ts";
 import { noHostPolicyCallInComponentRule } from "./rules/no-host-policy-call-in-component.ts";
 import { noNodeFsInEffectRule } from "./rules/no-node-fs-in-effect.ts";
 import { noPlainErrorInEffectRule } from "./rules/no-plain-error-in-effect.ts";
-import { noRegistryContextRule } from "./rules/no-registry-context.ts";
 import { noYieldEffectFailRule } from "./rules/no-yield-effect-fail.ts";
 import { preferTaggedStructRule } from "./rules/prefer-tagged-struct.ts";
 import { serviceIdShapeRule } from "./rules/service-id-shape.ts";
@@ -52,7 +51,6 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-host-policy-call-in-component": noHostPolicyCallInComponentRule,
 		"no-node-fs-in-effect": noNodeFsInEffectRule,
 		"no-plain-error-in-effect": noPlainErrorInEffectRule,
-		"no-registry-context": noRegistryContextRule,
 		"no-yield-effect-fail": noYieldEffectFailRule,
 		"prefer-tagged-struct": preferTaggedStructRule,
 		"service-id-shape": serviceIdShapeRule,

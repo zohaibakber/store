@@ -1,9 +1,9 @@
 # Desktop app
 
 The Electron app for Tabaaq. This workspace owns the renderer in `src`, the
-host contract in `src/host`, the main process, the preload bridge, the replica
-and analytics workers, the updater, their tests, and packaging. Vite config
-for the renderer lives in `vite.app.ts`.
+host contract in `src/host`, the React bindings over the replica in
+`src/inventory`, the main process, the preload bridge, the replica
+and analytics workers, the updater, their tests, and packaging.
 
 The renderer uses hash history. Auth, invoice analysis, native integrations,
 and authenticated sync HTTP go through preload IPC. Live inventory reads the

@@ -5,12 +5,6 @@ import {
   type PurchaseOrder,
   type PurchaseOrderItem,
 } from "@store/contracts";
-import {
-  useCommand,
-  usePurchasingGate,
-  useSuspenseCatalogProductsById,
-  type ReceiveDeliveryLineInput,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import * as React from "react";
 
@@ -31,6 +25,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import type { ReceiveDeliveryLineInput } from "@/inventory/commands";
+import { useCommand } from "@/inventory/provider";
+import { usePurchasingGate } from "@/inventory/purchasing-queries";
+import { useSuspenseCatalogProductsById } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";

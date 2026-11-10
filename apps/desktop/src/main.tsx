@@ -1,9 +1,9 @@
 import "@fontsource-variable/inter/index.css";
 import "@fontsource-variable/geist-mono/index.css";
 import "@/styles.css";
-import { startElectron } from "./start-electron";
+import { startApp } from "./mount-app";
 
-void startElectron().catch((cause: unknown) => {
+void startApp().catch((cause: unknown) => {
   console.error("Desktop startup failed.", cause);
   const root = document.getElementById("root");
   if (!root) return;

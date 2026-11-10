@@ -1,8 +1,12 @@
 import { RegistryContext, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { InventorySyncStatus } from "@store/client-db";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as Atom from "effect/reactivity/Atom";
 import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import * as React from "react";
+
+import { FirstSync } from "@/components/app/first-sync";
+import { PageLoading } from "@/components/app/loading-spinner";
 
 import type { WorkspaceCommands } from "./commands";
 import { InventoryNotReady, InventoryProviderMissing } from "./errors";
@@ -31,7 +35,11 @@ export function InventoryProvider({
   const result = useAtomValue(opening);
   const retry = useAtomRefresh(opening);
   const state = React.useMemo(() => inventoryState(result, retry), [result, retry]);
-  return <InventoryContext.Provider value={state}>{children}</InventoryContext.Provider>;
+  return (
+    <InventoryContext.Provider value={state}>
+      <InventoryOpenFailure>{children}</InventoryOpenFailure>
+    </InventoryContext.Provider>
+  );
 }
 
 export const useInventoryState = (): InventoryState => {
@@ -70,3 +78,48 @@ export const useInventorySyncStatus = () => useAtomValue(useCatalogReplica().ato
 export const useInventorySyncActivity = () => useAtomValue(useCatalogReplica().atoms.syncActivity);
 
 export const useInventorySyncTransfer = () => useAtomValue(useCatalogReplica().atoms.syncTransfer);
+
+function InventoryOpenFailure({ children }: { readonly children: React.ReactNode }) {
+  const state = useInventoryState();
+  if (state._tag !== "Error") return children;
+  return (
+    <div className="flex flex-col gap-3 p-6">
+      <p className="text-sm text-destructive">{state.error}</p>
+      <button className="text-sm underline" onClick={state.retry} type="button">
+        Try again
+      </button>
+    </div>
+  );
+}
+
+export function InventoryReady({ children }: { readonly children: React.ReactNode }) {
+  const state = useInventoryState();
+  if (state._tag !== "Ready") return <PageLoading />;
+  return <FirstSyncGate>{children}</FirstSyncGate>;
+}
+
+const isHalted = (status: InventorySyncStatus) => {
+  switch (status._tag) {
+    case "storageError":
+    case "updateRequired":
+    case "recoveryRequired":
+    case "unavailable":
+      return true;
+    case "savedLocally":
+    case "pendingConfirmation":
+    case "caughtUp":
+    case "rejected":
+      return false;
+  }
+};
+
+export const useFirstSyncPending = () => {
+  const { firstSyncPending } = useInventorySyncActivity();
+  const status = useInventorySyncStatus();
+  return firstSyncPending && !isHalted(status);
+};
+
+function FirstSyncGate({ children }: { readonly children: React.ReactNode }) {
+  if (useFirstSyncPending()) return <FirstSync />;
+  return children;
+}

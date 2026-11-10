@@ -1,10 +1,8 @@
-import * as Rpc from "effect/rpc/Rpc";
-import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
 
 export const REPLICA_PORTS_CHANNEL = "replica:ports";
 
-export const REPLICA_PORT_ROLES = ["reads", "store", "desktop", "insights"] as const;
+export const REPLICA_PORT_ROLES = ["reads", "store", "insights"] as const;
 export type ReplicaPortRole = (typeof REPLICA_PORT_ROLES)[number];
 
 export const WorkspaceToken = Schema.NonEmptyString.pipe(Schema.brand("WorkspaceToken"));
@@ -29,7 +27,3 @@ export type WorkerPhase = typeof WorkerPhase.Type;
 
 export const WorkspaceState = Schema.Struct({ writer: WorkerPhase, reader: WorkerPhase });
 export type WorkspaceState = typeof WorkspaceState.Type;
-
-export class DesktopRpcs extends RpcGroup.make(
-  Rpc.make("WorkspaceState", { success: WorkspaceState, stream: true }),
-) {}

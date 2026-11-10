@@ -1,8 +1,8 @@
-import { causeSurface, type InventoryFailure } from "@store/inventory-react";
 import * as Cause from "effect/Cause";
 
 import { toastManager } from "@/components/ui/toast";
-import { isBridgeFailure } from "@/host";
+import { isBridgeFailure } from "@/host/shell";
+import { causeSurface, type InventoryFailure } from "@/inventory/errors";
 
 const DEFAULT_FALLBACK = "Something went wrong. Try again.";
 

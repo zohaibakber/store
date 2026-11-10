@@ -2,7 +2,6 @@ import { Delete02Icon, InformationCircleIcon, PencilEdit02Icon } from "@hugeicon
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
 import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts/catalog-write";
-import { useCommand, useSuspenseProductCount } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 import { Suspense, useId, useMemo, useRef, useState } from "react";
 
@@ -31,6 +30,8 @@ import {
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCommand } from "@/inventory/provider";
+import { useSuspenseProductCount } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatNumber } from "@/lib/format";
 

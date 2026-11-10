@@ -2,8 +2,7 @@ import {
   PURCHASE_ORDER_SORT_COLUMNS,
   type PurchaseOrderSortColumn,
   type PurchaseOrderTab,
-} from "@store/inventory-react";
-
+} from "@/inventory/list-request";
 import { listView, type ListView } from "@/lib/list-view";
 
 export const purchaseOrderList = listView({

@@ -1,6 +1,7 @@
 import type { Product, ProductId } from "@store/contracts";
-import { useSuspenseCatalogProduct } from "@store/inventory-react";
 import { Suspense, useEffect, useRef } from "react";
+
+import { useSuspenseCatalogProduct } from "@/inventory/queries";
 
 function Resolve({
   productId,

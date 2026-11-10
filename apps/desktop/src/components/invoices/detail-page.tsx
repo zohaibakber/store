@@ -2,7 +2,6 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, InvoiceId, InvoiceItem } from "@store/contracts";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import { useInvoiceStaff } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
@@ -28,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useInvoiceStaff } from "@/inventory/staff";
 import { EMPTY, formatCount } from "@/lib/format";
 
 function NewSaleAction() {

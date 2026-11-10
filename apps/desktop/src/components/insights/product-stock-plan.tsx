@@ -1,10 +1,4 @@
 import type { ProductId, ProductInsight, StockPolicy } from "@store/contracts";
-import {
-  useProductInsight,
-  useStockPolicy,
-  useSuspenseProductOnOrder,
-  useSuspenseSuppliers,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { serviceLevelFor } from "@store/services/insights";
 import { Link } from "@tanstack/react-router";
@@ -19,6 +13,8 @@ import {
 } from "@/components/purchases/presentation";
 import { FrameCard } from "@/components/shared/frame-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProductInsight, useStockPolicy } from "@/inventory/insights";
+import { useSuspenseProductOnOrder, useSuspenseSuppliers } from "@/inventory/purchasing-queries";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 

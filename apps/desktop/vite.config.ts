@@ -1,6 +1,10 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 import path from "node:path";
 
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter, type CodeSplittingOptions } from "@tanstack/router-plugin/vite";
+import react from "@vitejs/plugin-react";
+import type { Plugin } from "vite";
 import type { ElectronOptions } from "vite-plugin-electron";
 import electron from "vite-plugin-electron/simple";
 import { defineConfig, lazyPlugins } from "vite-plus";
@@ -13,11 +17,25 @@ import {
   PRODUCTION_AUTH_URL,
 } from "../../infra/deployment";
 import packageJson from "./package.json";
-import { rendererAppConfig, rendererRoot } from "./vite.app";
 
 const desktopRoot = import.meta.dirname;
 const electronSource = path.join(desktopRoot, "electron");
 const electronOutput = path.join(desktopRoot, "dist-electron");
+
+const devSplash = (): Plugin => ({
+  name: "desktop-dev-splash",
+  apply: "serve",
+  transformIndexHtml(html) {
+    return html
+      .replaceAll("/logo-light.svg", "/logo-dev.svg")
+      .replaceAll("/logo-dark.svg", "/logo-dev.svg")
+      .replaceAll('href="/logo.svg"', 'href="/logo-dev.svg"');
+  },
+});
+
+const keepShellInStartupBundle: CodeSplittingOptions = {
+  splitBehavior: ({ routeId }) => (routeId === "/_app" ? [] : undefined),
+};
 
 type ElectronStart = NonNullable<ElectronOptions["onstart"]>;
 
@@ -31,7 +49,6 @@ const reloadRenderer: ElectronStart = (start) =>
 export default defineConfig(({ command }) => {
   const released = command === "build";
   const sentryDsn = released ? DESKTOP_SENTRY_DSN : "";
-  const app = rendererAppConfig({ version: packageJson.version, sentryDsn });
   const electronDefines = {
     __APP_VERSION__: JSON.stringify(packageJson.version),
     __API_URL__: JSON.stringify(released ? PRODUCTION_API_URL : LOCAL_API_URL),
@@ -39,11 +56,16 @@ export default defineConfig(({ command }) => {
     __SENTRY_DSN__: JSON.stringify(sentryDsn),
   };
   return {
-    root: rendererRoot,
+    root: desktopRoot,
     envDir: desktopRoot,
-    define: app.define,
-    resolve: app.resolve,
-    worker: app.worker,
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version),
+      __SENTRY_DSN__: JSON.stringify(sentryDsn),
+      __SENTRY_DEBUG__: false,
+      __SENTRY_TRACING__: false,
+    },
+    resolve: { tsconfigPaths: true },
+    worker: { format: "es" },
     build: { outDir: path.join(desktopRoot, "dist"), emptyOutDir: true },
     server: {
       host: "127.0.0.1",
@@ -73,7 +95,16 @@ export default defineConfig(({ command }) => {
       options: { maxWarnings: 0 },
     },
     plugins: lazyPlugins(async () => [
-      ...app.plugins(),
+      devSplash(),
+      tanstackRouter({
+        target: "react",
+        autoCodeSplitting: true,
+        codeSplittingOptions: keepShellInStartupBundle,
+        routesDirectory: path.join(desktopRoot, "src/routes"),
+        generatedRouteTree: path.join(desktopRoot, "src/routeTree.gen.ts"),
+      }),
+      tailwindcss(),
+      react({ compiler: true }),
       ...(await electron({
         main: {
           entry: path.join(electronSource, "main.ts"),

@@ -17,16 +17,6 @@ import {
   withWorkspaceOnline,
   WorkspaceSnapshot,
 } from "@store/contracts/workspace";
-import {
-  SessionHttp,
-  adoptAuthenticatedSnapshot,
-  adoptSessionTokens,
-  layerSessionHttp,
-  renewSessionSnapshot,
-  resumeSessionSnapshot,
-  type RequestError,
-  type SessionSnapshotHooks,
-} from "@store/workspace";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -46,9 +36,17 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { app, net, safeStorage } from "electron";
 
-import type { SignInCredentials } from "../src/host/index";
+import type { SignInCredentials } from "../src/host/shell-rpcs";
 import { PrivateFiles } from "./private-files";
 import { ShellEvents } from "./shell-events";
+import {
+  adoptAuthenticatedSnapshot,
+  adoptSessionTokens,
+  renewSessionSnapshot,
+  resumeSessionSnapshot,
+  type SessionSnapshotHooks,
+} from "./workspace/session-broker";
+import { SessionHttp, layerSessionHttp, type RequestError } from "./workspace/session-http";
 
 const canPersistEncryptedSession = () =>
   safeStorage.isEncryptionAvailable() &&

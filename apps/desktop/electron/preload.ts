@@ -2,7 +2,7 @@ import "@sentry/electron/preload";
 import { REPLICA_PORTS_CHANNEL, type ReplicaPortsMessage } from "@store/contracts/replica";
 import { ipcRenderer, contextBridge } from "electron";
 
-import type { ShellPortBridge } from "../src/host/electron";
+import type { ShellPortBridge } from "../src/host/shell";
 import { SHELL_PORT_CHANNEL, SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
 
 ipcRenderer.on(REPLICA_PORTS_CHANNEL, (event, message: ReplicaPortsMessage) => {

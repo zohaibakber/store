@@ -1,11 +1,13 @@
 import type { InvoiceId, ProductId, PurchaseOrderId, RestockPageRequest } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type * as AsyncResult from "effect/reactivity/AsyncResult";
 import type * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import type { InvoiceListRequest } from "./invoice-list";
 import { PURCHASE_ORDER_TABS } from "./list-request";
+import { claimedCatalogScope, type Catalogs } from "./opening";
 import type { ProductListRequest } from "./product-list";
 import type { PurchaseOrderListRequest } from "./purchasing";
 import { HISTORY_PAGE_SIZE } from "./queries";
@@ -104,3 +106,27 @@ export const preloadPurchaseOrder = (inventory: Inventory, orderId: PurchaseOrde
     preloadSuppliers(inventory),
     warmAtom(inventory, inventory.atoms.purchaseOrderDetail(orderId)),
   ]);
+
+const PRELOAD_BUDGET = "750 millis";
+
+export const preloadInventory = (
+  context: {
+    readonly registry: AtomRegistry.AtomRegistry;
+    readonly inventory: Catalogs;
+  },
+  preload: (inventory: Inventory) => Effect.Effect<void, unknown> = () => Effect.void,
+): Promise<void> => {
+  const scope = context.registry.get(claimedCatalogScope);
+  if (Option.isNone(scope)) return Promise.resolve();
+  return Effect.runPromise(
+    AtomRegistry.getResult(context.registry, context.inventory.catalog(scope.value)).pipe(
+      Effect.flatMap((inventory) =>
+        inventory.atoms.registry.get(inventory.atoms.syncActivity).firstSyncPending
+          ? Effect.void
+          : preload(inventory),
+      ),
+      Effect.timeout(PRELOAD_BUDGET),
+      Effect.ignore,
+    ),
+  );
+};

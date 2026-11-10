@@ -27,9 +27,6 @@ organization's `OrgAuthority` Durable Object.
   pending projections, coverage, the polling scheduler, and the typed
   `SyncHttpApi` client. Its shared entrypoint (`@store/sync`) is native-free;
   the SQLite adapter lives behind `@store/sync/sqlite`.
-- `packages/inventory-react` owns the React bindings over the replica used by
-  the desktop renderer.
-- `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
 - `packages/services` owns shared application services such as insights and purchasing.

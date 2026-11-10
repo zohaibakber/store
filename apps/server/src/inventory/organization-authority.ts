@@ -2,11 +2,9 @@ import {
   AcquireSnapshotResult,
   CommandReceipt,
   ImportCatalogResult,
-  OrganizationDevices,
   RegisterReplicaResult,
   syncProtocolError,
   type AcquireSnapshotRequest,
-  type DeviceCommand,
   type ImportCatalogRequest,
   type ImportId,
   type ImportStatus,
@@ -37,7 +35,6 @@ const decodeRegisterResult = Schema.decodeUnknownEffect(RegisterReplicaResult);
 const decodeReceipt = Schema.decodeUnknownEffect(Schema.fromJsonString(CommandReceipt));
 const decodeAcquired = Schema.decodeUnknownEffect(AcquireSnapshotResult);
 const decodeImportResult = Schema.decodeUnknownEffect(Schema.fromJsonString(ImportCatalogResult));
-const decodeDevices = Schema.decodeUnknownEffect(OrganizationDevices);
 
 const garbled = (cause: Schema.SchemaError) =>
   new InventoryDatabaseError({
@@ -126,13 +123,6 @@ export class OrganizationAuthority extends Context.Service<
       actor: Actor,
       importId: ImportId,
     ) => Effect.Effect<ImportStatus, InventoryError, RuntimeContext>;
-    readonly devices: (
-      actor: Actor,
-    ) => Effect.Effect<OrganizationDevices, InventoryError, RuntimeContext>;
-    readonly commandDevice: (
-      actor: Actor,
-      command: DeviceCommand,
-    ) => Effect.Effect<OrganizationDevices, InventoryError, RuntimeContext>;
   }
 >()("@store/server/OrganizationAuthority") {
   static readonly layer = Layer.effect(
@@ -229,19 +219,6 @@ export class OrganizationAuthority extends Context.Service<
         }
       });
 
-      const devices = Effect.fn("OrganizationAuthority.devices")(function* (actor: Actor) {
-        const listed = yield* answered(authorityOf(actor).devices(actor));
-        return yield* decodeDevices(listed).pipe(Effect.mapError(garbled));
-      });
-
-      const commandDevice = Effect.fn("OrganizationAuthority.commandDevice")(function* (
-        actor: Actor,
-        command: DeviceCommand,
-      ) {
-        const listed = yield* answered(authorityOf(actor).deviceCommand(actor, command));
-        return yield* decodeDevices(listed).pipe(Effect.mapError(garbled));
-      });
-
       return OrganizationAuthority.of({
         register,
         submit,
@@ -252,8 +229,6 @@ export class OrganizationAuthority extends Context.Service<
         stageImportPart,
         commitImport,
         importStatus,
-        devices,
-        commandDevice,
       });
     }),
   );

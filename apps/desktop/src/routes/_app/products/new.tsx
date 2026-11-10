@@ -1,15 +1,10 @@
-import {
-  preloadAll,
-  preloadCatalogCategories,
-  preloadProductFacets,
-  useSuspenseCatalogSuggestions,
-  useSuspenseCatalogCategories,
-} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadAll, preloadCatalogCategories, preloadProductFacets } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import { useSuspenseCatalogSuggestions, useSuspenseCatalogCategories } from "@/inventory/queries";
 
 export const Route = createFileRoute("/_app/products/new")({
   loader: ({ context }) =>

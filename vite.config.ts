@@ -74,13 +74,12 @@ export default defineConfig({
           "packages/client-db/src/replica/**/*.ts",
           "packages/client-db/test/replica-*.test.ts",
           "packages/contracts/**/*.ts",
-          "packages/workspace/**/*.ts",
+          "apps/desktop/electron/workspace/**/*.ts",
           "packages/db/src/shared/**/*.ts",
           "apps/server/src/routes/sync.ts",
           "apps/server/test/{http,inventory}/**/*.ts",
-          "packages/inventory-react/**/*.{ts,tsx}",
-          "apps/desktop/src/lib/inventory/{provider,sync-status}.{ts,tsx}",
-          "apps/desktop/src/start-electron.tsx",
+          "apps/desktop/src/inventory/**/*.{ts,tsx}",
+          "apps/desktop/src/mount-app.tsx",
         ],
         rules: {
           "anti-slop/no-comments": "error",
@@ -109,7 +108,7 @@ export default defineConfig({
       {
         files: [
           "apps/desktop/src/components/products/batches.tsx",
-          "packages/inventory-react/src/atoms.ts",
+          "apps/desktop/src/inventory/atoms.ts",
         ],
         rules: {
           "anti-slop/no-date-now-in-effect": "off",
@@ -118,8 +117,8 @@ export default defineConfig({
       {
         files: [
           "apps/desktop/electron/host.ts",
-          "apps/desktop/src/host/electron.ts",
-          "apps/desktop/src/lib/inventory/preload.ts",
+          "apps/desktop/src/host/shell.ts",
+          "apps/desktop/src/inventory/preload.ts",
         ],
         rules: {
           "anti-slop/no-effect-run-outside-edge": "off",
@@ -132,7 +131,7 @@ export default defineConfig({
           "packages/client-db/src/replica/node-backup.ts",
           "packages/client-db/src/replica/node-readonly.ts",
           "packages/sync/src/replica/errors.ts",
-          "packages/workspace/src/session-http.ts",
+          "apps/desktop/electron/workspace/session-http.ts",
         ],
         rules: {
           "anti-slop/no-error-message-from-cause": "off",
@@ -159,7 +158,6 @@ export default defineConfig({
           "apps/desktop/electron/auth.ts",
           "apps/desktop/src/components/insights/restock-page.tsx",
           "apps/desktop/src/components/theme/provider.tsx",
-          "apps/desktop/src/host/electron.ts",
           "apps/server/src/auth/access-tokens.ts",
           "apps/server/src/runtime/isolate.ts",
           "apps/server/src/runtime/production-domain.ts",
@@ -181,13 +179,7 @@ export default defineConfig({
         },
       },
       {
-        files: ["packages/inventory-react/src/**/*.{ts,tsx}"],
-        rules: {
-          "anti-slop/no-registry-context": "off",
-        },
-      },
-      {
-        files: ["packages/workspace/src/session-http.ts"],
+        files: ["apps/desktop/electron/workspace/session-http.ts"],
         rules: {
           "anti-slop/tagged-error-tag-matches-class": "off",
         },
@@ -225,7 +217,6 @@ export default defineConfig({
       "anti-slop/no-host-policy-call-in-component": "error",
       "anti-slop/no-node-fs-in-effect": "error",
       "anti-slop/no-plain-error-in-effect": "error",
-      "anti-slop/no-registry-context": "error",
       "anti-slop/no-yield-effect-fail": "error",
       "anti-slop/prefer-tagged-struct": "error",
       "anti-slop/service-id-shape": "error",

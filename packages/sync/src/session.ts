@@ -1,7 +1,5 @@
 import type { DeviceLabel, SyncProtocolError } from "@store/contracts";
-import * as Clock from "effect/Clock";
 import * as SecureRandom from "effect/crypto/SecureRandom";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -89,33 +87,3 @@ export const layerOwnedHttpSync = (
     Layer.provideMerge(SyncEngine.layer(engineOptions(options.policy, options.deviceLabel))),
     Layer.provide(Layer.fresh(SyncStateRef.layer)),
   );
-
-const LOCAL_SYNC_POLICY: SyncSchedulerPolicy = {
-  activePoll: Duration.infinity,
-  hiddenPoll: Duration.infinity,
-  liveIdlePoll: Duration.infinity,
-  digestVerificationIntervalMillis: "never",
-};
-
-const ownLocalSync: Effect.Effect<
-  SyncScheduler["Service"],
-  ReplicaStoreError,
-  ReplicaStore | SyncScheduler
-> = Effect.gen(function* () {
-  const store = yield* ReplicaStore;
-  const scheduler = yield* SyncScheduler;
-  const cursor = yield* store.readSyncCursor;
-  if (!cursor.bootstrapped) yield* store.recordCaughtUp(yield* Clock.currentTimeMillis);
-  yield* scheduler.setNetworkOwner(true);
-  return scheduler;
-});
-
-export const layerOwnedLocalSync: Layer.Layer<
-  SyncEngine | SyncScheduler,
-  SyncProtocolError | ReplicaStoreError,
-  ReplicaStore | SyncTransport | SecureRandom.SecureRandom
-> = Layer.effect(SyncScheduler, ownLocalSync).pipe(
-  Layer.provide(SyncScheduler.layer(LOCAL_SYNC_POLICY, { recovers: false })),
-  Layer.provideMerge(SyncEngine.layer(engineOptions(LOCAL_SYNC_POLICY))),
-  Layer.provide(Layer.fresh(SyncStateRef.layer)),
-);

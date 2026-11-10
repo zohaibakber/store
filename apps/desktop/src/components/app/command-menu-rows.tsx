@@ -2,7 +2,6 @@ import { ArrowDown01Icon, ArrowUp01Icon, CornerDownLeftIcon } from "@hugeicons/c
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Invoice, Product, ProductId, StockStatus } from "@store/contracts";
 import { formatInvoiceNumber, productStock } from "@store/contracts/store-helpers";
-import { useProductInsight, useSuspenseCatalogProduct } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Suspense, type ReactNode } from "react";
 
@@ -10,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { CommandShortcut } from "@/components/ui/command";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import type { RecentProduct } from "@/hooks/use-recent-products";
+import { useProductInsight } from "@/inventory/insights";
+import { useSuspenseCatalogProduct } from "@/inventory/queries";
 import { EMPTY, formatCount } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";

@@ -8,7 +8,6 @@ import {
   type Product,
   type ProductSuggestions,
 } from "@store/contracts";
-import { useCommand } from "@store/inventory-react";
 import { formOptions, useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
+import { useCommand } from "@/inventory/provider";
 import { toastFailure } from "@/lib/errors";
 import { formatNumber } from "@/lib/format";
 

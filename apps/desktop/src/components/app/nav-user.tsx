@@ -7,7 +7,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type StaffMember } from "@store/contracts";
-import { useCommand } from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
@@ -29,9 +28,10 @@ import {
   MenuTrigger,
 } from "@/components/ui/menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { useCommand } from "@/inventory/provider";
+import { OnDeviceStatus } from "@/inventory/sync-status";
 import { signOut, useAuth } from "@/lib/auth";
 import { toastFailure } from "@/lib/errors";
-import { OnDeviceStatus } from "@/lib/inventory/sync-status";
 import { usePublishInProgress } from "@/lib/local-publish";
 import { useWindowKeydown } from "@/lib/shortcuts";
 

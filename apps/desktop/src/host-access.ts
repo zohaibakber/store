@@ -4,8 +4,8 @@ import {
   type AuthenticatedWorkspaceSnapshot,
   type WorkspaceSnapshot,
 } from "@store/contracts";
-import type { InventoryScope } from "@store/inventory-react";
 
+import type { InventoryScope } from "@/inventory/host";
 import type { DeviceWorkspace } from "@/session/device-workspace";
 
 interface AccessLocation {

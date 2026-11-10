@@ -1,8 +1,10 @@
 import type { DeviceLabel, OrganizationId } from "@store/contracts";
-import type { WorkspaceToken } from "@store/contracts/replica";
+import type { WorkspaceState, WorkspaceToken } from "@store/contracts/replica";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MessageChannelMain } from "electron";
 
 import type { ReplicaFileRefused } from "../src/host/file-refusal";
@@ -54,6 +56,10 @@ export class ReplicaHost extends Context.Service<
       senderId: number,
       workspaceToken: string,
     ) => Effect.Effect<void, ReplicaWorkspaceRefused>;
+    readonly workspaceState: (
+      senderId: number,
+      workspaceToken: string,
+    ) => Stream.Stream<WorkspaceState, ReplicaWorkspaceRefused>;
     readonly backUp: (
       senderId: number,
     ) => Effect.Effect<typeof BackupSaved.Type, ReplicaFileRefused>;
@@ -113,6 +119,12 @@ export const makeReplicaHost = Effect.fn("ReplicaHost.make")(function* (
     retryRecovery: (senderId, workspaceToken) =>
       sessions.whenOwnedOpen(senderId, workspaceToken, "recovery retry", (session) =>
         Effect.all([session.supervisor.retry, session.reader.retry], { discard: true }),
+      ),
+    workspaceState: (senderId, workspaceToken) =>
+      Stream.unwrap(
+        sessions.whenOwnedOpen(senderId, workspaceToken, "state", (session) =>
+          Effect.succeed(SubscriptionRef.changes(session.state)),
+        ),
       ),
     backUp: (senderId) => provide(Effect.flatMap(current(senderId), backup.backUp)),
     chooseRestore: (senderId) => provide(Effect.flatMap(current(senderId), backup.chooseRestore)),

@@ -403,36 +403,21 @@ describe("durable object catalog writes", () => {
         const reconnected = yield* write("cmd-reconnected", [
           supplierWrite("sup-3", null, "Initech"),
         ]);
-        const standingOf = commands
-          .devices(actor)
-          .pipe(
-            Effect.map(
-              (listed) =>
-                listed.devices.find((device) => device.replicaId === LAST_UNIT_REPLICA_B) ?? null,
-            ),
-          );
-        const listedHolding = yield* standingOf;
-        yield* commands.commandDevice(actor, {
-          _tag: "IgnoreDevice",
-          replicaId: LAST_UNIT_REPLICA_B,
-        });
+        yield* db
+          .update(replicas)
+          .set({ ignoredAt: yield* Clock.currentTimeMillis })
+          .where(peer);
         const ignored = yield* write("cmd-ignored", [supplierWrite("sup-4", null, "Umbrella")]);
-        const listedIgnored = yield* standingOf;
-        yield* commands.commandDevice(actor, {
-          _tag: "HeedDevice",
-          replicaId: LAST_UNIT_REPLICA_B,
-        });
+        yield* db.update(replicas).set({ ignoredAt: null }).where(peer);
         const heeded = yield* write("cmd-heeded", [supplierWrite("sup-5", null, "Hooli")]);
-        yield* commands.commandDevice(actor, {
-          _tag: "RemoveDevice",
-          replicaId: LAST_UNIT_REPLICA_B,
-        });
+        yield* db
+          .update(replicas)
+          .set({ removedAt: yield* Clock.currentTimeMillis })
+          .where(peer);
         const removed = yield* write("cmd-removed", [supplierWrite("sup-5", null, "Hooli")]);
-        const listedRemoved = yield* standingOf;
         yield* TestClock.adjust("5 millis");
         yield* api.liveHorizon(actor, LAST_UNIT_REPLICA_B);
         const returned = yield* write("cmd-returned", [supplierWrite("sup-6", null, "Stark")]);
-        const listedReturned = yield* standingOf;
         yield* db
           .update(replicas)
           .set({ lastSeenAt: now - ACTIVE_REPLICA_WINDOW_MILLIS - 60_000 })
@@ -453,14 +438,10 @@ describe("durable object catalog writes", () => {
           abandoned,
           registeredAbandoned,
           reconnected,
-          listedHolding,
           ignored,
-          listedIgnored,
           heeded,
           removed,
-          listedRemoved,
           returned,
-          listedReturned,
           dormant,
           registeredClear,
           upgraded,
@@ -473,14 +454,10 @@ describe("durable object catalog writes", () => {
         expect(outcome.abandoned).toMatchObject(ACCEPTED);
         expect(outcome.registeredAbandoned.lowestActiveSchemaVersion).toBe(2);
         expect(outcome.reconnected).toEqual(rejection(staleReplicaRejection(null)));
-        expect(outcome.listedHolding).toMatchObject({ upToDate: false, holdsBack: true });
         expect(outcome.ignored).toMatchObject(ACCEPTED);
-        expect(outcome.listedIgnored).toMatchObject({ ignored: true, holdsBack: false });
         expect(outcome.heeded).toEqual(rejection(staleReplicaRejection(null)));
         expect(outcome.removed).toMatchObject(ACCEPTED);
-        expect(outcome.listedRemoved).toBeNull();
         expect(outcome.returned).toEqual(rejection(staleReplicaRejection(null)));
-        expect(outcome.listedReturned).toMatchObject({ ignored: false, holdsBack: true });
         expect(outcome.dormant).toMatchObject(ACCEPTED);
         expect(outcome.registeredClear.lowestActiveSchemaVersion).toBe(2);
         expect(outcome.upgraded).toMatchObject(ACCEPTED);

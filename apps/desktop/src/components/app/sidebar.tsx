@@ -10,7 +10,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits } from "@store/contracts";
-import { useCatalogIsReady, useInventoryInsights } from "@store/inventory-react";
 import type * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
@@ -27,7 +26,9 @@ import {
   SidebarMenuBadge,
   SidebarRail,
 } from "@/components/ui/sidebar";
-import { useFirstSyncPending } from "@/lib/inventory/provider";
+import { useInventoryInsights } from "@/inventory/insights";
+import { useCatalogIsReady } from "@/inventory/provider";
+import { useFirstSyncPending } from "@/inventory/provider";
 
 function RestockCountReady() {
   const counts = useInventoryInsights().summary?.counts;

@@ -1,11 +1,9 @@
 import {
   AcquireSnapshotResult,
-  OrganizationDevices,
   RegisterReplicaResult,
   SYNC_SCHEMA_VERSION,
   SyncProtocolError,
   type AcquireSnapshotRequest,
-  type DeviceCommand,
   type ImportCatalogRequest,
   type RegisterReplicaRequest,
   type SyncProtocolCode,
@@ -53,8 +51,6 @@ export type LiveHorizonReply = { readonly epoch: string; readonly horizon: strin
 
 export type RegisterReply = typeof RegisterReplicaResult.Encoded;
 
-export type DevicesReply = typeof OrganizationDevices.Encoded;
-
 export type SnapshotReply = typeof AcquireSnapshotResult.Encoded;
 
 export interface OrgAuthorityApi<R = never, E = never> {
@@ -80,11 +76,6 @@ export interface OrgAuthorityApi<R = never, E = never> {
     snapshotId: string,
     partNumber: number,
   ) => Effect.Effect<AuthorityReply<SnapshotPartReply>, E, R>;
-  readonly devices: (actor: Actor) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
-  readonly deviceCommand: (
-    actor: Actor,
-    command: DeviceCommand,
-  ) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
   readonly liveHorizon: (
     actor: Actor,
     replicaId: string,
@@ -231,17 +222,6 @@ const make = Effect.gen(function* () {
     return yield* serve(snapshots.readPart(actor, snapshotId, partNumber));
   });
 
-  const devices = Effect.fn("OrgAuthority.devices")(function* (actor: Actor) {
-    return yield* serve(engine.devices(actor, yield* Clock.currentTimeMillis));
-  });
-
-  const deviceCommand = Effect.fn("OrgAuthority.deviceCommand")(function* (
-    actor: Actor,
-    command: DeviceCommand,
-  ) {
-    return yield* serve(engine.deviceCommand(actor, command, yield* Clock.currentTimeMillis));
-  });
-
   const liveHorizon = Effect.fn("OrgAuthority.liveHorizon")(function* (
     actor: Actor,
     replicaId: string,
@@ -312,8 +292,6 @@ const make = Effect.gen(function* () {
     pull,
     acquireSnapshot,
     readSnapshotPart,
-    devices,
-    deviceCommand,
     liveHorizon,
     stageImportPart,
     commitImport,

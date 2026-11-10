@@ -1,5 +1,4 @@
 import type { PurchaseOrder, Supplier } from "@store/contracts";
-import type { ReceiveDeliveryLineInput } from "@store/inventory-react";
 import * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
@@ -13,6 +12,7 @@ import {
   SheetPopup,
   SheetTitle,
 } from "@/components/ui/sheet";
+import type { ReceiveDeliveryLineInput } from "@/inventory/commands";
 
 import { formatOrderNumber, UNKNOWN_SUPPLIER } from "./presentation";
 

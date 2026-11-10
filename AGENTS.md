@@ -85,9 +85,9 @@ say so in the PR.
 - Command state never crosses process boundaries as SQL or query IR. The
   renderer reaches the replica only through `InventoryReads` (named bounded
   reads), `InventoryStore` (domain commands, commit and health streams),
-  `InventoryInsights`, and `DesktopRpcs` (main-owned workspace state), all
-  Effect RPC over MessagePorts. Preload exposes only the shell-port handshake; every other shell command,
-  including open, close, backup, restore and publish, is a typed `ShellRpcs`
+  and `InventoryInsights`, all Effect RPC over MessagePorts. Preload exposes
+  only the shell-port handshake; every other shell command, including open,
+  close, backup, restore, publish and the workspace state stream, is a typed `ShellRpcs`
   call over a MessagePort that main serves only to the trusted main frame, once
   per document. Adding a read means adding a named member, not a
   parameter.

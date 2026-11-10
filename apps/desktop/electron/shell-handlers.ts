@@ -2,7 +2,6 @@ import path from "node:path";
 
 import { AuthClientError } from "@store/auth";
 import { isWhatsAppUrl } from "@store/services/purchasing";
-import { isUnreachable, type RequestError } from "@store/workspace";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -29,6 +28,7 @@ import { ReplicaHost } from "./replica-host";
 import { ShellEvents } from "./shell-events";
 import { saveThemeSource } from "./theme-source";
 import { Updater } from "./updater";
+import { isUnreachable, type RequestError } from "./workspace/session-http";
 
 const GOOGLE_CALLBACK_INVALID = "The Google callback is invalid.";
 const GOOGLE_URL_REFUSED = "Only Google authorization URLs can be opened.";
@@ -137,14 +137,11 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
       AuthUpdateOrganization: ({ input }) => serverFailure(auth.updateOrganization(input)),
       SessionChanges: () => Stream.fromPubSub(events.session),
       OAuthCallbacks: () => Stream.fromQueue(events.oauthCallbacks),
-      InventoryHttpConfig: () =>
-        Effect.map(deviceId, (id) => ({ apiBaseUrl: shell.apiBaseUrl, deviceId: id })),
       ReplicaOpen: ({ identity }) =>
-        replicas
-          .open(sender, identity)
-          .pipe(
-            Effect.mapError((failure) => new WorkspaceOpenFailed({ message: failure.message })),
-          ),
+        deviceId.pipe(
+          Effect.flatMap((replicaId) => replicas.open(sender, { ...identity, replicaId })),
+          Effect.mapError((failure) => new WorkspaceOpenFailed({ message: failure.message })),
+        ),
       ReplicaClose: ({ workspaceToken }) =>
         replicas
           .close(sender.id, workspaceToken)
@@ -153,6 +150,10 @@ export const ShellHandlersLive = ShellRpcs.toLayer(
         replicas
           .retryRecovery(sender.id, workspaceToken)
           .pipe(Effect.mapError((failure) => new WorkspaceRefused({ message: failure.message }))),
+      WorkspaceState: ({ workspaceToken }) =>
+        replicas
+          .workspaceState(sender.id, workspaceToken)
+          .pipe(Stream.mapError((failure) => new WorkspaceRefused({ message: failure.message }))),
       BackUp: () => replicas.backUp(sender.id),
       ChooseRestore: () => replicas.chooseRestore(sender.id),
       ApplyRestore: () => replicas.applyRestore(sender.id),

@@ -3,7 +3,7 @@ import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 
 import type { CatalogOpenFailure } from "./errors";
-import type { InventoryHost, InventoryScope } from "./host";
+import type { InventoryScope } from "./host";
 import type { Inventory, InventoryState } from "./types";
 import { openCatalog } from "./workspace";
 
@@ -16,9 +16,9 @@ export type Catalogs = {
 
 export const claimedCatalogScope = Atom.make(Option.none<InventoryScope>()).pipe(Atom.keepAlive);
 
-export const makeCatalogs = (host: InventoryHost): Catalogs => {
+export const makeCatalogs = (): Catalogs => {
   const catalog = Atom.family((scope: InventoryScope): CatalogOpening =>
-    Atom.make(openCatalog(host, scope)).pipe(Atom.setIdleTTL(0)),
+    Atom.make(openCatalog(scope)).pipe(Atom.setIdleTTL(0)),
   );
   const held = Atom.make((get) => {
     const scope = get(claimedCatalogScope);

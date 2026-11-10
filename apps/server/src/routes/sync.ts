@@ -92,8 +92,6 @@ const publishOwnerRequired = ownerRefusal(
   "Only an owner can move a device's data into this organization.",
 );
 
-const devicesOwnerRequired = ownerRefusal("Only an owner can manage this organization's devices.");
-
 const asOwner = <A, R>(
   refusal: SyncForbidden,
   run: (actor: Actor) => Effect.Effect<A, InventoryError, R>,
@@ -212,20 +210,6 @@ export const SyncHandlers = HttpApiBuilder.group(
         Effect.fn("SyncHandlers.readImportStatus")(function* ({ params }) {
           return yield* asOwner(publishOwnerRequired, (actor) =>
             authority.importStatus(actor, params.importId),
-          );
-        }),
-      )
-      .handle(
-        "listDevices",
-        Effect.fn("SyncHandlers.listDevices")(function* () {
-          return yield* asOwner(devicesOwnerRequired, (actor) => authority.devices(actor));
-        }),
-      )
-      .handle(
-        "commandDevice",
-        Effect.fn("SyncHandlers.commandDevice")(function* ({ payload }) {
-          return yield* asOwner(devicesOwnerRequired, (actor) =>
-            authority.commandDevice(actor, payload),
           );
         }),
       );

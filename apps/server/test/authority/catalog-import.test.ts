@@ -42,8 +42,6 @@ import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore, SyncEngine, SyncTransport } from "@store/sync";
 import {
   layerSqliteReplicaStore,
-  LocalAuthority,
-  LOCAL_AUTHORITY_EPOCH,
   SqliteReplica,
   sqliteCatalogParts,
   sqlitePartitionDigest,
@@ -378,13 +376,10 @@ const catalogOf = (handle: SqliteReplicaHandle) =>
 
 const localWorkspace = (importId: string) =>
   Effect.gen(function* () {
-    const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
     const handle = yield* SqliteReplica;
-    yield* engine.ensureRegistered;
     for (const command of localHistory) {
       yield* store.enqueueCommand(queued(command));
-      yield* engine.drainUploads;
     }
     const digest = yield* sqlitePartitionDigest(handle.db);
     const parts = yield* sqliteCatalogParts(handle.db, {
@@ -394,18 +389,13 @@ const localWorkspace = (importId: string) =>
     return { digest, parts, catalog: yield* catalogOf(handle) };
   }).pipe(
     Effect.provide(
-      freshSyncEngine().pipe(
-        Layer.provide(SequentialCrypto),
-        Layer.provideMerge(LocalAuthority.layer),
-        Layer.provideMerge(
-          layerSqliteReplicaStore("import-local", { authority: LocalAuthority.submitWithin }),
-        ),
+      layerSqliteReplicaStore("import-local", { decidesLocally: true }).pipe(
         Layer.provideMerge(
           seededReplica({
             organizationId: LOCAL_ORGANIZATION_ID,
             userId: LOCAL_USER_ID,
             replicaId: DEVICE,
-            epoch: LOCAL_AUTHORITY_EPOCH,
+            epoch: "1",
           }),
         ),
       ),

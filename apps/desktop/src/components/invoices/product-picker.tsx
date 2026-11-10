@@ -2,7 +2,6 @@ import { Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, ProductId } from "@store/contracts";
 import { productStock } from "@store/contracts/store-helpers";
-import { useSuspenseProductSearch } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Suspense, useDeferredValue, useRef, useState } from "react";
 
@@ -22,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-products";
+import { useSuspenseProductSearch } from "@/inventory/queries";
 import { formatNumber } from "@/lib/format";
 import { SALE_SEARCH_LIMIT } from "@/lib/sale-drafts";
 import { isEditableTarget, isInListbox, useWindowKeydown } from "@/lib/shortcuts";

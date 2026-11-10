@@ -7,13 +7,13 @@ import { NotFound } from "@/components/app/not-found";
 import { ToastProvider } from "@/components/ui/toast";
 import { useAppUpdater } from "@/hooks/use-app-updater";
 import type { HostAccessPolicy } from "@/host-access";
+import type { Catalogs } from "@/inventory/opening";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import type { HostInventory } from "@/lib/inventory/host-inventory";
 import { workspaceSessionAtom } from "@/session/workspace-session";
 
 interface RouterContext {
   readonly access: HostAccessPolicy;
-  readonly inventory: HostInventory;
+  readonly inventory: Catalogs;
   readonly registry: AtomRegistry.AtomRegistry;
 }
 

@@ -1,7 +1,6 @@
 import { PlusSignCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Supplier } from "@store/contracts";
-import { useCommand } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 import * as React from "react";
 
@@ -15,6 +14,7 @@ import {
   ComboboxSeparator,
 } from "@/components/ui/combobox";
 import { toastManager } from "@/components/ui/toast";
+import { useCommand } from "@/inventory/provider";
 import { toastFailure } from "@/lib/errors";
 
 type SupplierOption = {

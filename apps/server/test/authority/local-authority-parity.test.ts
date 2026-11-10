@@ -10,7 +10,8 @@ import {
   type CommandReceipt,
   type EnqueueCommandRequest,
   type SyncCommand,
-  type SyncSubmitCommandRequest,
+  type SyncCommandEnvelope,
+  type SyncLogChange,
   type SyncSubmitCommandResult,
   OperationId,
   Money,
@@ -39,17 +40,24 @@ import {
   lastUnitBuyerBCommand,
 } from "@store/contracts/sync/fixtures";
 import { replicaState } from "@store/db/replica.schema";
-import { ReplicaStore, SyncEngine, SyncTransport } from "@store/sync";
-import { layerSqliteReplicaStore, LocalAuthority, SqliteReplica } from "@store/sync/sql-client";
+import { ReplicaStore } from "@store/sync";
+import { decideCommandWithin, type Decision } from "@store/sync/authority";
+import {
+  layerSqliteReplicaStore,
+  runReplicaTransaction,
+  SqliteReplica,
+  sqlitePartitionDigest,
+} from "@store/sync/sql-client";
 import { layerNodeSqliteReplica } from "@store/sync/sqlite";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
-import { freshSyncEngine } from "../lib/sync-engine";
-import { scenario, SequentialCrypto, TestAuthorities } from "./harness";
+import { scenario, TestAuthorities } from "./harness";
 
 const USER_ID = "user-1";
 const OCCURRED_AT = lastUnitBuyerACommand.occurredAt;
@@ -61,18 +69,15 @@ const PACK_BATCH = decodeBatchId("batch-packs");
 const PACKED_PRODUCT = decodeProductId("prod-packed");
 const LOOSE_PRODUCT = decodeProductId("prod-loose");
 
-type DecisionPath = "queued" | "inline";
-
-const DECISION_PATHS: ReadonlyArray<DecisionPath> = ["queued", "inline"];
-
-type LocalSubmission = {
-  readonly request: SyncSubmitCommandRequest;
-  readonly result: SyncSubmitCommandResult;
+type Decided = {
+  readonly result: CommandReceipt["result"];
+  readonly changes: ReadonlyArray<SyncLogChange>;
 };
 
 type TwinDecision = {
-  readonly local: SyncSubmitCommandResult;
-  readonly authority: SyncSubmitCommandResult;
+  readonly local: Decided;
+  readonly authority: Decided;
+  readonly enqueued: string;
 };
 
 const seededReplica = (organizationId: string) =>
@@ -96,66 +101,36 @@ const seededReplica = (organizationId: string) =>
     ),
   ).pipe(Layer.provideMerge(layerNodeSqliteReplica()));
 
-const recordingLocalAuthority = (submissions: Array<LocalSubmission>) =>
-  Layer.effect(
-    SyncTransport,
-    SyncTransport.use((authority) =>
-      Effect.succeed({
-        ...authority,
-        submitCommand: (request: SyncSubmitCommandRequest) =>
-          authority
-            .submitCommand(request)
-            .pipe(Effect.tap((result) => Effect.sync(() => submissions.push({ request, result })))),
-      }),
-    ),
-  ).pipe(Layer.provide(LocalAuthority.layer));
-
-const recordingStore = (
-  organizationId: string,
-  submissions: Array<LocalSubmission>,
-  path: DecisionPath,
-) => {
-  switch (path) {
-    case "queued":
-      return layerSqliteReplicaStore(`parity-${organizationId}`);
-    case "inline":
-      return layerSqliteReplicaStore(`parity-${organizationId}`, {
-        authority: (tx, request) =>
-          LocalAuthority.submitWithin(tx, request).pipe(
-            Effect.tap((result) => Effect.sync(() => submissions.push({ request, result }))),
-          ),
-      });
-  }
-};
-
-const twinLayer = (
-  organizationId: string,
-  submissions: Array<LocalSubmission>,
-  path: DecisionPath = "queued",
-) =>
-  Layer.mergeAll(
-    freshSyncEngine().pipe(
-      Layer.provide(SequentialCrypto),
-      Layer.provideMerge(recordingLocalAuthority(submissions)),
-      Layer.provideMerge(recordingStore(organizationId, submissions, path)),
-      Layer.provideMerge(seededReplica(organizationId)),
-    ),
+const deviceLayer = (organizationId: string) =>
+  layerSqliteReplicaStore(`parity-${organizationId}`, { decidesLocally: true }).pipe(
+    Layer.provideMerge(seededReplica(organizationId)),
   );
 
-const receiptOf = ({ page: _page, ...receipt }: SyncSubmitCommandResult) => receipt;
+const decidedLocally = (decision: Decision): Decided =>
+  Result.match(decision, {
+    onSuccess: ({ result, changes }) => ({ result, changes }),
+    onFailure: ({ code, message }) => ({
+      result: { _tag: "rejected", code, message },
+      changes: [],
+    }),
+  });
 
-const outcomeOf = (result: SyncSubmitCommandResult) =>
-  result.result._tag === "rejected"
-    ? `${result.result.code}: ${result.result.message}`
-    : result.result._tag;
+const decidedRemotely = (result: SyncSubmitCommandResult): Decided => ({
+  result: result.result,
+  changes: result.page?.transactions.flatMap((group) => group.changes) ?? [],
+});
+
+const outcomeOf = (decided: Decided) =>
+  decided.result._tag === "rejected"
+    ? `${decided.result.code}: ${decided.result.message}`
+    : decided.result._tag;
 
 type Steps = ReadonlyArray<ReadonlyArray<EnqueueCommandRequest>>;
 
-const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmission>) =>
+const openTwin = (organizationId: OrganizationId) =>
   Effect.gen(function* () {
-    const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
-    const localAuthority = yield* SyncTransport;
+    const replica = yield* SqliteReplica;
     const authorities = yield* TestAuthorities;
     yield* authorities.open(organizationId);
     const authority = typedCommands(yield* OrganizationAuthority);
@@ -164,118 +139,104 @@ const openTwin = (organizationId: OrganizationId, submissions: Array<LocalSubmis
       replicaId: LAST_UNIT_REPLICA_A,
       schemaVersion: SYNC_SCHEMA_VERSION,
     });
-    yield* engine.ensureRegistered;
+    let sent = 0;
+    let head = OrgCommitSequence.make("0");
+
+    const envelopeOf = (command: SyncCommand, operationId = command.payload.commandId) =>
+      Effect.gen(function* () {
+        sent += 1;
+        return {
+          organizationId,
+          epoch: LAST_UNIT_EPOCH,
+          replicaId: LAST_UNIT_REPLICA_A,
+          clientSequence: ReplicaClientSequence.make(String(sent)),
+          operationId: OperationId.make(operationId),
+          payloadHash: yield* canonicalPayloadHash(command),
+          command,
+        } satisfies SyncCommandEnvelope;
+      });
+
+    const decideLocally = (envelope: SyncCommandEnvelope) =>
+      runReplicaTransaction(replica, (tx) => decideCommandWithin(tx, actor, envelope)).pipe(
+        Effect.map(decidedLocally),
+      );
+
+    const decideRemotely = (envelope: SyncCommandEnvelope) =>
+      authority.submit(actor, { ...envelope, afterCommitSequence: head }).pipe(
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            head = result.commitSequence;
+          }),
+        ),
+        Effect.map(decidedRemotely),
+      );
 
     const decide = (steps: Steps) =>
       Effect.gen(function* () {
         const decisions: Array<TwinDecision> = [];
-        for (const step of steps) {
-          const decidedBefore = submissions.length;
-          for (const request of step) yield* store.enqueueCommand(request);
-          yield* engine.drainUploads;
-          for (const { request, result } of submissions.slice(decidedBefore)) {
-            decisions.push({
-              local: result,
-              authority: yield* authority.submit(actor, request),
-            });
-          }
+        for (const request of steps.flat()) {
+          const envelope = yield* envelopeOf(request.command, request.operationId);
+          const local = yield* decideLocally(envelope);
+          const enqueued = yield* Effect.exit(store.enqueueCommand(request));
+          decisions.push({
+            local,
+            authority: yield* decideRemotely(envelope),
+            enqueued: Exit.match(enqueued, {
+              onSuccess: ({ value }) => value.status,
+              onFailure: () => "refused",
+            }),
+          });
         }
         return decisions;
       });
 
-    return { actor, store, localAuthority, authority, decide };
+    const digests = Effect.gen(function* () {
+      const page = yield* authority.pull(actor, {
+        epoch: LAST_UNIT_EPOCH,
+        subscription: OPERATIONAL_SUBSCRIPTION,
+        afterCommitSequence: head,
+        digestVersion: PARTITION_DIGEST_VERSION,
+      });
+      return {
+        local: (yield* runReplicaTransaction(replica, sqlitePartitionDigest))?.digest,
+        authority: page.digest?.digest,
+      };
+    });
+
+    return { store, envelopeOf, decideLocally, decideRemotely, decide, digests };
   });
 
-const decideOnBoth = (organization: string, steps: Steps, path: DecisionPath = "queued") => {
-  const organizationId = decodeOrganizationId(`${organization}-${path}`);
-  const submissions: Array<LocalSubmission> = [];
+const decideOnBoth = (organization: string, steps: Steps) => {
+  const organizationId = decodeOrganizationId(organization);
   return Effect.gen(function* () {
-    const { actor, store, localAuthority, authority, decide } = yield* openTwin(
-      organizationId,
-      submissions,
-    );
-    const decisions = yield* decide(steps);
-
-    const last = submissions.at(-1);
-    const repeated =
-      last === undefined
-        ? undefined
-        : {
-            local: yield* localAuthority.submitCommand(last.request),
-            authority: yield* authority.submit(actor, last.request),
-          };
-
-    const head = OrgCommitSequence.make((yield* store.readSyncCursor).appliedCommitSequence);
-    const cursor = {
-      epoch: LAST_UNIT_EPOCH,
-      subscription: OPERATIONAL_SUBSCRIPTION,
-      afterCommitSequence: head,
-    };
-    const localPage = yield* localAuthority.pull(cursor);
-    const authorityPage = yield* authority.pull(actor, {
-      ...cursor,
-      digestVersion: PARTITION_DIGEST_VERSION,
-    });
-    const digest = yield* store.integrateAuthority({
-      payload: {
-        _tag: "pullPage",
-        page: { ...authorityPage, incarnation: localPage.incarnation },
-      },
-    });
-    return { decisions, repeated, localPage, authorityPage, digest: digest.value };
-  }).pipe(Effect.provide(twinLayer(organizationId, submissions, path)), Effect.scoped);
+    const twin = yield* openTwin(organizationId);
+    const decisions = yield* twin.decide(steps);
+    return { decisions, digests: yield* twin.digests };
+  }).pipe(Effect.provide(deviceLayer(organizationId)), Effect.scoped);
 };
 
 const decideUnqueuedOnBoth = (organization: string, setup: Steps, command: SyncCommand) => {
   const organizationId = decodeOrganizationId(organization);
-  const submissions: Array<LocalSubmission> = [];
   return Effect.gen(function* () {
-    const { actor, store, localAuthority, authority, decide } = yield* openTwin(
-      organizationId,
-      submissions,
-    );
-    yield* decide(setup);
-    const request: SyncSubmitCommandRequest = {
-      organizationId,
-      epoch: LAST_UNIT_EPOCH,
-      replicaId: LAST_UNIT_REPLICA_A,
-      clientSequence: ReplicaClientSequence.make(String(submissions.length + 1)),
-      operationId: OperationId.make(command.payload.commandId),
-      payloadHash: yield* canonicalPayloadHash(command),
-      command,
-      afterCommitSequence: OrgCommitSequence.make(
-        (yield* store.readSyncCursor).appliedCommitSequence,
-      ),
-    };
+    const twin = yield* openTwin(organizationId);
+    yield* twin.decide(setup);
+    const envelope = yield* twin.envelopeOf(command);
     return {
-      local: yield* localAuthority.submitCommand(request),
-      redecided: yield* localAuthority.submitCommand(request),
-      authority: yield* authority.submit(actor, request),
+      local: yield* twin.decideLocally(envelope),
+      redecided: yield* twin.decideLocally(envelope),
+      authority: yield* twin.decideRemotely(envelope),
     };
-  }).pipe(Effect.provide(twinLayer(organizationId, submissions)), Effect.scoped);
+  }).pipe(Effect.provide(deviceLayer(organizationId)), Effect.scoped);
 };
 
 const expectParity = (twin: Effect.Success<ReturnType<typeof decideOnBoth>>) => {
-  for (const { local, authority } of twin.decisions) {
-    expect(local.page?.transactions).toStrictEqual(authority.page?.transactions);
-    expect(local.page?.transactions).toHaveLength(1);
-    expect(local.page?.nextCommitSequence).toBe(authority.page?.nextCommitSequence);
-    expect(local.page?.horizon).toBe(authority.page?.horizon);
-    expect(receiptOf(local)).toStrictEqual(receiptOf(authority));
+  expect(twin.decisions.length).toBeGreaterThan(0);
+  for (const { local, authority, enqueued } of twin.decisions) {
+    expect(local).toStrictEqual(authority);
+    expect(enqueued).toBe(local.result._tag === "rejected" ? "refused" : "integrated");
   }
-  const lastDecision = twin.decisions.at(-1);
-  expect(lastDecision).toBeDefined();
-  expect(twin.repeated && receiptOf(twin.repeated.local)).toStrictEqual(
-    lastDecision && receiptOf(lastDecision.local),
-  );
-  expect(twin.repeated && receiptOf(twin.repeated.authority)).toStrictEqual(
-    lastDecision && receiptOf(lastDecision.authority),
-  );
-  expect(twin.localPage.transactions).toEqual([]);
-  expect(twin.localPage.digest).toBeUndefined();
-  expect(twin.authorityPage.transactions).toEqual([]);
-  expect(twin.authorityPage.digest).toBeDefined();
-  expect(twin.digest).toMatchObject({ repairRequired: false, digestVerified: true });
+  expect(twin.digests.authority).toBeDefined();
+  expect(twin.digests.local).toBe(twin.digests.authority);
 };
 
 const queued = (
@@ -680,501 +641,457 @@ const importedLines = (
   ]);
 
 describe("the local authority decides like the durable object authority", () => {
-  for (const path of DECISION_PATHS) {
-    it.effect(
-      `emits the same groups for catalog inserts, updates, deletes and their stock movements when ${path}`,
-      () =>
-        Effect.gen(function* () {
-          const twin = yield* decideOnBoth(
-            "org-parity-catalog",
-            [
-              [
-                queued(
-                  catalog("stock", [
-                    categoryWrite("cat-1", "Painkillers"),
-                    productWrite("prod-1", {
-                      categoryId: "cat-1",
-                      name: "Panadol",
-                      unitsPerPack: 10,
-                    }),
-                    batchWrite("batch-1", {
-                      productId: "prod-1",
-                      movementId: "mv-stock",
-                      packQuantity: 2,
-                      unitQuantity: 0,
-                    }),
-                    batchWrite(SPARE_BATCH, {
-                      productId: "prod-1",
-                      movementId: "mv-spare",
-                      packQuantity: 0,
-                      unitQuantity: 0,
-                    }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("edit", [
-                    categoryWrite("cat-1", "Pain relief", 1),
-                    productWrite(
-                      "prod-1",
-                      {
-                        categoryId: "cat-1",
-                        name: "Panadol Extra",
-                        unitsPerPack: 10,
-                        retailPrice: 120,
-                      },
-                      1,
-                    ),
-                    batchWrite(
-                      "batch-1",
-                      {
-                        productId: "prod-1",
-                        movementId: "mv-recount",
-                        packQuantity: 3,
-                        unitQuantity: 5,
-                        note: "Recount",
-                      },
-                      1,
-                    ),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("shrink", [
-                    batchWrite(
-                      "batch-1",
-                      {
-                        productId: "prod-1",
-                        movementId: "mv-shrink",
-                        packQuantity: 1,
-                        unitQuantity: 0,
-                      },
-                      2,
-                    ),
-                    batchWrite(
-                      "batch-1",
-                      {
-                        productId: "prod-1",
-                        movementId: "mv-relabel",
-                        packQuantity: 1,
-                        unitQuantity: 0,
-                      },
-                      3,
-                    ),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("second", [
-                    categoryWrite("cat-2", "Vitamins"),
-                    productWrite("prod-2", {
-                      categoryId: "cat-2",
-                      name: "Vitamin C",
-                      unitsPerPack: 1,
-                    }),
-                    batchWrite("batch-3", {
-                      productId: "prod-2",
-                      movementId: "mv-vitamins",
-                      packQuantity: 0,
-                      unitQuantity: 4,
-                    }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("empty", [
-                    batchWrite(
-                      "batch-3",
-                      {
-                        productId: "prod-2",
-                        movementId: "mv-empty",
-                        packQuantity: 0,
-                        unitQuantity: 0,
-                      },
-                      1,
-                    ),
-                  ]),
-                ),
-                queued(
-                  catalog("drop-batches", [
-                    removal("batch", "batch-3", 2),
-                    removal("batch", SPARE_BATCH, 1),
-                  ]),
-                ),
-                queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
-                queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
-              ],
-            ],
-            path,
-          );
-
-          expectParity(twin);
-          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-            Array.from({ length: 8 }, () => "catalogWrite"),
-          );
-          expect(
-            twin.decisions.map(({ local }) =>
-              local.page?.transactions[0]?.changes.map(
-                (change) => `${change.action} ${change.entity}`,
-              ),
-            ),
-          ).toEqual([
-            [
-              "upsert category",
-              "upsert product",
-              "upsert batch",
-              "upsert stockMovement",
-              "upsert batch",
-            ],
-            ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-            ["upsert batch", "upsert stockMovement", "upsert batch"],
-            ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
-            ["upsert batch", "upsert stockMovement"],
-            ["delete batch", "delete batch"],
-            ["delete product"],
-            ["delete category"],
-          ]);
-        }).pipe(scenario),
-    );
-  }
-
-  for (const path of DECISION_PATHS) {
-    it.effect(
-      `emits the same groups for sales, including packs opened across batches, when ${path}`,
-      () =>
-        Effect.gen(function* () {
-          const twin = yield* decideOnBoth(
-            "org-parity-sales",
-            [
-              [seedSales(10, 2, 1)],
-              [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
-              [
-                queued(
-                  sale("sale-split", 2, [
-                    { quantity: 6, packsOpened: 1 },
-                    { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  sale(
-                    "sale-pack",
-                    3,
-                    [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }],
-                    {
-                      customerName: "  Ada Lovelace  ",
-                    },
-                  ),
-                ),
-                queued(sale("sale-loose", 4, [{ quantity: 3 }])),
-              ],
-              [queued(sale("sale-twice", 5, [{ quantity: 1 }, { quantity: 2, packsOpened: 1 }]))],
-            ],
-            path,
-          );
-
-          expectParity(twin);
-          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
-            "catalogWrite",
-            "issueInvoice",
-            "issueInvoice",
-            "issueInvoice",
-            "issueInvoice",
-            "issueInvoice",
-          ]);
-          expect(
-            twin.decisions[2]?.local.page?.transactions[0]?.changes.map((change) => change.entity),
-          ).toEqual([
-            "invoice",
-            "batch",
-            "invoiceItem",
-            "stockMovement",
-            "stockMovement",
-            "batch",
-            "invoiceItem",
-            "stockMovement",
-            "stockMovement",
-          ]);
-        }).pipe(scenario),
-    );
-  }
-
-  for (const path of DECISION_PATHS) {
-    it.effect(
-      `emits the same groups for suppliers, orders, lines and deliveries when ${path}`,
-      () =>
-        Effect.gen(function* () {
-          const twin = yield* decideOnBoth(
-            "org-parity-purchasing",
-            [
-              [seedPurchasing],
-              [draftOrder],
-              [sendOrder],
-              [partialDelivery],
-              [
-                queued(
-                  catalog("receive-rest", [
-                    productWrite(
-                      PACKED_PRODUCT,
-                      { categoryId: GENERAL, name: "Packed", unitsPerPack: 10, retailPrice: 130 },
-                      1,
-                    ),
-                    deliveryWrite("batch-rest", {
-                      productId: PACKED_PRODUCT,
-                      lineId: "po-1-packed",
-                      movementId: "mv-rest",
-                      packQuantity: 1,
-                      unitQuantity: 5,
-                    }),
-                    deliveryWrite("batch-loose", {
-                      productId: LOOSE_PRODUCT,
-                      lineId: "po-1-loose",
-                      movementId: "mv-loose",
-                      packQuantity: 0,
-                      unitQuantity: 20,
-                    }),
-                    deliveryWrite("batch-nothing", {
-                      productId: LOOSE_PRODUCT,
-                      lineId: "po-1-loose",
-                      movementId: "mv-nothing",
-                      packQuantity: 0,
-                      unitQuantity: 0,
-                    }),
-                  ]),
-                ),
-              ],
-              [closeOrder],
-              [
-                queued(
-                  catalog("draft-2", [
-                    orderWrite("po-2", { orderNumber: 2, supplierId: "sup-globex", total: 400 }),
-                    lineWrite("po-2-packed", {
-                      purchaseOrderId: "po-2",
-                      productId: PACKED_PRODUCT,
-                      quantity: 1,
-                      quantityType: "pack",
-                      baseUnitQuantity: 10,
-                      packCost: 400,
-                    }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("cancel-2", [
-                    orderWrite(
-                      "po-2",
-                      { orderNumber: 2, supplierId: "sup-globex", status: "cancelled", total: 400 },
-                      1,
-                    ),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("draft-taken-number", [
-                    orderWrite("po-3", { orderNumber: 1, supplierId: "sup-globex" }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("replace-highest", [
-                    removal("purchaseOrder", "po-3", 1),
-                    orderWrite("po-4", { orderNumber: 2, supplierId: "sup-acme" }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("add-line", [
-                    lineWrite("po-4-loose", {
-                      purchaseOrderId: "po-4",
-                      productId: LOOSE_PRODUCT,
-                      quantity: 6,
-                      quantityType: "unit",
-                      baseUnitQuantity: 6,
-                    }),
-                  ]),
-                ),
-                queued(
-                  catalog("edit-line", [
-                    lineWrite(
-                      "po-4-loose",
-                      {
-                        purchaseOrderId: "po-4",
-                        productId: PACKED_PRODUCT,
-                        quantity: 2,
-                        quantityType: "pack",
-                        baseUnitQuantity: 20,
-                        packCost: 450,
-                      },
-                      1,
-                    ),
-                  ]),
-                ),
-                queued(
-                  catalog("reissue", [
-                    removal("purchaseOrderItem", "po-4-loose", 2),
-                    removal("purchaseOrder", "po-4", 1),
-                    orderWrite("po-5", { orderNumber: 3, supplierId: "sup-globex" }),
-                    orderWrite("po-6", { orderNumber: 3, supplierId: "sup-globex" }),
-                  ]),
-                ),
-              ],
-              [
-                queued(
-                  catalog("rename-supplier", [
-                    supplierWrite("sup-globex", { name: "Globex Corp" }, 1),
-                    supplierWrite("sup-initech", { name: "Initech" }),
-                  ]),
-                ),
-                queued(
-                  catalog("regroup", [
-                    orderWrite("po-5", { orderNumber: 3, supplierId: "sup-initech" }, 1),
-                    supplierWrite("sup-hooli", { name: "Hooli" }),
-                    removal("supplier", "sup-hooli", 1),
-                  ]),
-                ),
-              ],
-            ],
-            path,
-          );
-
-          expectParity(twin);
-          expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
-            Array.from({ length: 15 }, () => "catalogWrite"),
-          );
-          expect(
-            twin.decisions.map(({ local }) =>
-              local.page?.transactions[0]?.changes.map(
-                (change) => `${change.action} ${change.entity}`,
-              ),
-            ),
-          ).toEqual([
-            [
-              "upsert category",
-              "upsert product",
-              "upsert product",
-              "upsert supplier",
-              "upsert supplier",
-            ],
-            ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
-            ["upsert purchaseOrder"],
-            ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
-            [
-              "upsert product",
-              "upsert batch",
-              "upsert stockMovement",
-              "upsert purchaseOrderItem",
-              "upsert batch",
-              "upsert stockMovement",
-              "upsert purchaseOrderItem",
-              "upsert batch",
-              "upsert purchaseOrderItem",
-            ],
-            ["upsert purchaseOrder"],
-            ["upsert purchaseOrder", "upsert purchaseOrderItem"],
-            ["upsert purchaseOrder"],
-            ["upsert purchaseOrder"],
-            ["delete purchaseOrder", "upsert purchaseOrder"],
-            ["upsert purchaseOrderItem"],
-            ["upsert purchaseOrderItem"],
-            [
-              "delete purchaseOrderItem",
-              "delete purchaseOrder",
-              "upsert purchaseOrder",
-              "upsert purchaseOrder",
-            ],
-            ["upsert supplier", "upsert supplier"],
-            ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
-          ]);
-        }).pipe(scenario),
-    );
-  }
-
-  for (const path of DECISION_PATHS) {
-    it.effect(
-      `emits the same groups for an import that opens its own category, in one write or split, when ${path}`,
-      () =>
-        Effect.gen(function* () {
-          const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
-          const twin = yield* decideOnBoth(
-            "org-parity-import",
-            [
-              [
-                queued(
-                  catalog("import-small", [
-                    categoryWrite("cat-small", "Small import"),
-                    ...importedLines("cat-small", 0, 2),
-                  ]),
-                ),
-              ],
-              [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
-              [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
-              [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
-            ],
-            path,
-          );
-
-          expectParity(twin);
-          expect(twin.decisions.map(({ local }) => local.result)).toEqual([
-            { _tag: "catalogWrite", rowsWritten: 5 },
-            { _tag: "catalogWrite", rowsWritten: 1 },
-            { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
-            { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
-          ]);
-        }).pipe(scenario),
-      120_000,
-    );
-  }
-
   it.effect(
-    "refuses at enqueue what the authority rejects, and keeps no trace, when the store decides",
+    `emits the same groups for catalog inserts, updates, deletes and their stock movements`,
     () =>
       Effect.gen(function* () {
-        const organizationId = decodeOrganizationId("org-parity-refusal");
-        const submissions: Array<LocalSubmission> = [];
-        const refusal = yield* Effect.gen(function* () {
-          const { actor, store, authority, decide } = yield* openTwin(organizationId, submissions);
-          yield* decide(REPACKED);
-          const before = yield* store.readSyncCursor;
-          const decidedBefore = submissions.length;
-          const failure = yield* Effect.flip(store.enqueueCommand(queued(stalePriceDelivery)));
-          const refused = submissions.slice(decidedBefore);
-          return {
-            failure,
-            decisions: refused.length,
-            authority: yield* Effect.forEach(refused, ({ request }) =>
-              authority.submit(actor, request),
+        const twin = yield* decideOnBoth("org-parity-catalog", [
+          [
+            queued(
+              catalog("stock", [
+                categoryWrite("cat-1", "Painkillers"),
+                productWrite("prod-1", {
+                  categoryId: "cat-1",
+                  name: "Panadol",
+                  unitsPerPack: 10,
+                }),
+                batchWrite("batch-1", {
+                  productId: "prod-1",
+                  movementId: "mv-stock",
+                  packQuantity: 2,
+                  unitQuantity: 0,
+                }),
+                batchWrite(SPARE_BATCH, {
+                  productId: "prod-1",
+                  movementId: "mv-spare",
+                  packQuantity: 0,
+                  unitQuantity: 0,
+                }),
+              ]),
             ),
-            status: yield* store.readCommandStatus(
-              OperationId.make(stalePriceDelivery.payload.commandId),
+          ],
+          [
+            queued(
+              catalog("edit", [
+                categoryWrite("cat-1", "Pain relief", 1),
+                productWrite(
+                  "prod-1",
+                  {
+                    categoryId: "cat-1",
+                    name: "Panadol Extra",
+                    unitsPerPack: 10,
+                    retailPrice: 120,
+                  },
+                  1,
+                ),
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-recount",
+                    packQuantity: 3,
+                    unitQuantity: 5,
+                    note: "Recount",
+                  },
+                  1,
+                ),
+              ]),
             ),
-            before,
-            after: yield* store.readSyncCursor,
-          };
-        }).pipe(Effect.provide(twinLayer(organizationId, submissions, "inline")), Effect.scoped);
-
-        expect(refusal.decisions).toBe(1);
-        expect(refusal.authority.map(({ result }) => result)).toEqual([
-          { _tag: "rejected", code: "ENTITY_CONFLICT", message: refusal.failure.message },
+          ],
+          [
+            queued(
+              catalog("shrink", [
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-shrink",
+                    packQuantity: 1,
+                    unitQuantity: 0,
+                  },
+                  2,
+                ),
+                batchWrite(
+                  "batch-1",
+                  {
+                    productId: "prod-1",
+                    movementId: "mv-relabel",
+                    packQuantity: 1,
+                    unitQuantity: 0,
+                  },
+                  3,
+                ),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("second", [
+                categoryWrite("cat-2", "Vitamins"),
+                productWrite("prod-2", {
+                  categoryId: "cat-2",
+                  name: "Vitamin C",
+                  unitsPerPack: 1,
+                }),
+                batchWrite("batch-3", {
+                  productId: "prod-2",
+                  movementId: "mv-vitamins",
+                  packQuantity: 0,
+                  unitQuantity: 4,
+                }),
+              ]),
+            ),
+          ],
+          [
+            queued(
+              catalog("empty", [
+                batchWrite(
+                  "batch-3",
+                  {
+                    productId: "prod-2",
+                    movementId: "mv-empty",
+                    packQuantity: 0,
+                    unitQuantity: 0,
+                  },
+                  1,
+                ),
+              ]),
+            ),
+            queued(
+              catalog("drop-batches", [
+                removal("batch", "batch-3", 2),
+                removal("batch", SPARE_BATCH, 1),
+              ]),
+            ),
+            queued(catalog("drop-product", [removal("product", "prod-2", 1)])),
+            queued(catalog("drop-category", [removal("category", "cat-2", 1)])),
+          ],
         ]);
-        expect(refusal.failure).toMatchObject({
-          code: "ENTITY_CONFLICT",
-          message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
-        });
-        expect(refusal.status).toBeUndefined();
-        expect(refusal.after).toEqual(refusal.before);
+
+        expectParity(twin);
+        expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+          Array.from({ length: 8 }, () => "catalogWrite"),
+        );
+        expect(
+          twin.decisions.map(({ local }) =>
+            local.changes.map((change) => `${change.action} ${change.entity}`),
+          ),
+        ).toEqual([
+          [
+            "upsert category",
+            "upsert product",
+            "upsert batch",
+            "upsert stockMovement",
+            "upsert batch",
+          ],
+          ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+          ["upsert batch", "upsert stockMovement", "upsert batch"],
+          ["upsert category", "upsert product", "upsert batch", "upsert stockMovement"],
+          ["upsert batch", "upsert stockMovement"],
+          ["delete batch", "delete batch"],
+          ["delete product"],
+          ["delete category"],
+        ]);
       }).pipe(scenario),
   );
 
-  it.effect("rejects with the same code and message whatever a queued command gets wrong", () =>
+  it.effect(`emits the same groups for sales, including packs opened across batches,`, () =>
+    Effect.gen(function* () {
+      const twin = yield* decideOnBoth("org-parity-sales", [
+        [seedSales(10, 2, 1)],
+        [queued({ _tag: "issueInvoice", payload: lastUnitBuyerACommand })],
+        [
+          queued(
+            sale("sale-split", 2, [
+              { quantity: 6, packsOpened: 1 },
+              { batchId: PACK_BATCH, quantity: 12, packsOpened: 2 },
+            ]),
+          ),
+        ],
+        [
+          queued(
+            sale("sale-pack", 3, [{ batchId: PACK_BATCH, quantity: 1, quantityType: "pack" }], {
+              customerName: "  Ada Lovelace  ",
+            }),
+          ),
+          queued(sale("sale-loose", 4, [{ quantity: 3 }])),
+        ],
+        [queued(sale("sale-twice", 5, [{ quantity: 1 }, { quantity: 2, packsOpened: 1 }]))],
+      ]);
+
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual([
+        "catalogWrite",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+        "issueInvoice",
+      ]);
+      expect(twin.decisions[2]?.local.changes.map((change) => change.entity)).toEqual([
+        "invoice",
+        "batch",
+        "invoiceItem",
+        "stockMovement",
+        "stockMovement",
+        "batch",
+        "invoiceItem",
+        "stockMovement",
+        "stockMovement",
+      ]);
+    }).pipe(scenario),
+  );
+
+  it.effect(`emits the same groups for suppliers, orders, lines and deliveries`, () =>
+    Effect.gen(function* () {
+      const twin = yield* decideOnBoth("org-parity-purchasing", [
+        [seedPurchasing],
+        [draftOrder],
+        [sendOrder],
+        [partialDelivery],
+        [
+          queued(
+            catalog("receive-rest", [
+              productWrite(
+                PACKED_PRODUCT,
+                { categoryId: GENERAL, name: "Packed", unitsPerPack: 10, retailPrice: 130 },
+                1,
+              ),
+              deliveryWrite("batch-rest", {
+                productId: PACKED_PRODUCT,
+                lineId: "po-1-packed",
+                movementId: "mv-rest",
+                packQuantity: 1,
+                unitQuantity: 5,
+              }),
+              deliveryWrite("batch-loose", {
+                productId: LOOSE_PRODUCT,
+                lineId: "po-1-loose",
+                movementId: "mv-loose",
+                packQuantity: 0,
+                unitQuantity: 20,
+              }),
+              deliveryWrite("batch-nothing", {
+                productId: LOOSE_PRODUCT,
+                lineId: "po-1-loose",
+                movementId: "mv-nothing",
+                packQuantity: 0,
+                unitQuantity: 0,
+              }),
+            ]),
+          ),
+        ],
+        [closeOrder],
+        [
+          queued(
+            catalog("draft-2", [
+              orderWrite("po-2", { orderNumber: 2, supplierId: "sup-globex", total: 400 }),
+              lineWrite("po-2-packed", {
+                purchaseOrderId: "po-2",
+                productId: PACKED_PRODUCT,
+                quantity: 1,
+                quantityType: "pack",
+                baseUnitQuantity: 10,
+                packCost: 400,
+              }),
+            ]),
+          ),
+        ],
+        [
+          queued(
+            catalog("cancel-2", [
+              orderWrite(
+                "po-2",
+                { orderNumber: 2, supplierId: "sup-globex", status: "cancelled", total: 400 },
+                1,
+              ),
+            ]),
+          ),
+        ],
+        [
+          queued(
+            catalog("draft-taken-number", [
+              orderWrite("po-3", { orderNumber: 1, supplierId: "sup-globex" }),
+            ]),
+          ),
+        ],
+        [
+          queued(
+            catalog("replace-highest", [
+              removal("purchaseOrder", "po-3", 1),
+              orderWrite("po-4", { orderNumber: 2, supplierId: "sup-acme" }),
+            ]),
+          ),
+        ],
+        [
+          queued(
+            catalog("add-line", [
+              lineWrite("po-4-loose", {
+                purchaseOrderId: "po-4",
+                productId: LOOSE_PRODUCT,
+                quantity: 6,
+                quantityType: "unit",
+                baseUnitQuantity: 6,
+              }),
+            ]),
+          ),
+          queued(
+            catalog("edit-line", [
+              lineWrite(
+                "po-4-loose",
+                {
+                  purchaseOrderId: "po-4",
+                  productId: PACKED_PRODUCT,
+                  quantity: 2,
+                  quantityType: "pack",
+                  baseUnitQuantity: 20,
+                  packCost: 450,
+                },
+                1,
+              ),
+            ]),
+          ),
+          queued(
+            catalog("reissue", [
+              removal("purchaseOrderItem", "po-4-loose", 2),
+              removal("purchaseOrder", "po-4", 1),
+              orderWrite("po-5", { orderNumber: 3, supplierId: "sup-globex" }),
+              orderWrite("po-6", { orderNumber: 3, supplierId: "sup-globex" }),
+            ]),
+          ),
+        ],
+        [
+          queued(
+            catalog("rename-supplier", [
+              supplierWrite("sup-globex", { name: "Globex Corp" }, 1),
+              supplierWrite("sup-initech", { name: "Initech" }),
+            ]),
+          ),
+          queued(
+            catalog("regroup", [
+              orderWrite("po-5", { orderNumber: 3, supplierId: "sup-initech" }, 1),
+              supplierWrite("sup-hooli", { name: "Hooli" }),
+              removal("supplier", "sup-hooli", 1),
+            ]),
+          ),
+        ],
+      ]);
+
+      expectParity(twin);
+      expect(twin.decisions.map(({ local }) => outcomeOf(local))).toEqual(
+        Array.from({ length: 15 }, () => "catalogWrite"),
+      );
+      expect(
+        twin.decisions.map(({ local }) =>
+          local.changes.map((change) => `${change.action} ${change.entity}`),
+        ),
+      ).toEqual([
+        [
+          "upsert category",
+          "upsert product",
+          "upsert product",
+          "upsert supplier",
+          "upsert supplier",
+        ],
+        ["upsert purchaseOrder", "upsert purchaseOrderItem", "upsert purchaseOrderItem"],
+        ["upsert purchaseOrder"],
+        ["upsert batch", "upsert stockMovement", "upsert purchaseOrderItem"],
+        [
+          "upsert product",
+          "upsert batch",
+          "upsert stockMovement",
+          "upsert purchaseOrderItem",
+          "upsert batch",
+          "upsert stockMovement",
+          "upsert purchaseOrderItem",
+          "upsert batch",
+          "upsert purchaseOrderItem",
+        ],
+        ["upsert purchaseOrder"],
+        ["upsert purchaseOrder", "upsert purchaseOrderItem"],
+        ["upsert purchaseOrder"],
+        ["upsert purchaseOrder"],
+        ["delete purchaseOrder", "upsert purchaseOrder"],
+        ["upsert purchaseOrderItem"],
+        ["upsert purchaseOrderItem"],
+        [
+          "delete purchaseOrderItem",
+          "delete purchaseOrder",
+          "upsert purchaseOrder",
+          "upsert purchaseOrder",
+        ],
+        ["upsert supplier", "upsert supplier"],
+        ["upsert purchaseOrder", "upsert supplier", "delete supplier"],
+      ]);
+    }).pipe(scenario),
+  );
+
+  it.effect(
+    `emits the same groups for an import that opens its own category, in one write or split,`,
+    () =>
+      Effect.gen(function* () {
+        const fullChunkLines = MAX_CATALOG_WRITE_ROWS / IMPORT_ROWS_PER_LINE;
+        const twin = yield* decideOnBoth("org-parity-import", [
+          [
+            queued(
+              catalog("import-small", [
+                categoryWrite("cat-small", "Small import"),
+                ...importedLines("cat-small", 0, 2),
+              ]),
+            ),
+          ],
+          [queued(catalog("import-category", [categoryWrite("cat-bulk", "Bulk import")]))],
+          [queued(catalog("import-bulk", importedLines("cat-bulk", 2, fullChunkLines)))],
+          [queued(catalog("import-rest", importedLines("cat-bulk", 2 + fullChunkLines, 1)))],
+        ]);
+
+        expectParity(twin);
+        expect(twin.decisions.map(({ local }) => local.result)).toEqual([
+          { _tag: "catalogWrite", rowsWritten: 5 },
+          { _tag: "catalogWrite", rowsWritten: 1 },
+          { _tag: "catalogWrite", rowsWritten: MAX_CATALOG_WRITE_ROWS },
+          { _tag: "catalogWrite", rowsWritten: IMPORT_ROWS_PER_LINE },
+        ]);
+      }).pipe(scenario),
+    120_000,
+  );
+
+  it.effect("refuses at enqueue what the authority rejects, and keeps no trace", () =>
+    Effect.gen(function* () {
+      const organizationId = decodeOrganizationId("org-parity-refusal");
+      const refusal = yield* Effect.gen(function* () {
+        const twin = yield* openTwin(organizationId);
+        yield* twin.decide(REPACKED);
+        const before = yield* twin.store.readSyncCursor;
+        const failure = yield* Effect.flip(twin.store.enqueueCommand(queued(stalePriceDelivery)));
+        return {
+          failure,
+          authority: yield* twin
+            .envelopeOf(stalePriceDelivery)
+            .pipe(Effect.flatMap(twin.decideRemotely)),
+          status: yield* twin.store.readCommandStatus(
+            OperationId.make(stalePriceDelivery.payload.commandId),
+          ),
+          before,
+          after: yield* twin.store.readSyncCursor,
+        };
+      }).pipe(Effect.provide(deviceLayer(organizationId)), Effect.scoped);
+
+      expect(refusal.authority.result).toEqual({
+        _tag: "rejected",
+        code: "ENTITY_CONFLICT",
+        message: refusal.failure.message,
+      });
+      expect(refusal.failure).toMatchObject({
+        code: "ENTITY_CONFLICT",
+        message: `Product ${LOOSE_PRODUCT} changed since units per pack was read.`,
+      });
+      expect(refusal.status).toBeUndefined();
+      expect(refusal.after).toEqual(refusal.before);
+    }).pipe(scenario),
+  );
+
+  it.effect("rejects with the same code and message whatever a command gets wrong", () =>
     Effect.gen(function* () {
       const staleTopUp = (commandId: string) =>
         queued(
@@ -1724,7 +1641,7 @@ describe("the local authority decides like the durable object authority", () => 
 
   for (const [name, setup, command, expected] of unqueued) {
     it.effect(
-      `decides ${name} like the authority and the same way twice, though the engine never queues it`,
+      `decides ${name} like the authority and the same way twice, though it is never enqueued`,
       () =>
         Effect.gen(function* () {
           const twin = yield* decideUnqueuedOnBoth(
@@ -1733,10 +1650,7 @@ describe("the local authority decides like the durable object authority", () => 
             command,
           );
           expect(twin.local.result).toMatchObject(expected);
-          expect(twin.local.page?.transactions).toStrictEqual(twin.authority.page?.transactions);
-          expect(twin.local.page?.transactions).toHaveLength(1);
-          expect(twin.local.page?.horizon).toBe(twin.authority.page?.horizon);
-          expect(receiptOf(twin.local)).toStrictEqual(receiptOf(twin.authority));
+          expect(twin.local).toStrictEqual(twin.authority);
           expect(twin.redecided).toStrictEqual(twin.local);
         }).pipe(scenario),
     );

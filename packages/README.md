@@ -13,9 +13,6 @@
   failures, and the typed `SyncHttpApi` client. The shared entrypoint
   (`@store/sync`) stays native-free (`test/sql-client-boundary.test.ts` enforces
   it); SQLite lives behind `@store/sync/sqlite`.
-- `inventory-react`. React bindings over the replica (atoms, queries, sync
-  status, insights) used by the desktop renderer.
-- `workspace`. Shared session HTTP, token renewal, and organization clients.
 - `services`. Application services shared by multiple apps.
 
 Package tests mirror the source domains under `test`.

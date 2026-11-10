@@ -2,13 +2,6 @@ import { useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { StaffState } from "@store/contracts";
 import type { InvoiceId } from "@store/contracts/ids";
 import { formatInvoiceNumber } from "@store/contracts/store-helpers";
-import {
-  useCommand,
-  useReadyInventory,
-  useStaffState,
-  type Inventory,
-  type InventoryFailure,
-} from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -18,6 +11,10 @@ import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
+import type { InventoryFailure } from "@/inventory/errors";
+import { useCommand, useReadyInventory } from "@/inventory/provider";
+import { useStaffState } from "@/inventory/staff";
+import type { Inventory } from "@/inventory/types";
 import { failureMessage } from "@/lib/errors";
 import { newSaleId, saleDraftsAtom, storedSaleDraftAtoms } from "@/lib/preferences";
 import {

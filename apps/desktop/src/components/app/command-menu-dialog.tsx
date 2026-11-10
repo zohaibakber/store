@@ -19,12 +19,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type Invoice, type StaffState } from "@store/contracts";
-import {
-  claimedCatalogScope,
-  useCatalogIsReady,
-  useInventoryInvoices,
-  useProductSearch,
-} from "@store/inventory-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
@@ -58,8 +52,10 @@ import { Kbd } from "@/components/ui/kbd";
 import { useStartSale } from "@/hooks/use-new-sale-shortcut";
 import { useRecentProducts, useRememberRecentProduct } from "@/hooks/use-recent-products";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
+import { claimedCatalogScope } from "@/inventory/opening";
+import { useCatalogIsReady } from "@/inventory/provider";
+import { useInventoryInvoices, useProductSearch } from "@/inventory/queries";
 import { isSubmitChord } from "@/lib/shortcuts";
-import { Route as RootRoute } from "@/routes/__root";
 
 import {
   emptyMessage,
@@ -98,7 +94,6 @@ export function InventoryCommandDialog({
   readonly onOpenChange: (open: boolean) => void;
   readonly open: boolean;
 }) {
-  const { inventory } = RootRoute.useRouteContext();
   const scope = useAtomValue(claimedCatalogScope);
   const [session, setSession] = useState(0);
   const [presented, setPresented] = useState(open);
@@ -120,9 +115,7 @@ export function InventoryCommandDialog({
         portalProps={{ keepMounted: true }}
       >
         <Activity mode={presented ? "visible" : "hidden"}>
-          {inventory._tag === "Unavailable" ? (
-            <p className="p-6 text-sm text-destructive">Search is unavailable.</p>
-          ) : Option.isNone(scope) ? (
+          {Option.isNone(scope) ? (
             <p className="p-6 text-sm text-destructive">Search workspace is unavailable.</p>
           ) : (
             <LiveCommandMenu key={session} onOpenChange={onOpenChange} />
