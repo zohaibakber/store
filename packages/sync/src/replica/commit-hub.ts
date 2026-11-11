@@ -1,5 +1,4 @@
-import type { SyncEntity } from "@store/contracts";
-import type { ReplicaCommitNotice, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
+import type { SyncEntity, ReplicaCommitNotice, ReplicaReadStamp } from "@store/contracts";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";

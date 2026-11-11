@@ -1,15 +1,16 @@
 import { useAtomMount } from "@effect/atom-react";
-import { useReadyInventory, type Inventory } from "@store/inventory-react";
 import * as Effect from "effect/Effect";
 import * as Atom from "effect/reactivity/Atom";
 import { useMemo } from "react";
 
-import { appHost } from "@/host";
 import type { Workspace } from "@/host-access";
+import { shell } from "@/host/shell";
+import { useReadyInventory } from "@/inventory/provider";
+import type { Inventory } from "@/inventory/types";
 import { witnessLocalCatalog } from "@/session/workspace-session";
 
 const witnessLocalFile = (get: Atom.AtomContext) =>
-  Effect.tryPromise(() => appHost().publish.localCatalog()).pipe(
+  Effect.flatMap(shell, (client) => client.PublishLocalCatalog()).pipe(
     Effect.flatMap((report) =>
       report._tag === "unknown"
         ? Effect.void

@@ -23,11 +23,3 @@ export const Published = Schema.TaggedStruct("published", { counts: CatalogCount
 export type PublishOutcome =
   | typeof Published.Type
   | { readonly _tag: "failed"; readonly message: string };
-
-export type WorkspacePublishBridge = {
-  readonly offer: (organizationId: string) => Promise<PublishOffer>;
-  readonly publish: (organizationId: string) => Promise<PublishOutcome>;
-  readonly discard: (organizationId: string) => Promise<PublishOffer>;
-  readonly localCatalog: () => Promise<LocalCatalogReport>;
-  readonly onProgress: (listener: (progress: PublishProgress) => void) => () => void;
-};

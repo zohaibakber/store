@@ -67,9 +67,7 @@ const syncDatabaseFailure = (error: InventoryDatabaseError) =>
 
 type SyncHttpError = SyncBadRequest | SyncForbidden | SyncConflict | SyncServiceUnavailable;
 
-export const failWithSyncHttpError = (
-  error: InventoryError,
-): Effect.Effect<never, SyncHttpError> =>
+export const failWithSyncHttpError = (error: InventoryError): Effect.Effect<never, SyncHttpError> =>
   error._tag === "InventoryDatabaseError"
     ? syncDatabaseFailure(error)
     : Effect.fail(syncProtocolHttpError(error));

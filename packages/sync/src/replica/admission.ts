@@ -3,8 +3,8 @@ import {
   syncProtocolError,
   type EnqueueCommandRequest,
 } from "@store/contracts";
+import type { CommandStatus } from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
-import type { CommandStatus } from "@store/contracts/sync/replica-model";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

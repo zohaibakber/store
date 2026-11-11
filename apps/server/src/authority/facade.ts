@@ -1,11 +1,9 @@
 import {
   AcquireSnapshotResult,
-  OrganizationDevices,
   RegisterReplicaResult,
   SYNC_SCHEMA_VERSION,
   SyncProtocolError,
   type AcquireSnapshotRequest,
-  type DeviceCommand,
   type ImportCatalogRequest,
   type RegisterReplicaRequest,
   type SyncProtocolCode,
@@ -22,7 +20,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { AuthorityRequestMalformed, makeAuthorityEngine, type Actor } from "./engine";
-import type { EncodedCommit } from "./frames";
+import type { CommitFanout, EncodedCommit } from "./frames";
 import { makeAuthorityImports } from "./imports";
 import { makeAuthorityMaintenance, type MaintenanceReport } from "./maintenance";
 import { migrateAuthority } from "./migrations";
@@ -53,8 +51,6 @@ export type LiveHorizonReply = { readonly epoch: string; readonly horizon: strin
 
 export type RegisterReply = typeof RegisterReplicaResult.Encoded;
 
-export type DevicesReply = typeof OrganizationDevices.Encoded;
-
 export type SnapshotReply = typeof AcquireSnapshotResult.Encoded;
 
 export interface OrgAuthorityApi<R = never, E = never> {
@@ -62,10 +58,7 @@ export interface OrgAuthorityApi<R = never, E = never> {
     actor: Actor,
     request: RegisterReplicaRequest,
   ) => Effect.Effect<AuthorityReply<RegisterReply>, E, R>;
-  readonly submit: (
-    actor: Actor,
-    bodyText: string,
-  ) => Effect.Effect<AuthorityReply<EncodedCommit>, E, R>;
+  readonly submit: (actor: Actor, bodyText: string) => Effect.Effect<AuthorityReply<string>, E, R>;
   readonly receipt: (
     actor: Actor,
     operationId: string,
@@ -83,11 +76,6 @@ export interface OrgAuthorityApi<R = never, E = never> {
     snapshotId: string,
     partNumber: number,
   ) => Effect.Effect<AuthorityReply<SnapshotPartReply>, E, R>;
-  readonly devices: (actor: Actor) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
-  readonly deviceCommand: (
-    actor: Actor,
-    command: DeviceCommand,
-  ) => Effect.Effect<AuthorityReply<DevicesReply>, E, R>;
   readonly liveHorizon: (
     actor: Actor,
     replicaId: string,
@@ -102,7 +90,7 @@ export interface OrgAuthorityApi<R = never, E = never> {
     actor: Actor,
     importId: string,
     request: ImportCatalogRequest,
-  ) => Effect.Effect<AuthorityReply<EncodedCommit>, E, R>;
+  ) => Effect.Effect<AuthorityReply<string>, E, R>;
   readonly importStatus: (
     actor: Actor,
     importId: string,
@@ -117,6 +105,11 @@ export class MaintenanceAlarm extends Context.Service<
     readonly scheduleAt: (at: number) => Effect.Effect<void>;
   }
 >()("@store/server/MaintenanceAlarm") {}
+
+export class LiveBroadcast extends Context.Service<
+  LiveBroadcast,
+  { readonly publish: (fanout: CommitFanout) => Effect.Effect<void> }
+>()("@store/server/LiveBroadcast") {}
 
 const isProtocolError = Schema.is(SyncProtocolError);
 
@@ -145,6 +138,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* SecureRandom.SecureRandom;
   const alarm = yield* MaintenanceAlarm;
   const digest = yield* Digest.Digest;
+  const live = yield* LiveBroadcast;
   const mintId = Effect.map(crypto.uuidV4(), (uuid) => uuid.replaceAll("-", ""));
   yield* migrateAuthority(sql).pipe(Effect.orDie);
   const db = yield* makeReplicaDb(sql);
@@ -163,6 +157,12 @@ const make = Effect.gen(function* () {
   const serveWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     serve(Effect.tap(effect, () => soon));
 
+  const broadcast = <E, R>(effect: Effect.Effect<EncodedCommit, E, R>) =>
+    effect.pipe(
+      Effect.tap((commit) => (commit.fanout === null ? Effect.void : live.publish(commit.fanout))),
+      Effect.map((commit) => commit.json),
+    );
+
   const register = Effect.fn("OrgAuthority.register")(function* (
     actor: Actor,
     request: RegisterReplicaRequest,
@@ -174,7 +174,7 @@ const make = Effect.gen(function* () {
 
   const submit = Effect.fn("OrgAuthority.submit")(function* (actor: Actor, bodyText: string) {
     return yield* serveWrite(
-      engine.submit(actor, bodyText, yield* Clock.currentTimeMillis, pullByteBudget),
+      broadcast(engine.submit(actor, bodyText, yield* Clock.currentTimeMillis, pullByteBudget)),
     );
   });
 
@@ -222,17 +222,6 @@ const make = Effect.gen(function* () {
     return yield* serve(snapshots.readPart(actor, snapshotId, partNumber));
   });
 
-  const devices = Effect.fn("OrgAuthority.devices")(function* (actor: Actor) {
-    return yield* serve(engine.devices(actor, yield* Clock.currentTimeMillis));
-  });
-
-  const deviceCommand = Effect.fn("OrgAuthority.deviceCommand")(function* (
-    actor: Actor,
-    command: DeviceCommand,
-  ) {
-    return yield* serve(engine.deviceCommand(actor, command, yield* Clock.currentTimeMillis));
-  });
-
   const liveHorizon = Effect.fn("OrgAuthority.liveHorizon")(function* (
     actor: Actor,
     replicaId: string,
@@ -263,7 +252,9 @@ const make = Effect.gen(function* () {
     request: ImportCatalogRequest,
   ) {
     return yield* serveWrite(
-      imports.commit(actor, importId, request, yield* Clock.currentTimeMillis, yield* mintId),
+      broadcast(
+        imports.commit(actor, importId, request, yield* Clock.currentTimeMillis, yield* mintId),
+      ),
     );
   });
 
@@ -301,8 +292,6 @@ const make = Effect.gen(function* () {
     pull,
     acquireSnapshot,
     readSnapshotPart,
-    devices,
-    deviceCommand,
     liveHorizon,
     stageImportPart,
     commitImport,

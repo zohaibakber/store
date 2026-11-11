@@ -3,8 +3,7 @@ import path from "node:path";
 import { REPLICA_STORAGE_PREFIX, sqliteReplicaFileName } from "@store/client-db";
 import { analyticsDatabasePath } from "@store/client-db/node-analytics";
 import type { DeviceLabel } from "@store/contracts";
-import { ReplicaStorageError, ReplicaUnavailable, WorkspaceToken } from "@store/contracts/replica";
-import type { RequestError } from "@store/workspace";
+import { WorkspaceToken, type WorkerPhase, type WorkspaceState } from "@store/contracts/replica";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -25,11 +24,10 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MessageChannelMain } from "electron";
 
 import { makeAnalyticsController, type AnalyticsController } from "./analytics-supervisor";
-import type { DesktopLicence } from "./desktop-rpcs";
-import type { LicenceService } from "./licence/service";
 import {
   makeRendererPorts,
   noRendererPorts,
@@ -57,6 +55,7 @@ import {
   type SpawnReplicaWorker,
 } from "./replica-supervisor";
 import { spawnNodeReplicaReader, spawnNodeReplicaWorker } from "./worker-process";
+import type { RequestError } from "./workspace/session-http";
 
 type ReplicaSenderListener = {
   (event: "did-navigate", listener: () => void): void;
@@ -96,6 +95,7 @@ export type OpenWorkspace = {
   readonly identity: typeof ReplicaOpenInput.Type;
   readonly release: () => void;
   readonly gate: Latch.Latch;
+  readonly state: SubscriptionRef.SubscriptionRef<WorkspaceState>;
   readonly workspaceToken: WorkspaceToken;
   readonly databasePath: string;
   readonly supervisor: ReplicaSupervisor;
@@ -112,7 +112,6 @@ export type OpenWorkspacesTuning = {
   readonly supervisorPolicy?: Partial<ReplicaSupervisorPolicy>;
   readonly closeGrace?: Duration.Input;
   readonly ownershipWait?: Duration.Input;
-  readonly licence?: LicenceService["Service"];
 };
 
 export type AccessTokenSource = {
@@ -212,6 +211,18 @@ const forwardStream = <A, E>(
     Effect.forkScoped,
   );
 
+const trackPhases = (
+  state: SubscriptionRef.SubscriptionRef<WorkspaceState>,
+  worker: keyof WorkspaceState,
+  phases: Stream.Stream<WorkerPhase>,
+) =>
+  phases.pipe(
+    Stream.runForEach((phase) =>
+      SubscriptionRef.update(state, (current) => ({ ...current, [worker]: phase })),
+    ),
+    Effect.forkScoped,
+  );
+
 const TOKEN_RETRY = Schedule.min([Schedule.exponential("1 second"), Schedule.spaced("30 seconds")]);
 
 const pushAccessTokens = (source: AccessTokenSource, client: ReplicaWorkerClient) => {
@@ -246,40 +257,6 @@ const bootFor = (
 
 const applyForeground = (worker: LiveReplicaWorker, visible: boolean) =>
   worker.client.SetForeground({ visible }).pipe(Effect.ignore);
-
-const tellLicence = (licence: LicenceService["Service"], client: ReplicaWorkerClient) =>
-  Effect.flatMap(licence.current, (state) => client.SetLicence({ state })).pipe(Effect.ignore);
-
-const sessionLicence = (
-  licence: LicenceService["Service"],
-  writer: () => ReplicaSupervisor,
-): DesktopLicence => ({
-  states: licence.states,
-  enter: (text) =>
-    licence
-      .enter(
-        text,
-        writer()
-          .use((worker) => worker.client.DatabaseShop())
-          .pipe(
-            Effect.map((database) => Option.fromNullishOr(database.shopId)),
-            Effect.catchTags({
-              ReplicaWorkerLost: () =>
-                Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
-              RpcClientError: () => Effect.fail(new ReplicaUnavailable({ reason: "restarting" })),
-              ReplicaWorkerFailure: ({ message }) =>
-                Effect.fail(new ReplicaStorageError({ message })),
-            }),
-          ),
-      )
-      .pipe(
-        Effect.tap(() =>
-          writer()
-            .use((worker) => tellLicence(licence, worker.client))
-            .pipe(Effect.ignore),
-        ),
-      ),
-});
 
 export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
   options: OpenWorkspacesOptions,
@@ -360,7 +337,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     sender: ReplicaSender,
     workspaceToken: WorkspaceToken,
     analytics: AnalyticsController,
-    licence: DesktopLicence | undefined,
   ) => {
     const { rendererChannel } = options;
     if (rendererChannel === undefined || sender.postMessage === undefined) {
@@ -375,7 +351,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       workspaceToken,
       channel: rendererChannel,
       attachInsights: (port) => analytics.use((client) => client.AttachRenderer({ port })),
-      licence,
     });
   };
 
@@ -394,13 +369,6 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
           );
         }
         if (!(yield* Ref.get(foreground))) yield* applyForeground(worker, false);
-        const { licence } = options;
-        if (licence !== undefined) {
-          yield* tellLicence(licence, client);
-          yield* forwardStream(licence.states, (state) =>
-            client.SetLicence({ state }).pipe(Effect.ignore),
-          );
-        }
         if (recovered) {
           const stamp = yield* client.Stamp().pipe(Effect.option);
           if (Option.isSome(stamp)) {
@@ -420,6 +388,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     identity: typeof ReplicaOpenInput.Type,
     workspaceToken: WorkspaceToken,
     databasePath: string,
+    state: SubscriptionRef.SubscriptionRef<WorkspaceState>,
     scope: Scope.Closeable,
     release: () => void,
   ) =>
@@ -436,15 +405,8 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         },
         onLost: Effect.suspend(() => ports.reattach),
       });
-      const ports: RendererPorts = yield* rendererPorts(
-        sender,
-        workspaceToken,
-        analytics,
-        options.licence === undefined
-          ? undefined
-          : sessionLicence(options.licence, () => supervisor),
-      );
-      const supervisor: ReplicaSupervisor = yield* startReplicaSupervisor({
+      const ports: RendererPorts = yield* rendererPorts(sender, workspaceToken, analytics);
+      const supervisor = yield* startReplicaSupervisor({
         spawn: spawnWorker,
         launch: {
           workerPath: options.workerPath,
@@ -460,8 +422,8 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         attach: (worker) =>
           ports.workerUp("reader", (port) => worker.client.AttachRenderer({ port })),
       });
-      yield* ports.track("writer", supervisor.phases);
-      yield* ports.track("reader", reader.phases);
+      yield* trackPhases(state, "writer", supervisor.phases);
+      yield* trackPhases(state, "reader", reader.phases);
       return { supervisor, reader, analytics };
     }).pipe(
       Scope.provide(scope),
@@ -475,6 +437,10 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
     const workspaceToken = WorkspaceToken.make(yield* crypto.uuidV4());
     const databasePath = replicaDatabasePath(yield* Effect.fromResult(admitReplicaKey(identity)));
     const scope = yield* Scope.make();
+    const state = yield* SubscriptionRef.make<WorkspaceState>({
+      writer: "starting",
+      reader: "starting",
+    });
     const gone = yield* Deferred.make<void>();
     const release = () => {
       Deferred.doneUnsafe(gone, Exit.void);
@@ -491,6 +457,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       identity,
       workspaceToken,
       databasePath,
+      state,
       scope,
       release,
     );
@@ -507,6 +474,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
         identity,
         release,
         gate,
+        state,
         workspaceToken,
         databasePath,
         supervisor: started.supervisor,
@@ -525,6 +493,7 @@ export const makeOpenWorkspaces = Effect.fn("OpenWorkspaces.make")(function* (
       session.identity,
       session.workspaceToken,
       session.databasePath,
+      session.state,
       scope,
       session.release,
     );

@@ -2,26 +2,22 @@ import type { DeviceLabel } from "@store/contracts";
 import { replicaState } from "@store/db/replica.schema";
 import {
   layerOwnedHttpSync,
-  layerOwnedLocalSync,
   mapReplicaStoreFailure,
+  SyncScheduler,
   type ReplicaStore,
-  type SyncEngine,
-  type SyncScheduler,
+  type SyncState,
   type SyncTransport,
   type OwnedLiveHost,
 } from "@store/sync";
 import {
   layerSqliteReplicaStore,
-  LocalAuthority,
   SqliteReplica,
   type SqliteReplicaHandle,
-  type SqliteReplicaStoreOptions,
 } from "@store/sync/sql-client";
 import { eq } from "drizzle-orm";
-import type * as Digest from "effect/crypto/Digest";
-import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 
 import { CommandAdmission } from "../store/admission";
 
@@ -65,12 +61,7 @@ export const layerSeededReplica = <E, R>(
     ),
   ).pipe(Layer.provideMerge(replica));
 
-export type SqliteReplicaServices =
-  | CommandAdmission
-  | ReplicaStore
-  | SyncEngine
-  | SyncScheduler
-  | SqliteReplica;
+export type SqliteReplicaServices = CommandAdmission | ReplicaStore | SyncScheduler | SqliteReplica;
 
 type SqliteReplicaSessionInput<ReplicaError> = {
   readonly replica: Layer.Layer<SqliteReplica, ReplicaError>;
@@ -85,43 +76,37 @@ type SqliteReplicaSyncInput<ReplicaError, TransportError> =
     readonly deviceLabel?: DeviceLabel | undefined;
   };
 
-type SqliteReplicaAuthority<SyncError> = {
-  readonly sync: Layer.Layer<
-    SyncEngine | SyncScheduler,
-    SyncError,
-    ReplicaStore | SqliteReplica | SecureRandom.SecureRandom | Digest.Digest
-  >;
-  readonly store: SqliteReplicaStoreOptions;
-};
+const ON_DEVICE: SyncState = { phase: "idle", cursor: undefined, live: false, owner: true };
 
-const layerSqliteReplicaSession = <ReplicaError, SyncError>(
-  input: SqliteReplicaSessionInput<ReplicaError>,
-  authority: SqliteReplicaAuthority<SyncError>,
-) =>
-  Layer.mergeAll(authority.sync, Layer.fresh(CommandAdmission.layer)).pipe(
-    Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity, authority.store)),
-    Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
-  );
-
-const httpAuthority = <ReplicaError, TransportError>(
-  input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
-) => ({
-  sync: layerOwnedHttpSync({
-    live: input.live,
-    deviceLabel: input.deviceLabel,
-  }).pipe(Layer.provide(input.transport)),
-  store: {},
-});
-
-const localAuthority = () => ({
-  sync: layerOwnedLocalSync.pipe(Layer.provide(LocalAuthority.layer)),
-  store: { authority: LocalAuthority.submitWithin },
-});
+const onDeviceScheduler = Layer.succeed(
+  SyncScheduler,
+  SyncScheduler.of({
+    state: Stream.concat(Stream.make(ON_DEVICE), Stream.never),
+    wake: () => Effect.void,
+    setVisible: () => Effect.void,
+    setNetworkOwner: () => Effect.void,
+    setLiveConnected: () => Effect.void,
+    shutdown: Effect.void,
+  }),
+);
 
 export const layerSqliteReplicaSync = <ReplicaError, TransportError>(
   input: SqliteReplicaSyncInput<ReplicaError, TransportError>,
-) => layerSqliteReplicaSession(input, httpAuthority(input));
+) =>
+  Layer.mergeAll(
+    layerOwnedHttpSync({ live: input.live, deviceLabel: input.deviceLabel }).pipe(
+      Layer.provide(input.transport),
+    ),
+    Layer.fresh(CommandAdmission.layer),
+  ).pipe(
+    Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity)),
+    Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
+  );
 
 export const layerSqliteReplicaLocal = <ReplicaError>(
   input: SqliteReplicaSessionInput<ReplicaError>,
-) => layerSqliteReplicaSession(input, localAuthority());
+) =>
+  Layer.mergeAll(onDeviceScheduler, Layer.fresh(CommandAdmission.layer)).pipe(
+    Layer.provideMerge(layerSqliteReplicaStore(input.databaseIdentity, { decidesLocally: true })),
+    Layer.provideMerge(layerSeededReplica(input.replica, input.identity)),
+  );

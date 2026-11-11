@@ -1,15 +1,11 @@
 import { ProductId } from "@store/contracts";
-import {
-  preloadAll,
-  preloadCatalogProductsById,
-  preloadProductSearch,
-} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { InvoiceCreatePage } from "@/components/invoices/create-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadAll, preloadCatalogProductsById, preloadProductSearch } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
 import { saleDraftsAtom } from "@/lib/preferences";
 import { SALE_SEARCH_LIMIT, saleDraftOwner, saleProductIds } from "@/lib/sale-drafts";
 import { lenientSearchParam } from "@/lib/search-param";

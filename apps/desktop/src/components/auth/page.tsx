@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { appHost } from "@/host";
+import { listenShell, runShell } from "@/host/shell";
 import { signInMessage } from "@/lib/errors";
 import { reportError } from "@/lib/report-error";
 import { cn } from "@/lib/utils";
@@ -318,11 +318,11 @@ export function useGoogleCallback(): GoogleCallback {
 
   React.useEffect(
     () =>
-      appHost().signIn.onOAuthCallback((url) => {
-        setState({ completing: true, error: null });
-        appHost()
-          .signIn.completeGoogle(url)
-          .then(
+      listenShell(
+        (shell) => shell.OAuthCallbacks(),
+        (callbackUrl) => {
+          setState({ completing: true, error: null });
+          runShell((shell) => shell.AuthCompleteGoogle({ callbackUrl })).then(
             (completed) => {
               if (!completed) setState({ completing: false, error: null });
             },
@@ -334,7 +334,8 @@ export function useGoogleCallback(): GoogleCallback {
               });
             },
           );
-      }),
+        },
+      ),
     [],
   );
 
@@ -382,13 +383,13 @@ export function AuthForm({
           googleBusy={busy === "google"}
           onContinue={(email) =>
             run("email", async () => {
-              const route = await appHost().signIn.identify({
-                email: EmailAddress.make(normalizeEmail(email)),
-              });
+              const route = await runShell((shell) =>
+                shell.AuthIdentify({ email: EmailAddress.make(normalizeEmail(email)) }),
+              );
               setStep(route);
             })
           }
-          onGoogle={() => run("google", () => appHost().signIn.beginGoogle())}
+          onGoogle={() => run("google", () => runShell((shell) => shell.AuthBeginGoogle()))}
         />
       ) : null}
       {step._tag === "Password" ? (
@@ -398,11 +399,15 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(password) =>
             run("email", async () => {
-              await appHost().signIn.authenticate({
-                _tag: "Password",
-                email: step.email,
-                password,
-              });
+              await runShell((shell) =>
+                shell.AuthAuthenticate({
+                  credentials: {
+                    _tag: "Password",
+                    email: step.email,
+                    password,
+                  },
+                }),
+              );
             })
           }
         />
@@ -415,11 +420,15 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(code) =>
             run("email", async () => {
-              await appHost().signIn.authenticate({
-                _tag: "Otp",
-                challengeId: step.challengeId,
-                code: OtpCode.make(code),
-              });
+              await runShell((shell) =>
+                shell.AuthAuthenticate({
+                  credentials: {
+                    _tag: "Otp",
+                    challengeId: step.challengeId,
+                    code: OtpCode.make(code),
+                  },
+                }),
+              );
             })
           }
         />
@@ -431,12 +440,16 @@ export function AuthForm({
           onBack={startOver}
           onSubmit={(input) =>
             run("email", async () => {
-              await appHost().signIn.authenticate({
-                _tag: "RegisterPassword",
-                email: step.email,
-                name: input.name.trim(),
-                password: input.password,
-              });
+              await runShell((shell) =>
+                shell.AuthAuthenticate({
+                  credentials: {
+                    _tag: "RegisterPassword",
+                    email: step.email,
+                    name: input.name.trim(),
+                    password: input.password,
+                  },
+                }),
+              );
             })
           }
         />

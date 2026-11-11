@@ -1,19 +1,12 @@
-import {
-  preloadAll,
-  preloadCatalogCategories,
-  preloadProductFacets,
-  useSuspenseCatalogSuggestions,
-  useSuspenseCatalogCategories,
-} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import * as Schema from "effect/Schema";
 
-import { ProductPrefill, useProductCreateForm } from "@/components/products/form";
+import { useProductCreateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadAll, preloadCatalogCategories, preloadProductFacets } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import { useSuspenseCatalogSuggestions, useSuspenseCatalogCategories } from "@/inventory/queries";
 
 export const Route = createFileRoute("/_app/products/new")({
-  validateSearch: Schema.toStandardSchemaV1(ProductPrefill),
   loader: ({ context }) =>
     preloadInventory(context, (inventory) =>
       preloadAll([preloadCatalogCategories(inventory), preloadProductFacets(inventory)]),
@@ -25,27 +18,17 @@ export const Route = createFileRoute("/_app/products/new")({
 function NewProductPage() {
   const categories = useSuspenseCatalogCategories();
   const suggestions = useSuspenseCatalogSuggestions();
-  const prefill = Route.useSearch();
-  return (
-    <NewProductForm
-      categories={categories}
-      key={[prefill.name, prefill.composition, prefill.strength, prefill.unitsPerPack].join("\n")}
-      prefill={prefill}
-      suggestions={suggestions}
-    />
-  );
+  return <NewProductForm categories={categories} suggestions={suggestions} />;
 }
 
 function NewProductForm({
   categories,
-  prefill,
   suggestions,
 }: {
   readonly categories: Parameters<typeof useProductCreateForm>[0];
-  readonly prefill: ProductPrefill;
   readonly suggestions: React.ComponentProps<typeof ProductFormPage>["suggestions"];
 }) {
-  const form = useProductCreateForm(categories, prefill);
+  const form = useProductCreateForm(categories);
   const navigate = useNavigate();
 
   return (

@@ -1,7 +1,6 @@
 import { SquareLock02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { permits, type StaffId, type StaffState } from "@store/contracts";
-import { useCatalogIsReady, useCommand, useStaffState } from "@store/inventory-react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -31,6 +30,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { useIdleLock } from "@/hooks/use-idle-lock";
+import { useCatalogIsReady, useCommand } from "@/inventory/provider";
+import { useStaffState } from "@/inventory/staff";
 
 export function StaffGate({ children }: { readonly children: ReactNode }) {
   if (!useCatalogIsReady()) return <StaffScreenLoading />;
@@ -53,15 +54,13 @@ function useArrival(state: StaffState | undefined) {
 
   useEffect(() => {
     if (arrivingId === null) return;
-    let current = true;
+    const superseded = new AbortController();
     void navigate({ to: destination }).finally(() => {
-      if (!current) return;
+      if (superseded.signal.aborted) return;
       setSettled(arrivingId);
       setViaLock(false);
     });
-    return () => {
-      current = false;
-    };
+    return () => superseded.abort();
   }, [arrivingId, destination, navigate]);
 
   return { arriving: arrivingId !== null, lastActorId: settled };

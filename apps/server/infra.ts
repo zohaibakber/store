@@ -1,32 +1,16 @@
-import * as Cloudflare from "@alchemy.run/cloudflare";
 import { AuthSigningKeyPair } from "@store/db/auth/infra";
 import * as Alchemy from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { LOCAL_API_PORT, PRODUCTION_API_HOSTNAME, PRODUCTION_ZONE } from "../../infra/deployment";
-import { Api, OrgAuthority, OrgHub } from "./api";
-import { AiGateway } from "./src/ai/gateway";
-import { workersAiLanguageModel } from "./src/ai/language-model";
+import { Api, OrgAuthority } from "./api";
 import { AccessTokens } from "./src/auth/access-tokens";
 import { OrgAuthorityLive } from "./src/authority/durable-object";
-import { PageImagesLive } from "./src/global-search/page-images";
-import { GlobalSearch } from "./src/global-search/service";
-import { cloudflareWebSearch } from "./src/global-search/web-search";
 import { makeWorkerFetch } from "./src/http/app";
 import { OrgAuthorities, OrganizationAuthority } from "./src/inventory/organization-authority";
-import { LiveFanout } from "./src/live/fanout";
-import { OrgHubLive } from "./src/live/org-hub";
-import { OrgHubs } from "./src/live/org-hubs";
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
-
-const OrgHubsLive = Layer.effect(
-  OrgHubs,
-  Effect.gen(function* () {
-    return OrgHubs.of(yield* OrgHub);
-  }),
-);
 
 const OrgAuthoritiesLive = Layer.effect(
   OrgAuthorities,
@@ -35,18 +19,9 @@ const OrgAuthoritiesLive = Layer.effect(
   }),
 );
 
-const SearchBackendsLive = Layer.mergeAll(
-  cloudflareWebSearch,
-  workersAiLanguageModel,
-  PageImagesLive,
-).pipe(Layer.provide(AiGateway.layer));
-
-const ApiServicesLive = Layer.mergeAll(
-  OrganizationAuthority.layer.pipe(Layer.provide(OrgAuthoritiesLive)),
-  LiveFanout.layer,
-  GlobalSearch.layer.pipe(Layer.provide(SearchBackendsLive)),
-  AccessTokens.layer,
-).pipe(Layer.provideMerge(OrgHubsLive));
+const ApiServicesLive = Layer.mergeAll(OrganizationAuthority.layer, AccessTokens.layer).pipe(
+  Layer.provideMerge(OrgAuthoritiesLive),
+);
 
 export const ApiLive = Api.make(
   Effect.gen(function* () {
@@ -75,14 +50,7 @@ export const ApiLive = Api.make(
   Effect.gen(function* () {
     const fetch = yield* makeWorkerFetch;
     return { fetch };
-  }).pipe(
-    Effect.provide(ApiServicesLive),
-    Effect.provide(OrgHubLive),
-    Effect.provide(OrgAuthorityLive),
-    Effect.provide(Cloudflare.Workers.AIBinding),
-    Effect.provide(Cloudflare.AI.QueryGatewayBinding),
-    Effect.provide(Cloudflare.Workers.RateLimitBinding),
-  ),
+  }).pipe(Effect.provide(ApiServicesLive), Effect.provide(OrgAuthorityLive)),
 );
 
 export default ApiLive;

@@ -1,13 +1,10 @@
 import {
   ACTIVE_REPLICA_WINDOW_MILLIS,
-  MAX_ORGANIZATION_DEVICES,
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
   staleReplicaRejection,
-  SYNC_SCHEMA_VERSION,
   SyncSubmitCommandRequest,
   syncProtocolError,
-  type DeviceCommand,
   type RegisterReplicaRequest,
   type SyncCommandEnvelope,
   type SyncLogChange,
@@ -25,13 +22,12 @@ import {
   constraintViolationOf,
   decideCommandWithin,
   removeEntityRow,
-  SETTLED_CATALOG,
   writeEntityRow,
   type ConstraintViolation,
   type Decision,
   type ReplicaDb,
 } from "@store/sync/authority";
-import { and, asc, between, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, between, eq, gt } from "drizzle-orm";
 import * as Array from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
@@ -273,7 +269,7 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
       const gated = yield* purchasingGate(envelope, now);
       if (gated !== undefined) return Result.fail(gated) satisfies Decision;
     }
-    return yield* decideCommandWithin(db, actor, envelope, SETTLED_CATALOG);
+    return yield* decideCommandWithin(db, actor, envelope);
   });
 
   const applyAccepted = (organizationId: string, changes: ReadonlyArray<SyncLogChange>) =>
@@ -465,32 +461,6 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     } satisfies EncodedCommit;
   });
 
-  const listDevices = Effect.fn("Authority.listDevices")(function* (now: number) {
-    const active = new Set((yield* activeReplicas(now)).map((replica) => replica.replicaId));
-    const rows = yield* db
-      .select()
-      .from(replicas)
-      .where(or(isNull(replicas.removedAt), gt(replicas.lastSeenAt, replicas.removedAt)))
-      .orderBy(desc(replicas.lastSeenAt), asc(replicas.replicaId))
-      .limit(MAX_ORGANIZATION_DEVICES)
-      .all();
-    return {
-      devices: rows.map((row) => {
-        const upToDate = row.schemaVersion >= SYNC_SCHEMA_VERSION;
-        return {
-          replicaId: row.replicaId,
-          userId: row.ownerUserId,
-          label: row.deviceLabel || null,
-          registeredAt: row.registeredAt,
-          lastSeenAt: row.lastSeenAt,
-          upToDate,
-          ignored: row.ignoredAt !== null && row.ignoredAt >= (row.schemaVersionAt ?? 0),
-          holdsBack: active.has(row.replicaId) && !upToDate,
-        };
-      }),
-    };
-  });
-
   const transact = <A, E, R>(effect: Effect.Effect<A, E, R>) => sql.withTransaction(effect);
 
   return {
@@ -618,33 +588,6 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
     ) {
       return yield* transact(
         Effect.flatMap(requireState(actor), (state) => pullWithin(state, request)),
-      );
-    }),
-
-    devices: Effect.fn("Authority.devices")(function* (actor: Actor, now: number) {
-      return yield* transact(Effect.andThen(requireState(actor), listDevices(now)));
-    }),
-
-    deviceCommand: Effect.fn("Authority.deviceCommand")(function* (
-      actor: Actor,
-      command: DeviceCommand,
-      now: number,
-    ) {
-      return yield* transact(
-        Effect.gen(function* () {
-          yield* requireState(actor);
-          yield* db
-            .update(replicas)
-            .set(
-              command._tag === "IgnoreDevice"
-                ? { ignoredAt: now }
-                : command._tag === "HeedDevice"
-                  ? { ignoredAt: null }
-                  : { removedAt: now },
-            )
-            .where(eq(replicas.replicaId, command.replicaId));
-          return yield* listDevices(now);
-        }),
       );
     }),
 

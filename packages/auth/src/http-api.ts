@@ -8,21 +8,20 @@ import { Authorization } from "./http-authorization";
 import { AuthBadRequest, AuthHttpErrors } from "./http-errors";
 import { AuthJwks } from "./jwt";
 import {
+  AuthOrganizationMembership,
   BeginGoogleInput,
   ExchangeGoogleInput,
   GoogleAuthorization,
   IdentifyInput,
   IssuedSession,
   LoginRoute,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
   OtpLoginCommand,
   PasswordLoginCommand,
   RefreshedSession,
   RefreshInput,
   RegisterPasswordCommand,
   SignOutInput,
+  UpdateOrganizationInput,
 } from "./model";
 
 export class MalformedRequest extends HttpApiMiddleware.Service<MalformedRequest>()(
@@ -97,15 +96,9 @@ const authSessionGroup = HttpApiGroup.make("session")
 
 const authOrganizationGroup = HttpApiGroup.make("organization")
   .add(
-    HttpApiEndpoint.get("roster", "/v1/organization", {
-      success: OrganizationRoster,
-      error: AuthHttpErrors,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("command", "/v1/organization", {
-      payload: OrganizationCommand,
-      success: OrganizationCommandResult,
+    HttpApiEndpoint.post("update", "/v1/organization", {
+      payload: UpdateOrganizationInput,
+      success: AuthOrganizationMembership,
       error: AuthHttpErrors,
     }),
   )

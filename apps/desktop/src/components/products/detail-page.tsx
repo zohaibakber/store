@@ -6,8 +6,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Product, StockMovement } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
-import { useStaffPermission } from "@store/inventory-react";
+import { productStock } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import * as React from "react";
@@ -43,6 +42,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { useRememberRecentProduct } from "@/hooks/use-recent-products";
+import { useStaffPermission } from "@/inventory/staff";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 import { usePageShortcuts } from "@/lib/shortcuts";

@@ -11,7 +11,8 @@ import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { OrgAuthority, type OrgAuthorityContract } from "../../api";
-import { MaintenanceAlarm, OrgAuthorityFacade } from "./facade";
+import { LiveBroadcast, MaintenanceAlarm, OrgAuthorityFacade } from "./facade";
+import { makeLiveSockets } from "./live-sockets";
 
 export const OrgAuthorityLive = OrgAuthority.make(
   Effect.gen(function* () {
@@ -41,6 +42,11 @@ export const OrgAuthorityLive = OrgAuthority.make(
             scheduled === null || scheduled > at ? alarmAt(at) : Effect.void,
           ),
       });
+      const sockets = yield* makeLiveSockets(state, alarm.scheduleBy);
+      const live = LiveBroadcast.of({
+        publish: (fanout) =>
+          Effect.asVoid(sockets.publish(fanout)).pipe(Effect.provide(RuntimeContext.phantom)),
+      });
       const context = yield* Layer.build(
         OrgAuthorityFacade.layer.pipe(
           Layer.provide([
@@ -48,13 +54,21 @@ export const OrgAuthorityLive = OrgAuthority.make(
             Layer.succeed(SecureRandom.SecureRandom, crypto),
             Layer.succeed(Digest.Digest, digest),
             Layer.succeed(MaintenanceAlarm, alarm),
+            Layer.succeed(LiveBroadcast, live),
           ]),
         ),
       );
       const authority = Context.get(context, OrgAuthorityFacade);
       return {
         ...authority,
-        alarm: () => Effect.andThen(Ref.set(armedAt, null), Effect.asVoid(authority.maintain())),
+        fetch: sockets.admit(authority.liveHorizon),
+        webSocketMessage: sockets.webSocketMessage,
+        webSocketClose: sockets.webSocketClose,
+        alarm: () =>
+          Ref.set(armedAt, null).pipe(
+            Effect.andThen(authority.maintain()),
+            Effect.andThen(sockets.sweep()),
+          ),
       } satisfies OrgAuthorityContract;
     });
   }).pipe(Effect.provide([SecureRandom.layerWebCrypto, Digest.layerWebCrypto])),

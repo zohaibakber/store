@@ -8,24 +8,23 @@ import {
   type SyncTransactionGroup,
   OperationId,
   Money,
-} from "@store/contracts";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeProductId,
   decodePurchaseOrderId,
   decodePurchaseOrderItemId,
   decodeSupplierId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
 import { canonicalPayloadHash } from "@store/contracts/operation-hash";
+import * as Effect from "effect/Effect";
+
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
   LAST_UNIT_ORGANIZATION_ID,
   LAST_UNIT_PRODUCT_ID,
   LAST_UNIT_REPLICA_A,
-} from "@store/contracts/sync/fixtures";
-import * as Effect from "effect/Effect";
+} from "../../../contracts/test/fixtures/last-unit-invoice";
 
 export const FIXTURE_NOW = 1_700_000_000_000;
 
@@ -186,25 +185,6 @@ export const deleteSpareBatchWrite: CatalogRowWrite = {
   id: SPARE_BATCH_ID,
   expectedRowVersion: 1,
 };
-
-export const restockBatchWrite = (input: {
-  readonly movementId: string;
-  readonly unitQuantity: number;
-}): CatalogRowWrite => ({
-  entity: "batch",
-  action: "upsert",
-  id: decodeBatchId(LAST_UNIT_BATCH_ID),
-  expectedRowVersion: 1,
-  movementId: input.movementId,
-  note: "Restock",
-  row: {
-    productId: decodeProductId(LAST_UNIT_PRODUCT_ID),
-    batchNumber: "B-1",
-    expiresAt: null,
-    packQuantity: 0,
-    unitQuantity: input.unitQuantity,
-  },
-});
 
 export const SUPPLIER_ID = decodeSupplierId("supplier-acme");
 export const SUPPLIER_NAME = "Acme Wholesale";

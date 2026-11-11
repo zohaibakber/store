@@ -8,7 +8,7 @@ periods, and inventory value. The Electron analytics worker runs them incrementa
 
 The analytics source reads compact product and stocked-batch facts, sales grouped by
 product and local day, units on order grouped by product, and invoice totals by day and
-hour (`ReplicaInsightsFacts` pieces in `@store/contracts/sync/replica-insights`). SQLite
+hour (`ReplicaInsightsFacts` pieces in `@store/contracts`). SQLite
 aggregates with `GROUP BY`. The window is 180 local days so the 90-day period has a
 comparable previous period.
 

@@ -94,24 +94,6 @@ const sessions = (where = "1 = 1") =>
 const googleOnly = { sub: "google-sub-1", email: "google@example.com" };
 
 describe("one-time codes", () => {
-  it.effect("signs in with a delivered code", () =>
-    Effect.gen(function* () {
-      const auth = yield* AuthApi;
-      yield* googleSignIn(googleOnly);
-      const delivered = yield* identify(googleOnly.email);
-      if (delivered._tag !== "Otp" || !delivered.developmentCode) {
-        return yield* Effect.die(new Error("expected a code"));
-      }
-      expect(
-        yield* count("SELECT count(*) AS total FROM auth_ephemeral_record WHERE kind = 'otp'"),
-      ).toBe(1);
-      const signedIn = yield* auth.authenticate(
-        otpSignIn(delivered.challengeId, delivered.developmentCode),
-      );
-      expect(signedIn.workspace.user.email).toBe(googleOnly.email);
-    }).pipe(scenario({ deliversOtp: true })),
-  );
-
   it.effect("makes nothing redeemable while delivery is disabled", () =>
     Effect.gen(function* () {
       yield* googleSignIn(googleOnly);

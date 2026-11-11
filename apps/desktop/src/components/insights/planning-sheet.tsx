@@ -1,7 +1,6 @@
 import { ArrowReloadHorizontalIcon, Settings02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { StockPolicy } from "@store/contracts";
-import { useStockPolicy } from "@store/inventory-react";
 import { DEFAULT_STOCK_POLICY } from "@store/services/insights";
 import * as React from "react";
 
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useStockPolicy } from "@/inventory/insights";
 
 type WholeKey = Exclude<keyof StockPolicy, "serviceLevel">;
 

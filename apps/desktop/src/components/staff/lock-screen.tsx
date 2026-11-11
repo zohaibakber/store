@@ -1,12 +1,6 @@
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { StaffId, StaffMember } from "@store/contracts";
-import {
-  causeSurface,
-  staffRefusalCopy,
-  useCommand,
-  type InventoryFailure,
-} from "@store/inventory-react";
 import { initials } from "@store/services/format";
 import type * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
@@ -25,6 +19,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { causeSurface, staffRefusalCopy, type InventoryFailure } from "@/inventory/errors";
+import { useCommand } from "@/inventory/provider";
 
 type View =
   | { readonly _tag: "list" }

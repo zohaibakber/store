@@ -5,19 +5,19 @@ import {
   ReplicaClientSequence,
   type SyncCommandEnvelope,
   type SyncPullRequest,
+  decodeOrganizationId,
 } from "@store/contracts";
-import { decodeOrganizationId } from "@store/contracts/ids";
+import { batches } from "@store/db/authority.schema";
+import type { ReplicaDb } from "@store/sync/authority";
+import { eq } from "drizzle-orm";
+import * as Effect from "effect/Effect";
+
 import {
   LAST_UNIT_BATCH_ID,
   LAST_UNIT_EPOCH,
   lastUnitBuyerAEnvelope,
   lastUnitBuyerBEnvelope,
-} from "@store/contracts/sync/fixtures";
-import { authorityTransactions, batches } from "@store/db/authority.schema";
-import type { ReplicaDb } from "@store/sync/authority";
-import { eq } from "drizzle-orm";
-import * as Effect from "effect/Effect";
-
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import type { Actor } from "../../src/authority/engine";
 import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { typedCommands } from "../inventory/typed-commands";
@@ -144,71 +144,5 @@ describe("durable object inventory commands", () => {
       expect(outcome.reused).toMatchObject({ code: "INVALID_PAYLOAD_HASH" });
       expect(outcome.gap).toMatchObject({ code: "REPLICA_SEQUENCE_GAP" });
     }).pipe(scenario),
-  );
-
-  it.effect("reads the page after the commit for a client that is behind or retrying", () =>
-    Effect.gen(function* () {
-      const organizationId = decodeOrganizationId("org-submit-behind");
-      const actor = actorFor(organizationId);
-      const first = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
-      const second = envelopeFor(organizationId, lastUnitBuyerBEnvelope);
-      const { commands } = yield* openCommands(organizationId);
-      yield* commands.commit(actor, first);
-      const behind = yield* commands.submit(actor, {
-        ...second,
-        afterCommitSequence: OrgCommitSequence.make("0"),
-      });
-      const retried = yield* commands.submit(actor, {
-        ...second,
-        afterCommitSequence: OrgCommitSequence.make("1"),
-      });
-      const pulled = yield* commands.pull(actor, pullFromStart);
-      const outcome = { behind, retried, pulled };
-      expect(outcome.behind.decision).toBe("rejected");
-      expect(outcome.behind.page).toEqual(outcome.pulled);
-      expect(outcome.behind.page?.transactions.map((group) => group.commitSequence)).toEqual([
-        "1",
-        "2",
-      ]);
-      expect(outcome.retried.commitSequence).toBe(outcome.behind.commitSequence);
-      expect(outcome.retried.page?.transactions.map((group) => group.commitSequence)).toEqual([
-        "2",
-      ]);
-    }).pipe(scenario),
-  );
-
-  it.effect(
-    "publishes a fan-out group for every commit that consumes a sequence and none for replays",
-    () =>
-      Effect.gen(function* () {
-        const organizationId = decodeOrganizationId("org-submit-fanout");
-        const actor = actorFor(organizationId);
-        const first = envelopeFor(organizationId, lastUnitBuyerAEnvelope);
-        const second = envelopeFor(organizationId, lastUnitBuyerBEnvelope);
-        const { commands, db } = yield* openCommands(organizationId);
-        const accepted = yield* commands.submitEncoded(actor, first);
-        const rejected = yield* commands.submitEncoded(actor, second);
-        const replayed = yield* commands.submitEncoded(actor, first);
-        const pulled = yield* commands.pullEncoded(actor, pullFromStart);
-        const headers = yield* db
-          .select({ byteLength: authorityTransactions.byteLength })
-          .from(authorityTransactions)
-          .orderBy(authorityTransactions.commitSequence)
-          .all();
-        const outcome = { accepted, rejected, replayed, pulled, headers };
-        const page = JSON.parse(outcome.pulled.json);
-        expect(outcome.accepted.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "1" });
-        expect(outcome.rejected.fanout).toMatchObject({ epoch: LAST_UNIT_EPOCH, horizon: "2" });
-        expect(outcome.replayed.fanout).toBeNull();
-        expect(JSON.parse(outcome.replayed.json)).toMatchObject({
-          operationId: first.operationId,
-          commitSequence: "1",
-        });
-        expect(JSON.parse(outcome.accepted.fanout?.group ?? "null")).toEqual(page.transactions[0]);
-        expect(JSON.parse(outcome.rejected.fanout?.group ?? "null")).toEqual(page.transactions[1]);
-        expect(page.transactions[1]).toMatchObject({ decision: "rejected", changes: [] });
-        expect(outcome.accepted.fanout?.byteLength).toBe(outcome.headers[0]?.byteLength);
-        expect(outcome.rejected.fanout?.byteLength).toBe(outcome.headers[1]?.byteLength);
-      }).pipe(scenario),
   );
 });

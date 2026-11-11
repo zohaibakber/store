@@ -2,8 +2,7 @@
 
 pnpm workspace for offline-first inventory: an Electron desktop app and
 Cloudflare Worker API and auth services. Inventory commands commit in each
-organization's `OrgAuthority` Durable Object. The system
-design is in [`docs/architecture.md`](docs/architecture.md).
+organization's `OrgAuthority` Durable Object.
 
 ## Workspace boundaries
 
@@ -28,12 +27,9 @@ design is in [`docs/architecture.md`](docs/architecture.md).
   pending projections, coverage, the polling scheduler, and the typed
   `SyncHttpApi` client. Its shared entrypoint (`@store/sync`) is native-free;
   the SQLite adapter lives behind `@store/sync/sqlite`.
-- `packages/inventory-react` owns the React bindings over the replica used by
-  the desktop renderer.
-- `packages/workspace` owns shared session HTTP and organization clients.
 - `packages/auth` owns auth schemas, ES256 access tokens, password hashing, and
   the shared Effect HTTP client.
-- `packages/services` owns shared application services such as global product search.
+- `packages/services` owns shared application services such as insights and purchasing.
 
 Tests live in a sibling `test` tree that mirrors each package's `src` domains.
 Shared helpers stay next to the tests that use them. The desktop renderer has no unit
@@ -45,9 +41,9 @@ shell, `components/shared` holds reusable application components, and
 
 Inventory reads are named, bounded `InventoryReads` RPCs. On desktop the
 renderer calls them over a `MessagePort` to a read-only reader worker, and the
-writer's commit notices invalidate them. Analytics use one bounded aggregate read instead: the replica groups
-sales by product and local day (`readInsights`), and `@store/services/insights`
-turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
+writer's commit notices invalidate them. Analytics are built by an analytics worker into a separate analytics database
+(`apps/desktop/electron/analytics-*.ts`, `packages/client-db/src/analytics`), and
+`@store/services/insights` turns those facts into forecasts, reorder points, and ranked alerts. Sales (`issueInvoice`) and catalog changes (`catalogWrite`) are both
 sync commands: they commit locally first, project pending rows, then upload to
 `/api/sync/commands`, where one transaction in the organization's
 `OrgAuthority` Durable Object decides them and appends to the change log that `/api/sync/pull` serves.
@@ -85,7 +81,7 @@ stage details live in `apps/server/README.md`.
 
 GitHub Actions verifies every change. Pull requests do not create or update
 Cloudflare resources. Every push to `main` deploys the production API, auth,
-database, and edge rules, then publishes the desktop release.
+and database, then publishes the desktop release.
 
 Bootstrap its least-privilege Cloudflare
 credentials once:

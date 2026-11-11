@@ -1,14 +1,6 @@
 import { Cancel01Icon, Search01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { sumMoney, type Product, type PurchaseOrderId, type Supplier } from "@store/contracts";
-import {
-  useCommand,
-  useLearnedSuppliers,
-  useProductsOnOrder,
-  usePurchasingGate,
-  useSuspenseProductSearch,
-  useSuspenseSuppliers,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { useNavigate } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
@@ -44,6 +36,14 @@ import {
 import { SheetClose, SheetFooter, SheetPanel } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import { useCommand } from "@/inventory/provider";
+import {
+  useLearnedSuppliers,
+  useProductsOnOrder,
+  usePurchasingGate,
+  useSuspenseSuppliers,
+} from "@/inventory/purchasing-queries";
+import { useSuspenseProductSearch } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount, pluralize } from "@/lib/format";
 import { useSubmitShortcut } from "@/lib/shortcuts";

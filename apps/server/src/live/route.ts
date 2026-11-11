@@ -4,7 +4,6 @@ import {
   LIVE_SOCKET_PATH,
   LiveSocketQuery,
   offeredLiveProtocols,
-  type SyncProtocolCode,
 } from "@store/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -15,26 +14,21 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { AccessTokens } from "../auth/access-tokens";
 import { authenticateToken } from "../auth/session";
+import { admissionHeaders, withoutAdmissionHeaders } from "../authority/live-sockets";
 import { publicError } from "../http/errors";
-import { SYNC_STATUS } from "../http/sync-errors";
-import type { InventoryError } from "../inventory/errors";
-import { OrganizationAuthority } from "../inventory/organization-authority";
-import { admissionHeaders, withoutAdmissionHeaders } from "./hub-core";
-import { OrgHubs } from "./org-hubs";
+import { OrgAuthorities } from "../inventory/organization-authority";
 
 export interface LiveRouteDependencies {
-  readonly hubs: {
+  readonly authorities: {
     readonly getByName: (
       organizationId: string,
-    ) => Pick<ReturnType<OrgHubs["Service"]["getByName"]>, "fetch">;
+    ) => Pick<ReturnType<OrgAuthorities["Service"]["getByName"]>, "fetch">;
   };
   readonly verifyAccessToken: AccessTokenVerifier;
-  readonly readLiveHorizon: OrganizationAuthority["Service"]["liveHorizon"];
 }
 
 const refuse = (status: number, code: string, message: string) =>
@@ -44,14 +38,6 @@ const decodeQuery = Schema.decodeUnknownOption(LiveSocketQuery);
 
 const queryOf = (request: HttpServerRequest.HttpServerRequest) =>
   decodeQuery(Object.fromEntries(new URL(request.url, "http://live.invalid").searchParams));
-
-const liveStatus = (code: SyncProtocolCode) =>
-  code === "ORGANIZATION_MISMATCH" ? 409 : SYNC_STATUS[code];
-
-const horizonFailure = (error: InventoryError) =>
-  error._tag !== "SyncProtocolError"
-    ? refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.")
-    : refuse(liveStatus(error.code), error.code, error.message);
 
 const freshUpgradeResponse = (
   response: HttpServerResponse.HttpServerResponse,
@@ -93,24 +79,19 @@ export const liveSocketHandler = Effect.fn("LiveRoutes.socket")(function* (
   if (Option.isNone(query)) {
     return refuse(400, "INVALID_LIVE_QUERY", "The live channel needs a replica id.");
   }
-  const horizon = yield* dependencies
-    .readLiveHorizon({ organizationId, userId: claims.subject }, query.value.replicaId)
-    .pipe(Effect.result);
-  if (Result.isFailure(horizon)) return horizonFailure(horizon.failure);
   const forwarded = request.modify({
     headers: HttpHeaders.fromInput({
       ...withoutAdmissionHeaders(request.headers),
       ...admissionHeaders({
+        organizationId,
         replicaId: query.value.replicaId,
         userId: claims.subject,
         expiresAt: claims.expiresAt,
         maxBytes: query.value.maxBytes ?? null,
-        epoch: horizon.success.epoch,
-        horizon: horizon.success.horizon,
       }),
     }),
   });
-  return yield* dependencies.hubs
+  return yield* dependencies.authorities
     .getByName(organizationId)
     .fetch(forwarded)
     .pipe(
@@ -123,17 +104,12 @@ export const liveSocketHandler = Effect.fn("LiveRoutes.socket")(function* (
 
 export const LiveRoutes = Layer.unwrap(
   Effect.gen(function* () {
-    const authority = yield* OrganizationAuthority;
-    const hubs = yield* OrgHubs;
+    const authorities = yield* OrgAuthorities;
     const { verify } = yield* AccessTokens;
     return HttpRouter.add(
       "GET",
       LIVE_SOCKET_PATH,
-      liveSocketHandler({
-        hubs,
-        verifyAccessToken: verify,
-        readLiveHorizon: authority.liveHorizon,
-      }),
+      liveSocketHandler({ authorities, verifyAccessToken: verify }),
     );
   }),
 );

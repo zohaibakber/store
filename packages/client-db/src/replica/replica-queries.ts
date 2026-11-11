@@ -4,8 +4,9 @@ import {
   INSIGHTS_ON_ORDER_STATUSES,
   Money,
   type InsightsProductFact,
+  CategoryId,
+  ProductId,
 } from "@store/contracts";
-import { CategoryId, ProductId } from "@store/contracts/ids";
 import {
   categories,
   invoiceItems,

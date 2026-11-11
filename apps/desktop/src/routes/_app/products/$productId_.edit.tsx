@@ -1,19 +1,21 @@
 import { decodeProductId } from "@store/contracts";
-import {
-  preloadAll,
-  preloadCatalogCategories,
-  preloadCatalogProduct,
-  preloadProductFacets,
-  useSuspenseCatalogSuggestions,
-  useSuspenseCatalogCategories,
-  useSuspenseCatalogProduct,
-} from "@store/inventory-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import { ProductDetailNotFound } from "@/components/products/detail-page";
 import { useProductUpdateForm } from "@/components/products/form";
 import { ProductFormPage } from "@/components/products/form-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import {
+  preloadAll,
+  preloadCatalogCategories,
+  preloadCatalogProduct,
+  preloadProductFacets,
+} from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import {
+  useSuspenseCatalogSuggestions,
+  useSuspenseCatalogCategories,
+  useSuspenseCatalogProduct,
+} from "@/inventory/queries";
 
 export const Route = createFileRoute("/_app/products/$productId_/edit")({
   params: { parse: ({ productId }) => ({ productId: decodeProductId(productId) }) },

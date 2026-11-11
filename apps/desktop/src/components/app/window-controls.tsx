@@ -1,14 +1,23 @@
+import { useAtomValue } from "@effect/atom-react";
 import { Cancel01Icon, Copy01Icon, MinusSignIcon, SquareIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useSyncExternalStore } from "react";
+import * as Effect from "effect/Effect";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
+import * as Atom from "effect/reactivity/Atom";
+import * as Stream from "effect/Stream";
 
 import { Button } from "@/components/ui/button";
-import { appHost } from "@/host";
-import type { WindowControlsBridge } from "@/host";
+import { fireShell, shell } from "@/host/shell";
 import { cn } from "@/lib/utils";
 
-function WindowControlButtons({ controls }: { readonly controls: WindowControlsBridge }) {
-  const maximized = useSyncExternalStore(controls.onMaximizedChange, controls.isMaximized);
+const windowMaximized = Atom.make(
+  Stream.unwrap(Effect.map(shell, (client) => client.WindowMaximized())),
+).pipe(Atom.keepAlive);
+
+export function WindowControls() {
+  const maximized = useAtomValue(windowMaximized, (result) =>
+    AsyncResult.getOrElse(result, () => false),
+  );
   return (
     <div
       className="flex items-center gap-1 [-webkit-app-region:no-drag]"
@@ -16,7 +25,7 @@ function WindowControlButtons({ controls }: { readonly controls: WindowControlsB
     >
       <Button
         aria-label="Minimise"
-        onClick={() => controls.minimize()}
+        onClick={() => fireShell((client) => client.WindowMinimize())}
         size="icon-sm"
         variant="ghost"
       >
@@ -24,7 +33,7 @@ function WindowControlButtons({ controls }: { readonly controls: WindowControlsB
       </Button>
       <Button
         aria-label={maximized ? "Restore" : "Maximise"}
-        onClick={() => controls.toggleMaximize()}
+        onClick={() => fireShell((client) => client.WindowToggleMaximize())}
         size="icon-sm"
         variant="ghost"
       >
@@ -34,15 +43,16 @@ function WindowControlButtons({ controls }: { readonly controls: WindowControlsB
           icon={maximized ? Copy01Icon : SquareIcon}
         />
       </Button>
-      <Button aria-label="Close" onClick={() => controls.close()} size="icon-sm" variant="ghost">
+      <Button
+        aria-label="Close"
+        onClick={() => fireShell((client) => client.WindowClose())}
+        size="icon-sm"
+        variant="ghost"
+      >
         <HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} />
       </Button>
     </div>
   );
-}
-
-export function WindowControls() {
-  return <WindowControlButtons controls={appHost().shell.window} />;
 }
 
 export function WindowDragStrip({ className }: { readonly className?: string }) {

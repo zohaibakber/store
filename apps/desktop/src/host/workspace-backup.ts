@@ -14,7 +14,6 @@ export const BackupSaved = Schema.Union([
   Schema.TaggedStruct("saved", { fileName: Schema.String, bytes: Schema.Natural }),
   Cancelled,
 ]);
-export type BackupOutcome = typeof BackupSaved.Type | typeof Failed.Type;
 
 export const RestoreStaged = Schema.Union([
   Schema.TaggedStruct("staged", {
@@ -27,11 +26,3 @@ export const RestoreStaged = Schema.Union([
 export type RestoreChoice = typeof RestoreStaged.Type | typeof Failed.Type;
 
 export const RestoreApplied = Schema.TaggedStruct("restored", {});
-export type RestoreOutcome = typeof RestoreApplied.Type | typeof Failed.Type;
-
-export type WorkspaceBackupBridge = {
-  readonly backUp: () => Promise<BackupOutcome>;
-  readonly chooseRestore: () => Promise<RestoreChoice>;
-  readonly applyRestore: () => Promise<RestoreOutcome>;
-  readonly discardRestore: () => Promise<void>;
-};

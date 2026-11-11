@@ -1,4 +1,4 @@
-import type { CommandStatus } from "@store/contracts/sync/replica-model";
+import type { CommandStatus } from "@store/contracts";
 
 export const CAUGHT_UP_RECORD_INTERVAL_MILLIS = 60_000;
 

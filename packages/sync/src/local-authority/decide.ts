@@ -10,9 +10,9 @@ import {
   type CatalogRowWrite,
   type SyncCommandEnvelope,
   type SyncLogChange,
+  ReplicaBatchRow,
 } from "@store/contracts";
 import { type SyncEntityRow } from "@store/contracts/entity-rows";
-import { ReplicaBatchRow } from "@store/contracts/sync/replica-model";
 import * as Array from "effect/Array";
 import * as Order from "effect/Order";
 import * as Result from "effect/Result";

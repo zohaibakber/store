@@ -3,7 +3,7 @@ import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons"
 import * as Atom from "effect/reactivity/Atom";
 import * as React from "react";
 
-import { appHost } from "@/host";
+import { fireShell } from "@/host/shell";
 import { themePreferenceAtom, type ThemePreference } from "@/lib/preferences";
 
 type ResolvedTheme = "dark" | "light";
@@ -48,7 +48,7 @@ export function ThemeSync() {
   }, [theme]);
 
   React.useEffect(() => {
-    appHost().theme.setSource(preference);
+    fireShell((shell) => shell.ThemeSetSource({ source: preference }));
   }, [preference]);
 
   return null;

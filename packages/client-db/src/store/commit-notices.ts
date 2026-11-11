@@ -1,4 +1,5 @@
 import { SyncEntity } from "@store/contracts";
+import type { ReplicaCommitNotice } from "@store/contracts";
 import {
   FULL_INVALIDATION_KEY,
   touchedKeysOf,
@@ -6,7 +7,6 @@ import {
   type ReplicaKey,
   type Stamp,
 } from "@store/contracts/replica";
-import type { ReplicaCommitNotice } from "@store/contracts/sync/replica-model";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";

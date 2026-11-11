@@ -1,6 +1,6 @@
 import { Cancel01Icon, PauseIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { InvoiceId } from "@store/contracts/ids";
+import type { InvoiceId } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
 import { useEffect, useId, useRef } from "react";
 

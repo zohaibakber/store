@@ -1,10 +1,4 @@
 import { decodePurchaseOrderId } from "@store/contracts";
-import {
-  preloadPurchaseOrder,
-  useSuspensePurchaseOrder,
-  useSuspensePurchaseOrderDeliveries,
-  useSuspenseSuppliers,
-} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
@@ -13,7 +7,13 @@ import {
   PurchaseOrderNotFound,
   PurchaseOrderPage,
 } from "@/components/purchases/order-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadPurchaseOrder } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import {
+  useSuspensePurchaseOrder,
+  useSuspensePurchaseOrderDeliveries,
+  useSuspenseSuppliers,
+} from "@/inventory/purchasing-queries";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const orderSearch = Schema.toStandardSchemaV1(

@@ -17,7 +17,7 @@ function SignInToSync() {
           <p className="text-sm font-medium">This device</p>
           <p className="text-xs text-muted-foreground">
             Products, stock and sales are saved on this device only. Sign in to sync them across
-            devices and work with your team.
+            devices.
           </p>
         </div>
         <Button className="shrink-0" render={<Link to="/sign-in" />} size="sm">

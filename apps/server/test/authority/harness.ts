@@ -11,10 +11,12 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import {
+  LiveBroadcast,
   MaintenanceAlarm,
   OrgAuthorityFacade,
   type OrgAuthorityApi,
 } from "../../src/authority/facade";
+import type { CommitFanout } from "../../src/authority/frames";
 import { OrgAuthorities, OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { TEST_EPOCH, testRuntimeContext } from "../lib/app";
 
@@ -23,6 +25,7 @@ export type TestAuthority = {
   readonly db: ReplicaDb;
   readonly sql: SqlClient.SqlClient;
   readonly alarms: Array<number>;
+  readonly published: Array<CommitFanout>;
 };
 
 export const SequentialCrypto = Layer.sync(SecureRandom.SecureRandom, () => {
@@ -65,6 +68,7 @@ export class TestAuthorities extends Context.Service<
           const db = yield* makeReplicaDb(sql);
           const alarms: Array<number> = [];
           const recordAlarm = (at: number) => Effect.sync(() => void alarms.push(at));
+          const published: Array<CommitFanout> = [];
           const context = yield* Layer.build(
             OrgAuthorityFacade.layer.pipe(
               Layer.provide([
@@ -73,20 +77,26 @@ export class TestAuthorities extends Context.Service<
                   scheduleAt: recordAlarm,
                   scheduleBy: recordAlarm,
                 }),
+                Layer.succeed(LiveBroadcast, {
+                  publish: (fanout) => Effect.sync(() => void published.push(fanout)),
+                }),
                 Layer.succeed(SecureRandom.SecureRandom, crypto),
                 Layer.succeed(Digest.Digest, digest),
               ]),
             ),
           );
           const api = Context.get(context, OrgAuthorityFacade);
-          const authority = { api, db, sql, alarms } satisfies TestAuthority;
+          const authority = { api, db, sql, alarms, published } satisfies TestAuthority;
           authorities.set(organizationId, authority);
           return authority;
         }).pipe(Scope.provide(scope));
       return TestAuthorities.of({
         open,
         of,
-        getByName: (organizationId) => of(organizationId).api,
+        getByName: (organizationId) => ({
+          ...of(organizationId).api,
+          fetch: () => Effect.die("The test authority does not serve sockets."),
+        }),
       });
     }),
   ).pipe(Layer.provide(SequentialCrypto));

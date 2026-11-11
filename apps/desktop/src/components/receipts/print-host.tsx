@@ -1,14 +1,14 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { InvoiceId } from "@store/contracts";
-import { useSuspenseInventoryInvoice } from "@store/inventory-react";
 import * as Atom from "effect/reactivity/Atom";
 import { Suspense, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { toastManager } from "@/components/ui/toast";
 import { useReceiptFormat, useReceiptStoreName } from "@/hooks/use-receipt-format";
-import { appHost } from "@/host";
 import type { PrintPage } from "@/host/share";
+import { runShell } from "@/host/shell";
+import { useSuspenseInventoryInvoice } from "@/inventory/queries";
 import { toastBridgeFailure } from "@/lib/errors";
 import type { ReceiptFormat, ReceiptPaper } from "@/lib/receipt-format";
 
@@ -50,8 +50,9 @@ const pageOf = (paper: ReceiptPaper, format: ReceiptFormat, sheet: HTMLElement):
 };
 
 const deliver = async (job: ReceiptPrintJob, page: PrintPage, fileStem: string) => {
-  const outcome =
-    job.output === "pdf" ? await appHost().savePdf(fileStem) : await appHost().print(page);
+  const outcome = await runShell((shell) =>
+    job.output === "pdf" ? shell.ShareSavePdf({ fileStem }) : shell.SharePrint({ page }),
+  );
   switch (outcome._tag) {
     case "saved":
       toastManager.add({ title: `Saved ${outcome.fileName}`, type: "success" });

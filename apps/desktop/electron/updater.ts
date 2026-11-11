@@ -7,7 +7,7 @@ import {
   updateFailureMessage,
   type UpdaterEvent,
   type UpdatePhase,
-} from "@store/contracts/updater";
+} from "@store/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberHandle from "effect/FiberHandle";

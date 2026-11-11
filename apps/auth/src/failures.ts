@@ -1,9 +1,4 @@
-import {
-  authHttpErrorStatus,
-  EmailAddress,
-  type AuthErrorCode,
-  type AuthHttpError,
-} from "@store/auth";
+import { authHttpErrorStatus, type AuthErrorCode, type AuthHttpError } from "@store/auth";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
@@ -94,32 +89,6 @@ const REFUSALS = {
     "ORGANIZATION_NOT_FOUND",
     "This organization is not yours.",
   ),
-  AlreadyAMember: wire(
-    "Conflict",
-    "ALREADY_A_MEMBER",
-    "This person is already in the organization.",
-  ),
-  InvitationInvalid: wire(
-    "NotFound",
-    "INVITATION_NOT_FOUND",
-    "This invitation is no longer valid. Ask for a new one.",
-  ),
-  InvitationNotPending: wire(
-    "NotFound",
-    "INVITATION_NOT_FOUND",
-    "This invitation is no longer pending.",
-  ),
-  InvitationAlreadyUsed: wire(
-    "Conflict",
-    "INVITATION_ALREADY_USED",
-    "This invitation has already been used.",
-  ),
-  MemberNotFound: wire("NotFound", "MEMBER_NOT_FOUND", "This person is not a member."),
-  CannotRemoveSelf: wire(
-    "Conflict",
-    "CANNOT_REMOVE_SELF",
-    "Leave the organization instead of removing yourself.",
-  ),
   Unavailable: wire(
     "ServiceUnavailable",
     "AUTH_UNAVAILABLE",
@@ -127,35 +96,10 @@ const REFUSALS = {
   ),
   "RateLimited.request": wire("TooManyRequests", "RATE_LIMITED", "Wait before trying again."),
   "RateLimited.code": wire("TooManyRequests", "RATE_LIMITED", "Wait before trying another code."),
-  "RateLimited.invitation": wire(
-    "TooManyRequests",
-    "RATE_LIMITED",
-    "Wait before trying another invitation.",
-  ),
-  "InsufficientRole.owner": wire(
-    "Forbidden",
-    "INSUFFICIENT_ROLE",
-    "Only the organization owner can do this.",
-  ),
-  "InsufficientRole.manager": wire(
+  InsufficientRole: wire(
     "Forbidden",
     "INSUFFICIENT_ROLE",
     "You do not have permission to do this.",
-  ),
-  "InsufficientRole.ownerOverManagers": wire(
-    "Forbidden",
-    "INSUFFICIENT_ROLE",
-    "Only the organization owner can remove an owner or an admin.",
-  ),
-  "LastOwner.roleChange": wire(
-    "Conflict",
-    "LAST_OWNER",
-    "Make someone else an owner before changing this role.",
-  ),
-  "LastOwner.removal": wire(
-    "Conflict",
-    "LAST_OWNER",
-    "Make someone else an owner before removing this person.",
   ),
 } as const satisfies Record<string, AuthFailureWire>;
 
@@ -163,29 +107,11 @@ export class AuthRefusal extends Schema.TaggedError<AuthRefusal>()("AuthRefusal"
   reason: Schema.Literals(Struct.keys(REFUSALS)),
 }) {}
 
-export class InvitationEmailMismatch extends Schema.TaggedError<InvitationEmailMismatch>()(
-  "InvitationEmailMismatch",
-  { invited: EmailAddress },
-) {}
+export type RateLimitAttempt = "request" | "code";
 
-export type AuthFailure = AuthRefusal | InvitationEmailMismatch;
+export const authFailureWire = (failure: AuthRefusal): AuthFailureWire => REFUSALS[failure.reason];
 
-export type RateLimitAttempt = "request" | "code" | "invitation";
-
-export const authFailureWire = (failure: AuthFailure): AuthFailureWire => {
-  switch (failure._tag) {
-    case "AuthRefusal":
-      return REFUSALS[failure.reason];
-    case "InvitationEmailMismatch":
-      return wire(
-        "Forbidden",
-        "INVITATION_EMAIL_MISMATCH",
-        `This invitation was sent to ${failure.invited}.`,
-      );
-  }
-};
-
-export const authHttpError = (failure: AuthFailure): AuthHttpError => {
+export const authHttpError = (failure: AuthRefusal): AuthHttpError => {
   const { kind, code, message } = authFailureWire(failure);
   return { _tag: kind, error: { code, message } };
 };

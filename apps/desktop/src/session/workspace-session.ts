@@ -1,5 +1,4 @@
 import { unauthenticatedWorkspace, type WorkspaceSnapshot } from "@store/contracts";
-import { claimedCatalogScope } from "@store/inventory-react";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,13 +8,14 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import type { AuthSessionBridge } from "@/host";
 import {
   hasAuthenticatedWorkspace,
   type HostAccessPolicy,
   type OpenWorkspace,
   type Workspace,
 } from "@/host-access";
+import { shell } from "@/host/shell";
+import { claimedCatalogScope } from "@/inventory/opening";
 
 import {
   deviceWorkspaceAfter,
@@ -79,7 +79,6 @@ class WorkspaceSessionPorts extends Context.Service<
   {
     readonly access: HostAccessPolicy;
     readonly device: DeviceWorkspaceStore;
-    readonly bridge: Pick<AuthSessionBridge, "getSession" | "sessionChanges">;
     readonly invalidate: Effect.Effect<void>;
     readonly flush: (fn: () => void) => void;
   }
@@ -198,11 +197,10 @@ const settled = (get: Atom.FnContext, change: WorkspaceChange) => {
 
 export const refreshWorkspaceSession = sessionRuntime.fn<void>()(
   Effect.fn("WorkspaceSession.refresh")(function* (_, get) {
-    const { bridge } = yield* WorkspaceSessionPorts;
-    const snapshot = yield* Effect.tryPromise({
-      try: () => bridge.getSession(),
-      catch: (cause) => new WorkspaceSessionUnreachable({ cause }),
-    });
+    const client = yield* shell;
+    const snapshot = yield* client
+      .AuthSession()
+      .pipe(Effect.mapError((cause) => new WorkspaceSessionUnreachable({ cause })));
     yield* settled(get, { _tag: "Session", snapshot });
   }),
 );
@@ -227,13 +225,15 @@ export const witnessLocalCatalog = sessionRuntime.fn<DeviceWorkspace["localCatal
 export const workspaceSessionFeed = sessionRuntime
   .atom(
     Effect.gen(function* () {
-      const { bridge } = yield* WorkspaceSessionPorts;
+      const client = yield* shell;
       const registry = yield* AtomRegistry.AtomRegistry;
-      yield* bridge.sessionChanges.pipe(
-        Stream.runForEach((snapshot) =>
-          Effect.sync(() => registry.set(commitWorkspaceChange, { _tag: "Session", snapshot })),
-        ),
-      );
+      yield* client
+        .SessionChanges()
+        .pipe(
+          Stream.runForEach((snapshot) =>
+            Effect.sync(() => registry.set(commitWorkspaceChange, { _tag: "Session", snapshot })),
+          ),
+        );
     }),
   )
   .pipe(Atom.keepAlive);

@@ -10,7 +10,7 @@ import {
   type RegisterReplicaResult,
   type SyncCommandEnvelope,
 } from "@store/contracts";
-import type { CommandStatus, ReplicaReadStamp } from "@store/contracts/sync/replica-model";
+import type { CommandStatus, ReplicaReadStamp } from "@store/contracts";
 import { commandOutbox, replicaState } from "@store/db/replica.schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";

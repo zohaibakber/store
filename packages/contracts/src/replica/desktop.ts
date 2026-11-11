@@ -1,13 +1,8 @@
-import * as Rpc from "effect/rpc/Rpc";
-import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
-
-import { Licence, LicenceRefusal, LicenceState, MAX_LICENCE_TEXT_LENGTH } from "../licence";
-import { ReplicaStorageError, ReplicaUnavailable } from "./errors";
 
 export const REPLICA_PORTS_CHANNEL = "replica:ports";
 
-export const REPLICA_PORT_ROLES = ["reads", "store", "desktop", "insights"] as const;
+export const REPLICA_PORT_ROLES = ["reads", "store", "insights"] as const;
 export type ReplicaPortRole = (typeof REPLICA_PORT_ROLES)[number];
 
 export const WorkspaceToken = Schema.NonEmptyString.pipe(Schema.brand("WorkspaceToken"));
@@ -32,13 +27,3 @@ export type WorkerPhase = typeof WorkerPhase.Type;
 
 export const WorkspaceState = Schema.Struct({ writer: WorkerPhase, reader: WorkerPhase });
 export type WorkspaceState = typeof WorkspaceState.Type;
-
-export class DesktopRpcs extends RpcGroup.make(
-  Rpc.make("WorkspaceState", { success: WorkspaceState, stream: true }),
-  Rpc.make("LicenceState", { success: LicenceState, stream: true }),
-  Rpc.make("EnterLicence", {
-    payload: { text: Schema.String.check(Schema.isMaxLength(MAX_LICENCE_TEXT_LENGTH)) },
-    success: Licence,
-    error: Schema.Union([LicenceRefusal, ReplicaStorageError, ReplicaUnavailable]),
-  }),
-) {}

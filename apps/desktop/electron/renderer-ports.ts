@@ -2,24 +2,16 @@ import {
   REPLICA_PORT_ROLES,
   REPLICA_PORTS_CHANNEL,
   type ReplicaPortsMessage,
-  type WorkerPhase,
-  type WorkspaceState,
   type WorkspaceToken,
 } from "@store/contracts/replica";
-import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
-import * as Stream from "effect/Stream";
-import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { MessageChannelMain, MessagePortMain } from "electron";
 
-import { layerDesktopServer, noDesktopLicence, type DesktopLicence } from "./desktop-rpcs";
 import { pumpPorts } from "./port-pump";
 
 const ATTACH_LIMIT = "10 seconds";
@@ -42,16 +34,7 @@ export type RendererPorts = {
     worker: Worker,
     attach: AttachPort,
   ) => Effect.Effect<void, never, Scope.Scope>;
-  readonly track: (
-    worker: Worker,
-    phases: Stream.Stream<WorkerPhase>,
-  ) => Effect.Effect<void, never, Scope.Scope>;
   readonly reattach: Effect.Effect<void>;
-};
-
-type Attachment = {
-  readonly workers: Scope.Closeable;
-  readonly desktop: Scope.Closeable;
 };
 
 export const makeRendererPorts = (options: {
@@ -59,18 +42,13 @@ export const makeRendererPorts = (options: {
   readonly workspaceToken: WorkspaceToken;
   readonly channel: () => MessageChannelMain;
   readonly attachInsights: AttachPort;
-  readonly licence?: DesktopLicence | undefined;
 }): Effect.Effect<RendererPorts, never, Scope.Scope> =>
   Effect.gen(function* () {
     const scope = yield* Effect.scope;
     const turn = yield* Semaphore.make(1);
     const generations = yield* Ref.make(0);
     const live = yield* Ref.make<Partial<Record<Worker, AttachPort>>>({});
-    const attached = yield* Ref.make(Option.none<Attachment>());
-    const state = yield* SubscriptionRef.make<WorkspaceState>({
-      writer: "starting",
-      reader: "starting",
-    });
+    const attached = yield* Ref.make(Option.none<Scope.Closeable>());
 
     const bridge = (attach: AttachPort) =>
       Effect.gen(function* () {
@@ -94,7 +72,7 @@ export const makeRendererPorts = (options: {
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.void,
-          onSome: (attachment) => Scope.close(attachment.workers, Exit.void),
+          onSome: (workers) => Scope.close(workers, Exit.void),
         }),
       ),
     );
@@ -103,29 +81,12 @@ export const makeRendererPorts = (options: {
       const { writer, reader } = yield* Ref.get(live);
       if (writer === undefined || reader === undefined || options.target.isDestroyed()) return;
       yield* closeWorkerPorts;
-      const previous = yield* Ref.get(attached);
       const workers = yield* Scope.fork(scope);
-      const desktop = yield* Scope.fork(scope);
       const reads = yield* bridge(reader).pipe(Scope.provide(workers));
       const store = yield* bridge(writer).pipe(Scope.provide(workers));
       const insights = yield* bridge(options.attachInsights).pipe(Scope.provide(workers));
       yield* Effect.all([reads.attach, store.attach], { discard: true, concurrency: 2 });
       yield* Effect.forkIn(insights.attach, workers);
-      const desktopChannel = options.channel();
-      yield* Layer.launch(
-        Layer.fresh(
-          layerDesktopServer(
-            desktopChannel.port1,
-            SubscriptionRef.changes(state),
-            options.licence ?? noDesktopLicence,
-          ),
-        ),
-      ).pipe(
-        Effect.catchCauseIf(Predicate.not(Cause.hasInterruptsOnly), (cause) =>
-          Effect.logWarning("RendererPorts.desktop_server_failed", cause),
-        ),
-        Effect.forkIn(desktop),
-      );
       const generation = yield* Ref.updateAndGet(generations, (count) => count + 1);
       yield* Effect.try(() =>
         options.target.postMessage(
@@ -136,11 +97,10 @@ export const makeRendererPorts = (options: {
             workspaceToken: options.workspaceToken,
             roles: REPLICA_PORT_ROLES,
           },
-          [reads.port, store.port, desktopChannel.port2, insights.port],
+          [reads.port, store.port, insights.port],
         ),
       ).pipe(Effect.catch((error) => Effect.logWarning("RendererPorts.post_failed", error)));
-      yield* Ref.set(attached, Option.some({ workers, desktop }));
-      if (Option.isSome(previous)) yield* Scope.close(previous.value.desktop, Exit.void);
+      yield* Ref.set(attached, Option.some(workers));
     }).pipe(turn.withPermits(1));
 
     return {
@@ -152,20 +112,11 @@ export const makeRendererPorts = (options: {
               Effect.andThen(turn.withPermits(1)(closeWorkerPorts)),
             ),
         ).pipe(Effect.andThen(Effect.forkIn(attach, scope)), Effect.asVoid),
-      track: (worker, phases) =>
-        phases.pipe(
-          Stream.runForEach((phase) =>
-            SubscriptionRef.update(state, (current) => ({ ...current, [worker]: phase })),
-          ),
-          Effect.forkScoped,
-          Effect.asVoid,
-        ),
       reattach: Effect.forkIn(attach, scope).pipe(Effect.asVoid),
     };
   });
 
 export const noRendererPorts: RendererPorts = {
   workerUp: () => Effect.void,
-  track: () => Effect.void,
   reattach: Effect.void,
 };

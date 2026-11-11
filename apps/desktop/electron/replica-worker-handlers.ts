@@ -16,7 +16,6 @@ import {
   settleReplicaFile,
   stageReplicaBackup,
 } from "@store/client-db/node-backup";
-import { layerShopLicence, ShopLicence } from "@store/client-db/node-licence";
 import {
   commitPublish,
   ImportRefused,
@@ -85,7 +84,7 @@ const fileFailure = (
 
 const StaffGateLive = layerNodeStaffGate();
 
-type Session = Context.Context<SqliteReplicaServices | StaffGate | ShopLicence>;
+type Session = Context.Context<SqliteReplicaServices | StaffGate>;
 
 type Platform = SecureRandom.SecureRandom | Digest.Digest;
 
@@ -184,7 +183,7 @@ const openSession = (
   scope: Scope.Scope,
 ): Effect.Effect<Session, unknown> =>
   Layer.buildWithScope(
-    Layer.fresh(Layer.provideMerge(Layer.mergeAll(StaffGateLive, layerShopLicence), session)).pipe(
+    Layer.fresh(Layer.provideMerge(StaffGateLive, session)).pipe(
       Layer.provide(Layer.succeedContext(platform)),
     ),
     scope,
@@ -437,12 +436,6 @@ export const makeReplicaWorkerHandlers = <R>(boot: Effect.Effect<WorkerBoot, unk
           link
             .setToken(token)
             .pipe(Effect.andThen(token === null ? Effect.void : wake("reconnect"))),
-        SetLicence: ({ state }) =>
-          withSession((session) => Context.get(session, ShopLicence).accept(state)),
-        DatabaseShop: () =>
-          withSession((session) => Context.get(session, ShopLicence).shop).pipe(
-            Effect.map((shop) => ({ shopId: Option.getOrNull(shop) })),
-          ),
       });
     }),
   );

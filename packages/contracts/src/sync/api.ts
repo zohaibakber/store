@@ -6,7 +6,6 @@ import * as Schema from "effect/Schema";
 import { publicErrorSchema } from "../http-errors";
 import { OperationId } from "../ids";
 import { PositiveIntFromString } from "../schema-primitives";
-import { DeviceCommand, OrganizationDevices } from "./devices";
 import {
   ImportCatalogRequest,
   ImportCatalogResult,
@@ -127,19 +126,6 @@ export const syncGroup = HttpApiGroup.make("sync")
     HttpApiEndpoint.get("readImportStatus", "/api/sync/imports/:importId", {
       params: Schema.Struct({ importId: ImportId }),
       success: ImportStatus,
-      error: SyncHttpErrors,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("listDevices", "/api/sync/devices", {
-      success: OrganizationDevices,
-      error: SyncHttpErrors,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("commandDevice", "/api/sync/devices", {
-      payload: DeviceCommand,
-      success: OrganizationDevices,
       error: SyncHttpErrors,
     }),
   );

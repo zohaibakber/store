@@ -1,5 +1,4 @@
 import type { Product } from "@store/contracts";
-import { useCommand } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 
 import {
@@ -11,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
+import { useCommand } from "@/inventory/provider";
 import { toastFailure } from "@/lib/errors";
 
 const visibilityOptions = [

@@ -1,12 +1,11 @@
 import {
+  AuthOrganizationMembership,
   IdentifyInput,
   LoginRoute,
-  OrganizationCommand,
-  OrganizationCommandResult,
-  OrganizationRoster,
   OtpLoginCommand,
   PasswordLoginCommand,
   RegisterPasswordCommand,
+  UpdateOrganizationInput,
 } from "@store/auth";
 import {
   LOCAL_ORGANIZATION_ID,
@@ -14,14 +13,10 @@ import {
   OrganizationId,
   ReplicaId,
   UserId,
+  WorkspaceSnapshot,
 } from "@store/contracts";
-import { WorkspaceToken } from "@store/contracts/replica";
-import {
-  GlobalProductSearchInput,
-  GlobalProductSearchResult,
-} from "@store/contracts/server-api.schema";
-import type { UpdaterEvent } from "@store/contracts/updater";
-import { WorkspaceSnapshot } from "@store/contracts/workspace";
+import type { UpdaterEvent } from "@store/contracts";
+import { WorkspaceState, WorkspaceToken } from "@store/contracts/replica";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as Schema from "effect/Schema";
@@ -73,7 +68,10 @@ export const RemoteReplicaIdentity = Schema.Struct({
 
 export const ReplicaOpenInput = Schema.Union([LocalReplicaIdentity, RemoteReplicaIdentity]);
 
-export const ReplicaIdentity = ReplicaOpenInput;
+export const ReplicaIdentity = Schema.Union([
+  LocalReplicaIdentity.mapFields(Struct.omit(["replicaId"])),
+  RemoteReplicaIdentity.mapFields(Struct.omit(["replicaId"])),
+]);
 export type ReplicaIdentity = typeof ReplicaIdentity.Encoded;
 
 export class WorkspaceRefused extends Schema.TaggedError<WorkspaceRefused>()("WorkspaceRefused", {
@@ -85,12 +83,6 @@ export const ReplicaOpened = Schema.Struct({
   engine: Schema.Literals(["sqlite", "unavailable"]),
 });
 export type ReplicaOpened = typeof ReplicaOpened.Type;
-
-export const InventoryHttpConfig = Schema.Struct({
-  apiBaseUrl: Schema.String,
-  deviceId: Schema.String,
-});
-export type InventoryHttpConfig = typeof InventoryHttpConfig.Type;
 
 export const SignInCredentials = Schema.toEncoded(
   Schema.Union([
@@ -138,20 +130,13 @@ export const ShellRpcs = RpcGroup.make(
   }),
   Rpc.make("AuthRenew", { success: WorkspaceSnapshot, error: ServerRequestFailed }),
   Rpc.make("AuthSignOut"),
-  Rpc.make("AuthOrganization", { success: OrganizationRoster, error: ServerRequestFailed }),
-  Rpc.make("AuthOrganize", {
-    payload: { command: OrganizationCommand },
-    success: OrganizationCommandResult,
+  Rpc.make("AuthUpdateOrganization", {
+    payload: { input: UpdateOrganizationInput },
+    success: AuthOrganizationMembership,
     error: ServerRequestFailed,
   }),
   Rpc.make("SessionChanges", { success: WorkspaceSnapshot, stream: true }),
   Rpc.make("OAuthCallbacks", { success: Schema.String, stream: true }),
-  Rpc.make("SearchGlobalProducts", {
-    payload: GlobalProductSearchInput.fields,
-    success: GlobalProductSearchResult,
-    error: ServerRequestFailed,
-  }),
-  Rpc.make("InventoryHttpConfig", { success: InventoryHttpConfig }),
   Rpc.make("ReplicaOpen", {
     payload: { identity: ReplicaIdentity },
     success: ReplicaOpened,
@@ -160,6 +145,12 @@ export const ShellRpcs = RpcGroup.make(
   Rpc.make("ReplicaClose", {
     payload: { workspaceToken: WorkspaceToken },
     error: WorkspaceRefused,
+  }),
+  Rpc.make("WorkspaceState", {
+    payload: { workspaceToken: WorkspaceToken },
+    success: WorkspaceState,
+    error: WorkspaceRefused,
+    stream: true,
   }),
   Rpc.make("ReplicaRetry", {
     payload: { workspaceToken: WorkspaceToken },

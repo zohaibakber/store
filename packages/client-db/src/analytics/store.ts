@@ -16,8 +16,10 @@ import {
   type RestockCursor,
   type RestockFilters,
   type InsightsInventoryTotals,
+  CategoryId,
+  ProductId,
+  decodeProductId,
 } from "@store/contracts";
-import { CategoryId, ProductId, decodeProductId } from "@store/contracts/ids";
 import {
   expiringBatch,
   insightAlert,

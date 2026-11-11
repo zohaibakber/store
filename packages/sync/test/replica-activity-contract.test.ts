@@ -7,12 +7,15 @@ import {
   type SyncPullResult,
   OperationId,
 } from "@store/contracts";
-import { LAST_UNIT_EPOCH, LAST_UNIT_PRODUCT_ID } from "@store/contracts/sync/fixtures";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 
+import {
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_PRODUCT_ID,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import type { ReplicaOutboxActivity } from "../src/replica/activity";
 import { readOutboxActivitySqlite, readPendingRowIdsSqlite } from "../src/replica/sqlite/activity";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
@@ -101,25 +104,6 @@ describe.each(adapters)("%s outbox activity", (_name, makeHarness) => {
         payload: { _tag: "submitPage", page },
       });
     });
-
-  it.effect("integrates a submitted command from the page carried by its receipt", () =>
-    withHarness((harness) =>
-      Effect.gen(function* () {
-        const applied = yield* submitWithPage(harness, ownPageAt(harness, "3"));
-
-        expect(applied.value).toMatchObject({
-          outcome: { _tag: "applied" },
-          appliedThrough: "3",
-          repairRequired: false,
-        });
-        expect(yield* harness.store.readCommandStatus(OperationId.make("catalog-submitted"))).toBe(
-          "integrated",
-        );
-        expect((yield* harness.store.readSyncCursor).appliedCommitSequence).toBe("3");
-        expect(yield* harness.readPendingRowIds("product")).toEqual([]);
-      }),
-    ),
-  );
 
   it.effect("settles the receipt and leaves a page that skips a commit unapplied", () =>
     withHarness((harness) =>

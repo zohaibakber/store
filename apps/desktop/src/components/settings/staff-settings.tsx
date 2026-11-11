@@ -8,7 +8,6 @@ import {
   type StaffEvent,
   type StaffMember,
 } from "@store/contracts";
-import { causeSurface, useCommand } from "@store/inventory-react";
 import * as Exit from "effect/Exit";
 import * as Redacted from "effect/Redacted";
 import { useEffect, useState, type ReactNode, type SubmitEvent } from "react";
@@ -58,6 +57,8 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { useReleaseSaleDrafts } from "@/hooks/use-sale-drafts";
+import { causeSurface } from "@/inventory/errors";
+import { useCommand } from "@/inventory/provider";
 import { toastFailure } from "@/lib/errors";
 import { formatCount } from "@/lib/format";
 import { formatInvoiceTime } from "@/lib/format-date";

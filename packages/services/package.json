@@ -5,7 +5,6 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
     "./insights": "./src/insights/index.ts",
     "./format": "./src/format.ts",
     "./purchasing": "./src/purchasing/index.ts"

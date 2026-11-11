@@ -4,7 +4,7 @@ export { mapReplicaStoreFailure } from "./replica/errors";
 export { ReplicaStore } from "./replica/store";
 export { SyncScheduler } from "./scheduler";
 export type { SyncSchedulerPolicy } from "./scheduler";
-export { layerOwnedHttpSync, layerOwnedLocalSync } from "./session";
+export { layerOwnedHttpSync } from "./session";
 export type { OwnedLiveHost } from "./session";
 export { SyncStateRef } from "./sync-state";
 export type { SyncPhase, SyncState } from "./sync-state";

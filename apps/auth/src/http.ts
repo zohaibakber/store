@@ -32,7 +32,7 @@ import {
   unavailableOnInfrastructureFailure,
   type InfrastructureFailure,
 } from "./errors";
-import { authFailureWire, authHttpError, AuthRefusal, type AuthFailure } from "./failures";
+import { authFailureWire, authHttpError, AuthRefusal } from "./failures";
 import { GoogleIdentity } from "./google-identity";
 import { OAuthState } from "./identifiers";
 import { addressBucket, AUTH_RATE_LIMIT_PERIOD_SECONDS, AuthLimiter } from "./limits";
@@ -57,7 +57,7 @@ const retryAfterRateLimit = HttpEffect.appendPreResponseHandler((_request, respo
 
 const publicBody = (code: AuthErrorCode, message: string) => ({ error: { code, message } });
 
-const fromAuth = <A, R>(effect: Effect.Effect<A, AuthFailure | InfrastructureFailure, R>) =>
+const fromAuth = <A, R>(effect: Effect.Effect<A, AuthRefusal | InfrastructureFailure, R>) =>
   unavailableOnInfrastructureFailure(effect).pipe(
     Effect.tapError((failure) =>
       authFailureWire(failure).kind === "TooManyRequests" ? retryAfterRateLimit : Effect.void,
@@ -202,21 +202,13 @@ const OrganizationHandlers = HttpApiBuilder.group(
   Effect.fn("AuthOrganizationHandlers.make")(function* (handlers) {
     const organizations = yield* Organizations;
 
-    return handlers
-      .handle(
-        "roster",
-        Effect.fn("AuthOrganizationHandlers.roster")(function* () {
-          const token = yield* CurrentAccessToken;
-          return yield* fromAuth(organizations.roster(token));
-        }),
-      )
-      .handle(
-        "command",
-        Effect.fn("AuthOrganizationHandlers.command")(function* ({ payload }) {
-          const token = yield* CurrentAccessToken;
-          return yield* fromAuth(organizations.organize({ accessToken: token, command: payload }));
-        }),
-      );
+    return handlers.handle(
+      "update",
+      Effect.fn("AuthOrganizationHandlers.update")(function* ({ payload }) {
+        const token = yield* CurrentAccessToken;
+        return yield* fromAuth(organizations.update(token, payload));
+      }),
+    );
   }),
 );
 
@@ -233,7 +225,7 @@ const GoogleCallbackParameters = Schema.Struct({
 const firstValue = (value: string | ReadonlyArray<string> | undefined) =>
   Predicate.isString(value) ? value : value?.[0];
 
-const callbackFailureResponse = (failure: AuthFailure) => {
+const callbackFailureResponse = (failure: AuthRefusal) => {
   const { kind, message } = authFailureWire(failure);
   return oauthCallbackErrorResponse(authHttpErrorStatus(kind), message);
 };

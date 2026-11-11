@@ -3,13 +3,13 @@ import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { RouteError } from "@/components/app/route-error";
 import type { HostAccessPolicy } from "@/host-access";
-import type { HostInventory } from "@/lib/inventory/host-inventory";
+import type { Catalogs } from "@/inventory/opening";
 import { routeTree } from "@/routeTree.gen";
 
 export const getRouter = (input: {
   readonly history: RouterHistory;
   readonly access: HostAccessPolicy;
-  readonly inventory: HostInventory;
+  readonly inventory: Catalogs;
   readonly registry: AtomRegistry.AtomRegistry;
 }) =>
   createRouter({

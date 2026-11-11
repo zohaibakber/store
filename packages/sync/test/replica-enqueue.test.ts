@@ -1,13 +1,20 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type CatalogRowWrite, type EnqueueCommandRequest, OperationId } from "@store/contracts";
-import { decodeCategoryId } from "@store/contracts/ids";
-import { LAST_UNIT_ORGANIZATION_ID, LAST_UNIT_REPLICA_A } from "@store/contracts/sync/fixtures";
+import {
+  type CatalogRowWrite,
+  type EnqueueCommandRequest,
+  OperationId,
+  decodeCategoryId,
+} from "@store/contracts";
 import { replicaState } from "@store/db/replica.schema";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 
+import {
+  LAST_UNIT_ORGANIZATION_ID,
+  LAST_UNIT_REPLICA_A,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { ReplicaStore } from "../src/replica/store";

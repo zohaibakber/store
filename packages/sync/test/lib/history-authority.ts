@@ -14,12 +14,12 @@ import {
   type SyncPullResult,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import * as Array from "effect/Array";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
+import { LAST_UNIT_EPOCH } from "../../../contracts/test/fixtures/last-unit-invoice";
 import type { SyncTransport } from "../../src/transport";
 import { authorityDigest, commitToAuthority, type AuthorityPartition } from "./authority-digest";
 

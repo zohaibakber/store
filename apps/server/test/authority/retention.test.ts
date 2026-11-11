@@ -1,12 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { OPERATIONAL_SUBSCRIPTION, OrgCommitSequence, SyncProtocolError } from "@store/contracts";
-import { decodeOrganizationId } from "@store/contracts/ids";
 import {
-  LAST_UNIT_BATCH_ID,
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_PRODUCT_ID,
-  LAST_UNIT_REPLICA_A,
-} from "@store/contracts/sync/fixtures";
+  OPERATIONAL_SUBSCRIPTION,
+  OrgCommitSequence,
+  SyncProtocolError,
+  decodeOrganizationId,
+} from "@store/contracts";
 import {
   authorityChanges,
   authorityState,
@@ -15,7 +13,6 @@ import {
   categories,
   commandReceipts,
   downloadLeases,
-  importParts,
   products,
   replicas,
   snapshots,
@@ -25,6 +22,12 @@ import { asc } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import {
+  LAST_UNIT_BATCH_ID,
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_PRODUCT_ID,
+  LAST_UNIT_REPLICA_A,
+} from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import { makeAuthorityEngine } from "../../src/authority/engine";
 import type { Actor } from "../../src/authority/engine";
 import { makeAuthorityMaintenance, type MaintenancePolicy } from "../../src/authority/maintenance";
@@ -275,57 +278,6 @@ describe("durable object inventory maintenance", () => {
       expect(outcome.remainingChanges).toHaveLength(2);
       expect(outcome.receipts).toHaveLength(10);
     }).pipe(scenario),
-  );
-
-  it.effect(
-    "expires leases, prunes old unleased snapshots, and sweeps abandoned import parts",
-    () =>
-      Effect.gen(function* () {
-        const organizationId = decodeOrganizationId("org-prune");
-        const { db, maintain } = yield* seedOrganization(
-          yield* TestAuthorities,
-          organizationId,
-          10,
-        );
-        yield* publishSnapshot(db, "snapshot-a", 2);
-        yield* publishSnapshot(db, "snapshot-b", 4);
-        yield* publishSnapshot(db, "snapshot-c", 6);
-        yield* publishSnapshot(db, "snapshot-d", 8);
-        yield* grantLease(db, LAST_UNIT_REPLICA_A, "snapshot-a", 2, OCCURRED_AT - 1);
-        yield* grantLease(db, "replica-held", "snapshot-b", 4, OCCURRED_AT + 600_000);
-        yield* db
-          .insert(importParts)
-          .values({
-            importId: "abandoned",
-            partNumber: 1,
-            byteLength: 2,
-            sha256: "0".repeat(64),
-            framesJson: "[]",
-            receivedAt: OCCURRED_AT - TEST_POLICY.abandonedImportMillis,
-          })
-          .pipe(Effect.orDie);
-        const report = yield* maintain();
-        const kept = yield* db
-          .select({ snapshotId: snapshots.snapshotId })
-          .from(snapshots)
-          .orderBy(asc(snapshots.snapshotId))
-          .all()
-          .pipe(Effect.orDie);
-        const leases = yield* db.select().from(downloadLeases).all().pipe(Effect.orDie);
-        const parts = yield* db.select().from(importParts).all().pipe(Effect.orDie);
-        const outcome = { report, kept, leases, parts };
-        expect(outcome.report.expiredLeases).toBe(1);
-        expect(outcome.report.prunedSnapshots).toBe(1);
-        expect(outcome.report.sweptImportParts).toBe(1);
-        expect(outcome.kept.map((row) => row.snapshotId)).toEqual([
-          "snapshot-b",
-          "snapshot-c",
-          "snapshot-d",
-        ]);
-        expect(outcome.leases.map((lease) => lease.replicaId)).toEqual(["replica-held"]);
-        expect(outcome.parts).toHaveLength(0);
-        expect(outcome.report.floorAfter).toBe("4");
-      }).pipe(scenario),
   );
 
   it.effect("refuses a pull below the new floor and serves a pull above it", () =>

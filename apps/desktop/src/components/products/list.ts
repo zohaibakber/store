@@ -1,5 +1,4 @@
-import { PRODUCT_SORT_COLUMNS, type ProductSortColumn } from "@store/inventory-react";
-
+import { PRODUCT_SORT_COLUMNS, type ProductSortColumn } from "@/inventory/list-request";
 import { listView, type ListView } from "@/lib/list-view";
 
 export const productList = listView({

@@ -9,7 +9,7 @@ The Cloudflare Worker exposes authenticated inventory and support APIs:
 - `POST /api/sync/snapshots`, `GET /api/sync/snapshots/:snapshotId/parts/:partNumber`
 - `GET /api/sync/live` (WebSocket upgrade; the bearer token travels in
   `Sec-WebSocket-Protocol` and the socket is held by the organization's
-  `OrgHub` Durable Object, which fans out each commit and stores nothing)
+  `OrgAuthority` Durable Object, which pushes each commit to its own sockets)
 
 The auth Worker issues short-lived ES256 JWTs. The API verifies them locally
 from `Authorization: Bearer` and trusts the organization membership in the
@@ -25,9 +25,9 @@ object, which decides the command in one storage transaction.
 
 Infrastructure is declared in TypeScript with [Alchemy](https://alchemy.run).
 The Worker, its bindings, and the local dev port live in `infra.ts`.
-`alchemy.run.ts` composes the API Worker, auth Worker, and edge rules into one stack.
-Alchemy provisions the auth D1 database, Workers AI, rate limiters, and the
-`OrgAuthority` and `OrgHub` Durable Objects on each stage. Maintenance runs on
+`alchemy.run.ts` composes the API Worker and auth Worker into one stack.
+Alchemy provisions the auth D1 database and the
+`OrgAuthority` Durable Object on each stage. Maintenance runs on
 each `OrgAuthority` object's own alarm, armed after writes: it expires leases,
 prunes or rebuilds snapshots, advances the retention floor, and trims change-log
 history within a time budget, then re-arms only while work remains.

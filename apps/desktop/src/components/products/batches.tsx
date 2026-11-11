@@ -1,8 +1,7 @@
 import { PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { Batch, Product, StockMovement } from "@store/contracts";
-import { productStock } from "@store/contracts/store-helpers";
-import { useCommand, type CommandExit } from "@store/inventory-react";
+import { productStock } from "@store/contracts";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { format, isValid, parse } from "date-fns";
@@ -44,6 +43,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastManager } from "@/components/ui/toast";
+import type { CommandExit } from "@/inventory/errors";
+import { useCommand } from "@/inventory/provider";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 import { formatDate, parseExpiryDate } from "@/lib/format-date";

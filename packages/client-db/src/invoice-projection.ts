@@ -3,14 +3,10 @@ import {
   allocateInvoiceLine,
   withAllocationIds,
   type AllocatableBatch,
+  decodeInvoiceId,
 } from "@store/contracts";
+import type { CreateInvoiceInput, InvoiceAllocation, IssueInvoiceCommand } from "@store/contracts";
 import { CatalogRefusal } from "@store/contracts/catalog-refusal";
-import { decodeInvoiceId } from "@store/contracts/ids";
-import type {
-  CreateInvoiceInput,
-  InvoiceAllocation,
-  IssueInvoiceCommand,
-} from "@store/contracts/store.schema";
 import * as Result from "effect/Result";
 
 import type { CatalogActor, CatalogWriteIds } from "./projection-context";

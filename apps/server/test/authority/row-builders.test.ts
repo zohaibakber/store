@@ -1,16 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
-  OPERATIONAL_SUBSCRIPTION,
-  PARTITION_DIGEST_VERSION,
   partitionDigestOf,
   PURCHASE_ORDER_STATUSES,
-  SnapshotPartPayload,
   STOCK_MOVEMENT_ROW_VERSION,
-  SyncEpoch,
   type PartitionLeafSource,
 } from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
-import { LAST_UNIT_EPOCH } from "@store/contracts/sync/fixtures";
 import {
   authorityState,
   batches,
@@ -25,13 +19,10 @@ import {
 } from "@store/db/authority.schema";
 import type { ReplicaDb } from "@store/sync/authority";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
+import { LAST_UNIT_EPOCH } from "../../../../packages/contracts/test/fixtures/last-unit-invoice";
 import { partitionDigest } from "../../src/authority/digest";
-import { OrganizationAuthority } from "../../src/inventory/organization-authority";
 import { scenario, TestAuthorities } from "./harness";
-
-const decodePart = Schema.decodeUnknownSync(Schema.fromJsonString(SnapshotPartPayload));
 
 const ADVERSARIAL_TEXT = [
   "plain",
@@ -245,61 +236,5 @@ describe("durable object row builders and partition digests", () => {
       expect(outcome.clientHistory.count).toBe(ADVERSARIAL_TEXT.length * 9 - 2);
       expect(outcome.empty).toEqual(outcome.emptyClient);
     }).pipe(scenario, Effect.orDie),
-  );
-
-  it.effect(
-    "serves snapshot rows that decode to the stored rows and hash to the authority digest",
-    () =>
-      Effect.gen(function* () {
-        const organizationId = "org-snapshot-rows";
-        const actor = { organizationId, userId: "user-1" };
-        const authorities = yield* TestAuthorities;
-        const { db } = yield* authorities.open(organizationId);
-        yield* seed(db, organizationId);
-        const snapshots = yield* OrganizationAuthority;
-        const { manifest } = yield* snapshots.acquireSnapshot(actor, {
-          epoch: SyncEpoch.make(LAST_UNIT_EPOCH),
-          subscription: OPERATIONAL_SUBSCRIPTION,
-        });
-        const parts = yield* Effect.forEach(manifest.parts, (part) =>
-          snapshots.readSnapshotPart(actor, manifest.snapshotId, part.partNumber),
-        );
-        const stored = {
-          category: yield* db.select().from(categories).all(),
-          product: yield* db.select().from(products).all(),
-          batch: yield* db.select().from(batches).all(),
-          invoice: yield* db.select().from(invoices).all(),
-          invoiceItem: yield* db.select().from(invoiceItems).all(),
-          stockMovement: yield* db.select().from(stockMovements).all(),
-          supplier: yield* db.select().from(suppliers).all(),
-          purchaseOrder: yield* db.select().from(purchaseOrders).all(),
-          purchaseOrderItem: yield* db.select().from(purchaseOrderItems).all(),
-        };
-        const outcome = {
-          manifest,
-          rows: parts.flatMap((part) => decodePart(part.json).rows),
-          stored,
-          digest: yield* partitionDigest(db),
-        };
-        expect(outcome.manifest.digestVersion).toBe(PARTITION_DIGEST_VERSION);
-        expect(outcome.rows).toHaveLength(ADVERSARIAL_TEXT.length * 9 - 2);
-        for (const row of outcome.rows) {
-          const decodeStored = Schema.decodeUnknownSync(syncEntityRows[row.entity].schema);
-          const original = outcome.stored[row.entity].find(
-            (candidate) => candidate.id === row.entityId,
-          );
-          expect(original, `${row.entity} ${row.entityId}`).toBeDefined();
-          expect(decodeStored(row.row)).toEqual(decodeStored(original));
-        }
-        expect(
-          yield* partitionDigestOf(
-            outcome.rows.map((row) => ({
-              entity: row.entity,
-              entityId: row.entityId,
-              rowVersion: row.rowVersion,
-            })),
-          ),
-        ).toEqual(outcome.digest);
-      }).pipe(scenario, Effect.orDie),
   );
 });

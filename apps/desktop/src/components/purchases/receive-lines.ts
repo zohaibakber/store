@@ -7,7 +7,8 @@ import {
   type Product,
   type PurchaseOrderItem,
 } from "@store/contracts";
-import type { ReceiveDeliveryLineInput } from "@store/inventory-react";
+
+import type { ReceiveDeliveryLineInput } from "@/inventory/commands";
 
 import { byProductName } from "./presentation";
 

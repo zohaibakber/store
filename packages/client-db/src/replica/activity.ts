@@ -5,8 +5,7 @@ import {
   SyncProtocolCode,
   type SyncCommand,
 } from "@store/contracts";
-import type { CatalogRowWrite } from "@store/contracts/catalog-write";
-import type { ProductId } from "@store/contracts/ids";
+import type { CatalogRowWrite, ProductId } from "@store/contracts";
 import {
   InventorySyncActivity,
   MAX_REJECTED_COMMAND_TARGETS,

@@ -1,5 +1,4 @@
 import {
-  OrgCommitSequence,
   syncProtocolError,
   type CommandReceipt,
   type EnqueueCommandRequest,
@@ -9,8 +8,6 @@ import {
   type SnapshotPartPayload,
   type SyncCommandEnvelope,
   type SyncPullResult,
-  type SyncSubmitCommandRequest,
-  type SyncSubmitCommandResult,
   type SyncSubscription,
 } from "@store/contracts";
 import type {
@@ -18,20 +15,23 @@ import type {
   Committed,
   ReplicaCommitNotice,
   ReplicaReadStamp,
-} from "@store/contracts/sync/replica-model";
+} from "@store/contracts";
+import { commandOutbox } from "@store/db/replica.schema";
+import { inArray } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
+import { decideLocalCommand } from "../../local-authority";
 import { admitAuthorityWithin, applyAdmission } from "../apply";
+import { decodeStoredEnvelope } from "../codecs";
 import {
   adoptReplicaRegistration,
   claimNextUpload,
@@ -44,6 +44,7 @@ import {
   pruneIntegratedCommands,
   queueAdmittedCommand,
   admitLocalCommand,
+  clientSequenceLength,
   settleUploadClaim,
   type ClaimNextUploadInput,
 } from "../commands";
@@ -63,6 +64,7 @@ import {
   UNVERIFIED,
   verifyPulledDigest,
 } from "../coverage";
+import { OUTSTANDING_COMMAND_STATUSES } from "../decisions";
 import { isStorageFullFailure, mapReplicaStoreFailure } from "../errors";
 import {
   abandonSnapshotCandidate,
@@ -73,6 +75,7 @@ import {
   stepSnapshotActivation,
   type SnapshotStep,
 } from "../import";
+import { undoLocalEffects } from "../pending";
 import { syncCursorOf } from "../registration";
 import type { ReplicaDb } from "../sql-client/drizzle";
 import {
@@ -101,7 +104,7 @@ import {
   refreshPlannerStats,
   type BulkClear,
 } from "./generation";
-import { listPendingMarks } from "./pending-rows";
+import { listPendingMarks, sqlitePendingRows } from "./pending-rows";
 import {
   maintainReplicaPlanner,
   PLANNER_CHECK_INTERVAL,
@@ -126,13 +129,8 @@ type CheckpointWindow = {
   readonly prior: WindowSettings | undefined;
 };
 
-type InTransactionAuthority = (
-  tx: ReplicaDb,
-  request: SyncSubmitCommandRequest,
-) => Effect.Effect<SyncSubmitCommandResult, unknown, Digest.Digest>;
-
 export type SqliteReplicaStoreOptions = {
-  readonly authority?: InTransactionAuthority;
+  readonly decidesLocally?: boolean;
 };
 
 type EnqueuedCommand = {
@@ -147,6 +145,7 @@ type SqliteReplicaStoreInternals = {
   readonly requestCleanup: Effect.Effect<void>;
   readonly cleanupRequests: Queue.Dequeue<void>;
   readonly maintainPlanner: Effect.Effect<void>;
+  readonly openLocal: Effect.Effect<void, ReplicaStoreError>;
 };
 
 const makeSqliteReplicaStoreInternals = (
@@ -264,33 +263,18 @@ const makeSqliteReplicaStoreInternals = (
     const touchedByIntegrating = (value: Effect.Success<ReturnType<typeof integrateWithin>>) =>
       mergeTouched(value.settled?.restored ?? EMPTY_TOUCHED, value.applied);
 
-    const decideWithin = (
-      tx: ReplicaDb,
-      envelope: SyncCommandEnvelope,
-      appliedCommitSequence: string,
-    ) =>
+    const integrateLocally = (tx: ReplicaDb, envelope: SyncCommandEnvelope) =>
       Effect.gen(function* () {
-        const authority = options.authority;
-        if (authority === undefined) return undefined;
-        const decided = yield* authority(tx, {
-          ...envelope,
-          afterCommitSequence: OrgCommitSequence.make(appliedCommitSequence),
-        }).pipe(
-          Effect.tapError((cause) =>
-            Effect.logDebug(
-              "The in-transaction authority left a command to the upload queue",
-              cause,
-            ),
-          ),
-          Effect.option,
+        const decided = yield* decideLocalCommand(tx, envelope);
+        const integrated = yield* integrateWithin(
+          tx,
+          { _tag: "submitPage", page: decided.page },
+          { claimId: undefined, receipt: decided.receipt },
         );
-        if (Option.isNone(decided)) return undefined;
-        const { page, ...receipt } = decided.value;
-        if (page === undefined) return undefined;
-        if (receipt.result._tag === "rejected") {
-          return yield* syncProtocolError(receipt.result.code, receipt.result.message);
+        if (integrated.applied.outcome._tag === "refused") {
+          return yield* integrated.applied.outcome.error;
         }
-        return { receipt, page };
+        return { result: decided.receipt.result, touched: touchedByIntegrating(integrated) };
       });
 
     const enqueueCommand = (request: EnqueueCommandRequest) =>
@@ -306,34 +290,26 @@ const makeSqliteReplicaStoreInternals = (
                 touched: EMPTY_TOUCHED,
               } satisfies EnqueuedCommand;
             }
-            const decided = yield* decideWithin(
-              tx,
-              admission.envelope,
-              admission.state.appliedCommitSequence,
-            );
-            const projected =
-              decided === undefined ? yield* projectAdmittedCommand(tx, admission) : EMPTY_TOUCHED;
+            const projected = options.decidesLocally
+              ? EMPTY_TOUCHED
+              : yield* projectAdmittedCommand(tx, admission);
             const stamp = yield* queueAdmittedCommand(tx, admission, request.occurredAt);
             yield* recordActiveMutation(tx, () => ({
               kind: "local",
               operationId: request.operationId,
             }));
-            if (decided === undefined) {
+            if (!options.decidesLocally) {
               return { status: "pending", stamp, touched: projected } satisfies EnqueuedCommand;
             }
-            const integrated = yield* integrateWithin(
-              tx,
-              { _tag: "submitPage", page: decided.page },
-              { claimId: undefined, receipt: decided.receipt },
-            );
-            if (integrated.applied.outcome._tag === "refused") {
-              return yield* integrated.applied.outcome.error;
+            const integrated = yield* integrateLocally(tx, admission.envelope);
+            if (integrated.result._tag === "rejected") {
+              return yield* syncProtocolError(integrated.result.code, integrated.result.message);
             }
             yield* pruneIntegratedCommands(tx, admission.envelope.clientSequence);
             return {
               status: (yield* commandStatus(tx, request.operationId)) ?? "pending",
               stamp,
-              touched: touchedByIntegrating(integrated),
+              touched: integrated.touched,
             } satisfies EnqueuedCommand;
           }),
         touchedNotice((queued) => queued.touched),
@@ -347,6 +323,48 @@ const makeSqliteReplicaStoreInternals = (
           notice: committed.notice,
         })),
       );
+
+    const drainLocalOutbox = (tx: ReplicaDb) =>
+      Effect.gen(function* () {
+        const rows = yield* tx
+          .select()
+          .from(commandOutbox)
+          .where(inArray(commandOutbox.status, [...OUTSTANDING_COMMAND_STATUSES]))
+          .orderBy(clientSequenceLength, commandOutbox.clientSequence)
+          .all();
+        const last = rows.at(-1);
+        if (last === undefined) return EMPTY_TOUCHED;
+        const pendingRows = sqlitePendingRows(tx, (yield* loadReplicaState(tx)).organizationId);
+        const restored = yield* Effect.forEach([...rows].reverse(), (row) =>
+          undoLocalEffects(pendingRows, row.operationId),
+        );
+        const integrated = yield* Effect.forEach(rows, (row) =>
+          decodeStoredEnvelope(row).pipe(
+            Effect.flatMap((envelope) => integrateLocally(tx, envelope)),
+            Effect.map((integrated) => integrated.touched),
+          ),
+        );
+        yield* pruneIntegratedCommands(tx, last.clientSequence);
+        return mergeTouched(...restored, ...integrated);
+      });
+
+    const openLocal = Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) =>
+        commit(
+          "SqliteReplicaStore.openLocal",
+          (tx) =>
+            Effect.gen(function* () {
+              const touched = yield* drainLocalOutbox(tx);
+              if (!syncCursorOf(yield* loadReplicaState(tx)).bootstrapped) {
+                yield* recordCaughtUp(tx, now);
+              }
+              return touched;
+            }),
+          touchedNotice((touched: TouchedSet) => touched),
+        ),
+      ),
+      Effect.asVoid,
+    );
 
     const claimUpload = (input: ClaimNextUploadInput) =>
       commit(
@@ -694,6 +712,7 @@ const makeSqliteReplicaStoreInternals = (
       requestCleanup,
       cleanupRequests,
       maintainPlanner,
+      openLocal,
     } satisfies SqliteReplicaStoreInternals;
   });
 
@@ -709,12 +728,13 @@ export const makeSqliteReplicaStore = (
 export const layerSqliteReplicaStore = (
   databaseIdentity: string,
   options: SqliteReplicaStoreOptions = {},
-): Layer.Layer<ReplicaStore, never, SqliteReplica | Digest.Digest> =>
+): Layer.Layer<ReplicaStore, ReplicaStoreError, SqliteReplica | Digest.Digest> =>
   Layer.effect(
     ReplicaStore,
     Effect.gen(function* () {
       const handle = yield* SqliteReplica;
       const internals = yield* makeSqliteReplicaStoreInternals(handle, databaseIdentity, options);
+      if (options.decidesLocally) yield* internals.openLocal;
       yield* internals.requestCleanup;
       yield* Stream.fromQueue(internals.cleanupRequests).pipe(
         Stream.mapEffect(() => internals.cleanup),

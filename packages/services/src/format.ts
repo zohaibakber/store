@@ -1,4 +1,4 @@
-import { moneyToRupees } from "@store/contracts/store-pricing";
+import { moneyToRupees } from "@store/contracts";
 
 const rupees = new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR" });
 const rupeesWithFraction = new Intl.NumberFormat("en-PK", {

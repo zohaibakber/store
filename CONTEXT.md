@@ -68,14 +68,14 @@ _Avoid_: Optimistic cache, shadow state, draft rows
 
 **Command state.**
 Where a saved command stands: pending, sending, accepted awaiting integration,
-integrated, rejected, or abandoned. It is read through the replica handle, never
+integrated, or rejected. It is read through the replica handle, never
 as SQL across IPC.
 _Avoid_: Sync status, queue state
 
 **Insights report.**
 The analysis of one catalog replica: demand forecasts, reorder points and
 suggested orders, stock status, ranked alerts, and sales periods. Built from
-aggregated facts the replica reads in one bounded pass.
+sales facts an analytics worker aggregates into a separate analytics database.
 _Avoid_: Dashboard analytics, stock recommendations
 
 **Invoice.**

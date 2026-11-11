@@ -1,9 +1,9 @@
 import type { SalesRange } from "@store/contracts";
-import { useInventoryInsights } from "@store/inventory-react";
 
 import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { SegmentedRadio } from "@/components/shared/segmented-radio";
-import { useCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
+import { useCatalogIsEmpty } from "@/inventory/catalog-empty";
+import { useInventoryInsights } from "@/inventory/insights";
 
 import { InsightsBuilding } from "./building";
 import { KpiGrid } from "./kpis";

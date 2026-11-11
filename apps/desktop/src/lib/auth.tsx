@@ -4,8 +4,8 @@ import { unauthenticatedWorkspace } from "@store/contracts";
 import * as Schema from "effect/Schema";
 import * as React from "react";
 
-import { appHost } from "@/host";
 import type { OpenWorkspace, Workspace } from "@/host-access";
+import { runShell } from "@/host/shell";
 import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
 import {
   refreshWorkspaceSession,
@@ -32,7 +32,7 @@ const AuthContext = React.createContext<AuthContextValue | null>(null);
 
 export async function signOut() {
   try {
-    await appHost().auth.signOut();
+    await runShell((shell) => shell.AuthSignOut());
   } catch (error) {
     toastBridgeFailure(error);
   }
@@ -40,7 +40,7 @@ export async function signOut() {
 
 export async function bootstrapAuth(): Promise<WorkspaceSnapshot> {
   try {
-    return await appHost().auth.getSession();
+    return await runShell((shell) => shell.AuthSession());
   } catch (cause) {
     return unauthenticatedWorkspace({
       isOnline: false,

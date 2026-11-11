@@ -14,13 +14,6 @@ import {
   type RestockView,
   type StockStatus,
 } from "@store/contracts";
-import {
-  restockExportFailureCopy,
-  useInventoryInsights,
-  usePurchasingGate,
-  useRestockExport,
-  useRestockPage,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import {
@@ -55,6 +48,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { restockExportFailureCopy } from "@/inventory/errors";
+import { useInventoryInsights, useRestockExport, useRestockPage } from "@/inventory/insights";
+import { usePurchasingGate } from "@/inventory/purchasing-queries";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { isString } from "@/lib/predicates";
 

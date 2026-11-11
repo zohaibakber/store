@@ -16,9 +16,6 @@ import {
   type SyncEntity,
   OperationId,
   Money,
-} from "@store/contracts";
-import { syncEntityRows } from "@store/contracts/entity-rows";
-import {
   decodeBatchId,
   decodeCategoryId,
   decodeInvoiceId,
@@ -28,7 +25,8 @@ import {
   decodePurchaseOrderId,
   decodePurchaseOrderItemId,
   decodeSupplierId,
-} from "@store/contracts/ids";
+} from "@store/contracts";
+import { syncEntityRows } from "@store/contracts/entity-rows";
 import {
   authorityState,
   importParts,
@@ -42,8 +40,6 @@ import { replicaState } from "@store/db/replica.schema";
 import { ReplicaStore, SyncEngine, SyncTransport } from "@store/sync";
 import {
   layerSqliteReplicaStore,
-  LocalAuthority,
-  LOCAL_AUTHORITY_EPOCH,
   SqliteReplica,
   sqliteCatalogParts,
   sqlitePartitionDigest,
@@ -378,13 +374,10 @@ const catalogOf = (handle: SqliteReplicaHandle) =>
 
 const localWorkspace = (importId: string) =>
   Effect.gen(function* () {
-    const engine = yield* SyncEngine;
     const store = yield* ReplicaStore;
     const handle = yield* SqliteReplica;
-    yield* engine.ensureRegistered;
     for (const command of localHistory) {
       yield* store.enqueueCommand(queued(command));
-      yield* engine.drainUploads;
     }
     const digest = yield* sqlitePartitionDigest(handle.db);
     const parts = yield* sqliteCatalogParts(handle.db, {
@@ -394,18 +387,13 @@ const localWorkspace = (importId: string) =>
     return { digest, parts, catalog: yield* catalogOf(handle) };
   }).pipe(
     Effect.provide(
-      freshSyncEngine().pipe(
-        Layer.provide(SequentialCrypto),
-        Layer.provideMerge(LocalAuthority.layer),
-        Layer.provideMerge(
-          layerSqliteReplicaStore("import-local", { authority: LocalAuthority.submitWithin }),
-        ),
+      layerSqliteReplicaStore("import-local", { decidesLocally: true }).pipe(
         Layer.provideMerge(
           seededReplica({
             organizationId: LOCAL_ORGANIZATION_ID,
             userId: LOCAL_USER_ID,
             replicaId: DEVICE,
-            epoch: LOCAL_AUTHORITY_EPOCH,
+            epoch: "1",
           }),
         ),
       ),
@@ -502,6 +490,7 @@ describe("publishing a local workspace into an empty organization", () => {
       const unlanded = yield* imports.commitImport(owner, importId, miscounted).pipe(Effect.flip);
       const staged = yield* imports.importStatus(owner, importId);
       const landed = yield* imports.commitImport(owner, importId, request);
+      const landedFanout = authorities.of("org-published").published.at(-1);
       const committed = decodeResult(landed.json);
       const settled = yield* imports.importStatus(owner, importId);
       const later = decodeImportId("import-later");
@@ -613,7 +602,7 @@ describe("publishing a local workspace into an empty organization", () => {
         settled,
         superseded,
         refused,
-        fanout: landed.fanout,
+        fanout: landedFanout,
         committed,
         repeated,
         asked,

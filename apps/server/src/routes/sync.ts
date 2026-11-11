@@ -14,7 +14,6 @@ import { publicError } from "../http/errors";
 import { failWithSyncHttpError } from "../http/sync-errors";
 import type { InventoryError } from "../inventory/errors";
 import { MAX_SUBMIT_BODY_BYTES, OrganizationAuthority } from "../inventory/organization-authority";
-import { LiveFanout } from "../live/fanout";
 
 const SNAPSHOT_PART_CACHE_CONTROL = "private, max-age=31536000, immutable";
 
@@ -93,8 +92,6 @@ const publishOwnerRequired = ownerRefusal(
   "Only an owner can move a device's data into this organization.",
 );
 
-const devicesOwnerRequired = ownerRefusal("Only an owner can manage this organization's devices.");
-
 const asOwner = <A, R>(
   refusal: SyncForbidden,
   run: (actor: Actor) => Effect.Effect<A, InventoryError, R>,
@@ -112,7 +109,6 @@ export const SyncHandlers = HttpApiBuilder.group(
   "sync",
   Effect.fn("SyncHandlers.make")(function* (handlers) {
     const authority = yield* OrganizationAuthority;
-    const fanout = yield* LiveFanout;
 
     return handlers
       .handle(
@@ -133,9 +129,6 @@ export const SyncHandlers = HttpApiBuilder.group(
               );
               if (Result.isFailure(bodyText)) return bodyText.failure;
               const submitted = yield* authority.submit(actor, bodyText.success);
-              if (submitted.fanout !== null) {
-                yield* fanout.publish(actor.organizationId, submitted.fanout);
-              }
               return encodedJsonResponse(submitted.json);
             }).pipe(
               Effect.catchTag("SyncRequestMalformed", () =>
@@ -207,15 +200,7 @@ export const SyncHandlers = HttpApiBuilder.group(
         "commitImport",
         Effect.fn("SyncHandlers.commitImport")(function* ({ params, payload }) {
           const committed = yield* asOwner(publishOwnerRequired, (actor) =>
-            authority
-              .commitImport(actor, params.importId, payload)
-              .pipe(
-                Effect.tap((result) =>
-                  result.fanout === null
-                    ? Effect.void
-                    : fanout.publish(actor.organizationId, result.fanout),
-                ),
-              ),
+            authority.commitImport(actor, params.importId, payload),
           );
           return encodedJsonResponse(committed.json);
         }),
@@ -225,20 +210,6 @@ export const SyncHandlers = HttpApiBuilder.group(
         Effect.fn("SyncHandlers.readImportStatus")(function* ({ params }) {
           return yield* asOwner(publishOwnerRequired, (actor) =>
             authority.importStatus(actor, params.importId),
-          );
-        }),
-      )
-      .handle(
-        "listDevices",
-        Effect.fn("SyncHandlers.listDevices")(function* () {
-          return yield* asOwner(devicesOwnerRequired, (actor) => authority.devices(actor));
-        }),
-      )
-      .handle(
-        "commandDevice",
-        Effect.fn("SyncHandlers.commandDevice")(function* ({ payload }) {
-          return yield* asOwner(devicesOwnerRequired, (actor) =>
-            authority.commandDevice(actor, payload),
           );
         }),
       );

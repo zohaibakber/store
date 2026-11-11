@@ -1,9 +1,9 @@
 import type { ProductId } from "@store/contracts";
-import { useProductInsight } from "@store/inventory-react";
 import type * as React from "react";
 
 import { AsyncBoundary } from "@/components/app/error-boundary";
 import { StatusLabel } from "@/components/insights/status-badge";
+import { useProductInsight } from "@/inventory/insights";
 import { EMPTY } from "@/lib/format";
 
 import { formatStock } from "./stock";

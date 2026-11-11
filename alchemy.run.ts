@@ -7,7 +7,6 @@ import * as Layer from "effect/Layer";
 import { Auth, AuthLive } from "./apps/auth/infra.ts";
 import { Api } from "./apps/server/api.ts";
 import { ApiLive } from "./apps/server/infra.ts";
-import { Edge } from "./infra/edge.ts";
 
 export default Alchemy.Stack(
   "Tabaaq",
@@ -19,13 +18,11 @@ export default Alchemy.Stack(
     const { stage } = yield* Alchemy.Stack;
     const auth = yield* Auth;
     const api = yield* Api;
-    const edge = yield* Edge;
     return {
       stage,
       authUrl: auth.url,
       apiUrl: api.url,
       workerName: api.workerName,
-      edge,
     };
   }).pipe(Effect.provide(AuthLive.pipe(Layer.provideMerge(ApiLive)))),
 );

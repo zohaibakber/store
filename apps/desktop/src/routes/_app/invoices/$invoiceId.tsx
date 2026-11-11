@@ -1,5 +1,4 @@
 import { decodeInvoiceId } from "@store/contracts";
-import { preloadInventoryInvoice, useSuspenseInventoryInvoice } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
@@ -7,7 +6,9 @@ import {
   InvoiceDetailNotFound,
   InvoiceDetailPage,
 } from "@/components/invoices/detail-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadInventoryInvoice } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import { useSuspenseInventoryInvoice } from "@/inventory/queries";
 
 export const Route = createFileRoute("/_app/invoices/$invoiceId")({
   params: { parse: ({ invoiceId }) => ({ invoiceId: decodeInvoiceId(invoiceId) }) },

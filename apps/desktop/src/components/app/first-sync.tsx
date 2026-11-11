@@ -1,6 +1,5 @@
 import { CloudDownloadIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useInventorySyncTransfer } from "@store/inventory-react";
 
 import {
   Empty,
@@ -12,6 +11,7 @@ import {
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import { useInventorySyncTransfer } from "@/inventory/provider";
 
 function FirstSyncProgress() {
   const transfer = useInventorySyncTransfer();

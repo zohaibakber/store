@@ -1,17 +1,17 @@
 import { SALES_RANGE_DAYS, type SalesRange } from "@store/contracts";
-import {
-  preloadAll,
-  preloadInventoryInsights,
-  preloadInventoryInvoices,
-} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { InsightsError } from "@/components/insights/insights-error";
 import { OverviewPage } from "@/components/insights/overview-page";
 import { RECENT_INVOICE_LIMIT } from "@/components/insights/presentation";
-import { preloadCatalogIsEmpty } from "@/lib/inventory/catalog-empty";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadCatalogIsEmpty } from "@/inventory/catalog-empty";
+import {
+  preloadAll,
+  preloadInventoryInsights,
+  preloadInventoryInvoices,
+} from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const DEFAULT_RANGE: SalesRange = 30;

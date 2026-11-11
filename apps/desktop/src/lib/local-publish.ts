@@ -1,8 +1,7 @@
 import { useAtom, useAtomMount, useAtomSet, useAtomValue } from "@effect/atom-react";
-import { useSuspenseCatalogHoldsNothing } from "@store/inventory-react";
+import { OrganizationId } from "@store/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
@@ -11,9 +10,10 @@ import { useMemo } from "react";
 
 import { toastManager } from "@/components/ui/toast";
 import { clearSaleDrafts } from "@/hooks/use-sale-drafts";
-import { appHost } from "@/host";
+import { refusedAsFailure, shell } from "@/host/shell";
 import type { CatalogCounts } from "@/host/workspace-backup";
 import type { PublishOffer, PublishOutcome, PublishProgress } from "@/host/workspace-publish";
+import { useSuspenseCatalogHoldsNothing } from "@/inventory/queries";
 import { useAuth } from "@/lib/auth";
 import { catalogContents } from "@/lib/catalog-counts";
 import { bridgeMessage, toastBridgeFailure } from "@/lib/errors";
@@ -45,32 +45,24 @@ const IDLE: PublishPhase = { _tag: "Idle" };
 
 const ANOTHER_ORGANIZATION = "another organization";
 
+const decodeOrganizationId = Schema.decodeUnknownEffect(OrganizationId);
+
 const offerAtom = Atom.family((organizationId: string) =>
   Atom.make(
-    Effect.tryPromise(() => appHost().publish.offer(organizationId)).pipe(
+    Effect.all([shell, decodeOrganizationId(organizationId)]).pipe(
+      Effect.flatMap(([client, id]) => client.PublishOffer({ organizationId: id })),
       Effect.orElseSucceed(() => NO_OFFER),
     ),
   ),
 );
 
 const progressAtom = Atom.make(
-  Stream.callback<PublishProgress>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        appHost().publish.onProgress((progress) => Queue.offerUnsafe(queue, progress)),
-      ),
-      (stop) => Effect.sync(stop),
-    ),
-  ),
+  Stream.unwrap(Effect.map(shell, (client) => client.PublishProgress())),
 );
 
-class PublishBridgeFailed extends Schema.TaggedError<PublishBridgeFailed>()("PublishBridgeFailed", {
-  cause: Schema.Defect(),
-}) {}
-
-const failedMove = (failure: PublishBridgeFailed): PublishOutcome => ({
+const failedMove = (cause: unknown): PublishOutcome => ({
   _tag: "failed",
-  message: bridgeMessage(failure.cause),
+  message: bridgeMessage(cause),
 });
 
 const moveToOrganization = Atom.fn<PublishTarget>()(
@@ -78,10 +70,11 @@ const moveToOrganization = Atom.fn<PublishTarget>()(
     const outcome = yield* Effect.scoped(
       Effect.gen(function* () {
         yield* Atom.mount(progressAtom);
-        return yield* Effect.tryPromise({
-          try: () => appHost().publish.publish(organization.id),
-          catch: (cause) => new PublishBridgeFailed({ cause }),
-        }).pipe(Effect.match({ onSuccess: (published) => published, onFailure: failedMove }));
+        return yield* Effect.all([shell, decodeOrganizationId(organization.id)]).pipe(
+          Effect.flatMap(([client, id]) => client.PublishStart({ organizationId: id })),
+          refusedAsFailure,
+          Effect.match({ onSuccess: (published) => published, onFailure: failedMove }),
+        );
       }),
     );
     if (outcome._tag === "published") {
@@ -102,11 +95,9 @@ const moveAtom = singleFlight(moveToOrganization);
 
 const discardElsewhere = Atom.fn<PublishTarget>()(
   Effect.fn("LocalPublish.discard")(function* (organization, get) {
-    yield* Effect.tryPromise({
-      try: () => appHost().publish.discard(organization.id),
-      catch: (cause) => new PublishBridgeFailed({ cause }),
-    }).pipe(
-      Effect.tapError((failure) => Effect.sync(() => toastBridgeFailure(failure.cause))),
+    yield* Effect.all([shell, decodeOrganizationId(organization.id)]).pipe(
+      Effect.flatMap(([client, id]) => client.PublishDiscard({ organizationId: id })),
+      Effect.tapError((failure) => Effect.sync(() => toastBridgeFailure(failure))),
       Effect.ignore,
       Effect.ensuring(Effect.sync(() => get.refresh(offerAtom(organization.id)))),
     );

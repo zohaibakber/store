@@ -1,5 +1,7 @@
-import { OrganizationName, type AuthOrganizationMembership } from "@store/auth";
+import { OrganizationId, OrganizationName } from "@store/auth";
+import type { AuthenticatedWorkspaceSnapshot } from "@store/contracts";
 import { useForm } from "@tanstack/react-form";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { FormField } from "@/components/shared/form-field";
@@ -9,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Fieldset } from "@/components/ui/fieldset";
 import { Input } from "@/components/ui/input";
 import { toastManager } from "@/components/ui/toast";
-import { useOrganization } from "@/lib/organization";
+import { runShell } from "@/host/shell";
+import { toastBridgeFailure } from "@/lib/errors";
 
 const profileSchema = Schema.toStandardSchemaV1(
   Schema.Struct({
@@ -24,22 +27,30 @@ export function OrganizationProfileCard({
   organization,
   editable,
 }: {
-  organization: AuthOrganizationMembership;
+  organization: NonNullable<AuthenticatedWorkspaceSnapshot["activeOrganization"]>;
   editable: boolean;
 }) {
-  const { actions } = useOrganization();
   const defaults = { name: organization.name };
 
   const form = useForm({
     defaultValues: defaults,
     validators: { onSubmit: profileSchema },
     onSubmit: async ({ value }) => {
-      const result = await actions.organize({
-        _tag: "UpdateOrganization",
-        organizationId: organization.id,
-        name: OrganizationName.make(value.name.trim()),
-      });
-      if (result) toastManager.add({ title: "Organization updated", type: "success" });
+      try {
+        await runShell((client) =>
+          client
+            .AuthUpdateOrganization({
+              input: {
+                organizationId: OrganizationId.make(organization.id),
+                name: OrganizationName.make(value.name.trim()),
+              },
+            })
+            .pipe(Effect.andThen(client.AuthRenew())),
+        );
+        toastManager.add({ title: "Organization updated", type: "success" });
+      } catch (cause) {
+        toastBridgeFailure(cause);
+      }
     },
   });
 

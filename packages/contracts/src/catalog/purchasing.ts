@@ -36,10 +36,7 @@ export const isPurchaseOrderOpen = (status: PurchaseOrderStatus): boolean => {
 export const OPEN_PURCHASE_ORDER_STATUSES: ReadonlyArray<PurchaseOrderStatus> =
   PURCHASE_ORDER_STATUSES.filter(isPurchaseOrderOpen);
 
-export const canMovePurchaseOrder = (
-  from: PurchaseOrderStatus,
-  to: PurchaseOrderStatus,
-): boolean =>
+export const canMovePurchaseOrder = (from: PurchaseOrderStatus, to: PurchaseOrderStatus): boolean =>
   from === to
     ? isPurchaseOrderOpen(from)
     : purchaseOrderTransitions[from].some((next) => next === to);

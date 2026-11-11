@@ -1,4 +1,3 @@
-import { preloadProductList, type ProductListRequest } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
@@ -6,7 +5,9 @@ import * as React from "react";
 import { productList, type ProductListView } from "@/components/products/list";
 import { ProductsPage } from "@/components/products/page";
 import { useShownRequest } from "@/components/shared/list-view";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadProductList } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import type { ProductListRequest } from "@/inventory/product-list";
 import { ListSearchText } from "@/lib/list-view";
 import { lenientSearchParam } from "@/lib/search-param";
 

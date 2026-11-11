@@ -1,4 +1,4 @@
-import type { AbcClass, StockPolicy } from "@store/contracts/sync/replica-analytics";
+import type { AbcClass, StockPolicy } from "@store/contracts";
 
 export const DEFAULT_STOCK_POLICY: StockPolicy = {
   leadDays: 7,

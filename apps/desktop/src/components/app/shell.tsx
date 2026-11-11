@@ -1,5 +1,4 @@
 import { useAtom, useAtomValue } from "@effect/atom-react";
-import { claimedCatalogScope, type Catalogs } from "@store/inventory-react";
 import { getRouteApi, Outlet } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { Suspense, type ReactNode } from "react";
@@ -12,15 +11,15 @@ import { AppSidebar } from "@/components/app/sidebar";
 import { SiteBreadcrumbs } from "@/components/app/site-breadcrumbs";
 import { TitleBar, TitleBarEnd, TitleBarSearch, TitleBarStart } from "@/components/app/title-bar";
 import { WindowControls } from "@/components/app/window-controls";
-import { LicenceNotice } from "@/components/licence/notice";
 import { ReceiptPrintHost } from "@/components/receipts/print-host";
 import { StaffGate, StaffRouteGuard } from "@/components/staff/gate";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { claimedCatalogScope } from "@/inventory/opening";
+import { InventoryProvider, InventoryReady } from "@/inventory/provider";
+import { WorkspaceSyncAction } from "@/inventory/sync-status";
 import { useAuth } from "@/lib/auth";
-import { InventoryProvider, InventoryReady } from "@/lib/inventory/provider";
-import { WorkspaceSyncAction } from "@/lib/inventory/sync-status";
 import { useLocalCatalogWitness } from "@/lib/local-catalog-witness";
 import { sidebarOpenAtom } from "@/lib/preferences";
 
@@ -30,26 +29,14 @@ const CATALOG_UNAVAILABLE = "Catalog storage is unavailable.";
 
 export function AppShell() {
   const { inventory } = route.useRouteContext();
-  if (inventory._tag === "Unavailable") return <ShellFrame content={<CatalogUnavailable />} />;
-  return <ClaimedCatalogShell catalogs={inventory.catalogs} />;
-}
-
-function CatalogUnavailable() {
-  return <p className="p-6 text-sm text-destructive">{CATALOG_UNAVAILABLE}</p>;
-}
-
-function ClaimedCatalogShell({ catalogs }: { readonly catalogs: Catalogs }) {
   const scope = useAtomValue(claimedCatalogScope);
   if (Option.isNone(scope)) return <ShellFrame content={<CatalogUnavailable />} />;
   return (
-    <InventoryProvider opening={catalogs.catalog(scope.value)}>
+    <InventoryProvider opening={inventory.catalog(scope.value)}>
       <StaffGate>
         <ShellFrame
           content={
             <InventoryReady>
-              <div className="sticky top-0 z-10">
-                <LicenceNotice />
-              </div>
               <PublishOffer />
               <ReceiptPrintHost />
               <StaffRouteGuard>
@@ -63,6 +50,10 @@ function ClaimedCatalogShell({ catalogs }: { readonly catalogs: Catalogs }) {
       </StaffGate>
     </InventoryProvider>
   );
+}
+
+function CatalogUnavailable() {
+  return <p className="p-6 text-sm text-destructive">{CATALOG_UNAVAILABLE}</p>;
 }
 
 function ShellFrame({ content }: { readonly content: ReactNode }) {

@@ -1,6 +1,6 @@
-import { MAX_LIST_SEARCH_LENGTH, type ListPage } from "@store/inventory-react";
 import * as Schema from "effect/Schema";
 
+import { MAX_LIST_SEARCH_LENGTH, type ListPage } from "@/inventory/list-request";
 import { lenientSearchParam } from "@/lib/search-param";
 
 export const LIST_PAGE_SIZES = [25, 50, 100] as const;

@@ -1,5 +1,12 @@
-import { roleAllows, type StaffMember, type StaffState } from "@store/contracts";
-import { BatchId, InvoiceId, ProductId, type StaffId } from "@store/contracts/ids";
+import {
+  roleAllows,
+  type StaffMember,
+  type StaffState,
+  BatchId,
+  InvoiceId,
+  ProductId,
+  type StaffId,
+} from "@store/contracts";
 import * as Schema from "effect/Schema";
 
 export const MAX_SALE_DRAFTS = 9;

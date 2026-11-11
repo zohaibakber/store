@@ -1,12 +1,12 @@
 import { RESTOCK_VIEWS, type RestockView } from "@store/contracts";
-import { preloadRestockPage } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { InsightsError } from "@/components/insights/insights-error";
 import { RESTOCK_PAGE_SIZE } from "@/components/insights/presentation";
 import { RestockPage } from "@/components/insights/restock-page";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { preloadRestockPage } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const DEFAULT_VIEW: RestockView = "action";

@@ -5,8 +5,8 @@ import {
   SyncSubscription,
   type SyncEntityChange,
   type SyncProtocolError,
+  replicaEntitySchemas,
 } from "@store/contracts";
-import { replicaEntitySchemas } from "@store/contracts/sync/replica-model";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

@@ -1,11 +1,10 @@
-import { isValidDiscount, type IssueInvoiceResult, type Product } from "@store/contracts";
-import type { InvoiceId, ProductId } from "@store/contracts/ids";
-import { formatInvoiceNumber } from "@store/contracts/store-helpers";
 import {
-  useCommand,
-  useSuspenseCatalogProductsById,
-  type CommandExit,
-} from "@store/inventory-react";
+  isValidDiscount,
+  type IssueInvoiceResult,
+  type Product,
+  formatInvoiceNumber,
+} from "@store/contracts";
+import type { InvoiceId, ProductId } from "@store/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -42,6 +41,9 @@ import {
   useSaleDraftActions,
   useSaleSearchFocusRequest,
 } from "@/hooks/use-sale-drafts";
+import type { CommandExit } from "@/inventory/errors";
+import { useCommand } from "@/inventory/provider";
+import { useSuspenseCatalogProductsById } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
 import {
   activateSaleDraft,

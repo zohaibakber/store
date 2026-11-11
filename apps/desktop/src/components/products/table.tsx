@@ -1,5 +1,4 @@
 import type { ProductRow } from "@store/client-db";
-import type { ProductFacets } from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link } from "@tanstack/react-router";
 import { createColumnHelper, type ReactTable } from "@tanstack/react-table";
@@ -12,6 +11,7 @@ import {
 } from "@/components/shared/data-table";
 import { useListTable } from "@/components/shared/list-view";
 import { useStaffAllows } from "@/components/staff/access";
+import type { ProductFacets } from "@/inventory/product-list";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDate } from "@/lib/format-date";
 

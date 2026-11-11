@@ -1,5 +1,4 @@
-import type { UpdaterEvent } from "@store/contracts/updater";
-import type { WorkspaceSnapshot } from "@store/contracts/workspace";
+import type { UpdaterEvent, WorkspaceSnapshot } from "@store/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

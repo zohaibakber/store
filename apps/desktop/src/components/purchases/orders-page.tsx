@@ -1,15 +1,6 @@
 import { Add01Icon, ShoppingBasket01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { PurchaseOrder } from "@store/contracts";
-import {
-  PURCHASE_ORDER_TABS,
-  usePurchasingGate,
-  useSuspensePurchaseOrderCount,
-  useSuspensePurchaseOrderListCount,
-  useSuspensePurchaseOrderPage,
-  type PurchaseOrderListRequest,
-  type PurchaseOrderTab,
-} from "@store/inventory-react";
 import { formatPrice } from "@store/services/format";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { createColumnHelper } from "@tanstack/react-table";
@@ -37,6 +28,14 @@ import {
 } from "@/components/ui/empty";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { PURCHASE_ORDER_TABS, type PurchaseOrderTab } from "@/inventory/list-request";
+import type { PurchaseOrderListRequest } from "@/inventory/purchasing";
+import {
+  usePurchasingGate,
+  useSuspensePurchaseOrderCount,
+  useSuspensePurchaseOrderListCount,
+  useSuspensePurchaseOrderPage,
+} from "@/inventory/purchasing-queries";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { formatDateTime, formatInvoiceTime } from "@/lib/format-date";
 

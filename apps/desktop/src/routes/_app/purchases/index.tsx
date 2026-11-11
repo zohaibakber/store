@@ -1,13 +1,4 @@
 import type { SupplierId } from "@store/contracts";
-import {
-  PURCHASE_ORDER_TABS,
-  preloadAll,
-  preloadPurchaseOrderList,
-  preloadPurchaseOrderTabs,
-  preloadSuppliers,
-  useSuspenseSuppliers,
-  type PurchaseOrderListRequest,
-} from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
@@ -20,7 +11,16 @@ import {
 import { PurchaseOrdersPage } from "@/components/purchases/orders-page";
 import { supplierIdsMatching, supplierNamesOf } from "@/components/purchases/presentation";
 import { useShownRequest } from "@/components/shared/list-view";
-import { preloadInventory } from "@/lib/inventory/preload";
+import { PURCHASE_ORDER_TABS } from "@/inventory/list-request";
+import {
+  preloadAll,
+  preloadPurchaseOrderList,
+  preloadPurchaseOrderTabs,
+  preloadSuppliers,
+} from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
+import type { PurchaseOrderListRequest } from "@/inventory/purchasing";
+import { useSuspenseSuppliers } from "@/inventory/purchasing-queries";
 import { lenientSearchParam } from "@/lib/search-param";
 
 const PurchasesSearch = Schema.Struct({

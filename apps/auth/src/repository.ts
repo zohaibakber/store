@@ -1,15 +1,12 @@
 import {
   AuthClientKind,
   EmailAddress,
-  InvitationId,
   OrganizationId,
-  OrganizationMember,
   OrganizationRole,
   PasswordHash,
   SessionId,
   UserId,
   type EmailAddress as EmailAddressType,
-  type InvitationId as InvitationIdType,
   type OrganizationId as OrganizationIdType,
   type OrganizationRole as OrganizationRoleType,
   type PasswordHash as PasswordHashType,
@@ -19,27 +16,11 @@ import {
 import {
   oauthAccount,
   organization,
-  organizationInvitation,
   organizationMembership,
   session,
   user,
 } from "@store/db/auth.schema";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  lte,
-  ne,
-  not,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -50,7 +31,6 @@ import * as SchemaGetter from "effect/SchemaGetter";
 import { AuthCrypto } from "./crypto";
 import { AuthD1, bound, runD1Batch, type CompilableQuery } from "./d1";
 import { GoogleAccountId, SessionFamilyId } from "./identifiers";
-import { defaultOrganizationName } from "./organization-permissions";
 
 const instant = Schema.flip(Schema.DateFromMillis);
 const nullableInstant = Schema.NullOr(instant);
@@ -90,28 +70,6 @@ const MembershipRecord = Schema.Struct({
   role: OrganizationRole,
 });
 export interface MembershipRecord extends Schema.Schema.Type<typeof MembershipRecord> {}
-
-const InvitationRecord = Schema.Struct({
-  id: InvitationId,
-  organizationId: OrganizationId,
-  organizationName: Schema.String,
-  email: EmailAddress,
-  role: OrganizationRole,
-  invitedByUserId: UserId,
-  expiresAt: Schema.Number,
-  acceptedAt: Schema.NullOr(Schema.Number),
-  revokedAt: Schema.NullOr(Schema.Number),
-  createdAt: Schema.Number,
-});
-export interface InvitationRecord extends Schema.Schema.Type<typeof InvitationRecord> {}
-
-const InvitationRow = Schema.Struct({
-  ...InvitationRecord.fields,
-  expiresAt: instant,
-  acceptedAt: nullableInstant,
-  revokedAt: nullableInstant,
-  createdAt: instant,
-});
 
 const SessionRecord = Schema.Struct({
   id: SessionId,
@@ -171,16 +129,6 @@ interface NewSession {
   readonly expiresAt: number;
 }
 
-interface NewInvitation {
-  readonly organizationId: OrganizationIdType;
-  readonly email: EmailAddressType;
-  readonly role: OrganizationRoleType;
-  readonly tokenHash: string;
-  readonly invitedByUserId: UserIdType;
-  readonly expiresAt: number;
-  readonly now: number;
-}
-
 const repositoryError = (operation: string, cause: unknown) =>
   new AuthRepositoryError({ operation, cause });
 
@@ -205,19 +153,6 @@ const membershipColumns = {
   role: organizationMembership.role,
 };
 
-const invitationColumns = {
-  id: organizationInvitation.id,
-  organizationId: organizationInvitation.organizationId,
-  organizationName: organization.name,
-  email: organizationInvitation.email,
-  role: organizationInvitation.role,
-  invitedByUserId: organizationInvitation.invitedByUserId,
-  expiresAt: organizationInvitation.expiresAt,
-  acceptedAt: organizationInvitation.acceptedAt,
-  revokedAt: organizationInvitation.revokedAt,
-  createdAt: organizationInvitation.createdAt,
-};
-
 const sessionColumns = {
   id: session.id,
   familyId: session.familyId,
@@ -233,22 +168,13 @@ const sessionColumns = {
 
 const decodeUser = Schema.decodeUnknownEffect(UserRow);
 const decodeMembership = Schema.decodeUnknownEffect(MembershipRecord);
-const decodeInvitation = Schema.decodeUnknownEffect(InvitationRow);
 const decodeSession = Schema.decodeUnknownEffect(SessionRow);
-const decodeMembers = Schema.decodeUnknownEffect(Schema.Array(OrganizationMember));
 
 const decoded = <A, Row>(
   decoder: (row: Row) => Effect.Effect<A, Schema.SchemaError>,
   operation: string,
   row: Row,
 ) => decoder(row).pipe(Effect.mapError((cause) => repositoryError(operation, cause)));
-
-const stillPending = (now: number) =>
-  and(
-    isNull(organizationInvitation.acceptedAt),
-    isNull(organizationInvitation.revokedAt),
-    gt(organizationInvitation.expiresAt, at(now)),
-  );
 
 const sessionValues = (input: NewSession) => ({
   id: input.id,
@@ -311,39 +237,6 @@ export class AuthRepository extends Context.Service<
       readonly name: string;
       readonly role: OrganizationRoleType;
     }) => Effect.Effect<MembershipRecord | null, AuthRepositoryError>;
-    readonly listMembers: (
-      organizationId: OrganizationIdType,
-    ) => Effect.Effect<ReadonlyArray<OrganizationMember>, AuthRepositoryError>;
-    readonly changeMemberRole: (input: {
-      readonly organizationId: OrganizationIdType;
-      readonly userId: UserIdType;
-      readonly role: OrganizationRoleType;
-    }) => Effect.Effect<boolean, AuthRepositoryError>;
-    readonly removeMember: (input: {
-      readonly organizationId: OrganizationIdType;
-      readonly userId: UserIdType;
-    }) => Effect.Effect<boolean, AuthRepositoryError>;
-    readonly createInvitation: (
-      input: NewInvitation,
-    ) => Effect.Effect<InvitationRecord, AuthRepositoryError>;
-    readonly revokeInvitation: (input: {
-      readonly organizationId: OrganizationIdType;
-      readonly invitationId: InvitationIdType;
-      readonly now: number;
-    }) => Effect.Effect<boolean, AuthRepositoryError>;
-    readonly findInvitationByTokenHash: (
-      tokenHash: string,
-    ) => Effect.Effect<InvitationRecord | null, AuthRepositoryError>;
-    readonly pendingInvitationsForOrganization: (input: {
-      readonly organizationId: OrganizationIdType;
-      readonly now: number;
-    }) => Effect.Effect<ReadonlyArray<InvitationRecord>, AuthRepositoryError>;
-    readonly acceptInvitation: (input: {
-      readonly invitation: InvitationRecord;
-      readonly userId: UserIdType;
-      readonly sessionId: SessionIdType;
-      readonly now: number;
-    }) => Effect.Effect<boolean, AuthRepositoryError>;
     readonly createSession: (input: NewSession) => Effect.Effect<void, AuthRepositoryError>;
     readonly findSession: (
       sessionId: SessionIdType,
@@ -382,13 +275,6 @@ export class AuthRepository extends Context.Service<
       const returningMatchedOne = (rows: ReadonlyArray<ReturnedId> | undefined) =>
         (rows?.length ?? 0) === 1;
 
-      const invitationById = (invitationId: string) =>
-        database
-          .select(invitationColumns)
-          .from(organizationInvitation)
-          .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
-          .where(eq(organizationInvitation.id, invitationId));
-
       const membershipOf = (userId: UserIdType, organizationId: OrganizationIdType) =>
         database
           .select(membershipColumns)
@@ -401,23 +287,6 @@ export class AuthRepository extends Context.Service<
             ),
           );
 
-      const anotherOwnerExists = (organizationId: OrganizationIdType, userId: UserIdType) =>
-        exists(
-          database
-            .select({ id: organizationMembership.id })
-            .from(organizationMembership)
-            .where(
-              and(
-                eq(organizationMembership.organizationId, organizationId),
-                eq(organizationMembership.role, "owner"),
-                ne(organizationMembership.userId, userId),
-              ),
-            ),
-        );
-
-      const leavesAnOwner = (organizationId: OrganizationIdType, userId: UserIdType) =>
-        or(ne(organizationMembership.role, "owner"), anotherOwnerExists(organizationId, userId));
-
       const newAccount = Effect.fnUntraced(function* (input: {
         readonly email: EmailAddressType;
         readonly name: string;
@@ -429,7 +298,7 @@ export class AuthRepository extends Context.Service<
         const name = input.name.trim();
         const store = {
           id: OrganizationId.make(yield* newId),
-          name: defaultOrganizationName(input.name),
+          name: `${name || "My"}'s Shop`,
         };
         const membershipId = yield* newId;
         return {
@@ -639,215 +508,6 @@ export class AuthRepository extends Context.Service<
             organizationName: updated.name,
             role: input.role,
           });
-        }),
-        listMembers: Effect.fn("AuthRepository.listMembers")(function* (organizationId) {
-          const rows = yield* database
-            .select({
-              userId: user.id,
-              name: user.name,
-              email: user.email,
-              image: user.image,
-              role: organizationMembership.role,
-              joinedAt: organizationMembership.createdAt,
-            })
-            .from(organizationMembership)
-            .innerJoin(user, eq(user.id, organizationMembership.userId))
-            .where(eq(organizationMembership.organizationId, organizationId))
-            .orderBy(asc(organizationMembership.createdAt))
-            .pipe(fail("listMembers"));
-          return yield* decoded(
-            decodeMembers,
-            "listMembers.decode",
-            rows.map((row) => ({ ...row, joinedAt: row.joinedAt.getTime() })),
-          );
-        }),
-        changeMemberRole: Effect.fn("AuthRepository.changeMemberRole")(function* (input) {
-          const changed = yield* database
-            .update(organizationMembership)
-            .set({ role: input.role })
-            .where(
-              and(
-                eq(organizationMembership.organizationId, input.organizationId),
-                eq(organizationMembership.userId, input.userId),
-                ne(organizationMembership.role, input.role),
-                leavesAnOwner(input.organizationId, input.userId),
-              ),
-            )
-            .returning({ id: organizationMembership.id })
-            .pipe(fail("changeMemberRole"));
-          return returningMatchedOne(changed);
-        }),
-        removeMember: Effect.fn("AuthRepository.removeMember")(function* (input) {
-          const now = yield* Clock.currentTimeMillis;
-          const results = yield* atomicBatch("removeMember", [
-            database
-              .delete(organizationMembership)
-              .where(
-                and(
-                  eq(organizationMembership.organizationId, input.organizationId),
-                  eq(organizationMembership.userId, input.userId),
-                  leavesAnOwner(input.organizationId, input.userId),
-                ),
-              )
-              .returning({ id: organizationMembership.id }),
-            database
-              .update(session)
-              .set({ revokedAt: at(now) })
-              .where(
-                and(
-                  eq(session.userId, input.userId),
-                  eq(session.activeOrganizationId, input.organizationId),
-                  isNull(session.revokedAt),
-                  not(
-                    exists(
-                      database
-                        .select({ id: organizationMembership.id })
-                        .from(organizationMembership)
-                        .where(
-                          and(
-                            eq(organizationMembership.organizationId, input.organizationId),
-                            eq(organizationMembership.userId, input.userId),
-                          ),
-                        ),
-                    ),
-                  ),
-                ),
-              ),
-          ]);
-          return returningMatchedOne(results[0]);
-        }),
-        createInvitation: Effect.fn("AuthRepository.createInvitation")(function* (input) {
-          const invitationId = InvitationId.make(yield* newId);
-          yield* atomicBatch("createInvitation", [
-            database
-              .update(organizationInvitation)
-              .set({ revokedAt: at(input.now) })
-              .where(
-                and(
-                  eq(organizationInvitation.organizationId, input.organizationId),
-                  eq(organizationInvitation.email, input.email),
-                  isNull(organizationInvitation.acceptedAt),
-                  isNull(organizationInvitation.revokedAt),
-                ),
-              ),
-            database.insert(organizationInvitation).values({
-              id: invitationId,
-              organizationId: input.organizationId,
-              email: input.email,
-              role: input.role,
-              tokenHash: input.tokenHash,
-              invitedByUserId: input.invitedByUserId,
-              expiresAt: at(input.expiresAt),
-              acceptedAt: null,
-              revokedAt: null,
-              createdAt: at(input.now),
-            }),
-          ]);
-          const [row] = yield* invitationById(invitationId).pipe(fail("createInvitation.read"));
-          if (!row) {
-            return yield* repositoryError("createInvitation", "The invitation was not stored.");
-          }
-          return yield* decoded(decodeInvitation, "createInvitation.decode", row);
-        }),
-        revokeInvitation: Effect.fn("AuthRepository.revokeInvitation")(function* (input) {
-          const revoked = yield* database
-            .update(organizationInvitation)
-            .set({ revokedAt: at(input.now) })
-            .where(
-              and(
-                eq(organizationInvitation.id, input.invitationId),
-                eq(organizationInvitation.organizationId, input.organizationId),
-                isNull(organizationInvitation.acceptedAt),
-                isNull(organizationInvitation.revokedAt),
-              ),
-            )
-            .returning({ id: organizationInvitation.id })
-            .pipe(fail("revokeInvitation"));
-          return returningMatchedOne(revoked);
-        }),
-        findInvitationByTokenHash: Effect.fn("AuthRepository.findInvitationByTokenHash")(
-          function* (tokenHash) {
-            const [row] = yield* database
-              .select(invitationColumns)
-              .from(organizationInvitation)
-              .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
-              .where(eq(organizationInvitation.tokenHash, tokenHash))
-              .pipe(fail("findInvitationByTokenHash"));
-            if (!row) return null;
-            return yield* decoded(decodeInvitation, "findInvitationByTokenHash.decode", row);
-          },
-        ),
-        pendingInvitationsForOrganization: Effect.fn(
-          "AuthRepository.pendingInvitationsForOrganization",
-        )(function* (input) {
-          const rows = yield* database
-            .select(invitationColumns)
-            .from(organizationInvitation)
-            .innerJoin(organization, eq(organization.id, organizationInvitation.organizationId))
-            .where(
-              and(
-                eq(organizationInvitation.organizationId, input.organizationId),
-                stillPending(input.now),
-              ),
-            )
-            .orderBy(desc(organizationInvitation.createdAt))
-            .pipe(fail("pendingInvitationsForOrganization"));
-          return yield* Effect.forEach(rows, (row) =>
-            decoded(decodeInvitation, "pendingInvitationsForOrganization.decode", row),
-          );
-        }),
-        acceptInvitation: Effect.fn("AuthRepository.acceptInvitation")(function* (input) {
-          const pendingInvitation = and(
-            eq(organizationInvitation.id, input.invitation.id),
-            stillPending(input.now),
-          );
-          const membershipId = yield* newId;
-          const results = yield* atomicBatch("acceptInvitation", [
-            database
-              .insert(organizationMembership)
-              .select((query) =>
-                query
-                  .select({
-                    id: bound(organizationMembership.id, membershipId),
-                    organizationId: organizationInvitation.organizationId,
-                    userId: bound(organizationMembership.userId, input.userId),
-                    role: organizationInvitation.role,
-                    createdAt: bound(organizationMembership.createdAt, at(input.now)),
-                  })
-                  .from(organizationInvitation)
-                  .where(pendingInvitation),
-              )
-              .onConflictDoNothing({
-                target: [organizationMembership.organizationId, organizationMembership.userId],
-              }),
-            database
-              .update(organizationInvitation)
-              .set({ acceptedAt: at(input.now) })
-              .where(pendingInvitation)
-              .returning({ id: organizationInvitation.id }),
-            database
-              .update(session)
-              .set({ activeOrganizationId: input.invitation.organizationId })
-              .where(
-                and(
-                  eq(session.id, input.sessionId),
-                  eq(session.userId, input.userId),
-                  isNull(session.revokedAt),
-                  exists(
-                    database
-                      .select({ id: organizationInvitation.id })
-                      .from(organizationInvitation)
-                      .where(
-                        and(
-                          eq(organizationInvitation.id, input.invitation.id),
-                          eq(organizationInvitation.acceptedAt, at(input.now)),
-                        ),
-                      ),
-                  ),
-                ),
-              ),
-          ]);
-          return returningMatchedOne(results[1]);
         }),
         createSession: Effect.fn("AuthRepository.createSession")(function* (input) {
           yield* database.insert(session).values(sessionValues(input)).pipe(fail("createSession"));

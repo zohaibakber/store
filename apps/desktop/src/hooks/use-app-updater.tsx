@@ -1,53 +1,39 @@
 import { useAtomMount, useAtomSet } from "@effect/atom-react";
 import { classifyUpdateFailure, updateFailureMessage } from "@store/contracts";
-import type { UpdaterEvent } from "@store/contracts/updater";
+import type { UpdaterEvent } from "@store/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
-import * as Queue from "effect/Queue";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { toastManager } from "@/components/ui/toast";
-import { appHost } from "@/host";
-import type { AppUpdaterBridge } from "@/host";
+import { fireShell, shell } from "@/host/shell";
 
 const UPDATE_READY_TOAST_ID = "app-update-ready";
 const UPDATE_CHECK_TOAST_ID = "app-update-check";
 
 type CheckToast = Parameters<typeof toastManager.add>[0];
 
-const updaterEvents = (updater: AppUpdaterBridge) =>
-  Stream.callback<UpdaterEvent>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => updater.onEvent((event) => Queue.offerUnsafe(queue, event))),
-      (stop) => Effect.sync(stop),
-    ),
-  );
-
 const latestUpdaterEvent = Atom.make(
-  Stream.unwrap(
-    Effect.sync(() => {
-      const updater = appHost().updater;
-      return updater ? Stream.zipWithIndex(updaterEvents(updater)) : Stream.empty;
-    }),
-  ),
+  import.meta.env.PROD
+    ? Stream.zipWithIndex(Stream.unwrap(Effect.map(shell, (client) => client.UpdaterEvents())))
+    : Stream.empty,
 );
 
 const eventOf = <E,>(result: AsyncResult.AsyncResult<readonly [UpdaterEvent, number], E>) =>
   Option.getOrUndefined(Option.map(AsyncResult.value(result), ([event]) => event));
 
 const showUpdateReady = (version: string) => {
-  const updater = appHost().updater;
-  if (!updater) return;
+  if (!import.meta.env.PROD) return;
   toastManager.close(UPDATE_CHECK_TOAST_ID);
   toastManager.add({
     actionProps: {
       children: "Restart",
-      onClick: () => updater.install(),
+      onClick: () => fireShell((client) => client.UpdaterInstall()),
     },
     data: { dismissLabel: "Later" },
     description: `Version ${version} installs when you restart Tabaaq.`,
@@ -145,8 +131,7 @@ const rejectedCheckToast = (message: string): CheckToast => {
 
 const checkForUpdate = Atom.fn<void>()(
   Effect.fn("AppUpdater.check")(function* (_, get) {
-    const updater = appHost().updater;
-    if (!updater) return;
+    if (!import.meta.env.PROD) return;
     const settled = yield* Deferred.make<UpdaterEvent>();
     get.subscribe(latestUpdaterEvent, (result) => {
       const event = eventOf(result);
@@ -160,10 +145,8 @@ const checkForUpdate = Atom.fn<void>()(
       title: "Checking for updates…",
       type: "loading",
     });
-    const rejected = Effect.tryPromise({
-      try: () => updater.check(),
-      catch: (error) => (Schema.is(Messaged)(error) ? error.message : ""),
-    }).pipe(
+    const rejected = Effect.flatMap(shell, (client) => client.UpdaterCheck()).pipe(
+      Effect.mapError((error) => (Schema.is(Messaged)(error) ? error.message : "")),
       Effect.andThen(Effect.never),
       Effect.catch((message) => Effect.succeed(Option.some(rejectedCheckToast(message)))),
     );
@@ -175,7 +158,7 @@ const checkForUpdate = Atom.fn<void>()(
   }),
 ).pipe(Atom.keepAlive);
 
-export const canCheckForAppUpdate = () => Boolean(appHost().updater);
+export const canCheckForAppUpdate = () => import.meta.env.PROD;
 
 export const useCheckForAppUpdate = () => {
   const check = useAtomSet(checkForUpdate);

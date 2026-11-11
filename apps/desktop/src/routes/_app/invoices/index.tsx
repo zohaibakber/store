@@ -1,4 +1,3 @@
-import { preloadInvoiceList, type InvoiceListRequest } from "@store/inventory-react";
 import { createFileRoute } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import * as React from "react";
@@ -6,7 +5,9 @@ import * as React from "react";
 import { invoiceList, type InvoiceListView } from "@/components/invoices/list";
 import { InvoicesPage } from "@/components/invoices/page";
 import { useShownRequest } from "@/components/shared/list-view";
-import { preloadInventory } from "@/lib/inventory/preload";
+import type { InvoiceListRequest } from "@/inventory/invoice-list";
+import { preloadInvoiceList } from "@/inventory/preload";
+import { preloadInventory } from "@/inventory/preload";
 
 const invoicesSearch = Schema.toStandardSchemaV1(Schema.Struct(invoiceList.searchFields));
 

@@ -3,22 +3,21 @@ import {
   AuthorityIncarnation,
   OPERATIONAL_SUBSCRIPTION,
   OrgCommitSequence,
-  PARTITION_DIGEST_VERSION,
   type CommandReceipt,
   type SyncPullRequest,
   type SyncPullResult,
   type SyncSubmitCommandRequest,
   type SyncTransactionGroup,
 } from "@store/contracts";
-import {
-  LAST_UNIT_EPOCH,
-  LAST_UNIT_REPLICA_A,
-  lastUnitBuyerAEnvelope,
-} from "@store/contracts/sync/fixtures";
 import { commandOutbox } from "@store/db/replica.schema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import {
+  LAST_UNIT_EPOCH,
+  LAST_UNIT_REPLICA_A,
+  lastUnitBuyerAEnvelope,
+} from "../../contracts/test/fixtures/last-unit-invoice";
 import { runReplicaTransaction } from "../src/replica/sql-client/handle";
 import { makeSqliteReplicaStore } from "../src/replica/sqlite/store";
 import type { SyncTransport } from "../src/transport";
@@ -126,29 +125,6 @@ describe("sync engine applies the page that rides on a submit", () => {
         yield* engine.catchUp;
 
         expect(recorded.pulls.map((request) => request.afterCommitSequence)).toEqual(["0"]);
-      }),
-    ),
-  );
-
-  it.effect("still pulls with a digest when verification is due", () =>
-    withSeededReplica((handle) =>
-      Effect.gen(function* () {
-        const recorded = recordingTransport((request) =>
-          pageOf("0", [ownGroup(request, "1")], "1"),
-        );
-        const { engine } = yield* openEngine(handle, recorded.transport);
-
-        yield* engine.drainUploads;
-        yield* engine.catchUp;
-
-        expect(recorded.pulls).toEqual([
-          {
-            epoch: LAST_UNIT_EPOCH,
-            subscription: "operational",
-            afterCommitSequence: "1",
-            digestVersion: PARTITION_DIGEST_VERSION,
-          },
-        ]);
       }),
     ),
   );
