@@ -1,5 +1,3 @@
-import { app, type WebContents } from "electron";
-
 type AcceleratorInput = {
   readonly type: string;
   readonly key: string;
@@ -10,22 +8,9 @@ type AcceleratorInput = {
   readonly shift: boolean;
 };
 
-const isNewSaleAccelerator = (input: AcceleratorInput): boolean => {
+export const isNewSaleAccelerator = (input: AcceleratorInput): boolean => {
   if (input.type !== "keyDown") return false;
   const isN = input.code === "KeyN" || input.key.toLowerCase() === "n";
   if (!isN) return false;
   return (input.control || input.meta) && !input.alt && !input.shift;
-};
-
-export const registerNewSaleAccelerator = (
-  isMainWindow: (contents: WebContents) => boolean,
-  onNewSale: () => void,
-) => {
-  app.on("web-contents-created", (_event, contents) => {
-    contents.on("before-input-event", (event, input) => {
-      if (!isNewSaleAccelerator(input)) return;
-      event.preventDefault();
-      if (isMainWindow(contents)) onNewSale();
-    });
-  });
 };
