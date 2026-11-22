@@ -37,12 +37,12 @@ function InvoiceItems() {
                 <span className="block text-end">#</span>
               </TableHead>
               <TableHead className="h-8">Product</TableHead>
-              <TableHead className="h-8 w-32">Batch</TableHead>
+              <TableHead className="h-8 w-28 2xl:w-32">Batch</TableHead>
               <TableHead className="h-8 w-36">Qty</TableHead>
-              <TableHead className="h-8 w-36">
+              <TableHead className="h-8 w-28 2xl:w-36">
                 <span className="block text-end">Price</span>
               </TableHead>
-              <TableHead className="h-8 w-28">
+              <TableHead className="h-8 w-24 2xl:w-28">
                 <span className="block text-end">Total</span>
               </TableHead>
               <TableHead className="h-8 w-10">

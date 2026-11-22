@@ -45,6 +45,7 @@ import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-l
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
@@ -144,7 +145,7 @@ const columns = columnHelper.columns([
   columnHelper.accessor("name", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Product" />,
     cell: ({ row }) => (
-      <div className="w-72 max-w-72">
+      <div className="w-40 max-w-40 lg:w-56 lg:max-w-56 xl:w-72 xl:max-w-72">
         <TwoLine
           primary={
             <Link
@@ -423,7 +424,7 @@ function RestockBody({
       </PageToolbar>
       <PurchasingGateNotice gate={gate} />
       <div className="flex items-center gap-2">
-        <div className="min-w-0 overflow-x-auto">
+        <ScrollArea className="h-auto w-auto min-w-0" scrollFade>
           <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
             <TabsList aria-label="Stock view">
               {RESTOCK_VIEWS.map((value) => (
@@ -438,7 +439,7 @@ function RestockBody({
               ))}
             </TabsList>
           </Tabs>
-        </div>
+        </ScrollArea>
         {summary === null ? null : <PolicyInfo summary={summary} />}
       </div>
       <ListTableContent loading={loading} />

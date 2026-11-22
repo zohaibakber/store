@@ -75,7 +75,7 @@ function Kpi({
         <span className="truncate text-sm text-muted-foreground">{label}</span>
         {change === undefined ? null : <Delta value={change} />}
       </div>
-      <span className="text-2xl font-medium wrap-anywhere tabular-nums">{value}</span>
+      <span className="text-lg font-medium wrap-anywhere tabular-nums lg:text-2xl">{value}</span>
       <span className="truncate text-xs text-muted-foreground">{detail}</span>
       {children}
     </div>
@@ -94,7 +94,7 @@ export function KpiGrid({
   return (
     <section
       aria-label="Key figures"
-      className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-4"
+      className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 md:grid-cols-4"
     >
       <Kpi
         change={period.revenueChange}

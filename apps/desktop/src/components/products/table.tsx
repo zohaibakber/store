@@ -33,6 +33,8 @@ const priceCell = ({ getValue }: { getValue: () => number | null }) => {
   );
 };
 
+const narrowWindow = () => globalThis.matchMedia?.("(max-width: 1023px)").matches ?? false;
+
 const textCell = (value: string) =>
   value ? (
     <span className="block max-w-40 truncate" title={value}>
@@ -167,6 +169,9 @@ export function useProductsTable(input: {
     }),
     initialState: {
       columnVisibility: {
+        // Narrow windows start without the optional text columns; View brings them back.
+        aisle: !narrowWindow(),
+        composition: !narrowWindow(),
         unitPrice: false,
         purchasePrice: false,
         strength: false,

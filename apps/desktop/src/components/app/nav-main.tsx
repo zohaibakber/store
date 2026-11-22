@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { useNewSaleShortcut } from "@/hooks/use-new-sale-shortcut";
 import { useParkedSaleCount } from "@/hooks/use-sale-drafts";
 import { newSaleShortcut } from "@/host/new-sale-shortcut";
@@ -38,13 +39,17 @@ const isWithin = (pathname: string, url: string) =>
   url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(`${url}/`);
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, open, setOpen, setOpenMobile } = useSidebar();
+  const overlaysContent = useMediaQuery("max-lg");
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const parkedSales = useParkedSaleCount(pathname === "/invoices/new");
   const parkedLabel = `${formatCount(parkedSales, "sale")} in progress`;
 
+  // On narrow windows the expanded sidebar floats over the page, so following a
+  // link puts it away again.
   const closeMobileSidebar = () => {
     if (isMobile) setOpenMobile(false);
+    else if (overlaysContent && open) setOpen(false);
   };
 
   useNewSaleShortcut();

@@ -20,6 +20,7 @@ import {
   MessageChannelMain,
   type MessagePortMain,
   nativeTheme,
+  screen,
   session,
   shell,
   type WebContents,
@@ -243,8 +244,24 @@ const shellPort = makeShellPort<WebContents, MessagePortMain>({
   },
 });
 
+// Small and square screens (800x600, 1024x768, 1280x1024) have no room to spare,
+// so the window opens maximized there; larger screens get a comfortable size.
+function initialWindowBounds() {
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  return {
+    width: Math.min(1440, area.width),
+    height: Math.min(900, area.height),
+    minWidth: Math.min(800, area.width),
+    minHeight: Math.min(560, area.height),
+    maximize: area.width < 1440 || area.height < 900,
+  };
+}
+
 function createWindow() {
+  const { maximize, ...bounds } = initialWindowBounds();
   win = new BrowserWindow({
+    ...bounds,
+    center: true,
     icon: appIconPath(),
     show: false,
     autoHideMenuBar: true,
@@ -266,7 +283,10 @@ function createWindow() {
   win.setIcon(appIconPath());
   app.dock?.setIcon(appIconPath());
 
-  win.once("ready-to-show", () => win?.show());
+  win.once("ready-to-show", () => {
+    if (maximize) win?.maximize();
+    win?.show();
+  });
   shellPort.attach(win.webContents);
   publishWindowMaximized();
   win.webContents.on("console-message", (event) => {

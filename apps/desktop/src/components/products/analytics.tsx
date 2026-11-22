@@ -18,7 +18,9 @@ function PrivateStockValue({ value }: { value: string }) {
 
   return (
     <div className="relative bg-background px-3 py-1.5">
-      <p className="truncate text-xs text-muted-foreground">Stock value at cost</p>
+      <p className="truncate text-xs text-muted-foreground" title="Stock value at cost">
+        Stock value at cost
+      </p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}
         className="text-base font-medium tabular-nums"
@@ -127,7 +129,7 @@ export function ProductAnalytics() {
   return (
     <div
       aria-live="polite"
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 lg:grid-cols-6"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3 md:grid-cols-6"
     >
       <AsyncBoundary fallback={PENDING_TILES}>
         <StockTiles />

@@ -46,7 +46,7 @@ function TitleBarSearch() {
     <Button
       aria-haspopup="dialog"
       aria-keyshortcuts="Control+K"
-      className="w-96 justify-start"
+      className="w-48 justify-start lg:w-72 xl:w-96"
       onClick={open}
       onFocus={preload}
       onPointerEnter={preload}
@@ -55,7 +55,7 @@ function TitleBarSearch() {
     >
       <HugeiconsIcon aria-hidden="true" icon={SearchIcon} />
       <span className="text-muted-foreground">Search</span>
-      <Kbd className="ms-auto">Ctrl+K</Kbd>
+      <Kbd className="ms-auto max-lg:hidden">Ctrl+K</Kbd>
     </Button>
   );
 }

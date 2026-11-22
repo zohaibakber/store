@@ -1,5 +1,6 @@
 import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
+import * as React from "react";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { NumberControl } from "@/components/shared/control-group";
@@ -30,31 +31,33 @@ function InvoiceCheckout() {
   return (
     <FrameCard title="Summary">
       <div className="flex flex-col gap-4">
-        <Field>
-          <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
-          <Input
-            id="customer-name"
-            maxLength={MAX_CATALOG_NAME_LENGTH}
-            onChange={(event) => setCustomerName(event.target.value)}
-            placeholder="Walk-in customer"
-            value={customerName}
-          />
-        </Field>
-        <Field data-invalid={!validBulkDiscount || undefined}>
-          <FieldLabel htmlFor="bulk-discount">Bulk discount</FieldLabel>
-          <NumberControl
-            addon="%"
-            id="bulk-discount"
-            inputProps={{ "aria-label": "Bulk discount percentage" }}
-            max={100}
-            min={0}
-            onValueChange={setBulkDiscount}
-            value={bulkDiscount}
-          />
-          {!validBulkDiscount && (
-            <FieldError match>Enter a discount between 0% and 100%.</FieldError>
-          )}
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <Field>
+            <FieldLabel htmlFor="customer-name">Customer</FieldLabel>
+            <Input
+              id="customer-name"
+              maxLength={MAX_CATALOG_NAME_LENGTH}
+              onChange={(event) => setCustomerName(event.target.value)}
+              placeholder="Walk-in customer"
+              value={customerName}
+            />
+          </Field>
+          <Field data-invalid={!validBulkDiscount || undefined}>
+            <FieldLabel htmlFor="bulk-discount">Bulk discount</FieldLabel>
+            <NumberControl
+              addon="%"
+              id="bulk-discount"
+              inputProps={{ "aria-label": "Bulk discount percentage" }}
+              max={100}
+              min={0}
+              onValueChange={setBulkDiscount}
+              value={bulkDiscount}
+            />
+            {!validBulkDiscount && (
+              <FieldError match>Enter a discount between 0% and 100%.</FieldError>
+            )}
+          </Field>
+        </div>
 
         <Separator />
 
@@ -98,4 +101,51 @@ function InvoiceCheckout() {
   );
 }
 
-export { InvoiceCheckout };
+// Below the two-column breakpoint the summary sits under the items, often below
+// the fold on short screens. This bar keeps the total and the sale action in
+// reach until the end of the summary scrolls into view.
+function InvoiceCheckoutBar({
+  summaryEnd,
+}: {
+  readonly summaryEnd: React.RefObject<HTMLElement | null>;
+}) {
+  const {
+    actions: { completeSale },
+    meta: { canSubmit, isSubmitting, total },
+  } = useInvoiceCreate();
+  const [summaryVisible, setSummaryVisible] = React.useState(true);
+
+  React.useEffect(() => {
+    const target = summaryEnd.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry) setSummaryVisible(entry.isIntersecting);
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [summaryEnd]);
+
+  if (summaryVisible) return null;
+  return (
+    <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-between gap-4 border-t bg-background px-4 py-3 xl:hidden">
+      <div className="flex items-baseline gap-2">
+        <span className="text-muted-foreground">Total</span>
+        <span className="text-lg font-medium tabular-nums">{formatPrice(total)}</span>
+      </div>
+      <Button
+        disabled={!canSubmit || isSubmitting}
+        loading={isSubmitting}
+        onClick={() => completeSale()}
+        type="button"
+      >
+        Complete sale
+        <KbdGroup>
+          <Kbd>Ctrl</Kbd>
+          <Kbd>Enter</Kbd>
+        </KbdGroup>
+      </Button>
+    </div>
+  );
+}
+
+export { InvoiceCheckout, InvoiceCheckoutBar };
