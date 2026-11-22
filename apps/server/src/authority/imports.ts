@@ -28,7 +28,7 @@ import * as Schema from "effect/Schema";
 import type { SqlClient } from "effect/sql/SqlClient";
 
 import { partitionDigest } from "./digest";
-import { refuse, type Actor, type AuthorityEngine } from "./engine";
+import { latestWithoutPurchasing, refuse, type Actor, type AuthorityEngine } from "./engine";
 import { byteLengthOf, type CommitFanout } from "./frames";
 import type { AuthoritySnapshots } from "./snapshots";
 
@@ -399,12 +399,7 @@ export const makeAuthorityImports = (
   });
 
   const purchasingGate = Effect.fn("AuthorityImports.purchasingGate")(function* (now: number) {
-    const stale = (yield* engine.activeReplicas(now))
-      .filter((replica) => replica.schemaVersion < 2)
-      .sort(
-        (left, right) =>
-          right.lastSeenAt - left.lastSeenAt || (left.replicaId < right.replicaId ? -1 : 1),
-      )[0];
+    const stale = latestWithoutPurchasing(yield* engine.activeReplicas(now));
     if (stale !== undefined) {
       return yield* refuse(
         "REPLICA_SCHEMA_OUTDATED",

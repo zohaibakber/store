@@ -12,6 +12,8 @@ export const MAX_SYNC_PULL_TRANSACTIONS = 1_000;
 
 export const SYNC_SCHEMA_VERSION = 2;
 
+export const PURCHASING_SCHEMA_VERSION = 2;
+
 export const SyncSchemaVersion = PositiveInt;
 export type SyncSchemaVersion = typeof SyncSchemaVersion.Type;
 
