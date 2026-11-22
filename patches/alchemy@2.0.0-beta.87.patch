@@ -1,0 +1,26 @@
+diff --git a/lib/Workers/Workerd/WorkerBridge.js b/lib/Workers/Workerd/WorkerBridge.js
+index 06bf82bbbb4977b366c64fa68669c395993dd234..89d09d1a61b1ee81981249b43930801f60852bf2 100644
+--- a/lib/Workers/Workerd/WorkerBridge.js
++++ b/lib/Workers/Workerd/WorkerBridge.js
+@@ -37,6 +37,8 @@ export const makeWorkerBridge = (Base, options) => {
+         stack: options.stack,
+         exportName: "default",
+     }, options.buildOptions);
++    build(() => undefined).catch(() => undefined);
++
+     class WorkerBridge extends Base {
+         ctx;
+         env;
+diff --git a/src/Workers/Workerd/WorkerBridge.ts b/src/Workers/Workerd/WorkerBridge.ts
+index 8c600f6a8f53db6f5f5f305b253429f4fa24ef41..48b958a4d38b2ce50e89ad8f8f0eecd61220aa81 100644
+--- a/src/Workers/Workerd/WorkerBridge.ts
++++ b/src/Workers/Workerd/WorkerBridge.ts
+@@ -90,6 +90,8 @@ export const makeWorkerBridge = <Runtime extends WorkerRuntimeContextLike>(
+     },
+     options.buildOptions,
+   );
++  build(() => undefined).catch(() => undefined);
++
+ 
+   class WorkerBridge extends Base {
+     constructor(
