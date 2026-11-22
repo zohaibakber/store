@@ -23,7 +23,7 @@ import { makeBackoff } from "./backoff";
 export type LiveSocketHost = {
   readonly apiBaseUrl: string;
   readonly replicaId: string;
-  readonly accessToken: (options: { readonly force: boolean }) => Promise<string | null>;
+  readonly accessToken: (options: { readonly force: boolean }) => Effect.Effect<string | null>;
 };
 
 type LiveSocketHandlers = {
@@ -188,13 +188,7 @@ export const makeLiveSocket = (
 
     const pass = Effect.gen(function* () {
       const force = yield* Ref.getAndSet(forceRefresh, false);
-      const requestToken = (refresh: boolean) =>
-        Effect.tryPromise(() => host.accessToken({ force: refresh })).pipe(
-          Effect.tapError((error) =>
-            Effect.logWarning("sync.live_token_failed").pipe(Effect.annotateLogs({ error })),
-          ),
-          Effect.orElseSucceed(() => null),
-        );
+      const requestToken = (refresh: boolean) => host.accessToken({ force: refresh });
       const offered = yield* requestToken(force);
       const token =
         offered !== null && !force && (yield* nearExpiry(offered))

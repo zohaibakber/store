@@ -74,14 +74,16 @@ const harness = (routes: Readonly<Record<string, Route>>) =>
     const session = Context.get(context, SessionHttp);
     yield* session.setTokens(tokens("issued"));
     const load = loadSessionSnapshot({
-      getLocalSnapshot: () => local,
-      publish: (snapshot) => {
-        local = snapshot;
-        return snapshot;
-      },
+      current: Effect.sync(() => local),
+      publish: (snapshot) =>
+        Effect.sync(() => {
+          local = snapshot;
+          return snapshot;
+        }),
       clearAuthenticated: Effect.sync(() => {
         outcome.forgotten += 1;
       }),
+      persistAuthenticated: () => Effect.void,
     }).pipe(Effect.provideService(SessionHttp, session));
     return {
       session,
