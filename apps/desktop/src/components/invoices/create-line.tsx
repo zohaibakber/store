@@ -231,7 +231,9 @@ function InvoiceCreateLine({
             {line.product.name}
           </span>
           {line.product.strength && (
-            <span className="shrink-0 text-muted-foreground">{line.product.strength}</span>
+            <span className="min-w-0 shrink-[4] truncate text-muted-foreground">
+              {line.product.strength}
+            </span>
           )}
           {error ? (
             <span

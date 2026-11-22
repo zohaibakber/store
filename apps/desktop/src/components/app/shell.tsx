@@ -64,7 +64,7 @@ function ShellFrame({ content }: { readonly content: ReactNode }) {
     <TooltipProvider>
       <CommandMenuProvider>
         <SidebarProvider
-          className="h-svh min-h-0 flex-col overflow-hidden"
+          className="h-svh min-h-0 flex-col overflow-hidden max-lg:**:data-[slot=sidebar-gap]:w-(--sidebar-width-icon) max-lg:[&_[data-state=expanded]_[data-slot=sidebar-container]]:z-20 max-lg:[&_[data-state=expanded]_[data-slot=sidebar-container]]:shadow-lg"
           onOpenChange={setSidebarOpen}
           open={sidebarOpen}
         >

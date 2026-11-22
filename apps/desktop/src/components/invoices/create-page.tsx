@@ -1,6 +1,7 @@
 import type { ProductId } from "@store/contracts";
+import * as React from "react";
 
-import { InvoiceCheckout } from "@/components/invoices/create-checkout";
+import { InvoiceCheckout, InvoiceCheckoutBar } from "@/components/invoices/create-checkout";
 import { InvoiceCreateProvider, useInvoiceCreate } from "@/components/invoices/create-context";
 import { InvoiceItems } from "@/components/invoices/create-items";
 import { SaleDiscardDialog, SaleDraftTabs } from "@/components/invoices/draft-tabs";
@@ -102,6 +103,7 @@ function InvoiceCreatePage({
   readonly addProductId?: ProductId;
   readonly onProductAdded: () => void;
 }) {
+  const summaryEnd = React.useRef<HTMLDivElement>(null);
   return (
     <InvoiceCreateProvider>
       <CompleteSaleShortcut />
@@ -112,12 +114,14 @@ function InvoiceCreatePage({
       <SaleDiscardDialog />
       <PageLayout>
         <SaleDraftTabs />
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
           <InvoiceItems />
-          <div className="lg:sticky lg:top-4">
+          <div className="xl:sticky xl:top-4">
             <InvoiceCheckout />
+            <div ref={summaryEnd} />
           </div>
         </div>
+        <InvoiceCheckoutBar summaryEnd={summaryEnd} />
       </PageLayout>
     </InvoiceCreateProvider>
   );

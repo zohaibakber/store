@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { cn } from "@/lib/utils";
 
 type BreadcrumbLoaderData = Invoice | { readonly product?: { readonly name: string } } | undefined;
 type BreadcrumbParams = Readonly<Record<string, string | undefined>>;
@@ -45,6 +46,8 @@ export function SiteBreadcrumbs() {
             label = breadcrumb;
           }
           const isCurrent = index === breadcrumbMatches.length - 1;
+          // Narrow windows keep only the current page and its parent.
+          const isDistant = index < breadcrumbMatches.length - 2;
           const to =
             match.fullPath === "/products/"
               ? "/products"
@@ -58,15 +61,29 @@ export function SiteBreadcrumbs() {
 
           return (
             <Fragment key={match.id}>
-              {index > 0 && <BreadcrumbSeparator />}
-              <BreadcrumbItem className="min-w-0">
+              {index > 0 && (
+                <BreadcrumbSeparator
+                  className={cn(
+                    "shrink-0",
+                    index < breadcrumbMatches.length - 1 && "max-lg:hidden",
+                  )}
+                />
+              )}
+              <BreadcrumbItem
+                className={cn(
+                  "min-w-0",
+                  isCurrent ? "shrink" : "max-w-40 shrink-[2]",
+                  isDistant && "max-lg:hidden",
+                )}
+              >
                 {isCurrent ? (
-                  <BreadcrumbPage>
-                    <span className="block truncate">{label}</span>
-                  </BreadcrumbPage>
+                  <BreadcrumbPage className="min-w-0 truncate">{label}</BreadcrumbPage>
                 ) : (
-                  <BreadcrumbLink render={<Link params={match.params} to={to} />}>
-                    <span className="block truncate">{label}</span>
+                  <BreadcrumbLink
+                    className="min-w-0 truncate"
+                    render={<Link params={match.params} to={to} />}
+                  >
+                    {label}
                   </BreadcrumbLink>
                 )}
               </BreadcrumbItem>
