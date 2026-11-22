@@ -1,9 +1,14 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const kit = path.join(packageRoot, "node_modules", "drizzle-kit", "bin.cjs");
+const kitRoot = path.join(packageRoot, "node_modules", "drizzle-kit");
+const kitBin = JSON.parse(readFileSync(path.join(kitRoot, "package.json"), "utf8")).bin[
+  "drizzle-kit"
+];
+const kit = path.join(kitRoot, kitBin);
 
 const targets = [
   { config: "drizzle.auth.config.ts", dialect: "sqlite" },

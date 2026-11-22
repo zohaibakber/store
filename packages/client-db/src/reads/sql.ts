@@ -248,8 +248,6 @@ export const containsEvery = (tokens: ReadonlyArray<string>) => and(...tokens.ma
 export const nameStartsWith = (tokens: ReadonlyArray<string>) =>
   like(products.name, `${tokens.join(" ")}%`);
 
-export const nameIs = (name: string) => like(products.name, name);
-
 export const productWhere = (filters: ProductListFilters) =>
   and(
     containsEvery(searchTokens(filters.search ?? "")),
