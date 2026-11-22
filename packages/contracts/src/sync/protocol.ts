@@ -34,8 +34,6 @@ export const compareDecimalSequence: Order.Order<string> = Order.mapInput(
 
 export const incrementDecimalSequence = (value: string): string => String(BigInt(value) + 1n);
 
-export const unpadDecimalSequence = (value: string): string => String(BigInt(value));
-
 export const SyncEpoch = DecimalSequence.pipe(Schema.brand("SyncEpoch"));
 export type SyncEpoch = typeof SyncEpoch.Type;
 

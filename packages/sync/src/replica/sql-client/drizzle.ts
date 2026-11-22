@@ -1,6 +1,4 @@
 import { entityKind } from "drizzle-orm";
-import { EffectCache } from "drizzle-orm/cache/core/cache-effect";
-import type { QueryMetadata, WithCacheConfig } from "drizzle-orm/cache/core/types";
 import { DefaultServices } from "drizzle-orm/effect-core/defaults";
 import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import { EffectLogger } from "drizzle-orm/effect-core/logger";
@@ -30,11 +28,6 @@ export type ReplicaDb = SQLiteEffectDatabase<ReplicaQueryEffectHKT, unknown, Emp
 
 type QueryMode = "arrays" | "objects" | "raw";
 
-type SessionServices = {
-  readonly logger: EffectLogger["Service"];
-  readonly cache: EffectCache["Service"];
-};
-
 const copyRow = (row: Row | undefined) => (row === undefined ? row : { ...row });
 
 class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHKT, EmptyRelations> {
@@ -43,7 +36,7 @@ class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHK
   constructor(
     private readonly client: SqlClient,
     dialect: SQLiteDialect,
-    private readonly services: SessionServices,
+    private readonly logger: EffectLogger["Service"],
   ) {
     super(dialect);
   }
@@ -54,8 +47,6 @@ class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHK
     _prepare: boolean,
     executeMethod?: SQLiteExecuteMethod,
     mapper?: (rows: Array<any>) => any,
-    queryMetadata?: QueryMetadata,
-    cacheConfig?: WithCacheConfig,
   ): SQLiteEffectPreparedQuery<T, ReplicaQueryEffectHKT> {
     const statement = (params: Array<unknown>) => this.client.unsafe<Row>(query.sql, params);
     return new SQLiteEffectPreparedQuery(
@@ -79,10 +70,7 @@ class SqlClientSession extends SQLiteEffectSession<unknown, ReplicaQueryEffectHK
       query,
       mapper,
       mode,
-      this.services.logger,
-      this.services.cache,
-      queryMetadata,
-      cacheConfig,
+      this.logger,
       false,
     );
   }
@@ -117,11 +105,6 @@ class SqlClientDatabase extends SQLiteEffectDatabase<
 export const makeReplicaDb = (client: SqlClient): Effect.Effect<ReplicaDb> =>
   Effect.gen(function* () {
     const logger = yield* EffectLogger;
-    const cache = yield* EffectCache;
     const dialect = new SQLiteDialect({ codecs: effectSQLiteDoCodecs, useJitMappers: false });
-    return new SqlClientDatabase(
-      dialect,
-      new SqlClientSession(client, dialect, { logger, cache }),
-      {},
-    );
+    return new SqlClientDatabase(dialect, new SqlClientSession(client, dialect, logger), {});
   }).pipe(Effect.provide(DefaultServices));

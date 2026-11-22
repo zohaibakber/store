@@ -63,5 +63,3 @@ export const makeDesktopHost = (options: DesktopHostOptions) => {
     dispose: () => runtime.dispose(),
   };
 };
-
-export type DesktopHost = ReturnType<typeof makeDesktopHost>;
