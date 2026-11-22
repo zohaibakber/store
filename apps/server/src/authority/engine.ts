@@ -36,6 +36,7 @@ import type { SqlClient } from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
 import { partitionDigest } from "./digest";
+import { AuthorityRequestMalformed } from "./errors";
 import {
   groupByteLength,
   groupFrame,
@@ -50,11 +51,6 @@ export type Actor = {
   readonly organizationId: string;
   readonly userId: string;
 };
-
-export class AuthorityRequestMalformed extends Schema.TaggedError<AuthorityRequestMalformed>()(
-  "AuthorityRequestMalformed",
-  { message: Schema.String },
-) {}
 
 export const PULL_PAGE_GROUPS = 100;
 

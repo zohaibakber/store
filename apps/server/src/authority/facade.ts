@@ -2,11 +2,9 @@ import {
   AcquireSnapshotResult,
   RegisterReplicaResult,
   SYNC_SCHEMA_VERSION,
-  SyncProtocolError,
   type AcquireSnapshotRequest,
   type ImportCatalogRequest,
   type RegisterReplicaRequest,
-  type SyncProtocolCode,
   type SyncPullRequest,
 } from "@store/contracts";
 import { makeReplicaDb } from "@store/sync/authority";
@@ -16,10 +14,10 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { AuthorityRequestMalformed, makeAuthorityEngine, type Actor } from "./engine";
+import { makeAuthorityEngine, type Actor } from "./engine";
+import { isAuthorityFailure, type AuthorityFailure } from "./errors";
 import type { CommitFanout, EncodedCommit } from "./frames";
 import { makeAuthorityImports } from "./imports";
 import { makeAuthorityMaintenance, type MaintenanceReport } from "./maintenance";
@@ -35,11 +33,6 @@ import {
 } from "./policy";
 import { makeAuthoritySnapshots } from "./snapshots";
 
-export type AuthorityReply<A> =
-  | { readonly _tag: "ok"; readonly value: A }
-  | { readonly _tag: "refused"; readonly code: SyncProtocolCode; readonly message: string }
-  | { readonly _tag: "malformed"; readonly message: string };
-
 export type ImportStatusReply =
   | { readonly _tag: "committed"; readonly json: string }
   | { readonly _tag: "other"; readonly message: string }
@@ -53,49 +46,37 @@ export type RegisterReply = typeof RegisterReplicaResult.Encoded;
 
 export type SnapshotReply = typeof AcquireSnapshotResult.Encoded;
 
-export interface OrgAuthorityApi<R = never, E = never> {
+export interface OrgAuthorityApi<R = never, E = AuthorityFailure> {
   readonly register: (
     actor: Actor,
     request: RegisterReplicaRequest,
-  ) => Effect.Effect<AuthorityReply<RegisterReply>, E, R>;
-  readonly submit: (actor: Actor, bodyText: string) => Effect.Effect<AuthorityReply<string>, E, R>;
-  readonly receipt: (
-    actor: Actor,
-    operationId: string,
-  ) => Effect.Effect<AuthorityReply<string | null>, E, R>;
-  readonly pull: (
-    actor: Actor,
-    request: SyncPullRequest,
-  ) => Effect.Effect<AuthorityReply<string>, E, R>;
+  ) => Effect.Effect<RegisterReply, E, R>;
+  readonly submit: (actor: Actor, bodyText: string) => Effect.Effect<string, E, R>;
+  readonly receipt: (actor: Actor, operationId: string) => Effect.Effect<string | null, E, R>;
+  readonly pull: (actor: Actor, request: SyncPullRequest) => Effect.Effect<string, E, R>;
   readonly acquireSnapshot: (
     actor: Actor,
     request: AcquireSnapshotRequest,
-  ) => Effect.Effect<AuthorityReply<SnapshotReply>, E, R>;
+  ) => Effect.Effect<SnapshotReply, E, R>;
   readonly readSnapshotPart: (
     actor: Actor,
     snapshotId: string,
     partNumber: number,
-  ) => Effect.Effect<AuthorityReply<SnapshotPartReply>, E, R>;
-  readonly liveHorizon: (
-    actor: Actor,
-    replicaId: string,
-  ) => Effect.Effect<AuthorityReply<LiveHorizonReply>, E, R>;
+  ) => Effect.Effect<SnapshotPartReply, E, R>;
+  readonly liveHorizon: (actor: Actor, replicaId: string) => Effect.Effect<LiveHorizonReply, E, R>;
   readonly stageImportPart: (
     actor: Actor,
     importId: string,
     partNumber: number,
     bodyText: string,
-  ) => Effect.Effect<AuthorityReply<string>, E, R>;
+  ) => Effect.Effect<string, E, R>;
   readonly commitImport: (
     actor: Actor,
     importId: string,
     request: ImportCatalogRequest,
-  ) => Effect.Effect<AuthorityReply<string>, E, R>;
-  readonly importStatus: (
-    actor: Actor,
-    importId: string,
-  ) => Effect.Effect<AuthorityReply<ImportStatusReply>, E, R>;
-  readonly maintain: () => Effect.Effect<MaintenanceReport, E, R>;
+  ) => Effect.Effect<string, E, R>;
+  readonly importStatus: (actor: Actor, importId: string) => Effect.Effect<ImportStatusReply, E, R>;
+  readonly maintain: () => Effect.Effect<MaintenanceReport, never, R>;
 }
 
 export class MaintenanceAlarm extends Context.Service<
@@ -111,26 +92,13 @@ export class LiveBroadcast extends Context.Service<
   { readonly publish: (fanout: CommitFanout) => Effect.Effect<void> }
 >()("@store/server/LiveBroadcast") {}
 
-const isProtocolError = Schema.is(SyncProtocolError);
-
-const isMalformed = Schema.is(AuthorityRequestMalformed);
-
-const replyOf = <A, E, R>(
+// Refusals and malformed requests cross the RPC as typed failures, which the
+// Durable Object's declared `errors` rebuild on the Worker; the rest is a defect.
+const declaredFailures = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<AuthorityReply<A>, never, R> =>
-  effect.pipe(
-    Effect.map((value): AuthorityReply<A> => ({ _tag: "ok", value })),
-    Effect.catchIf(isProtocolError, (error) =>
-      Effect.succeed<AuthorityReply<A>>({
-        _tag: "refused",
-        code: error.code,
-        message: error.message,
-      }),
-    ),
-    Effect.catchIf(isMalformed, (error) =>
-      Effect.succeed<AuthorityReply<A>>({ _tag: "malformed", message: error.message }),
-    ),
-    Effect.orDie,
+): Effect.Effect<A, AuthorityFailure, R> =>
+  Effect.catch(effect, (error) =>
+    isAuthorityFailure(error) ? Effect.fail(error) : Effect.die(error),
   );
 
 const make = Effect.gen(function* () {
@@ -152,7 +120,7 @@ const make = Effect.gen(function* () {
   );
 
   const serve = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    replyOf(Effect.provideService(effect, Digest.Digest, digest));
+    declaredFailures(Effect.provideService(effect, Digest.Digest, digest));
 
   const serveWrite = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     serve(Effect.tap(effect, () => soon));

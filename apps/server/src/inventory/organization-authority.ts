@@ -3,7 +3,7 @@ import {
   CommandReceipt,
   ImportCatalogResult,
   RegisterReplicaResult,
-  syncProtocolError,
+  type SyncProtocolError,
   type AcquireSnapshotRequest,
   type ImportCatalogRequest,
   type ImportId,
@@ -22,7 +22,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { Actor } from "../authority/engine";
-import type { AuthorityReply, OrgAuthorityApi, SnapshotPartReply } from "../authority/facade";
+import { isAuthorityFailure } from "../authority/errors";
+import type { OrgAuthorityApi, SnapshotPartReply } from "../authority/facade";
 import { InventoryDatabaseError, SyncRequestMalformed, type InventoryError } from "./errors";
 
 export const MAX_SUBMIT_BODY_BYTES = 2 * 1024 * 1024;
@@ -48,21 +49,24 @@ const unreachable = (cause: unknown) =>
     cause,
   });
 
-const settle = Effect.fnUntraced(function* <A>(reply: AuthorityReply<A>) {
-  switch (reply._tag) {
-    case "ok":
-      return reply.value;
-    case "refused":
-      return yield* syncProtocolError(reply.code, reply.message);
-    case "malformed":
-      return yield* new SyncRequestMalformed({ message: reply.message });
-  }
-});
+// A declared failure arrives rebuilt as its class; anything else (a stub that
+// could not be reached, a defect thrown in the object) means no answer.
+const answeredOrMalformed = <A, R>(
+  reply: Effect.Effect<A, unknown, R>,
+): Effect.Effect<A, InventoryDatabaseError | SyncProtocolError | SyncRequestMalformed, R> =>
+  Effect.catch(
+    reply,
+    (
+      error,
+    ): Effect.Effect<never, InventoryDatabaseError | SyncProtocolError | SyncRequestMalformed> => {
+      if (!isAuthorityFailure(error)) return Effect.fail(unreachable(error));
+      return error._tag === "SyncProtocolError"
+        ? Effect.fail(error)
+        : Effect.fail(new SyncRequestMalformed({ message: error.message }));
+    },
+  );
 
-const answeredOrMalformed = <A, E, R>(reply: Effect.Effect<AuthorityReply<A>, E, R>) =>
-  reply.pipe(Effect.mapError(unreachable), Effect.flatMap(settle));
-
-const answered = <A, E, R>(reply: Effect.Effect<AuthorityReply<A>, E, R>) =>
+const answered = <A, R>(reply: Effect.Effect<A, unknown, R>) =>
   answeredOrMalformed(reply).pipe(
     Effect.catchTag("SyncRequestMalformed", (malformed) =>
       Effect.fail(new InventoryDatabaseError({ message: malformed.message })),
