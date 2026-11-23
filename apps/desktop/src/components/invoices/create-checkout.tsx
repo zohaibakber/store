@@ -110,6 +110,7 @@ function InvoiceCheckoutBar({
   readonly summaryEnd: React.RefObject<HTMLElement | null>;
 }) {
   const {
+    state: { lines },
     actions: { completeSale },
     meta: { canSubmit, isSubmitting, total },
   } = useInvoiceCreate();
@@ -125,7 +126,7 @@ function InvoiceCheckoutBar({
     return () => observer.disconnect();
   }, [summaryEnd]);
 
-  if (summaryVisible) return null;
+  if (summaryVisible || lines.length === 0) return null;
   return (
     <div className="sticky bottom-0 z-10 -mx-4 -mb-4 flex items-center justify-between gap-4 border-t bg-background px-4 py-3 xl:hidden">
       <div className="flex items-baseline gap-2">

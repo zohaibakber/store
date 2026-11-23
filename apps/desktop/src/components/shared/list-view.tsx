@@ -9,6 +9,7 @@ import {
   type TableOptions,
   type Updater,
 } from "@tanstack/react-table";
+import type * as React from "react";
 import { useDeferredValue, useEffect, useEffectEvent } from "react";
 
 import {
@@ -112,10 +113,16 @@ export function useShownRequest<Request>(request: Request): ShownRequest<Request
   return { request: shown, loading: request !== shown };
 }
 
-export function ListTableContent({ loading }: { readonly loading: boolean }) {
+export function ListTableContent({
+  empty,
+  loading,
+}: {
+  readonly empty?: React.ReactNode;
+  readonly loading: boolean;
+}) {
   return (
     <div aria-busy={loading} className={cn("transition-opacity", loading && "opacity-60")}>
-      <DataTableContent>
+      <DataTableContent empty={empty}>
         <DataTableFooter>
           <DataTablePagination pageSizes={LIST_PAGE_SIZES} />
         </DataTableFooter>

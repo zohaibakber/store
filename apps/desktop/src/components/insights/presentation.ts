@@ -20,7 +20,7 @@ export const STATUS_META = {
   dead: { label: "Not selling", tone: "secondary", hint: "No sales for the dead-stock period" },
   overstock: { label: "Overstocked", tone: "info", hint: "Far more cover than needed" },
   healthy: { label: "Healthy", tone: "success", hint: "Stock covers expected demand" },
-  inactive: { label: "Inactive", tone: "secondary", hint: "No stock and no recent sales" },
+  inactive: { label: "Not stocked", tone: "secondary", hint: "No stock and no recent sales" },
 } satisfies Record<
   StockStatus,
   { readonly label: string; readonly tone: Tone; readonly hint: string }

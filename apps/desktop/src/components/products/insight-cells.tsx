@@ -22,8 +22,12 @@ function LiveStock({ productId }: { readonly productId: ProductId }) {
 
 function LiveStatus({ productId }: { readonly productId: ProductId }) {
   const insight = useProductInsight(productId);
-  if (insight === null || insight.status === "inactive") return PLACEHOLDER;
-  return <StatusLabel status={insight.status} />;
+  if (insight === null) return PLACEHOLDER;
+  return (
+    <span className={insight.status === "inactive" ? "text-muted-foreground" : undefined}>
+      <StatusLabel status={insight.status} />
+    </span>
+  );
 }
 
 function InsightCell({ children }: { readonly children: React.ReactNode }) {

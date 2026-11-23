@@ -25,8 +25,10 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { expiryDaysLeft, expiryTone } from "@/lib/expiry";
 import { EMPTY, formatCount, formatNumber, pluralize } from "@/lib/format";
 import { AUTO_BATCH } from "@/lib/sale-drafts";
+import { cn } from "@/lib/utils";
 
 const quantityItems = [
   { label: "Unit", value: "unit" },
@@ -43,6 +45,14 @@ const batchLabel = (batch: Batch) => {
   if (batch.batchNumber && expiry) return `${batch.batchNumber} · ${expiry}`;
   if (batch.batchNumber) return batch.batchNumber;
   return expiry ? `Exp ${expiry}` : EMPTY;
+};
+
+// Inside the warning window the days left replace the month, which fits the
+// narrow batch column and does not rely on colour.
+const expiryLine = (expiry: string, daysLeft: number | null) => {
+  if (daysLeft === null) return `Exp ${expiry}`;
+  if (daysLeft <= 0) return "Expired";
+  return `${daysLeft}d left`;
 };
 
 const elsewhereHint = (line: SaleLine) => {
@@ -92,7 +102,7 @@ function LineRow({
       tabIndex={0}
     >
       {children}
-      <TableCell>
+      <TableCell className="ps-3">
         <div className="-my-1.5 flex justify-end">
           <Button
             aria-label={`Remove ${name}`}
@@ -161,9 +171,16 @@ function LineBatch({ line }: { line: SaleLine }) {
   const chosen = line.batchId === AUTO_BATCH || batches.some((batch) => batch.id === line.batchId);
 
   if (batches.length <= 1 && chosen) {
+    if (!only) return <span className="text-xs text-muted-foreground">{EMPTY}</span>;
+    const expiry = only.expiresAt == null ? null : format(only.expiresAt, "MMM ''yy");
     return (
-      <span className="block truncate text-xs leading-tight text-muted-foreground tabular-nums">
-        {only ? batchLabel(only) : EMPTY}
+      <span className="flex min-w-0 flex-col leading-tight tabular-nums">
+        <span className="truncate text-sm">{only.batchNumber ?? EMPTY}</span>
+        {expiry && (
+          <span className={cn("truncate text-xs", expiryTone(only.expiresAt))}>
+            {expiryLine(expiry, expiryDaysLeft(only.expiresAt))}
+          </span>
+        )}
       </span>
     );
   }
@@ -244,8 +261,11 @@ function InvoiceCreateLine({
             </span>
           ) : (
             <span className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-muted-foreground">
-              {line.product.category.name}
-              {hint && ` · ${hint}`}
+              <span className="max-xl:hidden">
+                {line.product.category.name}
+                {hint && " · "}
+              </span>
+              {hint}
             </span>
           )}
         </div>
@@ -270,6 +290,7 @@ function InvoiceCreateLine({
               <NumberFieldInput
                 aria-invalid={error ? true : undefined}
                 aria-label={`Quantity of ${line.product.name}`}
+                className="text-end"
                 onKeyDown={returnOnEnter}
               />
             </NumberFieldGroup>
@@ -308,7 +329,7 @@ function InvoiceCreateLine({
             </span>
           )}
           <NumberField
-            className="w-20"
+            className="w-16 xl:w-20"
             format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
             min={0}
             onValueChange={(salePrice) => updateLine(line, { salePrice })}
@@ -319,6 +340,7 @@ function InvoiceCreateLine({
             <NumberFieldGroup>
               <NumberFieldInput
                 aria-label={`Unit price of ${line.product.name} in PKR`}
+                className="text-end"
                 onKeyDown={returnOnEnter}
               />
             </NumberFieldGroup>

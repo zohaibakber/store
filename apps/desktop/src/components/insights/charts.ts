@@ -1,10 +1,9 @@
 import type { SalesDay } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import { areaY, barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tanstack/charts";
+import { barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
-import { scalePoint } from "@tanstack/charts/scales/point";
-import { curveMonotoneX } from "d3-shape";
+import { curveLinear } from "d3-shape";
 import { format } from "date-fns";
 
 import { chartTheme, chartTooltip } from "@/components/ui/chart";
@@ -41,33 +40,31 @@ const revenueTooltip = (points: readonly ChartPoint<SalesDay>[]) => {
 };
 
 export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
+  const tickStep = rows.length <= 7 ? 1 : rows.length <= 31 ? 7 : 14;
+  // Even steps are counted back from today, so the last label is always today, and
+  // the first day keeps a label unless a stepped one already sits close to it.
+  const stepped = rows.filter((_, index) => (rows.length - 1 - index) % tickStep === 0);
+  const first = rows[0];
+  const firstFar = first !== undefined && (rows.length - 1) % tickStep >= Math.ceil(tickStep / 2);
+  const tickDays = [...(firstFar ? [first] : []), ...stepped].map((row) => String(row.day));
   return defineChart(
     {
       marks: [
-        areaY(rows, {
-          id: "revenue-area",
-          x: (row) => String(row.day),
-          y: "revenue",
-          key: (row) => `area-${row.day}`,
-          curve: d3Curve(curveMonotoneX),
-          fill: "var(--chart-1)",
-          fillOpacity: 0.08,
-        }),
-        lineY(rows, {
+        barY(rows, {
           id: "revenue",
           x: (row) => String(row.day),
           y: "revenue",
           key: (row) => String(row.day),
-          curve: d3Curve(curveMonotoneX),
-          stroke: "var(--chart-1)",
-          strokeWidth: 2,
+          fill: "var(--chart-1)",
+          maxThickness: 24,
+          radius: 2,
         }),
         lineY(rows, {
           id: "previous",
           x: (row) => String(row.day),
           y: "previousRevenue",
           key: (row) => `previous-${row.day}`,
-          curve: d3Curve(curveMonotoneX),
+          curve: d3Curve(curveLinear),
           stroke: "var(--muted-foreground)",
           strokeOpacity: 0.6,
           strokeWidth: 1.5,
@@ -76,13 +73,19 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
       ],
       scales: {
         x: {
-          scale: () => scalePoint<string>().padding(0.1),
+          scale: () => scaleBand<string>().paddingInner(0.3).paddingOuter(0.1),
           axis: {
-            ...axisTicks((value: string) => {
-              const row = rows.find((candidate) => String(candidate.day) === value);
-              return row ? dayLabel(row.date) : "";
-            }),
-            tickLabels: { thin: { minGap: 32, priority: "ends" } },
+            line: false,
+            ticks: {
+              size: 0,
+              padding: 8,
+              values: tickDays,
+              format: (value: string) => {
+                const row = rows.find((candidate) => String(candidate.day) === value);
+                return row ? dayLabel(row.date) : "";
+              },
+            },
+            tickLabels: { thin: { minGap: 16, keep: tickDays.slice(0, 1) } },
           },
         },
         y: {

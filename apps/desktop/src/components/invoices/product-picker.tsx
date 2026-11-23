@@ -21,7 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-products";
-import { useSuspenseProductSearch } from "@/inventory/queries";
+import { useSuspenseCatalogProduct, useSuspenseProductSearch } from "@/inventory/queries";
 import { formatNumber } from "@/lib/format";
 import { SALE_SEARCH_LIMIT } from "@/lib/sale-drafts";
 import { isEditableTarget, isInListbox, useWindowKeydown } from "@/lib/shortcuts";
@@ -40,11 +40,11 @@ function InvoiceProductPicker() {
   });
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group/picker flex flex-col gap-1.5">
       <Suspense fallback={<LoadingSpinner className="h-9" />}>
         <ProductPickerSearch onPick={addProduct} />
       </Suspense>
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+      <p className="invisible flex items-center gap-1 text-xs text-muted-foreground group-focus-within/picker:visible">
         Type <Kbd>3*</Kbd> before a name to add 3 at once.
       </p>
     </div>
@@ -63,7 +63,6 @@ function ProductPickerSearch({
   readonly onPick: (product: Product, quantity: number) => void;
 }) {
   const {
-    state: { lines },
     meta: { searchRef },
   } = useInvoiceCreate();
   const [query, setQuery] = useState("");
@@ -119,9 +118,6 @@ function ProductPickerSearch({
           autoFocus
           aria-keyshortcuts="/"
           aria-label="Search products"
-          onFocus={() => {
-            if (!query && lines.length === 0 && recents.length > 0) setOpen(true);
-          }}
           onKeyDown={(event) => {
             if (event.key === "Escape" && query) {
               setQuery("");
@@ -202,4 +198,91 @@ function ProductOption({ product }: { readonly product: Product }) {
   );
 }
 
-export { InvoiceProductPicker };
+const CHIP_CLASS =
+  "inline-flex h-8 max-w-64 items-center gap-1.5 rounded-md border bg-background px-2.5 text-sm outline-none";
+
+function RecentChipLabel({
+  recent,
+  note,
+}: {
+  readonly recent: RecentProduct;
+  readonly note?: string;
+}) {
+  return (
+    <>
+      <span className="truncate">{recent.name}</span>
+      {recent.strength && <span className="shrink-0 text-muted-foreground">{recent.strength}</span>}
+      {note && <span className="shrink-0 text-xs text-muted-foreground">{note}</span>}
+    </>
+  );
+}
+
+function RecentChip({ recent }: { readonly recent: RecentProduct }) {
+  const {
+    actions: { addProduct },
+  } = useInvoiceCreate();
+  const product = useSuspenseCatalogProduct(recent.id);
+  if (!product) return null;
+  if (productStock(product) <= 0) {
+    return (
+      <li>
+        <span aria-disabled="true" className={`${CHIP_CLASS} opacity-64`}>
+          <RecentChipLabel
+            note={product.batches.length === 0 ? "Not stocked" : "Out of stock"}
+            recent={recent}
+          />
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li>
+      <button
+        className={`${CHIP_CLASS} hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring`}
+        onClick={() => addProduct(product, 1)}
+        type="button"
+      >
+        <RecentChipLabel recent={recent} />
+      </button>
+    </li>
+  );
+}
+
+/**
+ * The empty cart: the last products sold, one click from the cart, so the
+ * search popup never has to open over the page by itself.
+ */
+function RecentProductsQuickAdd() {
+  const recents = useRecentProducts();
+
+  if (recents.length === 0) {
+    return (
+      <p className="py-6 text-center text-muted-foreground">
+        No items yet. Search above and press Enter to add.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 py-3">
+      <p className="text-xs text-muted-foreground">No items yet. Add a recent product:</p>
+      <ul aria-label="Recent products" className="flex flex-wrap gap-1.5">
+        {recents.map((recent) => (
+          <Suspense
+            fallback={
+              <li>
+                <span className={CHIP_CLASS}>
+                  <RecentChipLabel recent={recent} />
+                </span>
+              </li>
+            }
+            key={recent.id}
+          >
+            <RecentChip recent={recent} />
+          </Suspense>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export { InvoiceProductPicker, RecentProductsQuickAdd };

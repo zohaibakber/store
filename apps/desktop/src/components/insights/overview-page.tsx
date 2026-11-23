@@ -10,6 +10,7 @@ import { KpiGrid } from "./kpis";
 import { PlanningSheet } from "./planning-sheet";
 import { RecentInvoices } from "./recent-invoices";
 import {
+  AttentionClear,
   AttentionFeed,
   ExpiringSoon,
   RevenueTrend,
@@ -37,11 +38,23 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
   return (
     <>
       <KpiGrid period={period} summary={summary} />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <AttentionFeed className="lg:col-span-2" summary={summary} />
-        <StockHealth summary={summary} />
-      </div>
-      <RevenueTrend period={period} />
+      {summary.attention.length === 0 ? (
+        <>
+          <AttentionClear />
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+            <RevenueTrend className="order-last lg:order-none lg:col-span-2" period={period} />
+            <StockHealth summary={summary} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <AttentionFeed className="lg:col-span-2" summary={summary} />
+            <StockHealth summary={summary} />
+          </div>
+          <RevenueTrend period={period} />
+        </>
+      )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TopSellers period={period} />
         <SalesRhythm summary={summary} />

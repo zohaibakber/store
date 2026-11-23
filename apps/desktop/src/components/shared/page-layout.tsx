@@ -6,7 +6,7 @@ type PageWidth = "full" | "narrow";
 
 const widthClassNames = {
   full: "",
-  narrow: "mx-auto max-w-3xl",
+  narrow: "max-w-3xl",
 } as const satisfies Record<PageWidth, string>;
 
 function PageLayout({
