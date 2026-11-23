@@ -1,6 +1,6 @@
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { InvoiceCreateLine, InvoiceMissingLine } from "@/components/invoices/create-line";
-import { InvoiceProductPicker } from "@/components/invoices/product-picker";
+import { InvoiceProductPicker, RecentProductsQuickAdd } from "@/components/invoices/product-picker";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   Table,
@@ -53,10 +53,8 @@ function InvoiceItems() {
           <TableBody>
             {lines.length === 0 ? (
               <TableRow>
-                <TableCell className="h-16" colSpan={7}>
-                  <p className="text-center whitespace-normal text-muted-foreground">
-                    No items yet. Search above and press Enter to add.
-                  </p>
+                <TableCell className="whitespace-normal" colSpan={7}>
+                  <RecentProductsQuickAdd />
                 </TableCell>
               </TableRow>
             ) : (

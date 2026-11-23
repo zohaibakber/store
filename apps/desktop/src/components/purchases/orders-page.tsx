@@ -15,7 +15,7 @@ import {
 } from "@/components/shared/data-table";
 import { FrameCard } from "@/components/shared/frame-card";
 import { ListTableContent, useListTable } from "@/components/shared/list-view";
-import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar, PageHeading } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -227,6 +227,7 @@ export function PurchaseOrdersPage({
         table={table}
       >
         <PageToolbar>
+          <PageHeading className="me-2 shrink-0">Purchases</PageHeading>
           <DataTableFilter
             className="me-auto"
             columnId="supplier"

@@ -8,7 +8,7 @@ import type { ProductListView } from "@/components/products/list";
 import { ProductTableFilters, useProductsTable } from "@/components/products/table";
 import { DataTable, DataTableFilter, DataTableViewOptions } from "@/components/shared/data-table";
 import { ListTableContent } from "@/components/shared/list-view";
-import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar, PageHeading } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import type { ProductListRequest } from "@/inventory/product-list";
 import {
@@ -62,6 +62,7 @@ export function ProductsPage({
     >
       <PageLayout>
         <PageToolbar>
+          <PageHeading className="me-2 shrink-0">Products</PageHeading>
           <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
           <ProductTableFilters categories={categories} facets={facets} />
           <DataTableViewOptions />

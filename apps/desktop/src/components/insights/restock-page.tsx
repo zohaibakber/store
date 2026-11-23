@@ -79,6 +79,16 @@ const VIEW_LABEL = {
   all: "All",
 } satisfies Record<RestockView, string>;
 
+const RESTOCK_EMPTY = {
+  action: "Nothing needs ordering right now.",
+  out: "No selling product has run out.",
+  critical: "Nothing runs out before a delivery could arrive.",
+  low: "Nothing is at its reorder point.",
+  overstock: "Nothing has far more stock than it needs.",
+  dead: "Every stocked product has sold recently.",
+  all: "No products yet.",
+} satisfies Record<RestockView, string>;
+
 const STATUS_RANK = new Map<StockStatus, number>(
   [...HEALTH_ORDER, "inactive" as const].map((status, index) => [status, index]),
 );
@@ -395,6 +405,7 @@ function RestockBody({
       table={table}
     >
       <PageToolbar>
+        <PageHeading className="me-2 shrink-0">Restock</PageHeading>
         <DataTableFilter className="me-auto" columnId="name" placeholder="Search products" />
         <ExportButton />
         <PlanningSheet />
@@ -442,7 +453,7 @@ function RestockBody({
         </ScrollArea>
         {summary === null ? null : <PolicyInfo summary={summary} />}
       </div>
-      <ListTableContent loading={loading} />
+      <ListTableContent empty={RESTOCK_EMPTY[view]} loading={loading} />
       <OrderBuilderSheet
         onOpenChange={setBuilderOpen}
         onOrdered={deselect}

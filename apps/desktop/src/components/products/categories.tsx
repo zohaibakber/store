@@ -3,8 +3,10 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { Category } from "@store/contracts";
 import { MAX_CATALOG_NAME_LENGTH } from "@store/contracts";
 import * as Exit from "effect/Exit";
-import { Suspense, useId, useMemo, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 
+import { PageHeading, PageToolbar } from "@/components/shared/page-layout";
+import { SegmentedRadio } from "@/components/shared/segmented-radio";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -18,8 +20,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Frame } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -33,10 +33,15 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCommand } from "@/inventory/provider";
 import { useSuspenseProductCount } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 
 const PACKS_HINT =
-  "Off for items sold one at a time: products skip pack size and pack price, and stock arrives as a quantity with an expiry. Purchase price stays the pack cost.";
+  "Units is for items sold one at a time: products skip pack size and pack price, and stock arrives as a quantity with an expiry. Purchase price stays the pack cost.";
+
+const SOLD_AS_OPTIONS = [
+  { value: "packs", label: "Packs" },
+  { value: "units", label: "Units" },
+] as const;
 
 const normalized = (name: string) => name.trim().toLocaleLowerCase();
 
@@ -64,7 +69,6 @@ function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
   const [createCategory, pending] = useCommand((commands) => commands.createCategory);
   const [name, setName] = useState("");
   const [tracksPacks, setTracksPacks] = useState(true);
-  const switchId = useId();
   const trimmed = name.trim();
   const duplicate = taken.has(normalized(name));
   const canSave =
@@ -107,10 +111,12 @@ function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
         />
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
-          <Switch checked={tracksPacks} id={switchId} onCheckedChange={setTracksPacks} />
-          <Label htmlFor={switchId}>Sold in packs</Label>
-        </div>
+        <SegmentedRadio
+          label="How the new category is sold"
+          onValueChange={(next) => setTracksPacks(next === "packs")}
+          options={SOLD_AS_OPTIONS}
+          value={tracksPacks ? "packs" : "units"}
+        />
       </TableCell>
       <TableCell />
       <TableCell>
@@ -256,7 +262,7 @@ function CategoryRow({
 }) {
   const [updateCategory] = useCommand((commands) => commands.updateCategory);
   const [editing, setEditing] = useState(false);
-  const switchLabel = `Sell ${category.name} in packs`;
+  const soldAsLabel = `How ${category.name} is sold`;
 
   const setTracksPacks = async (tracksPacks: boolean) => {
     const exit = await updateCategory({ id: category.id, name: category.name, tracksPacks });
@@ -274,16 +280,12 @@ function CategoryRow({
         />
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
-          <Switch
-            aria-label={switchLabel}
-            checked={category.tracksPacks}
-            onCheckedChange={(next) => void setTracksPacks(next)}
-          />
-          <span className="text-muted-foreground">
-            {category.tracksPacks ? "Packs" : "Single units"}
-          </span>
-        </div>
+        <SegmentedRadio
+          label={soldAsLabel}
+          onValueChange={(next) => void setTracksPacks(next === "packs")}
+          options={SOLD_AS_OPTIONS}
+          value={category.tracksPacks ? "packs" : "units"}
+        />
       </TableCell>
       <TableCell>
         <div className="text-end tabular-nums">
@@ -327,29 +329,37 @@ export function CategoriesTable({ categories }: { readonly categories: ReadonlyA
   );
 
   return (
-    <Frame className="w-full">
-      <Table variant="card">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>
-              <SoldAsHeader />
-            </TableHead>
-            <TableHead>
-              <div className="text-end">Products</div>
-            </TableHead>
-            <TableHead>
-              <span className="sr-only">Actions</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <NewCategoryRow taken={taken} />
-          {sorted.map((category) => (
-            <CategoryRow category={category} key={category.id} taken={taken} />
-          ))}
-        </TableBody>
-      </Table>
-    </Frame>
+    <>
+      <PageToolbar>
+        <PageHeading className="me-auto">Categories</PageHeading>
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {formatCount(categories.length, "category", "categories")}
+        </span>
+      </PageToolbar>
+      <Frame className="w-full">
+        <Table variant="card">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>
+                <SoldAsHeader />
+              </TableHead>
+              <TableHead>
+                <div className="text-end">Products</div>
+              </TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <NewCategoryRow taken={taken} />
+            {sorted.map((category) => (
+              <CategoryRow category={category} key={category.id} taken={taken} />
+            ))}
+          </TableBody>
+        </Table>
+      </Frame>
+    </>
   );
 }

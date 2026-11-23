@@ -63,7 +63,6 @@ function ProductPickerSearch({
   readonly onPick: (product: Product, quantity: number) => void;
 }) {
   const {
-    state: { lines },
     meta: { searchRef },
   } = useInvoiceCreate();
   const [query, setQuery] = useState("");
@@ -119,9 +118,6 @@ function ProductPickerSearch({
           autoFocus
           aria-keyshortcuts="/"
           aria-label="Search products"
-          onFocus={() => {
-            if (!query && lines.length === 0 && recents.length > 0) setOpen(true);
-          }}
           onKeyDown={(event) => {
             if (event.key === "Escape" && query) {
               setQuery("");
@@ -202,4 +198,58 @@ function ProductOption({ product }: { readonly product: Product }) {
   );
 }
 
-export { InvoiceProductPicker };
+/**
+ * The empty cart: the last products sold, one click from the cart, so the
+ * search popup never has to open over the page by itself.
+ */
+function RecentProductsQuickAdd() {
+  const {
+    actions: { addProduct },
+  } = useInvoiceCreate();
+  const recents = useRecentProducts();
+  const [pending, setPending] = useState<{ readonly id: ProductId; readonly nonce: number } | null>(
+    null,
+  );
+  const nonceRef = useRef(0);
+
+  if (recents.length === 0) {
+    return (
+      <p className="py-6 text-center text-muted-foreground">
+        No items yet. Search above and press Enter to add.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 py-3">
+      {pending && (
+        <ProductResolver
+          key={pending.nonce}
+          onResolve={(product) => {
+            if (product) addProduct(product, 1);
+            setPending(null);
+          }}
+          productId={pending.id}
+        />
+      )}
+      <p className="text-xs text-muted-foreground">No items yet. Add a recent product:</p>
+      <ul aria-label="Recent products" className="flex flex-wrap gap-1.5">
+        {recents.map((recent) => (
+          <li key={recent.id}>
+            <button
+              className="inline-flex h-8 max-w-64 items-center gap-1.5 rounded-md border bg-background px-2.5 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setPending({ id: recent.id, nonce: nonceRef.current++ })}
+              type="button"
+            >
+              <span className="truncate">{recent.name}</span>
+              {recent.strength && (
+                <span className="shrink-0 text-muted-foreground">{recent.strength}</span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export { InvoiceProductPicker, RecentProductsQuickAdd };

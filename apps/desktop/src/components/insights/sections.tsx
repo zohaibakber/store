@@ -99,6 +99,29 @@ function ViewAll({ children, to }: { readonly children: string; readonly to: "/r
   );
 }
 
+/** One quiet row in place of the attention table when nothing needs stock. */
+export function AttentionClear() {
+  return (
+    <div className="flex h-12 items-center gap-3 rounded-xl border bg-card px-4 text-sm">
+      <HugeiconsIcon
+        aria-hidden="true"
+        className="size-4 shrink-0 text-success"
+        icon={CheckmarkCircle02Icon}
+      />
+      <p className="min-w-0 truncate">
+        All clear
+        <span className="text-muted-foreground">
+          {" "}
+          · Stock covers expected demand for every product.
+        </span>
+      </p>
+      <div className="ms-auto shrink-0">
+        <ViewAll to="/restock">Restock plan</ViewAll>
+      </div>
+    </div>
+  );
+}
+
 function End({ children }: { readonly children: React.ReactNode }) {
   return <div className="text-right tabular-nums">{children}</div>;
 }
@@ -277,6 +300,11 @@ export function StockHealth({ summary }: { readonly summary: InsightsSummary }) 
             );
           })}
         </ul>
+        {summary.counts.inactive > 0 ? (
+          <p className="px-2 text-xs text-muted-foreground tabular-nums">
+            {formatCount(summary.counts.inactive, "product")} not stocked yet
+          </p>
+        ) : null}
         {summary.inventory.reorderCount > 0 ? (
           <p className="px-2 pb-1 text-xs text-muted-foreground tabular-nums">
             {formatCount(summary.inventory.reorderCount, "product")} to order
@@ -303,10 +331,17 @@ function ChartLegend({ items }: { readonly items: ReadonlyArray<readonly [string
   );
 }
 
-export function RevenueTrend({ period }: { readonly period: SalesPeriod }) {
+export function RevenueTrend({
+  className,
+  period,
+}: {
+  readonly className?: string;
+  readonly period: SalesPeriod;
+}) {
   const definition = React.useMemo(() => createRevenueTrendChart(period.series), [period.series]);
   return (
     <FrameCard
+      className={className}
       action={
         <ChartLegend
           items={[
