@@ -14,7 +14,7 @@ import {
   type ListTableFeatures,
 } from "@/components/shared/data-table";
 import { ListTableContent, useListTable } from "@/components/shared/list-view";
-import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar, PageHeading } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import type { InvoiceListRequest } from "@/inventory/invoice-list";
@@ -41,13 +41,27 @@ const columns = columnHelper.columns([
     enableHiding: false,
     meta: { label: "Invoice" },
   }),
+  columnHelper.accessor("createdAt", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+    cell: ({ getValue }) => (
+      <Tooltip>
+        <TooltipTrigger render={<span />}>
+          <span className="text-muted-foreground tabular-nums">
+            {formatInvoiceTime(getValue())}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup>{formatDateTime(getValue())}</TooltipPopup>
+      </Tooltip>
+    ),
+    meta: { label: "Created" },
+  }),
   columnHelper.accessor((invoice) => invoice.customerName ?? "Walk-in customer", {
     id: "customer",
     header: "Customer",
     cell: ({ row, getValue }) => (
       <span
         className={cn(
-          "block max-w-96 truncate",
+          "block max-w-120 truncate",
           !row.original.customerName && "text-muted-foreground",
         )}
         title={row.original.customerName ?? undefined}
@@ -70,20 +84,6 @@ const columns = columnHelper.columns([
     cell: ({ getValue }) => <span className="font-medium">{formatPrice(getValue())}</span>,
     enableSorting: false,
     meta: { label: "Total", align: "end" },
-  }),
-  columnHelper.accessor("createdAt", {
-    header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
-    cell: ({ getValue }) => (
-      <Tooltip>
-        <TooltipTrigger render={<span />}>
-          <span className="text-muted-foreground tabular-nums">
-            {formatInvoiceTime(getValue())}
-          </span>
-        </TooltipTrigger>
-        <TooltipPopup>{formatDateTime(getValue())}</TooltipPopup>
-      </Tooltip>
-    ),
-    meta: { label: "Created", align: "end" },
   }),
 ]);
 
@@ -130,6 +130,7 @@ function InvoicesPage({
     >
       <PageLayout>
         <PageToolbar>
+          <PageHeading className="me-2 shrink-0">Invoices</PageHeading>
           <DataTableFilter className="me-auto" columnId="customer" placeholder="Search invoices" />
           <Button render={<Link to="/invoices/new" />} size="sm">
             <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />

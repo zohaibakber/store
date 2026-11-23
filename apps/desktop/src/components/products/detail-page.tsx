@@ -75,40 +75,67 @@ function DetailsCard({
   readonly product: Product;
 }) {
   const tracksPacks = product.category.tracksPacks;
-  const details: ReadonlyArray<{ readonly label: string; readonly value: React.ReactNode }> = [
-    { label: "Category", value: product.category.name },
-    {
-      label: "On hand",
-      value: formatStock(productStock(product), product.unitsPerPack, tracksPacks),
-    },
-    ...(tracksPacks
-      ? [
-          { label: "Units per pack", value: formatNumber(product.unitsPerPack) },
-          { label: "Unit price", value: price(product.unitPrice) },
-          { label: "Retail price", value: price(product.retailPrice) },
-        ]
-      : [{ label: "Retail price", value: price(product.unitPrice) }]),
-    ...(editable ? [{ label: "Purchase price", value: price(product.purchasePrice) }] : []),
-    { label: "Composition", value: text(product.composition) },
-    { label: "Strength", value: text(product.strength) },
-    { label: "Aisle", value: text(product.aisle) },
-    { label: "Created", value: formatDate(product.createdAt) },
-    { label: "Updated", value: formatDate(product.updatedAt) },
-  ];
+  type Detail = { readonly label: string; readonly value: React.ReactNode };
+  const groups: ReadonlyArray<{ readonly title: string; readonly details: ReadonlyArray<Detail> }> =
+    [
+      {
+        title: "Stock",
+        details: [
+          {
+            label: "On hand",
+            value: formatStock(productStock(product), product.unitsPerPack, tracksPacks),
+          },
+          ...(tracksPacks
+            ? [{ label: "Units per pack", value: formatNumber(product.unitsPerPack) }]
+            : []),
+          { label: "Aisle", value: text(product.aisle) },
+        ],
+      },
+      {
+        title: "Pricing",
+        details: [
+          ...(tracksPacks
+            ? [
+                { label: "Retail price", value: price(product.retailPrice) },
+                { label: "Unit price", value: price(product.unitPrice) },
+              ]
+            : [{ label: "Retail price", value: price(product.unitPrice) }]),
+          ...(editable ? [{ label: "Purchase price", value: price(product.purchasePrice) }] : []),
+        ],
+      },
+      {
+        title: "Product",
+        details: [
+          { label: "Category", value: product.category.name },
+          { label: "Composition", value: text(product.composition) },
+          { label: "Strength", value: text(product.strength) },
+        ],
+      },
+    ];
 
   return (
     <FrameCard
       action={editable ? <ProductVisibilitySelect product={product} /> : undefined}
       title="Details"
     >
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4 xl:grid-cols-6">
-        {details.map((detail) => (
-          <div className="flex min-w-0 flex-col gap-0.5" key={detail.label}>
-            <dt className="truncate text-xs text-muted-foreground">{detail.label}</dt>
-            <dd className="truncate tabular-nums">{detail.value}</dd>
-          </div>
+      <div className="grid gap-x-12 gap-y-5 text-sm md:grid-cols-3 xl:grid-cols-[repeat(3,20rem)]">
+        {groups.map((group) => (
+          <section className="flex min-w-0 flex-col gap-2" key={group.title}>
+            <h3 className="border-b pb-1.5 text-xs font-medium">{group.title}</h3>
+            <dl className="flex flex-col gap-1.5">
+              {group.details.map((detail) => (
+                <div
+                  className="flex min-w-0 items-baseline justify-between gap-4"
+                  key={detail.label}
+                >
+                  <dt className="shrink-0 text-muted-foreground">{detail.label}</dt>
+                  <dd className="min-w-0 truncate text-end tabular-nums">{detail.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         ))}
-      </dl>
+      </div>
     </FrameCard>
   );
 }
@@ -137,7 +164,12 @@ export function ProductDetailPage({
   const hasStock = product.batches.some(
     (batch) => batch.packQuantity > 0 || batch.unitQuantity > 0,
   );
-  const summary = [product.category.name, product.strength, product.composition]
+  const summary = [
+    product.category.name,
+    product.strength,
+    product.composition,
+    `Updated ${formatDate(product.updatedAt)}`,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 
@@ -221,7 +253,7 @@ export function ProductDetailPage({
 
       <PageContent>
         <DetailsCard editable={canManageStock} product={product} />
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-4">
             <ProductBatchesCard editable={canManageStock} product={product} />
             {canManageStock ? <ProductStockPlan productId={product.id} /> : null}

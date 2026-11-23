@@ -6,6 +6,7 @@ import {
   type WorkspaceSnapshot as WorkspaceSnapshotType,
 } from "@store/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import {
   SessionHttp,
@@ -16,14 +17,19 @@ import {
 
 const SESSION_REJECTED = "You signed in, but the server rejected the session.";
 
+export class SessionPersistFailed extends Schema.TaggedError<SessionPersistFailed>()(
+  "SessionPersistFailed",
+  { message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
+) {}
+
 export interface SessionSnapshotHooks {
-  readonly getLocalSnapshot: () => WorkspaceSnapshotType;
-  readonly publish: (snapshot: WorkspaceSnapshotType) => WorkspaceSnapshotType;
-  readonly clearAuthenticated?: Effect.Effect<void>;
-  readonly persistAuthenticated?: (
+  readonly current: Effect.Effect<WorkspaceSnapshotType>;
+  readonly publish: (snapshot: WorkspaceSnapshotType) => Effect.Effect<WorkspaceSnapshotType>;
+  readonly clearAuthenticated: Effect.Effect<void>;
+  readonly persistAuthenticated: (
     snapshot: WorkspaceSnapshotType,
     tokens: TokenSet,
-  ) => Effect.Effect<void, Error>;
+  ) => Effect.Effect<void, SessionPersistFailed>;
 }
 
 export const adoptAuthenticatedSnapshot = (
@@ -31,14 +37,13 @@ export const adoptAuthenticatedSnapshot = (
   snapshot: WorkspaceSnapshotType,
   tokens: TokenSet | null,
 ): Effect.Effect<WorkspaceSnapshotType> =>
-  Effect.suspend(() => {
-    const online = withWorkspaceOnline(snapshot, true);
-    hooks.publish(online);
-    if (hooks.persistAuthenticated === undefined || tokens === null) return Effect.succeed(online);
-    return hooks.persistAuthenticated(online, tokens).pipe(
+  Effect.gen(function* () {
+    const online = yield* hooks.publish(withWorkspaceOnline(snapshot, true));
+    if (tokens === null) return online;
+    return yield* hooks.persistAuthenticated(online, tokens).pipe(
       Effect.as(online),
-      Effect.catch((error) =>
-        Effect.sync(() => hooks.publish(withWorkspaceError(online, error.message))),
+      Effect.catchTag("SessionPersistFailed", (error) =>
+        hooks.publish(withWorkspaceError(online, error.message)),
       ),
     );
   });
@@ -47,15 +52,13 @@ const clearSession = (hooks: SessionSnapshotHooks, workspaceError: string | null
   Effect.gen(function* () {
     const session = yield* SessionHttp;
     yield* session.setTokens(null);
-    if (hooks.clearAuthenticated !== undefined) yield* hooks.clearAuthenticated;
-    return hooks.publish(unauthenticatedWorkspace({ isOnline: true, workspaceError }));
+    yield* hooks.clearAuthenticated;
+    return yield* hooks.publish(unauthenticatedWorkspace({ isOnline: true, workspaceError }));
   });
 
 const publishUnreachable = (hooks: SessionSnapshotHooks, workspaceError: string) =>
-  Effect.sync(() =>
-    hooks.publish(
-      withWorkspaceError(withWorkspaceOnline(hooks.getLocalSnapshot(), false), workspaceError),
-    ),
+  Effect.flatMap(hooks.current, (local) =>
+    hooks.publish(withWorkspaceError(withWorkspaceOnline(local, false), workspaceError)),
   );
 
 const confirmRejection = Effect.fnUntraced(function* (hooks: SessionSnapshotHooks, reason: string) {
@@ -67,7 +70,7 @@ const confirmRejection = Effect.fnUntraced(function* (hooks: SessionSnapshotHook
       onSuccess: (access) =>
         Effect.flatMap(session.tokens, (tokens) =>
           access?.workspace !== undefined || (access === null && tokens !== null)
-            ? Effect.sync(() => hooks.getLocalSnapshot())
+            ? hooks.current
             : clearSession(hooks, reason),
         ),
     }),
@@ -82,7 +85,7 @@ const settleSnapshot = <R>(
     Effect.matchEffect({
       onFailure: (error) => {
         if (isSupersededSession(error) || error.refresh === "succeeded") {
-          return Effect.sync(() => hooks.getLocalSnapshot());
+          return hooks.current;
         }
         if (isRejectedStatus(error.status) && error.refresh === undefined) {
           return confirmRejection(hooks, error.message);
@@ -119,9 +122,7 @@ export const resumeSessionSnapshot = (
       Effect.matchEffect({
         onFailure: (error) => publishUnreachable(hooks, error.message),
         onSuccess: (access) =>
-          access?.workspace === undefined
-            ? loadSessionSnapshot(hooks)
-            : Effect.sync(() => hooks.getLocalSnapshot()),
+          access?.workspace === undefined ? loadSessionSnapshot(hooks) : hooks.current,
       }),
     );
   });
@@ -138,5 +139,5 @@ export const renewSessionSnapshot = (
   Effect.gen(function* () {
     const session = yield* SessionHttp;
     const refreshed = yield* session.renewAccess;
-    return refreshed === null ? yield* loadSessionSnapshot(hooks) : hooks.getLocalSnapshot();
+    return yield* refreshed === null ? loadSessionSnapshot(hooks) : hooks.current;
   });

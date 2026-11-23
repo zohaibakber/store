@@ -144,6 +144,8 @@ function DataTable<TData extends RowData>({
 }
 
 function DataTableFooter({ children, className, ...props }: React.ComponentProps<"footer">) {
+  const { table } = useDataTable();
+  if (table.getRowCount() === 0) return null;
   return (
     <FrameFooter className={className} data-slot="data-table-footer" {...props}>
       <div className="-mx-3 -my-2">{children}</div>
@@ -413,7 +415,12 @@ function DataTableColumnHeader({ column, title, className, ...props }: DataTable
   );
 }
 
-function DataTableContent({ className, children, ...props }: React.ComponentProps<"div">) {
+function DataTableContent({
+  className,
+  children,
+  empty = "No results.",
+  ...props
+}: React.ComponentProps<"div"> & { readonly empty?: React.ReactNode }) {
   const { table, onRowClick, onRowPreload } = useDataTable();
   const rows = table.getRowModel().rows;
   return (
@@ -449,8 +456,11 @@ function DataTableContent({ className, children, ...props }: React.ComponentProp
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell className="h-24" colSpan={table.getAllLeafColumns().length}>
-                  <p className="text-center text-muted-foreground">No results.</p>
+                <TableCell
+                  className="h-32 whitespace-normal"
+                  colSpan={table.getAllLeafColumns().length}
+                >
+                  <div className="text-center text-muted-foreground">{empty}</div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -494,15 +504,17 @@ function DataTablePagination({
   const firstResult = pageIndex * pageSize + 1;
   const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
   const sizes = [...new Set<number>([...pageSizes, pageSize])].sort((a, b) => a - b);
+  const fitsOnePage = pageIndex === 0 && rowCount <= (sizes[0] ?? pageSize);
+  if (rowCount === 0) return null;
 
   return (
-    <div className={cn("flex items-center justify-between gap-2", className)} {...props}>
+    <div className={cn("flex min-h-8 items-center justify-between gap-2", className)} {...props}>
       <p className="text-xs text-muted-foreground tabular-nums">
         {rowCount === 0
           ? formatCount(0, "result")
           : `${formatNumber(firstResult)}–${formatNumber(lastResult)} of ${formatNumber(rowCount)}`}
       </p>
-      <div className="flex items-center gap-2">
+      <div className={cn("flex items-center gap-2", fitsOnePage && "hidden")}>
         <Select
           onValueChange={(value) => table.setPageSize(Number(value))}
           value={String(pageSize)}

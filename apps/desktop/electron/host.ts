@@ -3,20 +3,19 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 
 import { DesktopAuth, type DesktopAuthOptions } from "./auth";
 import { DesktopShell } from "./desktop-shell";
+import { layerDesktopShell, type DesktopShellConfig } from "./desktop-shell-live";
 import { PrivateFiles } from "./private-files";
 import { makeReplicaHost, ReplicaHost } from "./replica-host";
 import { ShellEvents } from "./shell-events";
 import { ShellServer } from "./shell-server";
 import { Updater } from "./updater";
 
-export interface DesktopHostOptions extends DesktopAuthOptions {
+export interface DesktopHostConfig extends DesktopAuthOptions, DesktopShellConfig {
   readonly packaged: boolean;
-  readonly shell: DesktopShell["Service"];
 }
 
 const PlatformLive = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer);
@@ -40,26 +39,19 @@ const ReplicaHostLive = Layer.effect(
   }),
 );
 
-const MainLive = (options: DesktopHostOptions) =>
+/**
+ * The main process's services once the app is ready. `ShellEvents` and
+ * `MainWindow` come from the program, which needs them before ready.
+ */
+export const layerDesktopHost = (config: DesktopHostConfig) =>
   ShellServer.layer.pipe(
     Layer.provideMerge(ReplicaHostLive),
     Layer.provideMerge(
       Layer.mergeAll(
-        DesktopAuth.layer(options),
-        Layer.succeed(DesktopShell, options.shell),
-        options.packaged ? Updater.layer : Updater.layerUnpackaged,
+        DesktopAuth.layer(config),
+        layerDesktopShell(config),
+        config.packaged ? Updater.layer : Updater.layerUnpackaged,
       ),
     ),
-    Layer.provideMerge(ShellEvents.layer),
     Layer.provideMerge(PrivateFiles.layer.pipe(Layer.provideMerge(PlatformLive))),
   );
-
-export const makeDesktopHost = (options: DesktopHostOptions) => {
-  const runtime = ManagedRuntime.make(MainLive(options));
-  return {
-    run: <A, E>(
-      effect: Effect.Effect<A, E, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>,
-    ) => runtime.runPromise(effect),
-    dispose: () => runtime.dispose(),
-  };
-};

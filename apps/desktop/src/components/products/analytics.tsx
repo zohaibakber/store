@@ -19,7 +19,7 @@ function PrivateStockValue({ value }: { value: string }) {
   return (
     <div className="relative bg-background px-3 py-1.5">
       <p className="truncate text-xs text-muted-foreground" title="Stock value at cost">
-        Stock value at cost
+        Stock value
       </p>
       <p
         aria-label={visible ? `Stock value ${value}` : "Stock value hidden"}

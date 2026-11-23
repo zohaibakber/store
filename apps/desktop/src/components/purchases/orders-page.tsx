@@ -15,7 +15,7 @@ import {
 } from "@/components/shared/data-table";
 import { FrameCard } from "@/components/shared/frame-card";
 import { ListTableContent, useListTable } from "@/components/shared/list-view";
-import { PageLayout, PageToolbar } from "@/components/shared/page-layout";
+import { PageLayout, PageToolbar, PageHeading } from "@/components/shared/page-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -154,12 +154,14 @@ function TabCount({ tab }: { readonly tab: PurchaseOrderTab }) {
 function NewOrderButton({
   disabled,
   onClick,
+  variant = "default",
 }: {
   readonly disabled: boolean;
   readonly onClick: () => void;
+  readonly variant?: "default" | "outline";
 }) {
   return (
-    <Button disabled={disabled} onClick={onClick} size="sm">
+    <Button disabled={disabled} onClick={onClick} size="sm" variant={variant}>
       <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
       New order
     </Button>
@@ -227,6 +229,7 @@ export function PurchaseOrdersPage({
         table={table}
       >
         <PageToolbar>
+          <PageHeading className="me-2 shrink-0">Purchases</PageHeading>
           <DataTableFilter
             className="me-auto"
             columnId="supplier"
@@ -235,7 +238,11 @@ export function PurchaseOrdersPage({
           <Button render={<Link to="/suppliers" />} size="sm" variant="outline">
             Suppliers
           </Button>
-          <NewOrderButton disabled={gate.blocked} onClick={() => onBuilderOpenChange(true)} />
+          <NewOrderButton
+            disabled={gate.blocked}
+            onClick={() => onBuilderOpenChange(true)}
+            variant={total === 0 && !searching ? "outline" : "default"}
+          />
         </PageToolbar>
         <PurchasingGateNotice gate={gate} />
         <Tabs

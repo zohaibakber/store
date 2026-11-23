@@ -198,11 +198,16 @@ export const makePinnedHttp = Effect.fn("PinnedHttp.make")(function* (apiBaseUrl
     ),
     liveAccessToken: ({ force }) =>
       (force ? expire(undefined) : Effect.void).pipe(
-        Effect.andThen(Effect.timeoutOption(settled, LIVE_TOKEN_LIMIT)),
-        Effect.map((current) =>
-          Option.isSome(current) && current.value._tag === "held"
-            ? Redacted.value(current.value.token)
-            : null,
+        Effect.andThen(
+          settled.pipe(
+            Effect.map((current) =>
+              current._tag === "held" ? Redacted.value(current.token) : null,
+            ),
+            Effect.timeoutOrElse({
+              duration: LIVE_TOKEN_LIMIT,
+              orElse: () => Effect.succeed(null),
+            }),
+          ),
         ),
       ),
   } satisfies PinnedHttp;

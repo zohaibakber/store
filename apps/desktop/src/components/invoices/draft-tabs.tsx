@@ -6,7 +6,7 @@ import { useEffect, useId, useRef } from "react";
 
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { ParkedElsewhereMenu } from "@/components/invoices/parked-elsewhere";
-import { PageToolbar } from "@/components/shared/page-layout";
+import { PageHeading, PageToolbar } from "@/components/shared/page-layout";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -134,30 +134,36 @@ function SaleDraftTabs() {
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [draftId]);
 
-  if (!several && !started && parked.length === 0) return null;
+  // A fresh sale shows a heading in the tabs' place, so the row keeps its height
+  // and the search box stays put when the first product goes in.
+  const fresh = !several && !started;
 
   return (
     <PageToolbar className="justify-between">
-      <div
-        aria-label="Open sales"
-        className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto"
-        ref={stripRef}
-        role="group"
-      >
-        {tabs.map((tab, index) => (
-          <DraftButton
-            active={tab.id === draftId}
-            hintId={hintId}
-            id={tab.id}
-            index={index}
-            key={tab.id}
-            label={tab.label}
-          />
-        ))}
-        <span className="sr-only" id={hintId}>
-          Press Delete to discard this sale.
-        </span>
-      </div>
+      {fresh ? (
+        <PageHeading>New sale</PageHeading>
+      ) : (
+        <div
+          aria-label="Open sales"
+          className="flex min-w-0 scrollbar-none items-center gap-1.5 overflow-x-auto"
+          ref={stripRef}
+          role="group"
+        >
+          {tabs.map((tab, index) => (
+            <DraftButton
+              active={tab.id === draftId}
+              hintId={hintId}
+              id={tab.id}
+              index={index}
+              key={tab.id}
+              label={tab.label}
+            />
+          ))}
+          <span className="sr-only" id={hintId}>
+            Press Delete to discard this sale.
+          </span>
+        </div>
+      )}
       {parked.length > 0 ? (
         <div className="flex shrink-0 items-center gap-2">
           <ParkedElsewhereMenu parked={parked} takeOver={takeOver} />

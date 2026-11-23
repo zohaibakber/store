@@ -1,4 +1,5 @@
 import {
+  PURCHASING_SCHEMA_VERSION,
   ACTIVE_REPLICA_WINDOW_MILLIS,
   OPERATIONAL_SUBSCRIPTION,
   PARTITION_DIGEST_VERSION,
@@ -36,6 +37,7 @@ import type { SqlClient } from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
 import { partitionDigest } from "./digest";
+import { AuthorityRequestMalformed } from "./errors";
 import {
   groupByteLength,
   groupFrame,
@@ -51,10 +53,25 @@ export type Actor = {
   readonly userId: string;
 };
 
-export class AuthorityRequestMalformed extends Schema.TaggedError<AuthorityRequestMalformed>()(
-  "AuthorityRequestMalformed",
-  { message: Schema.String },
-) {}
+/**
+ * The most recently seen replica that predates purchasing, if any. Purchasing
+ * writes wait until every active replica can hold them.
+ */
+export const latestWithoutPurchasing = <
+  R extends {
+    readonly replicaId: string;
+    readonly schemaVersion: number;
+    readonly lastSeenAt: number;
+  },
+>(
+  replicas: ReadonlyArray<R>,
+): R | undefined =>
+  replicas
+    .filter((replica) => replica.schemaVersion < PURCHASING_SCHEMA_VERSION)
+    .sort(
+      (left, right) =>
+        right.lastSeenAt - left.lastSeenAt || (left.replicaId < right.replicaId ? -1 : 1),
+    )[0];
 
 export const PULL_PAGE_GROUPS = 100;
 
@@ -251,12 +268,9 @@ export const makeAuthorityEngine = (sql: SqlClient, db: ReplicaDb) => {
         (write.entity === "batch" && write.action === "upsert" && write.receipt !== undefined),
     );
     if (!touchesPurchasing) return undefined;
-    const stale = (yield* activeReplicas(now))
-      .filter((replica) => replica.replicaId !== envelope.replicaId && replica.schemaVersion < 2)
-      .sort(
-        (left, right) =>
-          right.lastSeenAt - left.lastSeenAt || (left.replicaId < right.replicaId ? -1 : 1),
-      )[0];
+    const stale = latestWithoutPurchasing(
+      (yield* activeReplicas(now)).filter((replica) => replica.replicaId !== envelope.replicaId),
+    );
     return stale === undefined ? undefined : staleReplicaRejection(stale.deviceLabel || null);
   });
 

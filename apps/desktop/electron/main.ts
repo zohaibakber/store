@@ -4,50 +4,19 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import { ELECTRON_PROTOCOL } from "@store/auth/security";
 import { deviceLabelOf } from "@store/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
-import * as Queue from "effect/Queue";
-import {
-  app,
-  BrowserWindow,
-  clipboard,
-  dialog,
-  ipcMain,
-  Menu,
-  MessageChannelMain,
-  type MessagePortMain,
-  nativeTheme,
-  screen,
-  session,
-  shell,
-  type WebContents,
-} from "electron";
+import * as Runtime from "effect/Runtime";
+import { app, Menu } from "electron";
 
-import { SHELL_PORT_REQUEST_CHANNEL } from "../src/host/shell-port-channels";
-import { DesktopAuth } from "./auth";
 import { makeDesktopContentSecurityPolicy } from "./content-security-policy";
-import { DesktopShell, OpenExternalFailed } from "./desktop-shell";
-import { DialogFailed, type Dialogs } from "./dialogs";
-import { makeDesktopHost } from "./host";
-import { registerNewSaleAccelerator } from "./new-sale-accelerator";
-import { isOAuthCallbackUrl, oauthCallbackRedirectUri } from "./oauth-callback";
-import {
-  desktopRendererOrigin,
-  desktopRendererUrl,
-  registerDesktopProtocolHandler,
-  registerDesktopSchemePrivileges,
-} from "./protocol";
-import { lockDownRenderer } from "./renderer-lockdown";
-import { ReplicaHost } from "./replica-host";
+import { mainProgram } from "./main-program";
+import { oauthCallbackRedirectUri } from "./oauth-callback";
+import { desktopRendererOrigin, registerDesktopSchemePrivileges } from "./protocol";
 import { initDesktopSentry, reportDesktopError } from "./sentry";
-import { ShellEvents } from "./shell-events";
-import { makeShellPort } from "./shell-port";
-import { ShellServer } from "./shell-server";
-import { makeShutdownCoordinator } from "./shutdown";
-import { readThemeSource } from "./theme-source";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,14 +38,9 @@ for (const file of app.isPackaged ? [] : envFallbackFiles) {
 
 initDesktopSentry();
 
-let win: BrowserWindow | null;
-let events: ShellEvents["Service"] | undefined;
-
-const packagedExtraResourceIconPath = () => path.join(process.resourcesPath, "logo.png");
-const unpackagedDevMarkPath = () =>
-  path.join(process.env.APP_ROOT, "assets", "dev", "logo-dev.png");
-const appIconPath = () =>
-  app.isPackaged ? packagedExtraResourceIconPath() : unpackagedDevMarkPath();
+const appIconPath = app.isPackaged
+  ? path.join(process.resourcesPath, "logo.png")
+  : path.join(process.env.APP_ROOT, "assets", "dev", "logo-dev.png");
 
 const EXPERIMENTAL_WAYLAND_COLOR_MANAGER = "WaylandWpColorManagerV1";
 if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
@@ -89,304 +53,63 @@ if (process.platform === "linux" && process.env["WAYLAND_DISPLAY"]) {
   }
 }
 
-const WINDOW_LIGHT_BACKGROUND = "#ffffff";
-const WINDOW_DARK_BACKGROUND = "#161616";
-
-const windowBackground = () =>
-  nativeTheme.shouldUseDarkColors ? WINDOW_DARK_BACKGROUND : WINDOW_LIGHT_BACKGROUND;
-
+// Both must run before the app is ready, so they stay outside the program.
 registerDesktopSchemePrivileges(ELECTRON_PROTOCOL);
 Menu.setApplicationMenu(null);
-
-let pendingOAuthCallback: string | null = null;
-
-const deliverOAuthCallback = () => {
-  if (!pendingOAuthCallback || !events) return;
-  Queue.offerUnsafe(events.oauthCallbacks, pendingOAuthCallback);
-  pendingOAuthCallback = null;
-};
-
-const publishOAuthCallback = (url: string) => {
-  if (!isOAuthCallbackUrl(url, ELECTRON_PROTOCOL)) return;
-  pendingOAuthCallback = url;
-  deliverOAuthCallback();
-};
-
-const rendererCsp = makeDesktopContentSecurityPolicy({
-  scheme: ELECTRON_PROTOCOL,
-  apiOrigin: new URL(__API_URL__).origin,
-  development: Boolean(VITE_DEV_SERVER_URL),
-});
-
-const allowedRendererOrigins = () =>
-  [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
-    Boolean(value),
-  );
 
 const hostDeviceLabel = () => {
   const [name = ""] = hostname().split(".");
   return name.includes("@") ? undefined : deviceLabelOf(name);
 };
 
-const BACKUP_FILE_FILTERS = [{ name: "Tabaaq backup", extensions: ["sqlite"] }];
-
-const showDialog = <A>(show: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: show,
-    catch: (cause) => new DialogFailed({ message: "The file dialog could not be opened.", cause }),
-  });
-
-const chooseSavePath = (options: Electron.SaveDialogOptions) =>
-  showDialog(() =>
-    win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options),
-  ).pipe(
-    Effect.map((chosen) =>
-      chosen.canceled || chosen.filePath === "" ? Option.none() : Option.some(chosen.filePath),
-    ),
+const allowedRendererOrigins = () =>
+  [desktopRendererOrigin(ELECTRON_PROTOCOL), VITE_DEV_SERVER_URL].filter((value): value is string =>
+    Boolean(value),
   );
 
-const chooseOpenPath = (options: Electron.OpenDialogOptions) =>
-  showDialog(() =>
-    win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options),
-  ).pipe(
-    Effect.map((chosen) =>
-      chosen.canceled ? Option.none() : Option.fromNullishOr(chosen.filePaths[0]),
-    ),
-  );
-
-const dialogs: Dialogs = {
-  chooseBackupDestination: (suggestedName) =>
-    chooseSavePath({
-      title: "Back up to file",
-      buttonLabel: "Back up",
-      defaultPath: path.join(app.getPath("documents"), suggestedName),
-      filters: BACKUP_FILE_FILTERS,
-    }),
-  chooseBackupSource: Effect.suspend(() =>
-    chooseOpenPath({
-      title: "Restore from file",
-      buttonLabel: "Choose backup",
-      defaultPath: app.getPath("documents"),
-      filters: BACKUP_FILE_FILTERS,
-      properties: ["openFile"],
-    }),
-  ),
-  choosePdfDestination: (suggestedName) =>
-    chooseSavePath({
-      title: "Save as PDF",
-      buttonLabel: "Save",
-      defaultPath: path.join(app.getPath("documents"), suggestedName),
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    }),
-};
-
-const withWindow = (control: (window: BrowserWindow) => void) =>
-  Effect.sync(() => {
-    if (win && !win.isDestroyed()) control(win);
-  });
-
-const desktopShell = DesktopShell.of({
-  apiBaseUrl: __API_URL__,
-  userDataPath: app.getPath("userData"),
-  workerPath: path.join(MAIN_DIST, "replica-worker.js"),
-  deviceLabel: hostDeviceLabel(),
-  rendererChannel: () => new MessageChannelMain(),
-  oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
-  dialogs,
-  minimizeWindow: withWindow((window) => window.minimize()),
-  toggleMaximizeWindow: withWindow((window) =>
-    window.isMaximized() ? window.unmaximize() : window.maximize(),
-  ),
-  closeWindow: withWindow((window) => window.close()),
-  setThemeSource: (source) =>
-    Effect.sync(() => {
-      nativeTheme.themeSource = source;
-    }),
-  openExternal: (url) =>
-    Effect.tryPromise({
-      try: () => shell.openExternal(url),
-      catch: (cause) => new OpenExternalFailed({ message: "The link could not be opened.", cause }),
-    }),
-  writeClipboardText: (text) => Effect.sync(() => clipboard.writeText(text)),
-});
-
-const host = makeDesktopHost({
+const program = mainProgram({
   apiBaseUrl: __API_URL__,
   authBaseUrl: __AUTH_URL__,
   packaged: app.isPackaged,
-  shell: desktopShell,
-});
-
-const publishReplicaForeground = (visible: boolean) => {
-  host
-    .run(ReplicaHost.use((replicas) => replicas.setForeground(visible)))
-    .catch((cause: unknown) => reportDesktopError(cause, { op: "replica-foreground" }));
-};
-
-const publishWindowMaximized = () => {
-  if (!win || win.isDestroyed() || !events) return;
-  PubSub.publishUnsafe(events.maximized, win.isMaximized());
-};
-
-const shellPort = makeShellPort<WebContents, MessagePortMain>({
-  allowedOrigins: allowedRendererOrigins,
-  mainWindowContentsId: () => win?.webContents.id,
-  channel: () => new MessageChannelMain(),
-  serve: (sender, port) => {
-    void host
-      .run(ShellServer.use((server) => server.serve(sender, port)))
-      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-serve" }));
-  },
-  release: (senderId) => {
-    void host
-      .run(ShellServer.use((server) => server.release(senderId)))
-      .catch((cause: unknown) => reportDesktopError(cause, { op: "shell-port-release" }));
-  },
-});
-
-// Small and square screens (800x600, 1024x768, 1280x1024) have no room to spare,
-// so the window opens maximized there; larger screens get a comfortable size.
-function initialWindowBounds() {
-  const area = screen.getPrimaryDisplay().workAreaSize;
-  return {
-    width: Math.min(1440, area.width),
-    height: Math.min(900, area.height),
-    minWidth: Math.min(800, area.width),
-    minHeight: Math.min(560, area.height),
-    maximize: area.width < 1440 || area.height < 900,
-  };
-}
-
-function createWindow() {
-  const { maximize, ...bounds } = initialWindowBounds();
-  win = new BrowserWindow({
-    ...bounds,
-    center: true,
-    icon: appIconPath(),
-    show: false,
-    autoHideMenuBar: true,
-    backgroundColor: windowBackground(),
-    titleBarStyle: "hidden",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      backgroundThrottling: true,
-      contextIsolation: true,
-      devTools: !app.isPackaged,
-      enableWebSQL: false,
-      nodeIntegration: false,
-      sandbox: true,
-      spellcheck: false,
-      webSecurity: true,
-    },
-  });
-
-  win.setIcon(appIconPath());
-  app.dock?.setIcon(appIconPath());
-
-  win.once("ready-to-show", () => {
-    if (maximize) win?.maximize();
-    win?.show();
-  });
-  shellPort.attach(win.webContents);
-  publishWindowMaximized();
-  win.webContents.on("console-message", (event) => {
-    if (event.level === "debug" || event.level === "info") return;
-    const location = event.sourceId ? ` (${event.sourceId}:${event.lineNumber})` : "";
-    console.error(`[renderer ${event.level}] ${event.message}${location}`);
-  });
-  win.webContents.on("unresponsive", () => {
-    console.error("Renderer became unresponsive.");
-  });
-
-  win.on("closed", () => {
-    win = null;
-  });
-  win.on("maximize", publishWindowMaximized);
-  win.on("unmaximize", publishWindowMaximized);
-  win.on("blur", () => publishReplicaForeground(false));
-  win.on("minimize", () => publishReplicaForeground(false));
-  win.on("hide", () => publishReplicaForeground(false));
-  win.on("focus", () => publishReplicaForeground(true));
-  win.on("restore", () => publishReplicaForeground(true));
-  win.on("show", () => publishReplicaForeground(true));
-
-  void win.loadURL(desktopRendererUrl(ELECTRON_PROTOCOL));
-}
-
-nativeTheme.on("updated", () => {
-  if (!win || win.isDestroyed()) return;
-
-  win.setBackgroundColor(windowBackground());
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-    win = null;
-  }
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-
-const shutdown = makeShutdownCoordinator({
-  dispose: () => host.dispose(),
-  quit: () => app.quit(),
-  reportError: (cause) => reportDesktopError(cause, { op: "desktop-shutdown" }),
-});
-
-app.on("before-quit", shutdown);
-
-const primaryInstance = app.requestSingleInstanceLock();
-if (!primaryInstance) app.quit();
-
-app.on("open-url", (event, url) => {
-  event.preventDefault();
-  publishOAuthCallback(url);
-});
-app.on("second-instance", (_event, argv) => {
-  const callback = argv.find((value) => value.startsWith(`${ELECTRON_PROTOCOL}://`));
-  if (callback) publishOAuthCallback(callback);
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  }
-});
-
-const initialOAuthCallback = process.argv.find((value) =>
-  value.startsWith(`${ELECTRON_PROTOCOL}://`),
-);
-if (initialOAuthCallback) publishOAuthCallback(initialOAuthCallback);
-
-void app.whenReady().then(async () => {
-  if (!primaryInstance) return;
-  app.setAsDefaultProtocolClient(ELECTRON_PROTOCOL);
-  registerDesktopProtocolHandler({
+  workerPath: path.join(MAIN_DIST, "replica-worker.js"),
+  deviceLabel: hostDeviceLabel(),
+  oauthRedirectUri: oauthCallbackRedirectUri(ELECTRON_PROTOCOL),
+  scheme: ELECTRON_PROTOCOL,
+  argv: process.argv,
+  rendererRoot: RENDERER_DIST,
+  developmentServerUrl: VITE_DEV_SERVER_URL,
+  contentSecurityPolicy: makeDesktopContentSecurityPolicy({
     scheme: ELECTRON_PROTOCOL,
-    rendererRoot: RENDERER_DIST,
-    developmentServerUrl: VITE_DEV_SERVER_URL,
-    contentSecurityPolicy: rendererCsp,
-  });
-  lockDownRenderer({
-    session: session.defaultSession,
-    allowedOrigins: allowedRendererOrigins,
-    contentSecurityPolicy: rendererCsp,
-  });
-  events = await host.run(ShellEvents);
-  deliverOAuthCallback();
-  registerNewSaleAccelerator(
-    (contents) => contents.id === win?.webContents.id,
-    () => {
-      if (events) PubSub.publishUnsafe(events.newSale, undefined);
+    apiOrigin: new URL(__API_URL__).origin,
+    development: Boolean(VITE_DEV_SERVER_URL),
+  }),
+  allowedOrigins: allowedRendererOrigins,
+  preloadPath: path.join(__dirname, "preload.cjs"),
+  iconPath: appIconPath,
+});
+
+// The one edge of the main process. A second instance hands its argv to the
+// first and quits. Otherwise the program runs until a quit request closes its
+// scope, and only then does the app quit.
+if (app.requestSingleInstanceLock()) {
+  NodeRuntime.runMain(
+    program.pipe(
+      Effect.tapCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : Effect.sync(() => reportDesktopError(Cause.squash(cause), { op: "desktop-main" })),
+      ),
+    ),
+    {
+      disableErrorReporting: true,
+      teardown: (exit, onExit) =>
+        Runtime.defaultTeardown(exit, (code) => {
+          process.exitCode = code;
+          app.quit();
+          onExit(code);
+        }),
     },
   );
-  ipcMain.on(SHELL_PORT_REQUEST_CHANNEL, (event) => {
-    shellPort.request(event);
-  });
-  nativeTheme.themeSource = await host.run(readThemeSource(app.getPath("userData")));
-  createWindow();
-  void host.run(DesktopAuth.use((auth) => auth.initialize));
-});
+} else {
+  app.quit();
+}

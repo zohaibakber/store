@@ -92,7 +92,7 @@ function InvoiceDetailPage({ invoice }: { invoice: Invoice }) {
   const discount = subtotal - invoice.total;
 
   return (
-    <PageLayout>
+    <PageLayout width="narrow">
       <PageHeader>
         <PageHeading>
           Invoice{" "}

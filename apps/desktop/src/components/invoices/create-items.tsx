@@ -1,6 +1,6 @@
 import { useInvoiceCreate } from "@/components/invoices/create-context";
 import { InvoiceCreateLine, InvoiceMissingLine } from "@/components/invoices/create-line";
-import { InvoiceProductPicker } from "@/components/invoices/product-picker";
+import { InvoiceProductPicker, RecentProductsQuickAdd } from "@/components/invoices/product-picker";
 import { FrameCard } from "@/components/shared/frame-card";
 import {
   Table,
@@ -37,15 +37,15 @@ function InvoiceItems() {
                 <span className="block text-end">#</span>
               </TableHead>
               <TableHead className="h-8">Product</TableHead>
-              <TableHead className="h-8 w-28 2xl:w-32">Batch</TableHead>
+              <TableHead className="h-8 w-24 xl:w-28 2xl:w-32">Batch</TableHead>
               <TableHead className="h-8 w-36">Qty</TableHead>
-              <TableHead className="h-8 w-28 2xl:w-36">
+              <TableHead className="h-8 w-20 xl:w-28 2xl:w-36">
                 <span className="block text-end">Price</span>
               </TableHead>
               <TableHead className="h-8 w-24 2xl:w-28">
                 <span className="block text-end">Total</span>
               </TableHead>
-              <TableHead className="h-8 w-10">
+              <TableHead className="h-8 w-12">
                 <span className="sr-only">Remove</span>
               </TableHead>
             </TableRow>
@@ -53,10 +53,8 @@ function InvoiceItems() {
           <TableBody>
             {lines.length === 0 ? (
               <TableRow>
-                <TableCell className="h-16" colSpan={7}>
-                  <p className="text-center whitespace-normal text-muted-foreground">
-                    No items yet. Search above and press Enter to add.
-                  </p>
+                <TableCell className="whitespace-normal" colSpan={7}>
+                  <RecentProductsQuickAdd />
                 </TableCell>
               </TableRow>
             ) : (

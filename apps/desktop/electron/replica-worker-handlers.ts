@@ -42,7 +42,6 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
@@ -113,14 +112,13 @@ const linkRemoteAuthority = Effect.fnUntraced(function* (
   config: Extract<WorkerBoot, { readonly authority: "remote" }>,
 ) {
   const http = yield* makePinnedHttp(config.apiBaseUrl);
-  const runPromise = yield* FiberSet.makeRuntimePromise<never>();
   return {
     session: layerNodeReplicaSync({
       ...sessionInput(config),
       transport: http.syncTransport,
       live: {
         apiBaseUrl: config.apiBaseUrl,
-        accessToken: (options) => runPromise(http.liveAccessToken(options)),
+        accessToken: http.liveAccessToken,
       },
       deviceLabel: config.deviceLabel,
     }),

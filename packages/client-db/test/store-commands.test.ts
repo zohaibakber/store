@@ -29,7 +29,7 @@ const openStore = (replicaId: string) =>
           identity: { organizationId: "org-1", userId: "user-1", replicaId },
           databaseIdentity: `store-commands-${replicaId}`,
           transport: UnreachableTransport,
-          live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
+          live: { apiBaseUrl: "https://api.example.com", accessToken: () => Effect.succeed(null) },
         }).pipe(Layer.provide(NodeCrypto.layer)),
       ),
     );

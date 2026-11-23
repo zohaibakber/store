@@ -16,12 +16,14 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { publicError } from "../http/errors";
 import { SYNC_STATUS } from "../http/sync-errors";
 import type { Actor } from "./engine";
-import type { AuthorityReply, LiveHorizonReply } from "./facade";
+import type { AuthorityFailure } from "./errors";
+import type { LiveHorizonReply } from "./facade";
 import type { CommitFanout } from "./frames";
 
 export const LiveAttachment = Schema.Struct({
@@ -269,7 +271,10 @@ export const makeLiveSockets = Effect.fnUntraced(function* (
     state.getWebSockets(tag).pipe(Effect.map((sockets) => sockets.map(liveSocket)));
 
   const admit = (
-    horizonOf: (actor: Actor, replicaId: string) => Effect.Effect<AuthorityReply<LiveHorizonReply>>,
+    horizonOf: (
+      actor: Actor,
+      replicaId: string,
+    ) => Effect.Effect<LiveHorizonReply, AuthorityFailure>,
   ) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -277,18 +282,22 @@ export const makeLiveSockets = Effect.fnUntraced(function* (
       if (admission === undefined || request.headers.upgrade?.toLowerCase() !== "websocket") {
         return refuse(400, "INVALID_LIVE_ADMISSION", "The live admission is invalid.");
       }
-      const horizon = yield* horizonOf(
-        { organizationId: admission.organizationId, userId: admission.userId },
-        admission.replicaId,
+      const answer = yield* Effect.result(
+        horizonOf(
+          { organizationId: admission.organizationId, userId: admission.userId },
+          admission.replicaId,
+        ),
       );
-      switch (horizon._tag) {
-        case "refused":
-          return refuse(liveStatus(horizon.code), horizon.code, horizon.message);
-        case "malformed":
-          return refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.");
-        case "ok":
-          break;
+      if (Result.isFailure(answer)) {
+        const failure = answer.failure;
+        switch (failure._tag) {
+          case "SyncProtocolError":
+            return refuse(liveStatus(failure.code), failure.code, failure.message);
+          case "AuthorityRequestMalformed":
+            return refuse(503, "SYNC_UNAVAILABLE", "Organization sync is temporarily unavailable.");
+        }
       }
+      const horizon = answer.success;
       closeSockets(
         yield* socketsTagged(replicaTag(admission.replicaId)),
         LIVE_SOCKET_CLOSE.normal,
@@ -301,10 +310,10 @@ export const makeLiveSockets = Effect.fnUntraced(function* (
         userId: admission.userId,
         expiresAt: admission.expiresAt,
         maxBytes: admission.maxBytes,
-        epoch: horizon.value.epoch,
+        epoch: horizon.epoch,
       });
       yield* scheduleBy(admission.expiresAt);
-      const greeting = yield* advance(horizon.value);
+      const greeting = yield* advance(horizon);
       server.ws.send(helloFrame(greeting));
       return platform.upgrade(client);
     }).pipe(Effect.withSpan("LiveSockets.admit"));

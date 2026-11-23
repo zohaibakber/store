@@ -4,6 +4,7 @@ import type * as Effect from "effect/Effect";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/http/HttpServerResponse";
 
+import { AUTHORITY_FAILURES } from "./src/authority/errors";
 import type { OrgAuthorityApi } from "./src/authority/facade";
 
 export interface OrgAuthorityContract extends OrgAuthorityApi<RuntimeContext> {
@@ -27,6 +28,7 @@ export interface OrgAuthorityContract extends OrgAuthorityApi<RuntimeContext> {
 
 export class OrgAuthority extends Cloudflare.DurableObject<OrgAuthority, OrgAuthorityContract>()(
   "OrgAuthority",
+  { errors: AUTHORITY_FAILURES },
 ) {}
 
 export class Api extends Cloudflare.Worker<Api, {}, OrgAuthority>()("Api") {}

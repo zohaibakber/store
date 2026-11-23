@@ -22,7 +22,6 @@ import * as Base64Url from "effect/encoding/Base64Url";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
 import * as LayerRef from "effect/LayerRef";
-import * as MutableRef from "effect/MutableRef";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Redacted from "effect/Redacted";
@@ -40,6 +39,7 @@ import {
   adoptSessionTokens,
   renewSessionSnapshot,
   resumeSessionSnapshot,
+  SessionPersistFailed,
   type SessionSnapshotHooks,
 } from "./workspace/session-broker";
 import { SessionHttp, layerSessionHttp, type RequestError } from "./workspace/session-http";
@@ -63,7 +63,7 @@ const netHttp = FetchHttpClient.layer.pipe(
 );
 
 const persistenceError = (cause: unknown) =>
-  cause instanceof Error ? cause : new Error("Could not persist the authenticated session.");
+  new SessionPersistFailed({ message: "Could not persist the authenticated session.", cause });
 
 const desktopClient = nativeClient("Tabaaq Desktop");
 
@@ -128,18 +128,18 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
   const random = yield* SecureRandom.SecureRandom;
   const digest = yield* Digest.Digest;
   const events = yield* ShellEvents;
-  const snapshot = MutableRef.make<WorkspaceSnapshot>(unauthenticated(false));
+  const snapshot = yield* Ref.make<WorkspaceSnapshot>(unauthenticated(false));
   const googleVerifier = yield* Ref.make(Option.none<Redacted.Redacted<string>>());
   const transitions = yield* Semaphore.make(1);
   const accessTokens = yield* PubSub.unbounded<Redacted.Redacted<string> | null>();
 
   const hooks: SessionSnapshotHooks = {
-    getLocalSnapshot: () => MutableRef.get(snapshot),
-    publish: (next) => {
-      MutableRef.set(snapshot, next);
-      PubSub.publishUnsafe(events.session, next);
-      return next;
-    },
+    current: Ref.get(snapshot),
+    publish: (next) =>
+      Ref.set(snapshot, next).pipe(
+        Effect.andThen(PubSub.publish(events.session, next)),
+        Effect.as(next),
+      ),
     clearAuthenticated: forgetPersisted,
     persistAuthenticated: (workspace, tokens) =>
       Effect.mapError(writePersisted({ snapshot: workspace, tokens }), persistenceError),
@@ -153,10 +153,9 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
         adoptAuthenticatedSnapshot(hooks, refreshed.workspace, tokens).pipe(
           Effect.andThen(PubSub.publish(accessTokens, Redacted.make(tokens.accessToken))),
         ),
-      onRejected: Effect.sync(() => hooks.publish(unauthenticated(true))).pipe(
-        Effect.andThen(PubSub.publish(accessTokens, null)),
-        Effect.andThen(forgetPersisted),
-      ),
+      onRejected: hooks
+        .publish(unauthenticated(true))
+        .pipe(Effect.andThen(PubSub.publish(accessTokens, null)), Effect.andThen(forgetPersisted)),
     }).pipe(Layer.provide(netHttp)),
     { idleTimeToLive: Duration.infinity },
   );
@@ -176,15 +175,13 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
 
   const restored = yield* Effect.cached(
     Effect.tap(readPersisted, (persisted) =>
-      Effect.sync(() => {
-        if (Option.isSome(persisted)) {
-          MutableRef.set(snapshot, withWorkspaceOnline(persisted.value.snapshot, false));
-        }
-      }),
+      Option.isSome(persisted)
+        ? Ref.set(snapshot, withWorkspaceOnline(persisted.value.snapshot, false))
+        : Effect.void,
     ).pipe(Effect.uninterruptible),
   );
 
-  const current = Effect.sync(() => MutableRef.get(snapshot));
+  const current = Ref.get(snapshot);
 
   const adopt = (issued: IssuedSession) =>
     transitions.withPermit(withSession(adoptSessionTokens(hooks, issued)));
@@ -249,7 +246,7 @@ const makeDesktopAuth = Effect.fnUntraced(function* (options: DesktopAuthOptions
           const tokens = yield* session.tokens;
           yield* session.setTokens(null);
           yield* session.logout(tokens).pipe(Effect.ignore);
-          hooks.publish(unauthenticated(true));
+          yield* hooks.publish(unauthenticated(true));
           yield* PubSub.publish(accessTokens, null);
           yield* forgetPersisted;
         }),

@@ -51,7 +51,10 @@ describe("layerNodeReplicaSync", () => {
             identity: { organizationId: "org-1", userId: "user-1", replicaId: "replica-1" },
             databaseIdentity: "node-sync-recovery",
             transport: failingTransport(snapshotRequests),
-            live: { apiBaseUrl: "https://api.example.com", accessToken: async () => null },
+            live: {
+              apiBaseUrl: "https://api.example.com",
+              accessToken: () => Effect.succeed(null),
+            },
           }).pipe(Layer.provide(NodeCrypto.layer)),
         ),
       );
