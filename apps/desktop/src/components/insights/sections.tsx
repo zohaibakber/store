@@ -269,7 +269,10 @@ export function StockHealth({ summary }: { readonly summary: InsightsSummary }) 
   return (
     <FrameCard description={formatCount(tracked, "product")} flush title="Stock health">
       <div className="flex flex-col gap-1 p-2">
-        <ul aria-label="Products by stock status" className="flex flex-col">
+        <ul
+          aria-label="Products by stock status"
+          className="flex flex-col md:grid md:grid-cols-2 md:gap-x-6 lg:flex"
+        >
           {HEALTH_ORDER.map((status) => {
             const meta = STATUS_META[status];
             const count = summary.counts[status];

@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { EMPTY, formatCount, formatNumber, pluralize } from "@/lib/format";
 import { AUTO_BATCH } from "@/lib/sale-drafts";
+import { cn } from "@/lib/utils";
 
 const quantityItems = [
   { label: "Unit", value: "unit" },
@@ -43,6 +44,17 @@ const batchLabel = (batch: Batch) => {
   if (batch.batchNumber && expiry) return `${batch.batchNumber} · ${expiry}`;
   if (batch.batchNumber) return batch.batchNumber;
   return expiry ? `Exp ${expiry}` : EMPTY;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Batches close to expiry stand out at the counter: amber inside 90 days, red inside 30.
+const expiryTone = (expiresAt: number | null) => {
+  if (expiresAt == null) return "text-muted-foreground";
+  const days = (expiresAt - Date.now()) / DAY_MS;
+  if (days <= 30) return "text-destructive-foreground";
+  if (days <= 90) return "text-warning";
+  return "text-muted-foreground";
 };
 
 const elsewhereHint = (line: SaleLine) => {
@@ -166,7 +178,9 @@ function LineBatch({ line }: { line: SaleLine }) {
     return (
       <span className="flex min-w-0 flex-col leading-tight tabular-nums">
         <span className="truncate text-sm">{only.batchNumber ?? EMPTY}</span>
-        {expiry && <span className="truncate text-xs text-muted-foreground">Exp {expiry}</span>}
+        {expiry && (
+          <span className={cn("truncate text-xs", expiryTone(only.expiresAt))}>Exp {expiry}</span>
+        )}
       </span>
     );
   }
@@ -276,6 +290,7 @@ function InvoiceCreateLine({
               <NumberFieldInput
                 aria-invalid={error ? true : undefined}
                 aria-label={`Quantity of ${line.product.name}`}
+                className="text-end"
                 onKeyDown={returnOnEnter}
               />
             </NumberFieldGroup>
@@ -325,6 +340,7 @@ function InvoiceCreateLine({
             <NumberFieldGroup>
               <NumberFieldInput
                 aria-label={`Unit price of ${line.product.name} in PKR`}
+                className="text-end"
                 onKeyDown={returnOnEnter}
               />
             </NumberFieldGroup>

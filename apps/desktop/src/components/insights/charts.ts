@@ -72,8 +72,12 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
             ...axisTicks((value: string) => {
               const index = rows.findIndex((candidate) => String(candidate.day) === value);
               const row = rows[index];
-              // Even steps counted back from today, so the last label is always today.
-              return row && (rows.length - 1 - index) % tickStep === 0 ? dayLabel(row.date) : "";
+              // Even steps are counted back from today, so the last label is always today.
+              if (!row) return "";
+              const fromEnd = rows.length - 1 - index;
+              // The first day keeps a label unless a stepped label sits too close to it.
+              const firstLabel = index === 0 && fromEnd % tickStep >= Math.ceil(tickStep / 2);
+              return fromEnd % tickStep === 0 || firstLabel ? dayLabel(row.date) : "";
             }),
           },
         },

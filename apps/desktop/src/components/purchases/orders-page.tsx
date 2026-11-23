@@ -154,12 +154,14 @@ function TabCount({ tab }: { readonly tab: PurchaseOrderTab }) {
 function NewOrderButton({
   disabled,
   onClick,
+  variant = "default",
 }: {
   readonly disabled: boolean;
   readonly onClick: () => void;
+  readonly variant?: "default" | "outline";
 }) {
   return (
-    <Button disabled={disabled} onClick={onClick} size="sm">
+    <Button disabled={disabled} onClick={onClick} size="sm" variant={variant}>
       <HugeiconsIcon aria-hidden="true" icon={Add01Icon} />
       New order
     </Button>
@@ -236,7 +238,11 @@ export function PurchaseOrdersPage({
           <Button render={<Link to="/suppliers" />} size="sm" variant="outline">
             Suppliers
           </Button>
-          <NewOrderButton disabled={gate.blocked} onClick={() => onBuilderOpenChange(true)} />
+          <NewOrderButton
+            disabled={gate.blocked}
+            onClick={() => onBuilderOpenChange(true)}
+            variant={total === 0 && !searching ? "outline" : "default"}
+          />
         </PageToolbar>
         <PurchasingGateNotice gate={gate} />
         <Tabs
