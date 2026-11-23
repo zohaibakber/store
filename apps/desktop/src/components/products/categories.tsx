@@ -91,6 +91,7 @@ function NewCategoryRow({ taken }: { readonly taken: ReadonlySet<string> }) {
         <Input
           aria-invalid={duplicate || undefined}
           aria-label="New category name"
+          className="max-w-sm"
           disabled={pending}
           maxLength={MAX_CATALOG_NAME_LENGTH}
           onChange={(event) => setName(event.target.value)}

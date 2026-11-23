@@ -1,13 +1,13 @@
 import { PackageIcon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { Batch, Product, StockMovement } from "@store/contracts";
-import { productStock } from "@store/contracts";
+import type { Batch, InvoiceId, Product, StockMovement } from "@store/contracts";
+import { formatInvoiceNumber, productStock } from "@store/contracts";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
 import { format, isValid, parse } from "date-fns";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
-import { useMemo, useState, type ReactNode } from "react";
+import { Suspense, useMemo, useState, type ReactNode } from "react";
 
 import { ExpiryPicker } from "@/components/shared/expiry-picker";
 import { FormField } from "@/components/shared/form-field";
@@ -45,6 +45,7 @@ import {
 import { toastManager } from "@/components/ui/toast";
 import type { CommandExit } from "@/inventory/errors";
 import { useCommand } from "@/inventory/provider";
+import { useSuspenseInventoryInvoice } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 import { formatDate, parseExpiryDate } from "@/lib/format-date";
@@ -580,6 +581,11 @@ const MOVEMENT_LABEL = {
 
 const MOVEMENT_PREVIEW = 10;
 
+function InvoiceNumber({ invoiceId }: { readonly invoiceId: InvoiceId }) {
+  const invoice = useSuspenseInventoryInvoice(invoiceId);
+  return invoice ? `Invoice #${formatInvoiceNumber(invoice.invoiceNumber)}` : "Invoice";
+}
+
 function MovementReference({
   batchNumbers,
   movement,
@@ -594,7 +600,9 @@ function MovementReference({
         params={{ invoiceId: movement.invoiceId }}
         to="/invoices/$invoiceId"
       >
-        Invoice
+        <Suspense fallback="Invoice">
+          <InvoiceNumber invoiceId={movement.invoiceId} />
+        </Suspense>
       </Link>
     );
   }

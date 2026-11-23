@@ -21,7 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { useRecentProducts, type RecentProduct } from "@/hooks/use-recent-products";
-import { useSuspenseProductSearch } from "@/inventory/queries";
+import { useSuspenseCatalogProduct, useSuspenseProductSearch } from "@/inventory/queries";
 import { formatNumber } from "@/lib/format";
 import { SALE_SEARCH_LIMIT } from "@/lib/sale-drafts";
 import { isEditableTarget, isInListbox, useWindowKeydown } from "@/lib/shortcuts";
@@ -198,19 +198,59 @@ function ProductOption({ product }: { readonly product: Product }) {
   );
 }
 
+const CHIP_CLASS =
+  "inline-flex h-8 max-w-64 items-center gap-1.5 rounded-md border bg-background px-2.5 text-sm outline-none";
+
+function RecentChipLabel({
+  recent,
+  note,
+}: {
+  readonly recent: RecentProduct;
+  readonly note?: string;
+}) {
+  return (
+    <>
+      <span className="truncate">{recent.name}</span>
+      {recent.strength && <span className="shrink-0 text-muted-foreground">{recent.strength}</span>}
+      {note && <span className="shrink-0 text-xs text-muted-foreground">{note}</span>}
+    </>
+  );
+}
+
+function RecentChip({ recent }: { readonly recent: RecentProduct }) {
+  const {
+    actions: { addProduct },
+  } = useInvoiceCreate();
+  const product = useSuspenseCatalogProduct(recent.id);
+  if (!product) return null;
+  if (productStock(product) <= 0) {
+    return (
+      <li>
+        <span aria-disabled="true" className={`${CHIP_CLASS} opacity-64`}>
+          <RecentChipLabel note="Out of stock" recent={recent} />
+        </span>
+      </li>
+    );
+  }
+  return (
+    <li>
+      <button
+        className={`${CHIP_CLASS} hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring`}
+        onClick={() => addProduct(product, 1)}
+        type="button"
+      >
+        <RecentChipLabel recent={recent} />
+      </button>
+    </li>
+  );
+}
+
 /**
  * The empty cart: the last products sold, one click from the cart, so the
  * search popup never has to open over the page by itself.
  */
 function RecentProductsQuickAdd() {
-  const {
-    actions: { addProduct },
-  } = useInvoiceCreate();
   const recents = useRecentProducts();
-  const [pending, setPending] = useState<{ readonly id: ProductId; readonly nonce: number } | null>(
-    null,
-  );
-  const nonceRef = useRef(0);
 
   if (recents.length === 0) {
     return (
@@ -221,31 +261,21 @@ function RecentProductsQuickAdd() {
   }
   return (
     <div className="flex flex-col gap-2 py-3">
-      {pending && (
-        <ProductResolver
-          key={pending.nonce}
-          onResolve={(product) => {
-            if (product) addProduct(product, 1);
-            setPending(null);
-          }}
-          productId={pending.id}
-        />
-      )}
       <p className="text-xs text-muted-foreground">No items yet. Add a recent product:</p>
       <ul aria-label="Recent products" className="flex flex-wrap gap-1.5">
         {recents.map((recent) => (
-          <li key={recent.id}>
-            <button
-              className="inline-flex h-8 max-w-64 items-center gap-1.5 rounded-md border bg-background px-2.5 text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setPending({ id: recent.id, nonce: nonceRef.current++ })}
-              type="button"
-            >
-              <span className="truncate">{recent.name}</span>
-              {recent.strength && (
-                <span className="shrink-0 text-muted-foreground">{recent.strength}</span>
-              )}
-            </button>
-          </li>
+          <Suspense
+            fallback={
+              <li>
+                <span className={CHIP_CLASS}>
+                  <RecentChipLabel recent={recent} />
+                </span>
+              </li>
+            }
+            key={recent.id}
+          >
+            <RecentChip recent={recent} />
+          </Suspense>
         ))}
       </ul>
     </div>

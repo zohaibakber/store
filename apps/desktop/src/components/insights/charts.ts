@@ -1,9 +1,8 @@
 import type { SalesDay } from "@store/contracts";
 import { formatPrice } from "@store/services/format";
-import { areaY, barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tanstack/charts";
+import { barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tanstack/charts";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
-import { scalePoint } from "@tanstack/charts/scales/point";
 import { curveLinear } from "d3-shape";
 import { format } from "date-fns";
 
@@ -44,23 +43,14 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
   return defineChart(
     {
       marks: [
-        areaY(rows, {
-          id: "revenue-area",
-          x: (row) => String(row.day),
-          y: "revenue",
-          key: (row) => `area-${row.day}`,
-          curve: d3Curve(curveLinear),
-          fill: "var(--chart-1)",
-          fillOpacity: 0.08,
-        }),
-        lineY(rows, {
+        barY(rows, {
           id: "revenue",
           x: (row) => String(row.day),
           y: "revenue",
           key: (row) => String(row.day),
-          curve: d3Curve(curveLinear),
-          stroke: "var(--chart-1)",
-          strokeWidth: 2,
+          fill: "var(--chart-1)",
+          maxThickness: 24,
+          radius: 2,
         }),
         lineY(rows, {
           id: "previous",
@@ -76,7 +66,7 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
       ],
       scales: {
         x: {
-          scale: () => scalePoint<string>().padding(0.1),
+          scale: () => scaleBand<string>().paddingInner(0.3).paddingOuter(0.1),
           axis: {
             ...axisTicks((value: string) => {
               const row = rows.find((candidate) => String(candidate.day) === value);

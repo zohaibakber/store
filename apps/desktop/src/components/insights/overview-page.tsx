@@ -42,7 +42,7 @@ function OverviewBody({ range }: { readonly range: SalesRange }) {
         <>
           <AttentionClear />
           <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-            <RevenueTrend className="lg:col-span-2" period={period} />
+            <RevenueTrend className="order-last lg:order-none lg:col-span-2" period={period} />
             <StockHealth summary={summary} />
           </div>
         </>

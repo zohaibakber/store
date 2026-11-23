@@ -109,8 +109,6 @@ function DetailsCard({
           { label: "Category", value: product.category.name },
           { label: "Composition", value: text(product.composition) },
           { label: "Strength", value: text(product.strength) },
-          { label: "Created", value: formatDate(product.createdAt) },
-          { label: "Updated", value: formatDate(product.updatedAt) },
         ],
       },
     ];
@@ -120,9 +118,9 @@ function DetailsCard({
       action={editable ? <ProductVisibilitySelect product={product} /> : undefined}
       title="Details"
     >
-      <div className="grid gap-x-8 gap-y-5 text-sm md:grid-cols-3">
+      <div className="grid gap-x-12 gap-y-5 text-sm md:grid-cols-3 xl:grid-cols-[repeat(3,20rem)]">
         {groups.map((group) => (
-          <section className="flex max-w-80 min-w-0 flex-col gap-2" key={group.title}>
+          <section className="flex min-w-0 flex-col gap-2" key={group.title}>
             <h3 className="border-b pb-1.5 text-xs font-medium">{group.title}</h3>
             <dl className="flex flex-col gap-1.5">
               {group.details.map((detail) => (
@@ -166,7 +164,12 @@ export function ProductDetailPage({
   const hasStock = product.batches.some(
     (batch) => batch.packQuantity > 0 || batch.unitQuantity > 0,
   );
-  const summary = [product.category.name, product.strength, product.composition]
+  const summary = [
+    product.category.name,
+    product.strength,
+    product.composition,
+    `Updated ${formatDate(product.updatedAt)}`,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 

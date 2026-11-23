@@ -37,7 +37,7 @@ const narrowWindow = () => globalThis.matchMedia?.("(max-width: 1023px)").matche
 
 const textCell = (value: string) =>
   value ? (
-    <span className="block max-w-40 truncate" title={value}>
+    <span className="block max-w-64 truncate" title={value}>
       {value}
     </span>
   ) : (
@@ -140,6 +140,7 @@ export function useProductsTable(input: {
   readonly categories: ReadonlyArray<CategoryOption>;
   readonly onViewChange: (view: ProductListView) => void;
   readonly loading: boolean;
+  readonly hasAisles: boolean;
 }): ReactTable<ListTableFeatures, ProductListRow> {
   const { view, categories } = input;
   const seesCost = useStaffAllows("manageStock");
@@ -169,8 +170,9 @@ export function useProductsTable(input: {
     }),
     initialState: {
       columnVisibility: {
-        // Narrow windows start without the optional text columns; View brings them back.
-        aisle: !narrowWindow(),
+        // Narrow windows start without the optional text columns, and Aisle stays
+        // hidden until a product has one; View brings either back.
+        aisle: input.hasAisles && !narrowWindow(),
         composition: !narrowWindow(),
         unitPrice: false,
         purchasePrice: false,

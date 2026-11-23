@@ -46,9 +46,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { toastManager } from "@/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { restockExportFailureCopy } from "@/inventory/errors";
 import { useInventoryInsights, useRestockExport, useRestockPage } from "@/inventory/insights";
 import { usePurchasingGate } from "@/inventory/purchasing-queries";
@@ -130,12 +139,13 @@ const columns = columnHelper.columns([
   columnHelper.display({
     id: "select",
     header: ({ table }) => {
-      const all = table.getIsAllPageRowsSelected();
+      const empty = table.getRowModel().rows.length === 0;
+      const all = !empty && table.getIsAllPageRowsSelected();
       return (
         <Checkbox
           aria-label="Select all products on this page"
           checked={all}
-          disabled={table.getRowModel().rows.length === 0}
+          disabled={empty}
           indeterminate={!all && table.getIsSomePageRowsSelected()}
           onCheckedChange={(checked) => table.toggleAllPageRowsSelected(checked)}
         />
@@ -303,6 +313,11 @@ function RestockBody({
   readonly onViewChange: (view: RestockView) => void;
 }) {
   const { summary } = useInventoryInsights();
+  const roomForTabs = useMediaQuery("lg");
+  const viewItems = RESTOCK_VIEWS.map((value) => ({
+    value,
+    label: `${VIEW_LABEL[value]} · ${formatNumber(summary === null ? 0 : viewCount(summary, value))}`,
+  }));
   const navigate = useNavigate();
   const router = useRouter();
   const gate = usePurchasingGate();
@@ -435,22 +450,43 @@ function RestockBody({
       </PageToolbar>
       <PurchasingGateNotice gate={gate} />
       <div className="flex items-center gap-2">
-        <ScrollArea className="h-auto w-auto min-w-0" scrollFade>
-          <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
-            <TabsList aria-label="Stock view">
-              {RESTOCK_VIEWS.map((value) => (
-                <TabsTab key={value} value={value}>
-                  {VIEW_LABEL[value]}
-                  <Badge variant="outline">
-                    <span className="tabular-nums">
-                      {formatNumber(summary === null ? 0 : viewCount(summary, value))}
-                    </span>
-                  </Badge>
-                </TabsTab>
-              ))}
-            </TabsList>
-          </Tabs>
-        </ScrollArea>
+        {roomForTabs ? (
+          <ScrollArea className="h-auto w-auto min-w-0" scrollFade>
+            <Tabs onValueChange={(next: RestockView) => onViewChange(next)} value={view}>
+              <TabsList aria-label="Stock view">
+                {RESTOCK_VIEWS.map((value) => (
+                  <TabsTab key={value} value={value}>
+                    {VIEW_LABEL[value]}
+                    <Badge variant="outline">
+                      <span className="tabular-nums">
+                        {formatNumber(summary === null ? 0 : viewCount(summary, value))}
+                      </span>
+                    </Badge>
+                  </TabsTab>
+                ))}
+              </TabsList>
+            </Tabs>
+          </ScrollArea>
+        ) : (
+          <Select
+            items={viewItems}
+            onValueChange={(next) => next && onViewChange(next)}
+            value={view}
+          >
+            <SelectTrigger aria-label="Stock view" className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {viewItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        )}
         {summary === null ? null : <PolicyInfo summary={summary} />}
       </div>
       <ListTableContent empty={RESTOCK_EMPTY[view]} loading={loading} />

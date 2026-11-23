@@ -45,7 +45,15 @@ export function ProductsPage({
       categoryName: names.get(product.categoryId) ?? "Uncategorized",
     }));
   }, [categories, page]);
-  const table = useProductsTable({ rows, total, view, categories, onViewChange, loading });
+  const table = useProductsTable({
+    rows,
+    total,
+    view,
+    categories,
+    onViewChange,
+    loading,
+    hasAisles: facets.aisle.length > 0,
+  });
 
   return (
     <DataTable

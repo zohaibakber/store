@@ -144,6 +144,8 @@ function DataTable<TData extends RowData>({
 }
 
 function DataTableFooter({ children, className, ...props }: React.ComponentProps<"footer">) {
+  const { table } = useDataTable();
+  if (table.getRowCount() === 0) return null;
   return (
     <FrameFooter className={className} data-slot="data-table-footer" {...props}>
       <div className="-mx-3 -my-2">{children}</div>

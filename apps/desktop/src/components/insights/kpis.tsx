@@ -18,29 +18,29 @@ function Sparkline({
 }) {
   if (values.length < 2 || values.every((value) => value === 0)) return null;
   const max = Math.max(...values, 1);
-  const step = SPARK_WIDTH / (values.length - 1);
-  const points = values
-    .map(
-      (value, index) =>
-        `${(index * step).toFixed(1)},${(SPARK_HEIGHT - (value / max) * SPARK_HEIGHT).toFixed(1)}`,
-    )
-    .join(" ");
+  const slot = SPARK_WIDTH / values.length;
+  const bar = Math.max(1, slot * 0.6);
   return (
     <svg
       aria-label={label}
       className="h-6 w-full text-chart-1"
       preserveAspectRatio="none"
       role="img"
-      viewBox={`0 -1 ${SPARK_WIDTH} ${SPARK_HEIGHT + 2}`}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
     >
-      <polyline
-        fill="none"
-        points={points}
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        vectorEffect="non-scaling-stroke"
-      />
+      {values.map((value, index) => {
+        const height = value === 0 ? 0 : Math.max(1, (value / max) * SPARK_HEIGHT);
+        return (
+          <rect
+            fill="currentColor"
+            height={height}
+            key={index}
+            width={bar}
+            x={index * slot + (slot - bar) / 2}
+            y={SPARK_HEIGHT - height}
+          />
+        );
+      })}
     </svg>
   );
 }
