@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { expiryTone } from "@/lib/expiry";
 import { EMPTY, formatCount, formatNumber, pluralize } from "@/lib/format";
 import { AUTO_BATCH } from "@/lib/sale-drafts";
 import { cn } from "@/lib/utils";
@@ -44,17 +45,6 @@ const batchLabel = (batch: Batch) => {
   if (batch.batchNumber && expiry) return `${batch.batchNumber} · ${expiry}`;
   if (batch.batchNumber) return batch.batchNumber;
   return expiry ? `Exp ${expiry}` : EMPTY;
-};
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// Batches close to expiry stand out at the counter: amber inside 90 days, red inside 30.
-const expiryTone = (expiresAt: number | null) => {
-  if (expiresAt == null) return "text-muted-foreground";
-  const days = (expiresAt - Date.now()) / DAY_MS;
-  if (days <= 30) return "text-destructive-foreground";
-  if (days <= 90) return "text-warning";
-  return "text-muted-foreground";
 };
 
 const elsewhereHint = (line: SaleLine) => {

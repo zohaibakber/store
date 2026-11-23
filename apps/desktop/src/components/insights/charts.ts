@@ -41,6 +41,12 @@ const revenueTooltip = (points: readonly ChartPoint<SalesDay>[]) => {
 
 export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
   const tickStep = rows.length <= 7 ? 1 : rows.length <= 31 ? 7 : 14;
+  // Even steps are counted back from today, so the last label is always today, and
+  // the first day keeps a label unless a stepped one already sits close to it.
+  const stepped = rows.filter((_, index) => (rows.length - 1 - index) % tickStep === 0);
+  const first = rows[0];
+  const firstFar = first !== undefined && (rows.length - 1) % tickStep >= Math.ceil(tickStep / 2);
+  const tickDays = [...(firstFar ? [first] : []), ...stepped].map((row) => String(row.day));
   return defineChart(
     {
       marks: [
@@ -69,16 +75,17 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
         x: {
           scale: () => scaleBand<string>().paddingInner(0.3).paddingOuter(0.1),
           axis: {
-            ...axisTicks((value: string) => {
-              const index = rows.findIndex((candidate) => String(candidate.day) === value);
-              const row = rows[index];
-              // Even steps are counted back from today, so the last label is always today.
-              if (!row) return "";
-              const fromEnd = rows.length - 1 - index;
-              // The first day keeps a label unless a stepped label sits too close to it.
-              const firstLabel = index === 0 && fromEnd % tickStep >= Math.ceil(tickStep / 2);
-              return fromEnd % tickStep === 0 || firstLabel ? dayLabel(row.date) : "";
-            }),
+            line: false,
+            ticks: {
+              size: 0,
+              padding: 8,
+              values: tickDays,
+              format: (value: string) => {
+                const row = rows.find((candidate) => String(candidate.day) === value);
+                return row ? dayLabel(row.date) : "";
+              },
+            },
+            tickLabels: { thin: { minGap: 16, keep: tickDays.slice(0, 1) } },
           },
         },
         y: {
