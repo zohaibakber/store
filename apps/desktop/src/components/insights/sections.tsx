@@ -287,7 +287,7 @@ export function StockHealth({ summary }: { readonly summary: InsightsSummary }) 
                   {meta.label}
                 </Link>
                 <InsightMeter
-                  className="flex-1"
+                  className="max-w-60 flex-1"
                   label={`${meta.label}: ${formatCount(count, "product")}`}
                   max={tracked}
                   tone={meta.tone}
@@ -345,7 +345,7 @@ export function RevenueTrend({
       action={
         <ChartLegend
           items={[
-            [`Last ${period.days} days`, "h-0.5 w-3 rounded-full bg-chart-1"],
+            [`Last ${period.days} days`, "size-2 rounded-xs bg-chart-1"],
             ["Previous period", "h-0 w-3 border-t border-dashed border-muted-foreground"],
           ]}
         />

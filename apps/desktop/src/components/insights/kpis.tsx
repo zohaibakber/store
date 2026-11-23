@@ -16,7 +16,7 @@ function Sparkline({
   readonly values: ReadonlyArray<number>;
   readonly label: string;
 }) {
-  if (values.length < 2 || values.every((value) => value === 0)) return null;
+  if (values.filter((value) => value > 0).length < 3) return null;
   const max = Math.max(...values, 1);
   const slot = SPARK_WIDTH / values.length;
   const bar = Math.max(1, slot * 0.6);

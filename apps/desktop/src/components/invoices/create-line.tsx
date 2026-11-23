@@ -92,7 +92,7 @@ function LineRow({
       tabIndex={0}
     >
       {children}
-      <TableCell>
+      <TableCell className="ps-3">
         <div className="-my-1.5 flex justify-end">
           <Button
             aria-label={`Remove ${name}`}
@@ -161,9 +161,12 @@ function LineBatch({ line }: { line: SaleLine }) {
   const chosen = line.batchId === AUTO_BATCH || batches.some((batch) => batch.id === line.batchId);
 
   if (batches.length <= 1 && chosen) {
+    if (!only) return <span className="text-xs text-muted-foreground">{EMPTY}</span>;
+    const expiry = only.expiresAt == null ? null : format(only.expiresAt, "MMM ''yy");
     return (
-      <span className="block truncate text-xs leading-tight text-muted-foreground tabular-nums">
-        {only ? batchLabel(only) : EMPTY}
+      <span className="flex min-w-0 flex-col leading-tight tabular-nums">
+        <span className="truncate text-sm">{only.batchNumber ?? EMPTY}</span>
+        {expiry && <span className="truncate text-xs text-muted-foreground">Exp {expiry}</span>}
       </span>
     );
   }
@@ -244,8 +247,11 @@ function InvoiceCreateLine({
             </span>
           ) : (
             <span className="min-w-0 flex-1 basis-0 truncate text-xs leading-tight text-muted-foreground">
-              {line.product.category.name}
-              {hint && ` · ${hint}`}
+              <span className="max-xl:hidden">
+                {line.product.category.name}
+                {hint && " · "}
+              </span>
+              {hint}
             </span>
           )}
         </div>
@@ -308,7 +314,7 @@ function InvoiceCreateLine({
             </span>
           )}
           <NumberField
-            className="w-20"
+            className="w-16 xl:w-20"
             format={{ maximumFractionDigits: 2, minimumFractionDigits: 0 }}
             min={0}
             onValueChange={(salePrice) => updateLine(line, { salePrice })}

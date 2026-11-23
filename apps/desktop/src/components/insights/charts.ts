@@ -40,6 +40,7 @@ const revenueTooltip = (points: readonly ChartPoint<SalesDay>[]) => {
 };
 
 export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
+  const tickStep = rows.length <= 7 ? 1 : rows.length <= 31 ? 7 : 14;
   return defineChart(
     {
       marks: [
@@ -69,10 +70,11 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
           scale: () => scaleBand<string>().paddingInner(0.3).paddingOuter(0.1),
           axis: {
             ...axisTicks((value: string) => {
-              const row = rows.find((candidate) => String(candidate.day) === value);
-              return row ? dayLabel(row.date) : "";
+              const index = rows.findIndex((candidate) => String(candidate.day) === value);
+              const row = rows[index];
+              // Even steps counted back from today, so the last label is always today.
+              return row && (rows.length - 1 - index) % tickStep === 0 ? dayLabel(row.date) : "";
             }),
-            tickLabels: { thin: { minGap: 32, priority: "ends" } },
           },
         },
         y: {

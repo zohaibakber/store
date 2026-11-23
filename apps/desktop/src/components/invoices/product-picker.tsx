@@ -227,7 +227,10 @@ function RecentChip({ recent }: { readonly recent: RecentProduct }) {
     return (
       <li>
         <span aria-disabled="true" className={`${CHIP_CLASS} opacity-64`}>
-          <RecentChipLabel note="Out of stock" recent={recent} />
+          <RecentChipLabel
+            note={product.batches.length === 0 ? "Not stocked" : "Out of stock"}
+            recent={recent}
+          />
         </span>
       </li>
     );
