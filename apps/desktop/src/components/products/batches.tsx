@@ -47,7 +47,7 @@ import type { CommandExit } from "@/inventory/errors";
 import { useCommand } from "@/inventory/provider";
 import { useSuspenseInventoryInvoice } from "@/inventory/queries";
 import { toastFailure } from "@/lib/errors";
-import { expiryTone } from "@/lib/expiry";
+import { expiryDaysLeft, expiryTone } from "@/lib/expiry";
 import { EMPTY, formatCount, formatNumber } from "@/lib/format";
 import { formatDate, parseExpiryDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
@@ -438,12 +438,16 @@ const muted = <span className="text-muted-foreground">{EMPTY}</span>;
 
 function ExpiryCell({ expiresAt, now }: { expiresAt: number | null; now: number }) {
   if (expiresAt === null) return muted;
-  const expired = expiresAt < now;
   const tone = expiryTone(expiresAt, now);
+  const daysLeft = expiryDaysLeft(expiresAt, now);
+  const date = formatDate(expiresAt);
   return (
     <span className={tone === "text-muted-foreground" ? undefined : tone}>
-      {formatDate(expiresAt)}
-      {expired ? " · Expired" : ""}
+      {daysLeft === null
+        ? date
+        : daysLeft <= 0
+          ? `Expired ${date}`
+          : `${date} · ${formatCount(daysLeft, "day")}`}
     </span>
   );
 }

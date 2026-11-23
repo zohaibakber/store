@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { expiryTone } from "@/lib/expiry";
+import { expiryDaysLeft, expiryTone } from "@/lib/expiry";
 import { EMPTY, formatCount, formatNumber, pluralize } from "@/lib/format";
 import { AUTO_BATCH } from "@/lib/sale-drafts";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,12 @@ const batchLabel = (batch: Batch) => {
   if (batch.batchNumber && expiry) return `${batch.batchNumber} · ${expiry}`;
   if (batch.batchNumber) return batch.batchNumber;
   return expiry ? `Exp ${expiry}` : EMPTY;
+};
+
+const expiryLine = (expiry: string, daysLeft: number | null) => {
+  if (daysLeft === null) return `Exp ${expiry}`;
+  if (daysLeft <= 0) return "Expired";
+  return `Exp ${expiry} · ${daysLeft}d`;
 };
 
 const elsewhereHint = (line: SaleLine) => {
@@ -169,7 +175,9 @@ function LineBatch({ line }: { line: SaleLine }) {
       <span className="flex min-w-0 flex-col leading-tight tabular-nums">
         <span className="truncate text-sm">{only.batchNumber ?? EMPTY}</span>
         {expiry && (
-          <span className={cn("truncate text-xs", expiryTone(only.expiresAt))}>Exp {expiry}</span>
+          <span className={cn("truncate text-xs", expiryTone(only.expiresAt))}>
+            {expiryLine(expiry, expiryDaysLeft(only.expiresAt))}
+          </span>
         )}
       </span>
     );

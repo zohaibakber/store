@@ -12,3 +12,13 @@ export const expiryTone = (expiresAt: number | null, now = Date.now()) => {
   if (days <= 90) return "text-warning";
   return "text-muted-foreground";
 };
+
+/**
+ * Days left once a batch is inside the 90-day window, so the warning never
+ * rests on colour alone; null when it is further out or has no expiry.
+ */
+export const expiryDaysLeft = (expiresAt: number | null, now = Date.now()) => {
+  if (expiresAt == null) return null;
+  const days = Math.ceil((expiresAt - now) / DAY_MS);
+  return days <= 90 ? days : null;
+};
