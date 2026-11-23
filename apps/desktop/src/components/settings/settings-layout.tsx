@@ -15,7 +15,7 @@ import {
   staffSectionPlace,
   type SettingsSection,
 } from "@/components/settings/sections";
-import { PageLayout } from "@/components/shared/page-layout";
+import { PageHeading, PageLayout, PageToolbar } from "@/components/shared/page-layout";
 import { useStaffAccess } from "@/components/staff/access";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs";
@@ -56,15 +56,18 @@ export function SettingsLayout() {
 
   return (
     <PageLayout>
+      <PageToolbar>
+        <PageHeading className="me-auto">Settings</PageHeading>
+      </PageToolbar>
       <Tabs
-        className="mx-auto w-full max-w-5xl"
+        className="w-full"
         orientation={sideBySide ? "vertical" : "horizontal"}
         value={section ?? null}
       >
         <div
           className={cn(
             sideBySide
-              ? "sticky top-4 me-4 w-48 shrink-0 self-start border-s"
+              ? "sticky top-4 me-8 w-44 shrink-0 self-start border-s"
               : "mb-2 scrollbar-none overflow-x-auto",
           )}
         >

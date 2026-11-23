@@ -4,7 +4,7 @@ import { areaY, barY, d3Curve, defineChart, lineY, type ChartPoint } from "@tans
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { scalePoint } from "@tanstack/charts/scales/point";
-import { curveMonotoneX } from "d3-shape";
+import { curveLinear } from "d3-shape";
 import { format } from "date-fns";
 
 import { chartTheme, chartTooltip } from "@/components/ui/chart";
@@ -49,7 +49,7 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
           x: (row) => String(row.day),
           y: "revenue",
           key: (row) => `area-${row.day}`,
-          curve: d3Curve(curveMonotoneX),
+          curve: d3Curve(curveLinear),
           fill: "var(--chart-1)",
           fillOpacity: 0.08,
         }),
@@ -58,7 +58,7 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
           x: (row) => String(row.day),
           y: "revenue",
           key: (row) => String(row.day),
-          curve: d3Curve(curveMonotoneX),
+          curve: d3Curve(curveLinear),
           stroke: "var(--chart-1)",
           strokeWidth: 2,
         }),
@@ -67,7 +67,7 @@ export function createRevenueTrendChart(rows: ReadonlyArray<SalesDay>) {
           x: (row) => String(row.day),
           y: "previousRevenue",
           key: (row) => `previous-${row.day}`,
-          curve: d3Curve(curveMonotoneX),
+          curve: d3Curve(curveLinear),
           stroke: "var(--muted-foreground)",
           strokeOpacity: 0.6,
           strokeWidth: 1.5,

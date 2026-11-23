@@ -40,11 +40,11 @@ function InvoiceProductPicker() {
   });
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="group/picker flex flex-col gap-1.5">
       <Suspense fallback={<LoadingSpinner className="h-9" />}>
         <ProductPickerSearch onPick={addProduct} />
       </Suspense>
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+      <p className="invisible flex items-center gap-1 text-xs text-muted-foreground group-focus-within/picker:visible">
         Type <Kbd>3*</Kbd> before a name to add 3 at once.
       </p>
     </div>

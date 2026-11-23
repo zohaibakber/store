@@ -340,11 +340,11 @@ export function CategoriesTable({ categories }: { readonly categories: ReadonlyA
         <Table variant="card">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead className="w-full">Name</TableHead>
               <TableHead>
                 <SoldAsHeader />
               </TableHead>
-              <TableHead>
+              <TableHead className="ps-8">
                 <div className="text-end">Products</div>
               </TableHead>
               <TableHead>

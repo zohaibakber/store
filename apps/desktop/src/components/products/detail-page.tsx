@@ -88,7 +88,6 @@ function DetailsCard({
           ...(tracksPacks
             ? [{ label: "Units per pack", value: formatNumber(product.unitsPerPack) }]
             : []),
-          { label: "Category", value: product.category.name },
           { label: "Aisle", value: text(product.aisle) },
         ],
       },
@@ -107,6 +106,7 @@ function DetailsCard({
       {
         title: "Product",
         details: [
+          { label: "Category", value: product.category.name },
           { label: "Composition", value: text(product.composition) },
           { label: "Strength", value: text(product.strength) },
           { label: "Created", value: formatDate(product.createdAt) },
@@ -122,8 +122,8 @@ function DetailsCard({
     >
       <div className="grid gap-x-8 gap-y-5 text-sm md:grid-cols-3">
         {groups.map((group) => (
-          <section className="flex min-w-0 flex-col gap-2" key={group.title}>
-            <h3 className="text-xs text-muted-foreground">{group.title}</h3>
+          <section className="flex max-w-80 min-w-0 flex-col gap-2" key={group.title}>
+            <h3 className="border-b pb-1.5 text-xs font-medium">{group.title}</h3>
             <dl className="flex flex-col gap-1.5">
               {group.details.map((detail) => (
                 <div

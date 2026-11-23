@@ -503,6 +503,7 @@ function DataTablePagination({
   const lastResult = Math.min((pageIndex + 1) * pageSize, rowCount);
   const sizes = [...new Set<number>([...pageSizes, pageSize])].sort((a, b) => a - b);
   const fitsOnePage = pageIndex === 0 && rowCount <= (sizes[0] ?? pageSize);
+  if (rowCount === 0) return null;
 
   return (
     <div className={cn("flex min-h-8 items-center justify-between gap-2", className)} {...props}>
