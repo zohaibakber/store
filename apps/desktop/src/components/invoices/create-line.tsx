@@ -47,10 +47,12 @@ const batchLabel = (batch: Batch) => {
   return expiry ? `Exp ${expiry}` : EMPTY;
 };
 
+// Inside the warning window the days left replace the month, which fits the
+// narrow batch column and does not rely on colour.
 const expiryLine = (expiry: string, daysLeft: number | null) => {
   if (daysLeft === null) return `Exp ${expiry}`;
   if (daysLeft <= 0) return "Expired";
-  return `Exp ${expiry} · ${daysLeft}d`;
+  return `${daysLeft}d left`;
 };
 
 const elsewhereHint = (line: SaleLine) => {
