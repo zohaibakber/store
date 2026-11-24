@@ -1,6 +1,8 @@
+import { SyncBadRequest } from "@store/contracts/sync/api";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerError from "effect/http/HttpServerError";
@@ -13,14 +15,45 @@ import { OrgAuthorities, OrganizationAuthority } from "../inventory/organization
 import { LiveRoutes } from "../live/route";
 import { SyncHandlers } from "../routes/sync";
 import { buildOncePerIsolate, workerRuntimeServices } from "../runtime/isolate";
-import { StoreApi } from "./api";
+import { MalformedRequest, StoreApi } from "./api";
 import { publicError } from "./errors";
 import { AuthHandlers, SystemHandlers } from "./system";
+
+const malformedRequest = SyncBadRequest.make(
+  publicError("INVALID_REQUEST", "The request is not valid. Update the app and try again."),
+);
+
+const MalformedRequestLive = HttpApiMiddleware.layerSchemaErrorTransform(
+  MalformedRequest,
+  (error, { endpoint }) => {
+    switch (error.kind) {
+      case "Params":
+      case "Headers":
+      case "Query":
+      case "Payload":
+        return Effect.logWarning("worker.malformed_request").pipe(
+          Effect.annotateLogs({ endpoint: endpoint.identifier, part: error.kind }),
+          Effect.andThen(Effect.fail(malformedRequest)),
+        );
+      case "Body":
+      case "ResponseHeaders":
+        return Effect.fail(error);
+      default: {
+        const _exhaustive: never = error.kind;
+        return _exhaustive;
+      }
+    }
+  },
+);
 
 const ProtectedHandlers = SyncHandlers.pipe(Layer.provide(OrganizationAuthLive));
 
 const ApiRoutes = HttpApiBuilder.layer(StoreApi).pipe(
-  Layer.provide(Layer.mergeAll(SystemHandlers, AuthHandlers, ProtectedHandlers)),
+  Layer.provide(
+    Layer.mergeAll(SystemHandlers, AuthHandlers, ProtectedHandlers).pipe(
+      Layer.provide(MalformedRequestLive),
+    ),
+  ),
 );
 
 const recoverUnexpected = <E, R>(

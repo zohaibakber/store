@@ -19,9 +19,9 @@
     "@alchemy.run/cloudflare": "catalog:",
     "@alchemy.run/drizzle": "catalog:",
     "@alchemy.run/github": "catalog:",
-    "@cloudflare/workers-types": "5.20261121.1",
+    "@cloudflare/workers-types": "5.20261124.1",
     "@effect/platform-node": "catalog:",
-    "@effect/tsgo": "0.73.2",
+    "@effect/tsgo": "0.73.4",
     "@types/node": "^26.6.6",
     "alchemy": "catalog:",
     "effect": "catalog:",
@@ -32,9 +32,9 @@
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "12.21.0",
+      "version": "12.23.0",
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@12.21.0"
+  "packageManager": "pnpm@12.23.0"
 }

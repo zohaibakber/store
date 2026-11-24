@@ -12,6 +12,7 @@
     "dev": "cd ../.. && pnpm exec alchemy dev --stage dev --env-file .env.dev"
   },
   "dependencies": {
+    "@effect/platform-cloudflare": "catalog:",
     "@effect/sql-sqlite-do": "catalog:",
     "@store/auth": "workspace:*",
     "@store/contracts": "workspace:*",

@@ -9,6 +9,7 @@ import { AccessTokens } from "./src/auth/access-tokens";
 import { OrgAuthorityLive } from "./src/authority/durable-object";
 import { makeWorkerFetch } from "./src/http/app";
 import { OrgAuthorities, OrganizationAuthority } from "./src/inventory/organization-authority";
+import { makeWorkerTracing } from "./src/runtime/tracer";
 
 const ALCHEMY_DEV_WORKERD_COMPATIBILITY_DATE = "2026-07-11";
 
@@ -34,7 +35,7 @@ export const ApiLive = Api.make(
         flags: ["nodejs_compat", "enable_request_signal"],
       },
       placement: { mode: "smart" as const },
-      observability: { enabled: true },
+      observability: { enabled: true, traces: { enabled: true } },
       dev: { port: LOCAL_API_PORT },
       env: { AUTH_JWT_PUBLIC_KEY: signingKey.publicKey },
     };
@@ -48,8 +49,9 @@ export const ApiLive = Api.make(
     };
   }),
   Effect.gen(function* () {
+    const traced = yield* makeWorkerTracing;
     const fetch = yield* makeWorkerFetch;
-    return { fetch };
+    return { fetch: traced(fetch) };
   }).pipe(Effect.provide(ApiServicesLive), Effect.provide(OrgAuthorityLive)),
 );
 

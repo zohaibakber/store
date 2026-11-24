@@ -11,6 +11,7 @@ import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { OrgAuthority, type OrgAuthorityContract } from "../../api";
+import { makeWorkerTracing } from "../runtime/tracer";
 import { LiveBroadcast, MaintenanceAlarm, OrgAuthorityFacade } from "./facade";
 import { makeLiveSockets } from "./live-sockets";
 
@@ -19,6 +20,7 @@ export const OrgAuthorityLive = OrgAuthority.make(
     const state = yield* Cloudflare.DurableObjectState;
     const crypto = yield* SecureRandom.SecureRandom;
     const digest = yield* Digest.Digest;
+    const traced = yield* makeWorkerTracing;
     return Effect.gen(function* () {
       const sql = yield* SqliteClient.make({ storage: state.raw.storage }).pipe(
         Effect.provide(Reactivity.layer),
@@ -60,14 +62,28 @@ export const OrgAuthorityLive = OrgAuthority.make(
       );
       const authority = Context.get(context, OrgAuthorityFacade);
       return {
-        ...authority,
-        fetch: sockets.admit(authority.liveHorizon),
+        register: (actor, request) => traced(authority.register(actor, request)),
+        submit: (actor, bodyText) => traced(authority.submit(actor, bodyText)),
+        receipt: (actor, operationId) => traced(authority.receipt(actor, operationId)),
+        pull: (actor, request) => traced(authority.pull(actor, request)),
+        acquireSnapshot: (actor, request) => traced(authority.acquireSnapshot(actor, request)),
+        readSnapshotPart: (actor, snapshotId, partNumber) =>
+          traced(authority.readSnapshotPart(actor, snapshotId, partNumber)),
+        liveHorizon: (actor, replicaId) => traced(authority.liveHorizon(actor, replicaId)),
+        stageImportPart: (actor, importId, partNumber, bodyText) =>
+          traced(authority.stageImportPart(actor, importId, partNumber, bodyText)),
+        commitImport: (actor, importId, request) =>
+          traced(authority.commitImport(actor, importId, request)),
+        importStatus: (actor, importId) => traced(authority.importStatus(actor, importId)),
+        maintain: () => traced(authority.maintain()),
+        fetch: traced(sockets.admit(authority.liveHorizon)),
         webSocketMessage: sockets.webSocketMessage,
         webSocketClose: sockets.webSocketClose,
         alarm: () =>
           Ref.set(armedAt, null).pipe(
             Effect.andThen(authority.maintain()),
             Effect.andThen(sockets.sweep()),
+            traced,
           ),
       } satisfies OrgAuthorityContract;
     });
