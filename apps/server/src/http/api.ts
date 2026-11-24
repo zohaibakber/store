@@ -1,11 +1,17 @@
 import { WorkspaceSnapshot } from "@store/contracts";
-import { syncGroup } from "@store/contracts/sync/api";
+import { SyncBadRequest, syncGroup } from "@store/contracts/sync/api";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
+import * as HttpApiMiddleware from "effect/http-api/HttpApiMiddleware";
 import * as Schema from "effect/Schema";
 
 import { OrganizationAuth } from "../auth/organization";
+
+export class MalformedRequest extends HttpApiMiddleware.Service<MalformedRequest>()(
+  "@store/server/MalformedRequest",
+  { error: SyncBadRequest },
+) {}
 
 const Health = Schema.Struct({ ok: Schema.Boolean });
 
@@ -17,8 +23,6 @@ const auth = HttpApiGroup.make("auth").add(
   HttpApiEndpoint.get("session", "/api/auth/session", { success: WorkspaceSnapshot }),
 );
 
-export const StoreApi = HttpApi.make("StoreApi").add(
-  system,
-  auth,
-  syncGroup.middleware(OrganizationAuth),
-);
+export const StoreApi = HttpApi.make("StoreApi")
+  .add(system, auth, syncGroup.middleware(OrganizationAuth))
+  .middleware(MalformedRequest);
