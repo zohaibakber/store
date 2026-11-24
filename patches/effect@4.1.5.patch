@@ -1,0 +1,28 @@
+diff --git a/dist/Hash.js b/dist/Hash.js
+index 26fa8860130858293ca5d321039114c29a958c67..7d07b21985f4f49710f47e9ff0ff38752b735d73 100644
+--- a/dist/Hash.js
++++ b/dist/Hash.js
+@@ -112,6 +112,9 @@ export const hash = self => {
+               h = bytes === undefined ? random(self) : array(bytes);
+             } else if (self instanceof DataView) {
+               h = array(viewBytes(self));
++            } else if (ArrayBuffer.isView(self) && bufferBytes(self.buffer) === undefined) {
++              // A view over a detached buffer cannot be read: hash it by reference.
++              h = random(self);
+             } else if (Array.isArray(self) || ArrayBuffer.isView(self)) {
+               h = array(self);
+             } else if (self instanceof Map) {
+diff --git a/src/Hash.ts b/src/Hash.ts
+index 341a6e39b13c80f0b9788aa372ea83051724921d..4f5a4492521fa4c531d2eb4d3f39d3e65f5637dd 100644
+--- a/src/Hash.ts
++++ b/src/Hash.ts
+@@ -149,6 +149,9 @@ export const hash: <A>(self: A) => number = <A>(self: A) => {
+             h = bytes === undefined ? random(self) : array(bytes)
+           } else if (self instanceof DataView) {
+             h = array(viewBytes(self))
++          } else if (ArrayBuffer.isView(self) && bufferBytes(self.buffer) === undefined) {
++            // A view over a detached buffer cannot be read: hash it by reference.
++            h = random(self)
+           } else if (Array.isArray(self) || ArrayBuffer.isView(self)) {
+             h = array(self as any)
+           } else if (self instanceof Map) {

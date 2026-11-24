@@ -72,3 +72,4 @@ peerDependencyRules:
 
 patchedDependencies:
   alchemy@2.0.0-beta.87: patches/alchemy@2.0.0-beta.87.patch
+  effect@4.1.5: patches/effect@4.1.5.patch
